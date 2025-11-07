@@ -21,7 +21,7 @@ This module contains an implementation of a genetic algorithm. As with simulated
 Mutants are represented as pairs of (ZX-diagram, circuit) to allow for mutation operators that act on either, though by default only the two two congruences defined in congruences.py (that act at the graph-level) are used. Tournament selection is used by default but other options are available. The default fitness function is a weighted gate count defined in scores.py.
 """
 
-from tqdm import tqdm # type: ignore
+from tqdm import tqdm  # type: ignore
 import numpy as np
 from random import shuffle
 import random
@@ -30,14 +30,15 @@ from copy import deepcopy
 from .scores import wgc
 from .congruences import apply_rand_lc, apply_rand_pivot
 import sys
-if __name__ == '__main__':
-    sys.path.append('..')
-from pyzx.simplify import to_graph_like, full_reduce
-from pyzx.extract import extract_circuit
-from pyzx.optimize import basic_optimization
+
+if __name__ == "__main__":
+    sys.path.append("..")
+from tsim.external.pyzx.simplify import to_graph_like, full_reduce
+from tsim.external.pyzx.extract import extract_circuit
+from tsim.external.pyzx.optimize import basic_optimization
 
 
-__all__ = ['GeneticOptimizer']
+__all__ = ["GeneticOptimizer"]
 
 
 class Mutant:
@@ -49,7 +50,8 @@ class Mutant:
         self.c_curr = c
         self.g_curr = g.copy()
         self.score = None
-        self.dead = False # no more actions can be applied to it
+        self.dead = False  # no more actions can be applied to it
+
 
 def default_score(m):
     return wgc(m.c_curr)
@@ -70,6 +72,7 @@ def rand_pivot(c, g, reduce_prob=0.1):
         g_tmp = g_fr.copy()
     return True, (c_new, g_tmp)
 
+
 def rand_lc(c, g, reduce_prob=0.1):
     """Applies a random local complementation to a Mutant"""
 
@@ -85,13 +88,13 @@ def rand_lc(c, g, reduce_prob=0.1):
     return True, (c_new, g_tmp)
 
 
-class GeneticOptimizer():
+class GeneticOptimizer:
     """Implements a genetic algorithm for evolving a population of (ZX-diagram, circuit) pairs.
     The primary functionality of this class is defined in the evolve method."""
 
     def __init__(self, actions=[rand_pivot, rand_lc], score=default_score):
         self.actions = actions
-        self.score = score # function that maps Mutant -> Double
+        self.score = score  # function that maps Mutant -> Double
 
     # TODO: multi-thread
     def mutate(self):
@@ -105,7 +108,7 @@ class GeneticOptimizer():
                 success, (c_new, g_new) = a(m.c_curr, m.g_curr)
                 if success:
                     m.c_curr = c_new.to_basic_gates()
-                    m.g_curr = g_new.copy() # copy() to make vertices consecutive
+                    m.g_curr = g_new.copy()  # copy() to make vertices consecutive
                     m.score = self.score(m)
                     break
             if not success:
@@ -124,7 +127,7 @@ class GeneticOptimizer():
                 m1, m2 = random.sample(self.mutants, 2)
                 if m1.dead:
                     new_mutants.append(m2)
-                elif m1.score < m2.score: # Reminder: lower is better
+                elif m1.score < m2.score:  # Reminder: lower is better
                     new_mutants.append(m1)
                 else:
                     new_mutants.append(m2)
@@ -150,7 +153,6 @@ class GeneticOptimizer():
             self.mutants = [deepcopy(m) for m in self.mutants]
         else:
             raise RuntimeError(f"[select] Unknown selection method {method}")
-
 
     def evolve(self, g, n_mutants, n_generations, quiet=True):
         """The primary functionality of GeneticOptimizer. Given an input ZX-diagram,
@@ -182,7 +184,7 @@ class GeneticOptimizer():
         best_scores = [best_score]
         for i in tqdm(range(self.n_gens), desc="Generations", disable=self.quiet):
             n_unique_mutants = len(list(set([id(m) for m in self.mutants])))
-            assert(n_unique_mutants == self.n_mutants)
+            assert n_unique_mutants == self.n_mutants
 
             self.mutate()
             best_in_gen = min(self.mutants, key=lambda m: m.score)

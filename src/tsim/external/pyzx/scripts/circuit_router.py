@@ -22,8 +22,16 @@ import time
 import argparse
 from typing import Any, Dict, Iterable, List, Union
 
-from pyzx.routing.cnot_mapper import ElimMode, gauss, genetic_elim_modes, basic_elim_modes, pso_elim_modes, sequential_gauss, elim_modes
-from pyzx.routing.parity_maps import CNOT_tracker
+from tsim.external.pyzx.routing.cnot_mapper import (
+    ElimMode,
+    gauss,
+    genetic_elim_modes,
+    basic_elim_modes,
+    pso_elim_modes,
+    sequential_gauss,
+    elim_modes,
+)
+from tsim.external.pyzx.routing.parity_maps import CNOT_tracker
 
 try:
     from pandas import DataFrame
@@ -59,6 +67,7 @@ debug = False
 
 from ..extract import bi_adj, connectivity_from_biadj, permutation_as_swaps
 
+
 class CompileMode(Enum):
     """
     Compilation modes for the cnot mapper procedures
@@ -70,6 +79,7 @@ class CompileMode(Enum):
 
     def __str__(self):
         return f"{self.value}"
+
 
 def create_dest_filename(
     original_file,
@@ -405,7 +415,7 @@ def route_circuit(
         ]
     )
     if mode == CompileMode.QUIL_COMPILER:
-        from pyzx.pyquil_circuit import PyQuilCircuit
+        from tsim.external.pyzx.pyquil_circuit import PyQuilCircuit
 
         compiled_circuit = PyQuilCircuit.from_circuit(
             c, architecture
@@ -568,10 +578,10 @@ def route_circuit(
             and (gate.name == "CNOT" or gate.name == "CZ")
             and not (
                 architecture.graph.connected(
-                    qubit_lookup[gate.target], qubit_lookup[gate.control] # type: ignore
+                    qubit_lookup[gate.target], qubit_lookup[gate.control]  # type: ignore
                 )
                 or architecture.graph.connected(
-                    qubit_lookup[gate.control], qubit_lookup[gate.target] # type: ignore
+                    qubit_lookup[gate.control], qubit_lookup[gate.target]  # type: ignore
                 )
             )
         ]
@@ -794,7 +804,9 @@ def batch_route_circuits(
                                                                     circuits[
                                                                         architecture.name
                                                                     ][mode] = circuit
-                                                            except KeyError as e:  # Should only happen with quilc
+                                                            except (
+                                                                KeyError
+                                                            ) as e:  # Should only happen with quilc
                                                                 if (
                                                                     mode
                                                                     == CompileMode.QUIL_COMPILER
@@ -823,10 +835,11 @@ def batch_route_circuits(
             df.to_csv(metrics_file, columns=get_metric_header(), index=False)
     return circuits
 
+
 def count_cnots_circuit(mode, circuit, n_compile=1, store_circuit_as=None):
     count = -1
     if mode == CompileMode.QUIL_COMPILER:
-        from pyzx.pyquil_circuit import PyQuilCircuit
+        from tsim.external.pyzx.pyquil_circuit import PyQuilCircuit
 
         if isinstance(circuit, PyQuilCircuit):
             count = (
@@ -1029,7 +1042,9 @@ def batch_map_cnot_circuits(
                                                 circuits[architecture.name][
                                                     mode
                                                 ] = circuit
-                                        except KeyError as e:  # Should only happen with quilc
+                                        except (
+                                            KeyError
+                                        ) as e:  # Should only happen with quilc
                                             if mode == CompileMode.QUIL_COMPILER:
                                                 print(
                                                     "\033[31mCould not compile",
@@ -1092,7 +1107,7 @@ def map_cnot_circuit(
             **kwargs,
         )
     elif mode == CompileMode.QUIL_COMPILER:
-        from pyzx.pyquil_circuit import PyQuilCircuit
+        from tsim.external.pyzx.pyquil_circuit import PyQuilCircuit
 
         compiled_circuit = PyQuilCircuit.from_CNOT_tracker(circuit, architecture)
         compiled_circuit.compile()
@@ -1204,7 +1219,7 @@ def sequential_map_cnot_circuits(
                                         n_iterations=iteration,
                                         crossover_prob=crossover_prob,
                                         mutate_prob=mutation_prob,
-                                    ) # type: ignore
+                                    )  # type: ignore
                                     end_time = time.time()
                                     print("score:", score)
                                     print("time (s):", end_time - start_time)
@@ -1220,29 +1235,134 @@ def sequential_map_cnot_circuits(
 
     return circuits
 
+
 def main(args):
     parser = argparse.ArgumentParser(prog="pyzx router", description=description)
-    parser.add_argument("QASM_source",nargs="+",help="The QASM file or folder with QASM files to be routed.")
-    parser.add_argument("-m","--mode",nargs="+",dest="mode",default=ElimMode.STEINER_MODE,help="The mode specifying how to route. choose 'all' for using all modes.",choices=elim_modes + [CompileMode.QUIL_COMPILER, "all"])
-    parser.add_argument("-a","--architecture",nargs="+",dest="architecture",default=SQUARE,choices=architectures,help="Which architecture it should run compile to.")
-    parser.add_argument("-q","--qubits",nargs="+",default=None,type=int,help="The number of qubits for the architecture.")
-    parser.add_argument("--output_perm",default="y",choices=["y", "n", "pso"],help="Whether the location of the output qubits can be different for the input location. Qubit locations can be optimized with pso.")
+    parser.add_argument(
+        "QASM_source",
+        nargs="+",
+        help="The QASM file or folder with QASM files to be routed.",
+    )
+    parser.add_argument(
+        "-m",
+        "--mode",
+        nargs="+",
+        dest="mode",
+        default=ElimMode.STEINER_MODE,
+        help="The mode specifying how to route. choose 'all' for using all modes.",
+        choices=elim_modes + [CompileMode.QUIL_COMPILER, "all"],
+    )
+    parser.add_argument(
+        "-a",
+        "--architecture",
+        nargs="+",
+        dest="architecture",
+        default=SQUARE,
+        choices=architectures,
+        help="Which architecture it should run compile to.",
+    )
+    parser.add_argument(
+        "-q",
+        "--qubits",
+        nargs="+",
+        default=None,
+        type=int,
+        help="The number of qubits for the architecture.",
+    )
+    parser.add_argument(
+        "--output_perm",
+        default="y",
+        choices=["y", "n", "pso"],
+        help="Whether the location of the output qubits can be different for the input location. Qubit locations can be optimized with pso.",
+    )
     # parser.add_argument("-f", "--full_reduce", dest="full_reduce", default=1, type=int, choices=[0,1], help="Full reduce")
-    parser.add_argument("--population",nargs="+",default=30,type=int,help="The population size for the genetic algorithm.")
-    parser.add_argument("--iterations",nargs="+",default=15,type=int,help="The number of iterations for the genetic algorithm.")
-    parser.add_argument("--crossover_prob",nargs="+",default=0.8,type=restricted_float,help="The crossover probability for the genetic algorithm. Must be between 0.0 and 1.0.")
-    parser.add_argument("--mutation_prob",nargs="+",default=0.2,type=restricted_float,help="The mutation probability for the genetic algorithm. Must be between 0.0 and 1.0.")
+    parser.add_argument(
+        "--population",
+        nargs="+",
+        default=30,
+        type=int,
+        help="The population size for the genetic algorithm.",
+    )
+    parser.add_argument(
+        "--iterations",
+        nargs="+",
+        default=15,
+        type=int,
+        help="The number of iterations for the genetic algorithm.",
+    )
+    parser.add_argument(
+        "--crossover_prob",
+        nargs="+",
+        default=0.8,
+        type=restricted_float,
+        help="The crossover probability for the genetic algorithm. Must be between 0.0 and 1.0.",
+    )
+    parser.add_argument(
+        "--mutation_prob",
+        nargs="+",
+        default=0.2,
+        type=restricted_float,
+        help="The mutation probability for the genetic algorithm. Must be between 0.0 and 1.0.",
+    )
     # PSO args
-    parser.add_argument("--swarm_size",nargs="+",default=15,type=int,help="The swarm size for the particle swarm optimizer.")
-    parser.add_argument("--steps",nargs="+",default=10,type=int,help="The number of steps/iterations for the particle swarm optimizer.")
-    parser.add_argument("--sco",nargs="+",default=0.4,type=restricted_float,help="The crossover percentage with the best particle in the swarm for the particle swarm optimizer. Must be between 0.0 and 1.0.")
-    parser.add_argument("--pco",nargs="+",default=0.3,type=restricted_float,help="The crossover percentage with the personal best of a particle for the particle swarm optimizer. Must be between 0.0 and 1.0.")
-    parser.add_argument("--mutation_perc",nargs="+",default=0.2,type=restricted_float,help="The mutation percentage of a particle for the particle swarm optimizer. Must be between 0.0 and 1.0.")
+    parser.add_argument(
+        "--swarm_size",
+        nargs="+",
+        default=15,
+        type=int,
+        help="The swarm size for the particle swarm optimizer.",
+    )
+    parser.add_argument(
+        "--steps",
+        nargs="+",
+        default=10,
+        type=int,
+        help="The number of steps/iterations for the particle swarm optimizer.",
+    )
+    parser.add_argument(
+        "--sco",
+        nargs="+",
+        default=0.4,
+        type=restricted_float,
+        help="The crossover percentage with the best particle in the swarm for the particle swarm optimizer. Must be between 0.0 and 1.0.",
+    )
+    parser.add_argument(
+        "--pco",
+        nargs="+",
+        default=0.3,
+        type=restricted_float,
+        help="The crossover percentage with the personal best of a particle for the particle swarm optimizer. Must be between 0.0 and 1.0.",
+    )
+    parser.add_argument(
+        "--mutation_perc",
+        nargs="+",
+        default=0.2,
+        type=restricted_float,
+        help="The mutation percentage of a particle for the particle swarm optimizer. Must be between 0.0 and 1.0.",
+    )
     # parser.add_argument("--perm", default="both", choices=["row", "col", "both"], help="Whether to find a single optimal permutation that permutes the rows, columns or both with the genetic algorithm.")
-    parser.add_argument("--destination",help="Destination file or folder where the compiled circuit should be stored. Otherwise the source folder is used.")
-    parser.add_argument("--metrics_csv",default=None,help="The location to store compiling metrics as csv, if not given, the metrics are not calculated. Only used when the source is a folder")
-    parser.add_argument("--n_compile",default=1,type=int,help="How often to run the Quilc compiler, since it is not deterministic.")
-    parser.add_argument("--subfolder", default=None,type=str,nargs="+",help="Possible subfolders from the main QASM source to compile from. Less typing when source folders are in the same folder. Can also be used for subfiles.")
+    parser.add_argument(
+        "--destination",
+        help="Destination file or folder where the compiled circuit should be stored. Otherwise the source folder is used.",
+    )
+    parser.add_argument(
+        "--metrics_csv",
+        default=None,
+        help="The location to store compiling metrics as csv, if not given, the metrics are not calculated. Only used when the source is a folder",
+    )
+    parser.add_argument(
+        "--n_compile",
+        default=1,
+        type=int,
+        help="How often to run the Quilc compiler, since it is not deterministic.",
+    )
+    parser.add_argument(
+        "--subfolder",
+        default=None,
+        type=str,
+        nargs="+",
+        help="Possible subfolders from the main QASM source to compile from. Less typing when source folders are in the same folder. Can also be used for subfiles.",
+    )
 
     # args = parser.parse_args(args)
     args, unknown = parser.parse_known_args(args)

@@ -16,10 +16,11 @@
 
 
 from typing import Any, Dict, Iterable, List, Optional, Union
-from pyzx.circuit import Circuit, Gate, gate_types, CNOT
-from pyzx.linalg import Z2, Mat2, MatLike
+from tsim.external.pyzx.circuit import Circuit, Gate, gate_types, CNOT
+from tsim.external.pyzx.linalg import Z2, Mat2, MatLike
 
 import numpy as np
+
 
 class CNOT_tracker(Circuit):
     """
@@ -68,7 +69,7 @@ class CNOT_tracker(Circuit):
         self.add_gate("CNOT", q0, q1)
         self.matrix.row_add(q0, q1)
 
-    def add_gate(self, gate: Union[Gate,str], *args, **kwargs):
+    def add_gate(self, gate: Union[Gate, str], *args, **kwargs):
         if isinstance(gate, CNOT):
             self.row_add(gate.control, gate.target)
         else:
@@ -124,7 +125,7 @@ class CNOT_tracker(Circuit):
         self.matrix = Mat2.id(self.n_qubits)
         for gate in self.gates:
             if hasattr(gate, "name") and gate.name == "CNOT":
-                self.matrix.row_add(gate.control, gate.target) # type: ignore
+                self.matrix.row_add(gate.control, gate.target)  # type: ignore
             else:
                 print(
                     "Warning: CNOT tracker can only be used for circuits with only CNOT gates!"
@@ -135,15 +136,21 @@ class CNOT_tracker(Circuit):
         circuit = Circuit.from_qasm_file(fname)
         return CNOT_tracker.from_circuit(circuit)
 
+
 class Parity:
     """
     A set of qubits XORed together.
     """
+
     parity: List[bool]
 
-    def __init__(self, par: Union[str, int, Iterable[Any]], n_qubits: Optional[int] = None):
+    def __init__(
+        self, par: Union[str, int, Iterable[Any]], n_qubits: Optional[int] = None
+    ):
         if isinstance(par, int):
-            self.parity = [bool(par & (1 << i)) for i in reversed(range(par.bit_length()))]
+            self.parity = [
+                bool(par & (1 << i)) for i in reversed(range(par.bit_length()))
+            ]
         elif isinstance(par, str):
             self.parity = [p != "0" for p in par]
         else:
@@ -158,7 +165,7 @@ class Parity:
     def n_qubits(self) -> int:
         """Returns the total number of qubits."""
         return len(self.parity)
-    
+
     def to_mat2_row(self) -> List[Z2]:
         return [1 if b else 0 for b in self.parity]
 

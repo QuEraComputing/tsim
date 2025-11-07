@@ -16,7 +16,7 @@
 
 from typing import List, Tuple, Optional
 
-from pyzx.routing.parity_maps import CNOT_tracker
+from tsim.external.pyzx.routing.parity_maps import CNOT_tracker
 
 from .architecture import Architecture
 from ..linalg import Mat2
