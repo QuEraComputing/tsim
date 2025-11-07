@@ -3,7 +3,7 @@ import numpy as np
 from enum import Enum
 from typing import List, Optional, Tuple
 
-from pyzx.circuit import Circuit
+from tsim.external.pyzx.circuit import Circuit
 
 from ..linalg import Mat2
 from .architecture import (
@@ -436,6 +436,7 @@ def sequential_gauss(
         sum([c.cnot_depth() * 10000 + c.count_cnots() for c in circuits]),
     )
 
+
 class StepFunction:
     """
     A step function for the PSO algorithm.
@@ -460,9 +461,11 @@ class StepFunction:
         kwargs = self.kwargs
         # Apply the original qubit placement
         ms = [
-            Mat2([[row[i] for i in initial_perm] for row in m.data])
-            if j == 0
-            else Mat2([r for r in m.data])
+            (
+                Mat2([[row[i] for i in initial_perm] for row in m.data])
+                if j == 0
+                else Mat2([r for r in m.data])
+            )
             for j, m in enumerate(matrices)
         ]
         # Optimize the sequence
@@ -478,9 +481,11 @@ class StepFunction:
         # Resulting permutation is the initial permutation of the reverse pass
         perms[0] = initial_perm
         ms = [
-            Mat2([[row[i] for i in perms[-1]] for row in m.data])
-            if j == 0
-            else Mat2([r for r in m.data])
+            (
+                Mat2([[row[i] for i in perms[-1]] for row in m.data])
+                if j == 0
+                else Mat2([r for r in m.data])
+            )
             for j, m in enumerate(rev_matrices)
         ]
         # Optimize the reverse sequences.

@@ -15,7 +15,6 @@
 # limitations under the License.
 
 
-
 """
 This module contains two congruences (i.e., non-simplification rewrite rules) for exploring the space of equivalent ZX-diagrams. The two congruences defined here are based on the graph-theoretic notions of local complementation and pivoting. The methods lc_cong and pivot_cong take a ZX-diagram and subjects over which to apply the rewrite rule as parameters. The methods apply_rand_lc and apply_rand_pivot select these subjects probabilistically.
 """
@@ -28,9 +27,11 @@ from fractions import Fraction
 from ..rules import apply_rule, lcomp
 
 import sys
-if __name__ == '__main__':
-    sys.path.append('..')
-from pyzx.utils import VertexType, EdgeType
+
+if __name__ == "__main__":
+    sys.path.append("..")
+from tsim.external.pyzx.utils import VertexType, EdgeType
+
 
 ### Utilities
 def toggle_edge(g, v1, v2):
@@ -40,14 +41,17 @@ def toggle_edge(g, v1, v2):
     else:
         g.add_edge(g.edge(v1, v2), edgetype=EdgeType.HADAMARD)
 
+
 def toggle_subset_connectivity(g, vs1, vs2):
     """Toggles the connectivity between two subsets of spiders in a graph-like ZX-diagram."""
     for v1 in vs1:
         for v2 in vs2:
             toggle_edge(g, v1, v2)
 
+
 def uniform_weights(g, elts):
     return [1 / len(elts)] * len(elts)
+
 
 def unfuse(g, v):
     """
@@ -61,9 +65,7 @@ def unfuse(g, v):
     # we could enforce the following to ensure graph-likeness, but not necessary
     # assert(len(bs) < 2)
 
-    new_v = g.add_vertex(
-        ty=VertexType.Z,
-        phase=v_phase)
+    new_v = g.add_vertex(ty=VertexType.Z, phase=v_phase)
 
     # unfuse the phase
     g.set_phase(v, phase=0)
@@ -78,8 +80,6 @@ def unfuse(g, v):
 
     # return the reference to the new vertex
     return new_v
-
-
 
 
 ### Local Complementation
@@ -117,8 +117,8 @@ def lc_cong(g, v):
     new_v = g.add_vertex(
         ty=VertexType.Z,
         phase=g.phase(v) + Fraction(1, 2),
-        qubit=g.qubit(v)-1,
-        row=g.row(v)
+        qubit=g.qubit(v) - 1,
+        row=g.row(v),
     )
     g.set_phase(v, phase=Fraction(1, 2))
     g.add_edge(g.edge(v, new_v), edgetype=EdgeType.HADAMARD)
@@ -126,21 +126,18 @@ def lc_cong(g, v):
 
 def lc_cong2(g, v):
     p = g.phase(v)
-    if p != Fraction(1,2) and p != Fraction(-1,2):
+    if p != Fraction(1, 2) and p != Fraction(-1, 2):
         v1 = g.add_vertex(
-                ty=VertexType.Z,
-                phase=g.phase(v) + Fraction(1, 2),
-                qubit=g.qubit(v)-2,
-                row=g.row(v))
-        v2 = g.add_vertex(
-                ty=VertexType.Z,
-                qubit=g.qubit(v)-1,
-                row=g.row(v))
+            ty=VertexType.Z,
+            phase=g.phase(v) + Fraction(1, 2),
+            qubit=g.qubit(v) - 2,
+            row=g.row(v),
+        )
+        v2 = g.add_vertex(ty=VertexType.Z, qubit=g.qubit(v) - 1, row=g.row(v))
         g.add_edge(g.edge(v1, v2), edgetype=EdgeType.HADAMARD)
         g.add_edge(g.edge(v2, v), edgetype=EdgeType.HADAMARD)
-        g.set_phase(v, Fraction(-1,2))
+        g.set_phase(v, Fraction(-1, 2))
     # apply_rule(g, lcomp, [[v, list(g.neighbors(v))]])
-
 
 
 def apply_rand_lc(g, weight_func=uniform_weights):
@@ -150,7 +147,6 @@ def apply_rand_lc(g, weight_func=uniform_weights):
     weights = weight_func(g, lc_vs)
     lc_v = np.random.choice(lc_vs, 1, p=weights)[0]
     lc_cong2(g, lc_v)
-
 
 
 ### Pivoting
@@ -163,14 +159,15 @@ def is_pivot_edge(g, e):
     v1, v2 = g.edge_st(e)
     return g.type(v1) == VertexType.Z and g.type(v2) == VertexType.Z
 
+
 def pivot_cong(g, v1, v2):
     """Applies pivoting to two connected spiders"""
 
     # get the three subsets
     nhd1 = list(g.neighbors(v1))
     nhd2 = list(g.neighbors(v2))
-    assert(all([g.type(v) in [VertexType.Z, VertexType.BOUNDARY] for v in nhd1]))
-    assert(all([g.type(v) in [VertexType.Z, VertexType.BOUNDARY] for v in nhd2]))
+    assert all([g.type(v) in [VertexType.Z, VertexType.BOUNDARY] for v in nhd1])
+    assert all([g.type(v) in [VertexType.Z, VertexType.BOUNDARY] for v in nhd2])
     vs1 = [v for v in nhd1 if g.type(v) == VertexType.Z]
     bs1 = [v for v in nhd1 if g.type(v) == VertexType.BOUNDARY]
     vs2 = [v for v in nhd2 if g.type(v) == VertexType.Z]
@@ -197,8 +194,6 @@ def pivot_cong(g, v1, v2):
     g.remove_edge(g.edge(v2, new_v2))
     g.add_edge(g.edge(v1, new_v2), edgetype=EdgeType.HADAMARD)
     g.add_edge(g.edge(v2, new_v1), edgetype=EdgeType.HADAMARD)
-
-
 
 
 def apply_rand_pivot(g, weight_func=uniform_weights):

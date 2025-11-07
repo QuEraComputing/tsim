@@ -1,4 +1,4 @@
-# PyZX - Python library for quantum circuit rewriting 
+# PyZX - Python library for quantum circuit rewriting
 #        and optimization using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
@@ -22,8 +22,9 @@ from pyquil.parser import parse as parse_quil
 from pyquil.quilbase import Pragma, Gate
 from numpy import pi
 
-from pyzx.routing.parity_maps import CNOT_tracker
-from pyzx.circuit import Circuit
+from tsim.external.pyzx.routing.parity_maps import CNOT_tracker
+from tsim.external.pyzx.circuit import Circuit
+
 
 class PyQuilCircuit(CNOT_tracker):
 
@@ -36,7 +37,7 @@ class PyQuilCircuit(CNOT_tracker):
         """
 
         super().__init__(**kwargs)
-        self.qc = get_qc('9q-square-qvm')
+        self.qc = get_qc("9q-square-qvm")
         device = architecture.to_quil_device()
         compiler = LocalQVMCompiler(endpoint=self.qc.compiler.endpoint, device=device)
         self.qc.device = device
@@ -51,8 +52,8 @@ class PyQuilCircuit(CNOT_tracker):
     def row_add(self, q0, q1):
         """
         Adds a CNOT gate between the given qubit indices q0 and q1
-        :param q0: 
-        :param q1: 
+        :param q0:
+        :param q1:
         """
         self.program += CNOT(q0, q1)
         super().row_add(q0, q1)
@@ -71,7 +72,9 @@ class PyQuilCircuit(CNOT_tracker):
     def compiled_cnot_count(self):
         if self.compiled_program is None:
             self.compile()
-        return len([g for g in self.compiled_program if isinstance(g, Gate) and g.name == "CZ"])
+        return len(
+            [g for g in self.compiled_program if isinstance(g, Gate) and g.name == "CZ"]
+        )
 
     def to_qasm(self):
         if self.compiled_program is None:
@@ -80,7 +83,9 @@ class PyQuilCircuit(CNOT_tracker):
         comments = []
         for g in self.compiled_program:
             if isinstance(g, Pragma):
-                wiring = " ".join(["//", g.command, "["+g.freeform_string[2:-1]+"]"])
+                wiring = " ".join(
+                    ["//", g.command, "[" + g.freeform_string[2:-1] + "]"]
+                )
                 comments.append(wiring)
             elif isinstance(g, Gate):
                 if g.name == "CZ":
@@ -93,8 +98,7 @@ class PyQuilCircuit(CNOT_tracker):
                     print("Unsupported gate found!", g)
 
         qasm = circuit.to_qasm()
-        return '\n'.join(comments+[qasm])
-
+        return "\n".join(comments + [qasm])
 
     def update_program(self):
         self.program = Program()
@@ -111,13 +115,17 @@ class PyQuilCircuit(CNOT_tracker):
                 elif gate.name == "T":
                     self.program += T(gate.target)
                 elif gate.name == "T*":
-                    self.program += RZ(3*pi/4, gate.target)
+                    self.program += RZ(3 * pi / 4, gate.target)
                 else:
-                    print(f"Warning: PyquilCircuit does not currently support the gate '{gate}'.")
+                    print(
+                        f"Warning: PyquilCircuit does not currently support the gate '{gate}'."
+                    )
 
     @staticmethod
     def from_CNOT_tracker(circuit, architecture):
-        new_circuit = PyQuilCircuit(architecture, n_qubits=circuit.qubits, name=circuit.name)
+        new_circuit = PyQuilCircuit(
+            architecture, n_qubits=circuit.qubits, name=circuit.name
+        )
         new_circuit.gates = circuit.gates
         new_circuit.update_matrix()
         new_circuit.update_program()
@@ -125,7 +133,9 @@ class PyQuilCircuit(CNOT_tracker):
 
     @staticmethod
     def from_circuit(circuit, architecture):
-        new_circuit = PyQuilCircuit(architecture, n_qubits=circuit.qubits, name=circuit.name)
+        new_circuit = PyQuilCircuit(
+            architecture, n_qubits=circuit.qubits, name=circuit.name
+        )
         new_circuit.gates = circuit.gates
         new_circuit.update_program()
         return new_circuit
@@ -141,7 +151,7 @@ class PyQuilCircuit(CNOT_tracker):
             self.compiled_program = parse_quil(ep.program)
             return ep.program
         except KeyError as e:
-            print('Oops, retrying to compile.', self.retries)
+            print("Oops, retrying to compile.", self.retries)
             if self.retries < self.max_retries:
                 self.retries += 1
                 return self.compile()
