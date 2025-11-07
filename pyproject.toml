@@ -1,0 +1,121 @@
+[project]
+name = "tsim"
+version = "0.1.0"
+description = "A non-Clifford circuit sampler based on ZX stabilizer rank decomposition"
+authors = [
+    { name = "Rafael Haenel", email = "rhaenel@quera.com" },
+    { name = "Chen Zhao", email = "czhao@quera.com" },
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ipywidgets>=8.1.8",
+    "numpy>=2.2.6",
+    "pyperclip>=1.11.0",
+    "sympy>=1.14.0",
+    "tqdm>=4.67.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "black>=24.10.0",
+    "coverage>=7.6.4",
+    "ipykernel>=7.1.0",
+    "ipython>=8.29.0",
+    "isort>=5.13.2",
+    "jupytext>=1.17.2",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.1",
+    "pyright[nodejs]>=1.1.388",
+    "pytest>=8.3.3",
+    "ruff>=0.7.3",
+    "rust-just>=1.36.0",
+]
+doc = [
+    "griffe-kirin>=0.1.0",
+    "griffe-inherited-docstrings>=1.1.1",
+    "mike>=2.1.3",
+    "mkdocs>=1.6.1",
+    "mkdocs-gen-files>=0.5.0",
+    "mkdocs-literate-nav>=0.6.1",
+    "mkdocs-material>=9.5.44",
+    "mkdocs-minify-plugin>=0.8.0",
+    "mkdocstrings[python]>=0.27.0",
+    "jupytext>=1.17.2",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tsim"]
+
+[tool.isort]
+profile = "black"
+combine_as_imports = true
+multi_line_output = 3
+src_paths = ["src/tsim"]
+skip_glob = ["src/tsim/external/**"]
+
+[tool.black]
+line-length = 88
+exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | src/tsim/external
+)/
+'''
+
+[tool.ruff]
+target-version = "py312"
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+    "src/tsim/external",
+]
+
+[tool.ruff.lint]
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.coverage.run]
+include = ["src/tsim/*"]
+omit = ["src/tsim/external/*"]
+
+[tool.pytest.ini_options]
+testpaths = "test/"
+norecursedirs = ["external"]
+
+[tool.pyright]
+include = ["src", "test"]
+exclude = ["src/tsim/external"]
