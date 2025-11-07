@@ -93,10 +93,10 @@ class Scalar(object):
     def __complex__(self) -> complex:
         return self.to_number()
 
-    def copy(self) -> 'Scalar':
+    def copy(self, conjugate: bool = False) -> 'Scalar':
         s = Scalar()
         s.power2 = self.power2
-        s.phase = self.phase
+        s.phase = self.phase if not conjugate else -self.phase
         s.phasevars_pi = copy.copy(self.phasevars_pi)
         
         #TEMP:
@@ -118,9 +118,9 @@ class Scalar(object):
                 s.phasevars_halfpi[3].append(i)
         
         s.phasepairs = copy.copy(self.phasepairs)
-        s.phasenodes = copy.copy(self.phasenodes)
+        s.phasenodes = copy.copy(self.phasenodes) if not conjugate else [-p for p in self.phasenodes]
         s.phasenodevars = copy.copy(self.phasenodevars)
-        s.floatfactor = self.floatfactor
+        s.floatfactor = self.floatfactor if not conjugate else self.floatfactor.conjugate()
         s.is_unknown = self.is_unknown
         s.is_zero = self.is_zero
         return s

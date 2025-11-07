@@ -135,7 +135,7 @@ class BaseGraph(Generic[VT, ET], metaclass=DocstringMeta):
             backend = type(self).backend
         g = Graph(backend = backend)
         g.track_phases = self.track_phases
-        g.scalar = self.scalar.copy()
+        g.scalar = self.scalar.copy(conjugate=adjoint)
         g.merge_vdata = self.merge_vdata
         mult:int = 1
         if adjoint: mult = -1
@@ -284,6 +284,16 @@ class BaseGraph(Generic[VT, ET], metaclass=DocstringMeta):
                         phase=other.phase(v),
                         qubit=other.qubit(v),
                         row=offset + other.row(v))
+
+                # preserve symbolic phases
+                vertex = vtab[v]
+                other_phase_vars = other._phaseVars[v]
+                assert len(other_phase_vars) <= 1
+                if len(other_phase_vars) == 1:
+                    self._phaseVars[vertex].clear()
+                    self._phase[vertex] = 0
+                    self._phaseVars[vertex].add(list(other_phase_vars)[0])
+
         for e in other.edges():
             s,t = other.edge_st(e)
             if not s in inputs and not t in inputs:
@@ -952,7 +962,7 @@ class BaseGraph(Generic[VT, ET], metaclass=DocstringMeta):
     def phases(self) -> Mapping[VT, FractionLike]:
         """Returns a mapping of vertices to their phase values."""
         raise NotImplementedError("Not implemented on backend" + type(self).backend)
-    def set_phase(self, vertex: VT, phase: FractionLike) -> None:
+    def set_phase(self, vertex: VT, phase: FractionLike | str) -> None:
         """Sets the phase of the vertex to the given value."""
         raise NotImplementedError("Not implemented on backend" + type(self).backend)
     def add_to_phase(self, vertex: VT, phase: FractionLike) -> None:
