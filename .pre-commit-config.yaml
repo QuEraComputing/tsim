@@ -1,0 +1,39 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+exclude: ^src/tsim/external/
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v5.0.0
+  hooks:
+    - id: check-yaml
+      args: ['--unsafe']
+    - id: end-of-file-fixer
+    - id: trailing-whitespace
+- repo: https://github.com/pycqa/isort
+  rev: 6.0.1
+  hooks:
+    - id: isort
+      name: isort (python)
+- repo: https://github.com/psf/black
+  rev: 25.1.0
+  hooks:
+    - id: black
+- repo: https://github.com/charliermarsh/ruff-pre-commit
+  # Ruff version.
+  rev: "v0.12.1"
+  hooks:
+    - id: ruff
+- repo: local
+  hooks:
+    - id: pyright-check
+      name: pyright-check
+      entry: uv run pyright src test
+      language: system
+      pass_filenames: false
+      always_run: true
+    - id: pytest-check
+      name: pytest-check
+      entry: uv run pytest test
+      language: system
+      pass_filenames: false
+      always_run: true
