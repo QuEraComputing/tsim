@@ -1,6 +1,6 @@
-"""Placeholder test file."""
+import tsim
 
 
-def test_placeholder():
-    """Placeholder test to ensure pytest runs successfully."""
-    assert True
+def test_version():
+    assert hasattr(tsim, "__version__")
+    assert isinstance(tsim.__version__, str)
