@@ -10,8 +10,10 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "ipywidgets>=8.1.8",
+    "jax>=0.6.2",
     "numpy>=2.2.6",
     "pyperclip>=1.11.0",
+    "stim>=1.15.0",
     "sympy>=1.14.0",
     "tqdm>=4.67.1",
 ]
@@ -28,6 +30,7 @@ dev = [
     "ipython>=8.29.0",
     "isort>=5.13.2",
     "jupytext>=1.17.2",
+    "matplotlib>=3.10.7",
     "mypy>=1.13.0",
     "pre-commit>=4.0.1",
     "pyright[nodejs]>=1.1.388",
