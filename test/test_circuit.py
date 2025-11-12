@@ -33,6 +33,7 @@ def test_single_qubit_gate(gate_func: str, matrix: np.ndarray):
     [
         ("cnot", np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]])),
         ("cz", np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, -1]])),
+        ("cy", np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]])),
     ],
 )
 def test_two_qubit_gate(gate_func: str, matrix: np.ndarray):
