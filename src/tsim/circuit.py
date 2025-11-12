@@ -67,9 +67,10 @@ def accepts_qubit_list(func=None, *, num_qubits=1):
                 for i in range(0, len(qubit_list), num_qubits):
                     chunk = qubit_list[i : i + num_qubits]
                     f(self, *chunk, *remaining_args, **kwargs)
+                return None
             else:
                 # Normal case - call function with all arguments
-                f(self, *args, **kwargs)
+                return f(self, *args, **kwargs)
 
         return wrapper
 
@@ -107,9 +108,13 @@ class Circuit:
 
         self.rec = []
         self.detectors = []
-        self.observables = []
+        self._observables_dict: dict[int, int] = {}  # idx: vertex
         self.num_error_bits = 0
         self.qubit_to_input = {}
+
+    @property
+    def observables(self) -> list[int]:
+        return [self._observables_dict[i] for i in sorted(self._observables_dict)]
 
     def _last_row(self, qubit: int):
         return self.g.row(self.last_vertex[qubit])
@@ -254,14 +259,23 @@ class Circuit:
             g.add_edge((v1, v3))
 
     @accepts_qubit_list
-    def mr(self, qubit: int):
-        """Measure and reset qubit(s)."""
-        self.m(qubit)
+    def rx(self, qubit: int):
+        self.r(qubit)
+        self.h(qubit)
+
+    @accepts_qubit_list
+    def mr(self, qubit: int, p: float = 0):
+        """Measure and reset qubit(s) (optionally noisy)"""
+        if p > 0:
+            self.x_error(qubit, p)
+        self.m(qubit, p=p)
         self.r(qubit)
 
     @accepts_qubit_list
-    def m(self, qubit: int):
-        """Measure qubit(s) in Z basis."""
+    def m(self, qubit: int, p: float = 0):
+        """Measure qubit(s) in Z basis (optionally noisy)"""
+        if p > 0:
+            self.x_error(qubit, p)
         g = self.g
         if qubit not in self.last_vertex:
             self._add_lane(qubit)
@@ -271,6 +285,42 @@ class Circuit:
         self.rec.append(v1)
         v2 = self._add_dummy(qubit)
         g.add_edge((v1, v2))
+
+    @accepts_qubit_list
+    def mx(self, qubit: int, p: float = 0):
+        """Measure qubit(s) in X basis (optionally noisy)"""
+        self.h(qubit)
+        self.m(qubit, p=p)
+
+    @accepts_qubit_list
+    def mpp(self, pp: str | list[str]):
+        # TODO: express within ZX
+
+        if isinstance(pp, list):
+            for pp_ in pp:
+                self.mpp(pp_)
+            return
+
+        aux = -2
+        self.r(aux)
+        self.h(aux)
+
+        components = pp.split("*")
+
+        for c in components:
+            p, i = c[0].lower(), int(c[1:])
+
+            if p == "x":
+                self.cx(aux, i)
+            elif p == "z":
+                self.cz(aux, i)
+            elif p == "y":
+                self.cy(aux, i)
+            else:
+                raise ValueError(f"Invalid Pauli operator: {p}")
+
+        self.h(aux)
+        self.m(aux)
 
     @accepts_qubit_list(num_qubits=2)
     def cnot(self, control: int, target: int):
@@ -329,6 +379,12 @@ class Circuit:
         g.add_edge((v2, v4))
 
         g.scalar.add_power(1)
+
+    @accepts_qubit_list(num_qubits=2)
+    def cy(self, control: int, target: int):
+        self.s_dag(target)
+        self.cx(control, target)
+        self.s(target)
 
     def _error(self, qubit: int, error_type: int, phase: str):
         if qubit not in self.last_vertex:
@@ -482,18 +538,23 @@ class Circuit:
             self.g.add_edge((v0, self.rec[rec_]))
         self.detectors.append(v0)
 
-    def observable_include(self, rec: list[int], *args: Any):
+    def observable_include(self, rec: list[int], idx: int):
         """Include measurement records in a logical observable."""
-        r = min(set([self.g.row(self.rec[r]) for r in rec])) - 0.5
-        d_rows = set([self.g.row(d) for d in self.detectors + self.observables])
-        while r in d_rows:
-            r += 1
-        v0 = self.g.add_vertex(
-            VertexType.X, qubit=-1, row=r, phase=f"obs[{len(self.observables)}]"  # type: ignore[arg-type]
-        )
+        idx = int(idx)
+
+        if idx not in self._observables_dict:
+            r = min(set([self.g.row(self.rec[r]) for r in rec])) - 0.5
+            d_rows = set([self.g.row(d) for d in self.detectors + self.observables])
+            while r in d_rows:
+                r += 1
+            v0 = self.g.add_vertex(
+                VertexType.X, qubit=-1, row=r, phase=f"obs[{idx}]"  # type: ignore[arg-type]
+            )
+            self._observables_dict[idx] = v0
+
+        v0 = self._observables_dict[idx]
         for rec_ in rec:
             self.g.add_edge((v0, self.rec[rec_]))
-        self.observables.append(v0)
 
     def to_tensor(self) -> Any:
         """Convert circuit to tensor representation."""
@@ -516,7 +577,6 @@ class Circuit:
         for q in self.last_vertex:
             g.set_row(self.last_vertex[q], max_row)
 
-        num_observables = len(self.observables)
         outputs = [v for v in g.vertices() if g.type(v) == VertexType.BOUNDARY]
         g.set_outputs(tuple(outputs))  # type: ignore[arg-type]
 
@@ -562,15 +622,15 @@ class Circuit:
                 assert len(annotations) == 1
                 g.remove_vertex(annotations.pop())
 
-        for i in range(num_observables):
+        for i in sorted(self._observables_dict.keys())[::-1]:
             g_obs_list.append(g.copy())
-            obs_vertices = annotation_to_vertex[f"obs[{num_observables -1 -i}]"]
+            obs_vertices = annotation_to_vertex[f"obs[{i}]"]
             assert len(obs_vertices) == 1
             v0 = obs_vertices[0]
             g.remove_vertex(v0)
 
         chars = [f"e{i}" for i in range(self.num_error_bits)] + [
-            f"obs[{i}]" for i in range(num_observables)
+            f"obs[{i}]" for i in sorted(self._observables_dict.keys())
         ]
         return SamplingGraphs(
             graphs=g_obs_list[::-1],
@@ -705,15 +765,16 @@ class Circuit:
 
         c.errors = []
         c.detectors = []
-        c.observables = []
+        c._observables_dict = {}
         c.rec = []
         return c
 
-    def append_stim_circuit(
+    def append_from_stim_program(
         self,
         stim_circuit: stim.Circuit,
         skip_annotations: bool = False,
         skip_detectors: bool = False,
+        replace_s_with_t: bool = False,
     ):
         """Append gates from a Stim circuit to this circuit."""
 
@@ -731,8 +792,18 @@ class Circuit:
             if name in ignore_gates:
                 continue
 
+            if name == "s" and replace_s_with_t:
+                name = "t"
+            if name == "s_dag" and replace_s_with_t:
+                name = "t_dag"
+
             if name == "tick":
                 self.tick()
+                continue
+            if name == "mpp":
+                # TODO: improve parsing
+                args = str(instruction).split(" ")[1:]
+                self.mpp(args)
                 continue
 
             targets = [t.value for t in instruction.targets_copy()]  # type: ignore[attr-defined]
@@ -741,19 +812,51 @@ class Circuit:
             func(targets, *args)
 
     @staticmethod
-    def from_stim_circuit(
+    def from_stim_program(
         stim_circuit: stim.Circuit,
         skip_annotations: bool = False,
         skip_detectors: bool = False,
+        replace_s_with_t: bool = False,
     ):
         """Create a Circuit from a Stim circuit."""
         c = Circuit()
-        c.append_stim_circuit(
+        c.append_from_stim_program(
             stim_circuit,
             skip_annotations=skip_annotations,
             skip_detectors=skip_detectors,
+            replace_s_with_t=replace_s_with_t,
         )
         return c
+
+    @staticmethod
+    def from_stim_program_text(
+        stim_program_text: str,
+        skip_annotations: bool = False,
+        skip_detectors: bool = False,
+        replace_s_with_t: bool = False,
+    ):
+        """Create a Circuit from a Stim program text."""
+        return Circuit.from_stim_program(
+            stim.Circuit(stim_program_text),
+            skip_annotations,
+            skip_detectors,
+            replace_s_with_t,
+        )
+
+    def append_from_stim_program_text(
+        self,
+        stim_program_text: str,
+        skip_annotations: bool = False,
+        skip_detectors: bool = False,
+        replace_s_with_t: bool = False,
+    ):
+        """Append gates from a Stim program text to this circuit."""
+        self.append_from_stim_program(
+            stim.Circuit(stim_program_text),
+            skip_annotations,
+            skip_detectors,
+            replace_s_with_t,
+        )
 
     def compile_sampler(self):
         """Compile circuit into a measurement sampler."""
