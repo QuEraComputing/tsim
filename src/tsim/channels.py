@@ -156,12 +156,12 @@ class Error(Channel):
         self._key = key
         self.p = p
 
-    def sample(self, num_samples: int = 1, num_bits: int = 1):  # type: ignore[override]
+    def sample(self, num_samples: int = 1):  # type: ignore[override]
         self._key, subkey = jax.random.split(self._key)
         samples = jax.random.bernoulli(subkey, self.p, shape=(num_samples,)).astype(
             jnp.uint8
         )
-        return jnp.repeat(samples[:, None], num_bits, axis=1)
+        return samples[:, None]
 
 
 class ErrorSampler:
