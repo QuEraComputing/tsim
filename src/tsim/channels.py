@@ -167,15 +167,28 @@ class Error(Channel):
 class ErrorSampler:
     """Samples from multiple error channels simultaneously."""
 
-    def __init__(self, error_channels: list[Channel]):
+    def __init__(
+        self,
+        error_channels: list[Channel],
+        isolated_transform: jax.Array,
+        correlated_transform: jax.Array,
+    ):
         """Initialize with a list of error channels."""
         self.error_channels = error_channels
+        self.isolated_transform = isolated_transform.T
+        self.correlated_transform = correlated_transform.T
 
-    def sample(self, num_samples: int = 1):
+    def sample(self, num_samples: int = 1) -> tuple[jax.Array, jax.Array]:
         """Sample from all error channels and concatenate results."""
         if len(self.error_channels) == 0:
-            return jnp.zeros((num_samples, 0), dtype=jnp.uint8)
+            return jnp.zeros((num_samples, 0), dtype=jnp.uint8), jnp.zeros(
+                (num_samples, 0), dtype=jnp.uint8
+            )
         samples = []
         for channel in self.error_channels:
             samples.append(channel.sample(num_samples))
-        return jnp.concatenate(samples, axis=1)
+        total_samples = jnp.concatenate(samples, axis=1)
+        return (
+            total_samples @ self.isolated_transform % 2,
+            total_samples @ self.correlated_transform % 2,
+        )

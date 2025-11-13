@@ -1,11 +1,13 @@
 import copy
+import random
 from collections import defaultdict
 from dataclasses import dataclass
 from fractions import Fraction
 from functools import wraps
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, TypeVar, overload
 
 import jax
+import numpy as np
 import stim
 from jax import Array
 
@@ -18,11 +20,29 @@ from tsim.channels import (
     PauliChannel1,
     PauliChannel2,
 )
-from tsim.external.pyzx import EdgeType, VertexType
+from tsim.external.pyzx import EdgeType, Scalar, VertexType
 from tsim.external.pyzx.graph.base import BaseGraph
 
+_T = TypeVar("_T")
 
-def accepts_qubit_list(func=None, *, num_qubits=1):
+
+# Overload 1: Used as @accepts_qubit_list (no parameters)
+# Returns a callable that accepts int | Iterable[int] for the first qubit parameter
+@overload
+def accepts_qubit_list(
+    func: Callable[..., Any],
+) -> Callable[..., None]: ...
+
+
+# Overload 2: Used as @accepts_qubit_list(num_qubits=...) - returns a decorator
+# The decorator transforms functions to accept int | Iterable[int] for qubit parameters
+@overload
+def accepts_qubit_list(
+    func: None = None, *, num_qubits: int = 1
+) -> Callable[[Callable[..., Any]], Callable[..., None]]: ...
+
+
+def accepts_qubit_list(func=None, *, num_qubits=1):  # type: ignore[no-untyped-def]
     """Decorator that allows a method to accept either individual qubits or a list of qubits.
 
     When a list is provided, the decorated method is called once for each group of qubits.
@@ -49,12 +69,12 @@ def accepts_qubit_list(func=None, *, num_qubits=1):
         circ.cnot([0,1,2,3,4,5]) # CNOT on (0,1), (2,3), and (4,5)
     """
 
-    def decorator(f):
+    def decorator(f):  # type: ignore[no-untyped-def]
         @wraps(f)
-        def wrapper(self, *args, **kwargs):
+        def wrapper(self, *args, **kwargs):  # type: ignore[no-untyped-def]
             # Check if the first argument is an iterable (but not a string)
             if args and isinstance(args[0], Iterable) and not isinstance(args[0], str):
-                qubit_list = list(args[0])
+                qubit_list = [int(a) if not isinstance(a, str) else a for a in args[0]]
                 remaining_args = args[1:]
 
                 # Split the qubit list into chunks of size num_qubits
@@ -85,12 +105,12 @@ def accepts_qubit_list(func=None, *, num_qubits=1):
 
 @dataclass
 class SamplingGraphs:
-    """Container for compiled ZX-graphs used in sampling."""
-
     graphs: list[BaseGraph]
     num_errors: int
     chars: list[str]
-    error_sampler: ErrorSampler | None = None
+    error_sampler: ErrorSampler
+    isolated_outputs: np.ndarray
+    correlated_outputs: np.ndarray
 
 
 class Circuit:
@@ -568,79 +588,11 @@ class Circuit:
         g.normalize()
         return g.to_matrix()
 
-    def compile_detector_graphs(self) -> SamplingGraphs:
-        """Compile circuit into graphs for detector sampling."""
-        g = self.g.copy()
+    def get_liouville_graph(self, meas_sampling_mode: bool = True):
+        """Get a the doubled graph of the circuit. When `meas_sampling_mode` is True,
+        measurement gates are pinned by output nodes. When False, dectectors and
+        observables are pinned by output nodes."""
 
-        # clean up last row
-        max_row = max(self.g.row(v) for v in self.last_vertex.values())
-        for q in self.last_vertex:
-            g.set_row(self.last_vertex[q], max_row)
-
-        outputs = [v for v in g.vertices() if g.type(v) == VertexType.BOUNDARY]
-        g.set_outputs(tuple(outputs))  # type: ignore[arg-type]
-
-        g_adj = g.adjoint()
-        g.compose(g_adj)
-
-        g = g.copy()
-
-        label_to_vertex: dict[str, list[int]] = defaultdict(list)
-        annotation_to_vertex: dict[str, list[int]] = defaultdict(list)
-        for v in g.vertices():
-            phase_vars = g._phaseVars[v]
-            if not len(phase_vars) == 1:
-                continue
-            phase = list(phase_vars)[0]
-            if "det" in phase or "obs" in phase or "rec" in phase:
-                label_to_vertex[phase].append(v)
-            if "det" in phase or "obs" in phase:
-                annotation_to_vertex[phase].append(v)
-
-        # connect all rec[i] vertices to each other and remove lables
-        for label, vertices in label_to_vertex.items():
-            if "rec" not in label:
-                continue
-            assert len(vertices) == 2
-            v0, v1 = vertices
-            if not g.connected(v0, v1):
-                g.add_edge((v0, v1))
-            g.set_phase(v0, 0)
-            g.set_phase(v1, 0)
-
-        # remove the duplicated set of detectors and observables
-        for vertices in annotation_to_vertex.values():
-            assert len(vertices) == 2
-            g.remove_vertex(vertices.pop())
-
-        # build the list of measurement graphs
-        g_obs_list = []
-
-        # TODO: for now we assumed detectors are deterministic, so we remove them
-        for label, annotations in annotation_to_vertex.items():
-            if "det" in label:
-                assert len(annotations) == 1
-                g.remove_vertex(annotations.pop())
-
-        for i in sorted(self._observables_dict.keys())[::-1]:
-            g_obs_list.append(g.copy())
-            obs_vertices = annotation_to_vertex[f"obs[{i}]"]
-            assert len(obs_vertices) == 1
-            v0 = obs_vertices[0]
-            g.remove_vertex(v0)
-
-        chars = [f"e{i}" for i in range(self.num_error_bits)] + [
-            f"obs[{i}]" for i in sorted(self._observables_dict.keys())
-        ]
-        return SamplingGraphs(
-            graphs=g_obs_list[::-1],
-            num_errors=self.num_error_bits,
-            chars=chars,
-            error_sampler=ErrorSampler(self.errors),
-        )
-
-    def compile_sampling_graphs(self) -> SamplingGraphs:
-        """Compile circuit into graphs for measurement sampling."""
         g = self.g.copy()
 
         # clean up last row
@@ -659,7 +611,6 @@ class Circuit:
 
         label_to_vertex: dict[str, list[int]] = defaultdict(list)
         annotation_to_vertex: dict[str, list[int]] = defaultdict(list)
-        rec_to_vertex: dict[str, int] = {}
         for v in g.vertices():
             phase_vars = g._phaseVars[v]
             if not len(phase_vars) == 1:
@@ -670,43 +621,157 @@ class Circuit:
             if "det" in phase or "obs" in phase:
                 annotation_to_vertex[phase].append(v)
 
+        outputs = [0] * num_measurements if meas_sampling_mode else []
+
         # connect all rec[i] vertices to each other and add red vertex with rec[i] label
-        i = 0
-        for label, vertices in label_to_vertex.items():
-            if "rec" not in label:
-                continue
+        for i in range(num_measurements):
+            label = f"rec[{i}]"
+            vertices = label_to_vertex[label]
+
             assert len(vertices) == 2
             v0, v1 = vertices
             if not g.connected(v0, v1):
                 g.add_edge((v0, v1))
             g.set_phase(v0, 0)
             g.set_phase(v1, 0)
-            v3 = g.add_vertex(VertexType.X, qubit=-1, row=i + 1, phase=label)  # type: ignore[arg-type]
-            rec_to_vertex[label] = v3
-            g.add_edge((v0, v3))
-            i += 1
 
-        # remove detectors and observables
-        for vertices in annotation_to_vertex.values():
-            assert len(vertices) == 2
-            for v in vertices:
-                g.remove_vertex(v)
+            # add outputs
+            if meas_sampling_mode:
+                v3 = g.add_vertex(VertexType.BOUNDARY, qubit=-1, row=i + 1, phase=0)  # type: ignore[arg-type]
+                outputs[i] = v3
+                g.add_edge((v0, v3))
 
-        # build the list of measurement graphs
-        g_obs_list = []
-        for i in range(num_measurements):
-            g_obs_list.append(g.copy())
-            rec_vertex = rec_to_vertex[f"rec[{num_measurements -1 -i}]"]
-            g.remove_vertex(rec_vertex)
+        if meas_sampling_mode:
+            # remove detectors and observables
+            for vertices in annotation_to_vertex.values():
+                assert len(vertices) == 2
+                for v in vertices:
+                    g.remove_vertex(v)
+        else:
+            # remove the duplicated set of detectors and observables
+            for vertices in annotation_to_vertex.values():
+                assert len(vertices) == 2
+                g.remove_vertex(vertices.pop())
 
-        chars = [f"e{i}" for i in range(self.num_error_bits)] + [
-            f"rec[{i}]" for i in range(num_measurements)
+            labels = [f"det[{i}]" for i in range(len(self.detectors))] + [
+                f"obs[{i}]" for i in self._observables_dict.keys()
+            ]
+            for label in labels:
+                vs = annotation_to_vertex[label]
+                assert len(vs) == 1
+                v = vs[0]
+                row = g.row(v)
+                vb = g.add_vertex(VertexType.BOUNDARY, qubit=-2, row=row)
+                g.add_edge((v, vb))
+                g.set_phase(v, 0)
+                outputs.append(vb)
+
+        g.set_outputs(tuple(outputs))
+        zx.full_reduce(g)
+
+        # transform to a new error basis f
+        e2idx = {f"e{i}": i for i in range(self.num_error_bits)}
+        error_transform = []
+
+        for v in g.vertices():
+            if v not in g._phaseVars:
+                continue
+            phase_vars = g._phaseVars[v]
+            if len(phase_vars) == 0:
+                continue
+
+            vec = np.zeros(self.num_error_bits, dtype=np.int32)
+            for phase_var in phase_vars:
+                vec[e2idx[phase_var]] = 1
+            g._phaseVars[v] = set([f"f{len(error_transform)}"])
+            error_transform.append(vec)
+
+        g.scalar = (
+            Scalar()
+        )  # clean the scalar. We need to manually normalize the diagram now.
+
+        return g, np.array(error_transform)
+
+    def compile_sampling_graphs(
+        self, meas_sampling_mode: bool = False
+    ) -> SamplingGraphs:
+
+        g, error_transform = self.get_liouville_graph(
+            meas_sampling_mode=meas_sampling_mode
+        )
+
+        f2idx = {f"f{i}": i for i in range(len(error_transform))}
+
+        isolated_output_idx2f = {}  # output_idx: f_idx
+        correlated_outputs = []
+        isolated_chars = set()
+
+        for o, v in enumerate(g.outputs()):
+            neighbors = g.neighbors(v)
+            assert len(neighbors) == 1
+            n = list(neighbors)[0]
+            if len(g.neighbors(n)) == 1 and g.type(n) != VertexType.BOUNDARY:
+                # The output is connected to a vertex that does not have other neighbors.
+                # This means the output can be trivially sampled.
+
+                # TODO: decompose the graph into connected components and sample
+                # each connected component separately.
+
+                assert g.type(n) == VertexType.Z, "full red. diagram has non-Z vertex"
+
+                edge_type = g.edge_type((v, n))
+                assert edge_type == EdgeType.HADAMARD, "output is not deterministic"
+
+                phase_var = g._phaseVars[n]
+                assert len(phase_var) == 1
+                phase = list(phase_var)[0]
+                f_idx = f2idx[phase]
+                isolated_output_idx2f[o] = f_idx
+                isolated_chars.add(phase)
+
+                g.remove_vertices((v, n))
+            else:
+                correlated_outputs.append(o)
+
+        f_chars = [f"f{i}" for i in range(len(error_transform))]
+        m_chars = [f"m{i}" for i in range(len(g.outputs()))]
+        chars = f_chars + m_chars
+
+        # Build the list of graphs for autoregressive sampling.
+        num_outputs = len(g.outputs())
+        g_list = []
+        for o in range(num_outputs):
+            g0 = g.copy()
+            output_vertices = list(g0.outputs())
+            effect = "0" * (o + 1) + "+" * (num_outputs - o - 1)
+            g0.apply_effect(effect)
+            for i, v in enumerate(output_vertices[: o + 1]):
+                g0.set_phase(v, m_chars[i])
+            zx.full_reduce(g0)
+            g_list.append(g0)
+
+        isolated_outputs = np.array(list(isolated_output_idx2f.keys()), dtype=np.int32)
+        isolated_vars = np.array(list(isolated_output_idx2f.values()), dtype=np.int32)
+        correlated_outputs = np.array(correlated_outputs, dtype=np.int32)
+
+        correlated_f_chars = [c for c in f_chars if c not in isolated_chars]
+        correlated_chars = [c for c in chars if c not in isolated_chars]
+        correlated_char_idx = [
+            i for i, c in enumerate(f_chars) if c not in isolated_chars
         ]
+
+        isolated_transform = jax.numpy.array(error_transform[isolated_vars])
+        correlated_transform = jax.numpy.array(error_transform[correlated_char_idx])
+
         return SamplingGraphs(
-            graphs=g_obs_list[::-1],
-            num_errors=self.num_error_bits,
-            chars=chars,
-            error_sampler=ErrorSampler(self.errors),
+            graphs=g_list,
+            num_errors=len(correlated_f_chars),
+            chars=correlated_chars,
+            error_sampler=ErrorSampler(
+                self.errors, isolated_transform, correlated_transform
+            ),
+            isolated_outputs=isolated_outputs,
+            correlated_outputs=correlated_outputs,
         )
 
     def copy(self):
@@ -862,12 +927,109 @@ class Circuit:
         """Compile circuit into a measurement sampler."""
         from tsim.sampler import Sampler
 
-        graphs = self.compile_sampling_graphs()
+        graphs = self.compile_sampling_graphs(meas_sampling_mode=True)
         return Sampler(graphs)
 
     def compile_detector_sampler(self):
         """Compile circuit into a detector sampler."""
         from tsim.sampler import Sampler
 
-        graphs = self.compile_detector_graphs()
+        graphs = self.compile_sampling_graphs(meas_sampling_mode=False)
         return Sampler(graphs)
+
+    @staticmethod
+    def random(
+        qubits: int,
+        depth: int,
+        p: float = 0.0,
+        p_t: float | None = None,
+        p_s: float | None = None,
+        p_hsh: float | None = None,
+        p_cnot: float | None = None,
+        seed: int | None = None,
+    ) -> "Circuit":
+        """Generate a random quantum circuit with depolarizing noise.
+
+        Args:
+            qubits: Number of qubits in the circuit
+            depth: Number of gate layers to generate
+            p: Depolarizing noise parameter (applied after each gate)
+            p_t: Probability of applying T gate (default: equal probability)
+            p_s: Probability of applying S gate (default: equal probability)
+            p_hsh: Probability of applying H, sqrt(X), or sqrt(Y) gates (default: equal probability)
+            p_cnot: Probability of applying CNOT gate (default: equal probability)
+            seed: Random seed for reproducibility (optional)
+
+        Returns:
+            A randomly generated Circuit with specified gates and noise
+        """
+        if seed is not None:
+            random.seed(seed)
+
+        # Set default equal probabilities if not specified
+        gate_probs = []
+        gate_types = []
+
+        if p_t is not None and p_t > 0:
+            gate_probs.append(p_t)
+            gate_types.append("t")
+        if p_s is not None and p_s > 0:
+            gate_probs.append(p_s)
+            gate_types.append("s")
+        if p_hsh is not None and p_hsh > 0:
+            gate_probs.append(p_hsh)
+            gate_types.append("hsh")
+        if p_cnot is not None and p_cnot > 0:
+            gate_probs.append(p_cnot)
+            gate_types.append("cnot")
+
+        # If no probabilities specified, use equal probabilities for all gates
+        if not gate_types:
+            gate_types = ["t", "s", "hsh", "cnot"]
+            gate_probs = [0.25, 0.25, 0.25, 0.25]
+        else:
+            # Normalize probabilities
+            total = sum(gate_probs)
+            gate_probs = [p / total for p in gate_probs]
+
+        circ = Circuit()
+
+        for q in range(qubits):
+            circ.r(q)
+
+        for _ in range(depth):
+            gate_type = random.choices(gate_types, weights=gate_probs, k=1)[0]
+
+            if gate_type == "t":
+                q = random.randint(0, qubits - 1)
+                circ.t(q)
+                if p > 0:
+                    circ.depolarize1(q, p)
+
+            elif gate_type == "s":
+                q = random.randint(0, qubits - 1)
+                circ.s(q)
+                if p > 0:
+                    circ.depolarize1(q, p)
+
+            elif gate_type == "hsh":
+                q = random.randint(0, qubits - 1)
+                gate = random.choice(["h", "sqrt_x", "sqrt_y"])
+                if gate == "h":
+                    circ.h(q)
+                elif gate == "sqrt_x":
+                    circ.sqrt_x(q)
+                else:
+                    circ.sqrt_y(q)
+                if p > 0:
+                    circ.depolarize1(q, p)
+
+            elif gate_type == "cnot":
+                if qubits < 2:
+                    continue
+                q1, q2 = random.sample(range(qubits), 2)
+                circ.cnot(q1, q2)
+                if p > 0:
+                    circ.depolarize2(q1, q2, p)
+
+        return circ
