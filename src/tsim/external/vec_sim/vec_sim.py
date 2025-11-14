@@ -16,16 +16,16 @@ Modifications:
 
 import random
 from typing import (
-    Dict,
     Any,
-    Tuple,
-    Union,
+    Callable,
+    Dict,
     Iterable,
-    Literal,
     List,
+    Literal,
     Optional,
     Sequence,
-    Callable,
+    Tuple,
+    Union,
     cast,
 )
 

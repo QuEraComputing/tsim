@@ -8,13 +8,14 @@ Circuits are represented as parametrized ZX diagrams and compiled for efficient 
 # TODO
 
 - [ ] Rewrite pyzx extension for parametrized diagrams and simplification rules (based on newest pyzx version)
-- [ ] Detector sampling via decoding graph: only possible for errors after Ts. Need to figure out dependency, i.e. some errors will produce deterministic detector flips, others will not.
-- [ ] Irreducible set of equivalent errors (combining errors like stim)
-- [ ] Fp64? Exact arithmetic?
-- [ ] Symbolic simplification of scalars?
+- [x] Detector sampling via decoding graph: only possible for errors after Ts. Need to figure out dependency, i.e. some errors will produce deterministic detector flips, others will not.
+- [x] Irreducible set of equivalent errors (combining errors like stim)
+- [ ] Efficient sampling from error distribution (currently, we transform circuit errors, but sample from the original error distribution)
+Symbolic simplification of scalars?
 - [ ] Allow taking multiple samples from a single error configuration?
 - [ ] Support/ API for stab rank decomposition techniques, e.g., cutting diagrams
 - [ ] Test on GPU
+- [ ] Bitpacking
 - [ ] Benchmarks
 
 
