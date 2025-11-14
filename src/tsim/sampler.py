@@ -8,29 +8,11 @@ import tsim.external.pyzx as zx
 from tsim.circuit import SamplingGraphs
 from tsim.compile import compile_circuit
 from tsim.evaluate import evaluate_batch
-from tsim.external.pyzx.graph.base import BaseGraph
-from tsim.simplify import full_red
-
-
-def find_stab(gg: BaseGraph, printOut: bool = False) -> list[BaseGraph]:
-    """Recursively decompose ZX-graph into stabilizer components."""
-    if zx.simplify.tcount(gg) == 0:
-        return [gg]
-    gsum = zx.simulate.replace_magic_states(gg, False)
-
-    full_red(gsum)
-    output = []
-
-    for hh in gsum.graphs:
-        output.extend(find_stab(hh, printOut))
-
-    if printOut:
-        print(len(gsum.graphs), len(output))
-    return output
+from tsim.stabrank import find_stab
 
 
 class Sampler:
-    """Efficient quantum circuit sampler using ZX-calculus."""
+    """Efficient quantum circuit sampler using ZX-calculus based stabilizer rank decomposition."""
 
     def __init__(self, sampling_graphs: SamplingGraphs):
         """Compile graphs for fast sampling."""
@@ -52,15 +34,11 @@ class Sampler:
     def __repr__(self):
         c_graphs = [c.num_graphs for c in self.compiled_circuits]
         c_params = [c.n_params for c in self.compiled_circuits]
-        c_terms = [
-            len(c.ab_graph_ids) + len(c.c_graph_ids) + len(c.d_graph_ids)
-            for c in self.compiled_circuits
-        ]
+        c_ab_terms = [len(c.ab_graph_ids) for c in self.compiled_circuits]
+        c_c_terms = [len(c.c_graph_ids) for c in self.compiled_circuits]
+        c_d_terms = [len(c.d_graph_ids) for c in self.compiled_circuits]
         num_circuits = len(self.compiled_circuits)
-        return (
-            f"CompiledSampler({num_circuits} qubits, {np.sum(c_graphs)} graphs, "
-            f"{np.sum(c_params)} parameters, {np.sum(c_terms)} scalar terms)"
-        )
+        return f"CompiledSampler({num_circuits} qubits, {np.sum(c_graphs)} graphs, {np.sum(c_params)} parameters, {np.sum(c_ab_terms)} AB terms, {np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms)"
 
     def sample_batch(self, batch_size: int) -> np.ndarray:
         """Sample a batch of measurement outcomes."""
@@ -77,9 +55,10 @@ class Sampler:
             state_0 = jnp.hstack([s, zeros])
             p_batch_0 = jnp.abs(evaluate_batch(circuit, state_0))
 
-            # normalize the probabilities
             state_1 = jnp.hstack([s, ones])
             p_batch_1 = jnp.abs(evaluate_batch(circuit, state_1))
+
+            # normalize the probabilities
             p1 = p_batch_1 / (p_batch_0 + p_batch_1)
 
             _, key = jax.random.split(key)
