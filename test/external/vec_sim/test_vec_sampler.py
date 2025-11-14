@@ -3,7 +3,7 @@ import random
 import numpy as np
 import stim
 
-from tsim.external.vec_sim import VecSampler
+from tsim.external.vec_sim.vec_sampler import VecSampler
 
 
 def test_vec_sampler_bell_state():

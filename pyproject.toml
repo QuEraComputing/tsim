@@ -13,6 +13,7 @@ dependencies = [
     "jax>=0.6.2",
     "numpy>=2.2.6",
     "pyperclip>=1.11.0",
+    "pyzx>=0.9.0",
     "stim>=1.15.0",
     "sympy>=1.14.0",
     "tqdm>=4.67.1",
@@ -33,6 +34,7 @@ dev = [
     "matplotlib>=3.10.7",
     "mypy>=1.13.0",
     "pre-commit>=4.0.1",
+    "py-spy>=0.4.1",
     "pyright[nodejs]>=1.1.388",
     "pytest>=8.3.3",
     "ruff>=0.7.3",
@@ -62,7 +64,7 @@ profile = "black"
 combine_as_imports = true
 multi_line_output = 3
 src_paths = ["src/tsim"]
-skip_glob = ["src/tsim/external/**"]
+skip_glob = ["src/tsim/external/pyzx/**"]
 
 [tool.black]
 line-length = 88
@@ -78,7 +80,7 @@ exclude = '''
   | buck-out
   | build
   | dist
-  | src/tsim/external
+  | src/tsim/external/pyzx
 )/
 '''
 
@@ -117,7 +119,7 @@ omit = ["src/tsim/external/*"]
 
 [tool.pytest.ini_options]
 testpaths = "test/"
-norecursedirs = ["external"]
+norecursedirs = ["pyzx"]
 
 [tool.pyright]
 include = ["src", "test"]
