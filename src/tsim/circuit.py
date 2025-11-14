@@ -690,6 +690,13 @@ class Circuit:
             Scalar()
         )  # clean the scalar. We need to manually normalize the diagram now.
 
+        # clean the diagram up a bit
+        for v in g.outputs():
+            n = list(g.neighbors(v))[0]
+            if len(list(g.neighbors(n))) == 1:
+                g.set_qubit(n, g.qubit(v) - 1)
+                g.set_row(n, g.row(v))
+
         return g, np.array(error_transform)
 
     def compile_sampling_graphs(
