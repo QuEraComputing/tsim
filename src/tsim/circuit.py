@@ -22,6 +22,7 @@ from tsim.channels import (
 )
 from tsim.external.pyzx import EdgeType, Scalar, VertexType
 from tsim.external.pyzx.graph.base import BaseGraph
+from tsim.graph_util import connected_components
 
 _T = TypeVar("_T")
 
@@ -104,13 +105,18 @@ def accepts_qubit_list(func=None, *, num_qubits=1):  # type: ignore[no-untyped-d
 
 
 @dataclass
-class SamplingGraphs:
+class AutoConnectedComponent:
     graphs: list[BaseGraph]
-    num_errors: int
-    chars: list[str]
+    output_indices: list[int]
+    f_chars: list[str]
+    m_chars: list[str]
+
+
+@dataclass
+class SamplingGraphs:
+    sampling_components: list[AutoConnectedComponent]
     error_sampler: ErrorSampler
-    isolated_outputs: np.ndarray
-    correlated_outputs: np.ndarray
+    chars: list[str]
 
 
 class Circuit:
@@ -588,7 +594,9 @@ class Circuit:
         g.normalize()
         return g.to_matrix()
 
-    def get_liouville_graph(self, meas_sampling_mode: bool = True):
+    def get_liouville_graph(
+        self, meas_sampling_mode: bool = True
+    ) -> tuple[BaseGraph, np.ndarray]:
         """Get a the doubled graph of the circuit. When `meas_sampling_mode` is True,
         measurement gates are pinned by output nodes. When False, dectectors and
         observables are pinned by output nodes."""
@@ -706,79 +714,45 @@ class Circuit:
         g, error_transform = self.get_liouville_graph(
             meas_sampling_mode=meas_sampling_mode
         )
-
-        f2idx = {f"f{i}": i for i in range(len(error_transform))}
-
-        isolated_output_idx2f = {}  # output_idx: f_idx
-        correlated_outputs = []
-        isolated_chars = set()
-
-        for o, v in enumerate(g.outputs()):
-            neighbors = g.neighbors(v)
-            assert len(neighbors) == 1
-            n = list(neighbors)[0]
-            if len(g.neighbors(n)) == 1 and g.type(n) != VertexType.BOUNDARY:
-                # The output is connected to a vertex that does not have other neighbors.
-                # This means the output can be trivially sampled.
-
-                # TODO: decompose the graph into connected components and sample
-                # each connected component separately.
-
-                assert g.type(n) == VertexType.Z, "full red. diagram has non-Z vertex"
-
-                edge_type = g.edge_type((v, n))
-                assert edge_type == EdgeType.HADAMARD, "output is not deterministic"
-
-                phase_var = g._phaseVars[n]
-                assert len(phase_var) == 1
-                phase = list(phase_var)[0]
-                f_idx = f2idx[phase]
-                isolated_output_idx2f[o] = f_idx
-                isolated_chars.add(phase)
-
-                g.remove_vertices((v, n))
-            else:
-                correlated_outputs.append(o)
-
-        f_chars = [f"f{i}" for i in range(len(error_transform))]
         m_chars = [f"m{i}" for i in range(len(g.outputs()))]
-        chars = f_chars + m_chars
+        f_chars = [f"f{i}" for i in range(len(error_transform))]
 
-        # Build the list of graphs for autoregressive sampling.
-        num_outputs = len(g.outputs())
-        g_list = []
-        for o in range(num_outputs):
-            g0 = g.copy()
-            output_vertices = list(g0.outputs())
-            effect = "0" * (o + 1) + "+" * (num_outputs - o - 1)
-            g0.apply_effect(effect)
-            for i, v in enumerate(output_vertices[: o + 1]):
-                g0.set_phase(v, m_chars[i])
-            zx.full_reduce(g0)
-            g_list.append(g0)
+        # error_transform T_f,e
 
-        isolated_outputs = np.array(list(isolated_output_idx2f.keys()), dtype=np.int32)
-        isolated_vars = np.array(list(isolated_output_idx2f.values()), dtype=np.int32)
-        correlated_outputs = np.array(correlated_outputs, dtype=np.int32)
+        components = connected_components(g)
+        auto_components = []
 
-        correlated_f_chars = [c for c in f_chars if c not in isolated_chars]
-        correlated_chars = [c for c in chars if c not in isolated_chars]
-        correlated_char_idx = [
-            i for i, c in enumerate(f_chars) if c not in isolated_chars
-        ]
+        for component in components:
+            # For each connected component, build a list of graphs for autoregressive sampling
+            # The first graph computes P(m_0), the second graph computes P(m_0, m_1), etc.
+            error_chars = set()
+            for v in component.graph.vertices():
+                error_chars |= component.graph._phaseVars[v]
 
-        isolated_transform = jax.numpy.array(error_transform[isolated_vars])
-        correlated_transform = jax.numpy.array(error_transform[correlated_char_idx])
+            num_outputs = len(component.graph.outputs())
+            g_list = []
+            for o in range(num_outputs):
+                g0 = component.graph.copy()
+                output_vertices = list(g0.outputs())
+                effect = "0" * (o + 1) + "+" * (num_outputs - o - 1)
+                g0.apply_effect(effect)
+                for i, v in enumerate(output_vertices[: o + 1]):
+                    g0.set_phase(v, m_chars[i])
+                zx.full_reduce(g0)
+                g_list.append(g0)
+
+            auto_comp = AutoConnectedComponent(
+                graphs=g_list,
+                output_indices=component.output_indices,
+                f_chars=sorted(error_chars),
+                m_chars=m_chars,
+            )
+            auto_components.append(auto_comp)
 
         return SamplingGraphs(
-            graphs=g_list,
-            num_errors=len(correlated_f_chars),
-            chars=correlated_chars,
-            error_sampler=ErrorSampler(
-                self.errors, isolated_transform, correlated_transform
-            ),
-            isolated_outputs=isolated_outputs,
-            correlated_outputs=correlated_outputs,
+            sampling_components=auto_components,
+            error_sampler=ErrorSampler(self.errors, error_transform),
+            chars=f_chars + m_chars,
         )
 
     def copy(self):
@@ -864,9 +838,9 @@ class Circuit:
             if name in ignore_gates:
                 continue
 
-            if name == "s" and replace_s_with_t:
+            if name == "s" and (replace_s_with_t or instruction.tag == "T"):
                 name = "t"
-            if name == "s_dag" and replace_s_with_t:
+            if name == "s_dag" and (replace_s_with_t or instruction.tag == "T"):
                 name = "t_dag"
 
             if name == "tick":
