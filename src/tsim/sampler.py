@@ -217,7 +217,7 @@ class CompiledDetectorSampler(BaseCompiledSampler):
         if append_observables:
             return samples
 
-        num_detectors = len(self.circuit.detectors)
+        num_detectors = len(self.circuit._detectors)
         det_samples = samples[:, :num_detectors]
         obs_samples = samples[:, num_detectors:]
 

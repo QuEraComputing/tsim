@@ -40,3 +40,47 @@ def test_two_qubit_gate(gate_func: str, matrix: np.ndarray):
     c = Circuit()
     c.__getattribute__(gate_func)(0, 1)
     assert np.allclose(c.to_matrix(), matrix)
+
+
+def test_num_measurements():
+    c = Circuit()
+    assert c.num_measurements == 0
+    c.m(0)
+    assert c.num_measurements == 1
+    c.m([1, 2])
+    assert c.num_measurements == 3
+
+
+def test_num_detectors():
+    c = Circuit()
+    assert c.num_detectors == 0
+    c.m(0)
+    c.detector([0])
+    assert c.num_detectors == 1
+    c.m(1)
+    c.detector([1])
+    assert c.num_detectors == 2
+
+
+def test_num_observables():
+    c = Circuit()
+    c.m(0)
+    assert c.num_observables == 0
+    c.m(1)
+    c.observable_include([0], 0)
+    assert c.num_observables == 1
+    c.observable_include([1], 2)
+    assert c.num_observables == 3
+    c.observable_include([0, 1], 5)
+    assert c.num_observables == 6
+
+
+def test_num_qubits():
+    c = Circuit()
+    assert c.num_qubits == 0
+    c.h(0)
+    assert c.num_qubits == 1
+    c.x(5)
+    assert c.num_qubits == 6
+    c.cnot(2, 3)
+    assert c.num_qubits == 6
