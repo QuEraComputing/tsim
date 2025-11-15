@@ -113,14 +113,14 @@ class Circuit:
         self.last_row: dict[int, int] = {}
         self.errors = []
 
-        self.rec = []
-        self.detectors = []
+        self._rec = []
+        self._detectors = []
         self._observables_dict: dict[int, int] = {}  # idx: vertex
         self.num_error_bits = 0
         self.qubit_to_input = {}
 
     @property
-    def observables(self) -> list[int]:
+    def _observables(self) -> list[int]:
         return [self._observables_dict[i] for i in sorted(self._observables_dict)]
 
     def _last_row(self, qubit: int):
@@ -145,6 +145,33 @@ class Circuit:
         self.g.add_edge((v1, v2))
         self.last_vertex[qubit] = v2
         return v1
+
+    @property
+    def num_measurements(self) -> int:
+        """Counts the number of bits produced when sampling the circuit's measurements."""
+        return len(self._rec)
+
+    @property
+    def num_detectors(self) -> int:
+        """Counts the number of bits produced when sampling the circuit's detectors."""
+        return len(self._detectors)
+
+    @property
+    def num_observables(self) -> int:
+        """
+        Counts the number of bits produced when sampling the circuit's logical observables.
+
+        This is one more than the largest observable index given to OBSERVABLE_INCLUDE.
+        """
+        return max(self._observables_dict.keys(), default=-1) + 1
+
+    @property
+    def num_qubits(self) -> int:
+        """Counts the number of qubits used when simulating the circuit.
+
+        This is always one more than the largest qubit index used by the circuit.
+        """
+        return max(self.last_vertex.keys(), default=-1) + 1
 
     @accepts_qubit_list
     def h(self, qubit: int):
@@ -288,8 +315,8 @@ class Circuit:
             self._add_lane(qubit)
         v1 = self.last_vertex[qubit]
         g.set_type(v1, VertexType.Z)
-        g.set_phase(v1, f"rec[{len(self.rec)}]")
-        self.rec.append(v1)
+        g.set_phase(v1, f"rec[{len(self._rec)}]")
+        self._rec.append(v1)
         v2 = self._add_dummy(qubit)
         g.add_edge((v1, v2))
 
@@ -534,24 +561,24 @@ class Circuit:
 
     def detector(self, rec: list[int], *args: Any):
         """Add a detector that checks parity of measurement records."""
-        r = min(set([self.g.row(self.rec[r]) for r in rec])) - 0.5
-        d_rows = set([self.g.row(d) for d in self.detectors + self.observables])
+        r = min(set([self.g.row(self._rec[r]) for r in rec])) - 0.5
+        d_rows = set([self.g.row(d) for d in self._detectors + self._observables])
         while r in d_rows:
             r += 1
         v0 = self.g.add_vertex(
-            VertexType.X, qubit=-1, row=r, phase=f"det[{len(self.detectors)}]"  # type: ignore[arg-type]
+            VertexType.X, qubit=-1, row=r, phase=f"det[{len(self._detectors)}]"  # type: ignore[arg-type]
         )
         for rec_ in rec:
-            self.g.add_edge((v0, self.rec[rec_]))
-        self.detectors.append(v0)
+            self.g.add_edge((v0, self._rec[rec_]))
+        self._detectors.append(v0)
 
     def observable_include(self, rec: list[int], idx: int):
         """Include measurement records in a logical observable."""
         idx = int(idx)
 
         if idx not in self._observables_dict:
-            r = min(set([self.g.row(self.rec[r]) for r in rec])) - 0.5
-            d_rows = set([self.g.row(d) for d in self.detectors + self.observables])
+            r = min(set([self.g.row(self._rec[r]) for r in rec])) - 0.5
+            d_rows = set([self.g.row(d) for d in self._detectors + self._observables])
             while r in d_rows:
                 r += 1
             v0 = self.g.add_vertex(
@@ -561,7 +588,7 @@ class Circuit:
 
         v0 = self._observables_dict[idx]
         for rec_ in rec:
-            self.g.add_edge((v0, self.rec[rec_]))
+            self.g.add_edge((v0, self._rec[rec_]))
 
     def to_tensor(self) -> Any:
         """Convert circuit to tensor representation."""
@@ -599,7 +626,7 @@ class Circuit:
         for q in self.last_vertex:
             g.set_row(self.last_vertex[q], max_row)
 
-        num_measurements = len(self.rec)
+        num_measurements = len(self._rec)
         outputs = [v for v in g.vertices() if g.type(v) == VertexType.BOUNDARY]
         g.set_outputs(tuple(outputs))
 
@@ -654,7 +681,7 @@ class Circuit:
                 assert len(vertices) == 2
                 g.remove_vertex(vertices.pop())
 
-            labels = [f"det[{i}]" for i in range(len(self.detectors))] + [
+            labels = [f"det[{i}]" for i in range(len(self._detectors))] + [
                 f"obs[{i}]" for i in self._observables_dict.keys()
             ]
             for label in labels:
@@ -726,9 +753,9 @@ class Circuit:
                 g.set_phase(vertices[0], 0)
 
         c.errors = []
-        c.detectors = []
+        c._detectors = []
         c._observables_dict = {}
-        c.rec = []
+        c._rec = []
         return c
 
     def append_from_stim_program(
