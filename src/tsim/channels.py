@@ -13,7 +13,7 @@ class Channel(abc.ABC):
     num_bits: int
 
     @abc.abstractmethod
-    def sample(self, num_samples: int = 1):
+    def sample(self, num_samples: int = 1) -> jax.Array:
         """Sample errors from the channel.
 
         Args:
@@ -24,13 +24,12 @@ class Channel(abc.ABC):
             sampled errors.
 
         """
-        pass
 
     def __repr__(self):
         return f"{self.__class__.__name__}(probs={jnp.exp(self.logits)})"
 
 
-class PauliChannel1:
+class PauliChannel1(Channel):
     """Single-qubit Pauli error channel."""
 
     def __init__(self, px: float, py: float, pz: float, key: Array):
@@ -40,7 +39,7 @@ class PauliChannel1:
         probs = jnp.array([1 - px - py - pz, pz, px, py])
         self.logits = jnp.log(probs)
 
-    def sample(self, num_samples: int = 1):
+    def sample(self, num_samples: int = 1) -> jax.Array:
         self._key, subkey = jax.random.split(self._key)
         samples = jax.random.categorical(subkey, self.logits, shape=(num_samples,))
         bits = ((samples[:, None] >> jnp.arange(2)) & 1).astype(jnp.uint8)
@@ -55,7 +54,7 @@ class Depolarize1(PauliChannel1):
         super().__init__(p / 3, p / 3, p / 3, key=key)
 
 
-class PauliChannel2:
+class PauliChannel2(Channel):
     """Two-qubit Pauli error channel."""
 
     def __init__(
@@ -120,7 +119,7 @@ class PauliChannel2:
         )
         self.logits = jnp.log(probs)
 
-    def sample(self, num_samples: int = 1):
+    def sample(self, num_samples: int = 1) -> jax.Array:
         self._key, subkey = jax.random.split(self._key)
         samples = jax.random.categorical(subkey, self.logits, shape=(num_samples,))
         bits = ((samples[:, None] >> jnp.arange(4)) & 1).astype(jnp.uint8)
@@ -161,7 +160,7 @@ class Error(Channel):
         self._key = key
         self.p = p
 
-    def sample(self, num_samples: int = 1):  # type: ignore[override]
+    def sample(self, num_samples: int = 1) -> jax.Array:
         self._key, subkey = jax.random.split(self._key)
         samples = jax.random.bernoulli(subkey, self.p, shape=(num_samples,)).astype(
             jnp.uint8
