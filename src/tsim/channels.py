@@ -178,7 +178,7 @@ class ErrorSampler:
         self.error_transform = jnp.array(error_transform.T)
 
     def sample(self, num_samples: int = 1) -> jax.Array:
-        """Sample from all error channels and concatenate results."""
+        """Sample from all error channels and transform to new error basis."""
         if len(self.error_channels) == 0:
             return jnp.zeros((num_samples, 0), dtype=jnp.uint8)
         samples = []

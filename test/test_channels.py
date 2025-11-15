@@ -39,7 +39,6 @@ def test_pauli_channel_2():
         for p2 in pauli2bits
     }
     for kw_name, bits in paulis2bits.items():
-        print(kw_name, bits)
         kwargs = {}
         for kw in paulis2bits:
             kwargs[kw] = 0

@@ -17,10 +17,8 @@ class ConnectedComponent:
 def connected_components(g: BaseGraph) -> list[ConnectedComponent]:
     """Return each connected component of ``g`` as its own ZX subgraph.
 
-    The function mirrors the way ``Circuit`` builds and manipulates ``zx.Graph``
-    instances. Each component is packaged inside a :class:`ConnectedComponent`
-    so downstream consumers know both the subgraph and which original output
-    indices still live inside it.
+    Each component is packaged inside a :class:`ConnectedComponent` that contains
+    the subgraph and a list of output indices matching the original output indices.
     """
 
     components: list[ConnectedComponent] = []
@@ -128,15 +126,3 @@ def _induced_subgraph(
     subgraph.set_outputs(component_outputs)
 
     return subgraph, vert_map
-
-
-if __name__ == "__main__":
-    from tsim.circuit import Circuit
-
-    circuit = Circuit.random(3, 3)
-    circuit.x_error(0, 0.1)
-    circuit.g.normalize()
-    zx.draw(circuit.g, labels=True)
-    for component in connected_components(circuit.g):
-        zx.draw(component.graph, labels=True)
-        print(component.output_indices)
