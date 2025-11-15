@@ -1,4 +1,6 @@
+from abc import ABC, abstractmethod
 from math import ceil
+from typing import Literal, overload
 
 import jax
 import jax.numpy as jnp
@@ -12,11 +14,12 @@ from tsim.evaluate import evaluate_batch
 from tsim.graph_util import connected_components, transform_error_basis
 
 
-class CompiledSampler:
+class BaseCompiledSampler(ABC):
     """Quantum circuit sampler using ZX-calculus based stabilizer rank decomposition."""
 
     def __init__(self, circuit: Circuit, sample_detectors: bool = False):
         """Create a sampler from pre-built sampler resources."""
+        self.circuit = circuit
         graph = circuit.get_sampling_graph(sample_detectors=sample_detectors)
 
         zx.full_reduce(graph)
@@ -109,34 +112,118 @@ class CompiledSampler:
 
         return np.concatenate(component_samples, axis=1)[:, self.program.output_order]
 
-    def sample(self, num_samples: int, batch_size: int = 100) -> np.ndarray:
-        """Sample measurement/detector outcomes with specified batch size. On a GPU
-        performance can be significantly improved by increasing the batch size.
-
-        Args:
-            num_samples: Total number of samples to generate
-            batch_size: Size of each sampling batch
-
-        Returns:
-            Array of measurement outcomes, shape (num_samples, num_qubits)
-        """
-        if num_samples < batch_size:
-            batch_size = num_samples
+    @abstractmethod
+    def sample(
+        self, shots: int, *, batch_size: int = 1024
+    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+        if shots < batch_size:
+            batch_size = shots
         batches = []
-        for _ in range(ceil(num_samples / batch_size)):
+        for _ in range(ceil(shots / batch_size)):
             batches.append(self.sample_batch(batch_size))
-        return np.concatenate(batches)[:num_samples]
+        return np.concatenate(batches)[:shots]
 
 
-class CompiledMeasurementSampler(CompiledSampler):
+class CompiledMeasurementSampler(BaseCompiledSampler):
     """Measurement sampler"""
 
     def __init__(self, circuit: Circuit):
         super().__init__(circuit, sample_detectors=False)
 
+    def sample(
+        self,
+        shots: int,
+        *,
+        batch_size: int = 1024,
+    ) -> np.ndarray:
+        """Samples a batch of measurement samples from the circuit.
 
-class CompiledDetectorSampler(CompiledSampler):
+        Args:
+            shots: The number of times to sample every measurement in the circuit.
+            batch_size: The number of samples to process in each batch. When using a
+                GPU, it is recommended to increase this value until VRAM is fully
+                utilized for maximum performance.
+
+        Returns:
+            A numpy array containing the measurement samples.
+        """
+        samples = super().sample(shots, batch_size=batch_size)
+        assert isinstance(samples, np.ndarray)
+        return samples
+
+
+class CompiledDetectorSampler(BaseCompiledSampler):
     """Detector and observable sampler"""
 
     def __init__(self, circuit: Circuit):
         super().__init__(circuit, sample_detectors=True)
+
+    @overload
+    def sample(
+        self,
+        shots: int,
+        *,
+        batch_size: int = 1024,
+        prepend_observables: bool = False,
+        append_observables: bool = False,
+        separate_observables: Literal[True],
+    ) -> tuple[np.ndarray, np.ndarray]: ...
+
+    @overload
+    def sample(
+        self,
+        shots: int,
+        *,
+        batch_size: int = 1024,
+        prepend_observables: bool = False,
+        append_observables: bool = False,
+        separate_observables: Literal[False] = False,
+    ) -> np.ndarray: ...
+
+    def sample(
+        self,
+        shots: int,
+        *,
+        batch_size: int = 1024,
+        prepend_observables: bool = False,
+        append_observables: bool = False,
+        separate_observables: bool = False,
+    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+        """Returns a numpy array containing detector samples from the circuit.
+
+        The circuit must define the detectors using DETECTOR instructions. Observables
+        defined by OBSERVABLE_INCLUDE instructions can also be included in the results
+        as honorary detectors.
+
+        Args:
+            shots: The number of times to sample every detector in the circuit.
+            batch_size: The number of samples to process in each batch. When using a
+                GPU, it is recommended to increase this value until VRAM is fully
+                utilized for maximum performance.
+            separate_observables: Defaults to False. When set to True, the return value
+                is a (detection_events, observable_flips) tuple instead of a flat
+                detection_events array.
+            prepend_observables: Defaults to false. When set, observables are included
+                with the detectors and are placed at the start of the results.
+            append_observables: Defaults to false. When set, observables are included
+                with the detectors and are placed at the end of the results.
+
+        Returns:
+            A numpy array or tuple of numpy arrays containing the samples.
+        """
+
+        samples = super().sample(shots, batch_size=batch_size)
+        assert isinstance(samples, np.ndarray)
+        if append_observables:
+            return samples
+
+        num_detectors = len(self.circuit.detectors)
+        det_samples = samples[:, :num_detectors]
+        obs_samples = samples[:, num_detectors:]
+
+        if prepend_observables:
+            return np.concatenate([obs_samples, det_samples], axis=1)
+        if separate_observables:
+            return det_samples, obs_samples
+
+        return det_samples  # TODO: don't compute observables if they are discarded here
