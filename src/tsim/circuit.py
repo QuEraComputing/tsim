@@ -1,13 +1,11 @@
 import copy
 import random
 from collections import defaultdict
-from dataclasses import dataclass
 from fractions import Fraction
 from functools import wraps
 from typing import Any, Callable, Iterable, TypeVar, overload
 
 import jax
-import numpy as np
 import stim
 from jax import Array
 
@@ -16,13 +14,11 @@ from tsim.channels import (
     Depolarize1,
     Depolarize2,
     Error,
-    ErrorSampler,
     PauliChannel1,
     PauliChannel2,
 )
-from tsim.external.pyzx import EdgeType, Scalar, VertexType
+from tsim.external.pyzx import EdgeType, VertexType
 from tsim.external.pyzx.graph.base import BaseGraph
-from tsim.graph_util import connected_components
 
 _T = TypeVar("_T")
 
@@ -102,21 +98,6 @@ def accepts_qubit_list(func=None, *, num_qubits=1):  # type: ignore[no-untyped-d
     else:
         # Called with parentheses: @accepts_qubit_list(num_qubits=2)
         return decorator
-
-
-@dataclass
-class AutoConnectedComponent:
-    graphs: list[BaseGraph]
-    output_indices: list[int]
-    f_chars: list[str]
-    m_chars: list[str]
-
-
-@dataclass
-class SamplingGraphs:
-    sampling_components: list[AutoConnectedComponent]
-    error_sampler: ErrorSampler
-    chars: list[str]
 
 
 class Circuit:
@@ -594,12 +575,22 @@ class Circuit:
         g.normalize()
         return g.to_matrix()
 
-    def get_liouville_graph(
-        self, meas_sampling_mode: bool = True
-    ) -> tuple[BaseGraph, np.ndarray]:
-        """Get a the doubled graph of the circuit. When `meas_sampling_mode` is True,
-        measurement gates are pinned by output nodes. When False, dectectors and
-        observables are pinned by output nodes."""
+    def get_sampling_graph(self, sample_detectors: bool = False) -> BaseGraph:
+        """Get a ZX graph that can be used to compute probabilities.
+
+        This graph will be constructed as follows:
+
+        1. Double the ZX-diagram by composing it with its adjoint.
+        2. Connect all rec[i] vertices to their corresponding adjoint rec[i] vertices.
+        3. Add outputs:
+        (a) When sampling measurements (i.e. `sample_detectors` is False),
+            add output nodes for each measurement. Detectors and observables are
+            removed since they are ignored when sampling measurements.
+        (b) When sampling detectors and observables (i.e. `sample_detectors` is True),
+            add output nodes for each detector and observable. Only one set of detector
+            and observable nodes is kept, i.e., detectors and observables are not
+            composed with their adjoints.
+        """
 
         g = self.g.copy()
 
@@ -610,7 +601,7 @@ class Circuit:
 
         num_measurements = len(self.rec)
         outputs = [v for v in g.vertices() if g.type(v) == VertexType.BOUNDARY]
-        g.set_outputs(tuple(outputs))  # type: ignore[arg-type]
+        g.set_outputs(tuple(outputs))
 
         g_adj = g.adjoint()
         g.compose(g_adj)
@@ -629,7 +620,7 @@ class Circuit:
             if "det" in phase or "obs" in phase:
                 annotation_to_vertex[phase].append(v)
 
-        outputs = [0] * num_measurements if meas_sampling_mode else []
+        outputs = [0] * num_measurements if not sample_detectors else []
 
         # connect all rec[i] vertices to each other and add red vertex with rec[i] label
         for i in range(num_measurements):
@@ -644,19 +635,21 @@ class Circuit:
             g.set_phase(v1, 0)
 
             # add outputs
-            if meas_sampling_mode:
-                v3 = g.add_vertex(VertexType.BOUNDARY, qubit=-1, row=i + 1, phase=0)  # type: ignore[arg-type]
+            if not sample_detectors:
+                v3 = g.add_vertex(VertexType.BOUNDARY, qubit=-1, row=i + 1, phase=0)
                 outputs[i] = v3
                 g.add_edge((v0, v3))
 
-        if meas_sampling_mode:
-            # remove detectors and observables
+        if not sample_detectors:
+            # sample measurements: remove detectors and observables
             for vertices in annotation_to_vertex.values():
                 assert len(vertices) == 2
                 for v in vertices:
                     g.remove_vertex(v)
         else:
-            # remove the duplicated set of detectors and observables
+            # sample detectors and observables:
+            # keep detector and observables but remove the adjoint (duplicated)
+            # annotation nodes
             for vertices in annotation_to_vertex.values():
                 assert len(vertices) == 2
                 g.remove_vertex(vertices.pop())
@@ -675,85 +668,8 @@ class Circuit:
                 outputs.append(vb)
 
         g.set_outputs(tuple(outputs))
-        zx.full_reduce(g)
 
-        # transform to a new error basis f
-        e2idx = {f"e{i}": i for i in range(self.num_error_bits)}
-        error_transform = []
-
-        for v in g.vertices():
-            if v not in g._phaseVars:
-                continue
-            phase_vars = g._phaseVars[v]
-            if len(phase_vars) == 0:
-                continue
-
-            vec = np.zeros(self.num_error_bits, dtype=np.int32)
-            for phase_var in phase_vars:
-                vec[e2idx[phase_var]] = 1
-            g._phaseVars[v] = set([f"f{len(error_transform)}"])
-            error_transform.append(vec)
-
-        g.scalar = (
-            Scalar()
-        )  # clean the scalar. We need to manually normalize the diagram now.
-
-        # clean the diagram up a bit
-        for v in g.outputs():
-            n = list(g.neighbors(v))[0]
-            if len(list(g.neighbors(n))) == 1:
-                g.set_qubit(n, g.qubit(v) - 1)
-                g.set_row(n, g.row(v))
-
-        return g, np.array(error_transform)
-
-    def compile_sampling_graphs(
-        self, meas_sampling_mode: bool = False
-    ) -> SamplingGraphs:
-
-        g, error_transform = self.get_liouville_graph(
-            meas_sampling_mode=meas_sampling_mode
-        )
-        m_chars = [f"m{i}" for i in range(len(g.outputs()))]
-        f_chars = [f"f{i}" for i in range(len(error_transform))]
-
-        # error_transform T_f,e
-
-        components = connected_components(g)
-        auto_components = []
-
-        for component in components:
-            # For each connected component, build a list of graphs for autoregressive sampling
-            # The first graph computes P(m_0), the second graph computes P(m_0, m_1), etc.
-            error_chars = set()
-            for v in component.graph.vertices():
-                error_chars |= component.graph._phaseVars[v]
-
-            num_outputs = len(component.graph.outputs())
-            g_list = []
-            for o in range(num_outputs):
-                g0 = component.graph.copy()
-                output_vertices = list(g0.outputs())
-                effect = "0" * (o + 1) + "+" * (num_outputs - o - 1)
-                g0.apply_effect(effect)
-                for i, v in enumerate(output_vertices[: o + 1]):
-                    g0.set_phase(v, m_chars[i])
-                zx.full_reduce(g0)
-                g_list.append(g0)
-
-            auto_comp = AutoConnectedComponent(
-                graphs=g_list,
-                output_indices=component.output_indices,
-                f_chars=sorted(error_chars),
-                m_chars=m_chars,
-            )
-            auto_components.append(auto_comp)
-
-        return SamplingGraphs(
-            sampling_components=auto_components,
-            error_sampler=ErrorSampler(self.errors, error_transform),
-            chars=f_chars + m_chars,
-        )
+        return g
 
     def copy(self):
         return copy.deepcopy(self)
@@ -852,8 +768,9 @@ class Circuit:
                 self.mpp(args)
                 continue
 
-            targets = [t.value for t in instruction.targets_copy()]  # type: ignore[attr-defined]
-            args = instruction.gate_args_copy()  # type: ignore[attr-defined]
+            assert not isinstance(instruction, stim.CircuitRepeatBlock)
+            targets = [t.value for t in instruction.targets_copy()]
+            args = instruction.gate_args_copy()
             func = getattr(self, name)
             func(targets, *args)
 
@@ -906,17 +823,15 @@ class Circuit:
 
     def compile_sampler(self):
         """Compile circuit into a measurement sampler."""
-        from tsim.sampler import Sampler
+        from tsim.sampler import CompiledMeasurementSampler
 
-        graphs = self.compile_sampling_graphs(meas_sampling_mode=True)
-        return Sampler(graphs)
+        return CompiledMeasurementSampler(self)
 
     def compile_detector_sampler(self):
         """Compile circuit into a detector sampler."""
-        from tsim.sampler import Sampler
+        from tsim.sampler import CompiledDetectorSampler
 
-        graphs = self.compile_sampling_graphs(meas_sampling_mode=False)
-        return Sampler(graphs)
+        return CompiledDetectorSampler(self)
 
     @staticmethod
     def random(

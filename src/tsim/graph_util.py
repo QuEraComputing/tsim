@@ -126,3 +126,35 @@ def _induced_subgraph(
     subgraph.set_outputs(component_outputs)
 
     return subgraph, vert_map
+
+
+def transform_error_basis(g: BaseGraph) -> tuple[BaseGraph, dict[str, set[str]]]:
+    # TODO: perform Gaussian elimination to obtain the smallest number of error bits
+
+    # transform to a new error basis f
+    error_transform = {}
+
+    for v in g.vertices():
+        if v not in g._phaseVars:
+            continue
+        phase_vars = g._phaseVars[v]
+        if len(phase_vars) == 0:
+            continue
+
+        new_var = f"f{len(error_transform)}"
+        g._phaseVars[v] = {new_var}
+
+        error_transform[new_var] = phase_vars
+
+    # Remove the scalar. Since we have not started the stabilizer rank decomposition.
+    # it is safe to remove the overall scalar.
+    g.scalar = zx.Scalar()
+
+    # clean the diagram up a bit
+    for v in g.outputs():
+        n = list(g.neighbors(v))[0]
+        if len(list(g.neighbors(n))) == 1:
+            g.set_qubit(n, g.qubit(v) - 1)
+            g.set_row(n, g.row(v))
+
+    return g, error_transform

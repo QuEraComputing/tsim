@@ -10,6 +10,7 @@ class Channel(abc.ABC):
     """Abstract base class for quantum error channels."""
 
     logits: jnp.ndarray
+    num_bits: int
 
     @abc.abstractmethod
     def sample(self, num_samples: int = 1):
@@ -34,6 +35,7 @@ class PauliChannel1:
 
     def __init__(self, px: float, py: float, pz: float, key: Array):
         """Initialize channel with X, Y, Z error probabilities."""
+        self.num_bits = 2
         self._key = key
         probs = jnp.array([1 - px - py - pz, pz, px, py])
         self.logits = jnp.log(probs)
@@ -95,6 +97,7 @@ class PauliChannel2:
             - pzy
             - pzz
         )
+        self.num_bits = 4
         probs = jnp.array(
             [
                 remainder,  # 00,00
@@ -154,6 +157,7 @@ class Error(Channel):
 
     def __init__(self, p: float, key: Array):
         """Initialize with error probability p."""
+        self.num_bits = 1
         self._key = key
         self.p = p
 
@@ -165,17 +169,27 @@ class Error(Channel):
         return samples[:, None]
 
 
-class ErrorSampler:
+class ChannelSampler:
     """Samples from multiple error channels simultaneously."""
 
     def __init__(
         self,
         error_channels: list[Channel],
-        error_transform: np.ndarray,
+        error_transform: dict[str, set[str]],
     ):
         """Initialize with a list of error channels."""
+        self.num_bits = sum(channel.num_bits for channel in error_channels)
         self.error_channels = error_channels
-        self.error_transform = jnp.array(error_transform.T)
+
+        e2idx = {f"e{i}": i for i in range(self.num_bits)}
+        vecs = []
+        for e_vars in error_transform.values():
+            vec = np.zeros(self.num_bits, dtype=np.int32)
+            for e_var in e_vars:
+                vec[e2idx[e_var]] = 1
+            vecs.append(vec)
+
+        self.error_transform = jnp.array(vecs).T
 
     def sample(self, num_samples: int = 1) -> jax.Array:
         """Sample from all error channels and transform to new error basis."""
