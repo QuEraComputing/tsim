@@ -11,6 +11,7 @@ from jax import Array
 
 import tsim.external.pyzx as zx
 from tsim.channels import (
+    Channel,
     Depolarize1,
     Depolarize2,
     Error,
@@ -107,27 +108,26 @@ class Circuit:
         """Initialize an empty circuit with optional random key for noise sampling."""
         if key is None:
             key = jax.random.key(0)
-        self.key = key
+        self._key = key
         self.g = zx.Graph()
-        self.last_vertex: dict[int, int] = {}
-        self.last_row: dict[int, int] = {}
-        self.errors = []
+        self._last_vertex: dict[int, int] = {}
+        self.error_channels: list[Channel] = []
 
-        self._rec = []
-        self._detectors = []
+        self._num_error_bits: int = 0
+        self._rec: list[int] = []
+        self._detectors: list[int] = []
         self._observables_dict: dict[int, int] = {}  # idx: vertex
-        self.num_error_bits = 0
-        self.qubit_to_input = {}
+        self._qubit_to_input: dict[int, int] = {}
 
     @property
     def _observables(self) -> list[int]:
         return [self._observables_dict[i] for i in sorted(self._observables_dict)]
 
     def _last_row(self, qubit: int):
-        return self.g.row(self.last_vertex[qubit])
+        return self.g.row(self._last_vertex[qubit])
 
     def _last_edge(self, qubit: int):
-        edges = self.g.incident_edges(self.last_vertex[qubit])
+        edges = self.g.incident_edges(self._last_vertex[qubit])
         assert len(edges) == 1
         return edges[0]
 
@@ -135,15 +135,15 @@ class Circuit:
         if row is None:
             row = self._last_row(qubit) + 1
         v1 = self.g.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=row)  # type: ignore[arg-type]
-        self.last_vertex[qubit] = v1
+        self._last_vertex[qubit] = v1
         return v1
 
     def _add_lane(self, qubit: int):
         v1 = self.g.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=0)
-        self.qubit_to_input[qubit] = v1
+        self._qubit_to_input[qubit] = v1
         v2 = self.g.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=1)
         self.g.add_edge((v1, v2))
-        self.last_vertex[qubit] = v2
+        self._last_vertex[qubit] = v2
         return v1
 
     @property
@@ -171,13 +171,13 @@ class Circuit:
 
         This is always one more than the largest qubit index used by the circuit.
         """
-        return max(self.last_vertex.keys(), default=-1) + 1
+        return max(self._last_vertex.keys(), default=-1) + 1
 
     @accepts_qubit_list
     def h(self, qubit: int):
         """Apply Hadamard gate to qubit(s)."""
         g = self.g
-        if qubit not in self.last_vertex:
+        if qubit not in self._last_vertex:
             self._add_lane(qubit)
 
         e = self._last_edge(qubit)
@@ -189,9 +189,9 @@ class Circuit:
     @accepts_qubit_list
     def x_phase(self, qubit: int, phase: Fraction):
         g = self.g
-        if qubit not in self.last_vertex:
+        if qubit not in self._last_vertex:
             self._add_lane(qubit)
-        v1 = self.last_vertex[qubit]
+        v1 = self._last_vertex[qubit]
         g.set_type(v1, VertexType.X)
         g.set_phase(v1, phase)
         v2 = self._add_dummy(qubit)
@@ -205,9 +205,9 @@ class Circuit:
     @accepts_qubit_list
     def z_phase(self, qubit: int, phase: Fraction):
         g = self.g
-        if qubit not in self.last_vertex:
+        if qubit not in self._last_vertex:
             self._add_lane(qubit)
-        v1 = self.last_vertex[qubit]
+        v1 = self._last_vertex[qubit]
         g.set_type(v1, VertexType.Z)
         g.set_phase(v1, phase)
         v2 = self._add_dummy(qubit)
@@ -247,18 +247,12 @@ class Circuit:
 
     @accepts_qubit_list
     def sqrt_y(self, qubit: int):
-        # self.z_phase(qubit, Fraction(3, 2))
-        # self.x_phase(qubit, Fraction(1, 2))
-        # self.z_phase(qubit, Fraction(1, 2))
         self.z(qubit)
         self.h(qubit)
         self.g.scalar.add_phase(Fraction(1, 4))
 
     @accepts_qubit_list
     def sqrt_y_dag(self, qubit: int):
-        # self.z_phase(qubit, Fraction(3, 2))
-        # self.x_phase(qubit, Fraction(-1, 2))
-        # self.z_phase(qubit, Fraction(1, 2))
         self.h(qubit)
         self.z(qubit)
         self.g.scalar.add_phase(Fraction(-1, 4))
@@ -279,12 +273,12 @@ class Circuit:
     def r(self, qubit: int):
         """Reset qubit(s) to |0⟩ state."""
         g = self.g
-        if qubit not in self.last_vertex:
+        if qubit not in self._last_vertex:
             v1 = self._add_lane(qubit)
             g.set_type(v1, VertexType.X)
         else:
             r = self._last_row(qubit)
-            v1 = self.last_vertex[qubit]
+            v1 = self._last_vertex[qubit]
             g.set_type(v1, VertexType.X)
             v2 = list(g.neighbors(v1))[0]
             g.remove_edge((v1, v2))
@@ -311,9 +305,9 @@ class Circuit:
         if p > 0:
             self.x_error(qubit, p)
         g = self.g
-        if qubit not in self.last_vertex:
+        if qubit not in self._last_vertex:
             self._add_lane(qubit)
-        v1 = self.last_vertex[qubit]
+        v1 = self._last_vertex[qubit]
         g.set_type(v1, VertexType.Z)
         g.set_phase(v1, f"rec[{len(self._rec)}]")
         self._rec.append(v1)
@@ -360,17 +354,17 @@ class Circuit:
     def cnot(self, control: int, target: int):
         """Apply CNOT gate between control and target qubit(s)."""
         g = self.g
-        if control not in self.last_vertex:
+        if control not in self._last_vertex:
             self._add_lane(control)
-        if target not in self.last_vertex:
+        if target not in self._last_vertex:
             self._add_lane(target)
 
         lr1 = self._last_row(control)
         lr2 = self._last_row(target)
         r = max(lr1, lr2)
 
-        v1 = self.last_vertex[control]
-        v2 = self.last_vertex[target]
+        v1 = self._last_vertex[control]
+        v2 = self._last_vertex[target]
         g.set_type(v1, VertexType.Z)
         g.set_type(v2, VertexType.X)
         g.set_row(v1, r)
@@ -384,23 +378,23 @@ class Circuit:
 
         g.scalar.add_power(1)
 
-    cx = cnot
+    cx = cnot  # alias
 
     @accepts_qubit_list(num_qubits=2)
     def cz(self, control: int, target: int):
         """Apply CZ gate between control and target qubit(s)."""
         g = self.g
-        if control not in self.last_vertex:
+        if control not in self._last_vertex:
             self._add_lane(control)
-        if target not in self.last_vertex:
+        if target not in self._last_vertex:
             self._add_lane(target)
 
         lr1 = self._last_row(control)
         lr2 = self._last_row(target)
         r = max(lr1, lr2)
 
-        v1 = self.last_vertex[control]
-        v2 = self.last_vertex[target]
+        v1 = self._last_vertex[control]
+        v2 = self._last_vertex[target]
         g.set_type(v1, VertexType.Z)
         g.set_type(v2, VertexType.Z)
         g.set_row(v1, r)
@@ -421,10 +415,10 @@ class Circuit:
         self.s(target)
 
     def _error(self, qubit: int, error_type: int, phase: str):
-        if qubit not in self.last_vertex:
+        if qubit not in self._last_vertex:
             self._add_lane(qubit)
         g = self.g
-        v1 = self.last_vertex[qubit]
+        v1 = self._last_vertex[qubit]
         v2 = self._add_dummy(qubit)
         g.add_edge((v1, v2))
 
@@ -434,56 +428,56 @@ class Circuit:
     @accepts_qubit_list
     def x_error(self, qubit: int, p: float):
         """Apply X error with probability p to qubit(s)."""
-        self.key, subkey = jax.random.split(self.key)
-        self.errors.append(Error(p, subkey))
-        self._error(qubit, VertexType.X, f"e{self.num_error_bits}")
-        self.num_error_bits += 1
+        self._key, subkey = jax.random.split(self._key)
+        self.error_channels.append(Error(p, subkey))
+        self._error(qubit, VertexType.X, f"e{self._num_error_bits}")
+        self._num_error_bits += 1
 
     @accepts_qubit_list
     def z_error(self, qubit: int, p: float):
         """Apply Z error with probability p to qubit(s)."""
-        self.key, subkey = jax.random.split(self.key)
-        self.errors.append(Error(p, subkey))
-        self._error(qubit, VertexType.Z, f"e{self.num_error_bits}")
-        self.num_error_bits += 1
+        self._key, subkey = jax.random.split(self._key)
+        self.error_channels.append(Error(p, subkey))
+        self._error(qubit, VertexType.Z, f"e{self._num_error_bits}")
+        self._num_error_bits += 1
 
     @accepts_qubit_list
     def y_error(self, qubit: int, p: float):
         """Apply Y error with probability p to qubit(s)."""
-        self.key, subkey = jax.random.split(self.key)
-        self.errors.append(Error(p, subkey))
-        self._error(qubit, VertexType.Z, f"e{self.num_error_bits}")
-        self._error(qubit, VertexType.X, f"e{self.num_error_bits}")
-        self.num_error_bits += 1
+        self._key, subkey = jax.random.split(self._key)
+        self.error_channels.append(Error(p, subkey))
+        self._error(qubit, VertexType.Z, f"e{self._num_error_bits}")
+        self._error(qubit, VertexType.X, f"e{self._num_error_bits}")
+        self._num_error_bits += 1
 
     @accepts_qubit_list
     def depolarize1(self, qubit: int, p: float):
         """Apply single-qubit depolarizing noise with probability p."""
-        self.key, subkey = jax.random.split(self.key)
-        self.errors.append(Depolarize1(p, subkey))
-        self._error(qubit, VertexType.Z, f"e{self.num_error_bits}")
-        self._error(qubit, VertexType.X, f"e{self.num_error_bits + 1}")
-        self.num_error_bits += 2
+        self._key, subkey = jax.random.split(self._key)
+        self.error_channels.append(Depolarize1(p, subkey))
+        self._error(qubit, VertexType.Z, f"e{self._num_error_bits}")
+        self._error(qubit, VertexType.X, f"e{self._num_error_bits + 1}")
+        self._num_error_bits += 2
 
     @accepts_qubit_list
     def pauli_channel_1(self, qubit: int, px: float, py: float, pz: float):
         """Apply single-qubit Pauli channel with specified error probabilities."""
-        self.key, subkey = jax.random.split(self.key)
-        self.errors.append(PauliChannel1(px, py, pz, subkey))
-        self._error(qubit, VertexType.Z, f"e{self.num_error_bits}")
-        self._error(qubit, VertexType.X, f"e{self.num_error_bits + 1}")
-        self.num_error_bits += 2
+        self._key, subkey = jax.random.split(self._key)
+        self.error_channels.append(PauliChannel1(px, py, pz, subkey))
+        self._error(qubit, VertexType.Z, f"e{self._num_error_bits}")
+        self._error(qubit, VertexType.X, f"e{self._num_error_bits + 1}")
+        self._num_error_bits += 2
 
     @accepts_qubit_list(num_qubits=2)
     def depolarize2(self, qubit_i: int, qubit_j: int, p: float):
         """Apply two-qubit depolarizing noise with probability p."""
-        self.key, subkey = jax.random.split(self.key)
-        self.errors.append(Depolarize2(p, subkey))
-        self._error(qubit_i, VertexType.Z, f"e{self.num_error_bits}")
-        self._error(qubit_i, VertexType.X, f"e{self.num_error_bits + 1}")
-        self._error(qubit_j, VertexType.Z, f"e{self.num_error_bits + 2}")
-        self._error(qubit_j, VertexType.X, f"e{self.num_error_bits + 3}")
-        self.num_error_bits += 4
+        self._key, subkey = jax.random.split(self._key)
+        self.error_channels.append(Depolarize2(p, subkey))
+        self._error(qubit_i, VertexType.Z, f"e{self._num_error_bits}")
+        self._error(qubit_i, VertexType.X, f"e{self._num_error_bits + 1}")
+        self._error(qubit_j, VertexType.Z, f"e{self._num_error_bits + 2}")
+        self._error(qubit_j, VertexType.X, f"e{self._num_error_bits + 3}")
+        self._num_error_bits += 4
 
     @accepts_qubit_list(num_qubits=2)
     def pauli_channel_2(
@@ -507,8 +501,8 @@ class Circuit:
         pzz: float = 0,
     ):
         """Apply two-qubit Pauli channel with specified error probabilities."""
-        self.key, subkey = jax.random.split(self.key)
-        self.errors.append(
+        self._key, subkey = jax.random.split(self._key)
+        self.error_channels.append(
             PauliChannel2(
                 pix,
                 piy,
@@ -528,35 +522,35 @@ class Circuit:
                 subkey,
             )
         )
-        self._error(qubit_i, VertexType.Z, f"e{self.num_error_bits}")
-        self._error(qubit_i, VertexType.X, f"e{self.num_error_bits + 1}")
-        self._error(qubit_j, VertexType.Z, f"e{self.num_error_bits + 2}")
-        self._error(qubit_j, VertexType.X, f"e{self.num_error_bits + 3}")
-        self.num_error_bits += 4
+        self._error(qubit_i, VertexType.Z, f"e{self._num_error_bits}")
+        self._error(qubit_i, VertexType.X, f"e{self._num_error_bits + 1}")
+        self._error(qubit_j, VertexType.Z, f"e{self._num_error_bits + 2}")
+        self._error(qubit_j, VertexType.X, f"e{self._num_error_bits + 3}")
+        self._num_error_bits += 4
 
     @accepts_qubit_list
     def i(self, qubit):
-        if qubit not in self.last_vertex:
+        if qubit not in self._last_vertex:
             self._add_lane(qubit)
-        v = self.last_vertex[qubit]
+        v = self._last_vertex[qubit]
         self.g.set_row(v, self._last_row(qubit) + 1)
 
     def tick(self):
         """Add a tick to the circuit."""
-        if len(self.last_vertex) == 0:
+        if len(self._last_vertex) == 0:
             return
-        r = max(self._last_row(q) for q in self.last_vertex)
-        for q in self.last_vertex:
-            self.g.set_row(self.last_vertex[q], r)
+        r = max(self._last_row(q) for q in self._last_vertex)
+        for q in self._last_vertex:
+            self.g.set_row(self._last_vertex[q], r)
 
     def diagram(self, labels=False):
         """Display the ZX-diagram representation of the circuit."""
         if len(self.g.vertices()) == 0:
             return
         g = self.g.copy()
-        max_row = max(self.g.row(v) for v in self.last_vertex.values())
-        for q in self.last_vertex:
-            g.set_row(self.last_vertex[q], max_row)
+        max_row = max(self.g.row(v) for v in self._last_vertex.values())
+        for q in self._last_vertex:
+            g.set_row(self._last_vertex[q], max_row)
         zx.draw(g, labels=labels)
 
     def detector(self, rec: list[int], *args: Any):
@@ -622,9 +616,9 @@ class Circuit:
         g = self.g.copy()
 
         # clean up last row
-        max_row = max(self.g.row(v) for v in self.last_vertex.values())
-        for q in self.last_vertex:
-            g.set_row(self.last_vertex[q], max_row)
+        max_row = max(self.g.row(v) for v in self._last_vertex.values())
+        for q in self._last_vertex:
+            g.set_row(self._last_vertex[q], max_row)
 
         num_measurements = len(self._rec)
         outputs = [v for v in g.vertices() if g.type(v) == VertexType.BOUNDARY]
@@ -729,7 +723,7 @@ class Circuit:
             else:
                 g.add_edge((n0, n1), EdgeType.HADAMARD)
             g.remove_vertex(vertex)
-        c.errors = []
+        c.error_channels = []
         return c
 
     def without_annotations(self):
@@ -752,7 +746,7 @@ class Circuit:
             if "rec" in label:
                 g.set_phase(vertices[0], 0)
 
-        c.errors = []
+        c.error_channels = []
         c._detectors = []
         c._observables_dict = {}
         c._rec = []

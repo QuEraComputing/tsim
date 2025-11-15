@@ -27,7 +27,7 @@ class BaseCompiledSampler(ABC):
         graph, error_transform = transform_error_basis(graph)
 
         self.channel_sampler = ChannelSampler(
-            error_channels=circuit.errors, error_transform=error_transform
+            error_channels=circuit.error_channels, error_transform=error_transform
         )
 
         m_chars = [f"m{i}" for i in range(len(graph.outputs()))]
