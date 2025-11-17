@@ -561,15 +561,16 @@ class Circuit:
         for q in self._last_vertex:
             self.g.set_row(self._last_vertex[q], r)
 
-    def diagram(self, labels=False):
+    def diagram(self, labels=False) -> BaseGraph:
         """Display the ZX-diagram representation of the circuit."""
         if len(self.g.vertices()) == 0:
-            return
-        g = self.g.copy()
+            return self.g
+        g = self.g.clone()
         max_row = max(self.g.row(v) for v in self._last_vertex.values())
         for q in self._last_vertex:
             g.set_row(self._last_vertex[q], max_row)
         zx.draw(g, labels=labels)
+        return g
 
     def detector(self, rec: list[int], *args: Any):
         """Add a detector that checks parity of measurement records."""
@@ -773,7 +774,7 @@ class Circuit:
             if "det" in label or "obs" in label:
                 for v in vertices:
                     g.remove_vertex(v)
-            if "rec" in label:
+            if "rec" in label or "m" in label:
                 g.set_phase(vertices[0], 0)
 
         c.error_channels = []
@@ -980,3 +981,7 @@ class Circuit:
                     circ.depolarize2(q1, q2, p)
 
         return circ
+
+    @property
+    def tcount(self):
+        return zx.tcount(self.g)
