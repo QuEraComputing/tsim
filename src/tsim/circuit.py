@@ -115,6 +115,7 @@ class Circuit:
 
         self._num_error_bits: int = 0
         self._rec: list[int] = []
+        self._silent_rec: list[int] = []
         self._detectors: list[int] = []
         self._observables_dict: dict[int, int] = {}  # idx: vertex
         self._qubit_to_input: dict[int, int] = {}
@@ -277,6 +278,14 @@ class Circuit:
             v1 = self._add_lane(qubit)
             g.set_type(v1, VertexType.X)
         else:
+            # If the last vertex is not a measurement, we need to perform silent measur.
+            v = self._last_vertex[qubit]
+            neighbors = list(g.neighbors(v))
+            assert len(neighbors) == 1
+            n = neighbors[0]
+            last_vertex_is_measurement = any("rec" in var for var in g._phaseVars[n])
+            if not last_vertex_is_measurement:
+                self._m(qubit, silent=True)
             r = self._last_row(qubit)
             v1 = self._last_vertex[qubit]
             g.set_type(v1, VertexType.X)
@@ -288,6 +297,8 @@ class Circuit:
 
     @accepts_qubit_list
     def rx(self, qubit: int):
+        if qubit in self._last_vertex:
+            self.h(qubit)
         self.r(qubit)
         self.h(qubit)
 
@@ -299,9 +310,7 @@ class Circuit:
         self.m(qubit, p=p)
         self.r(qubit)
 
-    @accepts_qubit_list
-    def m(self, qubit: int, p: float = 0):
-        """Measure qubit(s) in Z basis (optionally noisy)"""
+    def _m(self, qubit: int, p: float = 0, silent: bool = False):
         if p > 0:
             self.x_error(qubit, p)
         g = self.g
@@ -309,10 +318,19 @@ class Circuit:
             self._add_lane(qubit)
         v1 = self._last_vertex[qubit]
         g.set_type(v1, VertexType.Z)
-        g.set_phase(v1, f"rec[{len(self._rec)}]")
-        self._rec.append(v1)
+        if not silent:
+            g.set_phase(v1, f"rec[{len(self._rec)}]")
+            self._rec.append(v1)
+        else:
+            g.set_phase(v1, f"m[{len(self._silent_rec)}]")
+            self._silent_rec.append(v1)
         v2 = self._add_dummy(qubit)
         g.add_edge((v1, v2))
+
+    @accepts_qubit_list
+    def m(self, qubit: int, p: float = 0):
+        """Measure qubit(s) in Z basis (optionally noisy)"""
+        self._m(qubit, p, silent=False)
 
     @accepts_qubit_list
     def mx(self, qubit: int, p: float = 0):
@@ -636,7 +654,7 @@ class Circuit:
             if not len(phase_vars) == 1:
                 continue
             phase = list(phase_vars)[0]
-            if "det" in phase or "obs" in phase or "rec" in phase:
+            if "det" in phase or "obs" in phase or "rec" in phase or "m" in phase:
                 label_to_vertex[phase].append(v)
             if "det" in phase or "obs" in phase:
                 annotation_to_vertex[phase].append(v)
@@ -660,6 +678,18 @@ class Circuit:
                 v3 = g.add_vertex(VertexType.BOUNDARY, qubit=-1, row=i + 1, phase=0)
                 outputs[i] = v3
                 g.add_edge((v0, v3))
+
+        # connect all m[i] vertices to each other
+        for i in range(len(self._silent_rec)):
+            label = f"m[{i}]"
+            vertices = label_to_vertex[label]
+
+            assert len(vertices) == 2
+            v0, v1 = vertices
+            if not g.connected(v0, v1):
+                g.add_edge((v0, v1))
+            g.set_phase(v0, 0)
+            g.set_phase(v1, 0)
 
         if not sample_detectors:
             # sample measurements: remove detectors and observables
