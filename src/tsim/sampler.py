@@ -110,8 +110,9 @@ class BaseCompiledSampler(ABC):
 
             correlated_samples = s[:, num_errors:]
             component_samples.append(correlated_samples)
-
-        return np.concatenate(component_samples, axis=1)[:, self.program.output_order]
+        return np.concatenate(component_samples, axis=1)[
+            :, np.argsort(self.program.output_order)
+        ]
 
     @abstractmethod
     def sample(
