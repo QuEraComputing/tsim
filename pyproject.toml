@@ -124,3 +124,6 @@ norecursedirs = ["pyzx"]
 [tool.pyright]
 include = ["src", "test"]
 exclude = ["src/tsim/external"]
+
+[tool.uv.sources]
+pyzx = { git = "https://github.com/rafaelha/pyzx.git" }

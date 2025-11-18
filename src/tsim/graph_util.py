@@ -4,8 +4,9 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any, Dict, Sequence, Tuple
 
-import tsim.external.pyzx as zx
-from tsim.external.pyzx.graph.base import BaseGraph
+from pyzx.graph.base import BaseGraph
+from pyzx.graph.graph import Graph
+from pyzx.graph.scalar import Scalar
 
 
 @dataclass
@@ -79,7 +80,7 @@ def _induced_subgraph(
 ) -> tuple[BaseGraph, Dict[Any, Any]]:
     """Build the subgraph that is induced by ``vertices``."""
 
-    subgraph = zx.Graph(backend=type(g).backend)
+    subgraph = Graph()
     subgraph.track_phases = g.track_phases
     subgraph.merge_vdata = g.merge_vdata
 
@@ -148,7 +149,8 @@ def transform_error_basis(g: BaseGraph) -> tuple[BaseGraph, dict[str, set[str]]]
 
     # Remove the scalar. Since we have not started the stabilizer rank decomposition.
     # it is safe to remove the overall scalar.
-    g.scalar = zx.Scalar()
+    # TODO: we can only remove the scalar if it is not 0
+    g.scalar = Scalar()
 
     # clean the diagram up a bit
     for v in g.outputs():

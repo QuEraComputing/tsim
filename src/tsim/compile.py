@@ -1,8 +1,7 @@
 from typing import NamedTuple
 
 import jax.numpy as jnp
-
-from tsim.external.pyzx.graph.base import BaseGraph
+from pyzx.graph.base import BaseGraph
 
 
 class CompiledCircuit(NamedTuple):
@@ -75,7 +74,7 @@ def compile_circuit(
             bitstr = [0] * n_params
             for v in g_i.scalar.phasenodevars[term]:
                 bitstr[char_to_idx[v]] = 1
-            const_term = int(g_i.scalar.phasenodes[term] * 4)
+            const_term = int(g_i.scalar.phasenodes[term] * 4)  # type: ignore[arg-type]
 
             g_coord_ab.append(i)
             ab_term_types_list.append(4)
@@ -235,7 +234,7 @@ def compile_circuit(
     # Static data
     # ========================================================================
     phase_indices = jnp.array(
-        [int(g.scalar.phase * 4) for g in g_list], dtype=jnp.uint8
+        [int(float(g.scalar.phase) * 4) for g in g_list], dtype=jnp.uint8  # type: ignore[arg-type]
     )
     power2 = jnp.array([g.scalar.power2 for g in g_list], dtype=jnp.int32)
     floatfactor = jnp.array([g.scalar.floatfactor for g in g_list], dtype=jnp.complex64)

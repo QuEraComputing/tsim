@@ -4,10 +4,10 @@ from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
+import pyzx as zx
+from pyzx.graph.base import BaseGraph
 
-import tsim.external.pyzx as zx
 from tsim.compile import CompiledCircuit, compile_circuit
-from tsim.external.pyzx.graph.base import BaseGraph
 from tsim.stabrank import find_stab
 
 
@@ -31,7 +31,7 @@ class Decomposer:
             g0.apply_effect(effect)
             for i, v in enumerate(output_vertices[: o + 1]):
                 g0.set_phase(v, self.m_chars[i])
-            zx.full_reduce(g0)
+            zx.full_reduce(g0, paramSafe=True)
             graphs.append(g0)
 
         self.plugged_graphs = graphs

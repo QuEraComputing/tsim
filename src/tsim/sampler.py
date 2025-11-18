@@ -5,8 +5,8 @@ from typing import Literal, overload
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pyzx as zx
 
-import tsim.external.pyzx as zx
 from tsim.channels import ChannelSampler
 from tsim.circuit import Circuit
 from tsim.decomposer import Decomposer, DecomposerArray
@@ -22,7 +22,7 @@ class BaseCompiledSampler(ABC):
         self.circuit = circuit
         graph = circuit.get_sampling_graph(sample_detectors=sample_detectors)
 
-        zx.full_reduce(graph)
+        zx.full_reduce(graph, paramSafe=True)
 
         graph, error_transform = transform_error_basis(graph)
 
@@ -46,7 +46,8 @@ class BaseCompiledSampler(ABC):
                     m_chars=m_chars,
                 )
             )
-        self.program = DecomposerArray(components=decomposers)
+        sorted_decomposers = sorted(decomposers, key=lambda x: len(x.output_indices))
+        self.program = DecomposerArray(components=sorted_decomposers)
 
         self.program.decompose()
 

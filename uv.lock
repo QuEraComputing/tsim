@@ -2511,7 +2511,7 @@ wheels = [
 [[package]]
 name = "pyzx"
 version = "0.9.0"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/rafaelha/pyzx.git#812d441dde6c2b0a7617e62561874f43898f5ad9" }
 dependencies = [
     { name = "ipywidgets" },
     { name = "lark" },
@@ -2520,10 +2520,6 @@ dependencies = [
     { name = "pyperclip" },
     { name = "tqdm" },
     { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/22/b37c477bf79249bd2655267de071cb6ab7dbfe39579cfaeb6c3e99e26667/pyzx-0.9.0.tar.gz", hash = "sha256:9e1f4c7e490c6862750a0a0021d1c830eaff948185240eb88b4902105f7e27df", size = 327849, upload-time = "2025-01-30T20:35:59.942Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/21/78/9b1a64fa38f79d9f93289ed405c880da992ce106236a62bebf700a30100e/pyzx-0.9.0-py3-none-any.whl", hash = "sha256:13211a5922b1b79460c22e7cb685448261145e90bf30a29616f8058982a47b3f", size = 358711, upload-time = "2025-01-30T20:35:57.123Z" },
 ]
 
 [[package]]
@@ -3065,7 +3061,7 @@ requires-dist = [
     { name = "jax", specifier = ">=0.6.2" },
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "pyperclip", specifier = ">=1.11.0" },
-    { name = "pyzx", specifier = ">=0.9.0" },
+    { name = "pyzx", git = "https://github.com/rafaelha/pyzx.git" },
     { name = "stim", specifier = ">=1.15.0" },
     { name = "sympy", specifier = ">=1.14.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
