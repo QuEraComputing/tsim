@@ -21,14 +21,17 @@ class Decomposer:
     compiled_circuits: list[CompiledCircuit] | None = None
     f_selection: jax.Array | None = None
 
-    def plug_outputs(self) -> list[BaseGraph]:
+    def plug_outputs(self, autoregressive: bool = True) -> list[BaseGraph]:
         graphs: list[BaseGraph] = []
         num_outputs = len(self.graph.outputs())
-        for o in range(num_outputs):
+        for o in range(num_outputs) if autoregressive else [-1, num_outputs - 1]:
             g0 = self.graph.copy()
             output_vertices = list(g0.outputs())
             effect = "0" * (o + 1) + "+" * (num_outputs - o - 1)
             g0.apply_effect(effect)
+            g0.scalar.add_power(
+                (num_outputs - o - 1)
+            )  # compensate power of the trace effect
             for i, v in enumerate(output_vertices[: o + 1]):
                 g0.set_phase(v, self.m_chars[i])
             zx.full_reduce(g0, paramSafe=True)
@@ -37,8 +40,8 @@ class Decomposer:
         self.plugged_graphs = graphs
         return graphs
 
-    def decompose(self) -> None:
-        graphs = self.plug_outputs()
+    def decompose(self, autoregressive: bool = True) -> None:
+        graphs = self.plug_outputs(autoregressive=autoregressive)
         circuits: list[CompiledCircuit] = []
         chars = self.f_chars + self.m_chars
         num_errors = len(self.f_chars)
@@ -48,7 +51,18 @@ class Decomposer:
             zx.full_reduce(g_copy, paramSafe=True)
             g_copy.normalize()
             g_list = find_stab(g_copy)
-            circuits.append(compile_circuit(g_list, num_errors + i + 1, chars))
+            if autoregressive:
+                circuits.append(compile_circuit(g_list, num_errors + i + 1, chars))
+            else:
+                if i == 0:
+                    # just normalization
+                    circuits.append(compile_circuit(g_list, num_errors, chars))
+                else:
+                    # all outputs have variables
+                    num_outsputs = len(self.graph.outputs())
+                    circuits.append(
+                        compile_circuit(g_list, num_errors + num_outsputs, chars)
+                    )
 
         self.compiled_circuits = circuits
         self.f_selection = jnp.array(
@@ -67,6 +81,6 @@ class DecomposerArray:
             ord_list.extend(component.output_indices)
         return jnp.array(ord_list, dtype=jnp.int32)
 
-    def decompose(self) -> None:
+    def decompose(self, autoregressive: bool = True) -> None:
         for component in self.components:
-            component.decompose()
+            component.decompose(autoregressive=autoregressive)

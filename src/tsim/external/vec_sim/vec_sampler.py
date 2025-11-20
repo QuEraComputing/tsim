@@ -14,6 +14,7 @@ Modifications:
 """
 
 import random
+from typing import Literal, Union, overload
 
 import numpy as np
 import stim
@@ -22,7 +23,9 @@ from tsim.external.vec_sim import VecSim
 
 
 class VecSampler:
-    def __init__(self, stim_circuit: stim.Circuit, sweep_bit_randomization: bool):
+    def __init__(
+        self, stim_circuit: stim.Circuit, sweep_bit_randomization: bool = False
+    ):
         self.circuit = stim_circuit
         self.sweep_bit_randomization = sweep_bit_randomization
 
@@ -43,10 +46,35 @@ class VecSampler:
             np.array(observables, dtype=np.uint8),
         )
 
+    def state_vector(self) -> np.ndarray:
+        return sample_circuit_with_vec_sim_return_data(
+            self.circuit,
+            self.sweep_bit_randomization,
+            return_state_vector=True,
+        )
+
+
+@overload
+def sample_circuit_with_vec_sim_return_data(
+    circuit: stim.Circuit,
+    sweep_bit_randomization: bool,
+    return_state_vector: Literal[False] = False,
+) -> tuple[list[bool], list[bool], list[bool]]: ...
+
+
+@overload
+def sample_circuit_with_vec_sim_return_data(
+    circuit: stim.Circuit,
+    sweep_bit_randomization: bool,
+    return_state_vector: Literal[True],
+) -> np.ndarray: ...
+
 
 def sample_circuit_with_vec_sim_return_data(
-    circuit: stim.Circuit, sweep_bit_randomization: bool
-) -> tuple[list[bool], list[bool], list[bool]]:
+    circuit: stim.Circuit,
+    sweep_bit_randomization: bool,
+    return_state_vector: bool = False,
+) -> Union[tuple[list[bool], list[bool], list[bool]], np.ndarray]:
     sim = VecSim()
     measurements = []
     detectors = []
@@ -58,6 +86,7 @@ def sample_circuit_with_vec_sim_return_data(
     for q in range(circuit.num_qubits):
         sim.do_qalloc_z(q)
     for inst in circuit:
+        assert not isinstance(inst, stim.CircuitRepeatBlock)
         if inst.name == "S" and inst.tag == "T":
             for q in inst.targets_copy():
                 sim.do_t(q.qubit_value)
@@ -72,4 +101,6 @@ def sample_circuit_with_vec_sim_return_data(
                 out_detectors=detectors,
                 out_observables=observables,
             )
+    if return_state_vector:
+        return sim.normalized_state()
     return measurements, detectors, observables

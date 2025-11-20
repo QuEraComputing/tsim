@@ -14,6 +14,98 @@ from tsim.evaluate import evaluate_batch
 from tsim.graph_util import connected_components, transform_error_basis
 
 
+def get_repr(program: DecomposerArray) -> str:
+    c_graphs = []
+    c_params = []
+    c_ab_terms = []
+    c_c_terms = []
+    c_d_terms = []
+    num_circuits = 0
+    for component in program.components:
+        if component.compiled_circuits is None:
+            continue
+        for circuit in component.compiled_circuits:
+            c_graphs.append(circuit.num_graphs)
+            c_params.append(circuit.n_params)
+            c_ab_terms.append(len(circuit.ab_graph_ids))
+            c_c_terms.append(len(circuit.c_graph_ids))
+            c_d_terms.append(len(circuit.d_graph_ids))
+            num_circuits += 1
+    return (
+        f"CompiledSampler({num_circuits} outputs, {np.sum(c_graphs)} graphs, "
+        f"{np.sum(c_params)} parameters, {np.sum(c_ab_terms)} AB terms, "
+        f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms)"
+    )
+
+
+class CompiledProbSampler(ABC):
+    """Quantum circuit sampler using ZX-calculus based stabilizer rank decomposition."""
+
+    def __init__(self, circuit: Circuit, sample_detectors: bool = False):
+        """Create a sampler from pre-built sampler resources."""
+        self.circuit = circuit
+        graph = circuit.get_sampling_graph(sample_detectors=sample_detectors)
+
+        zx.full_reduce(graph, paramSafe=True)
+
+        graph, error_transform = transform_error_basis(graph)
+
+        self.channel_sampler = ChannelSampler(
+            error_channels=circuit.error_channels, error_transform=error_transform
+        )
+
+        m_chars = [f"m{i}" for i in range(len(graph.outputs()))]
+
+        decomposers: list[Decomposer] = []
+        for component in connected_components(graph):
+            error_chars = set()
+            for v in component.graph.vertices():
+                error_chars |= component.graph._phaseVars[v]
+
+            decomposers.append(
+                Decomposer(
+                    graph=component.graph,
+                    output_indices=component.output_indices,
+                    f_chars=sorted(error_chars),
+                    m_chars=m_chars,
+                )
+            )
+        sorted_decomposers = sorted(decomposers, key=lambda x: len(x.output_indices))
+        self.program = DecomposerArray(components=sorted_decomposers)
+
+        self.program.decompose(autoregressive=False)
+
+        self._key = jax.random.key(0)
+
+    def __repr__(self):
+        return get_repr(self.program)
+
+    def probabilities(self, state: np.ndarray, *, batch_size: int) -> jax.Array:
+        """Sample a batch of measurement/detector outcomes."""
+        f_samples = self.channel_sampler.sample(batch_size)
+        p_batch_total = [jnp.ones(batch_size, dtype=jnp.float32) for _ in range(2)]
+
+        for component in self.program.components:
+            if component.f_selection is None or component.compiled_circuits is None:
+                raise RuntimeError("Sampling plan not decomposed before sampling.")
+            assert len(component.compiled_circuits) == 2
+            for i in range(2):
+                circuit = component.compiled_circuits[i]
+
+                s = f_samples[:, component.f_selection]
+
+                component_state = state[component.output_indices]
+                tiled_component_state = jnp.tile(component_state, (batch_size, 1))
+
+                full_state = jnp.hstack([s, tiled_component_state]) if i == 1 else s
+
+                p_batch = jnp.abs(evaluate_batch(circuit, full_state))
+
+                p_batch_total[i] *= p_batch
+
+        return p_batch_total[1] / p_batch_total[0]
+
+
 class BaseCompiledSampler(ABC):
     """Quantum circuit sampler using ZX-calculus based stabilizer rank decomposition."""
 
@@ -54,27 +146,7 @@ class BaseCompiledSampler(ABC):
         self._key = jax.random.key(0)
 
     def __repr__(self):
-        c_graphs = []
-        c_params = []
-        c_ab_terms = []
-        c_c_terms = []
-        c_d_terms = []
-        num_circuits = 0
-        for component in self.program.components:
-            if component.compiled_circuits is None:
-                continue
-            for circuit in component.compiled_circuits:
-                c_graphs.append(circuit.num_graphs)
-                c_params.append(circuit.n_params)
-                c_ab_terms.append(len(circuit.ab_graph_ids))
-                c_c_terms.append(len(circuit.c_graph_ids))
-                c_d_terms.append(len(circuit.d_graph_ids))
-                num_circuits += 1
-        return (
-            f"CompiledSampler({num_circuits} outputs, {np.sum(c_graphs)} graphs, "
-            f"{np.sum(c_params)} parameters, {np.sum(c_ab_terms)} AB terms, "
-            f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms)"
-        )
+        return get_repr(self.program)
 
     def sample_batch(self, batch_size: int) -> np.ndarray:
         """Sample a batch of measurement/detector outcomes."""
