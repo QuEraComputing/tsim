@@ -4,9 +4,9 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any, Dict, Sequence, Tuple
 
-from pyzx.graph.base import BaseGraph
-from pyzx.graph.graph import Graph
-from pyzx.graph.scalar import Scalar
+from tsim.external.pyzx.graph.base import BaseGraph
+from tsim.external.pyzx.graph.graph import Graph
+from tsim.external.pyzx.graph.scalar import Scalar
 
 
 @dataclass

@@ -4,10 +4,10 @@ from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
-import pyzx as zx
-from pyzx.graph.base import BaseGraph
 
+import tsim.external.pyzx as zx
 from tsim.compile import CompiledCircuit, compile_circuit
+from tsim.external.pyzx.graph.base import BaseGraph
 from tsim.stabrank import find_stab
 
 
