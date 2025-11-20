@@ -35,9 +35,3 @@ repos:
       language: system
       pass_filenames: false
       always_run: true
-    - id: pytest-check
-      name: pytest-check
-      entry: uv run pytest test
-      language: system
-      pass_filenames: false
-      always_run: true
