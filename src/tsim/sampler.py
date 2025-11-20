@@ -80,7 +80,7 @@ class CompiledProbSampler(ABC):
     def __repr__(self):
         return get_repr(self.program)
 
-    def probabilities(self, state: np.ndarray, *, batch_size: int) -> jax.Array:
+    def probabilities(self, state: np.ndarray, *, batch_size: int) -> np.ndarray:
         """Sample a batch of measurement/detector outcomes."""
         f_samples = self.channel_sampler.sample(batch_size)
         p_batch_total = [jnp.ones(batch_size, dtype=jnp.float32) for _ in range(2)]
@@ -103,7 +103,7 @@ class CompiledProbSampler(ABC):
 
                 p_batch_total[i] *= p_batch
 
-        return p_batch_total[1] / p_batch_total[0]
+        return np.array(p_batch_total[1] / p_batch_total[0])
 
 
 class BaseCompiledSampler(ABC):
