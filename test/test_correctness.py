@@ -113,7 +113,6 @@ def samples_to_ints(samples: np.ndarray) -> np.ndarray:
     return samples @ powers
 
 
-@pytest.mark.slow
 @pytest.mark.parametrize("seed", [0, 1, 2])
 def test_sampler(seed):
     num_qubits = 3

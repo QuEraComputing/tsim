@@ -17,7 +17,8 @@ from tsim.graph_util import connected_components, transform_error_basis
 def get_repr(program: DecomposerArray) -> str:
     c_graphs = []
     c_params = []
-    c_ab_terms = []
+    c_a_terms = []
+    c_b_terms = []
     c_c_terms = []
     c_d_terms = []
     num_circuits = 0
@@ -27,13 +28,15 @@ def get_repr(program: DecomposerArray) -> str:
         for circuit in component.compiled_circuits:
             c_graphs.append(circuit.num_graphs)
             c_params.append(circuit.n_params)
-            c_ab_terms.append(len(circuit.ab_graph_ids))
+            c_a_terms.append(len(circuit.a_graph_ids))
+            c_b_terms.append(len(circuit.b_graph_ids))
             c_c_terms.append(len(circuit.c_graph_ids))
             c_d_terms.append(len(circuit.d_graph_ids))
             num_circuits += 1
     return (
         f"CompiledSampler({num_circuits} outputs, {np.sum(c_graphs)} graphs, "
-        f"{np.sum(c_params)} parameters, {np.sum(c_ab_terms)} AB terms, "
+        f"{np.sum(c_params)} parameters, {np.sum(c_a_terms)} A terms, "
+        f"{np.sum(c_b_terms)} B terms, "
         f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms)"
     )
 

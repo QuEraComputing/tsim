@@ -21,19 +21,30 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
     phase_lut = jnp.exp(1j * jnp.pi * jnp.arange(8) / 4)
 
     # ====================================================================
-    # TYPE A/B: Node and Half-Pi Terms
+    # TYPE A: Node Terms (1 + e^(i*alpha))
     # ====================================================================
-    rowsum = jnp.sum(circuit.ab_param_bits * param_vals, axis=1) % 2
-    phase_idx = (
-        ((4 * rowsum + circuit.ab_const_phases) % 8) * circuit.ab_term_types // 4
+    rowsum_a = jnp.sum(circuit.a_param_bits * param_vals, axis=1) % 2
+    phase_idx_a = (4 * rowsum_a + circuit.a_const_phases) % 8
+    term_vals_a = 1 + phase_lut[phase_idx_a]
+
+    summands_a = jax.ops.segment_prod(
+        term_vals_a,
+        circuit.a_graph_ids,
+        num_segments=num_graphs,
+        indices_are_sorted=True,
     )
 
-    term_vals_ab = phase_lut[phase_idx]
-    term_vals_ab = jnp.where(circuit.ab_term_types == 4, term_vals_ab + 1, term_vals_ab)
+    # ====================================================================
+    # TYPE B: Half-Pi Terms (e^(i*beta))
+    # ====================================================================
+    rowsum_b = jnp.sum(circuit.b_param_bits * param_vals, axis=1) % 2
+    # If rowsum is 1, phase is term_type (2 or 6). If 0, phase is 0.
+    phase_idx_b = (rowsum_b * circuit.b_term_types) % 8
+    term_vals_b = phase_lut[phase_idx_b]
 
-    summands_ab = jax.ops.segment_prod(
-        term_vals_ab,
-        circuit.ab_graph_ids,
+    summands_b = jax.ops.segment_prod(
+        term_vals_b,
+        circuit.b_graph_ids,
         num_segments=num_graphs,
         indices_are_sorted=True,
     )
@@ -75,7 +86,8 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
     # ====================================================================
     root2 = jnp.sqrt(2.0)
     contributions = (
-        summands_ab
+        summands_a
+        * summands_b
         * summands_c
         * summands_d
         * phase_lut[circuit.phase_indices]

@@ -18,11 +18,15 @@ class CompiledCircuit(NamedTuple):
     num_graphs: int
     n_params: int
 
-    # Type A/B: Node and Half-Pi Terms
-    ab_term_types: jnp.ndarray  # shape: (n_ab_terms,), dtype: uint8, values: {2, 4, 6}
-    ab_const_phases: jnp.ndarray  # shape: (n_ab_terms,), dtype: uint8, values: 0-7
-    ab_param_bits: jnp.ndarray  # shape: (n_ab_terms, n_params), dtype: uint8
-    ab_graph_ids: jnp.ndarray  # shape: (n_ab_terms,), dtype: int32
+    # Type A: Node Terms (1 + e^(i*alpha))
+    a_const_phases: jnp.ndarray  # shape: (n_a_terms,), dtype: uint8, values: 0-7
+    a_param_bits: jnp.ndarray  # shape: (n_a_terms, n_params), dtype: uint8
+    a_graph_ids: jnp.ndarray  # shape: (n_a_terms,), dtype: int32
+
+    # Type B: Half-Pi Terms (e^(i*beta))
+    b_term_types: jnp.ndarray  # shape: (n_b_terms,), dtype: uint8, values: {2, 6}
+    b_param_bits: jnp.ndarray  # shape: (n_b_terms, n_params), dtype: uint8
+    b_graph_ids: jnp.ndarray  # shape: (n_b_terms,), dtype: int32
 
     # Type C: Pi-Pair Terms
     c_const_bits_a: jnp.ndarray  # shape: (n_c_terms,), dtype: uint8, values: {0, 1}
@@ -62,12 +66,11 @@ def compile_circuit(
     char_to_idx = {char: i for i, char in enumerate(chars)}
 
     # ========================================================================
-    # Type A/B compilation (phase-node/ half-π)
+    # Type A compilation (phase-node)
     # ========================================================================
-    ab_term_types_list = []
-    ab_const_phases_list = []
-    ab_param_bits_list = []
-    g_coord_ab = []
+    a_const_phases_list = []
+    a_param_bits_list = []
+    g_coord_a = []
 
     for i in range(num_graphs):
         g_i = g_list[i]
@@ -77,11 +80,35 @@ def compile_circuit(
                 bitstr[char_to_idx[v]] = 1
             const_term = int(g_i.scalar.phasenodes[term] * 4)  # type: ignore[arg-type]
 
-            g_coord_ab.append(i)
-            ab_term_types_list.append(4)
-            ab_const_phases_list.append(const_term)
-            ab_param_bits_list.append(bitstr)
+            g_coord_a.append(i)
+            a_const_phases_list.append(const_term)
+            a_param_bits_list.append(bitstr)
 
+    a_const_phases = (
+        jnp.array(a_const_phases_list, dtype=jnp.uint8)
+        if a_const_phases_list
+        else jnp.zeros((0,), dtype=jnp.uint8)
+    )
+    a_param_bits = (
+        jnp.array(a_param_bits_list, dtype=jnp.uint8)
+        if a_param_bits_list
+        else jnp.zeros((0, n_params), dtype=jnp.uint8)
+    )
+    a_graph_ids = (
+        jnp.array(g_coord_a, dtype=jnp.int32)
+        if g_coord_a
+        else jnp.zeros((0,), dtype=jnp.int32)
+    )
+
+    # ========================================================================
+    # Type B compilation (half-π)
+    # ========================================================================
+    b_term_types_list = []
+    b_param_bits_list = []
+    g_coord_b = []
+
+    for i in range(num_graphs):
+        g_i = g_list[i]
         assert set(g_i.scalar.phasevars_halfpi.keys()) <= {1, 3}
         for j in [1, 3]:
             if j not in g_i.scalar.phasevars_halfpi:
@@ -91,30 +118,25 @@ def compile_circuit(
                 for v in g_i.scalar.phasevars_halfpi[j][term]:
                     bitstr[char_to_idx[v]] = 1
                 ttype = int((j / 2) * 4)
+                assert ttype != 4
 
-                g_coord_ab.append(i)
-                ab_term_types_list.append(ttype)
-                ab_const_phases_list.append(0)
-                ab_param_bits_list.append(bitstr)
+                g_coord_b.append(i)
+                b_term_types_list.append(ttype)
+                b_param_bits_list.append(bitstr)
 
-    ab_term_types = (
-        jnp.array(ab_term_types_list, dtype=jnp.uint8)
-        if ab_term_types_list
+    b_term_types = (
+        jnp.array(b_term_types_list, dtype=jnp.uint8)
+        if b_term_types_list
         else jnp.zeros((0,), dtype=jnp.uint8)
     )
-    ab_const_phases = (
-        jnp.array(ab_const_phases_list, dtype=jnp.uint8)
-        if ab_const_phases_list
-        else jnp.zeros((0,), dtype=jnp.uint8)
-    )
-    ab_param_bits = (
-        jnp.array(ab_param_bits_list, dtype=jnp.uint8)
-        if ab_param_bits_list
+    b_param_bits = (
+        jnp.array(b_param_bits_list, dtype=jnp.uint8)
+        if b_param_bits_list
         else jnp.zeros((0, n_params), dtype=jnp.uint8)
     )
-    ab_graph_ids = (
-        jnp.array(g_coord_ab, dtype=jnp.int32)
-        if g_coord_ab
+    b_graph_ids = (
+        jnp.array(g_coord_b, dtype=jnp.int32)
+        if g_coord_b
         else jnp.zeros((0,), dtype=jnp.int32)
     )
 
@@ -243,10 +265,12 @@ def compile_circuit(
     return CompiledCircuit(
         num_graphs=num_graphs,
         n_params=n_params,
-        ab_term_types=ab_term_types,
-        ab_const_phases=ab_const_phases,
-        ab_param_bits=ab_param_bits,
-        ab_graph_ids=ab_graph_ids,
+        a_const_phases=a_const_phases,
+        a_param_bits=a_param_bits,
+        a_graph_ids=a_graph_ids,
+        b_term_types=b_term_types,
+        b_param_bits=b_param_bits,
+        b_graph_ids=b_graph_ids,
         c_const_bits_a=c_const_bits_a,
         c_param_bits_a=c_param_bits_a,
         c_const_bits_b=c_const_bits_b,
