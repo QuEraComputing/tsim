@@ -86,8 +86,8 @@ if __name__ == "__main__":
             scalars, segment_ids, num_segments, True
         ).block_until_ready()
         _ = jax.ops.segment_prod(
-            complex_vals, segment_ids, num_segments, True
-        ).block_until_ready()
+            complex_vals.real, segment_ids, num_segments, True
+        ).block_until_ready()  # without .real this leads to segmentation fault on GPU
 
         # Time Exact
         start = time.time()
@@ -102,7 +102,7 @@ if __name__ == "__main__":
         start = time.time()
         for _ in range(10):
             _ = jax.ops.segment_prod(
-                complex_vals, segment_ids, num_segments, True
+                complex_vals.real, segment_ids, num_segments, True
             ).block_until_ready()
         end = time.time()
         time_complex = (end - start) / 10 * 1000
@@ -111,6 +111,7 @@ if __name__ == "__main__":
             f"{N:<10} | {time_exact:<15.3f} | {time_complex:<15.3f} | {time_exact/time_complex:<10.2f}"
         )
 
+        # CPU:
         # N          | Exact (ms)      | Complex (ms)    | Ratio
         # -------------------------------------------------------
         # 1000       | 0.041           | 0.177           | 0.23
@@ -119,5 +120,15 @@ if __name__ == "__main__":
         # 1000000    | 7.087           | 5.016           | 1.41
         # 10000000   | 111.526         | 42.580          | 2.62
         # 100000000  | 1250.639        | 466.575         | 2.68
+
+        # GPU:
+        # N          | Exact (ms)      | Complex (ms)    | Ratio
+        # -------------------------------------------------------
+        # 1000       | 0.074           | 0.279           | 0.27
+        # 10000      | 0.109           | 0.344           | 0.32
+        # 100000     | 0.119           | 0.353           | 0.34
+        # 1000000    | 0.257           | 0.376           | 0.68
+        # 10000000   | 2.096           | 0.591           | 3.55
+        # 100000000  | 23.765          | 6.200           | 3.83
 
         # TODO: can exact be improved to outperform complex?

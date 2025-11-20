@@ -92,20 +92,28 @@ def segment_scalar_prod(
 
     # Identify the last element of each contiguous block of segment_ids
     # The last element holds the total product for that segment block.
-    # We cannot use boolean masking directly in JIT for shape-dynamic selection
-    # unless we rely on 'where' and static shapes.
-    # Since we just need to scatter to 'num_segments', we can use a trick:
-    # We scatter ALL scanned values to their segment_ids.
-    # Because indices_are_sorted (or we sorted them), the last write to a
-    # segment_id will be the final accumulated value for that segment.
+    #
+    # We must ensure that we only write once to each segment location to avoid
+    # non-deterministic behavior on GPU (where scatter collisions are undefined).
+    # Since segment_ids is sorted, we can identify the last occurrence of each ID.
+
+    is_last = jnp.concatenate([segment_ids[:-1] != segment_ids[1:], jnp.array([True])])
+
+    # Use a dummy index for non-last elements.
+    # We extend res by 1 to have a trash bin at index 'num_segments'.
+    dump_idx = num_segments
+    scatter_indices = jnp.where(is_last, segment_ids, dump_idx)
 
     # Initialize result with multiplicative identity [1, 0, 0, 0]
-    res = jnp.tile(jnp.array([1, 0, 0, 0], dtype=data.dtype), (num_segments, 1))
+    # Add one extra row for the dump
+    res = jnp.tile(jnp.array([1, 0, 0, 0], dtype=data.dtype), (num_segments + 1, 1))
 
-    # Scatter all values. The last write wins in sequential order for .at[].set()
-    res = res.at[segment_ids].set(scanned_vals)
+    # Scatter values. Only the last value of each segment is written to a valid index.
+    # The rest go to the dump index.
+    res = res.at[scatter_indices].set(scanned_vals)
 
-    return res
+    # Remove the dump row
+    return res[:num_segments]
 
 
 def scalar_to_complex(data: jax.Array) -> jax.Array:
