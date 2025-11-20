@@ -1,5 +1,5 @@
-import pyzx as zx
-from pyzx.graph.base import BaseGraph
+import tsim.external.pyzx as zx
+from tsim.external.pyzx.graph.base import BaseGraph
 
 
 def find_stab(graph: BaseGraph) -> list[BaseGraph]:

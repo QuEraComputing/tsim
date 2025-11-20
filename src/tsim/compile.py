@@ -1,7 +1,8 @@
 from typing import NamedTuple
 
 import jax.numpy as jnp
-from pyzx.graph.base import BaseGraph
+
+from tsim.external.pyzx.graph.base import BaseGraph
 
 
 class CompiledCircuit(NamedTuple):

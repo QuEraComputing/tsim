@@ -6,13 +6,10 @@ from functools import wraps
 from typing import Any, Callable, Iterable, TypeVar, overload
 
 import jax
-import pyzx as zx
 import stim
 from jax import Array
-from pyzx.graph.base import BaseGraph
-from pyzx.graph.graph_s import GraphS
-from pyzx.utils import EdgeType, VertexType
 
+import tsim.external.pyzx as zx
 from tsim.channels import (
     Channel,
     Depolarize1,
@@ -21,6 +18,9 @@ from tsim.channels import (
     PauliChannel1,
     PauliChannel2,
 )
+from tsim.external.pyzx.graph.base import BaseGraph
+from tsim.external.pyzx.graph.graph_s import GraphS
+from tsim.external.pyzx.utils import EdgeType, VertexType
 
 _T = TypeVar("_T")
 

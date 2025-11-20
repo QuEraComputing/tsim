@@ -5,8 +5,8 @@ from typing import Literal, overload
 import jax
 import jax.numpy as jnp
 import numpy as np
-import pyzx as zx
 
+import tsim.external.pyzx as zx
 from tsim.channels import ChannelSampler
 from tsim.circuit import Circuit
 from tsim.decomposer import Decomposer, DecomposerArray
