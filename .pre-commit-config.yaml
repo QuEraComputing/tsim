@@ -34,4 +34,4 @@ repos:
       entry: uv run pyright src test
       language: system
       pass_filenames: false
-      always_run: true
+      always_run: false
