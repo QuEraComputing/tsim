@@ -34,14 +34,15 @@ from . import simplify
 from .circuit import Circuit
 from .graph import Graph
 from .graph.base import BaseGraph,VT,ET
+from .graph.scalar import DyadicNumber
 
-MAGIC_GLOBAL = -(7+5*sq2)/(2+2j)
-MAGIC_B60 = -16 + 12*sq2
-MAGIC_B66 = 96 - 68*sq2
-MAGIC_E6 = 10 - 7*sq2
-MAGIC_O6 = -14 + 10*sq2
-MAGIC_K6 = 7 - 5*sq2
-MAGIC_PHI = 10 - 7*sq2
+MAGIC_GLOBAL = DyadicNumber(k=2, a=-7, b=0, c=7, d=-10)
+MAGIC_B60 = DyadicNumber(k=-2, a=-4, b=3, c=0, d=3)
+MAGIC_B66 = DyadicNumber(k=-2, a=24, b=-17, c=0, d=-17)
+MAGIC_E6 = DyadicNumber(k=0, a=10, b=-7, c=0, d=-7)
+MAGIC_O6 = DyadicNumber(k=-1, a=-7, b=5, c=0, d=5)
+MAGIC_K6 = DyadicNumber(k=0, a=7, b=-5, c=0, d=-5)
+MAGIC_PHI = DyadicNumber(k=0, a=10, b=-7, c=0, d=-7)
 
 class SumGraph(object):
     """Container class for a sum of ZX-diagrams"""

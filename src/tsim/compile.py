@@ -3,6 +3,7 @@ from typing import NamedTuple
 import jax.numpy as jnp
 
 from tsim.external.pyzx.graph.base import BaseGraph
+from tsim.external.pyzx.graph.scalar import DyadicNumber
 
 
 class CompiledCircuit(NamedTuple):
@@ -28,14 +29,14 @@ class CompiledCircuit(NamedTuple):
     b_param_bits: jnp.ndarray  # shape: (n_b_terms, n_params), dtype: uint8
     b_graph_ids: jnp.ndarray  # shape: (n_b_terms,), dtype: int32
 
-    # Type C: Pi-Pair Terms
+    # Type C: Pi-Pair Terms (e^(i*Psi*Phi))
     c_const_bits_a: jnp.ndarray  # shape: (n_c_terms,), dtype: uint8, values: {0, 1}
     c_param_bits_a: jnp.ndarray  # shape: (n_c_terms, n_params), dtype: uint8
     c_const_bits_b: jnp.ndarray  # shape: (n_c_terms,), dtype: uint8, values: {0, 1}
     c_param_bits_b: jnp.ndarray  # shape: (n_c_terms, n_params), dtype: uint8
     c_graph_ids: jnp.ndarray  # shape: (n_c_terms,), dtype: int32
 
-    # Type D: Phase Pairs
+    # Type D: Phase Pairs (1 + e^a + e^b - e^(a+b))
     d_const_alpha: jnp.ndarray  # shape: (n_d_terms,), dtype: uint8, values: 0-7
     d_const_beta: jnp.ndarray  # shape: (n_d_terms,), dtype: uint8, values: 0-7
     d_param_bits_a: jnp.ndarray  # shape: (n_d_terms, n_params), dtype: uint8
@@ -43,10 +44,9 @@ class CompiledCircuit(NamedTuple):
     d_graph_ids: jnp.ndarray  # shape: (n_d_terms,), dtype: int32
 
     # Static per-graph data
-    # Shape: (num_graphs,)
-    phase_indices: jnp.ndarray  # dtype: uint8 (values 0-7)
-    power2: jnp.ndarray  # dtype: int32
-    floatfactor: jnp.ndarray  # dtype: complex64
+    phase_indices: jnp.ndarray  # shape: (num_graphs,), dtype: uint8 (values 0-7)
+    power2: jnp.ndarray  # shape: (num_graphs,), dtype: int32
+    floatfactor: jnp.ndarray  # shape: (num_graphs, 4), dtype: int32
 
 
 def compile_circuit(
@@ -259,8 +259,25 @@ def compile_circuit(
     phase_indices = jnp.array(
         [int(float(g.scalar.phase) * 4) for g in g_list], dtype=jnp.uint8  # type: ignore[arg-type]
     )
-    power2 = jnp.array([g.scalar.power2 for g in g_list], dtype=jnp.int32)
-    floatfactor = jnp.array([g.scalar.floatfactor for g in g_list], dtype=jnp.complex64)
+
+    exact_floatfactor = []
+    power2 = []
+
+    for g in g_list:
+        dn = g.scalar.floatfactor.copy()
+
+        p_sqrt2 = g.scalar.power2
+
+        if p_sqrt2 % 2 != 0:
+            p_sqrt2 -= 1
+            dn *= DyadicNumber(k=0, a=0, b=1, c=0, d=1)
+
+        assert p_sqrt2 % 2 == 0
+        p_sqrt2 -= 2 * dn.k
+        dn.k = 0
+
+        power2.append(p_sqrt2 // 2)
+        exact_floatfactor.append([dn.a, dn.b, dn.c, dn.d])
 
     return CompiledCircuit(
         num_graphs=num_graphs,
@@ -282,6 +299,6 @@ def compile_circuit(
         d_param_bits_b=d_param_bits_b,
         d_graph_ids=d_graph_ids,
         phase_indices=phase_indices,
-        power2=power2,
-        floatfactor=floatfactor,
+        power2=jnp.array(power2, dtype=jnp.int32),
+        floatfactor=jnp.array(exact_floatfactor, dtype=jnp.int32),
     )

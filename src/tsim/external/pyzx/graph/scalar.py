@@ -49,6 +49,59 @@ unicode_fractions = {
     Fraction(3,4): '¾',
 }
 
+class DyadicNumber:
+    k: int
+    a: int
+    b: int
+    c: int
+    d: int
+
+    def __init__(self, k: int = 0, a: int = 0, b: int = 0, c: int = 0, d: int = 0):
+
+        while a % 2 == 0 and b % 2 == 0 and c % 2 == 0 and d % 2 == 0:
+            a //= 2
+            b //= 2
+            c //= 2
+            d //= 2
+            k -= 1
+
+        self.k = k
+        self.a = a
+        self.b = b
+        self.c = c
+        self.d = d
+
+    def to_complex(self) -> complex:
+        return (
+            self.a
+            + self.b * cmath.exp(1j * math.pi / 4)
+            + self.c * 1j
+            + self.d * cmath.exp(-1j * math.pi / 4)
+        ) / (2**self.k)
+
+    def __mul__(self, other: "DyadicNumber") -> "DyadicNumber":
+        return DyadicNumber(
+            self.k + other.k,
+            self.a * other.a + self.b * other.d - self.c * other.c + self.d * other.b,
+            self.a * other.b + self.b * other.a + self.c * other.d + self.d * other.c,
+            self.a * other.c + self.b * other.b + self.c * other.a - self.d * other.d,
+            self.a * other.d - self.b * other.c - self.c * other.b + self.d * other.a,
+        )
+
+    @staticmethod
+    def sqrt2() -> "DyadicNumber":
+        return DyadicNumber(0, 0, 1, 0, 1)
+
+    @staticmethod
+    def one() -> "DyadicNumber":
+        return DyadicNumber(0, 1, 0, 0, 0)
+
+    def conjugate(self) -> "DyadicNumber":
+        return DyadicNumber(self.k, self.a, self.d, -self.c, self.b)
+
+    def copy(self) -> "DyadicNumber":
+        return DyadicNumber(self.k, self.a, self.b, self.c, self.d)
+
 class SpiderPair:
     def __init__(self, alpha, beta, paramsA, paramsB):
         self.alpha:   int      = alpha   # phase n of n*pi/4 (i.e. = 0,1,2,3,4,5,6,7) #TODO: Can change this to fraction if we want to support any alpha
@@ -70,7 +123,7 @@ class Scalar(object):
         self.phasepairs: List[SpiderPair] = [] # Stores list of spider-pairs
         self.phasenodes: List[FractionLike] = [] # Stores list of legless spiders, by their phases.
         self.phasenodevars: List[Set[str]] = [] # Stores the added parameters of the legless spider phases
-        self.floatfactor: complex = 1.0
+        self.floatfactor: DyadicNumber = DyadicNumber.one()
         self.is_unknown: bool = False # Whether this represents an unknown scalar value
         self.is_zero: bool = False
 
@@ -81,8 +134,8 @@ class Scalar(object):
         if self.is_unknown:
             return "UNKNOWN"
         s = "{0.real:.2f}{0.imag:+.2f}i = ".format(self.to_number())
-        if self.floatfactor != 1.0:
-            s += "{0.real:.2f}{0.imag:+.2f}i".format(self.floatfactor)
+        if self.floatfactor.to_complex() != 1.0:
+            s += "{0.real:.2f}{0.imag:+.2f}i".format(self.floatfactor.to_complex())
         if self.phase:
             s += "exp({}ipi)".format(str(self.phase))
         s += "sqrt(2)^{:d}".format(self.power2)
@@ -120,7 +173,7 @@ class Scalar(object):
         s.phasepairs = copy.copy(self.phasepairs)
         s.phasenodes = copy.copy(self.phasenodes) if not conjugate else [-p for p in self.phasenodes]
         s.phasenodevars = copy.copy(self.phasenodevars)
-        s.floatfactor = self.floatfactor if not conjugate else self.floatfactor.conjugate()
+        s.floatfactor = self.floatfactor.copy() if not conjugate else self.floatfactor.conjugate()
         s.is_unknown = self.is_unknown
         s.is_zero = self.is_zero
         return s
@@ -131,13 +184,13 @@ class Scalar(object):
         for node in self.phasenodes: # Node should be a Fraction
             val *= 1+cexp(node)
         val *= math.sqrt(2)**self.power2
-        return val*self.floatfactor
+        return val*self.floatfactor.to_complex()
 
     def to_latex(self) -> str:
         """Converts the Scalar into a string that is compatible with LaTeX."""
         if self.is_zero: return "0"
         elif self.is_unknown: return "Unknown"
-        f = self.floatfactor
+        f = self.floatfactor.to_complex()
         for node in self.phasenodes:
             f *= 1+cexp(node)
         if self.phase == 1:
@@ -147,7 +200,7 @@ class Scalar(object):
         if abs(f+1) < 0.001: #f \approx -1
             s += "-"
         elif abs(f-1) > 0.0001: #f \neq 1
-            s += str(self.floatfactor)
+            s += str(self.floatfactor.to_complex())
         if self.power2 != 0:
             s += r"\sqrt{{2}}^{{{:d}}}".format(self.power2)
         if self.phase not in (0,1):
@@ -161,7 +214,7 @@ class Scalar(object):
         to represent pi's and sqrt's."""
         if self.is_zero: return "0"
         elif self.is_unknown: return "Unknown"
-        f = self.floatfactor
+        f = self.floatfactor.to_complex()
         for node in self.phasenodes:
             f *= 1+cexp(node)
         phase = Fraction(self.phase)
@@ -191,8 +244,8 @@ class Scalar(object):
 
     def to_json(self) -> str:
         d = {"power2": self.power2, "phase": str(self.phase)}
-        if abs(self.floatfactor - 1) > 0.00001:
-            d["floatfactor"] =  self.floatfactor
+        if abs(self.floatfactor.to_complex() - 1) > 0.00001:
+            d["floatfactor"] =  self.floatfactor.to_complex()
         if self.phasenodes:
             d["phasenodes"] = [str(p) for p in self.phasenodes]
         if self.is_zero:
@@ -248,7 +301,7 @@ class Scalar(object):
             self.phasenodes.append(node)
             self.phasenodevars.append(node_params) # XOR
         if (node == 1 and len(node_params) == 0): self.is_zero = True
-    def add_float(self,f: complex) -> None:
+    def add_float(self,f: DyadicNumber) -> None:
         self.floatfactor *= f
 
     def mult_with_scalar(self, other: 'Scalar') -> None:

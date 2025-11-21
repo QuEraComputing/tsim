@@ -86,7 +86,7 @@ class CompiledProbSampler(ABC):
     def probabilities(self, state: np.ndarray, *, batch_size: int) -> np.ndarray:
         """Sample a batch of measurement/detector outcomes."""
         f_samples = self.channel_sampler.sample(batch_size)
-        p_batch_total = [jnp.ones(batch_size, dtype=jnp.float32) for _ in range(2)]
+        p_batch_total = [np.ones(batch_size, dtype=np.float64) for _ in range(2)]
 
         for component in self.program.components:
             if component.f_selection is None or component.compiled_circuits is None:
@@ -102,7 +102,7 @@ class CompiledProbSampler(ABC):
 
                 full_state = jnp.hstack([s, tiled_component_state]) if i == 1 else s
 
-                p_batch = jnp.abs(evaluate_batch(circuit, full_state))
+                p_batch = np.abs(evaluate_batch(circuit, full_state).to_numpy())
 
                 p_batch_total[i] *= p_batch
 
@@ -171,10 +171,10 @@ class BaseCompiledSampler(ABC):
 
             for circuit in component.compiled_circuits:
                 state_0 = jnp.hstack([s, zeros])
-                p_batch_0 = jnp.abs(evaluate_batch(circuit, state_0))
+                p_batch_0 = np.abs(evaluate_batch(circuit, state_0).to_numpy())
 
                 state_1 = jnp.hstack([s, ones])
-                p_batch_1 = jnp.abs(evaluate_batch(circuit, state_1))
+                p_batch_1 = np.abs(evaluate_batch(circuit, state_1).to_numpy())
 
                 # normalize the probabilities
                 p1 = p_batch_1 / (p_batch_0 + p_batch_1)
