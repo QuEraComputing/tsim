@@ -2,6 +2,7 @@ from typing import NamedTuple
 
 import jax.numpy as jnp
 
+from tsim.dyadic import DyadicNumber
 from tsim.external.pyzx.graph.base import BaseGraph
 
 
@@ -259,8 +260,34 @@ def compile_circuit(
     phase_indices = jnp.array(
         [int(float(g.scalar.phase) * 4) for g in g_list], dtype=jnp.uint8  # type: ignore[arg-type]
     )
-    power2 = jnp.array([g.scalar.power2 for g in g_list], dtype=jnp.int32)
-    floatfactor = jnp.array([g.scalar.floatfactor for g in g_list], dtype=jnp.complex64)
+
+    exact_floatfactor = []
+    power2 = []
+
+    for g in g_list:
+        initial = 2 ** (g.scalar.power2 / 2) * g.scalar.floatfactor
+        ff = g.scalar.floatfactor
+        dn = DyadicNumber.from_complex(ff)
+
+        assert (
+            abs(dn.to_complex() - ff) < 1e-8
+        ), f"dn: {dn.to_complex()}, ff: {ff}, {abs(dn.to_complex() - ff):.2e}"
+
+        p_sqrt2 = g.scalar.power2
+
+        if p_sqrt2 % 2 != 0:
+            p_sqrt2 -= 1
+            dn *= DyadicNumber(k=0, a=0, b=1, c=0, d=1)
+
+        assert p_sqrt2 % 2 == 0
+        p_sqrt2 -= 2 * dn.k
+        dn.k = 0
+
+        power2.append(p_sqrt2 // 2)
+        exact_floatfactor.append([dn.a, dn.b, dn.c, dn.d])
+
+        final = 2 ** (p_sqrt2 / 2) * dn.to_complex()
+        assert abs(initial - final) < 1e-12, f"initial: {initial}, final: {final}"
 
     return CompiledCircuit(
         num_graphs=num_graphs,
@@ -282,6 +309,6 @@ def compile_circuit(
         d_param_bits_b=d_param_bits_b,
         d_graph_ids=d_graph_ids,
         phase_indices=phase_indices,
-        power2=power2,
-        floatfactor=floatfactor,
+        power2=jnp.array(power2, dtype=jnp.int32),
+        floatfactor=jnp.array(exact_floatfactor, dtype=jnp.int32),
     )

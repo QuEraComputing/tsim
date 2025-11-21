@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 
 from tsim.compile import CompiledCircuit
-from tsim.exact_scalar import scalar_mul, scalar_to_complex, segment_scalar_prod
+from tsim.exact_scalar import scalar_mul, segment_scalar_prod
 
 
 @jax.jit
@@ -157,20 +157,38 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
             summands_c_exact,
             summands_d_exact,
             static_phases_exact,
+            circuit.floatfactor,
         ]
     )
+
+    power2 = circuit.power2
+    for i in range(10):
+        reducible = jnp.all(total_exact % 2 == 0, axis=-1)
+        total_exact = jnp.where(reducible[..., None], total_exact // 2, total_exact)
+        power2 = jnp.where(reducible, power2 + 1, power2)
+
+    min_power2 = jnp.min(power2, keepdims=True)
+    pow = (power2 - min_power2)[:, None]
+    total_exact2 = total_exact * 2**pow
+
+    exact_sum = jnp.sum(total_exact2, axis=-2)
 
     # ====================================================================
     # FINAL RESULT (Conversion to Complex)
     # ====================================================================
 
-    total_complex = scalar_to_complex(total_exact)
-    contributions = total_complex * 2 ** (circuit.power2 / 2) * circuit.floatfactor
+    # scale_factor = jnp.pow(2.0, min_power2.astype(jnp.float64))
+    # complex_sum = scalar_to_complex(exact_sum)
+    # result = complex_sum * scale_factor
 
-    # TODO: if not for the float factor, we could perform the sum exactly. In this case
-    # the exact scalar representation needs to be extended with a 1/2**k prefix.
-    result = jnp.sum(contributions)
-    return result
+    return jnp.hstack((-min_power2, exact_sum))
 
 
 evaluate_batch = jax.vmap(evaluate, in_axes=(None, 0))
+
+
+# def evaluate_batch(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
+#     res = []
+#     for p in param_vals:
+#         res.append(evaluate(circuit, p))
+#     return jnp.array(res)
