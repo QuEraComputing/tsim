@@ -29,14 +29,14 @@ class CompiledCircuit(NamedTuple):
     b_param_bits: jnp.ndarray  # shape: (n_b_terms, n_params), dtype: uint8
     b_graph_ids: jnp.ndarray  # shape: (n_b_terms,), dtype: int32
 
-    # Type C: Pi-Pair Terms
+    # Type C: Pi-Pair Terms (e^(i*Psi*Phi))
     c_const_bits_a: jnp.ndarray  # shape: (n_c_terms,), dtype: uint8, values: {0, 1}
     c_param_bits_a: jnp.ndarray  # shape: (n_c_terms, n_params), dtype: uint8
     c_const_bits_b: jnp.ndarray  # shape: (n_c_terms,), dtype: uint8, values: {0, 1}
     c_param_bits_b: jnp.ndarray  # shape: (n_c_terms, n_params), dtype: uint8
     c_graph_ids: jnp.ndarray  # shape: (n_c_terms,), dtype: int32
 
-    # Type D: Phase Pairs
+    # Type D: Phase Pairs (1 + e^a + e^b - e^(a+b))
     d_const_alpha: jnp.ndarray  # shape: (n_d_terms,), dtype: uint8, values: 0-7
     d_const_beta: jnp.ndarray  # shape: (n_d_terms,), dtype: uint8, values: 0-7
     d_param_bits_a: jnp.ndarray  # shape: (n_d_terms, n_params), dtype: uint8
@@ -44,10 +44,9 @@ class CompiledCircuit(NamedTuple):
     d_graph_ids: jnp.ndarray  # shape: (n_d_terms,), dtype: int32
 
     # Static per-graph data
-    # Shape: (num_graphs,)
-    phase_indices: jnp.ndarray  # dtype: uint8 (values 0-7)
-    power2: jnp.ndarray  # dtype: int32
-    floatfactor: jnp.ndarray  # dtype: complex64
+    phase_indices: jnp.ndarray  # shape: (num_graphs,), dtype: uint8 (values 0-7)
+    power2: jnp.ndarray  # shape: (num_graphs,), dtype: int32
+    floatfactor: jnp.ndarray  # shape: (num_graphs, 4), dtype: int32
 
 
 def compile_circuit(

@@ -2,11 +2,11 @@ import jax
 import jax.numpy as jnp
 
 from tsim.compile import CompiledCircuit
-from tsim.exact_scalar import scalar_mul, segment_scalar_prod
+from tsim.exact_scalar import DyadicArray
 
 
 @jax.jit
-def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
+def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> DyadicArray:
     """Evaluate compiled circuit with parameter values.
 
     Args:
@@ -18,13 +18,7 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
     """
     num_graphs = len(circuit.power2)
 
-    # Pre-compute exact scalars for phase values 0..7
-    # omega^k for k=0..7 in Z[omega] representation [a, b, c, d]
-    # 1         -> [1, 0, 0, 0]
-    # omega     -> [0, 1, 0, 0]
-    # i         -> [0, 0, 1, 0]
-    # i*omega   -> [0, 0, 0, -1]
-    # Basis is: 1, omega, i, omega^-1 (which is -i*omega)
+    # Pre-compute exact scalars for phase values, for powers of omega = e^(i*pi/4)
     unit_phases_exact = jnp.array(
         [
             [1, 0, 0, 0],  # 0: 1
@@ -39,8 +33,7 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
         dtype=jnp.int32,
     )
 
-    # Lookup table for (1 + omega^k) [0..7] -> ExactScalar
-    # Just add [1, 0, 0, 0] to unit_phases_exact
+    # Lookup table for exact scalars (1 + omega^k)
     one_plus_phases_exact = unit_phases_exact.at[:, 0].add(1)
 
     # ====================================================================
@@ -51,8 +44,8 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
 
     term_vals_a_exact = one_plus_phases_exact[phase_idx_a]
 
-    summands_a_exact = segment_scalar_prod(
-        term_vals_a_exact,
+    term_vals_a = DyadicArray(term_vals_a_exact)
+    summands_a = term_vals_a.segment_prod(
         circuit.a_graph_ids,
         num_segments=num_graphs,
         indices_are_sorted=True,
@@ -78,13 +71,12 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
 
     # Convert final summed phase to ExactScalar
     summands_b_exact = unit_phases_exact[sum_phases_b]
+    summands_b = DyadicArray(summands_b_exact)
 
     # ====================================================================
     # TYPE C: Pi-Pair Terms, (-1)^(Psi*Phi)
     # ====================================================================
     # These are +/- 1.
-    # (-1)^x * (-1)^y = (-1)^(x+y)
-    # So we can sum the exponents modulo 2.
 
     rowsum_a = (
         circuit.c_const_bits_a + jnp.sum(circuit.c_param_bits_a * param_vals, axis=1)
@@ -109,9 +101,9 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
     # 1  = [1, 0, 0, 0]
     # -1 = [-1, 0, 0, 0]
     # Vectorized: set 'a' component to 1 - 2*exponent
-    c_coeffs = jnp.zeros((num_graphs, 4), dtype=jnp.int32)
-    c_coeffs = c_coeffs.at[:, 0].set(1 - 2 * sum_exponents_c)
-    summands_c_exact = c_coeffs
+    summands_c_exact = jnp.zeros((num_graphs, 4), dtype=jnp.int32)
+    summands_c_exact = summands_c_exact.at[:, 0].set(1 - 2 * sum_exponents_c)
+    summands_c = DyadicArray(summands_c_exact)
 
     # ====================================================================
     # TYPE D: Phase Pairs (1 + e^a + e^b - e^g)
@@ -131,8 +123,8 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
         - unit_phases_exact[gamma]
     )
 
-    summands_d_exact = segment_scalar_prod(
-        term_vals_d_exact,
+    term_vals_d = DyadicArray(term_vals_d_exact)
+    summands_d = term_vals_d.segment_prod(
         circuit.d_graph_ids,
         num_segments=num_graphs,
         indices_are_sorted=True,
@@ -142,53 +134,31 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
     # FINAL COMBINATION
     # ====================================================================
 
-    static_phases_exact = unit_phases_exact[circuit.phase_indices]
+    static_phases = DyadicArray(unit_phases_exact[circuit.phase_indices])
+    float_factor = DyadicArray(circuit.floatfactor)
 
     def mul_all(terms):
         res = terms[0]
         for t in terms[1:]:
-            res = scalar_mul(res, t)
+            res = res * t
         return res
 
-    total_exact = mul_all(
+    total_summands = mul_all(
         [
-            summands_a_exact,
-            summands_b_exact,
-            summands_c_exact,
-            summands_d_exact,
-            static_phases_exact,
-            circuit.floatfactor,
+            summands_a,
+            summands_b,
+            summands_c,
+            summands_d,
+            static_phases,
+            float_factor,
         ]
     )
 
-    power2 = circuit.power2
-    for i in range(10):
-        reducible = jnp.all(total_exact % 2 == 0, axis=-1)
-        total_exact = jnp.where(reducible[..., None], total_exact // 2, total_exact)
-        power2 = jnp.where(reducible, power2 + 1, power2)
+    # Add initial power2 from circuit compilation
+    total_summands.power = total_summands.power + circuit.power2
 
-    min_power2 = jnp.min(power2, keepdims=True)
-    pow = (power2 - min_power2)[:, None]
-    total_exact2 = total_exact * 2**pow
-
-    exact_sum = jnp.sum(total_exact2, axis=-2)
-
-    # ====================================================================
-    # FINAL RESULT (Conversion to Complex)
-    # ====================================================================
-
-    # scale_factor = jnp.pow(2.0, min_power2.astype(jnp.float64))
-    # complex_sum = scalar_to_complex(exact_sum)
-    # result = complex_sum * scale_factor
-
-    return jnp.hstack((-min_power2, exact_sum))
+    total_summands = total_summands.reduce()
+    return total_summands.sum()
 
 
 evaluate_batch = jax.vmap(evaluate, in_axes=(None, 0))
-
-
-# def evaluate_batch(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> jnp.ndarray:
-#     res = []
-#     for p in param_vals:
-#         res.append(evaluate(circuit, p))
-#     return jnp.array(res)
