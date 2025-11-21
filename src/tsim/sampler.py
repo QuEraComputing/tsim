@@ -14,16 +14,6 @@ from tsim.evaluate import evaluate_batch
 from tsim.graph_util import connected_components, transform_error_basis
 
 
-def to_complex(data: jax.Array) -> jax.Array:
-    numpy_data = np.array(data)
-    return 2.0 ** (-numpy_data[..., 0]) * (
-        numpy_data[..., 1]
-        + numpy_data[..., 2] * np.exp(1j * jnp.pi / 4)
-        + numpy_data[..., 3] * 1j
-        + numpy_data[..., 4] * np.exp(-1j * jnp.pi / 4)
-    )
-
-
 def get_repr(program: DecomposerArray) -> str:
     c_graphs = []
     c_params = []
@@ -112,7 +102,7 @@ class CompiledProbSampler(ABC):
 
                 full_state = jnp.hstack([s, tiled_component_state]) if i == 1 else s
 
-                p_batch = np.abs(to_complex(evaluate_batch(circuit, full_state)))
+                p_batch = np.abs(evaluate_batch(circuit, full_state).to_numpy())
 
                 p_batch_total[i] *= p_batch
 
@@ -181,10 +171,10 @@ class BaseCompiledSampler(ABC):
 
             for circuit in component.compiled_circuits:
                 state_0 = jnp.hstack([s, zeros])
-                p_batch_0 = np.abs(to_complex(evaluate_batch(circuit, state_0)))
+                p_batch_0 = np.abs(evaluate_batch(circuit, state_0).to_numpy())
 
                 state_1 = jnp.hstack([s, ones])
-                p_batch_1 = np.abs(to_complex(evaluate_batch(circuit, state_1)))
+                p_batch_1 = np.abs(evaluate_batch(circuit, state_1).to_numpy())
 
                 # normalize the probabilities
                 p1 = p_batch_1 / (p_batch_0 + p_batch_1)

@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from tsim.exact_scalar import scalar_mul, scalar_to_complex, segment_scalar_prod
+from tsim.exact_scalar import DyadicArray
 
 
 @pytest.fixture
@@ -14,13 +14,16 @@ def random_scalars():
 
 
 def test_scalar_multiplication(random_scalars):
-    s1 = random_scalars[0][None]
-    s2 = random_scalars[1][None]
+    s1 = random_scalars[0]
+    s2 = random_scalars[1]
 
-    prod_exact = scalar_mul(s1, s2)
-    prod_complex = scalar_to_complex(s1) * scalar_to_complex(s2)
+    d1 = DyadicArray(s1)
+    d2 = DyadicArray(s2)
 
-    assert jnp.allclose(scalar_to_complex(prod_exact), prod_complex)
+    prod_exact = d1 * d2
+    prod_complex = d1.to_complex() * d2.to_complex()
+
+    assert jnp.allclose(prod_exact.to_complex(), prod_complex)
 
 
 def test_segment_prod(random_scalars):
@@ -32,17 +35,18 @@ def test_segment_prod(random_scalars):
     )
 
     # Exact computation
-    prod_exact = segment_scalar_prod(
-        random_scalars, segment_ids, num_segments=num_segments, indices_are_sorted=True
+    dyadic_array = DyadicArray(random_scalars)
+    prod_exact = dyadic_array.segment_prod(
+        segment_ids, num_segments=num_segments, indices_are_sorted=True
     )
 
     # Complex verification
-    complex_vals = scalar_to_complex(random_scalars)
+    complex_vals = dyadic_array.to_complex()
     prod_complex_ref = jax.ops.segment_prod(
         complex_vals, segment_ids, num_segments=num_segments, indices_are_sorted=True
     )
 
-    assert jnp.allclose(scalar_to_complex(prod_exact), prod_complex_ref, atol=1e-5)
+    assert jnp.allclose(prod_exact.to_complex(), prod_complex_ref, atol=1e-5)
 
 
 def test_segment_prod_unsorted(random_scalars):
@@ -51,17 +55,51 @@ def test_segment_prod_unsorted(random_scalars):
     segment_ids = jax.random.randint(jax.random.PRNGKey(1), (N,), 0, num_segments)
 
     # Exact computation
-    prod_exact = segment_scalar_prod(
-        random_scalars, segment_ids, num_segments=num_segments, indices_are_sorted=False
+    dyadic_array = DyadicArray(random_scalars)
+    prod_exact = dyadic_array.segment_prod(
+        segment_ids, num_segments=num_segments, indices_are_sorted=False
     )
 
     # Complex verification
-    complex_vals = scalar_to_complex(random_scalars)
+    complex_vals = dyadic_array.to_complex()
     prod_complex_ref = jax.ops.segment_prod(
         complex_vals, segment_ids, num_segments=num_segments, indices_are_sorted=False
     )
 
-    assert jnp.allclose(scalar_to_complex(prod_exact), prod_complex_ref, atol=1e-5)
+    assert jnp.allclose(prod_exact.to_complex(), prod_complex_ref, atol=1e-5)
+
+
+def test_dyadic_reduce():
+    coeffs = jnp.array([[2, 0, 0, 0]])
+    power = jnp.array([0])
+    dyadic = DyadicArray(coeffs, power)
+    reduced = dyadic.reduce()
+
+    assert jnp.array_equal(reduced.coeffs, jnp.array([[1, 0, 0, 0]]))
+    assert jnp.array_equal(reduced.power, jnp.array([1]))
+    assert jnp.isclose(reduced.to_complex(), dyadic.to_complex())
+
+    coeffs = jnp.array([[2, 0, 4, 0], [4, 16, 0, 8], [1, 0, 0, 0]])
+    power = jnp.array([0, 0, 0])
+    dyadic = DyadicArray(coeffs, power)
+    reduced = dyadic.reduce()
+
+    expected_coeffs = jnp.array([[1, 0, 2, 0], [1, 4, 0, 2], [1, 0, 0, 0]])
+    expected_power = jnp.array([1, 2, 0])
+
+    assert jnp.array_equal(reduced.coeffs, expected_coeffs)
+    assert jnp.array_equal(reduced.power, expected_power)
+    assert jnp.allclose(reduced.to_complex(), dyadic.to_complex())
+
+    # Zero should stop reducing (handled by condition check)
+    # [0, 0, 0, 0] -> infinitely even, but we stop to avoid infinite loop
+    coeffs = jnp.array([[0, 0, 0, 0]])
+    power = jnp.array([0])
+    dyadic = DyadicArray(coeffs, power)
+    reduced = dyadic.reduce()
+
+    assert jnp.array_equal(reduced.coeffs, coeffs)
+    assert jnp.array_equal(reduced.power, power)
 
 
 if __name__ == "__main__":
@@ -79,12 +117,13 @@ if __name__ == "__main__":
         # Data generation
         scalars = jax.random.randint(key, (N, 4), -5, 5)
         segment_ids = jnp.sort(jax.random.randint(key, (N,), 0, num_segments))
-        complex_vals = scalar_to_complex(scalars)
+        dyadic_vals = DyadicArray(scalars)
+        complex_vals = dyadic_vals.to_complex()
 
         # Warmup
-        _ = segment_scalar_prod(
-            scalars, segment_ids, num_segments, True
-        ).block_until_ready()
+        _ = dyadic_vals.segment_prod(
+            segment_ids, num_segments, True
+        ).coeffs.block_until_ready()
         _ = jax.ops.segment_prod(
             complex_vals.real, segment_ids, num_segments, True
         ).block_until_ready()  # without .real this leads to segmentation fault on GPU
@@ -92,9 +131,9 @@ if __name__ == "__main__":
         # Time Exact
         start = time.time()
         for _ in range(10):
-            _ = segment_scalar_prod(
-                scalars, segment_ids, num_segments, True
-            ).block_until_ready()
+            _ = dyadic_vals.segment_prod(
+                segment_ids, num_segments, True
+            ).coeffs.block_until_ready()
         end = time.time()
         time_exact = (end - start) / 10 * 1000
 
@@ -114,21 +153,11 @@ if __name__ == "__main__":
         # CPU:
         # N          | Exact (ms)      | Complex (ms)    | Ratio
         # -------------------------------------------------------
-        # 1000       | 0.041           | 0.177           | 0.23
-        # 10000      | 0.164           | 0.222           | 0.74
-        # 100000     | 0.773           | 0.648           | 1.19
-        # 1000000    | 7.087           | 5.016           | 1.41
-        # 10000000   | 111.526         | 42.580          | 2.62
-        # 100000000  | 1250.639        | 466.575         | 2.68
+        # 1000       | 4.082           | 0.133           | 30.69
+        # 10000      | 8.081           | 0.277           | 29.16
+        # 100000     | 9.551           | 0.428           | 22.30
+        # 1000000    | 25.801          | 3.099           | 8.33
+        # 10000000   | 195.691         | 26.727          | 7.32
+        # 100000000  | 2613.424        | 273.919         | 9.54
 
-        # GPU:
-        # N          | Exact (ms)      | Complex (ms)    | Ratio
-        # -------------------------------------------------------
-        # 1000       | 0.074           | 0.279           | 0.27
-        # 10000      | 0.109           | 0.344           | 0.32
-        # 100000     | 0.119           | 0.353           | 0.34
-        # 1000000    | 0.257           | 0.376           | 0.68
-        # 10000000   | 2.096           | 0.591           | 3.55
-        # 100000000  | 23.765          | 6.200           | 3.83
-
-        # TODO: can exact be improved to outperform complex?
+        # TODO: improve performance
