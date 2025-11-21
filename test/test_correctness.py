@@ -189,6 +189,5 @@ def test_statevector_simulator(num_qubits, seed):
     exact_state = np.abs(g.to_matrix()[:, 0]) ** 2
     exact_state /= np.sum(exact_state)
 
-    tol = 1e-7
-    assert np.allclose(tsim_state, exact_state, rtol=tol, atol=tol)
-    assert np.allclose(stim_state, exact_state, rtol=tol, atol=tol)
+    assert np.allclose(tsim_state, exact_state, rtol=1e-14, atol=1e-14)
+    assert np.allclose(stim_state, exact_state, rtol=1e-7, atol=1e-7)
