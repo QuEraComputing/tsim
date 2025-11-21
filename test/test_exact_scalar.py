@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from tsim.exact_scalar import DyadicArray
+from tsim.exact_scalar import ExactScalarArray
 
 
 @pytest.fixture
@@ -17,8 +17,8 @@ def test_scalar_multiplication(random_scalars):
     s1 = random_scalars[0]
     s2 = random_scalars[1]
 
-    d1 = DyadicArray(s1)
-    d2 = DyadicArray(s2)
+    d1 = ExactScalarArray(s1)
+    d2 = ExactScalarArray(s2)
 
     prod_exact = d1 * d2
     prod_complex = d1.to_complex() * d2.to_complex()
@@ -35,7 +35,7 @@ def test_segment_prod(random_scalars):
     )
 
     # Exact computation
-    dyadic_array = DyadicArray(random_scalars)
+    dyadic_array = ExactScalarArray(random_scalars)
     prod_exact = dyadic_array.segment_prod(
         segment_ids, num_segments=num_segments, indices_are_sorted=True
     )
@@ -55,7 +55,7 @@ def test_segment_prod_unsorted(random_scalars):
     segment_ids = jax.random.randint(jax.random.PRNGKey(1), (N,), 0, num_segments)
 
     # Exact computation
-    dyadic_array = DyadicArray(random_scalars)
+    dyadic_array = ExactScalarArray(random_scalars)
     prod_exact = dyadic_array.segment_prod(
         segment_ids, num_segments=num_segments, indices_are_sorted=False
     )
@@ -72,7 +72,7 @@ def test_segment_prod_unsorted(random_scalars):
 def test_dyadic_reduce():
     coeffs = jnp.array([[2, 0, 0, 0]])
     power = jnp.array([0])
-    dyadic = DyadicArray(coeffs, power)
+    dyadic = ExactScalarArray(coeffs, power)
     reduced = dyadic.reduce()
 
     assert jnp.array_equal(reduced.coeffs, jnp.array([[1, 0, 0, 0]]))
@@ -81,7 +81,7 @@ def test_dyadic_reduce():
 
     coeffs = jnp.array([[2, 0, 4, 0], [4, 16, 0, 8], [1, 0, 0, 0]])
     power = jnp.array([0, 0, 0])
-    dyadic = DyadicArray(coeffs, power)
+    dyadic = ExactScalarArray(coeffs, power)
     reduced = dyadic.reduce()
 
     expected_coeffs = jnp.array([[1, 0, 2, 0], [1, 4, 0, 2], [1, 0, 0, 0]])
@@ -95,7 +95,7 @@ def test_dyadic_reduce():
     # [0, 0, 0, 0] -> infinitely even, but we stop to avoid infinite loop
     coeffs = jnp.array([[0, 0, 0, 0]])
     power = jnp.array([0])
-    dyadic = DyadicArray(coeffs, power)
+    dyadic = ExactScalarArray(coeffs, power)
     reduced = dyadic.reduce()
 
     assert jnp.array_equal(reduced.coeffs, coeffs)
@@ -117,7 +117,7 @@ if __name__ == "__main__":
         # Data generation
         scalars = jax.random.randint(key, (N, 4), -5, 5)
         segment_ids = jnp.sort(jax.random.randint(key, (N,), 0, num_segments))
-        dyadic_vals = DyadicArray(scalars)
+        dyadic_vals = ExactScalarArray(scalars)
         complex_vals = dyadic_vals.to_complex()
 
         # Warmup
@@ -153,11 +153,11 @@ if __name__ == "__main__":
         # CPU:
         # N          | Exact (ms)      | Complex (ms)    | Ratio
         # -------------------------------------------------------
-        # 1000       | 4.082           | 0.133           | 30.69
-        # 10000      | 8.081           | 0.277           | 29.16
-        # 100000     | 9.551           | 0.428           | 22.30
-        # 1000000    | 25.801          | 3.099           | 8.33
-        # 10000000   | 195.691         | 26.727          | 7.32
-        # 100000000  | 2613.424        | 273.919         | 9.54
+        # 1000       | 0.165           | 0.128           | 1.29
+        # 10000      | 0.213           | 0.204           | 1.05
+        # 100000     | 0.917           | 0.519           | 1.77
+        # 1000000    | 8.231           | 3.114           | 2.64
+        # 10000000   | 118.212         | 27.932          | 4.23
+        # 100000000  | 1305.727        | 275.444         | 4.74
 
-        # TODO: improve performance
+        # TODO: improve performance. Can we match jax.ops.segment_prod?

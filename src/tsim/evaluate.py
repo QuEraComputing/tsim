@@ -2,11 +2,11 @@ import jax
 import jax.numpy as jnp
 
 from tsim.compile import CompiledCircuit
-from tsim.exact_scalar import DyadicArray
+from tsim.exact_scalar import ExactScalarArray
 
 
 @jax.jit
-def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> DyadicArray:
+def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> ExactScalarArray:
     """Evaluate compiled circuit with parameter values.
 
     Args:
@@ -44,7 +44,7 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> DyadicArray:
 
     term_vals_a_exact = one_plus_phases_exact[phase_idx_a]
 
-    term_vals_a = DyadicArray(term_vals_a_exact)
+    term_vals_a = ExactScalarArray(term_vals_a_exact)
     summands_a = term_vals_a.segment_prod(
         circuit.a_graph_ids,
         num_segments=num_graphs,
@@ -71,7 +71,7 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> DyadicArray:
 
     # Convert final summed phase to ExactScalar
     summands_b_exact = unit_phases_exact[sum_phases_b]
-    summands_b = DyadicArray(summands_b_exact)
+    summands_b = ExactScalarArray(summands_b_exact)
 
     # ====================================================================
     # TYPE C: Pi-Pair Terms, (-1)^(Psi*Phi)
@@ -103,7 +103,7 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> DyadicArray:
     # Vectorized: set 'a' component to 1 - 2*exponent
     summands_c_exact = jnp.zeros((num_graphs, 4), dtype=jnp.int32)
     summands_c_exact = summands_c_exact.at[:, 0].set(1 - 2 * sum_exponents_c)
-    summands_c = DyadicArray(summands_c_exact)
+    summands_c = ExactScalarArray(summands_c_exact)
 
     # ====================================================================
     # TYPE D: Phase Pairs (1 + e^a + e^b - e^g)
@@ -123,7 +123,7 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> DyadicArray:
         - unit_phases_exact[gamma]
     )
 
-    term_vals_d = DyadicArray(term_vals_d_exact)
+    term_vals_d = ExactScalarArray(term_vals_d_exact)
     summands_d = term_vals_d.segment_prod(
         circuit.d_graph_ids,
         num_segments=num_graphs,
@@ -134,8 +134,8 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> DyadicArray:
     # FINAL COMBINATION
     # ====================================================================
 
-    static_phases = DyadicArray(unit_phases_exact[circuit.phase_indices])
-    float_factor = DyadicArray(circuit.floatfactor)
+    static_phases = ExactScalarArray(unit_phases_exact[circuit.phase_indices])
+    float_factor = ExactScalarArray(circuit.floatfactor)
 
     def mul_all(terms):
         res = terms[0]
@@ -154,10 +154,10 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> DyadicArray:
         ]
     )
 
-    # Add initial power2 from circuit compilation
+    # Add initial power2 from circuit compilation: TODO refactor pyzx to use DyadicArray
     total_summands.power = total_summands.power + circuit.power2
 
-    total_summands = total_summands.reduce()
+    total_summands.reduce()
     return total_summands.sum()
 
 
