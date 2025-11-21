@@ -47,10 +47,10 @@ class VecSim:
         # Internal simulator qubit index to external qubit key.
         self.i2q: Dict[int, Any] = {}
         # The state vector, stored as numpy tensor.
-        self.state: np.ndarray = np.zeros(shape=(2, 2), dtype=np.complex64)
+        self.state: np.ndarray = np.zeros(shape=(2, 2), dtype=np.complex128)
         self.state[0, 0] = 1
         # Workspace for implementing operations without allocating each time.
-        self._buffer: np.ndarray = np.zeros(shape=(2, 2), dtype=np.complex64)
+        self._buffer: np.ndarray = np.zeros(shape=(2, 2), dtype=np.complex128)
         # Recorded measurement results.
         self.m_record: Dict[Any, bool] = {}
         # Storage for instructions like `accumulator_bit_xor` and `accumulator_bit_save`.
@@ -69,8 +69,8 @@ class VecSim:
     def clear(self):
         self.q2i = {}
         self.i2q = {}
-        self.state = np.zeros(shape=(2, 2), dtype=np.complex64)
-        self._buffer = np.zeros(shape=(2, 2), dtype=np.complex64)
+        self.state = np.zeros(shape=(2, 2), dtype=np.complex128)
+        self._buffer = np.zeros(shape=(2, 2), dtype=np.complex128)
         self.state[0, 0] = 1
         self.m_record = {}
         self.next_anon_key = 0
@@ -164,8 +164,8 @@ class VecSim:
         self.i2q[i] = q
         if len(self.q2i) > len(self.state.shape):
             old_state = self.state
-            self.state = np.zeros(shape=(2,) * len(self.q2i), dtype=np.complex64)
-            self._buffer = np.zeros(shape=(2,) * len(self.q2i), dtype=np.complex64)
+            self.state = np.zeros(shape=(2,) * len(self.q2i), dtype=np.complex128)
+            self._buffer = np.zeros(shape=(2,) * len(self.q2i), dtype=np.complex128)
             m: List[Union[slice, int]] = [slice(None)] * len(old_state.shape)
             m += [0] * (len(self.q2i) - len(old_state.shape))
             self.state[tuple(m)] = old_state
