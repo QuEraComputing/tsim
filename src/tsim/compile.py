@@ -2,8 +2,8 @@ from typing import NamedTuple
 
 import jax.numpy as jnp
 
-from tsim.dyadic import DyadicNumber
 from tsim.external.pyzx.graph.base import BaseGraph
+from tsim.external.pyzx.graph.scalar import DyadicNumber
 
 
 class CompiledCircuit(NamedTuple):
@@ -265,13 +265,7 @@ def compile_circuit(
     power2 = []
 
     for g in g_list:
-        initial = 2 ** (g.scalar.power2 / 2) * g.scalar.floatfactor
-        ff = g.scalar.floatfactor
-        dn = DyadicNumber.from_complex(ff)
-
-        assert (
-            abs(dn.to_complex() - ff) < 1e-8
-        ), f"dn: {dn.to_complex()}, ff: {ff}, {abs(dn.to_complex() - ff):.2e}"
+        dn = g.scalar.floatfactor.copy()
 
         p_sqrt2 = g.scalar.power2
 
@@ -285,9 +279,6 @@ def compile_circuit(
 
         power2.append(p_sqrt2 // 2)
         exact_floatfactor.append([dn.a, dn.b, dn.c, dn.d])
-
-        final = 2 ** (p_sqrt2 / 2) * dn.to_complex()
-        assert abs(initial - final) < 1e-12, f"initial: {initial}, final: {final}"
 
     return CompiledCircuit(
         num_graphs=num_graphs,
