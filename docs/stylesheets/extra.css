@@ -33,3 +33,8 @@ pre code {
 .md-grid {
     max-width: 1240px; /* Increase the overall content area width */
 }
+
+/* Hide Jupyter notebook input/output prompts (In[ ] and Out[ ]) */
+.jp-InputPrompt, .jp-OutputPrompt {
+    display: none !important;
+}

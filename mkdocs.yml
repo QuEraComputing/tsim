@@ -13,6 +13,8 @@ nav:
     - Installation: install.md
     - Getting Started: getting_started.md
     - Contributing: contrib.md
+  - Examples:
+    - demos/demo.ipynb
   - API Reference: reference/
   - Blog:
     - blog/index.md
@@ -85,6 +87,8 @@ plugins:
   - minify:
       minify_html: true
   - blog
+  - mkdocs-jupyter:
+      allow_errors: false
 
 extra_css:
   - stylesheets/extra.css
