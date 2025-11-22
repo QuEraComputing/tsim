@@ -1,0 +1,78 @@
+# tsim
+
+**Fast sampling of non-Clifford quantum circuits with noise**
+
+tsim is a quantum circuit sampler designed for efficient sampling of Clifford+T circuits with Pauli noise.
+
+`tsim` follows the `stim` API and works with `stim` circuits. It supports all `stim` [gates and noise channels](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference), and
+additionally, T-gates.
+
+
+
+## Quick Start
+
+
+To use T-gates, simply use the `S[T]` and `S_DAG[T]` instructions:
+
+```python
+c = Circuit.from_stim_program_text(
+    """
+    RX 0
+    S[T] 0  # This is a T-gate
+    DEPOLARIZE1(0.1) 0
+    H 0
+    M 0
+    S_DAG[T]  # This is a T_DAG gate
+    """
+)
+sampler = c.compile_sampler()
+samples = sampler.sample(shots=100)
+```
+`tsim` does not introduce its own "T" instruction to be fully compatible with `stim`.
+
+For circuits with detector and observable annotations, one can also compile a detector sampler:
+
+```python
+c = Circuit.from_stim_program_text(
+    """
+    RX 0
+    R 1
+    S_DAG[T] 0  # This is a T_DAG gate
+    PAULI_CHANNEL_1(0.1, 0.1, 0.2) 0 1
+    H 0
+    CNOT 0 1
+    M 0 1
+    DETECTOR rec[-1] rec[-2]
+    """
+)
+detector_sampler = c.compile_detector_sampler()
+samples = detector_sampler.sample(shots=100)
+```
+
+## Installation
+
+```bash
+uv add tsim
+```
+
+For GPU acceleration, use
+
+```bash
+uv add "tsim[cuda13]"
+```
+
+See [Installation](install.md) for more options.
+
+## How It Works
+
+`tsim` uses stabilizer rank decomposition based on the ZX calculus and is built on top of `pyzx`.
+Circuits are converted into ZX diagrams where noise channels are injected as parametrized Pauli vertices. For efficient sampling on
+CPU and GPU, the diagram is then compiled into contiguous jax arrays, following the approach in [arXiv:2403.06777](https://arxiv.org/abs/2403.06777).
+
+
+
+
+## Learn More
+
+- [Getting Started](getting_started.md) - Detailed usage guide
+- [Contributing](contrib.md) - Development workflow

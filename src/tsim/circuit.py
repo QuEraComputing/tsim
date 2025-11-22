@@ -41,7 +41,7 @@ def accepts_qubit_list(
 ) -> Callable[[Callable[..., Any]], Callable[..., None]]: ...
 
 
-def accepts_qubit_list(func=None, *, num_qubits=1):  # type: ignore[no-untyped-def]
+def accepts_qubit_list(func=None, *, num_qubits: int = 1):  # type: ignore[no-untyped-def]
     """Decorator that allows a method to accept either individual qubits or a list of qubits.
 
     When a list is provided, the decorated method is called once for each group of qubits.

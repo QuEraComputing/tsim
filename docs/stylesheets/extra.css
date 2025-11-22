@@ -1,0 +1,35 @@
+:root {
+  --md-primary-fg-color: #23144a;
+  --md-accent-fg-color: #ff8208;
+
+}
+
+
+#logo_light_mode {
+  display: var(--md-footer-logo-light-mode);
+}
+
+#logo_dark_mode {
+  display: var(--md-footer-logo-dark-mode);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-footer-logo-dark-mode:         block;
+  --md-footer-logo-light-mode:         none;
+}
+
+[data-md-color-scheme="default"] {
+  --md-footer-logo-dark-mode:           none;
+  --md-footer-logo-light-mode:         block;
+}
+
+/* Example for setting a maximum width for code blocks */
+pre code {
+    max-width: 800px; /* Adjust this value as needed (e.g., 100% for full width) */
+    overflow-x: auto; /* Adds horizontal scrollbar if content exceeds width */
+}
+
+/* Example for adjusting content area width for the Material theme */
+.md-grid {
+    max-width: 1240px; /* Increase the overall content area width */
+}

@@ -19,6 +19,10 @@ dependencies = [
     "tqdm>=4.67.1",
 ]
 
+[project.optional-dependencies]
+cuda12 = ["jax[cuda12]>=0.6.2"]
+cuda13 = ["jax[cuda13]>=0.6.2"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
