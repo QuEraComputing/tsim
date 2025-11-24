@@ -7,10 +7,10 @@ authors = [
     { name = "Chen Zhao", email = "czhao@quera.com" },
 ]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "ipywidgets>=8.1.8",
-    "jax>=0.6.2",
+    "jax>=0.8.0",
     "numpy>=2.2.6",
     "pyperclip>=1.11.0",
     "pyzx>=0.9.0",
@@ -19,19 +19,24 @@ dependencies = [
     "tqdm>=4.67.1",
 ]
 
+[project.optional-dependencies]
+cuda12 = ["jax[cuda12]>=0.8.0"]
+cuda13 = ["jax[cuda13]>=0.8.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "black>=24.10.0",
+    "black[jupyter]>=24.10.0",
     "coverage>=7.6.4",
-    "ipykernel>=7.1.0",
+    "ipykernel>=6.1.0",
     "ipython>=8.29.0",
     "isort>=5.13.2",
     "jupytext>=1.17.2",
     "matplotlib>=3.10.7",
+    "mkdocs-jupyter>=0.25.0",
     "mypy>=1.13.0",
     "pre-commit>=4.0.1",
     "py-spy>=0.4.1",
@@ -39,6 +44,8 @@ dev = [
     "pytest>=8.3.3",
     "ruff>=0.7.3",
     "rust-just>=1.36.0",
+    "sinter>=1.15.0",
+    "tesseract-decoder>=0.1.1.dev20251113222502",
 ]
 doc = [
     "griffe-kirin>=0.1.0",
@@ -46,6 +53,7 @@ doc = [
     "mike>=2.1.3",
     "mkdocs>=1.6.1",
     "mkdocs-gen-files>=0.5.0",
+    "mkdocs-jupyter>=0.25.0",
     "mkdocs-literate-nav>=0.6.1",
     "mkdocs-material>=9.5.44",
     "mkdocs-minify-plugin>=0.8.0",

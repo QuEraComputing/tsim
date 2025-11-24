@@ -229,6 +229,12 @@ class CompiledMeasurementSampler(BaseCompiledSampler):
         return samples
 
 
+def maybe_bit_pack(array: np.ndarray, *, do_nothing: bool = False) -> np.ndarray:
+    if do_nothing:
+        return array
+    return np.packbits(array.astype(np.bool_), axis=1, bitorder="little")
+
+
 class CompiledDetectorSampler(BaseCompiledSampler):
     """Detector and observable sampler"""
 
@@ -244,6 +250,7 @@ class CompiledDetectorSampler(BaseCompiledSampler):
         prepend_observables: bool = False,
         append_observables: bool = False,
         separate_observables: Literal[True],
+        bit_packed: bool = False,
     ) -> tuple[np.ndarray, np.ndarray]: ...
 
     @overload
@@ -255,6 +262,7 @@ class CompiledDetectorSampler(BaseCompiledSampler):
         prepend_observables: bool = False,
         append_observables: bool = False,
         separate_observables: Literal[False] = False,
+        bit_packed: bool = False,
     ) -> np.ndarray: ...
 
     def sample(
@@ -265,6 +273,7 @@ class CompiledDetectorSampler(BaseCompiledSampler):
         prepend_observables: bool = False,
         append_observables: bool = False,
         separate_observables: bool = False,
+        bit_packed: bool = False,
     ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         """Returns a numpy array containing detector samples from the circuit.
 
@@ -292,7 +301,7 @@ class CompiledDetectorSampler(BaseCompiledSampler):
         samples = super().sample(shots, batch_size=batch_size)
         assert isinstance(samples, np.ndarray)
         if append_observables:
-            return samples
+            return maybe_bit_pack(samples, do_nothing=not bit_packed)
 
         num_detectors = len(self.circuit._detectors)
         det_samples = samples[:, :num_detectors]
@@ -301,6 +310,10 @@ class CompiledDetectorSampler(BaseCompiledSampler):
         if prepend_observables:
             return np.concatenate([obs_samples, det_samples], axis=1)
         if separate_observables:
-            return det_samples, obs_samples
+            return maybe_bit_pack(
+                det_samples, do_nothing=not bit_packed
+            ), maybe_bit_pack(obs_samples, do_nothing=not bit_packed)
 
-        return det_samples  # TODO: don't compute observables if they are discarded here
+        return maybe_bit_pack(det_samples, do_nothing=not bit_packed)
+        # TODO: bitpacking should be done on GPU
+        # TODO: don't compute observables if they are discarded here
