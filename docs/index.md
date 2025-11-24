@@ -1,18 +1,15 @@
-# tsim
+# tsim: fast sampling of Clifford+T circuits
 
-**Fast sampling of non-Clifford quantum circuits with noise**
+`tsim` is a quantum circuit sampler designed for efficient sampling of Clifford+T circuits with Pauli noise.
 
-tsim is a quantum circuit sampler designed for efficient sampling of Clifford+T circuits with Pauli noise.
-
-`tsim` follows the `stim` API and works with `stim` circuits. It supports all `stim` [gates and noise channels](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference), and
-additionally, T-gates.
+`tsim` follows the `stim` API and works with `stim` circuits. It supports all `stim` [gates and noise channels](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference),
+and, importantly, T-gates.
 
 
 
 ## Quick Start
 
 
-To use T-gates, simply use the `S[T]` and `S_DAG[T]` instructions:
 
 ```python
 c = Circuit.from_stim_program_text(
@@ -28,9 +25,11 @@ c = Circuit.from_stim_program_text(
 sampler = c.compile_sampler()
 samples = sampler.sample(shots=100)
 ```
+
+To add T-gates to a circuit, simply use the `S[T]` and `S_DAG[T]` instructions.
 `tsim` does not introduce its own "T" instruction to be fully compatible with `stim`.
 
-For circuits with detector and observable annotations, one can also compile a detector sampler:
+For circuits with detector and observable annotations,you can compile a detector sampler:
 
 ```python
 c = Circuit.from_stim_program_text(
@@ -67,7 +66,7 @@ See [Installation](install.md) for more options.
 
 `tsim` uses stabilizer rank decomposition based on the ZX calculus and is built on top of `pyzx`.
 Circuits are converted into ZX diagrams where noise channels are injected as parametrized Pauli vertices. For efficient sampling on
-CPU and GPU, the diagram is then compiled into contiguous jax arrays, following the approach in [arXiv:2403.06777](https://arxiv.org/abs/2403.06777).
+CPU and GPU, the diagram is compiled into contiguous jax arrays, following the approach described in [arXiv:2403.06777](https://arxiv.org/abs/2403.06777).
 
 
 

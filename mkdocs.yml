@@ -14,7 +14,7 @@ nav:
     - Getting Started: getting_started.md
     - Contributing: contrib.md
   - Examples:
-    - demos/demo.ipynb
+    - demos/encoding_demo.ipynb
   - API Reference: reference/
   - Blog:
     - blog/index.md
