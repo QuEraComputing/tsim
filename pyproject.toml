@@ -7,10 +7,10 @@ authors = [
     { name = "Chen Zhao", email = "czhao@quera.com" },
 ]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "ipywidgets>=8.1.8",
-    "jax>=0.6.2",
+    "jax>=0.8.0",
     "numpy>=2.2.6",
     "pyperclip>=1.11.0",
     "pyzx>=0.9.0",
@@ -20,8 +20,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cuda12 = ["jax[cuda12]>=0.6.2"]
-cuda13 = ["jax[cuda13]>=0.6.2"]
+cuda12 = ["jax[cuda12]>=0.8.0"]
+cuda13 = ["jax[cuda13]>=0.8.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -29,7 +29,7 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "black>=24.10.0",
+    "black[jupyter]>=24.10.0",
     "coverage>=7.6.4",
     "ipykernel>=6.1.0",
     "ipython>=8.29.0",
@@ -44,6 +44,8 @@ dev = [
     "pytest>=8.3.3",
     "ruff>=0.7.3",
     "rust-just>=1.36.0",
+    "sinter>=1.15.0",
+    "tesseract-decoder>=0.1.1.dev20251113222502",
 ]
 doc = [
     "griffe-kirin>=0.1.0",

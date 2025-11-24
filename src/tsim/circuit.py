@@ -3,7 +3,7 @@ import random
 from collections import defaultdict
 from fractions import Fraction
 from functools import wraps
-from typing import Any, Callable, Iterable, TypeVar, overload
+from typing import Any, Callable, Iterable, Literal, TypeVar, cast, overload
 
 import jax
 import stim
@@ -105,7 +105,7 @@ def accepts_qubit_list(func=None, *, num_qubits: int = 1):  # type: ignore[no-un
 class Circuit:
     """Quantum circuit represented as a ZX-diagram with noise support."""
 
-    def __init__(self, key: Array | None = None):
+    def __init__(self, stim_program_text: str = "", key: Array | None = None):
         """Initialize an empty circuit with optional random key for noise sampling."""
         if key is None:
             key = jax.random.key(0)
@@ -120,6 +120,43 @@ class Circuit:
         self._detectors: list[int] = []
         self._observables_dict: dict[int, int] = {}  # idx: vertex
         self._qubit_to_input: dict[int, int] = {}
+
+        self.append_from_stim_program_text(stim_program_text)
+        self.stim_circuit: stim.Circuit | None
+        if stim_program_text != "":
+            self.stim_circuit = stim.Circuit(stim_program_text)
+        else:
+            self.stim_circuit = None
+
+    def detector_error_model(
+        self,
+        *,
+        decompose_errors: bool = False,
+        flatten_loops: bool = False,
+        allow_gauge_detectors: bool = False,
+        approximate_disjoint_errors: float = False,
+        ignore_decomposition_failures: bool = False,
+        block_decomposition_from_introducing_remnant_edges: bool = False,
+    ) -> stim.DetectorErrorModel:
+        if self.stim_circuit is None:
+            raise ValueError("Circuit has no stim circuit")
+        return self.stim_circuit.detector_error_model(
+            decompose_errors=decompose_errors,
+            flatten_loops=flatten_loops,
+            allow_gauge_detectors=allow_gauge_detectors,
+            approximate_disjoint_errors=approximate_disjoint_errors,
+            ignore_decomposition_failures=ignore_decomposition_failures,
+            block_decomposition_from_introducing_remnant_edges=block_decomposition_from_introducing_remnant_edges,
+        )
+
+    def __repr__(self) -> str:
+        return f"tsim.Circuit('''\n{str(self)}\n''')"
+
+    def __str__(self) -> str:
+        return str(self.stim_circuit)
+
+    def cast_to_stim(self) -> stim.Circuit:
+        return cast(stim.Circuit, self)
 
     @property
     def _observables(self) -> list[int]:
@@ -562,7 +599,12 @@ class Circuit:
         for q in self._last_vertex:
             self.g.set_row(self._last_vertex[q], r)
 
-    def diagram(self, labels=False) -> BaseGraph:
+    def diagram(
+        self, type: Literal["pyzx", "timeline-svg"] = "pyzx", labels=False
+    ) -> BaseGraph:
+        if type == "timeline-svg":
+            assert self.stim_circuit is not None, "Circuit has no stim circuit"
+            return self.stim_circuit.diagram(type="timeline-svg")
         """Display the ZX-diagram representation of the circuit."""
         if len(self.g.vertices()) == 0:
             return self.g
@@ -842,6 +884,7 @@ class Circuit:
             skip_detectors=skip_detectors,
             replace_s_with_t=replace_s_with_t,
         )
+        c.stim_circuit = stim_circuit
         return c
 
     @staticmethod
