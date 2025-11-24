@@ -1,0 +1,127 @@
+site_name: tsim
+repo_name: tsim
+repo_url: https://github.com/QuEraComputing/tsim
+site_description: >-
+  tsim
+edit_uri: "edit/main/docs/"
+site_url: https://github.com/QuEraComputing/tsim
+
+# Page tree
+nav:
+  - Home:
+    - index.md
+    - Installation: install.md
+    - Getting Started: getting_started.md
+    - Contributing: contrib.md
+  - Examples:
+    - demos/encoding_demo.ipynb
+  - API Reference: reference/
+  - Blog:
+    - blog/index.md
+
+
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - announce.dismiss
+    - content.action.view
+    - content.action.edit
+    - content.code.annotate
+    - content.code.copy
+    # - content.tabs.link
+    - content.tooltips
+    # - header.autohide
+    # - navigation.expand
+    - navigation.indexes
+    # - navigation.instant
+    # - navigation.prune
+    - navigation.sections
+    - navigation.tabs
+    # - navigation.tabs.sticky
+    - navigation.top
+    - navigation.tracking
+    - navigation.footer
+    - search.highlight
+    - search.suggest
+    - toc.follow
+
+plugins:
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_if_no_docstring: false
+            separate_signature: true
+            merge_init_into_class: true
+            extensions:
+              - griffe_inherited_docstrings
+              - griffe_kirin
+            show_inheritance_diagram: true
+            show_signature_annotations: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            docstring_options:
+              ignore_init_summary: true
+  - search:
+      separator: '[\s\-,:!=\[\: )"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - gen-files:
+      scripts:
+        - docs/scripts/gen_ref_nav.py
+  - literate-nav:
+      nav_file: SUMMARY.txt
+  - minify:
+      minify_html: true
+  - blog
+  - mkdocs-jupyter:
+      allow_errors: false
+
+extra_css:
+  - stylesheets/extra.css
+  - https://unpkg.com/katex@0/dist/katex.min.css
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - pymdownx.superfences
+  - pymdownx.caret
+  - pymdownx.mark
+  - pymdownx.tilde
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+
+copyright: Copyright &copy; 2025 QuEra Computing, Inc.
+
+extra:
+  version:
+    provider: mike
+  social:
+    - icon: simple/x
+      link: https://x.com/QueraComputing
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/company/quera-computing-inc/
+
+extra_javascript:
+  - scripts/katex.js
+  - https://unpkg.com/katex@0/dist/katex.min.js
+  - https://unpkg.com/katex@0/dist/contrib/auto-render.min.js
