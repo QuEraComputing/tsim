@@ -9,7 +9,7 @@ import numpy as np
 import tsim.external.pyzx as zx
 from tsim.channels import ChannelSampler
 from tsim.circuit import Circuit
-from tsim.decomposer import Decomposer, DecomposerArray
+from tsim.decomposer import Decomposer, DecomposerArray, DecompositionMode
 from tsim.evaluate import evaluate_batch
 from tsim.graph_util import connected_components, squash_graph, transform_error_basis
 
@@ -41,17 +41,27 @@ def get_repr(program: DecomposerArray) -> str:
     )
 
 
-class CompiledProbSampler(ABC):
-    """Quantum circuit sampler using ZX-calculus based stabilizer rank decomposition."""
+class _CompiledSamplerBase:
+    """Base class with common initialization logic for all compiled samplers."""
 
     def __init__(
         self,
         circuit: Circuit,
         *,
-        sample_detectors: bool = False,
-        seed: int | None = None,
+        sample_detectors: bool,
+        mode: DecompositionMode,
+        seed: int | None,
     ):
-        """Create a sampler from pre-built sampler resources."""
+        """Initialize the sampler with common graph preparation.
+
+        Args:
+            circuit: The quantum circuit to compile.
+            sample_detectors: If True, sample detectors/observables; if False, sample measurements.
+            mode: Decomposition mode:
+                - "sequential": For sampling - [1, 2, ..., n] per component
+                - "joint": For probability estimation - [0, n] per component
+            seed: Random seed for JAX. If None, a random seed is generated.
+        """
         self.circuit = circuit
         graph = circuit.get_sampling_graph(sample_detectors=sample_detectors)
 
@@ -83,7 +93,7 @@ class CompiledProbSampler(ABC):
         sorted_decomposers = sorted(decomposers, key=lambda x: len(x.output_indices))
         self.program = DecomposerArray(components=sorted_decomposers)
 
-        self.program.decompose(autoregressive=False)
+        self.program.decompose(mode=mode)
 
         if seed is None:
             seed = int(np.random.default_rng().integers(0, 2**31))
@@ -92,14 +102,47 @@ class CompiledProbSampler(ABC):
     def __repr__(self):
         return get_repr(self.program)
 
-    def probabilities(self, state: np.ndarray, *, batch_size: int) -> np.ndarray:
-        """Sample a batch of measurement/detector outcomes."""
+
+class CompileStateProbs(_CompiledSamplerBase):
+    """Computes measurement probabilities for a given state."""
+
+    def __init__(
+        self,
+        circuit: Circuit,
+        *,
+        sample_detectors: bool = False,
+        seed: int | None = None,
+    ):
+        """Create a probability estimator.
+
+        Args:
+            circuit: The quantum circuit to compile.
+            sample_detectors: If True, compute detector/observable probabilities.
+            seed: Random seed for JAX. If None, a random seed is generated.
+        """
+        super().__init__(
+            circuit,
+            sample_detectors=sample_detectors,
+            mode="joint",
+            seed=seed,
+        )
+
+    def probability_of(self, state: np.ndarray, *, batch_size: int) -> np.ndarray:
+        """Compute probabilities for a batch of error samples given a measurement state.
+
+        Args:
+            state: The measurement outcome state to compute probability for.
+            batch_size: Number of error samples to use for estimation.
+
+        Returns:
+            Array of probabilities P(state | error_sample) for each error sample.
+        """
         f_samples = self.channel_sampler.sample(batch_size)
         p_batch_total = [np.ones(batch_size, dtype=np.float64) for _ in range(2)]
 
         for component in self.program.components:
-            if component.f_selection is None or component.compiled_circuits is None:
-                raise RuntimeError("Sampling plan not decomposed before sampling.")
+            assert component.f_selection is not None
+            assert component.compiled_circuits is not None
             assert len(component.compiled_circuits) == 2
             for i in range(2):
                 circuit = component.compiled_circuits[i]
@@ -118,94 +161,65 @@ class CompiledProbSampler(ABC):
         return np.array(p_batch_total[1] / p_batch_total[0])
 
 
-class BaseCompiledSampler(ABC):
-    """Quantum circuit sampler using ZX-calculus based stabilizer rank decomposition."""
+class _SequentialSamplerBase(_CompiledSamplerBase, ABC):
+    """Base class for samplers that use sequential (autoregressive) decomposition."""
 
     def __init__(
         self,
         circuit: Circuit,
         *,
-        sample_detectors: bool = False,
-        seed: int | None = None,
+        sample_detectors: bool,
+        seed: int | None,
     ):
-        """Create a sampler from pre-built sampler resources."""
-        self.circuit = circuit
-        graph = circuit.get_sampling_graph(sample_detectors=sample_detectors)
+        """Create a sequential sampler.
 
-        zx.full_reduce(graph, paramSafe=True)
-        squash_graph(graph)
-
-        graph, error_transform = transform_error_basis(graph)
-
-        self.channel_sampler = ChannelSampler(
-            error_channels=circuit.error_channels, error_transform=error_transform
+        Args:
+            circuit: The quantum circuit to compile.
+            sample_detectors: If True, sample detectors/observables; if False, sample measurements.
+            seed: Random seed for JAX. If None, a random seed is generated.
+        """
+        super().__init__(
+            circuit,
+            sample_detectors=sample_detectors,
+            mode="sequential",
+            seed=seed,
         )
-
-        m_chars = [f"m{i}" for i in range(len(graph.outputs()))]
-
-        decomposers: list[Decomposer] = []
-        for component in connected_components(graph):
-            error_chars = set()
-            for v in component.graph.vertices():
-                error_chars |= component.graph._phaseVars[v]
-
-            decomposers.append(
-                Decomposer(
-                    graph=component.graph,
-                    output_indices=component.output_indices,
-                    f_chars=sorted(error_chars),
-                    m_chars=m_chars,
-                )
-            )
-        sorted_decomposers = sorted(decomposers, key=lambda x: len(x.output_indices))
-        self.program = DecomposerArray(components=sorted_decomposers)
-
-        self.program.decompose()
-
-        if seed is None:
-            seed = int(np.random.default_rng().integers(0, 2**31))
-        self._key = jax.random.key(seed)
-
-    def __repr__(self):
-        return get_repr(self.program)
 
     def sample_batch(self, batch_size: int) -> np.ndarray:
         """Sample a batch of measurement/detector outcomes."""
         f_samples = self.channel_sampler.sample(batch_size)
 
-        zeros = jnp.zeros((batch_size, 1), dtype=jnp.uint8)
-        ones = jnp.ones((batch_size, 1), dtype=jnp.uint8)
+        zeros = jnp.zeros((batch_size, 1), dtype=jnp.bool)
+        ones = jnp.ones((batch_size, 1), dtype=jnp.bool)
 
         component_samples = []
+        output_order = self.program.output_order
 
         for component in self.program.components:
-            if component.f_selection is None or component.compiled_circuits is None:
-                raise RuntimeError("Sampling plan not decomposed before sampling.")
+            assert component.f_selection is not None
+            assert component.compiled_circuits is not None
 
-            s = f_samples[:, component.f_selection]
-            num_errors = s.shape[1]
+            params = f_samples[:, component.f_selection]
+            num_errors = params.shape[1]
 
             key, self._key = jax.random.split(self._key)
 
             for circuit in component.compiled_circuits:
-                state_0 = jnp.hstack([s, zeros])
-                p_batch_0 = np.abs(evaluate_batch(circuit, state_0).to_numpy())
+                state_0 = jnp.hstack([params, zeros])
+                p0_batch = np.abs(evaluate_batch(circuit, state_0).to_numpy())
 
-                state_1 = jnp.hstack([s, ones])
-                p_batch_1 = np.abs(evaluate_batch(circuit, state_1).to_numpy())
+                state_1 = jnp.hstack([params, ones])
+                p1_batch = np.abs(evaluate_batch(circuit, state_1).to_numpy())
 
                 # normalize the probabilities
-                p1 = p_batch_1 / (p_batch_0 + p_batch_1)
+                p1_norm = p1_batch / (p0_batch + p1_batch)
 
                 _, key = jax.random.split(key)
-                m = jax.random.bernoulli(key, p=p1).astype(jnp.uint8)
-                s = jnp.hstack([s, m[:, None]])
+                measurement = jax.random.bernoulli(key, p=p1_norm).astype(jnp.bool)
+                params = jnp.hstack([params, measurement[:, None]])
 
-            correlated_samples = s[:, num_errors:]
-            component_samples.append(correlated_samples)
-        return np.concatenate(component_samples, axis=1)[
-            :, np.argsort(self.program.output_order)
-        ]
+            component_samples.append(params[:, num_errors:])
+        return np.concatenate(component_samples, axis=1)[:, np.argsort(output_order)]
 
     @abstractmethod
     def sample(
@@ -219,10 +233,16 @@ class BaseCompiledSampler(ABC):
         return np.concatenate(batches)[:shots]
 
 
-class CompiledMeasurementSampler(BaseCompiledSampler):
-    """Measurement sampler"""
+class CompiledMeasurementSampler(_SequentialSamplerBase):
+    """Samples measurement outcomes from a quantum circuit."""
 
     def __init__(self, circuit: Circuit, *, seed: int | None = None):
+        """Create a measurement sampler.
+
+        Args:
+            circuit: The quantum circuit to compile.
+            seed: Random seed for JAX. If None, a random seed is generated.
+        """
         super().__init__(circuit, sample_detectors=False, seed=seed)
 
     def sample(
@@ -231,7 +251,7 @@ class CompiledMeasurementSampler(BaseCompiledSampler):
         *,
         batch_size: int = 1024,
     ) -> np.ndarray:
-        """Samples a batch of measurement samples from the circuit.
+        """Samples measurement outcomes from the circuit.
 
         Args:
             shots: The number of times to sample every measurement in the circuit.
@@ -248,15 +268,30 @@ class CompiledMeasurementSampler(BaseCompiledSampler):
 
 
 def maybe_bit_pack(array: np.ndarray, *, do_nothing: bool = False) -> np.ndarray:
+    """Bit pack an array of boolean values (or do nothing)
+
+    Args:
+        array: The array to bit pack.
+        do_nothing: If True, do nothing and return the array as is.
+
+    Returns:
+        The bit packed array or the original array if do_nothing is True.
+    """
     if do_nothing:
         return array
     return np.packbits(array.astype(np.bool_), axis=1, bitorder="little")
 
 
-class CompiledDetectorSampler(BaseCompiledSampler):
-    """Detector and observable sampler"""
+class CompiledDetectorSampler(_SequentialSamplerBase):
+    """Samples detector and observable outcomes from a quantum circuit."""
 
     def __init__(self, circuit: Circuit, *, seed: int | None = None):
+        """Create a detector sampler.
+
+        Args:
+            circuit: The quantum circuit to compile.
+            seed: Random seed for JAX. If None, a random seed is generated.
+        """
         super().__init__(circuit, sample_detectors=True, seed=seed)
 
     @overload
@@ -293,7 +328,7 @@ class CompiledDetectorSampler(BaseCompiledSampler):
         separate_observables: bool = False,
         bit_packed: bool = False,
     ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
-        """Returns a numpy array containing detector samples from the circuit.
+        """Returns detector samples from the circuit.
 
         The circuit must define the detectors using DETECTOR instructions. Observables
         defined by OBSERVABLE_INCLUDE instructions can also be included in the results
@@ -311,6 +346,7 @@ class CompiledDetectorSampler(BaseCompiledSampler):
                 with the detectors and are placed at the start of the results.
             append_observables: Defaults to false. When set, observables are included
                 with the detectors and are placed at the end of the results.
+            bit_packed: Defaults to false. When set, results are bit-packed.
 
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.
@@ -333,5 +369,4 @@ class CompiledDetectorSampler(BaseCompiledSampler):
             ), maybe_bit_pack(obs_samples, do_nothing=not bit_packed)
 
         return maybe_bit_pack(det_samples, do_nothing=not bit_packed)
-        # TODO: bitpacking should be done on GPU
         # TODO: don't compute observables if they are discarded here
