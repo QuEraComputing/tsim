@@ -4,9 +4,12 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any, Dict, Sequence, Tuple
 
+import numpy as np
+
 from tsim.external.pyzx.graph.base import BaseGraph
 from tsim.external.pyzx.graph.graph import Graph
 from tsim.external.pyzx.graph.scalar import Scalar
+from tsim.util.linalg import find_basis
 
 
 @dataclass
@@ -130,24 +133,54 @@ def _induced_subgraph(
 
 
 def transform_error_basis(g: BaseGraph) -> tuple[BaseGraph, dict[str, set[str]]]:
-    # TODO: perform Gaussian elimination to obtain the smallest number of error bits
+    """Transform phase variables from the original 'e' basis to a reduced 'f' basis.
 
-    # transform to a new error basis f
-    error_transform = {}
+    This function finds a linearly independent basis for the phase variables
+    across all vertices and transforms them accordingly. The original variables
+    (e0, e1, ...) are mapped to a smaller set (f0, f1, ...) where each f_i
+    corresponds to a linear combination of original e variables.
 
-    for v in g.vertices():
-        if v not in g._phaseVars:
-            continue
-        phase_vars = g._phaseVars[v]
-        if len(phase_vars) == 0:
-            continue
+    Args:
+        g: A ZX graph with phase variables attached to vertices.
 
-        new_var = f"f{len(error_transform)}"
-        g._phaseVars[v] = {new_var}
+    Returns:
+        A tuple containing:
+            - The modified graph (same object, mutated in place)
+            - A mapping from new basis variables to original variables,
+              e.g. {"f0": {"e1", "e3"}, "f1": {"e2"}}
+    """
+    parametrized_vertices = [
+        v for v in g.vertices() if v in g._phaseVars and g._phaseVars[v]
+    ]
 
-        error_transform[new_var] = phase_vars
+    if not parametrized_vertices:
+        g.scalar = Scalar()
+        return g, {}
 
-    # Remove the scalar. Since we have not started the stabilizer rank decomposition.
+    # Parse variable indices and find the dimension
+    error_indices = [
+        [int(var[1:]) for var in g._phaseVars[v]] for v in parametrized_vertices
+    ]
+    num_errors = max(max(indices) for indices in error_indices) + 1
+
+    # Build binary matrix representation
+    error_matrix = np.zeros((len(error_indices), num_errors), dtype=np.uint8)
+    for row_idx, indices in enumerate(error_indices):
+        error_matrix[row_idx, indices] = 1
+
+    basis, transform = find_basis(error_matrix)
+    # Now: error_matrix = transform @ basis
+
+    for v, transform_row in zip(parametrized_vertices, transform):
+        new_vars = {f"f{j}" for j in np.nonzero(transform_row)[0]}
+        g._phaseVars[v] = new_vars
+
+    error_transform = {
+        f"f{i}": {f"e{j}" for j in np.nonzero(basis_vec)[0]}
+        for i, basis_vec in enumerate(basis)
+    }
+
+    # Remove the scalar. Since we have not started the stabilizer rank decomposition,
     # it is safe to remove the overall scalar.
     # TODO: we can only remove the scalar if it is not 0
     g.scalar = Scalar()
