@@ -42,6 +42,10 @@ class _CompiledSamplerBase:
 
         graph, error_transform = transform_error_basis(graph)
 
+        # Remove the scalar. Since we have not started the stabilizer rank decomposition,
+        # it is safe to remove the overall scalar.
+        graph.scalar = zx.Scalar()
+
         self.channel_sampler = ChannelSampler(
             error_channels=circuit.error_channels, error_transform=error_transform
         )

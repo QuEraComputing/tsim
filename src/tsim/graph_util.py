@@ -180,10 +180,6 @@ def transform_error_basis(g: BaseGraph) -> tuple[BaseGraph, dict[str, set[str]]]
         for i, basis_vec in enumerate(basis)
     }
 
-    # Remove the scalar. Since we have not started the stabilizer rank decomposition,
-    # it is safe to remove the overall scalar.
-    g.scalar = Scalar()
-
     return g, error_transform
 
 

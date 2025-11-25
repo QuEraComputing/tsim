@@ -45,6 +45,11 @@ class Decomposer:
             for i, v in enumerate(output_vertices[:num_plugged]):
                 g0.set_phase(v, self.m_chars[i])
             zx.full_reduce(g0, paramSafe=True)
+
+            # Remove parametrized global phase terms
+            g0.scalar.phasevars_halfpi = dict()
+            g0.scalar.phasevars_pi_pair = []
+
             graphs.append(g0)
 
         self.plugged_graphs = graphs
