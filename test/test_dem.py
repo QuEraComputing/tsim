@@ -59,6 +59,22 @@ def test_get_detector_error_model():
     assert dem.approx_equals(dem2, atol=1e-12)
 
 
+def test_get_detector_error_model_with_gauge_detectors():
+    c = stim.Circuit(
+        """
+        R 0 1
+        H 0
+        CNOT 0 1
+        H 1
+        X_ERROR(0.01) 0
+        M 0 1
+        OBSERVABLE_INCLUDE(0) rec[-1] rec[-2]
+        DETECTOR rec[-2]
+        """
+    )
+    assert str(get_detector_error_model(c)) == "error(0.01) D0 L0"
+
+
 def test_get_detector_error_model_no_errors():
     c = stim.Circuit(
         """

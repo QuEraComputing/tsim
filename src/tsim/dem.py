@@ -134,14 +134,14 @@ def get_detector_error_model(
     # obs combines all OBSERVABLE_INCLUDE instructions. We now add them to the end
     # of the flattened circuit as DETECTOR instructions.
     num_detectors = stim_circuit.num_detectors
-    mapping: dict[str, str] = {}
+    mapping: dict[int, int] = {}
     for idx, targets in obs.items():
         new_circuit.append_operation(
             "DETECTOR",
             [stim.target_rec(t) for t in targets],
         )
         # mapping from DETECTORS (D) to logical observables (L)
-        mapping[f"D{num_detectors}"] = f"L{idx}"
+        mapping[num_detectors] = idx
         num_detectors += 1
 
     dem = new_circuit.detector_error_model(
@@ -153,22 +153,41 @@ def get_detector_error_model(
         block_decomposition_from_introducing_remnant_edges=block_decomposition_from_introducing_remnant_edges,
     )
 
-    # reconvert DETECTORS (D) into logical observables (L)
-    dem_text = str(dem)
-    for a, b in mapping.items():
-        dem_text = (
-            dem_text.replace(f"detector {a}", f"logical_observable {b}")
-            .replace(a, b)  # replace D<idx> with L<idx>
-            .replace(f"error(0.5) {b}", "")  # remove gauge statements "error(0.5) L0"
-        )
-        # Additionally we have removed the gauge statements "error(0.5) L<idx>"
+    new_dem = stim.DetectorErrorModel()
+    for instruction in dem:
+        assert not isinstance(instruction, stim.DemRepeatBlock)
 
-    dem = stim.DetectorErrorModel(dem_text)
-    if dem.num_observables != stim_circuit.num_observables:
+        new_targets = []
+        new_type = instruction.type
+        for t in instruction.targets_copy():
+            if (
+                isinstance(t, stim.DemTarget)
+                and t.is_relative_detector_id
+                and t.val in mapping
+            ):
+                new_targets.append(stim.target_logical_observable_id(mapping[t.val]))
+                if instruction.type == "detector":
+                    new_type = "logical_observable"
+            else:
+                new_targets.append(t)
+
+        new_instruction = stim.DemInstruction(
+            new_type,
+            instruction.args_copy(),
+            new_targets,
+        )
+
+        if instruction.args_copy() == [0.5]:
+            # remove gauge statements "error(0.5) L<idx>"
+            continue
+
+        new_dem.append(new_instruction)
+
+    if new_dem.num_observables != stim_circuit.num_observables:
         raise ValueError(
             "Failed to compute detector error model. "
             "The number of observables changed after conversion. "
             "This indicates that stim has interpreted logical observables as gauges "
-            "and removed them."
+            f"and removed them. Error model:\n {str(new_dem)}"
         )
-    return dem
+    return new_dem
