@@ -11,7 +11,7 @@ from tsim.channels import ChannelSampler
 from tsim.circuit import Circuit
 from tsim.decomposer import Decomposer, DecomposerArray
 from tsim.evaluate import evaluate_batch
-from tsim.graph_util import connected_components, transform_error_basis
+from tsim.graph_util import connected_components, squash_graph, transform_error_basis
 
 
 def get_repr(program: DecomposerArray) -> str:
@@ -50,6 +50,7 @@ class CompiledProbSampler(ABC):
         graph = circuit.get_sampling_graph(sample_detectors=sample_detectors)
 
         zx.full_reduce(graph, paramSafe=True)
+        squash_graph(graph)
 
         graph, error_transform = transform_error_basis(graph)
 
@@ -118,6 +119,7 @@ class BaseCompiledSampler(ABC):
         graph = circuit.get_sampling_graph(sample_detectors=sample_detectors)
 
         zx.full_reduce(graph, paramSafe=True)
+        squash_graph(graph)
 
         graph, error_transform = transform_error_basis(graph)
 
