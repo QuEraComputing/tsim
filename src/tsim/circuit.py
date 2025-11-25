@@ -924,17 +924,31 @@ class Circuit:
             replace_s_with_t,
         )
 
-    def compile_sampler(self):
-        """Compile circuit into a measurement sampler."""
+    def compile_sampler(self, *, seed: int | None = None):
+        """Compile circuit into a measurement sampler.
+
+        Args:
+            seed: Random seed for the sampler. If None, a random seed will be generated.
+
+        Returns:
+            A CompiledMeasurementSampler that can be used to sample measurements.
+        """
         from tsim.sampler import CompiledMeasurementSampler
 
-        return CompiledMeasurementSampler(self)
+        return CompiledMeasurementSampler(self, seed=seed)
 
-    def compile_detector_sampler(self):
-        """Compile circuit into a detector sampler."""
+    def compile_detector_sampler(self, *, seed: int | None = None):
+        """Compile circuit into a detector sampler.
+
+        Args:
+            seed: Random seed for the sampler. If None, a random seed will be generated.
+
+        Returns:
+            A CompiledDetectorSampler that can be used to sample detectors and observables.
+        """
         from tsim.sampler import CompiledDetectorSampler
 
-        return CompiledDetectorSampler(self)
+        return CompiledDetectorSampler(self, seed=seed)
 
     @staticmethod
     def random(
