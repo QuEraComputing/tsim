@@ -90,12 +90,14 @@ class DecomposerArray:
 
         Args:
             mode: Decomposition mode applied to each component:
-                - "sequential": For sampling - [1, 2, ..., n] per component
+                - "sequential": For sampling - [0, 1, 2, ..., n] per component
+                  (includes normalization circuit for efficient chain-rule sampling)
                 - "joint": For probability - [0, n] per component
         """
         for component in self.components:
             if mode == "sequential":
-                outputs_to_plug = list(range(1, len(component.graph.outputs()) + 1))
+                # [0, 1, 2, ..., n] - includes normalization (0) for chain-rule optimization
+                outputs_to_plug = list(range(len(component.graph.outputs()) + 1))
             elif mode == "joint":
                 outputs_to_plug = [0, len(component.graph.outputs())]
 
