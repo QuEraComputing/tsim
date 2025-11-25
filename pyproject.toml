@@ -31,6 +31,7 @@ build-backend = "hatchling.build"
 dev = [
     "black[jupyter]>=24.10.0",
     "coverage>=7.6.4",
+    "galois>=0.4.7",
     "ipykernel>=6.1.0",
     "ipython>=8.29.0",
     "isort>=5.13.2",
