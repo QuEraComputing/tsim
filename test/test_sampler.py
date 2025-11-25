@@ -4,7 +4,7 @@ from tsim.circuit import Circuit
 
 
 def test_detector_sampler_args():
-    c = Circuit.from_stim_program_text(
+    c = Circuit(
         """
         R 0 1 2
         X 2
@@ -27,3 +27,18 @@ def test_detector_sampler_args():
     d, o = sampler.sample(1, separate_observables=True)
     assert np.array_equal(d, np.array([[0, 0]]))
     assert np.array_equal(o, np.array([[1]]))
+
+
+def test_seed():
+    c = Circuit(
+        """
+        H 0
+        M 0
+        """
+    )
+    for i in range(2):
+        sampler = c.compile_sampler(seed=0)
+        assert np.count_nonzero(sampler.sample(100)) == 54
+        assert np.count_nonzero(sampler.sample(100)) == 50
+        assert np.count_nonzero(sampler.sample(100)) == 54
+        assert np.count_nonzero(sampler.sample(100)) == 49

@@ -44,7 +44,13 @@ def get_repr(program: DecomposerArray) -> str:
 class CompiledProbSampler(ABC):
     """Quantum circuit sampler using ZX-calculus based stabilizer rank decomposition."""
 
-    def __init__(self, circuit: Circuit, sample_detectors: bool = False):
+    def __init__(
+        self,
+        circuit: Circuit,
+        *,
+        sample_detectors: bool = False,
+        seed: int | None = None,
+    ):
         """Create a sampler from pre-built sampler resources."""
         self.circuit = circuit
         graph = circuit.get_sampling_graph(sample_detectors=sample_detectors)
@@ -79,7 +85,9 @@ class CompiledProbSampler(ABC):
 
         self.program.decompose(autoregressive=False)
 
-        self._key = jax.random.key(0)
+        if seed is None:
+            seed = int(np.random.default_rng().integers(0, 2**31))
+        self._key = jax.random.key(seed)
 
     def __repr__(self):
         return get_repr(self.program)
@@ -113,7 +121,13 @@ class CompiledProbSampler(ABC):
 class BaseCompiledSampler(ABC):
     """Quantum circuit sampler using ZX-calculus based stabilizer rank decomposition."""
 
-    def __init__(self, circuit: Circuit, sample_detectors: bool = False):
+    def __init__(
+        self,
+        circuit: Circuit,
+        *,
+        sample_detectors: bool = False,
+        seed: int | None = None,
+    ):
         """Create a sampler from pre-built sampler resources."""
         self.circuit = circuit
         graph = circuit.get_sampling_graph(sample_detectors=sample_detectors)
@@ -148,7 +162,9 @@ class BaseCompiledSampler(ABC):
 
         self.program.decompose()
 
-        self._key = jax.random.key(0)
+        if seed is None:
+            seed = int(np.random.default_rng().integers(0, 2**31))
+        self._key = jax.random.key(seed)
 
     def __repr__(self):
         return get_repr(self.program)
@@ -206,8 +222,8 @@ class BaseCompiledSampler(ABC):
 class CompiledMeasurementSampler(BaseCompiledSampler):
     """Measurement sampler"""
 
-    def __init__(self, circuit: Circuit):
-        super().__init__(circuit, sample_detectors=False)
+    def __init__(self, circuit: Circuit, *, seed: int | None = None):
+        super().__init__(circuit, sample_detectors=False, seed=seed)
 
     def sample(
         self,
@@ -240,8 +256,8 @@ def maybe_bit_pack(array: np.ndarray, *, do_nothing: bool = False) -> np.ndarray
 class CompiledDetectorSampler(BaseCompiledSampler):
     """Detector and observable sampler"""
 
-    def __init__(self, circuit: Circuit):
-        super().__init__(circuit, sample_detectors=True)
+    def __init__(self, circuit: Circuit, *, seed: int | None = None):
+        super().__init__(circuit, sample_detectors=True, seed=seed)
 
     @overload
     def sample(
