@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import jax
 import jax.numpy as jnp
@@ -9,6 +10,8 @@ import tsim.external.pyzx as zx
 from tsim.compile import CompiledCircuit, compile_circuit
 from tsim.external.pyzx.graph.base import BaseGraph
 from tsim.stabrank import find_stab
+
+DecompositionMode = Literal["sequential", "joint"]
 
 
 @dataclass
@@ -21,18 +24,25 @@ class Decomposer:
     compiled_circuits: list[CompiledCircuit] | None = None
     f_selection: jax.Array | None = None
 
-    def plug_outputs(self, autoregressive: bool = True) -> list[BaseGraph]:
+    def plug_outputs(self, outputs_to_plug: list[int]) -> list[BaseGraph]:
+        """Create graphs with specified numbers of outputs plugged.
+
+        Args:
+            outputs_to_plug: List of integers specifying how many outputs to plug
+                for each graph. E.g., [1, 2, 3] creates 3 graphs with 1, 2, and 3
+                outputs plugged respectively.
+        """
         graphs: list[BaseGraph] = []
+        self.outputs_to_plug = outputs_to_plug
         num_outputs = len(self.graph.outputs())
-        for o in range(num_outputs) if autoregressive else [-1, num_outputs - 1]:
+
+        for num_plugged in outputs_to_plug:
             g0 = self.graph.copy()
             output_vertices = list(g0.outputs())
-            effect = "0" * (o + 1) + "+" * (num_outputs - o - 1)
+            effect = "0" * num_plugged + "+" * (num_outputs - num_plugged)
             g0.apply_effect(effect)
-            g0.scalar.add_power(
-                (num_outputs - o - 1)
-            )  # compensate power of the trace effect
-            for i, v in enumerate(output_vertices[: o + 1]):
+            g0.scalar.add_power(num_outputs - num_plugged)  # compensate power of trace
+            for i, v in enumerate(output_vertices[:num_plugged]):
                 g0.set_phase(v, self.m_chars[i])
             zx.full_reduce(g0, paramSafe=True)
             graphs.append(g0)
@@ -40,8 +50,12 @@ class Decomposer:
         self.plugged_graphs = graphs
         return graphs
 
-    def decompose(self, autoregressive: bool = True) -> None:
-        graphs = self.plug_outputs(autoregressive=autoregressive)
+    def decompose(self) -> None:
+        """Decompose the graph into compiled circuits."""
+        if self.plugged_graphs is None:
+            raise ValueError("Graphs not plugged")
+
+        graphs = self.plugged_graphs
         circuits: list[CompiledCircuit] = []
         chars = self.f_chars + self.m_chars
         num_errors = len(self.f_chars)
@@ -51,18 +65,8 @@ class Decomposer:
             zx.full_reduce(g_copy, paramSafe=True)
             g_copy.normalize()
             g_list = find_stab(g_copy)
-            if autoregressive:
-                circuits.append(compile_circuit(g_list, num_errors + i + 1, chars))
-            else:
-                if i == 0:
-                    # just normalization
-                    circuits.append(compile_circuit(g_list, num_errors, chars))
-                else:
-                    # all outputs have variables
-                    num_outsputs = len(self.graph.outputs())
-                    circuits.append(
-                        compile_circuit(g_list, num_errors + num_outsputs, chars)
-                    )
+            n_params = num_errors + self.outputs_to_plug[i]
+            circuits.append(compile_circuit(g_list, n_params, chars))
 
         self.compiled_circuits = circuits
         self.f_selection = jnp.array(
@@ -81,6 +85,19 @@ class DecomposerArray:
             ord_list.extend(component.output_indices)
         return jnp.array(ord_list, dtype=jnp.int32)
 
-    def decompose(self, autoregressive: bool = True) -> None:
+    def decompose(self, mode: DecompositionMode = "sequential") -> None:
+        """Decompose all components.
+
+        Args:
+            mode: Decomposition mode applied to each component:
+                - "sequential": For sampling - [1, 2, ..., n] per component
+                - "joint": For probability - [0, n] per component
+        """
         for component in self.components:
-            component.decompose(autoregressive=autoregressive)
+            if mode == "sequential":
+                outputs_to_plug = list(range(1, len(component.graph.outputs()) + 1))
+            elif mode == "joint":
+                outputs_to_plug = [0, len(component.graph.outputs())]
+
+            component.plug_outputs(outputs_to_plug)
+            component.decompose()

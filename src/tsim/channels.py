@@ -231,14 +231,14 @@ class ChannelSampler:
         for col, e_vars in enumerate(error_transform.values()):
             transform[[e2idx[evar] for evar in e_vars], col] = 1
 
-        self.error_transform = jnp.array(transform)
+        self.error_transform = jnp.array(transform).astype(jnp.float32)
 
     def sample(self, num_samples: int = 1) -> jax.Array:
         """Sample from all error channels and transform to new error basis."""
         if len(self.error_channels) == 0:
-            return jnp.zeros((num_samples, 0), dtype=jnp.uint8)
+            return jnp.zeros((num_samples, 0), dtype=jnp.bool)
         samples = []
         for channel in self.error_channels:
             samples.append(channel.sample(num_samples))
-        total_samples = jnp.concatenate(samples, axis=1)
-        return total_samples @ self.error_transform % 2
+        total_samples = jnp.concatenate(samples, axis=1).astype(jnp.float32)
+        return (total_samples @ self.error_transform % 2).astype(jnp.bool)
