@@ -7,7 +7,7 @@ import stim
 import tsim.external.pyzx as zx
 from tsim.circuit import Circuit
 from tsim.external.vec_sim.vec_sampler import VecSampler
-from tsim.sampler import CompileStateProbs
+from tsim.sampler import CompiledStateProbs
 
 
 def random_stim_circuit(
@@ -129,7 +129,7 @@ def test_sampler(seed):
     stim_sampler = VecSampler(stim_circuit, False)
     stim_samples, _, _ = stim_sampler.sample(n_samples)
 
-    sampler = circuit.compile_sampler()
+    sampler = circuit.compile_sampler(seed=seed)
     tsim_samples = sampler.sample(n_samples, batch_size=batch_size)
 
     # Convert samples to integers
@@ -171,7 +171,7 @@ def test_statevector_simulator(num_qubits, seed):
     # tsim statevector simulator
     circuit = Circuit.from_stim_program(stim_circuit)
     circuit.m(range(num_qubits))
-    prob_sampler = CompileStateProbs(circuit)
+    prob_sampler = CompiledStateProbs(circuit)
 
     sv = []
     for i in range(2**num_qubits):

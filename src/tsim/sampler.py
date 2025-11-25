@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 from math import ceil
 from typing import Literal, overload
 
@@ -12,33 +11,6 @@ from tsim.circuit import Circuit
 from tsim.decomposer import Decomposer, DecomposerArray, DecompositionMode
 from tsim.evaluate import evaluate_batch
 from tsim.graph_util import connected_components, squash_graph, transform_error_basis
-
-
-def get_repr(program: DecomposerArray) -> str:
-    c_graphs = []
-    c_params = []
-    c_a_terms = []
-    c_b_terms = []
-    c_c_terms = []
-    c_d_terms = []
-    num_circuits = 0
-    for component in program.components:
-        if component.compiled_circuits is None:
-            continue
-        for circuit in component.compiled_circuits:
-            c_graphs.append(circuit.num_graphs)
-            c_params.append(circuit.n_params)
-            c_a_terms.append(len(circuit.a_graph_ids))
-            c_b_terms.append(len(circuit.b_graph_ids))
-            c_c_terms.append(len(circuit.c_graph_ids))
-            c_d_terms.append(len(circuit.d_graph_ids))
-            num_circuits += 1
-    return (
-        f"CompiledSampler({num_circuits} outputs, {np.sum(c_graphs)} graphs, "
-        f"{np.sum(c_params)} parameters, {np.sum(c_a_terms)} A terms, "
-        f"{np.sum(c_b_terms)} B terms, "
-        f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms)"
-    )
 
 
 class _CompiledSamplerBase:
@@ -58,7 +30,7 @@ class _CompiledSamplerBase:
             circuit: The quantum circuit to compile.
             sample_detectors: If True, sample detectors/observables; if False, sample measurements.
             mode: Decomposition mode:
-                - "sequential": For sampling - [1, 2, ..., n] per component
+                - "sequential": For sampling - [0, 1, 2, ..., n] per component
                 - "joint": For probability estimation - [0, n] per component
             seed: Random seed for JAX. If None, a random seed is generated.
         """
@@ -99,12 +71,84 @@ class _CompiledSamplerBase:
             seed = int(np.random.default_rng().integers(0, 2**31))
         self._key = jax.random.key(seed)
 
+    def _sample_batch(self, batch_size: int) -> np.ndarray:
+        """Sample a batch of measurement outcomes."""
+        f_samples = self.channel_sampler.sample(batch_size)
+        ones = jnp.ones((batch_size, 1), dtype=jnp.bool)
+
+        component_samples = []
+        output_order = self.program.output_order
+
+        for component in self.program.components:
+            assert component.f_selection is not None
+            assert component.compiled_circuits is not None
+
+            params = f_samples[:, component.f_selection]
+            num_errors = params.shape[1]
+
+            key, self._key = jax.random.split(self._key)
+
+            # circuits[0] is normalization, circuits[1:] are for sequential bits
+            norm_circuit = component.compiled_circuits[0]
+            bit_circuits = component.compiled_circuits[1:]
+
+            # Compute normalization once
+            prev = np.abs(evaluate_batch(norm_circuit, params).to_numpy())
+
+            for circuit in bit_circuits:
+                # Only evaluate with bit=1 (chain rule: p0 = prev - p1)
+                state_1 = jnp.hstack([params, ones])
+                p1 = np.abs(evaluate_batch(circuit, state_1).to_numpy())
+
+                # P(bit=1) = p1 / prev
+                p1_norm = p1 / prev
+
+                _, key = jax.random.split(key)
+                measurement = jax.random.bernoulli(key, p=p1_norm)
+
+                # Chain rule: new_prev = p1 if bit=1, else prev - p1
+                prev = jnp.where(measurement, p1, prev - p1)
+
+                params = jnp.hstack([params, measurement[:, None]])
+
+            component_samples.append(params[:, num_errors:])
+
+        return np.concatenate(component_samples, axis=1)[:, np.argsort(output_order)]
+
     def __repr__(self):
-        return get_repr(self.program)
+        c_graphs = []
+        c_params = []
+        c_a_terms = []
+        c_b_terms = []
+        c_c_terms = []
+        c_d_terms = []
+        num_circuits = 0
+        for component in self.program.components:
+            if component.compiled_circuits is None:
+                continue
+            for circuit in component.compiled_circuits:
+                c_graphs.append(circuit.num_graphs)
+                c_params.append(circuit.n_params)
+                c_a_terms.append(len(circuit.a_graph_ids))
+                c_b_terms.append(len(circuit.b_graph_ids))
+                c_c_terms.append(len(circuit.c_graph_ids))
+                c_d_terms.append(len(circuit.d_graph_ids))
+                num_circuits += 1
+        return (
+            f"CompiledSampler({num_circuits} outputs, {np.sum(c_graphs)} graphs, "
+            f"{np.sum(c_params)} parameters, {np.sum(c_a_terms)} A terms, "
+            f"{np.sum(c_b_terms)} B terms, "
+            f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms)"
+        )
 
 
-class CompileStateProbs(_CompiledSamplerBase):
-    """Computes measurement probabilities for a given state."""
+class CompiledStateProbs(_CompiledSamplerBase):
+    """Computes measurement probabilities for a given state.
+
+    Uses joint decomposition [0, n] where:
+    - circuits[0]: normalization (0 outputs plugged)
+    - circuits[1]: full joint probability (all outputs plugged)
+    """
 
     def __init__(
         self,
@@ -138,103 +182,36 @@ class CompileStateProbs(_CompiledSamplerBase):
             Array of probabilities P(state | error_sample) for each error sample.
         """
         f_samples = self.channel_sampler.sample(batch_size)
-        p_batch_total = [np.ones(batch_size, dtype=np.float64) for _ in range(2)]
+        p_norm = np.ones(batch_size, dtype=np.float64)
+        p_joint = np.ones(batch_size, dtype=np.float64)
 
         for component in self.program.components:
             assert component.f_selection is not None
             assert component.compiled_circuits is not None
             assert len(component.compiled_circuits) == 2
-            for i in range(2):
-                circuit = component.compiled_circuits[i]
-
-                s = f_samples[:, component.f_selection]
-
-                component_state = state[component.output_indices]
-                tiled_component_state = jnp.tile(component_state, (batch_size, 1))
-
-                full_state = jnp.hstack([s, tiled_component_state]) if i == 1 else s
-
-                p_batch = np.abs(evaluate_batch(circuit, full_state).to_numpy())
-
-                p_batch_total[i] *= p_batch
-
-        return np.array(p_batch_total[1] / p_batch_total[0])
-
-
-class _SequentialSamplerBase(_CompiledSamplerBase, ABC):
-    """Base class for samplers that use sequential (autoregressive) decomposition."""
-
-    def __init__(
-        self,
-        circuit: Circuit,
-        *,
-        sample_detectors: bool,
-        seed: int | None,
-    ):
-        """Create a sequential sampler.
-
-        Args:
-            circuit: The quantum circuit to compile.
-            sample_detectors: If True, sample detectors/observables; if False, sample measurements.
-            seed: Random seed for JAX. If None, a random seed is generated.
-        """
-        super().__init__(
-            circuit,
-            sample_detectors=sample_detectors,
-            mode="sequential",
-            seed=seed,
-        )
-
-    def sample_batch(self, batch_size: int) -> np.ndarray:
-        """Sample a batch of measurement/detector outcomes."""
-        f_samples = self.channel_sampler.sample(batch_size)
-
-        zeros = jnp.zeros((batch_size, 1), dtype=jnp.bool)
-        ones = jnp.ones((batch_size, 1), dtype=jnp.bool)
-
-        component_samples = []
-        output_order = self.program.output_order
-
-        for component in self.program.components:
-            assert component.f_selection is not None
-            assert component.compiled_circuits is not None
 
             params = f_samples[:, component.f_selection]
-            num_errors = params.shape[1]
+            norm_circuit, joint_circuit = component.compiled_circuits
 
-            key, self._key = jax.random.split(self._key)
+            # Normalization: circuit[0] with only error params
+            p_norm *= np.abs(evaluate_batch(norm_circuit, params).to_numpy())
 
-            for circuit in component.compiled_circuits:
-                state_0 = jnp.hstack([params, zeros])
-                p0_batch = np.abs(evaluate_batch(circuit, state_0).to_numpy())
+            # Joint probability: circuit[1] with error params + state
+            component_state = state[component.output_indices]
+            tiled_state = jnp.tile(component_state, (batch_size, 1))
+            full_params = jnp.hstack([params, tiled_state])
+            p_joint *= np.abs(evaluate_batch(joint_circuit, full_params).to_numpy())
 
-                state_1 = jnp.hstack([params, ones])
-                p1_batch = np.abs(evaluate_batch(circuit, state_1).to_numpy())
-
-                # normalize the probabilities
-                p1_norm = p1_batch / (p0_batch + p1_batch)
-
-                _, key = jax.random.split(key)
-                measurement = jax.random.bernoulli(key, p=p1_norm).astype(jnp.bool)
-                params = jnp.hstack([params, measurement[:, None]])
-
-            component_samples.append(params[:, num_errors:])
-        return np.concatenate(component_samples, axis=1)[:, np.argsort(output_order)]
-
-    @abstractmethod
-    def sample(
-        self, shots: int, *, batch_size: int = 1024
-    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
-        if shots < batch_size:
-            batch_size = shots
-        batches = []
-        for _ in range(ceil(shots / batch_size)):
-            batches.append(self.sample_batch(batch_size))
-        return np.concatenate(batches)[:shots]
+        return p_joint / p_norm
 
 
-class CompiledMeasurementSampler(_SequentialSamplerBase):
-    """Samples measurement outcomes from a quantum circuit."""
+class CompiledMeasurementSampler(_CompiledSamplerBase):
+    """Samples measurement outcomes from a quantum circuit.
+
+    Uses sequential decomposition [0, 1, 2, ..., n] where:
+    - circuits[0]: normalization (0 outputs plugged)
+    - circuits[i]: cumulative probability up to bit i
+    """
 
     def __init__(self, circuit: Circuit, *, seed: int | None = None):
         """Create a measurement sampler.
@@ -243,15 +220,15 @@ class CompiledMeasurementSampler(_SequentialSamplerBase):
             circuit: The quantum circuit to compile.
             seed: Random seed for JAX. If None, a random seed is generated.
         """
-        super().__init__(circuit, sample_detectors=False, seed=seed)
+        super().__init__(
+            circuit,
+            sample_detectors=False,
+            mode="sequential",
+            seed=seed,
+        )
 
-    def sample(
-        self,
-        shots: int,
-        *,
-        batch_size: int = 1024,
-    ) -> np.ndarray:
-        """Samples measurement outcomes from the circuit.
+    def sample(self, shots: int, *, batch_size: int = 1024) -> np.ndarray:
+        """Sample measurement outcomes from the circuit.
 
         Args:
             shots: The number of times to sample every measurement in the circuit.
@@ -262,13 +239,16 @@ class CompiledMeasurementSampler(_SequentialSamplerBase):
         Returns:
             A numpy array containing the measurement samples.
         """
-        samples = super().sample(shots, batch_size=batch_size)
-        assert isinstance(samples, np.ndarray)
-        return samples
+        if shots < batch_size:
+            batch_size = shots
+        batches = []
+        for _ in range(ceil(shots / batch_size)):
+            batches.append(self._sample_batch(batch_size))
+        return np.concatenate(batches)[:shots]
 
 
 def maybe_bit_pack(array: np.ndarray, *, do_nothing: bool = False) -> np.ndarray:
-    """Bit pack an array of boolean values (or do nothing)
+    """Bit pack an array of boolean values (or do nothing).
 
     Args:
         array: The array to bit pack.
@@ -282,7 +262,7 @@ def maybe_bit_pack(array: np.ndarray, *, do_nothing: bool = False) -> np.ndarray
     return np.packbits(array.astype(np.bool_), axis=1, bitorder="little")
 
 
-class CompiledDetectorSampler(_SequentialSamplerBase):
+class CompiledDetectorSampler(_CompiledSamplerBase):
     """Samples detector and observable outcomes from a quantum circuit."""
 
     def __init__(self, circuit: Circuit, *, seed: int | None = None):
@@ -292,7 +272,12 @@ class CompiledDetectorSampler(_SequentialSamplerBase):
             circuit: The quantum circuit to compile.
             seed: Random seed for JAX. If None, a random seed is generated.
         """
-        super().__init__(circuit, sample_detectors=True, seed=seed)
+        super().__init__(
+            circuit,
+            sample_detectors=True,
+            mode="sequential",
+            seed=seed,
+        )
 
     @overload
     def sample(
@@ -351,9 +336,13 @@ class CompiledDetectorSampler(_SequentialSamplerBase):
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.
         """
+        if shots < batch_size:
+            batch_size = shots
+        batches = []
+        for _ in range(ceil(shots / batch_size)):
+            batches.append(self._sample_batch(batch_size))
+        samples = np.concatenate(batches)[:shots]
 
-        samples = super().sample(shots, batch_size=batch_size)
-        assert isinstance(samples, np.ndarray)
         if append_observables:
             return maybe_bit_pack(samples, do_nothing=not bit_packed)
 
@@ -364,9 +353,10 @@ class CompiledDetectorSampler(_SequentialSamplerBase):
         if prepend_observables:
             return np.concatenate([obs_samples, det_samples], axis=1)
         if separate_observables:
-            return maybe_bit_pack(
-                det_samples, do_nothing=not bit_packed
-            ), maybe_bit_pack(obs_samples, do_nothing=not bit_packed)
+            return (
+                maybe_bit_pack(det_samples, do_nothing=not bit_packed),
+                maybe_bit_pack(obs_samples, do_nothing=not bit_packed),
+            )
 
         return maybe_bit_pack(det_samples, do_nothing=not bit_packed)
         # TODO: don't compute observables if they are discarded here
