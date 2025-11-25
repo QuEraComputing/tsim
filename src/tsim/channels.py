@@ -169,26 +169,69 @@ class Error(Channel):
 
 
 class ChannelSampler:
-    """Samples from multiple error channels simultaneously."""
+    """Samples from multiple error channels and transforms to a reduced basis.
+
+    This class combines multiple error channels (each producing error bits e0, e1, ...)
+    and applies a linear transformation over GF(2) to convert samples from the original
+    "e" basis to a reduced "f" basis.
+
+    f_i = error_transform_ij * e_j mod 2
+
+    Channels whose variables don't appear in the transform are automatically filtered
+    out to avoid unnecessary sampling.
+
+    Attributes:
+        error_channels: Filtered list of channels that contribute to the transform.
+        error_transform: Matrix of shape (num_e, num_f) for basis conversion.
+
+    Example:
+        >>> channels = [Error(0.1, key1), Error(0.2, key2)]  # produces e0, e1
+        >>> transform = {"f0": {"e0", "e1"}}  # f0 = e0 XOR e1
+        >>> sampler = ChannelSampler(channels, transform)
+        >>> samples = sampler.sample(1000)  # shape (1000, 1)
+    """
 
     def __init__(
         self,
         error_channels: list[Channel],
         error_transform: dict[str, set[str]],
     ):
-        """Initialize with a list of error channels."""
-        self.num_bits = sum(channel.num_bits for channel in error_channels)
-        self.error_channels = error_channels
+        """Initialize the sampler with error channels and a basis transformation.
 
-        e2idx = {f"e{i}": i for i in range(self.num_bits)}
-        vecs = []
-        for e_vars in error_transform.values():
-            vec = np.zeros(self.num_bits, dtype=np.int32)
-            for e_var in e_vars:
-                vec[e2idx[e_var]] = 1
-            vecs.append(vec)
+        Args:
+            error_channels: List of channels. Channel i produces error bits starting
+                at index sum(channels[0:i].num_bits). For example, if channels have
+                num_bits [2, 1, 2], they produce variables [e0,e1], [e2], [e3,e4].
+            error_transform: Mapping from new basis variables to sets of original
+                variables. Each new variable f_i is the XOR of its associated e
+                variables. E.g., {"f0": {"e1", "e3"}, "f1": {"e2"}} means
+                f0 = e1 XOR e3 and f1 = e2.
+        """
+        from itertools import count
 
-        self.error_transform = jnp.array(vecs).T
+        counter = count()
+        channel_evars: list[list[str]] = [
+            [f"e{next(counter)}" for _ in range(ch.num_bits)] for ch in error_channels
+        ]
+
+        # Filter to channels whose variables are used
+        used_evars = set().union(*error_transform.values())
+        filtered = [
+            (ch, evars)
+            for ch, evars in zip(error_channels, channel_evars)
+            if set(evars) & used_evars
+        ]
+
+        self.error_channels = [ch for ch, _ in filtered]
+        kept_evars = [evar for _, evars in filtered for evar in evars]
+        e2idx = {evar: i for i, evar in enumerate(kept_evars)}
+
+        # Build transformation matrix: shape (num_e_vars, num_f_vars)
+        transform = np.zeros((len(e2idx), len(error_transform)), dtype=np.uint8)
+        for col, e_vars in enumerate(error_transform.values()):
+            transform[[e2idx[evar] for evar in e_vars], col] = 1
+
+        self.error_transform = jnp.array(transform)
 
     def sample(self, num_samples: int = 1) -> jax.Array:
         """Sample from all error channels and transform to new error basis."""
