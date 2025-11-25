@@ -1,5 +1,4 @@
 import copy
-import random
 from collections import defaultdict
 from fractions import Fraction
 from functools import wraps
@@ -949,103 +948,6 @@ class Circuit:
         from tsim.sampler import CompiledDetectorSampler
 
         return CompiledDetectorSampler(self, seed=seed)
-
-    @staticmethod
-    def random(
-        qubits: int,
-        depth: int,
-        p: float = 0.0,
-        p_t: float | None = None,
-        p_s: float | None = None,
-        p_hsh: float | None = None,
-        p_cnot: float | None = None,
-        seed: int | None = None,
-    ) -> "Circuit":
-        """Generate a random quantum circuit with depolarizing noise.
-
-        Args:
-            qubits: Number of qubits in the circuit
-            depth: Number of gate layers to generate
-            p: Depolarizing noise parameter (applied after each gate)
-            p_t: Probability of applying T gate (default: equal probability)
-            p_s: Probability of applying S gate (default: equal probability)
-            p_hsh: Probability of applying H, sqrt(X), or sqrt(Y) gates (default: equal probability)
-            p_cnot: Probability of applying CNOT gate (default: equal probability)
-            seed: Random seed for reproducibility (optional)
-
-        Returns:
-            A randomly generated Circuit with specified gates and noise
-        """
-        if seed is not None:
-            random.seed(seed)
-
-        # Set default equal probabilities if not specified
-        gate_probs = []
-        gate_types = []
-
-        if p_t is not None and p_t > 0:
-            gate_probs.append(p_t)
-            gate_types.append("t")
-        if p_s is not None and p_s > 0:
-            gate_probs.append(p_s)
-            gate_types.append("s")
-        if p_hsh is not None and p_hsh > 0:
-            gate_probs.append(p_hsh)
-            gate_types.append("hsh")
-        if p_cnot is not None and p_cnot > 0:
-            gate_probs.append(p_cnot)
-            gate_types.append("cnot")
-
-        # If no probabilities specified, use equal probabilities for all gates
-        if not gate_types:
-            gate_types = ["t", "s", "hsh", "cnot"]
-            gate_probs = [0.25, 0.25, 0.25, 0.25]
-        else:
-            # Normalize probabilities
-            total = sum(gate_probs)
-            gate_probs = [p / total for p in gate_probs]
-
-        circ = Circuit()
-
-        for q in range(qubits):
-            circ.r(q)
-
-        for _ in range(depth):
-            gate_type = random.choices(gate_types, weights=gate_probs, k=1)[0]
-
-            if gate_type == "t":
-                q = random.randint(0, qubits - 1)
-                circ.t(q)
-                if p > 0:
-                    circ.depolarize1(q, p)
-
-            elif gate_type == "s":
-                q = random.randint(0, qubits - 1)
-                circ.s(q)
-                if p > 0:
-                    circ.depolarize1(q, p)
-
-            elif gate_type == "hsh":
-                q = random.randint(0, qubits - 1)
-                gate = random.choice(["h", "sqrt_x", "sqrt_y"])
-                if gate == "h":
-                    circ.h(q)
-                elif gate == "sqrt_x":
-                    circ.sqrt_x(q)
-                else:
-                    circ.sqrt_y(q)
-                if p > 0:
-                    circ.depolarize1(q, p)
-
-            elif gate_type == "cnot":
-                if qubits < 2:
-                    continue
-                q1, q2 = random.sample(range(qubits), 2)
-                circ.cnot(q1, q2)
-                if p > 0:
-                    circ.depolarize2(q1, q2, p)
-
-        return circ
 
     @property
     def tcount(self):
