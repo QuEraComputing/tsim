@@ -72,7 +72,9 @@ def test_get_detector_error_model_with_gauge_detectors():
         DETECTOR rec[-2]
         """
     )
-    assert str(get_detector_error_model(c)) == "error(0.01) D0 L0"
+    assert get_detector_error_model(c).approx_equals(
+        stim.DetectorErrorModel("error(0.01) D0 L0"), atol=1e-12
+    )
 
 
 def test_get_detector_error_model_no_errors():
@@ -117,7 +119,7 @@ def test_get_detector_error_model_with_logical_observables():
             """
             R 0
             H 0
-            Z_ERROR(0.01) 0
+            X_ERROR(0.01) 0
             M 0
             OBSERVABLE_INCLUDE(0) rec[-1]
             """
