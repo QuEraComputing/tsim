@@ -112,6 +112,7 @@ class Circuit:
         self._key = key
         self.g = GraphS()
         self._last_vertex: dict[int, int] = {}
+        self._first_vertex: dict[int, int] = {}
         self.error_channels: list[Channel] = []
 
         self._num_error_bits: int = 0
@@ -182,6 +183,7 @@ class Circuit:
         self._qubit_to_input[qubit] = v1
         v2 = self.g.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=1)
         self.g.add_edge((v1, v2))
+        self._first_vertex[qubit] = v1
         self._last_vertex[qubit] = v2
         return v1
 
@@ -676,6 +678,11 @@ class Circuit:
         """
 
         g = self.g.copy()
+
+        # initialize un-initialized first vertices to the 0 state
+        for v in self._first_vertex.values():
+            if g.type(v) == VertexType.BOUNDARY:
+                g.set_type(v, VertexType.X)
 
         # clean up last row
         max_row = max(self.g.row(v) for v in self._last_vertex.values())
