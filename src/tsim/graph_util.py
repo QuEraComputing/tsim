@@ -182,14 +182,70 @@ def transform_error_basis(g: BaseGraph) -> tuple[BaseGraph, dict[str, set[str]]]
 
     # Remove the scalar. Since we have not started the stabilizer rank decomposition,
     # it is safe to remove the overall scalar.
-    # TODO: we can only remove the scalar if it is not 0
     g.scalar = Scalar()
 
-    # clean the diagram up a bit
-    for v in g.outputs():
-        n = list(g.neighbors(v))[0]
-        if len(list(g.neighbors(n))) == 1:
-            g.set_qubit(n, g.qubit(v) - 1)
-            g.set_row(n, g.row(v))
-
     return g, error_transform
+
+
+def squash_graph(g: BaseGraph) -> None:
+    """Compact the graph by placing vertices underneath their output connections.
+
+    Starting from output vertices, each vertex is placed directly underneath
+    (same row, qubit - 1) its already-placed neighbor. Positions are assigned
+    via BFS traversal from outputs, ensuring no (qubit, row) collisions.
+    """
+    outputs = list(g.outputs())
+    if not outputs:
+        return
+
+    # Normalize output positions: consecutive rows at qubit = num_outputs
+    num_outputs = len(outputs)
+    for row, v in enumerate(outputs):
+        g.set_qubit(v, num_outputs)
+        g.set_row(v, row)
+
+    # Track occupied positions and placed vertices
+    occupied: set[tuple[int, int]] = {(num_outputs, row) for row in range(num_outputs)}
+    placed: set[Any] = set(outputs)
+
+    # BFS from outputs
+    queue: deque[Any] = deque(outputs)
+
+    while queue:
+        current = queue.popleft()
+        current_qubit = int(g.qubit(current))
+        current_row = int(g.row(current))
+
+        for neighbor in g.neighbors(current):
+            if neighbor in placed:
+                continue
+
+            # Try to place directly underneath: same row, qubit - 1
+            target_qubit = current_qubit - 1
+            target_row = current_row
+
+            # If spot is taken, search for nearest free spot at same qubit level
+            if (target_qubit, target_row) in occupied:
+                # Search outward from target_row
+                for offset in range(1, 1000):
+                    if (target_qubit, target_row + offset) not in occupied:
+                        target_row = target_row + offset
+                        break
+                    if (
+                        target_qubit,
+                        target_row - offset,
+                    ) not in occupied and target_row - offset >= 0:
+                        target_row = target_row - offset
+                        break
+
+            g.set_qubit(neighbor, target_qubit)
+            g.set_row(neighbor, target_row)
+            occupied.add((target_qubit, target_row))
+            placed.add(neighbor)
+            queue.append(neighbor)
+
+    for v in g.outputs():
+        neighbors = list(g.neighbors(v))
+        if neighbors and len(list(g.neighbors(neighbors[0]))) == 1:
+            g.set_qubit(neighbors[0], g.qubit(v) + 1)
+            g.set_row(neighbors[0], g.row(v))
