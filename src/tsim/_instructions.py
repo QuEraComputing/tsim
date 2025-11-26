@@ -169,9 +169,6 @@ def h_xy(b: GraphRepresentation, qubit: int) -> None:
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
-h_xz = h  # alias for h
-
-
 def h_yz(b: GraphRepresentation, qubit: int) -> None:
     """Variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z)."""
     sqrt_x(b, qubit)
@@ -244,12 +241,9 @@ def cnot(b: GraphRepresentation, control: int, target: int) -> None:
     b.graph.scalar.add_power(1)
 
 
-cx = cnot  # alias for cnot
-
-
 def cy(b: GraphRepresentation, control: int, target: int) -> None:
     s_dag(b, target)
-    cx(b, control, target)
+    cnot(b, control, target)
     s(b, target)
 
 
@@ -292,41 +286,41 @@ def swap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
 
 def iswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     """Swaps two qubits and phases the -1 eigenspace of the ZZ observable by i."""
-    cx(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
     s(b, qubit2)
-    cx(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
     swap(b, qubit1, qubit2)
 
 
 def iswap_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     """Swaps two qubits and phases the -1 eigenspace of the ZZ observable by -i."""
-    cx(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
     s_dag(b, qubit2)
-    cx(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
     swap(b, qubit1, qubit2)
 
 
 def sqrt_xx(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     """Phases the -1 eigenspace of the XX observable by i."""
-    cx(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
     sqrt_x(b, qubit1)
-    cx(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
 
 
 def sqrt_xx_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     """Phases the -1 eigenspace of the XX observable by -i."""
-    cx(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
     sqrt_x_dag(b, qubit1)
-    cx(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
 
 
 def sqrt_yy(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     """Phases the -1 eigenspace of the YY observable by i."""
     s(b, qubit1)
-    cx(b, qubit2, qubit1)
+    cnot(b, qubit2, qubit1)
     z(b, qubit1)
     h(b, qubit2)
-    cx(b, qubit2, qubit1)
+    cnot(b, qubit2, qubit1)
     s(b, qubit1)
     b.graph.scalar.add_phase(Fraction(1, 4))
 
@@ -334,25 +328,25 @@ def sqrt_yy(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
 def sqrt_yy_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     """Phases the -1 eigenspace of the YY observable by -i."""
     s_dag(b, qubit1)
-    cx(b, qubit2, qubit1)
+    cnot(b, qubit2, qubit1)
     h(b, qubit2)
     z(b, qubit1)
-    cx(b, qubit2, qubit1)
+    cnot(b, qubit2, qubit1)
     s_dag(b, qubit1)
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
 def sqrt_zz(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     """Phases the -1 eigenspace of the ZZ observable by i."""
-    cx(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
     s(b, qubit2)
-    cx(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
 
 
 def sqrt_zz_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     """Phases the -1 eigenspace of the ZZ observable by -i."""
     h(b, qubit2)
-    cx(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
     h(b, qubit2)
     s_dag(b, qubit1)
     s_dag(b, qubit2)
@@ -361,7 +355,7 @@ def sqrt_zz_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
 def xcx(b: GraphRepresentation, control: int, target: int) -> None:
     """X-controlled X gate. Applies X to target if control is in |-> state."""
     h(b, control)
-    cx(b, control, target)
+    cnot(b, control, target)
     h(b, control)
 
 
@@ -375,13 +369,13 @@ def xcy(b: GraphRepresentation, control: int, target: int) -> None:
 
 def xcz(b: GraphRepresentation, control: int, target: int) -> None:
     """X-controlled Z gate. Applies Z to target if control is in |-> state."""
-    cx(b, target, control)
+    cnot(b, target, control)
 
 
 def ycx(b: GraphRepresentation, control: int, target: int) -> None:
     """Y-controlled X gate. Applies X to target if control is in |-i> state."""
     h_yz(b, control)
-    cx(b, control, target)
+    cnot(b, control, target)
     h_yz(b, control)
 
 
@@ -414,36 +408,8 @@ def _error(b: GraphRepresentation, qubit: int, error_type: int, phase: str) -> N
     b.graph.set_phase(v1, phase)  # type: ignore[arg-type]
 
 
-def x_error(b: GraphRepresentation, qubit: int, p: float) -> None:
-    b.error_specs.append(ErrorSpec(Error, (p,)))
-    _error(b, qubit, VertexType.X, f"e{b.num_error_bits}")
-    b.num_error_bits += 1
-
-
-def z_error(b: GraphRepresentation, qubit: int, p: float) -> None:
-    b.error_specs.append(ErrorSpec(Error, (p,)))
-    _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
-    b.num_error_bits += 1
-
-
-def y_error(b: GraphRepresentation, qubit: int, p: float) -> None:
-    b.error_specs.append(ErrorSpec(Error, (p,)))
-    _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
-    _error(b, qubit, VertexType.X, f"e{b.num_error_bits}")
-    b.num_error_bits += 1
-
-
 def depolarize1(b: GraphRepresentation, qubit: int, p: float) -> None:
     b.error_specs.append(ErrorSpec(Depolarize1, (p,)))
-    _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
-    _error(b, qubit, VertexType.X, f"e{b.num_error_bits + 1}")
-    b.num_error_bits += 2
-
-
-def pauli_channel_1(
-    b: GraphRepresentation, qubit: int, px: float, py: float, pz: float
-) -> None:
-    b.error_specs.append(ErrorSpec(PauliChannel1, (px, py, pz)))
     _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
     _error(b, qubit, VertexType.X, f"e{b.num_error_bits + 1}")
     b.num_error_bits += 2
@@ -456,6 +422,15 @@ def depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) ->
     _error(b, qubit_j, VertexType.Z, f"e{b.num_error_bits + 2}")
     _error(b, qubit_j, VertexType.X, f"e{b.num_error_bits + 3}")
     b.num_error_bits += 4
+
+
+def pauli_channel_1(
+    b: GraphRepresentation, qubit: int, px: float, py: float, pz: float
+) -> None:
+    b.error_specs.append(ErrorSpec(PauliChannel1, (px, py, pz)))
+    _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
+    _error(b, qubit, VertexType.X, f"e{b.num_error_bits + 1}")
+    b.num_error_bits += 2
 
 
 def pauli_channel_2(
@@ -491,6 +466,25 @@ def pauli_channel_2(
     b.num_error_bits += 4
 
 
+def x_error(b: GraphRepresentation, qubit: int, p: float) -> None:
+    b.error_specs.append(ErrorSpec(Error, (p,)))
+    _error(b, qubit, VertexType.X, f"e{b.num_error_bits}")
+    b.num_error_bits += 1
+
+
+def y_error(b: GraphRepresentation, qubit: int, p: float) -> None:
+    b.error_specs.append(ErrorSpec(Error, (p,)))
+    _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
+    _error(b, qubit, VertexType.X, f"e{b.num_error_bits}")
+    b.num_error_bits += 1
+
+
+def z_error(b: GraphRepresentation, qubit: int, p: float) -> None:
+    b.error_specs.append(ErrorSpec(Error, (p,)))
+    _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
+    b.num_error_bits += 1
+
+
 # =============================================================================
 # Collapsing gates
 # =============================================================================
@@ -511,6 +505,29 @@ def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -
         b.silent_rec.append(v1)
     v2 = add_dummy(b, qubit)
     b.graph.add_edge((v1, v2))
+    b.graph.scalar.add_power(-1)
+
+
+def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
+    if qubit not in b.last_vertex:
+        v1 = add_lane(b, qubit)
+        b.graph.set_type(v1, VertexType.X)
+        b.graph.scalar.add_power(-1)
+    else:
+        # If the last vertex is not a measurement, we need to perform silent measurement
+        v = b.last_vertex[qubit]
+        neighbors = list(b.graph.neighbors(v))
+        assert len(neighbors) == 1
+        if perform_trace:
+            _m(b, qubit, silent=True)
+        row = last_row(b, qubit)
+        v1 = b.last_vertex[qubit]
+        b.graph.set_type(v1, VertexType.X)
+        v2 = list(b.graph.neighbors(v1))[0]
+        b.graph.remove_edge((v1, v2))
+        v3 = add_dummy(b, qubit, row + 1)
+        b.graph.add_edge((v1, v3))
+        b.graph.scalar.add_power(-1)
 
 
 def m(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
@@ -533,7 +550,7 @@ def mpp(b: GraphRepresentation, pp: str | list[str]) -> None:
         p, idx = comp[0].lower(), int(comp[1:])
 
         if p == "x":
-            cx(b, aux, idx)
+            cnot(b, aux, idx)
         elif p == "z":
             cz(b, aux, idx)
         elif p == "y":
@@ -549,7 +566,25 @@ def mr(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
     if p > 0:
         x_error(b, qubit, p)
     m(b, qubit, p=p)
-    r(b, qubit)
+    _r(b, qubit, perform_trace=False)
+
+
+def mrx(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
+    h(b, qubit)
+    if p > 0:
+        x_error(b, qubit, p)
+    m(b, qubit, p=p)
+    _r(b, qubit, perform_trace=False)
+    h(b, qubit)
+
+
+def mry(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
+    h_yz(b, qubit)
+    if p > 0:
+        x_error(b, qubit, p)
+    m(b, qubit, p=p)
+    _r(b, qubit, perform_trace=False)
+    h_yz(b, qubit)
 
 
 def mx(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
@@ -557,26 +592,13 @@ def mx(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
     m(b, qubit, p=p)
 
 
+def my(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
+    h_yz(b, qubit)
+    m(b, qubit, p=p)
+
+
 def r(b: GraphRepresentation, qubit: int) -> None:
-    if qubit not in b.last_vertex:
-        v1 = add_lane(b, qubit)
-        b.graph.set_type(v1, VertexType.X)
-    else:
-        # If the last vertex is not a measurement, we need to perform silent measurement
-        v = b.last_vertex[qubit]
-        neighbors = list(b.graph.neighbors(v))
-        assert len(neighbors) == 1
-        n = neighbors[0]
-        last_vertex_is_measurement = any("rec" in var for var in b.graph._phaseVars[n])
-        if not last_vertex_is_measurement:
-            _m(b, qubit, silent=True)
-        row = last_row(b, qubit)
-        v1 = b.last_vertex[qubit]
-        b.graph.set_type(v1, VertexType.X)
-        v2 = list(b.graph.neighbors(v1))[0]
-        b.graph.remove_edge((v1, v2))
-        v3 = add_dummy(b, qubit, row + 1)
-        b.graph.add_edge((v1, v3))
+    _r(b, qubit, perform_trace=True)
 
 
 def rx(b: GraphRepresentation, qubit: int) -> None:
@@ -584,6 +606,13 @@ def rx(b: GraphRepresentation, qubit: int) -> None:
         h(b, qubit)
     r(b, qubit)
     h(b, qubit)
+
+
+def ry(b: GraphRepresentation, qubit: int) -> None:
+    if qubit in b.last_vertex:
+        h_yz(b, qubit)
+    r(b, qubit)
+    h_yz(b, qubit)
 
 
 # =============================================================================
@@ -636,37 +665,34 @@ def tick(b: GraphRepresentation) -> None:
 # =============================================================================
 
 GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
-    # Single-qubit gates
-    "H": (h, 1),
+    # ---- Pauli gates -----------------------------------------------------------
+    "I": (i, 1),
     "X": (x, 1),
     "Y": (y, 1),
     "Z": (z, 1),
-    "S": (s, 1),
-    "S_DAG": (s_dag, 1),
+    # ---- Non-Clifford gates ---------------------------------------------------
     "T": (t, 1),
     "T_DAG": (t_dag, 1),
+    # ---- Single-qubit gates ---------------------------------------------------
+    "C_XYZ": (c_xyz, 1),
+    "C_ZYX": (c_zyx, 1),
+    "H": (h, 1),
+    "H_XY": (h_xy, 1),
+    "H_YZ": (h_yz, 1),
+    "H_XZ": (h, 1),
+    "S": (s, 1),
     "SQRT_X": (sqrt_x, 1),
     "SQRT_X_DAG": (sqrt_x_dag, 1),
     "SQRT_Y": (sqrt_y, 1),
     "SQRT_Y_DAG": (sqrt_y_dag, 1),
-    "SQRT_Z": (sqrt_z, 1),
-    "SQRT_Z_DAG": (sqrt_z_dag, 1),
-    "C_XYZ": (c_xyz, 1),
-    "C_ZYX": (c_zyx, 1),
-    "H_XY": (h_xy, 1),
-    "H_YZ": (h_yz, 1),
-    "R": (r, 1),
-    "RX": (rx, 1),
-    "M": (m, 1),
-    "MX": (mx, 1),
-    "MR": (mr, 1),
-    "I": (i, 1),
-    # Two-qubit gates
-    "CNOT": (cx, 2),
-    "CX": (cx, 2),
+    "SQRT_Z": (s, 1),
+    "SQRT_Z_DAG": (s_dag, 1),
+    "S_DAG": (s_dag, 1),
+    # ---- Two-qubit gates ------------------------------------------------------
+    "CNOT": (cnot, 2),
+    "CX": (cnot, 2),
     "CZ": (cz, 2),
     "CY": (cy, 2),
-    "SWAP": (swap, 2),
     "ISWAP": (iswap, 2),
     "ISWAP_DAG": (iswap_dag, 2),
     "SQRT_XX": (sqrt_xx, 2),
@@ -675,18 +701,37 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     "SQRT_YY_DAG": (sqrt_yy_dag, 2),
     "SQRT_ZZ": (sqrt_zz, 2),
     "SQRT_ZZ_DAG": (sqrt_zz_dag, 2),
+    "SWAP": (swap, 2),
     "XCX": (xcx, 2),
     "XCY": (xcy, 2),
     "XCZ": (xcz, 2),
     "YCX": (ycx, 2),
     "YCY": (ycy, 2),
     "YCZ": (ycz, 2),
-    # Noise channels
-    "X_ERROR": (x_error, 1),
-    "Z_ERROR": (z_error, 1),
-    "Y_ERROR": (y_error, 1),
+    "ZCX": (cnot, 2),
+    "ZCY": (cy, 2),
+    "ZCZ": (cz, 2),
+    # ---- Noise channels -------------------------------------------------------
     "DEPOLARIZE1": (depolarize1, 1),
     "DEPOLARIZE2": (depolarize2, 2),
     "PAULI_CHANNEL_1": (pauli_channel_1, 1),
     "PAULI_CHANNEL_2": (pauli_channel_2, 2),
+    "X_ERROR": (x_error, 1),
+    "Y_ERROR": (y_error, 1),
+    "Z_ERROR": (z_error, 1),
+    # ---- Collapsing gates -----------------------------------------------------
+    "M": (m, 1),
+    # MPP handled by parser
+    "MR": (mr, 1),
+    "MRX": (mrx, 1),
+    "MRY": (mry, 1),
+    "MRZ": (mr, 1),
+    "MX": (mx, 1),
+    "MY": (my, 1),
+    "MZ": (m, 1),
+    "R": (r, 1),
+    "RX": (rx, 1),
+    "RY": (ry, 1),
+    "RZ": (r, 1),
+    # ---- Annotations handled by parser -----------------------------------------
 }
