@@ -13,25 +13,22 @@ from tsim._instructions import (
 def parse_stim_circuit(
     stim_circuit: stim.Circuit,
 ) -> GraphRepresentation:
-    """Parse a stim circuit into a BuiltGraph.
+    """Parse a stim circuit into a GraphRepresentation.
 
     Args:
         stim_circuit: The stim circuit to convert.
-        skip_annotations: If True, skip observable_include, detector, and m.
-        skip_detectors: If True, skip detector instructions only.
-        replace_s_with_t: If True, replace all S gates with T gates.
 
     Returns:
-        A BuiltGraph containing the ZX graph and all auxiliary data.
+        A GraphRepresentation containing the ZX graph and all auxiliary data.
     """
     b = GraphRepresentation()
 
-    ignore_gates = {"QUBIT_COORDS", "SHIFT_COORDS"}
     for instruction in stim_circuit.flattened():
         assert not isinstance(instruction, stim.CircuitRepeatBlock)
 
         name = instruction.name
-        if name in ignore_gates:
+        if name in ["QUBIT_COORDS", "SHIFT_COORDS"]:
+            # TODO: handle these visualization annotations
             continue
 
         if name == "S" and instruction.tag == "T":

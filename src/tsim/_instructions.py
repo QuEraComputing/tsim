@@ -361,7 +361,6 @@ def xcx(b: GraphRepresentation, control: int, target: int) -> None:
 
 def xcy(b: GraphRepresentation, control: int, target: int) -> None:
     """X-controlled Y gate. Applies Y to target if control is in |-> state."""
-    # TODO: bug in stim?
     h(b, control)
     cy(b, control, target)
     h(b, control)
@@ -404,8 +403,8 @@ def _error(b: GraphRepresentation, qubit: int, error_type: int, phase: str) -> N
     v2 = add_dummy(b, qubit)
     b.graph.add_edge((v1, v2))
 
-    b.graph.set_type(v1, error_type)  # type: ignore[arg-type]
-    b.graph.set_phase(v1, phase)  # type: ignore[arg-type]
+    b.graph.set_type(v1, error_type)
+    b.graph.set_phase(v1, phase)
 
 
 def depolarize1(b: GraphRepresentation, qubit: int, p: float) -> None:
@@ -514,7 +513,6 @@ def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
         b.graph.set_type(v1, VertexType.X)
         b.graph.scalar.add_power(-1)
     else:
-        # If the last vertex is not a measurement, we need to perform silent measurement
         v = b.last_vertex[qubit]
         neighbors = list(b.graph.neighbors(v))
         assert len(neighbors) == 1
@@ -626,7 +624,7 @@ def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
     while row in d_rows:
         row += 1
     v0 = b.graph.add_vertex(
-        VertexType.X, qubit=-1, row=row, phase=f"det[{len(b.detectors)}]"  # type: ignore[arg-type]
+        VertexType.X, qubit=-1, row=row, phase=f"det[{len(b.detectors)}]"
     )
     for rec_ in rec:
         b.graph.add_edge((v0, b.rec[rec_]))
@@ -641,9 +639,7 @@ def observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None
         d_rows = set([b.graph.row(d) for d in b.detectors + b.observables])
         while row in d_rows:
             row += 1
-        v0 = b.graph.add_vertex(
-            VertexType.X, qubit=-1, row=row, phase=f"obs[{idx}]"  # type: ignore[arg-type]
-        )
+        v0 = b.graph.add_vertex(VertexType.X, qubit=-1, row=row, phase=f"obs[{idx}]")
         b.observables_dict[idx] = v0
 
     v0 = b.observables_dict[idx]

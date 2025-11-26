@@ -13,6 +13,9 @@ class Channel(abc.ABC):
     logits: jnp.ndarray
     num_bits: int
 
+    def __init__(self, key: Array):
+        self._key = key
+
     @abc.abstractmethod
     def sample(self, num_samples: int = 1) -> jax.Array:
         """Sample errors from the channel.
@@ -182,7 +185,7 @@ class ErrorSpec:
 
     def create_channel(self, key: Array) -> Channel:
         """Create the actual Channel with the given random key."""
-        return self.error_type(*self.params, key)  # type: ignore[return-value]
+        return self.error_type(*self.params, key=key)
 
 
 def create_channels_from_specs(specs: list[ErrorSpec], key: Array) -> list[Channel]:
