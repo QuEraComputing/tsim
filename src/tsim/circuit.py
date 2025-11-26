@@ -152,6 +152,9 @@ class Circuit:
                 XZ surface code, single qubit depolarization has a Y error term which can be decomposed into simpler
                 X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to
                 decompose large errors into simple errors that affect at most two detectors.
+
+                This is not supported by tsim and setting it to true will raise an error. The argument is present
+                for compatibility with stim.
             flatten_loops: Defaults to false. When set to true, the output will not contain any `repeat` blocks.
                 When set to false, the error analysis watches for loops in the circuit reaching a periodic steady
                 state with respect to the detectors being introduced, the error mechanisms that affect them, and the

@@ -36,6 +36,7 @@ def get_detector_error_model(
             XZ surface code, single qubit depolarization has a Y error term which can be decomposed into simpler
             X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to
             decompose large errors into simple errors that affect at most two detectors.
+            When allow_non_deterministic_observables is set to true, decomposition is not supported.
         flatten_loops: Defaults to false. When set to true, the output will not contain any `repeat` blocks.
             When set to false, the error analysis watches for loops in the circuit reaching a periodic steady
             state with respect to the detectors being introduced, the error mechanisms that affect them, and the
@@ -83,6 +84,10 @@ def get_detector_error_model(
 
             Irrelevant unless decompose_errors=True.
     """
+    if allow_non_deterministic_observables and decompose_errors:
+        raise ValueError(
+            "Decomposition of error mechanisms is not supported when allowing non-deterministic observables."
+        )
     obs: dict[int, list[int]] = defaultdict(list)
 
     if not allow_non_deterministic_observables:
