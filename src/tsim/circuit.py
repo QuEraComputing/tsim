@@ -18,6 +18,7 @@ from tsim.channels import (
     PauliChannel1,
     PauliChannel2,
 )
+from tsim.dem import get_detector_error_model
 from tsim.external.pyzx.graph.base import BaseGraph
 from tsim.external.pyzx.graph.graph_s import GraphS
 from tsim.external.pyzx.utils import EdgeType, VertexType
@@ -135,13 +136,73 @@ class Circuit:
         decompose_errors: bool = False,
         flatten_loops: bool = False,
         allow_gauge_detectors: bool = False,
-        approximate_disjoint_errors: float = False,
+        approximate_disjoint_errors: bool = False,
         ignore_decomposition_failures: bool = False,
         block_decomposition_from_introducing_remnant_edges: bool = False,
     ) -> stim.DetectorErrorModel:
+        """Returns a stim.DetectorErrorModel describing the error processes in the circuit.
+
+        Unlike the stim.Circuit.detector_error_model() method, this method allows for non-deterministic observables
+        when `allow_gauge_detectors` is set to true.
+
+        Args:
+            decompose_errors: Defaults to false. When set to true, the error analysis attempts to decompose the
+                components of composite error mechanisms (such as depolarization errors) into simpler errors, and
+                suggest this decomposition via `stim.target_separator()` between the components. For example, in an
+                XZ surface code, single qubit depolarization has a Y error term which can be decomposed into simpler
+                X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to
+                decompose large errors into simple errors that affect at most two detectors.
+
+                This is not supported by tsim and setting it to true will raise an error. The argument is present
+                for compatibility with stim.
+            flatten_loops: Defaults to false. When set to true, the output will not contain any `repeat` blocks.
+                When set to false, the error analysis watches for loops in the circuit reaching a periodic steady
+                state with respect to the detectors being introduced, the error mechanisms that affect them, and the
+                locations of the logical observables. When it identifies such a steady state, it outputs a repeat
+                block. This is massively more efficient than flattening for circuits that contain loops, but creates
+                a more complex output.
+
+                Irrelevant unless allow_gauge_detectors=False.
+            allow_gauge_detectors: Defaults to false. When set to false, the error analysis verifies that detectors
+                in the circuit are actually deterministic under noiseless execution of the circuit.
+
+                Note that, unlike in stim, logical observables are also allowed to be non-deterministic.
+            approximate_disjoint_errors: Defaults to false. When set to false, composite error mechanisms with
+                disjoint components (such as `PAULI_CHANNEL_1(0.1, 0.2, 0.0)`) can cause the error analysis to throw
+                exceptions (because detector error models can only contain independent error mechanisms). When set
+                to true, the probabilities of the disjoint cases are instead assumed to be independent
+                probabilities. For example, a ``PAULI_CHANNEL_1(0.1, 0.2, 0.0)` becomes equivalent to an
+                `X_ERROR(0.1)` followed by a `Z_ERROR(0.2)`. This assumption is an approximation, but it is a good
+                approximation for small probabilities.
+
+                This argument can also be set to a probability between 0 and 1, setting a threshold below which the
+                approximation is acceptable. Any error mechanisms that have a component probability above the
+                threshold will cause an exception to be thrown.
+            ignore_decomposition_failures: Defaults to False.
+                When this is set to True, circuit errors that fail to decompose into graphlike
+                detector error model errors no longer cause the conversion process to abort.
+                Instead, the undecomposed error is inserted into the output. Whatever tool
+                the detector error model is then given to is responsible for dealing with the
+                undecomposed errors (e.g. a tool may choose to simply ignore them).
+
+                Irrelevant unless decompose_errors=True.
+            block_decomposition_from_introducing_remnant_edges: Defaults to False.
+                Requires that both A B and C D be present elsewhere in the detector error model
+                in order to decompose A B C D into A B ^ C D. Normally, only one of A B or C D
+                needs to appear to allow this decomposition.
+
+                Remnant edges can be a useful feature for ensuring decomposition succeeds, but
+                they can also reduce the effective code distance by giving the decoder single
+                edges that actually represent multiple errors in the circuit (resulting in the
+                decoder making misinformed choices when decoding).
+
+                Irrelevant unless decompose_errors=True.
+        """
         if self.stim_circuit is None:
             raise ValueError("Circuit has no stim circuit")
-        return self.stim_circuit.detector_error_model(
+        return get_detector_error_model(
+            self.stim_circuit,
+            allow_non_deterministic_observables=True,
             decompose_errors=decompose_errors,
             flatten_loops=flatten_loops,
             allow_gauge_detectors=allow_gauge_detectors,
