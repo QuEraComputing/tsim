@@ -1,107 +1,98 @@
+from typing import Any
+
 import numpy as np
 import pytest
 import stim
 
-from tsim import _instructions
 from tsim.circuit import Circuit
 
 
+def unitaries_equal_up_to_global_phase(
+    u1: np.ndarray, u2: np.ndarray[Any, Any]
+) -> bool:
+    product = u1 @ u2.conj().T
+    # If u1 = e^(i*phi) * u2, then product = e^(i*phi) * I
+    phase = product[0, 0]
+    expected = phase * np.eye(u1.shape[0])
+    return np.allclose(product, expected)
+
+
 @pytest.mark.parametrize(
-    "stim_gate, matrix",
+    "stim_gate",
     [
-        ("X", np.array([[0, 1], [1, 0]])),
-        ("Y", np.array([[0, -1j], [1j, 0]])),
-        ("I", np.array([[1, 0], [0, 1]])),
-        ("Z", np.array([[1, 0], [0, -1]])),
-        ("H", np.array([[1, 1], [1, -1]]) / np.sqrt(2)),
-        ("S", np.array([[1, 0], [0, 1j]])),
-        ("S_DAG", np.array([[1, 0], [0, -1j]])),
-        ("S[T]", np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]])),
-        ("S_DAG[T]", np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]])),
-        ("SQRT_X", np.array([[1 + 1j, 1 - 1j], [1 - 1j, 1 + 1j]]) / 2),
-        ("SQRT_X_DAG", np.array([[1 - 1j, 1 + 1j], [1 + 1j, 1 - 1j]]) / 2),
-        ("SQRT_Y", np.array([[1 + 1j, -1 - 1j], [1 + 1j, 1 + 1j]]) / 2),
-        ("SQRT_Y_DAG", np.array([[1 - 1j, 1 - 1j], [-1 + 1j, 1 - 1j]]) / 2),
+        # Pauli gates
+        "I",
+        "X",
+        "Y",
+        "Z",
+        # Single-qubit Clifford gates
+        "C_XYZ",
+        "C_ZYX",
+        "H",
+        "H_XY",
+        "H_XZ",
+        "H_YZ",
+        "S",
+        "SQRT_X",
+        "SQRT_X_DAG",
+        "SQRT_Y",
+        "SQRT_Y_DAG",
+        "SQRT_Z",
+        "SQRT_Z_DAG",
+        "S_DAG",
     ],
 )
-def test_single_qubit_gate(stim_gate: str, matrix: np.ndarray):
+def test_single_qubit_gate(stim_gate: str):
     c = Circuit(f"{stim_gate} 0")
-    assert np.allclose(c.to_matrix(), matrix)
+    stim_c = stim.Circuit(f"{stim_gate} 0")
+    stim_c_matrix = stim_c.to_tableau().to_unitary_matrix(endian="big")
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), stim_c_matrix)
+
+
+def test_t_gate():
+    c = Circuit("S[T] 0")
+    t_matrix = np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]])
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), t_matrix)
+
+
+def test_t_dag_gate():
+    c = Circuit("S_DAG[T] 0")
+    t_dag_matrix = np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]])
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), t_dag_matrix)
 
 
 @pytest.mark.parametrize(
-    "stim_gate, matrix",
+    "stim_gate",
     [
-        (
-            "CNOT",
-            np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]]),
-        ),
-        (
-            "CZ",
-            np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, -1]]),
-        ),
-        (
-            "CY",
-            np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]]),
-        ),
+        "CNOT",
+        "CX",
+        "CY",
+        "CZ",
+        "ISWAP",
+        "ISWAP_DAG",
+        "SQRT_XX",
+        "SQRT_XX_DAG",
+        "SQRT_YY",
+        "SQRT_YY_DAG",
+        "SQRT_ZZ",
+        "SQRT_ZZ_DAG",
+        "SWAP",
+        "XCX",
+        "XCY",
+        "XCZ",
+        "YCX",
+        "YCY",
+        "YCZ",
+        "ZCX",
+        "ZCY",
+        "ZCZ",
     ],
 )
-def test_two_qubit_gate(stim_gate: str, matrix: np.ndarray):
+def test_two_qubit_gate(stim_gate: str):
     c = Circuit(f"{stim_gate} 0 1")
-    assert np.allclose(c.to_matrix(), matrix)
-
-
-def _build_and_get_matrix(gate_func, *args):
-    """Helper to build a graph with a single gate and get its matrix."""
-    b = _instructions.GraphRepresentation()
-    gate_func(b, *args)
-    b.graph.normalize()
-    return b.graph.to_matrix()
-
-
-@pytest.mark.parametrize(
-    "gate_func, matrix",
-    [
-        (_instructions.x, np.array([[0, 1], [1, 0]])),
-        (_instructions.y, np.array([[0, -1j], [1j, 0]])),
-        (_instructions.i, np.array([[1, 0], [0, 1]])),
-        (_instructions.z, np.array([[1, 0], [0, -1]])),
-        (_instructions.h, np.array([[1, 1], [1, -1]]) / np.sqrt(2)),
-        (_instructions.s, np.array([[1, 0], [0, 1j]])),
-        (_instructions.s_dag, np.array([[1, 0], [0, -1j]])),
-        (_instructions.t, np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]])),
-        (_instructions.t_dag, np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]])),
-        (_instructions.sqrt_x, np.array([[1 + 1j, 1 - 1j], [1 - 1j, 1 + 1j]]) / 2),
-        (_instructions.sqrt_x_dag, np.array([[1 - 1j, 1 + 1j], [1 + 1j, 1 - 1j]]) / 2),
-        (_instructions.sqrt_y, np.array([[1 + 1j, -1 - 1j], [1 + 1j, 1 + 1j]]) / 2),
-        (_instructions.sqrt_y_dag, np.array([[1 - 1j, 1 - 1j], [-1 + 1j, 1 - 1j]]) / 2),
-    ],
-)
-def test_internal_single_qubit_gate(gate_func, matrix: np.ndarray):
-    result = _build_and_get_matrix(gate_func, 0)
-    assert np.allclose(result, matrix)
-
-
-@pytest.mark.parametrize(
-    "gate_func, matrix",
-    [
-        (
-            _instructions.cx,
-            np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]]),
-        ),
-        (
-            _instructions.cz,
-            np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, -1]]),
-        ),
-        (
-            _instructions.cy,
-            np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]]),
-        ),
-    ],
-)
-def test_internal_two_qubit_gate(gate_func, matrix: np.ndarray):
-    result = _build_and_get_matrix(gate_func, 0, 1)
-    assert np.allclose(result, matrix)
+    stim_c = stim.Circuit(f"{stim_gate} 0 1")
+    stim_c_matrix = stim_c.to_tableau().to_unitary_matrix(endian="big")
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), stim_c_matrix)
 
 
 def test_num_measurements():
