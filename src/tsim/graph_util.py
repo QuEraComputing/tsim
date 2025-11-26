@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from collections import deque
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from typing import Any, Dict, Sequence, Tuple
 
 import numpy as np
 
+from tsim._instructions import GraphRepresentation
+from tsim.external.pyzx import VertexType
 from tsim.external.pyzx.graph.base import BaseGraph
 from tsim.external.pyzx.graph.graph import Graph
 from tsim.external.pyzx.graph.scalar import Scalar
@@ -130,6 +132,111 @@ def _induced_subgraph(
     subgraph.set_outputs(component_outputs)
 
     return subgraph, vert_map
+
+
+def build_sampling_graph(
+    built: GraphRepresentation, sample_detectors: bool = False
+) -> BaseGraph:
+    """Build a ZX graph for sampling from a BuiltGraph.
+
+    This is the internal implementation of get_sampling_graph.
+    """
+    g = built.graph.copy()
+
+    # Initialize un-initialized first vertices to the 0 state
+    for v in built.first_vertex.values():
+        if g.type(v) == VertexType.BOUNDARY:
+            g.set_type(v, VertexType.X)
+
+    # Clean up last row
+    if built.last_vertex:
+        max_row = max(g.row(v) for v in built.last_vertex.values())
+        for q in built.last_vertex:
+            g.set_row(built.last_vertex[q], max_row)
+
+    num_measurements = len(built.rec)
+    outputs = [v for v in g.vertices() if g.type(v) == VertexType.BOUNDARY]
+    g.set_outputs(tuple(outputs))
+
+    g_adj = g.adjoint()
+    g.compose(g_adj)
+
+    g = g.copy()
+
+    label_to_vertex: dict[str, list[int]] = defaultdict(list)
+    annotation_to_vertex: dict[str, list[int]] = defaultdict(list)
+    for v in g.vertices():
+        phase_vars = g._phaseVars[v]
+        if not len(phase_vars) == 1:
+            continue
+        phase = list(phase_vars)[0]
+        if "det" in phase or "obs" in phase or "rec" in phase or "m" in phase:
+            label_to_vertex[phase].append(v)
+        if "det" in phase or "obs" in phase:
+            annotation_to_vertex[phase].append(v)
+
+    outputs = [0] * num_measurements if not sample_detectors else []
+
+    # Connect all rec[i] vertices to each other and add red vertex with rec[i] label
+    for i in range(num_measurements):
+        label = f"rec[{i}]"
+        vertices = label_to_vertex[label]
+
+        assert len(vertices) == 2
+        v0, v1 = vertices
+        if not g.connected(v0, v1):
+            g.add_edge((v0, v1))
+        g.set_phase(v0, 0)
+        g.set_phase(v1, 0)
+
+        # Add outputs
+        if not sample_detectors:
+            v3 = g.add_vertex(VertexType.BOUNDARY, qubit=-1, row=i + 1, phase=0)
+            outputs[i] = v3
+            g.add_edge((v0, v3))
+
+    # Connect all m[i] vertices to each other
+    for i in range(len(built.silent_rec)):
+        label = f"m[{i}]"
+        vertices = label_to_vertex[label]
+
+        assert len(vertices) == 2
+        v0, v1 = vertices
+        if not g.connected(v0, v1):
+            g.add_edge((v0, v1))
+        g.set_phase(v0, 0)
+        g.set_phase(v1, 0)
+
+    if not sample_detectors:
+        # Sample measurements: remove detectors and observables
+        for vertices in annotation_to_vertex.values():
+            assert len(vertices) == 2
+            for v in vertices:
+                g.remove_vertex(v)
+    else:
+        # Sample detectors and observables:
+        # Keep detector and observables but remove the adjoint (duplicated)
+        # annotation nodes
+        for vertices in annotation_to_vertex.values():
+            assert len(vertices) == 2
+            g.remove_vertex(vertices.pop())
+
+        labels = [f"det[{i}]" for i in range(len(built.detectors))] + [
+            f"obs[{i}]" for i in built.observables_dict.keys()
+        ]
+        for label in labels:
+            vs = annotation_to_vertex[label]
+            assert len(vs) == 1
+            v = vs[0]
+            row = g.row(v)
+            vb = g.add_vertex(VertexType.BOUNDARY, qubit=-2, row=row)
+            g.add_edge((v, vb))
+            g.set_phase(v, 0)
+            outputs.append(vb)
+
+    g.set_outputs(tuple(outputs))
+
+    return g
 
 
 def transform_error_basis(g: BaseGraph) -> tuple[BaseGraph, dict[str, set[str]]]:
