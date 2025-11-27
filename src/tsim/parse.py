@@ -59,10 +59,14 @@ def parse_stim_circuit(
 
         gate_func, num_qubits = GATE_TABLE[name]
         targets = [t.value for t in instruction.targets_copy()]
+        invert = [t.is_inverted_result_target for t in instruction.targets_copy()]
         args = instruction.gate_args_copy()
 
         for i_target in range(0, len(targets), num_qubits):
             chunk = targets[i_target : i_target + num_qubits]
-            gate_func(b, *chunk, *args)
+            if invert[i_target]:
+                gate_func(b, *chunk, *args, invert=True)
+            else:
+                gate_func(b, *chunk, *args)
 
     return b

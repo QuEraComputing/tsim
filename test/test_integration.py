@@ -285,6 +285,77 @@ def test_singlet_state(basis: str):
     assert (res[:, 0] != res[:, 1]).all()
 
 
+@pytest.mark.parametrize("basis", ["X", "Y", "Z"])
+def test_m_inverted_record(basis: str):
+    c = Circuit(
+        f"""
+        R 0 1 2
+        X 0
+        H 1
+        CNOT 1 0
+        Z 0
+        M{basis} 0 !0 !0 0
+        """
+    )
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples[:, 0] == samples[:, 3]).all()
+    assert (samples[:, 1] == samples[:, 2]).all()
+    assert (samples[:, 0] == ~samples[:, 1]).all()
+
+
+@pytest.mark.parametrize("basis", ["X", "Y", "Z"])
+def test_mr_inverted_record(basis: str):
+    c = Circuit(
+        f"""
+        R 0 1 2
+        X 0
+        H 1
+        CNOT 1 0
+        Z 0
+        MR{basis} 0 !0 !0 0
+        """
+    )
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    print(samples)
+    assert (samples[:, 1] == 1).all()
+    assert (samples[:, 2] == 1).all()
+    assert (samples[:, 3] == 0).all()
+
+
+@pytest.mark.parametrize("basis", ["X", "Y", "Z"])
+def test_mpp_inverted_record(basis: str):
+    singlet = """
+        R 0 1 2
+        X 0
+        H 1
+        CNOT 1 0
+        Z 0
+        """
+
+    c = Circuit(
+        f"""
+        {singlet}
+        MPP {basis}0*{basis}1
+        """
+    )
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert samples.all()
+
+    c = Circuit(
+        f"""
+        {singlet}
+        MPP !{basis}0*{basis}1
+        MPP !{basis}0*{basis}1
+        """
+    )
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (~samples).all()
+
+
 @pytest.mark.parametrize(
     "code_task",
     [
