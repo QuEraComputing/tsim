@@ -588,11 +588,13 @@ def mry(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
 def mx(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
     h(b, qubit)
     m(b, qubit, p=p)
+    h(b, qubit)
 
 
 def my(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
     h_yz(b, qubit)
     m(b, qubit, p=p)
+    h_yz(b, qubit)
 
 
 def r(b: GraphRepresentation, qubit: int) -> None:

@@ -223,18 +223,18 @@ def test_ry_mry():
 
 def test_m():
     id = np.eye(2)
-
     result = _build_and_get_matrix(_instructions.m, 0)
     assert np.allclose(result, id / np.sqrt(2))
 
 
 def tes_mx():
-    h = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
+    id = np.eye(2)
     result = _build_and_get_matrix(_instructions.mx, 0)
-    assert np.allclose(result, h / np.sqrt(2))
+    assert np.allclose(result, id / np.sqrt(2))
+    print(result)
 
 
 def test_my():
-    h_yz = np.array([[1, -1j], [1j, -1]]) / np.sqrt(2)
+    id = np.eye(2)
     result = _build_and_get_matrix(_instructions.my, 0)
-    assert np.allclose(result, h_yz / np.sqrt(2))
+    assert np.allclose(result, id / np.sqrt(2))
