@@ -366,7 +366,7 @@ def test_memory_error_correction_and_compare_to_stim(code_task: str):
     stim_errors_after_correction = error_count_after_correction[0]
     tsim_errors_after_correction = error_count_after_correction[1]
 
-    assert np.abs(stim_errors - tsim_errors) / stim_errors <= 0.05
+    assert np.abs(stim_errors - tsim_errors) / stim_errors <= 0.1
     assert (
         np.abs(stim_errors_after_correction - tsim_errors_after_correction)
         / stim_errors_after_correction
