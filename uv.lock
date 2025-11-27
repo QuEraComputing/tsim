@@ -1786,6 +1786,15 @@ wheels = [
 ]
 
 [[package]]
+name = "networkx"
+version = "3.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/fc/7b6fd4d22c8c4dc5704430140d8b3f520531d4fe7328b8f8d03f5a7950e8/networkx-3.6.tar.gz", hash = "sha256:285276002ad1f7f7da0f7b42f004bcba70d381e936559166363707fdad3d72ad", size = 2511464, upload-time = "2025-11-24T03:03:47.158Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/c7/d64168da60332c17d24c0d2f08bdf3987e8d1ae9d84b5bbd0eec2eb26a55/networkx-3.6-py3-none-any.whl", hash = "sha256:cdb395b105806062473d3be36458d8f1459a4e4b98e236a66c3a48996e07684f", size = 2063713, upload-time = "2025-11-24T03:03:45.21Z" },
+]
+
+[[package]]
 name = "nodeenv"
 version = "1.9.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2460,6 +2469,32 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b0/77/a5b8c569bf593b0140bde72ea885a803b82086995367bf2037de0159d924/pygments-2.19.2.tar.gz", hash = "sha256:636cb2477cec7f8952536970bc533bc43743542f70392ae026374600add5b887", size = 4968631, upload-time = "2025-06-21T13:39:12.283Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/21/705964c7812476f378728bdf590ca4b771ec72385c533964653c68e86bdc/pygments-2.19.2-py3-none-any.whl", hash = "sha256:86540386c03d588bb81d44bc3928634ff26449851e99741617ecb9037ee5ec0b", size = 1225217, upload-time = "2025-06-21T13:39:07.939Z" },
+]
+
+[[package]]
+name = "pymatching"
+version = "2.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "networkx" },
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c5/92/60f1419500b49afb0925b0536538c352ef71b4bf182c28b0e3861141fc81/pymatching-2.3.1.tar.gz", hash = "sha256:dac1afab0a190a003a3689a18c3afc5c99a5beaa6a099d79e3d4c8b24c1fa7c5", size = 347052, upload-time = "2025-09-25T21:46:25.293Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9b/94/eee399cae91c349481467b03189832277ea79781f331cc04bde51834a1e1/pymatching-2.3.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:020a7bd1f8a2d312fe98f4eee594cff98395272ab868f93ee202adbdec1901bf", size = 381265, upload-time = "2025-09-25T21:46:02.262Z" },
+    { url = "https://files.pythonhosted.org/packages/42/24/a72c64d30b7f1a86b3b87bd358b01c00eb2a8da8ceda9d3e4b030f73f26e/pymatching-2.3.1-cp311-cp311-macosx_11_0_x86_64.whl", hash = "sha256:10699180d84ec27a6bf5ccd78c61b8aa52afff0f01263cf928a51ec876138037", size = 412928, upload-time = "2025-09-25T21:46:03.603Z" },
+    { url = "https://files.pythonhosted.org/packages/24/dc/946e33cdc7aa734913f2c97326ddcea0f0fdd3cfdcd7b986e5326f5d3ee3/pymatching-2.3.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d462371c7d9864fb1b7993018f16e2f105d732e5671c56dd14c9a789a1aa4861", size = 624637, upload-time = "2025-09-25T21:46:05.025Z" },
+    { url = "https://files.pythonhosted.org/packages/56/97/14767cb0cb81de1cd2fc3211072bc3bdd08d0d4ae054eafa5584273a6a53/pymatching-2.3.1-cp311-cp311-win_amd64.whl", hash = "sha256:2d27bd5cf79b25268dfce11fb9e3a47acd0a5c1f88815c2fab333eaa8bd45b7b", size = 346047, upload-time = "2025-09-25T21:46:05.991Z" },
+    { url = "https://files.pythonhosted.org/packages/33/e9/cf2302b391f7c692feed5c1cddb07c2667722dd2944232cfb4c1a691e2ca/pymatching-2.3.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:4bde7bac71e3b1b1d55569c664a7a2d0b0d87962df12b9b45ce3e287d0ac0dff", size = 380195, upload-time = "2025-09-25T21:46:07.26Z" },
+    { url = "https://files.pythonhosted.org/packages/75/60/90c3fd4fe1b16dfc46aa3a774c9dc0438299aa07e7d9f41c3f6bbd207734/pymatching-2.3.1-cp312-cp312-macosx_11_0_x86_64.whl", hash = "sha256:fb06a9a60c32c490f2637a5d0ccb70c8c53024f970ab50d699bc8dc1c61f0534", size = 412898, upload-time = "2025-09-25T21:46:08.16Z" },
+    { url = "https://files.pythonhosted.org/packages/da/b5/25e97b533495a839780c89dac2b56e2b683100945ac4149645f9d95e7aee/pymatching-2.3.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b90cf168645adb78c9f81dd60c9e97e2aae005386b5795b54c8b4055d1492b1b", size = 626112, upload-time = "2025-09-25T21:46:09.591Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/50/e34731b6e7f1a46facaa5c189cc95a55b49a00730203d09f211ef4d5ee58/pymatching-2.3.1-cp312-cp312-win_amd64.whl", hash = "sha256:1f3a0d307b30ef52b7a9cabb58ec27a08ef057e09bcbd00ffe3c40f4e31e606d", size = 347938, upload-time = "2025-09-25T21:46:10.65Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/ee/1e89ba6a2811fad9f1c8d4254812c97904ee386e0490cdd0ee8c68d5d1cd/pymatching-2.3.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:5c010d2dc808a58e80874ada568a4d2bb8c9e81959b858e2e56a84ccc6b2b4ac", size = 380256, upload-time = "2025-09-25T21:46:11.567Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/ef/a3114a4c29cd43e180f0c494aa71beda969a347ee34459c4f816597d5e53/pymatching-2.3.1-cp313-cp313-macosx_11_0_x86_64.whl", hash = "sha256:8e3122358a398853d9e809beadcf52b2d7f38a7cac21e14bca6ce0b44045c376", size = 413004, upload-time = "2025-09-25T21:46:12.883Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/22/0d0494562792575be67358dcd8951678449b273af168dd5e52b887e51ab1/pymatching-2.3.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d0edddbae8437d173d7c1314c9cb853d4abc9b84be9b2274f76972ba89b1b5b5", size = 625873, upload-time = "2025-09-25T21:46:14.068Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/c4/0e53ff3c9312ffb0e1677ebb62172660c5614077dca9c69ccfc31b90b7e4/pymatching-2.3.1-cp313-cp313-win_amd64.whl", hash = "sha256:7ebce2e8bc98379f0bb7643a0ef0171142cf384ba626e46108c84249c868f0a6", size = 347977, upload-time = "2025-09-25T21:46:15.044Z" },
 ]
 
 [[package]]
@@ -3143,6 +3178,7 @@ dev = [
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "py-spy" },
+    { name = "pymatching" },
     { name = "pyright", extra = ["nodejs"] },
     { name = "pytest" },
     { name = "ruff" },
@@ -3193,6 +3229,7 @@ dev = [
     { name = "mypy", specifier = ">=1.13.0" },
     { name = "pre-commit", specifier = ">=4.0.1" },
     { name = "py-spy", specifier = ">=0.4.1" },
+    { name = "pymatching", specifier = ">=2.3.1" },
     { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.388" },
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "ruff", specifier = ">=0.7.3" },

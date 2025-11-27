@@ -78,7 +78,7 @@ def compile_circuit(
             bitstr = [0] * n_params
             for v in g_i.scalar.phasenodevars[term]:
                 bitstr[char_to_idx[v]] = 1
-            const_term = int(g_i.scalar.phasenodes[term] * 4)  # type: ignore[arg-type]
+            const_term = int(g_i.scalar.phasenodes[term] * 4)
 
             g_coord_a.append(i)
             a_const_phases_list.append(const_term)
@@ -257,7 +257,7 @@ def compile_circuit(
     # Static data
     # ========================================================================
     phase_indices = jnp.array(
-        [int(float(g.scalar.phase) * 4) for g in g_list], dtype=jnp.uint8  # type: ignore[arg-type]
+        [int(float(g.scalar.phase) * 4) for g in g_list], dtype=jnp.uint8
     )
 
     exact_floatfactor = []

@@ -6,11 +6,17 @@ import jax.numpy as jnp
 import numpy as np
 
 import tsim.external.pyzx as zx
-from tsim.channels import ChannelSampler
+from tsim.channels import ChannelSampler, create_channels_from_specs
 from tsim.circuit import Circuit
 from tsim.decomposer import Decomposer, DecomposerArray, DecompositionMode
 from tsim.evaluate import evaluate_batch
-from tsim.graph_util import connected_components, squash_graph, transform_error_basis
+from tsim.graph_util import (
+    build_sampling_graph,
+    connected_components,
+    squash_graph,
+    transform_error_basis,
+)
+from tsim.parse import parse_stim_circuit
 
 
 class _CompiledSamplerBase:
@@ -35,7 +41,19 @@ class _CompiledSamplerBase:
             seed: Random seed for JAX. If None, a random seed is generated.
         """
         self.circuit = circuit
-        graph = circuit.get_sampling_graph(sample_detectors=sample_detectors)
+
+        if seed is None:
+            seed = int(np.random.default_rng().integers(0, 2**31))
+        self._key = jax.random.key(seed)
+
+        built = parse_stim_circuit(circuit._stim_circ)
+
+        self._num_detectors = len(built.detectors)
+
+        self._key, subkey = jax.random.split(self._key)
+        error_channels = create_channels_from_specs(built.error_specs, subkey)
+
+        graph = build_sampling_graph(built, sample_detectors=sample_detectors)
 
         zx.full_reduce(graph, paramSafe=True)
         squash_graph(graph)
@@ -43,11 +61,12 @@ class _CompiledSamplerBase:
         graph, error_transform = transform_error_basis(graph)
 
         # Remove the scalar. Since we have not started the stabilizer rank decomposition,
-        # it is safe to remove the overall scalar.
+        # it is safe to remove the overall scalar. This removes many scalar terms
+        # and speeds up compilation and evaluation.
         graph.scalar = zx.Scalar()
 
         self.channel_sampler = ChannelSampler(
-            error_channels=circuit.error_channels, error_transform=error_transform
+            error_channels=error_channels, error_transform=error_transform
         )
 
         m_chars = [f"m{i}" for i in range(len(graph.outputs()))]
@@ -70,10 +89,6 @@ class _CompiledSamplerBase:
         self.program = DecomposerArray(components=sorted_decomposers)
 
         self.program.decompose(mode=mode)
-
-        if seed is None:
-            seed = int(np.random.default_rng().integers(0, 2**31))
-        self._key = jax.random.key(seed)
 
     def _sample_batch(self, batch_size: int) -> np.ndarray:
         """Sample a batch of measurement outcomes."""
@@ -350,7 +365,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         if append_observables:
             return maybe_bit_pack(samples, do_nothing=not bit_packed)
 
-        num_detectors = len(self.circuit._detectors)
+        num_detectors = self._num_detectors
         det_samples = samples[:, :num_detectors]
         obs_samples = samples[:, num_detectors:]
 

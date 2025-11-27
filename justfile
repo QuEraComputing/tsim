@@ -20,7 +20,7 @@ coverage-unit:
 coverage: coverage-run coverage-xml coverage-report
 
 doc:
-    uv run mkdocs serve
+    mkdocs serve
 
 doc-build:
-    uv run mkdocs build
+    mkdocs build
