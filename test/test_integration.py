@@ -1,5 +1,7 @@
 import numpy as np
+import pymatching
 import pytest
+import stim
 
 from tsim.circuit import Circuit
 
@@ -281,3 +283,92 @@ def test_singlet_state(basis: str):
     sampler = c.compile_sampler(seed=0)
     res = sampler.sample(20)
     assert (res[:, 0] != res[:, 1]).all()
+
+
+@pytest.mark.parametrize(
+    "code_task",
+    [
+        "repetition_code:memory",
+        "surface_code:rotated_memory_x",
+        "surface_code:rotated_memory_z",
+        "surface_code:unrotated_memory_x",
+        "surface_code:unrotated_memory_z",
+        "color_code:memory_xyz",
+    ],
+)
+def test_quantum_memory_codes_without_noise(code_task: str):
+
+    circ = stim.Circuit.generated(
+        code_task,
+        distance=3,
+        rounds=2,
+        after_clifford_depolarization=0.0,
+        before_measure_flip_probability=0.0,
+        before_round_data_depolarization=0.0,
+        after_reset_flip_probability=0.0,
+    )
+    c = Circuit.from_stim_program(circ)
+    sampler = c.compile_detector_sampler(seed=0)
+    samples = sampler.sample(10)
+    assert not np.any(samples)
+
+
+@pytest.mark.parametrize(
+    "code_task",
+    [
+        "repetition_code:memory",
+        "surface_code:rotated_memory_x",
+        "surface_code:rotated_memory_z",
+        "surface_code:unrotated_memory_x",
+        "surface_code:unrotated_memory_z",
+    ],
+)
+def test_memory_error_correction_and_compare_to_stim(code_task: str):
+    p = 0.01
+    circ = stim.Circuit.generated(
+        code_task,
+        distance=3,
+        rounds=2,
+        after_clifford_depolarization=p,
+        before_measure_flip_probability=p * 1.2,
+        before_round_data_depolarization=p * 0.8,
+        after_reset_flip_probability=p * 0.9,
+    )
+    error_count = []
+    error_count_after_correction = []
+
+    for c in [circ, Circuit.from_stim_program(circ)]:
+        sampler = c.compile_detector_sampler(seed=0)
+        if isinstance(c, Circuit):
+            detection_events, observable_flips = sampler.sample(
+                10_000, batch_size=10_000, separate_observables=True
+            )
+        else:
+            detection_events, observable_flips = sampler.sample(
+                10_000, separate_observables=True
+            )
+
+        detector_error_model = circ.detector_error_model(decompose_errors=True)
+        matcher = pymatching.Matching.from_detector_error_model(detector_error_model)
+
+        predictions = matcher.decode_batch(detection_events)
+
+        num_errors = np.count_nonzero(observable_flips)
+        num_errors_after_correction = np.count_nonzero(
+            np.logical_xor(observable_flips, predictions)
+        )
+        error_count.append(num_errors)
+        error_count_after_correction.append(num_errors_after_correction)
+        assert num_errors_after_correction <= num_errors
+
+    stim_errors = error_count[0]
+    tsim_errors = error_count[1]
+    stim_errors_after_correction = error_count_after_correction[0]
+    tsim_errors_after_correction = error_count_after_correction[1]
+
+    assert np.abs(stim_errors - tsim_errors) / stim_errors <= 0.05
+    assert (
+        np.abs(stim_errors_after_correction - tsim_errors_after_correction)
+        / stim_errors_after_correction
+        <= 0.3
+    )
