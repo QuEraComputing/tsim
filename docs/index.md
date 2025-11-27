@@ -12,7 +12,7 @@ and, importantly, T-gates.
 
 
 ```python
-c = Circuit.from_stim_program_text(
+c = tsim.Circuit(
     """
     RX 0
     S[T] 0  # This is a T-gate
@@ -32,7 +32,7 @@ To add T-gates to a circuit, simply use the `S[T]` and `S_DAG[T]` instructions.
 For circuits with detector and observable annotations,you can compile a detector sampler:
 
 ```python
-c = Circuit.from_stim_program_text(
+c = tsim.Circuit(
     """
     RX 0
     R 1
