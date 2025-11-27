@@ -528,8 +528,12 @@ def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
         b.graph.scalar.add_power(-1)
 
 
-def m(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
+def m(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+    if invert:
+        x(b, qubit)
     _m(b, qubit, p, silent=False)
+    if invert:
+        x(b, qubit)
 
 
 def mpp(b: GraphRepresentation, pp: str | list[str]) -> None:
@@ -541,6 +545,10 @@ def mpp(b: GraphRepresentation, pp: str | list[str]) -> None:
     aux = -2
     r(b, aux)
     h(b, aux)
+
+    invert_rec = pp[0] == "!"
+    if invert_rec:
+        pp = pp[1:]
 
     components = pp.split("*")
 
@@ -557,43 +565,43 @@ def mpp(b: GraphRepresentation, pp: str | list[str]) -> None:
             raise ValueError(f"Invalid Pauli operator: {p}")
 
     h(b, aux)
-    m(b, aux)
+    m(b, aux, invert=invert_rec)
 
 
-def mr(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
+def mr(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
     if p > 0:
         x_error(b, qubit, p)
-    m(b, qubit, p=p)
+    m(b, qubit, p=p, invert=invert)
     _r(b, qubit, perform_trace=False)
 
 
-def mrx(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
+def mrx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
     h(b, qubit)
     if p > 0:
         x_error(b, qubit, p)
-    m(b, qubit, p=p)
+    m(b, qubit, p=p, invert=invert)
     _r(b, qubit, perform_trace=False)
     h(b, qubit)
 
 
-def mry(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
+def mry(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
     h_yz(b, qubit)
     if p > 0:
         x_error(b, qubit, p)
-    m(b, qubit, p=p)
+    m(b, qubit, p=p, invert=invert)
     _r(b, qubit, perform_trace=False)
     h_yz(b, qubit)
 
 
-def mx(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
+def mx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
     h(b, qubit)
-    m(b, qubit, p=p)
+    m(b, qubit, p=p, invert=invert)
     h(b, qubit)
 
 
-def my(b: GraphRepresentation, qubit: int, p: float = 0) -> None:
+def my(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
     h_yz(b, qubit)
-    m(b, qubit, p=p)
+    m(b, qubit, p=p, invert=invert)
     h_yz(b, qubit)
 
 
