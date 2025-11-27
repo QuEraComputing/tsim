@@ -1,86 +1,213 @@
+from typing import Any
+
 import numpy as np
 import pytest
+import stim
 
 from tsim.circuit import Circuit
 
 
-@pytest.mark.parametrize(
-    "gate_func, matrix",
-    [
-        ("x", np.array([[0, 1], [1, 0]])),
-        ("y", np.array([[0, -1j], [1j, 0]])),
-        ("i", np.array([[1, 0], [0, 1]])),
-        ("z", np.array([[1, 0], [0, -1]])),
-        ("h", np.array([[1, 1], [1, -1]]) / np.sqrt(2)),
-        ("s", np.array([[1, 0], [0, 1j]])),
-        ("s_dag", np.array([[1, 0], [0, -1j]])),
-        ("t", np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]])),
-        ("t_dag", np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]])),
-        ("sqrt_x", np.array([[1 + 1j, 1 - 1j], [1 - 1j, 1 + 1j]]) / 2),
-        ("sqrt_x_dag", np.array([[1 - 1j, 1 + 1j], [1 + 1j, 1 - 1j]]) / 2),
-        ("sqrt_y", np.array([[1 + 1j, -1 - 1j], [1 + 1j, 1 + 1j]]) / 2),
-        ("sqrt_y_dag", np.array([[1 - 1j, 1 - 1j], [-1 + 1j, 1 - 1j]]) / 2),
-    ],
-)
-def test_single_qubit_gate(gate_func: str, matrix: np.ndarray):
-    c = Circuit()
-    c.__getattribute__(gate_func)(0)
-    assert np.allclose(c.to_matrix(), matrix)
+def unitaries_equal_up_to_global_phase(
+    u1: np.ndarray, u2: np.ndarray[Any, Any]
+) -> bool:
+    product = u1 @ u2.conj().T
+    # If u1 = e^(i*phi) * u2, then product = e^(i*phi) * I
+    phase = product[0, 0]
+    expected = phase * np.eye(u1.shape[0])
+    return np.allclose(product, expected)
 
 
 @pytest.mark.parametrize(
-    "gate_func, matrix",
+    "stim_gate",
     [
-        ("cnot", np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]])),
-        ("cz", np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, -1]])),
-        ("cy", np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]])),
+        # Pauli gates
+        "I",
+        "X",
+        "Y",
+        "Z",
+        # Single-qubit Clifford gates
+        "C_XYZ",
+        "C_ZYX",
+        "H",
+        "H_XY",
+        "H_XZ",
+        "H_YZ",
+        "S",
+        "SQRT_X",
+        "SQRT_X_DAG",
+        "SQRT_Y",
+        "SQRT_Y_DAG",
+        "SQRT_Z",
+        "SQRT_Z_DAG",
+        "S_DAG",
     ],
 )
-def test_two_qubit_gate(gate_func: str, matrix: np.ndarray):
-    c = Circuit()
-    c.__getattribute__(gate_func)(0, 1)
-    assert np.allclose(c.to_matrix(), matrix)
+def test_single_qubit_gate(stim_gate: str):
+    c = Circuit(f"{stim_gate} 0")
+    stim_c = stim.Circuit(f"{stim_gate} 0")
+    stim_c_matrix = stim_c.to_tableau().to_unitary_matrix(endian="big")
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), stim_c_matrix)
+
+
+def test_t_gate():
+    c = Circuit("S[T] 0")
+    t_matrix = np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]])
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), t_matrix)
+
+
+def test_t_dag_gate():
+    c = Circuit("S_DAG[T] 0")
+    t_dag_matrix = np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]])
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), t_dag_matrix)
+
+
+@pytest.mark.parametrize(
+    "stim_gate",
+    [
+        "CNOT",
+        "CX",
+        "CY",
+        "CZ",
+        "ISWAP",
+        "ISWAP_DAG",
+        "SQRT_XX",
+        "SQRT_XX_DAG",
+        "SQRT_YY",
+        "SQRT_YY_DAG",
+        "SQRT_ZZ",
+        "SQRT_ZZ_DAG",
+        "SWAP",
+        "XCX",
+        "XCY",
+        "XCZ",
+        "YCX",
+        "YCY",
+        "YCZ",
+        "ZCX",
+        "ZCY",
+        "ZCZ",
+    ],
+)
+def test_two_qubit_gate(stim_gate: str):
+    c = Circuit(f"{stim_gate} 0 1")
+    stim_c = stim.Circuit(f"{stim_gate} 0 1")
+    stim_c_matrix = stim_c.to_tableau().to_unitary_matrix(endian="big")
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), stim_c_matrix)
 
 
 def test_num_measurements():
     c = Circuit()
     assert c.num_measurements == 0
-    c.m(0)
+
+    c = Circuit("M 0")
     assert c.num_measurements == 1
-    c.m([1, 2])
+
+    c = Circuit("M 0 1 2")
     assert c.num_measurements == 3
 
 
 def test_num_detectors():
     c = Circuit()
     assert c.num_detectors == 0
-    c.m(0)
-    c.detector([0])
+
+    c = Circuit("M 0\nDETECTOR rec[-1]")
     assert c.num_detectors == 1
-    c.m(1)
-    c.detector([1])
+
+    c = Circuit("M 0 1\nDETECTOR rec[-1]\nDETECTOR rec[-2]")
     assert c.num_detectors == 2
 
 
 def test_num_observables():
-    c = Circuit()
-    c.m(0)
+    c = Circuit("M 0")
     assert c.num_observables == 0
-    c.m(1)
-    c.observable_include([0], 0)
+
+    c = Circuit("M 0 1\nOBSERVABLE_INCLUDE(0) rec[-1]")
     assert c.num_observables == 1
-    c.observable_include([1], 2)
+
+    c = Circuit("M 0 1\nOBSERVABLE_INCLUDE(0) rec[-1]\nOBSERVABLE_INCLUDE(2) rec[-2]")
     assert c.num_observables == 3
-    c.observable_include([0, 1], 5)
+
+    c = Circuit(
+        "M 0 1 2\n"
+        "OBSERVABLE_INCLUDE(0) rec[-1]\n"
+        "OBSERVABLE_INCLUDE(2) rec[-2]\n"
+        "OBSERVABLE_INCLUDE(5) rec[-1] rec[-2]"
+    )
     assert c.num_observables == 6
 
 
 def test_num_qubits():
     c = Circuit()
     assert c.num_qubits == 0
-    c.h(0)
+
+    c = Circuit("H 0")
     assert c.num_qubits == 1
-    c.x(5)
+
+    c = Circuit("H 0\nX 5")
     assert c.num_qubits == 6
-    c.cnot(2, 3)
+
+    c = Circuit("H 0\nX 5\nCNOT 2 3")
     assert c.num_qubits == 6
+
+
+def test_from_stim_program():
+    stim_circ = stim.Circuit("H 0\nCNOT 0 1\nM 0 1")
+    c = Circuit.from_stim_program(stim_circ)
+    assert c._stim_circ == stim_circ
+
+
+def test_from_stim_program_text():
+    c = Circuit("H 0\nCNOT 0 1\nM 0 1")
+    assert c._stim_circ == stim.Circuit("H 0\nCNOT 0 1\nM 0 1")
+
+
+def test_circuit_copy():
+    c1 = Circuit("H 0\nCNOT 0 1")
+    c2 = c1.copy()
+    assert c1 == c2
+    assert c1 is not c2
+
+
+def test_circuit_add():
+    c1 = Circuit("H 0")
+    c2 = Circuit("CNOT 0 1")
+    c3 = c1 + c2
+    assert c3._stim_circ == c1._stim_circ + c2._stim_circ
+
+
+def test_circuit_iadd():
+    c1 = Circuit("H 0")
+    c2 = Circuit("CNOT 0 1")
+
+    c1_stim = c1._stim_circ.copy()
+    c2_stim = c2._stim_circ.copy()
+
+    c1 += c2
+    assert c1._stim_circ == c1_stim + c2_stim
+
+
+def test_circuit_mul():
+    c1 = Circuit("H 0")
+    c1_stim = c1._stim_circ.copy()
+    c2 = c1 * 3
+    assert c2._stim_circ == (c1_stim * 3).flattened()
+
+
+def test_circuit_without_noise():
+    c = Circuit("H 0\nDEPOLARIZE1(0.01) 0\nM 0")
+    c_clean = c.without_noise()
+    assert c_clean._stim_circ == c._stim_circ.without_noise()
+
+
+def test_circuit_without_annotations():
+    c = Circuit("H 0\nOBSERVABLE_INCLUDE(0) rec[-1]\nDETECTOR rec[-1]\nM 0")
+    c_clean = c.without_annotations()
+    assert c_clean._stim_circ == stim.Circuit("H 0\nM 0")
+
+
+def test_circuit_eq():
+    c1 = Circuit("H 0")
+    c2 = Circuit("H 0")
+    c3 = Circuit("X 0")
+    assert c1 == c2
+    assert c1 != c3

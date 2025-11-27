@@ -1,4 +1,5 @@
 import abc
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
@@ -11,6 +12,9 @@ class Channel(abc.ABC):
 
     logits: jnp.ndarray
     num_bits: int
+
+    def __init__(self, key: Array):
+        self._key = key
 
     @abc.abstractmethod
     def sample(self, num_samples: int = 1) -> jax.Array:
@@ -166,6 +170,31 @@ class Error(Channel):
             jnp.uint8
         )
         return samples[:, None]
+
+
+@dataclass
+class ErrorSpec:
+    """Specification of an error channel.
+
+    Used during graph building to record what errors exist. Actual Channel
+    objects are created later when a sampler is compiled with a key.
+    """
+
+    error_type: type[Channel]
+    params: tuple[float, ...]
+
+    def create_channel(self, key: Array) -> Channel:
+        """Create the actual Channel with the given random key."""
+        return self.error_type(*self.params, key=key)
+
+
+def create_channels_from_specs(specs: list[ErrorSpec], key: Array) -> list[Channel]:
+    """Create Channel objects from ErrorSpecs with the given random key."""
+    channels = []
+    for spec in specs:
+        key, subkey = jax.random.split(key)
+        channels.append(spec.create_channel(subkey))
+    return channels
 
 
 class ChannelSampler:

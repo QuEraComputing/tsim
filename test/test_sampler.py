@@ -36,9 +36,9 @@ def test_seed():
         M 0
         """
     )
-    for i in range(2):
+    for _ in range(2):
         sampler = c.compile_sampler(seed=0)
-        assert np.count_nonzero(sampler.sample(100)) == 54
-        assert np.count_nonzero(sampler.sample(100)) == 50
-        assert np.count_nonzero(sampler.sample(100)) == 54
-        assert np.count_nonzero(sampler.sample(100)) == 49
+        assert np.count_nonzero(sampler.sample(100)) == 51
+        assert np.count_nonzero(sampler.sample(100)) == 56
+        assert np.count_nonzero(sampler.sample(100)) == 52
+        assert np.count_nonzero(sampler.sample(100)) == 46
