@@ -12,12 +12,12 @@ Contained within is:
 Anyone is welcome to use this work, and for those who do it would be appreciated if you cite the related paper https://arxiv.org/abs/2403.06777:
 <pre>
   @misc{sutcliffe2024fastclassicalsimulationquantum,
-      title={Fast classical simulation of quantum circuits via parametric rewriting in the ZX-calculus}, 
+      title={Fast classical simulation of quantum circuits via parametric rewriting in the ZX-calculus},
       author={Matthew Sutcliffe and Aleks Kissinger},
       year={2024},
       eprint={2403.06777},
       archivePrefix={arXiv},
       primaryClass={quant-ph},
-      url={https://arxiv.org/abs/2403.06777}, 
+      url={https://arxiv.org/abs/2403.06777},
 }
 </pre>
