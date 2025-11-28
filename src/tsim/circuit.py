@@ -51,6 +51,19 @@ class Circuit:
         c._stim_circ = stim_circuit.flattened()
         return c
 
+    @classmethod
+    def from_file(cls, filename: str) -> Circuit:
+        """Create a Circuit from a file.
+
+        Args:
+            filename: The filename to read the circuit from.
+
+        Returns:
+            A new Circuit instance.
+        """
+        stim_circ = stim.Circuit.from_file(filename)
+        return cls.from_stim_program(stim_circ)
+
     def __repr__(self) -> str:
         return f"tsim.Circuit('''\n{self._stim_circ}\n''')"
 

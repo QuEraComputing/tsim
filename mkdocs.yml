@@ -89,8 +89,13 @@ plugins:
   - blog
   - mkdocs-jupyter:
       allow_errors: false
+      execute: true
+      execute_ignore:
+          - "demos/demo.ipynb"
+          - "*.py"
 
 extra_css:
+
   - stylesheets/extra.css
   - https://unpkg.com/katex@0/dist/katex.min.css
 
