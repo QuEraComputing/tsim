@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Literal, cast
 
 import stim
@@ -225,7 +226,29 @@ class Circuit:
         )
 
     def diagram(
-        self, type: Literal["pyzx", "timeline-svg"] = "pyzx", labels: bool = False
+        self,
+        type: Literal[
+            "pyzx",
+            "timeline-text",
+            "timeline-svg",
+            "timeline-svg-html",
+            "timeline-3d",
+            "timeline-3d-html",
+            "detslice-text",
+            "detslice-svg",
+            "detslice-svg-html",
+            "matchgraph-svg",
+            "matchgraph-svg-html",
+            "matchgraph-3d",
+            "matchgraph-3d-html",
+            "timeslice-svg",
+            "timeslice-svg-html",
+            "detslice-with-ops-svg",
+            "detslice-with-ops-svg-html",
+            "interactive",
+            "interactive-html",
+        ] = "pyzx",
+        **kwargs: Any,
     ) -> Any:
         """Display the circuit diagram.
 
@@ -237,20 +260,47 @@ class Circuit:
             The graph representation.
         """
         if type == "timeline-svg":
-            return self._stim_circ.diagram(type="timeline-svg")
+            diagram = self._stim_circ.diagram(type="timeline-svg")
 
-        built = parse_stim_circuit(self._stim_circ)
-        g = built.graph
+            width: float | None = None
+            height = kwargs.get("height")
+            if height is not None and isinstance(height, (float, int)):
+                m = re.search(r'viewBox="[^"]*\s([\d.]+)\s+([\d.]+)"', str(diagram))
+                if m is not None:
+                    w, h = map(float, m.groups())
+                    width = float(height) / h * w
 
-        if len(g.vertices()) == 0:
+            if width is not None or "width" in kwargs:
+                try:
+                    from IPython.display import HTML
+
+                    return HTML(
+                        f"""
+                    <div style="overflow-x: scroll; ">
+                    <div style="width: {width or kwargs.get("width", 0)}px">
+                    {diagram}
+                    </div>
+                    </div>
+                    """
+                    )
+                except ImportError:
+                    pass
+            return diagram
+        elif type == "pyzx":
+            built = parse_stim_circuit(self._stim_circ)
+            g = built.graph
+
+            if len(g.vertices()) == 0:
+                return g
+
+            g = g.clone()
+            max_row = max(g.row(v) for v in built.last_vertex.values())
+            for q in built.last_vertex:
+                g.set_row(built.last_vertex[q], max_row)
+            zx.draw(g, **kwargs)
             return g
-
-        g = g.clone()
-        max_row = max(g.row(v) for v in built.last_vertex.values())
-        for q in built.last_vertex:
-            g.set_row(built.last_vertex[q], max_row)
-        zx.draw(g, labels=labels)
-        return g
+        else:
+            return self._stim_circ.diagram(type=type, **kwargs)
 
     def to_tensor(self) -> Any:
         """Convert circuit to tensor representation."""
@@ -270,6 +320,11 @@ class Circuit:
         """Count the number of T gates in the circuit."""
         built = parse_stim_circuit(self._stim_circ)
         return zx.tcount(built.graph)
+
+    def get_graph(self) -> BaseGraph:
+        """Construct the ZX graph"""
+        built = parse_stim_circuit(self._stim_circ)
+        return built.graph
 
     def get_sampling_graph(self, sample_detectors: bool = False) -> BaseGraph:
         """Get a ZX graph that can be used to compute probabilities.
