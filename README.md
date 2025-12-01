@@ -3,7 +3,7 @@
 A GPU-accelerated circuit sampler via ZX-calculus stabilizer rank decomposition.
 **Tsim feels just like [Stim](https://github.com/quantumlib/Stim), but can handle T-gates.**
 
-It is based on work by [Sutcliffe and Kissinger (2025)](https://arxiv.org/abs/2403.06777).
+It is based on [Sutcliffe and Kissinger (2025)](https://arxiv.org/abs/2403.06777).
 
 ## Installation
 
@@ -19,7 +19,7 @@ Or with [uv](https://docs.astral.sh/uv/):
 uv add git+https://github.com/QuEraComputing/tsim.git
 ```
 
-If you machine has a GPU, use:
+If your machine has a GPU, use:
 ```bash
 pip install "git+https://github.com/QuEraComputing/tsim.git#egg=tsim[cuda13]"
 ```
@@ -55,10 +55,9 @@ samples = detector_sampler.sample(shots=100)
 
 ## What is Tsim?
 
-Stim is a tool that allows sampling from Clifford+T circuits or computing amplitudes for
-outputs bitstrings. It's underlying algorithm is stabilizer rank decomposition, together with ZX-calculus simplification rules.
+Tsim is a quantum circuit simulator that supports fast sampling from Clifford+T circuits with Pauli noise. Its underlying algorithm is stabilizer rank decomposition, together with ZX-calculus simplification rules.
 
-As such, Tsim can scales to hundreds or even thousands of qubits, as long as the circuit
+As such, Tsim scales to hundreds or even thousands of qubits, as long as the circuit
 does not have too many T-gates.
 
 Just like Stim, Tsim compiles circuits into measurement or detector samplers.
@@ -78,4 +77,5 @@ Tsim supports all [Stim gates](https://github.com/quantumlib/Stim/wiki/Stim-v1.9
 - [ ] API for stabilizer rank decomposition techniques (e.g., diagram cutting)
 - [ ] Benchmarks
 - [ ] Simulate d=5 magic state cultivation circuit
-- [ ] Add quizx-powered simulator that is not compiled, analogous to stim's `TableauSimulator`
+- [ ] Add quizx-powered simulator that is not compiled but supports control flow and non-Pauli noise, analogous to stim's `TableauSimulator`
+- [ ] Better graph construction exploiting time order
