@@ -55,10 +55,46 @@ def test_t_gate():
     assert unitaries_equal_up_to_global_phase(c.to_matrix(), t_matrix)
 
 
+def test_t_gate_shorthand():
+    """Test that T shorthand is equivalent to S[T]."""
+    c1 = Circuit("T 0")
+    c2 = Circuit("S[T] 0")
+    assert c1._stim_circ == c2._stim_circ
+
+
 def test_t_dag_gate():
     c = Circuit("S_DAG[T] 0")
     t_dag_matrix = np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]])
     assert unitaries_equal_up_to_global_phase(c.to_matrix(), t_dag_matrix)
+
+
+def test_t_dag_gate_shorthand():
+    """Test that T_DAG shorthand is equivalent to S_DAG[T]."""
+    c1 = Circuit("T_DAG 0")
+    c2 = Circuit("S_DAG[T] 0")
+    assert c1._stim_circ == c2._stim_circ
+
+
+def test_rotation_gate_shorthand():
+    """Test that R_Z(angle) shorthand is converted correctly."""
+    c1 = Circuit("R_Z(0.25) 0")
+    c2 = Circuit("I[R_Z(theta=0.25*pi)] 0")
+    assert c1._stim_circ == c2._stim_circ
+
+    c1 = Circuit("R_X(-0.5) 0")
+    c2 = Circuit("I[R_X(theta=-0.5*pi)] 0")
+    assert c1._stim_circ == c2._stim_circ
+
+    c1 = Circuit("R_Y(0.333) 0")
+    c2 = Circuit("I[R_Y(theta=0.333*pi)] 0")
+    assert c1._stim_circ == c2._stim_circ
+
+
+def test_u3_gate_shorthand():
+    """Test that U3(theta, phi, lambda) shorthand is converted correctly."""
+    c1 = Circuit("U3(0.3, 0.24, 0.49) 0")
+    c2 = Circuit("I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0")
+    assert c1._stim_circ == c2._stim_circ
 
 
 @pytest.mark.parametrize(
@@ -211,3 +247,13 @@ def test_circuit_eq():
     c3 = Circuit("X 0")
     assert c1 == c2
     assert c1 != c3
+
+
+def test_from_file_preprocesses_shorthand(tmp_path):
+    path = tmp_path / "prog.stim"
+    path.write_text("T 0\nT_DAG 1\nR_Z(0.25) 0\n", encoding="utf-8")
+
+    loaded = Circuit.from_file(path)
+    expected = Circuit("T 0\nT_DAG 1\nR_Z(0.25) 0\n")
+
+    assert loaded._stim_circ == expected._stim_circ

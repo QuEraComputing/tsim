@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "ipywidgets>=8.1.8",
     "jax>=0.8.0",
+    "lxml>=6.0.2",
     "numpy>=2.2.6",
     "pyperclip>=1.11.0",
     "pyzx>=0.9.0",

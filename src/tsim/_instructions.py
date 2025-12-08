@@ -78,6 +78,11 @@ def ensure_lane(b: GraphRepresentation, qubit: int) -> None:
         add_lane(b, qubit)
 
 
+# =============================================================================
+# Non-Clifford Gates
+# =============================================================================
+
+
 def x_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
@@ -102,6 +107,35 @@ def t(b: GraphRepresentation, qubit: int) -> None:
 
 def t_dag(b: GraphRepresentation, qubit: int) -> None:
     z_phase(b, qubit, Fraction(-1, 4))
+
+
+def r_z(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
+    z_phase(b, qubit, phase)
+    b.graph.scalar.add_phase(-phase / 2)
+
+
+def r_x(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
+    x_phase(b, qubit, phase)
+    b.graph.scalar.add_phase(-phase / 2)
+
+
+def r_y(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
+    h_yz(b, qubit)
+    r_z(b, qubit, phase)
+    h_yz(b, qubit)
+
+
+def u3(
+    b: GraphRepresentation,
+    qubit: int,
+    theta: Fraction,
+    phi: Fraction,
+    lambda_: Fraction,
+) -> None:
+    r_z(b, qubit, lambda_)
+    r_y(b, qubit, theta)
+    r_z(b, qubit, phi)
+    b.graph.scalar.add_phase((phi + lambda_) / 2)
 
 
 # =============================================================================

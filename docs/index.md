@@ -15,19 +15,15 @@ and, importantly, T-gates.
 c = tsim.Circuit(
     """
     RX 0
-    S[T] 0  # This is a T-gate
+    T 0
     DEPOLARIZE1(0.1) 0
     H 0
     M 0
-    S_DAG[T]  # This is a T_DAG gate
     """
 )
 sampler = c.compile_sampler()
 samples = sampler.sample(shots=100)
 ```
-
-To add T-gates to a circuit, simply use the `S[T]` and `S_DAG[T]` instructions.
-`tsim` does not introduce its own "T" instruction to be fully compatible with `stim`.
 
 For circuits with detector and observable annotations,you can compile a detector sampler:
 
@@ -36,7 +32,7 @@ c = tsim.Circuit(
     """
     RX 0
     R 1
-    S_DAG[T] 0  # This is a T_DAG gate
+    T_DAG 0
     PAULI_CHANNEL_1(0.1, 0.1, 0.2) 0 1
     H 0
     CNOT 0 1
