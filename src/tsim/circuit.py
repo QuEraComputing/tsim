@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import re
-from typing import Any, Literal, cast
+from typing import Any, Iterable, Literal, cast, overload
 
 import stim
 
@@ -10,21 +9,21 @@ from tsim.dem import get_detector_error_model
 from tsim.external.pyzx.graph.base import BaseGraph
 from tsim.graph_util import build_sampling_graph
 from tsim.parse import parse_stim_circuit
+from tsim.util.diagram import render_svg
+from tsim.util.program_text import shorthand_to_stim, stim_to_shorthand
 
 
 class Circuit:
     """Quantum circuit as a thin wrapper around stim.Circuit.
+    _
+        Circuits are constructed like stim circuits:
 
-    Circuits are constructed like stim circuits:
-
-        >>> circuit = Circuit('''
-        ...     H 0
-        ...     S[T] 0  # This is the T instruction
-        ...     CNOT 0 1
-        ...     M 0 1
-        ... ''')
-
-    where `S[T]` is the T instruction.
+            >>> circuit = Circuit('''
+            ...     H 0
+            ...     T 0
+            ...     CNOT 0 1
+            ...     M 0 1
+            ... ''')
     """
 
     __slots__ = ("_stim_circ",)
@@ -36,7 +35,7 @@ class Circuit:
             stim_program_text: Stim program text to parse. If empty, creates an
                 empty circuit.
         """
-        self._stim_circ = stim.Circuit(stim_program_text)
+        self._stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text))
 
     @classmethod
     def from_stim_program(cls, stim_circuit: stim.Circuit) -> Circuit:
@@ -52,6 +51,15 @@ class Circuit:
         c._stim_circ = stim_circuit.flattened()
         return c
 
+    def append_from_stim_program_text(self, stim_program_text: str) -> None:
+        """Appends operations described by a STIM format program into the circuit.
+
+        Supports the same shorthand syntax as the constructor.
+        """
+        self._stim_circ.append_from_stim_program_text(
+            shorthand_to_stim(stim_program_text)
+        )
+
     @classmethod
     def from_file(cls, filename: str) -> Circuit:
         """Create a Circuit from a file.
@@ -62,14 +70,16 @@ class Circuit:
         Returns:
             A new Circuit instance.
         """
-        stim_circ = stim.Circuit.from_file(filename)
+        with open(filename, "r", encoding="utf-8") as f:
+            stim_program_text = f.read()
+        stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text))
         return cls.from_stim_program(stim_circ)
 
     def __repr__(self) -> str:
-        return f"tsim.Circuit('''\n{self._stim_circ}\n''')"
+        return f"tsim.Circuit('''\n{str(self)}\n''')"
 
     def __str__(self) -> str:
-        return str(self._stim_circ)
+        return stim_to_shorthand(str(self._stim_circ))
 
     def __len__(self) -> int:
         return len(self._stim_circ)
@@ -102,6 +112,110 @@ class Circuit:
     def __rmul__(self, repetitions: int) -> Circuit:
         return self * repetitions
 
+    @overload
+    def __getitem__(
+        self,
+        index_or_slice: int,
+    ) -> stim.CircuitInstruction:
+        pass
+
+    @overload
+    def __getitem__(
+        self,
+        index_or_slice: slice,
+    ) -> Circuit:
+        pass
+
+    def __getitem__(
+        self,
+        index_or_slice: object,
+    ) -> object:
+        """Returns copies of instructions from the circuit.
+
+        Args:
+            index_or_slice: An integer index picking out an instruction to return, or a
+                slice picking out a range of instructions to return as a circuit.
+
+        Returns:
+            If the index was an integer, then an instruction from the circuit.
+            If the index was a slice, then a circuit made up of the instructions in that
+            slice.
+        """
+        if isinstance(index_or_slice, int):
+            return self._stim_circ[index_or_slice]
+        elif isinstance(index_or_slice, slice):
+            return Circuit.from_stim_program(self._stim_circ[index_or_slice])
+        else:
+            raise TypeError(f"Invalid index or slice: {index_or_slice}")
+
+    def approx_equals(
+        self,
+        other: object,
+        *,
+        atol: float,
+    ) -> bool:
+        """Checks if a circuit is approximately equal to another circuit.
+
+        Two circuits are approximately equal if they are equal up to slight
+        perturbations of instruction arguments such as probabilities. For example,
+        `X_ERROR(0.100) 0` is approximately equal to `X_ERROR(0.099)` within an absolute
+        tolerance of 0.002. All other details of the circuits (such as the ordering of
+        instructions and targets) must be exactly the same.
+
+        Args:
+            other: The circuit, or other object, to compare to this one.
+            atol: The absolute error tolerance. The maximum amount each probability may
+                have been perturbed by.
+
+        Returns:
+            True if the given object is a circuit approximately equal up to the
+            receiving circuit up to the given tolerance, otherwise False.
+        """
+        if isinstance(other, Circuit):
+            return self._stim_circ.approx_equals(other._stim_circ, atol=atol)
+        elif isinstance(other, stim.Circuit):
+            return self._stim_circ.approx_equals(other, atol=atol)
+        else:
+            return False
+
+    def compile_m2d_converter(
+        self,
+        *,
+        skip_reference_sample: bool = False,
+    ) -> stim.CompiledMeasurementsToDetectionEventsConverter:
+        """Creates a measurement-to-detection-event converter for the given circuit.
+
+        The converter can efficiently compute detection events and observable flips
+        from raw measurement data.
+
+        The converter uses a noiseless reference sample, collected from the circuit
+        using stim's Tableau simulator during initialization of the converter, as a
+        baseline for determining what the expected value of a detector is.
+
+        Note that the expected behavior of gauge detectors (detectors that are not
+        actually deterministic under noiseless execution) can vary depending on the
+        reference sample. Stim mitigates this by always generating the same reference
+        sample for a given circuit.
+
+        Args:
+            skip_reference_sample: Defaults to False. When set to True, the reference
+                sample used by the converter is initialized to all-zeroes instead of
+                being collected from the circuit. This should only be used if it's known
+                that the all-zeroes sample is actually a possible result from the
+                circuit (under noiseless execution).
+
+        Returns:
+            An initialized stim.CompiledMeasurementsToDetectionEventsConverter.
+        """
+        return self._stim_circ.compile_m2d_converter(
+            skip_reference_sample=skip_reference_sample
+        )
+
+    @property
+    def stim_circuit(self) -> stim.Circuit:
+        """Return the underlying stim circuit."""
+        return self._stim_circ.copy()
+
     @property
     def num_measurements(self) -> int:
         """Counts the number of bits produced when sampling the circuit's measurements."""
@@ -127,6 +241,38 @@ class Circuit:
         This is always one more than the largest qubit index used by the circuit.
         """
         return self._stim_circ.num_qubits
+
+    @property
+    def num_ticks(
+        self,
+    ) -> int:
+        """Counts the number of TICK instructions executed when running the circuit.
+
+        TICKs in loops are counted once per iteration.
+
+        Returns:
+            The number of ticks executed by the circuit.
+        """
+        return self._stim_circ.num_ticks
+
+    def pop(
+        self,
+        index: int = -1,
+    ) -> stim.CircuitInstruction:
+        """Pops an operation from the end of the circuit, or at the given index.
+
+        Args:
+            index: Defaults to -1 (end of circuit). The index to pop from.
+
+        Returns:
+            The popped instruction.
+
+        Raises:
+            IndexError: The given index is outside the bounds of the circuit.
+        """
+        el = self._stim_circ.pop(index)
+        assert not isinstance(el, stim.CircuitRepeatBlock)
+        return el
 
     def copy(self) -> Circuit:
         """Create a copy of this circuit."""
@@ -229,63 +375,73 @@ class Circuit:
         self,
         type: Literal[
             "pyzx",
-            "timeline-text",
             "timeline-svg",
-            "timeline-svg-html",
-            "timeline-3d",
-            "timeline-3d-html",
-            "detslice-text",
-            "detslice-svg",
-            "detslice-svg-html",
-            "matchgraph-svg",
-            "matchgraph-svg-html",
-            "matchgraph-3d",
-            "matchgraph-3d-html",
             "timeslice-svg",
-            "timeslice-svg-html",
-            "detslice-with-ops-svg",
-            "detslice-with-ops-svg-html",
-            "interactive",
-            "interactive-html",
         ] = "pyzx",
+        tick: int | range | None = None,
+        filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),),
+        rows: int | None = None,
+        height: float | None = None,
+        width: float | None = None,
         **kwargs: Any,
     ) -> Any:
-        """Display the circuit diagram.
+        """Returns a diagram of the circuit, from a variety of options.
 
         Args:
-            type: Diagram type - "pyzx" for ZX-diagram, "timeline-svg" for stim timeline.
-            labels: Whether to show vertex labels (only for pyzx type).
+            type: The type of diagram. Available types are:
+                "pyzx": A pyzx SVG of the ZX diagram of the circuit.
+                "timeline-svg": An SVG image of the operations applied by
+                    the circuit over time. Includes annotations showing the
+                    measurement record index that each measurement writes
+                    to, and the measurements used by detectors.
+                "timeslice-svg": An SVG image of the operations applied
+                    between two TICK instructions in the circuit, with the
+                    operations laid out in 2d.
+            tick: Required for time slice diagrams. Specifies
+                which TICK instruction, or range of TICK instructions, to
+                slice at. Note that the first TICK instruction in the
+                circuit corresponds tick=1. The value tick=0 refers to the
+                very start of the circuit.
+
+                Passing `range(A, B)` for a detector slice will show the
+                slices for ticks A through B including A but excluding B.
+
+                Passing `range(A, B)` for a time slice will show the
+                operations between tick A and tick B.
+            rows: In diagrams that have multiple separate pieces, such as timeslice
+                diagrams and detslice diagrams, this controls how many rows of
+                pieces there will be. If not specified, a number of rows that creates
+                a roughly square layout will be chosen.
+            filter_coords: A list of things to include in the diagram. Different
+                effects depending on the diagram.
+
+                For detslice diagrams, the filter defaults to showing all detectors
+                and no observables. When specified, each list entry can be a collection
+                of floats (detectors whose coordinates start with the same numbers will
+                be included), a stim.DemTarget (specifying a detector or observable
+                to include), a string like "D5" or "L0" specifying a detector or
+                observable to include.
 
         Returns:
-            The graph representation.
+            An object whose `__str__` method returns the diagram, so that
+            writing the diagram to a file works correctly. The returned
+            object may also define methods such as `_repr_html_`, so that
+            ipython notebooks recognize it can be shown using a specialized
+            viewer instead of as raw text.
         """
-        if type == "timeline-svg":
-            diagram = self._stim_circ.diagram(type="timeline-svg")
-
-            width: float | None = None
-            height = kwargs.get("height")
-            if height is not None and isinstance(height, (float, int)):
-                m = re.search(r'viewBox="[^"]*\s([\d.]+)\s+([\d.]+)"', str(diagram))
-                if m is not None:
-                    w, h = map(float, m.groups())
-                    width = float(height) / h * w
-
-            if width is not None or "width" in kwargs:
-                try:
-                    from IPython.display import HTML
-
-                    return HTML(
-                        f"""
-                    <div style="overflow-x: scroll; ">
-                    <div style="width: {width or kwargs.get("width", 0)}px">
-                    {diagram}
-                    </div>
-                    </div>
-                    """
-                    )
-                except ImportError:
-                    pass
-            return diagram
+        if type in [
+            "timeline-svg",
+            "timeslice-svg",
+        ]:
+            return render_svg(
+                self._stim_circ,
+                type,
+                tick=tick,
+                filter_coords=filter_coords,
+                rows=rows,
+                width=width,
+                height=height,
+            )
         elif type == "pyzx":
             built = parse_stim_circuit(self._stim_circ)
             g = built.graph
@@ -381,3 +537,7 @@ class Circuit:
     def cast_to_stim(self) -> stim.Circuit:
         """Return self with type cast to stim.Circuit. This is useful for passing the circuit to functions that expect a stim.Circuit."""
         return cast(stim.Circuit, self)
+
+    def inverse(self) -> Circuit:
+        """Return the inverse of the circuit."""
+        return Circuit.from_stim_program(self._stim_circ.inverse())
