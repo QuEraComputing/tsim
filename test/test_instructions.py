@@ -1,3 +1,4 @@
+from fractions import Fraction
 from typing import Callable
 
 import numpy as np
@@ -43,6 +44,52 @@ def _build_and_get_matrix(gate_func: Callable | tuple[Callable, Callable], *args
 def test_single_qubit_instruction(gate_func, matrix: np.ndarray):
     result = _build_and_get_matrix(gate_func, 0)
     assert np.allclose(result, matrix)
+
+
+@pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
+def test_r_z(frac: Fraction):
+    frac = Fraction(1, 5)
+    result = _build_and_get_matrix(_instructions.r_z, 0, frac)
+    expected = np.array(
+        [[np.exp(-1j * np.pi / 2 * frac), 0], [0, np.exp(1j * np.pi / 2 * frac)]]
+    )
+    assert np.allclose(result, expected)
+
+
+@pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
+def test_r_x(frac: Fraction):
+    frac = Fraction(1, 5)
+    result = _build_and_get_matrix(_instructions.r_x, 0, frac)
+    theta = frac * np.pi
+    expected = np.array(
+        [
+            [np.cos(theta / 2), -1j * np.sin(theta / 2)],
+            [-1j * np.sin(theta / 2), np.cos(theta / 2)],
+        ]
+    )
+    assert np.allclose(result, expected)
+
+
+@pytest.mark.parametrize("frac_theta", [Fraction(1, 5), Fraction(-1, 3)])
+@pytest.mark.parametrize("frac_phi", [Fraction(1, 5), Fraction(1, 7)])
+@pytest.mark.parametrize("frac_lambda", [Fraction(-1, 13), Fraction(1, 7)])
+def test_u3(frac_theta: Fraction, frac_phi: Fraction, frac_lambda: Fraction):
+    result = _build_and_get_matrix(
+        _instructions.u3, 0, frac_theta, frac_phi, frac_lambda
+    )
+    theta = frac_theta * np.pi
+    phi = frac_phi * np.pi
+    lambda_ = frac_lambda * np.pi
+    expected = np.array(
+        [
+            [np.cos(theta / 2), -np.exp(1j * lambda_) * np.sin(theta / 2)],
+            [
+                np.exp(1j * phi) * np.sin(theta / 2),
+                np.exp(1j * (phi + lambda_)) * np.cos(theta / 2),
+            ],
+        ]
+    )
+    assert np.allclose(result, expected)
 
 
 @pytest.mark.parametrize(
