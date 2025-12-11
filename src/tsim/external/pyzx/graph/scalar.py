@@ -124,6 +124,7 @@ class Scalar(object):
         self.phasenodes: List[FractionLike] = [] # Stores list of legless spiders, by their phases.
         self.phasenodevars: List[Set[str]] = [] # Stores the added parameters of the legless spider phases
         self.floatfactor: DyadicNumber = DyadicNumber.one()
+        self.approximate_floatfactor: complex = 1.0 + 0.0j
         self.is_unknown: bool = False # Whether this represents an unknown scalar value
         self.is_zero: bool = False
 
@@ -174,6 +175,7 @@ class Scalar(object):
         s.phasenodes = copy.copy(self.phasenodes) if not conjugate else [-p for p in self.phasenodes]
         s.phasenodevars = copy.copy(self.phasenodevars)
         s.floatfactor = self.floatfactor.copy() if not conjugate else self.floatfactor.conjugate()
+        s.approximate_floatfactor = self.approximate_floatfactor if not conjugate else self.approximate_floatfactor.conjugate()
         s.is_unknown = self.is_unknown
         s.is_zero = self.is_zero
         return s
@@ -289,6 +291,8 @@ class Scalar(object):
         """Add a new spider-pair scalar term"""
         a = int(alpha*4) # Convert via alpha=a*pi/4
         b = int(beta*4)  # Convert via  beta=b*pi/4
+        assert a == alpha * 4, f"alpha: {alpha}, a: {a}"
+        assert b == beta * 4, f"beta: {beta}, b: {b}"
         sp = SpiderPair(a, b, paramsA, paramsB)
         self.phasepairs.append(sp)
         
@@ -310,6 +314,7 @@ class Scalar(object):
         self.phase = (self.phase +other.phase)%2
         self.phasenodes.extend(other.phasenodes)
         self.floatfactor *= other.floatfactor
+        self.approximate_floatfactor *= other.approximate_floatfactor
         if other.is_zero: self.is_zero = True
         if other.is_unknown: self.is_unknown = True
 

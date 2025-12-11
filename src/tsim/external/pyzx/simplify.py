@@ -306,7 +306,17 @@ def tcount(g: Union[BaseGraph[VT,ET], Circuit]) -> int:
     count = 0
     phases = g.phases()
     for v in g.vertices():
-        if phases[v]!=0 and phases[v].denominator > 2:
+        if phases[v] != 0 and phases[v].denominator > 2:
+            count += 1
+    return count
+
+
+def u3_count(g: BaseGraph[VT, ET]) -> int:
+    """Returns the amount of nodes in g that have a non-Clifford phase."""
+    count = 0
+    phases = g.phases()
+    for v in g.vertices():
+        if phases[v] != 0 and phases[v].denominator not in (1, 2, 4):
             count += 1
     return count
 

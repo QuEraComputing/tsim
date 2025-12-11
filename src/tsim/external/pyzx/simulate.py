@@ -474,3 +474,29 @@ def replace_1_1(g: BaseGraph[VT,ET], verts: List[VT]) -> BaseGraph[VT,ET]:
     g.add_edge(g.edge(verts[0],w),EdgeType.HADAMARD) 
     for v in verts: g.add_to_phase(v,Fraction(-1,4),{})
     return g
+
+
+def replace_1_0_arbitrary_rotation(g: BaseGraph[VT,ET], verts: List[VT]) -> BaseGraph[VT,ET]:
+    g.scalar.add_power(-1)
+    phase = g.phase(verts[0])
+    w = g.add_vertex(VertexType.Z,g.qubit(verts[0])-0.5, g.row(verts[0])-0.5, 0)
+    g.add_edge(g.edge(verts[0],w),EdgeType.HADAMARD)
+    for v in verts: g.add_to_phase(v,-phase,set())
+    return g
+
+def replace_1_1_arbitrary_rotation(g: BaseGraph[VT,ET], verts: List[VT]) -> BaseGraph[VT,ET]:
+    phase = g.phase(verts[0])
+    g.scalar.approximate_floatfactor *= np.exp(1j * phase * np.pi)
+    g.scalar.add_power(-1)
+    w = g.add_vertex(VertexType.Z,g.qubit(verts[0])-0.5, g.row(verts[0])-0.5, Fraction(1,1))
+    g.add_edge(g.edge(verts[0],w),EdgeType.HADAMARD) 
+    for v in verts: g.add_to_phase(v,-phase,set())
+    return g
+
+def replace_u3_states(g: BaseGraph[VT,ET]) -> SumGraph:
+    for v in g.vertices():
+        if g.phase(v).denominator not in (1, 2, 4):
+            g1 = replace_1_1_arbitrary_rotation(g.copy(), [v])
+            g2 = replace_1_0_arbitrary_rotation(g.copy(), [v])
+            return SumGraph([g1, g2])
+    return SumGraph([g])
