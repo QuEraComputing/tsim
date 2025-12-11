@@ -4,6 +4,23 @@ import pytest
 import stim
 
 from tsim.circuit import Circuit
+from tsim.sampler import CompiledStateProbs
+
+
+def to_matrix(c: Circuit):
+    prob_sampler = CompiledStateProbs(c)
+    num_qubits = c.num_qubits
+    sv = []
+    for i in range(2**num_qubits):
+        state = np.zeros(num_qubits, dtype=np.bool_)
+        for j in range(num_qubits):
+            state[j] = (i >> j) & 1
+        state = state[::-1]
+        sv.append(prob_sampler.probability_of(state, batch_size=1)[0])
+    mat = (np.array(sv) * 2 ** (num_qubits // 2)).reshape(
+        (2 ** (num_qubits // 2), 2 ** (num_qubits // 2))
+    )
+    return mat
 
 
 def test_sample_bell_state():
@@ -443,3 +460,105 @@ def test_memory_error_correction_and_compare_to_stim(code_task: str):
         / stim_errors_after_correction
         <= 0.3
     )
+
+
+@pytest.mark.parametrize("alpha", [0.34, 0.24, 0.49])
+@pytest.mark.parametrize("basis", ["X", "Y", "Z"])
+def test_rot_gates(alpha: float, basis: str):
+    alpha_pi = alpha * np.pi
+
+    c = Circuit(
+        f"""
+        R 0 1
+        H 0
+        CNOT 0 1
+        H_X{basis} 1
+        R_{basis}({alpha}) 1
+        H_X{basis} 1
+        M 0 1
+        """.replace(
+            "H_XX 1", ""
+        )
+    )
+    mat = to_matrix(c)
+
+    expected = (
+        np.abs(
+            [
+                [np.cos(alpha_pi / 2), -1j * np.sin(alpha_pi / 2)],
+                [-1j * np.sin(alpha_pi / 2), np.cos(alpha_pi / 2)],
+            ]
+        )
+        ** 2
+    )
+    assert np.allclose(mat, expected)
+
+
+@pytest.mark.parametrize(
+    "theta, phi, lambda_",
+    [(0.3, 0.24, 0.49), (0.1, -0.3, 0.2)],
+)
+def test_u3_gate(theta: float, phi: float, lambda_: float):
+    theta_pi = theta * np.pi
+    phi_pi = phi * np.pi
+    lambda_pi = lambda_ * np.pi
+
+    c = Circuit(
+        f"""
+        R 0 1
+        H 0
+        CNOT 0 1
+        U3({theta}, {phi}, {lambda_}) 1
+        M 0 1
+        """
+    )
+    mat = to_matrix(c)
+
+    expected = (
+        np.abs(
+            [
+                [np.cos(theta_pi / 2), -np.exp(1j * lambda_pi) * np.sin(theta_pi / 2)],
+                [
+                    np.exp(1j * phi_pi) * np.sin(theta_pi / 2),
+                    np.exp(1j * (phi_pi + lambda_pi)) * np.cos(theta_pi / 2),
+                ],
+            ]
+        )
+        ** 2
+    )
+    assert np.allclose(mat, expected)
+
+
+@pytest.mark.parametrize("basis", ["X", "Y", "Z"])
+def test_rot_gate_identity(basis: str):
+    c = Circuit(
+        f"""
+        R 0 1
+        H 0
+        CNOT 0 1
+        R_{basis}(0.34) 1
+        X_ERROR(0.0) 1  # prevent simplification
+        R_{basis}(-0.34) 1
+        X_ERROR(0.0) 1  # prevent simplification
+        M 0 1
+        """
+    )
+    mat = to_matrix(c)
+    assert np.allclose(mat, np.eye(2))
+
+
+if __name__ == "__main__":
+    c = Circuit(
+        """
+        R 0 1
+        H 0
+        CNOT 0 1
+        U3(0.34, 0.24, 0.49) 1
+        X_ERROR(0.0) 1  # prevent simplification
+        U3(-0.34, -0.49, -0.24) 1
+        X_ERROR(0.0) 1  # prevent simplification
+        M 0 1
+        """
+    )
+    mat = to_matrix(c)
+    assert np.allclose(mat, np.eye(2), atol=1e-6)

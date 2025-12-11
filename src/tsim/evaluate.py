@@ -1,12 +1,42 @@
+import functools
+from typing import Literal, overload
+
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from tsim.compile import CompiledCircuit
 from tsim.exact_scalar import ExactScalarArray
 
 
-@jax.jit
-def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> ExactScalarArray:
+@overload
+def evaluate(
+    circuit: CompiledCircuit,
+    param_vals: jnp.ndarray,
+    has_approximate_floatfactor: Literal[False],
+) -> ExactScalarArray: ...
+
+
+@overload
+def evaluate(
+    circuit: CompiledCircuit,
+    param_vals: jnp.ndarray,
+    has_approximate_floatfactor: Literal[True],
+) -> jnp.ndarray: ...
+
+
+@overload
+def evaluate(
+    circuit: CompiledCircuit,
+    param_vals: jnp.ndarray,
+    has_approximate_floatfactor: bool,
+) -> ExactScalarArray | jnp.ndarray: ...
+
+
+@functools.partial(jax.jit, static_argnums=(2,))
+def evaluate(
+    circuit: CompiledCircuit, param_vals: jnp.ndarray, has_approximate_floatfactor: bool
+) -> ExactScalarArray | jnp.ndarray:
     """Evaluate compiled circuit with parameter values.
 
     Args:
@@ -154,11 +184,31 @@ def evaluate(circuit: CompiledCircuit, param_vals: jnp.ndarray) -> ExactScalarAr
         ]
     )
 
-    # Add initial power2 from circuit compilation: TODO refactor pyzx to use DyadicArray
-    total_summands.power = total_summands.power + circuit.power2
+    if not has_approximate_floatfactor:
+        # Add initial power2 from circuit compilation: TODO refactor pyzx to use DyadicArray
+        total_summands.power = total_summands.power + circuit.power2
+        total_summands.reduce()
+        return total_summands.sum()
+    else:
+        return jnp.sum(
+            total_summands.to_complex()
+            * circuit.approximate_floatfactors
+            * 2.0**circuit.power2,
+            axis=-1,
+        )
 
-    total_summands.reduce()
-    return total_summands.sum()
+
+evaluate_batch = jax.vmap(evaluate, in_axes=(None, 0, None))
 
 
-evaluate_batch = jax.vmap(evaluate, in_axes=(None, 0))
+def evaluate_batch_numpy(
+    circuit: CompiledCircuit, param_vals: jnp.ndarray
+) -> np.ndarray:
+    if not circuit.has_approximate_floatfactors:
+        return evaluate_batch(
+            circuit, param_vals, circuit.has_approximate_floatfactors
+        ).to_numpy()
+    else:
+        return np.array(
+            evaluate_batch(circuit, param_vals, circuit.has_approximate_floatfactors)
+        )
