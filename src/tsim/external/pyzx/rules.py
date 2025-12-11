@@ -904,7 +904,8 @@ def apply_copy(g: BaseGraph[VT,ET], matches: List[MatchCopyType[VT]]) -> Rewrite
                 e = g.edge(w,n)
                 et = g.edge_type(e)
                 g.add_edge(g.edge(n,u), toggle_edge(et))
-            g.add_to_phase(n, a)
+            else:
+                g.add_to_phase(n, a)
     return ({}, rem, [], True)
 
 MatchPhasePolyType = Tuple[List[VT], Dict[FrozenSet[VT],Union[VT,Tuple[VT,VT]]]]
