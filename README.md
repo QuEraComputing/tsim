@@ -1,7 +1,7 @@
 # tsim
 
 A GPU-accelerated circuit sampler via ZX-calculus stabilizer rank decomposition.
-**Tsim feels just like [Stim](https://github.com/quantumlib/Stim), but can handle T-gates.**
+Tsim feels just like [Stim](https://github.com/quantumlib/Stim), but can handle T-gates.
 
 It is based on [Sutcliffe and Kissinger (2025)](https://arxiv.org/abs/2403.06777).
 
@@ -30,8 +30,7 @@ An introductory tutorial is available [here](https://github.com/QuEraComputing/t
 
 For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and currently supports all [Stim gates](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference), except `CORRELATED_ERROR` and `ELSE_CORRELATED_ERROR`.
 
-T-gates are supported via the `S[T]` and `S_DAG[T]` instructions:
-
+Additionally, `tsim` supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, and `U3`.
 ```python
 import tsim
 
@@ -39,7 +38,7 @@ c = tsim.Circuit(
     """
     RX 0
     R 1
-    S[T] 0  # T gate
+    T 0
     PAULI_CHANNEL_1(0.1, 0.1, 0.2) 0 1
     H 0
     CNOT 0 1
