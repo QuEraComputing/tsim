@@ -537,9 +537,9 @@ def test_rot_gate_identity(basis: str):
         H 0
         CNOT 0 1
         R_{basis}(0.34) 1
-        X_ERROR(0.0) 1  # prevent simplification
+        DEPOLARIZE1(0.0) 1  # prevent simplification
         R_{basis}(-0.34) 1
-        X_ERROR(0.0) 1  # prevent simplification
+        DEPOLARIZE1(0.0) 1  # prevent simplification
         M 0 1
         """
     )
@@ -547,18 +547,40 @@ def test_rot_gate_identity(basis: str):
     assert np.allclose(mat, np.eye(2))
 
 
-if __name__ == "__main__":
+def test_u3_gate_identity():
     c = Circuit(
         """
         R 0 1
         H 0
         CNOT 0 1
         U3(0.34, 0.24, 0.49) 1
-        X_ERROR(0.0) 1  # prevent simplification
+        DEPOLARIZE1(0.0) 1  # prevent simplification
         U3(-0.34, -0.49, -0.24) 1
-        X_ERROR(0.0) 1  # prevent simplification
+        DEPOLARIZE1(0.0) 1  # prevent simplification
         M 0 1
         """
     )
     mat = to_matrix(c)
     assert np.allclose(mat, np.eye(2), atol=1e-6)
+
+
+@pytest.mark.parametrize("n", [2, 5])
+def test_many_rx_gates(n: int):
+    a = 0.01
+    c = Circuit(
+        """
+        R 0 1
+        H 1
+        CNOT 1 0
+        """
+        + f"""
+        R_X({a}) 1
+        Z_ERROR(0.0) 1  # prevent simplification
+        """
+        * n
+        + f"""
+        R_X({-a * n}) 1
+        M 0 1
+        """
+    )
+    assert np.allclose(to_matrix(c), np.eye(2), atol=1e-6)

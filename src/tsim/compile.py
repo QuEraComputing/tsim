@@ -1,6 +1,8 @@
+from fractions import Fraction
 from typing import NamedTuple
 
 import jax.numpy as jnp
+import numpy as np
 
 from tsim.external.pyzx.graph.base import BaseGraph
 from tsim.external.pyzx.graph.scalar import DyadicNumber
@@ -65,6 +67,10 @@ def compile_circuit(
     Returns:
         CompiledCircuit with all data in static-shaped arrays
     """
+    for i, g in enumerate(g_list):
+        assert (
+            len(g.vertices()) == 0
+        ), f"Only scalar graphs can be compiled but graph {i} has {len(g.vertices())} vertices"
     num_graphs = len(g_list)
     char_to_idx = {char: i for i, char in enumerate(chars)}
 
@@ -260,14 +266,19 @@ def compile_circuit(
     # ========================================================================
     # Static data
     # ========================================================================
+    for g in g_list:
+        if g.scalar.phase.denominator not in [1, 2, 4]:
+
+            g.scalar.approximate_floatfactor *= np.exp(1j * g.scalar.phase * np.pi)
+            g.scalar.phase = Fraction(0, 1)
+
     has_approximate_floatfactors = any(
         g.scalar.approximate_floatfactor != 1.0 for g in g_list
     )
     approximate_floatfactors = jnp.array(
         [g.scalar.approximate_floatfactor for g in g_list], dtype=jnp.complex64
     )
-    for g in g_list:
-        assert g.scalar.phase.denominator in [1, 2, 4]
+
     phase_indices = jnp.array(
         [int(float(g.scalar.phase) * 4) for g in g_list], dtype=jnp.uint8
     )
