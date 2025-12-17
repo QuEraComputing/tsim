@@ -26,6 +26,7 @@ omega = (1+1j)/sq2
 from fractions import Fraction
 import itertools
 from typing import List, Optional, Dict, Tuple, Any
+from collections import defaultdict
 
 import numpy as np
 
@@ -476,27 +477,212 @@ def replace_1_1(g: BaseGraph[VT,ET], verts: List[VT]) -> BaseGraph[VT,ET]:
     return g
 
 
-def replace_1_0_arbitrary_rotation(g: BaseGraph[VT,ET], verts: List[VT]) -> BaseGraph[VT,ET]:
+def replace_1_0_arbitrary_rotation(
+    g: BaseGraph[VT, ET], verts: List[VT]
+) -> BaseGraph[VT, ET]:
     g.scalar.add_power(-1)
     phase = g.phase(verts[0])
-    w = g.add_vertex(VertexType.Z,g.qubit(verts[0])-0.5, g.row(verts[0])-0.5, 0)
-    g.add_edge(g.edge(verts[0],w),EdgeType.HADAMARD)
-    for v in verts: g.add_to_phase(v,-phase,set())
+    w = g.add_vertex(VertexType.Z, g.qubit(verts[0]) - 0.5, g.row(verts[0]) - 0.5, 0)
+    g.add_edge(g.edge(verts[0], w), EdgeType.HADAMARD)
+    for v in verts:
+        g.add_to_phase(v, -phase, set())
     return g
 
-def replace_1_1_arbitrary_rotation(g: BaseGraph[VT,ET], verts: List[VT]) -> BaseGraph[VT,ET]:
+
+def replace_1_1_arbitrary_rotation(
+    g: BaseGraph[VT, ET], verts: List[VT]
+) -> BaseGraph[VT, ET]:
     phase = g.phase(verts[0])
     g.scalar.approximate_floatfactor *= np.exp(1j * phase * np.pi)
     g.scalar.add_power(-1)
-    w = g.add_vertex(VertexType.Z,g.qubit(verts[0])-0.5, g.row(verts[0])-0.5, Fraction(1,1))
-    g.add_edge(g.edge(verts[0],w),EdgeType.HADAMARD) 
-    for v in verts: g.add_to_phase(v,-phase,set())
+    w = g.add_vertex(
+        VertexType.Z, g.qubit(verts[0]) - 0.5, g.row(verts[0]) - 0.5, Fraction(1, 1)
+    )
+    g.add_edge(g.edge(verts[0], w), EdgeType.HADAMARD)
+    for v in verts:
+        g.add_to_phase(v, -phase, set())
     return g
 
-def replace_u3_states(g: BaseGraph[VT,ET]) -> SumGraph:
+
+def replace_2_bell_arbitrary_rotation(
+    g: BaseGraph[VT, ET], verts: List[VT]
+) -> BaseGraph[VT, ET]:
+    v0, v1 = verts[:2]
+    phase0 = g.phase(v0) % Fraction(1, 2)
+    g.add_to_phase(v0, -phase0, set())
+    g.add_to_phase(v1, phase0, set())
+    g.add_edge(g.edge(v0, v1), EdgeType.SIMPLE)
+    return g
+
+
+def replace_2_10_arbitrary_rotation(
+    g: BaseGraph[VT, ET], verts: List[VT]
+) -> BaseGraph[VT, ET]:
+    v0, v1 = verts[:2]
+    phase0 = g.phase(v0) % Fraction(1, 2)
+    g.add_to_phase(v0, -phase0, set())
+    g.add_to_phase(v1, phase0, set())
+    v0_ = g.add_vertex(
+        VertexType.Z, g.qubit(v0) - 0.5, g.row(v0) - 0.5, phase=Fraction(1, 1)
+    )
+    v1_ = g.add_vertex(
+        VertexType.Z, g.qubit(v1) - 0.5, g.row(v1) - 0.5, phase=Fraction(0, 1)
+    )
+    g.add_edge(g.edge(v0_, v0), EdgeType.HADAMARD)
+    g.add_edge(g.edge(v1_, v1), EdgeType.HADAMARD)
+    g.scalar.add_phase(phase0)
+    g.scalar.add_power(-2)
+    return g
+
+
+def replace_2_01_arbitrary_rotation(
+    g: BaseGraph[VT, ET], verts: List[VT]
+) -> BaseGraph[VT, ET]:
+    v0, v1 = verts[:2]
+    phase0 = g.phase(v0) % Fraction(1, 2)
+    g.add_to_phase(v0, -phase0, set())
+    g.add_to_phase(v1, phase0, set())
+    v0_ = g.add_vertex(
+        VertexType.Z, g.qubit(v0) - 0.5, g.row(v0) - 0.5, phase=Fraction(0, 1)
+    )
+    v1_ = g.add_vertex(
+        VertexType.Z, g.qubit(v1) - 0.5, g.row(v1) - 0.5, phase=Fraction(1, 1)
+    )
+    g.add_edge(g.edge(v0_, v0), EdgeType.HADAMARD)
+    g.add_edge(g.edge(v1_, v1), EdgeType.HADAMARD)
+    g.scalar.add_phase(-phase0)
+    g.scalar.add_power(-2)
+    return g
+
+
+def replace_5_0_arbitrary_rotation(
+    g: BaseGraph[VT, ET], verts: List[VT]
+) -> BaseGraph[VT, ET]:
+    theta = g.phase(verts[0]) % Fraction(1, 2)
+    for v in verts:
+        g.add_to_phase(v, -theta, set())
+        v_ = g.add_vertex(VertexType.Z, g.qubit(v) - 0.5, g.row(v) - 0.5)
+        g.add_edge(g.edge(v_, v), EdgeType.HADAMARD)
+
+    g.scalar.approximate_floatfactor *= 1 - np.exp(1j * 4 * theta * np.pi)
+    g.scalar.add_power(-5)
+    return g
+
+
+def replace_5_1_arbitrary_rotation(
+    g: BaseGraph[VT, ET], verts: List[VT]
+) -> BaseGraph[VT, ET]:
+    theta = g.phase(verts[0]) % Fraction(1, 2)
+    for v in verts:
+        g.add_to_phase(v, -theta, set())
+        v_ = g.add_vertex(
+            VertexType.Z, g.qubit(v) - 0.5, g.row(v) - 0.5, phase=Fraction(1, 1)
+        )
+        g.add_edge(g.edge(v_, v), EdgeType.HADAMARD)
+
+    g.scalar.approximate_floatfactor *= (
+        np.exp(1j * 6 * theta * np.pi) - np.exp(1j * 2 * theta * np.pi)
+    ) * np.exp(-1j * theta * np.pi)
+    g.scalar.add_power(-5)
+    return g
+
+
+def replace_5_e_arbitrary_rotation(
+    g: BaseGraph[VT, ET], verts: List[VT]
+) -> BaseGraph[VT, ET]:
+    theta = g.phase(verts[0]) % Fraction(1, 2)
+    v1 = g.add_vertex(VertexType.Z, g.qubit(verts[0]) - 0.5, g.row(verts[0]) - 0.5)
+    v2 = g.add_vertex(
+        VertexType.Z, g.qubit(verts[1]) - 0.5, g.row(verts[1]) - 0.5, phase=-theta
+    )
+    g.add_edge(g.edge(v2, v1), EdgeType.HADAMARD)
+    for v in verts:
+        g.add_to_phase(v, -theta, set())
+        g.add_edge(g.edge(v, v1), EdgeType.HADAMARD)
+    g.scalar.approximate_floatfactor *= np.exp(1j * 3 * theta * np.pi) * np.cos(
+        theta * np.pi
+    )
+    g.scalar.add_power(4)
+    return g
+
+
+def replace_5_k_arbitrary_rotation(
+    g: BaseGraph[VT, ET], verts: List[VT]
+) -> BaseGraph[VT, ET]:
+    theta = g.phase(verts[0]) % Fraction(1, 2)
+    v1 = g.add_vertex(VertexType.Z, g.qubit(verts[0]) - 0.5, g.row(verts[0]) - 0.5)
+    v2 = g.add_vertex(
+        VertexType.Z,
+        g.qubit(verts[1]) - 0.5,
+        g.row(verts[1]) - 0.5,
+        phase=Fraction(1, 2) - theta,
+    )
+    g.add_edge(g.edge(v2, v1), EdgeType.HADAMARD)
+    for v in verts:
+        g.add_to_phase(v, Fraction(1, 2) - theta, set())
+        g.add_edge(g.edge(v, v1), EdgeType.HADAMARD)
+    g.scalar.approximate_floatfactor *= (
+        np.exp(1j * 3 * theta * np.pi) * 1j * np.sin(theta * np.pi)
+    )
+    g.scalar.add_power(4)
+    return g
+
+
+def replace_u3_states(g: BaseGraph[VT, ET], pick_random: Any = False) -> SumGraph:
+    """This function takes in a ZX-diagram in graph-like form
+    (all spiders fused, only Z spiders, only H-edges between spiders),
+    and splits it into a sum over smaller diagrams by using the magic
+    state decomposition of Bravyi, Smith, and Smolin (2016), PRX 6, 021043.
+    """
+    # copy so that the vertex labels we get will be the same ones if we copy the graph again
+    g = g.copy()
+
+    # First we find vertices with arbitary phase rotations, sorted by phase
+    phases: dict[Fraction, list[VT]] = defaultdict(list)
     for v in g.vertices():
-        if g.phase(v).denominator not in (1, 2, 4):
-            g1 = replace_1_1_arbitrary_rotation(g.copy(), [v])
-            g2 = replace_1_0_arbitrary_rotation(g.copy(), [v])
-            return SumGraph([g1, g2])
-    return SumGraph([g])
+        phase = g.phase(v)
+        if not phase or phase.denominator in (1, 2, 4):
+            continue
+        phases[phase % Fraction(1, 2)].append(v)
+
+    if len(phases) == 0:
+        raise Exception("No magic states to replace")
+
+    phase_with_most_vertices = max(phases.keys(), key=lambda x: len(phases[x]))
+    vs = phases[phase_with_most_vertices]
+
+    conjugate_phase_pair: list | None = None
+    for p in phases:
+        p_conj = (-p) % Fraction(1, 2)
+        if p_conj in phases:
+            conjugate_phase_pair = [phases[p][0], phases[p_conj][0]]
+            break
+
+    if len(vs) >= 5:
+        candidates = vs[:5]
+        replace_functions = [
+            replace_5_0_arbitrary_rotation,
+            replace_5_1_arbitrary_rotation,
+            replace_5_e_arbitrary_rotation,
+            replace_5_k_arbitrary_rotation,
+        ]
+    elif conjugate_phase_pair:
+        candidates = conjugate_phase_pair
+        replace_functions = [
+            replace_2_bell_arbitrary_rotation,
+            replace_2_10_arbitrary_rotation,
+            replace_2_01_arbitrary_rotation,
+        ]
+    else:
+        candidates = vs[0:1]
+        replace_functions = [
+            replace_1_0_arbitrary_rotation,
+            replace_1_1_arbitrary_rotation,
+        ]
+
+    graphs = []
+    for func in replace_functions:
+        h = func(g.copy(), candidates)
+        graphs.append(h)
+
+    return SumGraph(graphs)

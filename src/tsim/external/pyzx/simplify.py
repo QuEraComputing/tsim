@@ -205,6 +205,7 @@ def full_reduce(g: BaseGraph[VT,ET], quiet:bool=True, stats:Optional[Stats]=None
         interior_clifford_simp(g,quiet=quiet, stats=stats)
         j = pivot_gadget_simp(g,quiet=quiet, stats=stats)
         if i+j == 0:
+            g.remove_isolated_vertices()
             break
 
 def teleport_reduce(g: BaseGraph[VT,ET], quiet:bool=True, stats:Optional[Stats]=None) -> BaseGraph[VT,ET]:

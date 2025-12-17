@@ -854,7 +854,7 @@ class BaseGraph(Generic[VT, ET], metaclass=DocstringMeta):
                 w = list(self.neighbors(v))[0]
                 if len(list(self.neighbors(w))) > 1: continue # But this neighbor has other neighbors
                 if self.type(w) == VertexType.BOUNDARY: continue # It's a state/effect
-                if self.phase(w) not in [1, 2, 4]:
+                if self.phase(w).denominator not in [1, 2, 4]:
                     continue
                 # At this point w and v are only connected to each other
                 rem.append(v)
