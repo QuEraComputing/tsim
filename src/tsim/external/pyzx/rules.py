@@ -465,7 +465,7 @@ def match_pivot_boundary(
         if not good_vert or w is None: continue
         if bound in inputs: mod = 0.5
         else: mod = -0.5
-        v1 = g.add_vertex(VertexType.Z,-2,rs[w]+mod,phases[w])
+        v1 = g.add_vertex(VertexType.Z,-2,rs[w]+mod,phases[w], phaseVars=g.get_params(w))
         v2 = g.add_vertex(VertexType.Z,-1,rs[w]+mod,0)
         g.set_phase(w, 0)
         g.update_phase_index(w,v1)
