@@ -92,6 +92,12 @@ ROT_GATE_MATRICES = {
             [-1j * np.sin(frac * np.pi / 2), np.cos(frac * np.pi / 2)],
         ]
     ),
+    "R_Y": lambda frac: np.array(
+        [
+            [np.cos(frac * np.pi / 2), -np.sin(frac * np.pi / 2)],
+            [np.sin(frac * np.pi / 2), np.cos(frac * np.pi / 2)],
+        ]
+    ),
     "R_Z": lambda frac: np.array(
         [[np.exp(-1j * np.pi / 2 * frac), 0], [0, np.exp(1j * np.pi / 2 * frac)]]
     ),
