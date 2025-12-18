@@ -65,10 +65,18 @@ class Decomposer:
         chars = self.f_chars + self.m_chars
         num_errors = len(self.f_chars)
 
+        power2 = 0
         for i, graph in enumerate(graphs):
             g_copy = graph.copy()
             zx.full_reduce(g_copy, paramSafe=True)
             g_copy.normalize()
+
+            # Balance power2 of graphs to avoid over/underflow
+            # TODO: this might require a more sophisticated approach for large number of T gates
+            if i == 0:
+                power2 = g_copy.scalar.power2
+            g_copy.scalar.add_power(-power2)
+
             g_list = find_stab(g_copy)
             n_params = num_errors + self.outputs_to_plug[i]
             circuits.append(compile_circuit(g_list, n_params, chars))
