@@ -801,6 +801,9 @@ def match_supplementarity(g: BaseGraph[VT,ET]) -> List[MatchSupplementarityType[
     while len(candidates) > 0:
         v = candidates.pop()
         if phases[v] == 0 or phases[v].denominator <= 2: continue # Skip Clifford vertices
+        if phases[v].denominator not in [1,2,4]:
+            # Skip non-Clifford+T vertices
+            continue
         neigh = set(g.neighbors(v))
         if not neigh.isdisjoint(taken): continue
         par = frozenset(neigh)
@@ -893,6 +896,12 @@ def apply_copy(g: BaseGraph[VT,ET], matches: List[MatchCopyType[VT]]) -> Rewrite
     types = g.types()
     outputs = g.outputs()
     for v,w,a,alpha, neigh in matches:
+        assert len(g.neighbors(v)) == 1
+        assert g.phase(v) in (0,1)
+        w = list(g.neighbors(v))[0]
+        neigh = [n for n in g.neighbors(w) if n != v]
+        a = g.phase(v)
+        alpha = g.phase(w)
         rem.append(v)
         rem.append(w)
         g.scalar.add_power(-len(neigh)+1)
@@ -904,8 +913,12 @@ def apply_copy(g: BaseGraph[VT,ET], matches: List[MatchCopyType[VT]]) -> Rewrite
                 e = g.edge(w,n)
                 et = g.edge_type(e)
                 g.add_edge(g.edge(n,u), toggle_edge(et))
-            g.add_to_phase(n, a)
-    return ({}, rem, [], True)
+            else:
+                g.add_to_phase(n, a)
+        g.remove_vertices(rem)
+        rem = []
+    # return ({}, rem, [], True)
+    return ({}, [], [], True)
 
 MatchPhasePolyType = Tuple[List[VT], Dict[FrozenSet[VT],Union[VT,Tuple[VT,VT]]]]
 

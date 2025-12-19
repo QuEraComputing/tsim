@@ -1,6 +1,8 @@
+from fractions import Fraction
 from typing import NamedTuple
 
 import jax.numpy as jnp
+import numpy as np
 
 from tsim.external.pyzx.graph.base import BaseGraph
 from tsim.external.pyzx.graph.scalar import DyadicNumber
@@ -45,6 +47,9 @@ class CompiledCircuit(NamedTuple):
 
     # Static per-graph data
     phase_indices: jnp.ndarray  # shape: (num_graphs,), dtype: uint8 (values 0-7)
+    has_approximate_floatfactors: bool  # shape: (1,), dtype: bool
+    # TODO: use complex128
+    approximate_floatfactors: jnp.ndarray  # shape: (num_graphs,), dtype: complex64
     power2: jnp.ndarray  # shape: (num_graphs,), dtype: int32
     floatfactor: jnp.ndarray  # shape: (num_graphs, 4), dtype: int32
 
@@ -62,6 +67,10 @@ def compile_circuit(
     Returns:
         CompiledCircuit with all data in static-shaped arrays
     """
+    for i, g in enumerate(g_list):
+        assert (
+            len(g.vertices()) == 0
+        ), f"Only scalar graphs can be compiled but graph {i} has {len(g.vertices())} vertices"
     num_graphs = len(g_list)
     char_to_idx = {char: i for i, char in enumerate(chars)}
 
@@ -78,6 +87,7 @@ def compile_circuit(
             bitstr = [0] * n_params
             for v in g_i.scalar.phasenodevars[term]:
                 bitstr[char_to_idx[v]] = 1
+            assert g_i.scalar.phasenodes[term].denominator in [1, 2, 4]
             const_term = int(g_i.scalar.phasenodes[term] * 4)
 
             g_coord_a.append(i)
@@ -256,6 +266,19 @@ def compile_circuit(
     # ========================================================================
     # Static data
     # ========================================================================
+    for g in g_list:
+        if g.scalar.phase.denominator not in [1, 2, 4]:
+
+            g.scalar.approximate_floatfactor *= np.exp(1j * g.scalar.phase * np.pi)
+            g.scalar.phase = Fraction(0, 1)
+
+    has_approximate_floatfactors = any(
+        g.scalar.approximate_floatfactor != 1.0 for g in g_list
+    )
+    approximate_floatfactors = jnp.array(
+        [g.scalar.approximate_floatfactor for g in g_list], dtype=jnp.complex64
+    )
+
     phase_indices = jnp.array(
         [int(float(g.scalar.phase) * 4) for g in g_list], dtype=jnp.uint8
     )
@@ -299,6 +322,8 @@ def compile_circuit(
         d_param_bits_b=d_param_bits_b,
         d_graph_ids=d_graph_ids,
         phase_indices=phase_indices,
+        has_approximate_floatfactors=has_approximate_floatfactors,
+        approximate_floatfactors=approximate_floatfactors,
         power2=jnp.array(power2, dtype=jnp.int32),
         floatfactor=jnp.array(exact_floatfactor, dtype=jnp.int32),
     )

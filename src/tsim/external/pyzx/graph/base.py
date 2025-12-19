@@ -836,6 +836,10 @@ class BaseGraph(Generic[VT, ET], metaclass=DocstringMeta):
         rem: List[VT] = []
         for v in self.vertices():
             d = self.vertex_degree(v)
+            phase = self.phase(v)
+            if phase.denominator not in [1, 2, 4]:
+                # TODO: if no parameters are present, we can evaluate the isolated vertices
+                continue
             if d == 0:
                 rem.append(v)
                 ty = self.type(v)
@@ -850,6 +854,8 @@ class BaseGraph(Generic[VT, ET], metaclass=DocstringMeta):
                 w = list(self.neighbors(v))[0]
                 if len(list(self.neighbors(w))) > 1: continue # But this neighbor has other neighbors
                 if self.type(w) == VertexType.BOUNDARY: continue # It's a state/effect
+                if self.phase(w).denominator not in [1, 2, 4]:
+                    continue
                 # At this point w and v are only connected to each other
                 rem.append(v)
                 rem.append(w)
