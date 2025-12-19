@@ -251,7 +251,20 @@ def s_dag(b: GraphRepresentation, qubit: int) -> None:
 # =============================================================================
 
 
-def cnot(b: GraphRepresentation, control: int, target: int) -> None:
+def _cx_cz(
+    b: GraphRepresentation,
+    is_cx: bool,
+    control: int,
+    target: int,
+    classically_controlled: bool = False,
+) -> None:
+    edge_type = EdgeType.SIMPLE if is_cx else EdgeType.HADAMARD
+    vertex_type = VertexType.X if is_cx else VertexType.Z
+
+    m_vertex = 0
+    if classically_controlled:
+        m_vertex = b.rec[control]
+        control = b.graph.qubit(m_vertex)
     ensure_lane(b, control)
     ensure_lane(b, target)
 
@@ -260,49 +273,54 @@ def cnot(b: GraphRepresentation, control: int, target: int) -> None:
     row = max(lr1, lr2)
 
     v1 = b.last_vertex[control]
-    v2 = b.last_vertex[target]
     b.graph.set_type(v1, VertexType.Z)
-    b.graph.set_type(v2, VertexType.X)
     b.graph.set_row(v1, row)
-    b.graph.set_row(v2, row)
-    b.graph.add_edge((v1, v2))
-
     v3 = add_dummy(b, control, int(row + 1))
-    v4 = add_dummy(b, target, int(row + 1))
     b.graph.add_edge((v1, v3))
+
+    if control == target:
+        row += 1
+
+    v2 = b.last_vertex[target]
+    b.graph.set_type(v2, vertex_type)
+    b.graph.set_row(v2, row)
+    v4 = add_dummy(b, target, int(row + 1))
     b.graph.add_edge((v2, v4))
 
+    if classically_controlled:
+        b.graph.add_edge((m_vertex, v2), edge_type)
+    else:
+        b.graph.add_edge((v1, v2), edge_type)
     b.graph.scalar.add_power(1)
 
 
-def cy(b: GraphRepresentation, control: int, target: int) -> None:
+def cnot(
+    b: GraphRepresentation,
+    control: int,
+    target: int,
+    classically_controlled: bool = False,
+) -> None:
+    _cx_cz(b, True, control, target, classically_controlled)
+
+
+def cy(
+    b: GraphRepresentation,
+    control: int,
+    target: int,
+    classically_controlled: bool = False,
+) -> None:
     s_dag(b, target)
-    cnot(b, control, target)
+    cnot(b, control, target, classically_controlled)
     s(b, target)
 
 
-def cz(b: GraphRepresentation, control: int, target: int) -> None:
-    ensure_lane(b, control)
-    ensure_lane(b, target)
-
-    lr1 = last_row(b, control)
-    lr2 = last_row(b, target)
-    row = max(lr1, lr2)
-
-    v1 = b.last_vertex[control]
-    v2 = b.last_vertex[target]
-    b.graph.set_type(v1, VertexType.Z)
-    b.graph.set_type(v2, VertexType.Z)
-    b.graph.set_row(v1, row)
-    b.graph.set_row(v2, row)
-    b.graph.add_edge((v1, v2), EdgeType.HADAMARD)
-
-    v3 = add_dummy(b, control, int(row + 1))
-    v4 = add_dummy(b, target, int(row + 1))
-    b.graph.add_edge((v1, v3))
-    b.graph.add_edge((v2, v4))
-
-    b.graph.scalar.add_power(1)
+def cz(
+    b: GraphRepresentation,
+    control: int,
+    target: int,
+    classically_controlled: bool = False,
+) -> None:
+    _cx_cz(b, False, control, target, classically_controlled)
 
 
 def swap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:

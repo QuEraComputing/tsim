@@ -121,12 +121,18 @@ def parse_stim_circuit(
         gate_func, num_qubits = GATE_TABLE[name]
         targets = [t.value for t in instruction.targets_copy()]
         invert = [t.is_inverted_result_target for t in instruction.targets_copy()]
+        is_classically_controlled = [
+            t.is_measurement_record_target for t in instruction.targets_copy()
+        ]
         args = instruction.gate_args_copy()
 
         for i_target in range(0, len(targets), num_qubits):
             chunk = targets[i_target : i_target + num_qubits]
+            assert not (invert[i_target] and is_classically_controlled[i_target])
             if invert[i_target]:
                 gate_func(b, *chunk, *args, invert=True)
+            elif is_classically_controlled[i_target]:
+                gate_func(b, *chunk, *args, classically_controlled=True)
             else:
                 gate_func(b, *chunk, *args)
 
