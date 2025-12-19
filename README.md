@@ -90,8 +90,21 @@ In addition, Tsim supports the following non-Clifford instructions:
 The T gate applies a π/4 phase rotation, and T_DAG is its inverse:
 
 $$
-T = \begin{pmatrix} 1 & 0 \\ 0 & e^{i\pi/4} \end{pmatrix}, \quad
-T^\dagger = \begin{pmatrix} 1 & 0 \\ 0 & e^{-i\pi/4} \end{pmatrix}
+T =
+\left(
+\begin{array}{cc}
+1 & 0 \\
+0 & e^{i\pi/4}
+\end{array}
+\right),
+\quad
+T^\dagger =
+\left(
+\begin{array}{cc}
+1 & 0 \\
+0 & e^{-i\pi/4}
+\end{array}
+\right)
 $$
 
 ```
@@ -105,9 +118,29 @@ Rotation gates around the X, Y, and Z axes by an angle θ = α·π (where α is 
 
 $$
 \begin{align*}
-R_X(\alpha) &= \begin{pmatrix} \cos(\alpha\pi/2) & -i\sin(\alpha\pi/2) \\ -i\sin(\alpha\pi/2) & \cos(\alpha\pi/2) \end{pmatrix}\\
-R_Y(\alpha) &= \begin{pmatrix} \cos(\alpha\pi/2) & -\sin(\alpha\pi/2) \\ \sin(\alpha\pi/2) & \cos(\alpha\pi/2) \end{pmatrix}\\
-R_Z(\alpha) &= \begin{pmatrix} e^{-i\alpha\pi/2} & 0 \\ 0 & e^{i\alpha\pi/2} \end{pmatrix}
+R_X(\alpha) &=
+\left(
+\begin{array}{cc}
+\cos(\alpha\pi/2) & -i \sin(\alpha\pi/2) \\
+-i \sin(\alpha\pi/2) & \cos(\alpha\pi/2)
+\end{array}
+\right)
+\\
+R_Y(\alpha) &=
+\left(
+\begin{array}{cc}
+\cos(\alpha\pi/2) & -\sin(\alpha\pi/2) \\
+\sin(\alpha\pi/2) & \cos(\alpha\pi/2)
+\end{array}
+\right)
+\\
+R_Z(\alpha) &=
+\left(
+\begin{array}{cc}
+e^{-i\alpha\pi/2} & 0 \\
+0 & e^{i\alpha\pi/2}
+\end{array}
+\right)
 \end{align*}
 $$
 
@@ -122,7 +155,13 @@ R_Z(1.0) 2  # Rotate qubit 2 around Z by π
 The general single-qubit unitary with three parameters (θ, φ, λ), each specified as a multiple of π:
 
 $$
-U_3(\theta, \phi, \lambda) = \begin{pmatrix} \cos(\theta\pi/2) & -e^{i\lambda\pi}\sin(\theta\pi/2) \\ e^{i\phi\pi}\sin(\theta\pi/2) & e^{i(\phi+\lambda)\pi}\cos(\theta\pi/2) \end{pmatrix}
+U_3(\theta, \phi, \lambda) =
+\left(
+\begin{array}{cc}
+\cos(\theta\pi/2) & -e^{i\lambda\pi}\sin(\theta\pi/2) \\
+e^{i\phi\pi}\sin(\theta\pi/2) & e^{i(\phi+\lambda)\pi}\cos(\theta\pi/2)
+\end{array}
+\right)
 $$
 
 ```
