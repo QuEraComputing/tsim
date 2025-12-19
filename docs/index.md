@@ -25,7 +25,7 @@ sampler = c.compile_sampler()
 samples = sampler.sample(shots=100)
 ```
 
-For circuits with detector and observable annotations,you can compile a detector sampler:
+For circuits with detector and observable annotations, you can compile a detector sampler:
 
 ```python
 c = tsim.Circuit(

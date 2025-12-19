@@ -30,7 +30,7 @@ TODO: decide if we expose this.
 
 ## Performance Tips
 
-- **JIT compilation**: The first sample call mightbe slow due to compilation, subsequent calls are fast
+- **JIT compilation**: The first sample call might be slow due to compilation, subsequent calls are fast
 - **GPU acceleration**: Install with `pip install tsim[cuda13]` for automatic GPU acceleration.
 - **Batch sampling**: Especially on GPU, higher batch sizes can significantly improve performance.
 
