@@ -3265,6 +3265,7 @@ dev = [
     { name = "rust-just" },
     { name = "sinter" },
     { name = "tesseract-decoder" },
+    { name = "tqdm" },
 ]
 doc = [
     { name = "griffe-inherited-docstrings" },
@@ -3316,6 +3317,7 @@ dev = [
     { name = "rust-just", specifier = ">=1.36.0" },
     { name = "sinter", specifier = ">=1.15.0" },
     { name = "tesseract-decoder", specifier = ">=0.1.1.dev20251113222502" },
+    { name = "tqdm", specifier = ">=4.67.1" },
 ]
 doc = [
     { name = "griffe-inherited-docstrings", specifier = ">=1.1.1" },

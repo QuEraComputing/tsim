@@ -307,6 +307,16 @@ class VecSim:
         self.do_x(q)
         self.do_t(q)
 
+    def do_sqrt_y(self, q: Any) -> None:
+        self.do_h_yz(q)
+        self.do_s(q)
+        self.do_h_yz(q)
+
+    def do_sqrt_x(self, q: Any) -> None:
+        self.do_h(q)
+        self.do_s(q)
+        self.do_h(q)
+
     def do_t(self, q: Any) -> None:
         self.state[self.state_slicer({q: True})] *= (1 + 1j) / np.sqrt(2)
 
@@ -680,6 +690,12 @@ class VecSim:
         elif inst.name == "S_DAG":
             for q in inst.targets_copy():
                 self.do_s_dag(q.qubit_value)
+        elif inst.name == "SQRT_Y":
+            for q in inst.targets_copy():
+                self.do_sqrt_y(q.qubit_value)
+        elif inst.name == "SQRT_X":
+            for q in inst.targets_copy():
+                self.do_sqrt_x(q.qubit_value)
         elif inst.name == "H":
             for q in inst.targets_copy():
                 self.do_h(q.qubit_value)
@@ -712,6 +728,11 @@ class VecSim:
             for q in inst.targets_copy():
                 if random.random() < p:
                     self.do_x(q.qubit_value)
+        elif inst.name == "Y_ERROR":
+            (p,) = inst.gate_args_copy()
+            for q in inst.targets_copy():
+                if random.random() < p:
+                    self.do_y(q.qubit_value)
         elif inst.name == "Z_ERROR":
             (p,) = inst.gate_args_copy()
             for q in inst.targets_copy():

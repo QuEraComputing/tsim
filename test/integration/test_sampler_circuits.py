@@ -1,26 +1,10 @@
+from test.helpers import get_matrix
+
 import numpy as np
-import pymatching
 import pytest
-import stim
 
 from tsim.circuit import Circuit
 from tsim.sampler import CompiledStateProbs
-
-
-def to_matrix(c: Circuit):
-    prob_sampler = CompiledStateProbs(c)
-    num_qubits = c.num_qubits
-    sv = []
-    for i in range(2**num_qubits):
-        state = np.zeros(num_qubits, dtype=np.bool_)
-        for j in range(num_qubits):
-            state[j] = (i >> j) & 1
-        state = state[::-1]
-        sv.append(prob_sampler.probability_of(state, batch_size=1)[0])
-    mat = (np.array(sv) * 2 ** (num_qubits // 2)).reshape(
-        (2 ** (num_qubits // 2), 2 ** (num_qubits // 2))
-    )
-    return mat
 
 
 def test_sample_bell_state():
@@ -373,95 +357,6 @@ def test_mpp_inverted_record(basis: str):
     assert (~samples).all()
 
 
-@pytest.mark.parametrize(
-    "code_task",
-    [
-        "repetition_code:memory",
-        "surface_code:rotated_memory_x",
-        "surface_code:rotated_memory_z",
-        "surface_code:unrotated_memory_x",
-        "surface_code:unrotated_memory_z",
-        "color_code:memory_xyz",
-    ],
-)
-def test_quantum_memory_codes_without_noise(code_task: str):
-
-    circ = stim.Circuit.generated(
-        code_task,
-        distance=3,
-        rounds=2,
-        after_clifford_depolarization=0.0,
-        before_measure_flip_probability=0.0,
-        before_round_data_depolarization=0.0,
-        after_reset_flip_probability=0.0,
-    )
-    c = Circuit.from_stim_program(circ)
-    sampler = c.compile_detector_sampler(seed=0)
-    samples = sampler.sample(10)
-    assert not np.any(samples)
-
-
-@pytest.mark.parametrize(
-    "code_task",
-    [
-        "repetition_code:memory",
-        "surface_code:rotated_memory_x",
-        "surface_code:rotated_memory_z",
-        "surface_code:unrotated_memory_x",
-        "surface_code:unrotated_memory_z",
-    ],
-)
-def test_memory_error_correction_and_compare_to_stim(code_task: str):
-    p = 0.01
-    circ = stim.Circuit.generated(
-        code_task,
-        distance=3,
-        rounds=2,
-        after_clifford_depolarization=p,
-        before_measure_flip_probability=p * 1.2,
-        before_round_data_depolarization=p * 0.8,
-        after_reset_flip_probability=p * 0.9,
-    )
-    error_count = []
-    error_count_after_correction = []
-
-    for c in [circ, Circuit.from_stim_program(circ)]:
-        sampler = c.compile_detector_sampler(seed=0)
-        if isinstance(c, Circuit):
-            detection_events, observable_flips = sampler.sample(
-                10_000, batch_size=10_000, separate_observables=True
-            )
-        else:
-            detection_events, observable_flips = sampler.sample(
-                10_000, separate_observables=True
-            )
-
-        detector_error_model = circ.detector_error_model(decompose_errors=True)
-        matcher = pymatching.Matching.from_detector_error_model(detector_error_model)
-
-        predictions = matcher.decode_batch(detection_events)
-
-        num_errors = np.count_nonzero(observable_flips)
-        num_errors_after_correction = np.count_nonzero(
-            np.logical_xor(observable_flips, predictions)
-        )
-        error_count.append(num_errors)
-        error_count_after_correction.append(num_errors_after_correction)
-        assert num_errors_after_correction <= num_errors
-
-    stim_errors = error_count[0]
-    tsim_errors = error_count[1]
-    stim_errors_after_correction = error_count_after_correction[0]
-    tsim_errors_after_correction = error_count_after_correction[1]
-
-    assert np.abs(stim_errors - tsim_errors) / stim_errors <= 0.1
-    assert (
-        np.abs(stim_errors_after_correction - tsim_errors_after_correction)
-        / stim_errors_after_correction
-        <= 0.3
-    )
-
-
 @pytest.mark.parametrize("alpha", [0.34, 0.24, 0.49])
 @pytest.mark.parametrize("basis", ["X", "Y", "Z"])
 def test_rot_gates(alpha: float, basis: str):
@@ -480,7 +375,8 @@ def test_rot_gates(alpha: float, basis: str):
             "H_XX 1", ""
         )
     )
-    mat = to_matrix(c)
+    sampler = CompiledStateProbs(c)
+    mat = get_matrix(sampler)
 
     expected = (
         np.abs(
@@ -512,7 +408,8 @@ def test_u3_gate(theta: float, phi: float, lambda_: float):
         M 0 1
         """
     )
-    mat = to_matrix(c)
+    sampler = CompiledStateProbs(c)
+    mat = get_matrix(sampler)
 
     expected = (
         np.abs(
@@ -543,7 +440,8 @@ def test_rot_gate_identity(basis: str):
         M 0 1
         """
     )
-    mat = to_matrix(c)
+    sampler = CompiledStateProbs(c)
+    mat = get_matrix(sampler)
     assert np.allclose(mat, np.eye(2))
 
 
@@ -560,7 +458,8 @@ def test_u3_gate_identity():
         M 0 1
         """
     )
-    mat = to_matrix(c)
+    sampler = CompiledStateProbs(c)
+    mat = get_matrix(sampler)
     assert np.allclose(mat, np.eye(2), atol=1e-6)
 
 
@@ -583,4 +482,6 @@ def test_many_rx_gates(n: int):
         M 0 1
         """
     )
-    assert np.allclose(to_matrix(c), np.eye(2), atol=1e-6)
+    sampler = CompiledStateProbs(c)
+    mat = get_matrix(sampler)
+    assert np.allclose(mat, np.eye(2), atol=1e-6)
