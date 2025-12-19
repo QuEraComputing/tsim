@@ -13,11 +13,10 @@ nav:
     - Installation: install.md
     - Getting Started: getting_started.md
     - Contributing: contrib.md
-  - Examples:
+  - Tutorials:
     - demos/encoding_demo.ipynb
+    - demos/magic_state_distillation.ipynb
   - API Reference: reference/
-  - Blog:
-    - blog/index.md
 
 
 
@@ -89,9 +88,9 @@ plugins:
   - blog
   - mkdocs-jupyter:
       allow_errors: false
-      execute: true
+      execute: false
       execute_ignore:
-          - "demos/demo.ipynb"
+          - "notebooks/*"
           - "*.py"
 
 extra_css:
