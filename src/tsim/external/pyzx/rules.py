@@ -35,7 +35,7 @@ while the second and third should be fed to
 :meth:`~graph.base.BaseGraph.remove_vertices` and :meth:`~pyzx.graph.base.BaseGraph.remove_edges`.
 The last parameter is a Boolean that when true means that the rewrite rule can introduce
 isolated vertices that should be removed by
-:meth:`~pyzx.graph.base.BaseGraph.remove_isolated_vertices`\ .
+:meth:`~pyzx.graph.base.BaseGraph.remove_isolated_vertices`.
 
 Dealing with this output is done using either :func:`apply_rule` or :func:`pyzx.simplify.simp`.
 
