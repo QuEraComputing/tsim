@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Any, Dict, Sequence, Tuple
 
 import numpy as np
 
+import tsim.external.pyzx as zx
 from tsim._instructions import GraphRepresentation
 from tsim.external.pyzx import VertexType
 from tsim.external.pyzx.graph.base import BaseGraph
 from tsim.external.pyzx.graph.graph import Graph
+from tsim.external.pyzx.graph.graph_s import GraphS
 from tsim.external.pyzx.graph.scalar import Scalar
 from tsim.util.linalg import find_basis
 
@@ -26,7 +29,6 @@ def connected_components(g: BaseGraph) -> list[ConnectedComponent]:
     Each component is packaged inside a :class:`ConnectedComponent` that contains
     the subgraph and a list of output indices matching the original output indices.
     """
-
     components: list[ConnectedComponent] = []
     visited: set[Any] = set()
     outputs = tuple(g.outputs())
@@ -352,3 +354,17 @@ def squash_graph(g: BaseGraph) -> None:
         if neighbors and len(list(g.neighbors(neighbors[0]))) == 1:
             g.set_qubit(neighbors[0], g.qubit(v) + 1)
             g.set_row(neighbors[0], g.row(v))
+
+
+def evaluate_graph(g: GraphS, vals: dict[str, Fraction] | None = None) -> np.ndarray:
+    if vals is None:
+        vals = defaultdict(lambda: Fraction(0, 1))
+    g = g.copy()  # type: ignore
+    for v in g.vertices():
+        param_phase = g.phase(v)
+        for p in g.get_params(v):
+            param_phase += vals[p]
+        g.set_phase(v, param_phase, clearParams=True)
+    scalar_val = g.scalar.evaluate_scalar(vals)
+    g.scalar = zx.Scalar()
+    return g.to_tensor() * scalar_val

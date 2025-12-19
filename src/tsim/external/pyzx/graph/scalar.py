@@ -124,6 +124,7 @@ class Scalar(object):
         self.phasenodes: List[FractionLike] = [] # Stores list of legless spiders, by their phases.
         self.phasenodevars: List[Set[str]] = [] # Stores the added parameters of the legless spider phases
         self.floatfactor: DyadicNumber = DyadicNumber.one()
+        self.approximate_floatfactor: complex = 1.0 + 0.0j
         self.is_unknown: bool = False # Whether this represents an unknown scalar value
         self.is_zero: bool = False
 
@@ -142,6 +143,109 @@ class Scalar(object):
         for node in self.phasenodes:
             s += "(1+exp({}ipi))".format(str(node))
         return s
+
+    def print_attrs(self):
+        s = f"phasenode: {self.phasenodes}, {self.phasenodevars}"
+        s += f"\nphasevars_pi_pair: {self.phasevars_pi_pair}"
+        s += f"\nphasepairs: {[(pp.alpha, pp.beta, pp.paramsA, pp.paramsB) for pp in self.phasepairs]}"
+        s += f"\nphasevars_halfpi: {self.phasevars_halfpi}"
+        s += f"\nphase: {self.phase}"
+        s += f"\npower2: {self.power2}"
+        s += f"\nfloatfactor: {self.floatfactor.to_complex()}"
+        s += f"\napproximate_floatfactor: {self.approximate_floatfactor}"
+        s += f"\nis_zero: {self.is_zero}"
+        print(s)
+        return s
+
+    
+    def print_expr(self) -> str:
+        scalar = self
+        scalar_str = ""
+
+        def format_phase_str(alpha, params):
+            a_str = str(alpha) if alpha != 0 else ""
+            for vars in params:
+                a_str += f"+{vars}"
+            if len(a_str) > 0 and a_str[0] == "+":
+                a_str = a_str[1:]
+            return a_str
+
+        for const, vars in zip(scalar.phasenodes, scalar.phasenodevars):
+            scalar_str += f"(1 + exp(iπ {format_phase_str(const, vars)}))"
+
+        for pp in scalar.phasepairs:
+            a_str = format_phase_str(pp.alpha / 4, pp.paramsA)
+            b_str = format_phase_str(pp.beta / 4, pp.paramsB)
+
+            scalar_str += (
+                f"(1 + exp(iπ {a_str}) + exp(iπ {b_str}) - exp(iπ ({a_str} + {b_str})))"
+            )
+
+        for c in [1, 3]:
+            if c not in scalar.phasevars_halfpi:
+                continue
+            for vars in scalar.phasevars_halfpi[c]:
+                a_str = " + ".join(vars)
+                scalar_str += f"exp(iπ {a_str} * {c}/4)"
+
+        for pp in scalar.phasevars_pi_pair:
+            if len(pp[0]) == 0 or len(pp[1]) == 0:
+                continue
+            a_str = " + ".join(pp[0])
+            b_str = " + ".join(pp[1])
+
+            scalar_str += f"exp(iπ {a_str} * {b_str})"
+
+        if scalar.power2 % 2 == 0:
+            if scalar.power2 > 0:
+                scalar_str += f" * {2 ** (scalar.power2 // 2)}"
+            elif scalar.power2 < 0:
+                scalar_str += f" / {2 ** ((-scalar.power2) // 2)}"
+        else:
+            scalar_str += f" * sqrt(2) ** {scalar.power2}"
+
+        print(scalar_str)
+        return scalar_str
+
+    def evaluate_scalar(self, vals: dict[str, Fraction]) -> complex:
+        scalar = self
+        number = 1
+
+        vals["1"] = Fraction(1)
+
+        # phase nodes
+        for const, vars in zip(scalar.phasenodes, scalar.phasenodevars):
+            number *= 1 + cexp(const + sum(vals[var] for var in vars))
+
+        # phase pairs
+        for pp in scalar.phasepairs:
+            psi = pp.alpha / 4 + sum(vals[var] for var in pp.paramsA)
+            phi = pp.beta / 4 + sum(vals[var] for var in pp.paramsB)
+            number *= 1 + cexp(psi) + cexp(phi) - cexp(psi + phi)
+
+        # half-pi
+        for c in [1, 3]:
+            if c not in scalar.phasevars_halfpi:
+                continue
+            for vars in scalar.phasevars_halfpi[c]:
+                number *= cexp(sum(vals[var] for var in vars) % 2 * c / 2)
+
+        # pi-pair
+        for pp in scalar.phasevars_pi_pair:
+            psi = sum(vals[var] for var in pp[0])
+            phi = sum(vals[var] for var in pp[1])
+            number *= cexp(psi * phi)
+
+        if scalar.is_zero:
+            return 0
+
+        number *= cexp(scalar.phase)
+
+        number *= math.sqrt(2) ** scalar.power2
+        number *= scalar.floatfactor.to_complex()
+        number *= scalar.approximate_floatfactor
+
+        return number
 
     def __complex__(self) -> complex:
         return self.to_number()
@@ -174,6 +278,7 @@ class Scalar(object):
         s.phasenodes = copy.copy(self.phasenodes) if not conjugate else [-p for p in self.phasenodes]
         s.phasenodevars = copy.copy(self.phasenodevars)
         s.floatfactor = self.floatfactor.copy() if not conjugate else self.floatfactor.conjugate()
+        s.approximate_floatfactor = self.approximate_floatfactor if not conjugate else self.approximate_floatfactor.conjugate()
         s.is_unknown = self.is_unknown
         s.is_zero = self.is_zero
         return s
@@ -183,8 +288,13 @@ class Scalar(object):
         val = cexp(self.phase)
         for node in self.phasenodes: # Node should be a Fraction
             val *= 1+cexp(node)
+        for sp in self.phasepairs:
+            # alpha, beta are stored as integer multiples of pi/4
+            a = Fraction(sp.alpha, 4)
+            b = Fraction(sp.beta, 4)
+            val *= 1 + cexp(a) + cexp(b) - cexp(a + b)
         val *= math.sqrt(2)**self.power2
-        return val*self.floatfactor.to_complex()
+        return val*self.floatfactor.to_complex() * self.approximate_floatfactor
 
     def to_latex(self) -> str:
         """Converts the Scalar into a string that is compatible with LaTeX."""
@@ -289,6 +399,8 @@ class Scalar(object):
         """Add a new spider-pair scalar term"""
         a = int(alpha*4) # Convert via alpha=a*pi/4
         b = int(beta*4)  # Convert via  beta=b*pi/4
+        assert a == alpha * 4, f"alpha: {alpha}, a: {a}"
+        assert b == beta * 4, f"beta: {beta}, b: {b}"
         sp = SpiderPair(a, b, paramsA, paramsB)
         self.phasepairs.append(sp)
         
@@ -298,6 +410,7 @@ class Scalar(object):
         if (node == 0 and len(node_params) == 0):
             self.power2 += 2
         else:
+            assert node.denominator in [1,2,4]
             self.phasenodes.append(node)
             self.phasenodevars.append(node_params) # XOR
         if (node == 1 and len(node_params) == 0): self.is_zero = True
@@ -310,6 +423,7 @@ class Scalar(object):
         self.phase = (self.phase +other.phase)%2
         self.phasenodes.extend(other.phasenodes)
         self.floatfactor *= other.floatfactor
+        self.approximate_floatfactor *= other.approximate_floatfactor
         if other.is_zero: self.is_zero = True
         if other.is_unknown: self.is_unknown = True
 

@@ -9,7 +9,7 @@ import tsim.external.pyzx as zx
 from tsim.channels import ChannelSampler, create_channels_from_specs
 from tsim.circuit import Circuit
 from tsim.decomposer import Decomposer, DecomposerArray, DecompositionMode
-from tsim.evaluate import evaluate_batch
+from tsim.evaluate import evaluate_batch_numpy
 from tsim.graph_util import (
     build_sampling_graph,
     connected_components,
@@ -112,12 +112,12 @@ class _CompiledSamplerBase:
             bit_circuits = component.compiled_circuits[1:]
 
             # Compute normalization once
-            prev = np.abs(evaluate_batch(norm_circuit, params).to_numpy())
+            prev = np.abs(evaluate_batch_numpy(norm_circuit, params))
 
             for circuit in bit_circuits:
                 # Only evaluate with bit=1 (chain rule: p0 = prev - p1)
                 state_1 = jnp.hstack([params, ones])
-                p1 = np.abs(evaluate_batch(circuit, state_1).to_numpy())
+                p1 = np.abs(evaluate_batch_numpy(circuit, state_1))
 
                 # P(bit=1) = p1 / prev
                 p1_norm = p1 / prev
@@ -213,13 +213,13 @@ class CompiledStateProbs(_CompiledSamplerBase):
             norm_circuit, joint_circuit = component.compiled_circuits
 
             # Normalization: circuit[0] with only error params
-            p_norm *= np.abs(evaluate_batch(norm_circuit, params).to_numpy())
+            p_norm *= np.abs(evaluate_batch_numpy(norm_circuit, params))
 
             # Joint probability: circuit[1] with error params + state
             component_state = state[component.output_indices]
             tiled_state = jnp.tile(component_state, (batch_size, 1))
             full_params = jnp.hstack([params, tiled_state])
-            p_joint *= np.abs(evaluate_batch(joint_circuit, full_params).to_numpy())
+            p_joint *= np.abs(evaluate_batch_numpy(joint_circuit, full_params))
 
         return p_joint / p_norm
 

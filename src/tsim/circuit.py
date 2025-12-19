@@ -377,7 +377,7 @@ class Circuit:
             "pyzx",
             "timeline-svg",
             "timeslice-svg",
-        ] = "pyzx",
+        ] = "timeline-svg",
         tick: int | range | None = None,
         filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),),
         rows: int | None = None,
