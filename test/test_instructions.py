@@ -1,4 +1,9 @@
 from fractions import Fraction
+from test.helpers.gate_matrices import (
+    ROT_GATE_MATRICES,
+    SINGLE_QUBIT_GATE_MATRICES,
+    TWO_QUBIT_GATE_MATRICES,
+)
 from typing import Callable
 
 import numpy as np
@@ -22,23 +27,23 @@ def _build_and_get_matrix(gate_func: Callable | tuple[Callable, Callable], *args
 @pytest.mark.parametrize(
     "gate_func, matrix",
     [
-        (_instructions.i, np.array([[1, 0], [0, 1]])),
-        (_instructions.x, np.array([[0, 1], [1, 0]])),
-        (_instructions.y, np.array([[0, -1j], [1j, 0]])),
-        (_instructions.z, np.array([[1, 0], [0, -1]])),
-        (_instructions.t, np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]])),
-        (_instructions.t_dag, np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]])),
-        (_instructions.c_xyz, np.array([[1 - 1j, -1 - 1j], [1 - 1j, 1 + 1j]]) / 2),
-        (_instructions.c_zyx, np.array([[1 + 1j, 1 + 1j], [-1 + 1j, 1 - 1j]]) / 2),
-        (_instructions.h, np.array([[1, 1], [1, -1]]) / np.sqrt(2)),
-        (_instructions.h_xy, np.array([[0, 1 - 1j], [1 + 1j, 0]]) / np.sqrt(2)),
-        (_instructions.h_yz, np.array([[1, -1j], [1j, -1]]) / np.sqrt(2)),
-        (_instructions.s, np.array([[1, 0], [0, 1j]])),
-        (_instructions.sqrt_x, np.array([[1 + 1j, 1 - 1j], [1 - 1j, 1 + 1j]]) / 2),
-        (_instructions.sqrt_x_dag, np.array([[1 - 1j, 1 + 1j], [1 + 1j, 1 - 1j]]) / 2),
-        (_instructions.sqrt_y, np.array([[1 + 1j, -1 - 1j], [1 + 1j, 1 + 1j]]) / 2),
-        (_instructions.sqrt_y_dag, np.array([[1 - 1j, 1 - 1j], [-1 + 1j, 1 - 1j]]) / 2),
-        (_instructions.s_dag, np.array([[1, 0], [0, -1j]])),
+        (_instructions.i, SINGLE_QUBIT_GATE_MATRICES["I"]),
+        (_instructions.x, SINGLE_QUBIT_GATE_MATRICES["X"]),
+        (_instructions.y, SINGLE_QUBIT_GATE_MATRICES["Y"]),
+        (_instructions.z, SINGLE_QUBIT_GATE_MATRICES["Z"]),
+        (_instructions.t, SINGLE_QUBIT_GATE_MATRICES["T"]),
+        (_instructions.t_dag, SINGLE_QUBIT_GATE_MATRICES["T_DAG"]),
+        (_instructions.c_xyz, SINGLE_QUBIT_GATE_MATRICES["C_XYZ"]),
+        (_instructions.c_zyx, SINGLE_QUBIT_GATE_MATRICES["C_ZYX"]),
+        (_instructions.h, SINGLE_QUBIT_GATE_MATRICES["H"]),
+        (_instructions.h_xy, SINGLE_QUBIT_GATE_MATRICES["H_XY"]),
+        (_instructions.h_yz, SINGLE_QUBIT_GATE_MATRICES["H_YZ"]),
+        (_instructions.s, SINGLE_QUBIT_GATE_MATRICES["S"]),
+        (_instructions.sqrt_x, SINGLE_QUBIT_GATE_MATRICES["SQRT_X"]),
+        (_instructions.sqrt_x_dag, SINGLE_QUBIT_GATE_MATRICES["SQRT_X_DAG"]),
+        (_instructions.sqrt_y, SINGLE_QUBIT_GATE_MATRICES["SQRT_Y"]),
+        (_instructions.sqrt_y_dag, SINGLE_QUBIT_GATE_MATRICES["SQRT_Y_DAG"]),
+        (_instructions.s_dag, SINGLE_QUBIT_GATE_MATRICES["S_DAG"]),
     ],
 )
 def test_single_qubit_instruction(gate_func, matrix: np.ndarray):
@@ -50,9 +55,7 @@ def test_single_qubit_instruction(gate_func, matrix: np.ndarray):
 def test_r_z(frac: Fraction):
     frac = Fraction(1, 5)
     result = _build_and_get_matrix(_instructions.r_z, 0, frac)
-    expected = np.array(
-        [[np.exp(-1j * np.pi / 2 * frac), 0], [0, np.exp(1j * np.pi / 2 * frac)]]
-    )
+    expected = ROT_GATE_MATRICES["R_Z"](frac)
     assert np.allclose(result, expected)
 
 
@@ -60,13 +63,7 @@ def test_r_z(frac: Fraction):
 def test_r_x(frac: Fraction):
     frac = Fraction(1, 5)
     result = _build_and_get_matrix(_instructions.r_x, 0, frac)
-    theta = frac * np.pi
-    expected = np.array(
-        [
-            [np.cos(theta / 2), -1j * np.sin(theta / 2)],
-            [-1j * np.sin(theta / 2), np.cos(theta / 2)],
-        ]
-    )
+    expected = ROT_GATE_MATRICES["R_X"](frac)
     assert np.allclose(result, expected)
 
 
@@ -77,137 +74,31 @@ def test_u3(frac_theta: Fraction, frac_phi: Fraction, frac_lambda: Fraction):
     result = _build_and_get_matrix(
         _instructions.u3, 0, frac_theta, frac_phi, frac_lambda
     )
-    theta = frac_theta * np.pi
-    phi = frac_phi * np.pi
-    lambda_ = frac_lambda * np.pi
-    expected = np.array(
-        [
-            [np.cos(theta / 2), -np.exp(1j * lambda_) * np.sin(theta / 2)],
-            [
-                np.exp(1j * phi) * np.sin(theta / 2),
-                np.exp(1j * (phi + lambda_)) * np.cos(theta / 2),
-            ],
-        ]
-    )
+    expected = ROT_GATE_MATRICES["U3"](frac_theta, frac_phi, frac_lambda)
     assert np.allclose(result, expected)
 
 
 @pytest.mark.parametrize(
     "gate_func, matrix",
     [
-        (
-            _instructions.cnot,
-            np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]]),
-        ),
-        (
-            _instructions.cy,
-            np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]]),
-        ),
-        (
-            _instructions.cz,
-            np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, -1]]),
-        ),
-        (
-            _instructions.iswap,
-            np.array([[1, 0, 0, 0], [0, 0, 1j, 0], [0, 1j, 0, 0], [0, 0, 0, 1]]),
-        ),
-        (
-            _instructions.iswap_dag,
-            np.array([[1, 0, 0, 0], [0, 0, -1j, 0], [0, -1j, 0, 0], [0, 0, 0, 1]]),
-        ),
-        (
-            _instructions.sqrt_xx,
-            np.array(
-                [
-                    [1 + 1j, 0, 0, 1 - 1j],
-                    [0, 1 + 1j, 1 - 1j, 0],
-                    [0, 1 - 1j, 1 + 1j, 0],
-                    [1 - 1j, 0, 0, 1 + 1j],
-                ]
-            )
-            / 2,
-        ),
-        (
-            _instructions.sqrt_xx_dag,
-            np.array(
-                [
-                    [1 - 1j, 0, 0, 1 + 1j],
-                    [0, 1 - 1j, 1 + 1j, 0],
-                    [0, 1 + 1j, 1 - 1j, 0],
-                    [1 + 1j, 0, 0, 1 - 1j],
-                ]
-            )
-            / 2,
-        ),
-        (
-            _instructions.sqrt_yy,
-            np.array(
-                [
-                    [1 + 1j, 0, 0, -1 + 1j],
-                    [0, 1 + 1j, 1 - 1j, 0],
-                    [0, 1 - 1j, 1 + 1j, 0],
-                    [-1 + 1j, 0, 0, 1 + 1j],
-                ]
-            )
-            / 2,
-        ),
-        (
-            _instructions.sqrt_yy_dag,
-            np.array(
-                [
-                    [1 - 1j, 0, 0, -1 - 1j],
-                    [0, 1 - 1j, 1 + 1j, 0],
-                    [0, 1 + 1j, 1 - 1j, 0],
-                    [-1 - 1j, 0, 0, 1 - 1j],
-                ]
-            )
-            / 2,
-        ),
-        (
-            _instructions.sqrt_zz,
-            np.array([[1, 0, 0, 0], [0, 1j, 0, 0], [0, 0, 1j, 0], [0, 0, 0, 1]]),
-        ),
-        (
-            _instructions.sqrt_zz_dag,
-            np.array([[1, 0, 0, 0], [0, -1j, 0, 0], [0, 0, -1j, 0], [0, 0, 0, 1]]),
-        ),
-        (
-            _instructions.swap,
-            np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]]),
-        ),
-        (
-            _instructions.xcx,
-            np.array([[1, 1, 1, -1], [1, 1, -1, 1], [1, -1, 1, 1], [-1, 1, 1, 1]]) / 2,
-        ),
-        (
-            _instructions.xcy,
-            np.array(
-                [[1, -1j, 1, 1j], [1j, 1, -1j, 1], [1, 1j, 1, -1j], [-1j, 1, 1j, 1]]
-            )
-            / 2,
-        ),
-        (
-            _instructions.xcz,
-            np.array([[1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0], [0, 1, 0, 0]]),
-        ),
-        (
-            _instructions.ycx,
-            np.array(
-                [[1, 1, -1j, 1j], [1, 1, 1j, -1j], [1j, -1j, 1, 1], [-1j, 1j, 1, 1]]
-            )
-            / 2,
-        ),
-        (
-            _instructions.ycy,
-            np.array(
-                [[1, -1j, -1j, 1], [1j, 1, -1, -1j], [1j, -1, 1, -1j], [1, 1j, 1j, 1]]
-            )
-            / 2,
-        ),
-        (
-            _instructions.ycz,
-            np.array([[1, 0, 0, 0], [0, 0, 0, -1j], [0, 0, 1, 0], [0, 1j, 0, 0]]),
-        ),
+        (_instructions.cnot, TWO_QUBIT_GATE_MATRICES["CNOT"]),
+        (_instructions.cy, TWO_QUBIT_GATE_MATRICES["CY"]),
+        (_instructions.cz, TWO_QUBIT_GATE_MATRICES["CZ"]),
+        (_instructions.iswap, TWO_QUBIT_GATE_MATRICES["ISWAP"]),
+        (_instructions.iswap_dag, TWO_QUBIT_GATE_MATRICES["ISWAP_DAG"]),
+        (_instructions.sqrt_xx, TWO_QUBIT_GATE_MATRICES["SQRT_XX"]),
+        (_instructions.sqrt_xx_dag, TWO_QUBIT_GATE_MATRICES["SQRT_XX_DAG"]),
+        (_instructions.sqrt_yy, TWO_QUBIT_GATE_MATRICES["SQRT_YY"]),
+        (_instructions.sqrt_yy_dag, TWO_QUBIT_GATE_MATRICES["SQRT_YY_DAG"]),
+        (_instructions.sqrt_zz, TWO_QUBIT_GATE_MATRICES["SQRT_ZZ"]),
+        (_instructions.sqrt_zz_dag, TWO_QUBIT_GATE_MATRICES["SQRT_ZZ_DAG"]),
+        (_instructions.swap, TWO_QUBIT_GATE_MATRICES["SWAP"]),
+        (_instructions.xcx, TWO_QUBIT_GATE_MATRICES["XCX"]),
+        (_instructions.xcy, TWO_QUBIT_GATE_MATRICES["XCY"]),
+        (_instructions.xcz, TWO_QUBIT_GATE_MATRICES["XCZ"]),
+        (_instructions.ycx, TWO_QUBIT_GATE_MATRICES["YCX"]),
+        (_instructions.ycy, TWO_QUBIT_GATE_MATRICES["YCY"]),
+        (_instructions.ycz, TWO_QUBIT_GATE_MATRICES["YCZ"]),
     ],
 )
 def test_two_qubit_instruction(gate_func, matrix: np.ndarray):
@@ -255,7 +146,7 @@ def test_ry_mry():
 
     plus_i = (zero + 1j * one) / np.sqrt(2)
 
-    h_yz = np.array([[1, -1j], [1j, -1]]) / np.sqrt(2)
+    h_yz = SINGLE_QUBIT_GATE_MATRICES["H_YZ"]
 
     result = _build_and_get_matrix((_instructions.i, _instructions.ry), 0)
     assert np.allclose(result, np.outer(plus_i, (h_yz @ plus).conj()))
