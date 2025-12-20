@@ -76,7 +76,6 @@ profile = "black"
 combine_as_imports = true
 multi_line_output = 3
 src_paths = ["src/tsim"]
-skip_glob = ["src/tsim/external/pyzx/**"]
 
 [tool.black]
 line-length = 88
@@ -92,7 +91,6 @@ exclude = '''
   | buck-out
   | build
   | dist
-  | src/tsim/external/pyzx
 )/
 '''
 
