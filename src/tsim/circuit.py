@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Literal, cast, overload
 
+import pyzx as zx
 import stim
+from pyzx.graph.base import BaseGraph
 
-import tsim.external.pyzx as zx
 from tsim.dem import get_detector_error_model
-from tsim.external.pyzx.graph.base import BaseGraph
 from tsim.graph_util import build_sampling_graph
 from tsim.parse import parse_stim_circuit
 from tsim.util.diagram import render_svg

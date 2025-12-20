@@ -1,7 +1,7 @@
 from typing import Iterable, Sequence
 
-import tsim.external.pyzx as zx
-from tsim.external.pyzx.graph.base import BaseGraph
+import pyzx as zx
+from pyzx.graph.base import BaseGraph
 
 
 def _decompose(

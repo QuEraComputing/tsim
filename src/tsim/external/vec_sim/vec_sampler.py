@@ -20,6 +20,7 @@ import numpy as np
 import stim
 
 from tsim.external.vec_sim import VecSim
+from tsim.parse import parse_parametric_tag
 
 
 class VecSampler:
@@ -93,6 +94,24 @@ def sample_circuit_with_vec_sim_return_data(
         elif inst.name == "S_DAG" and inst.tag == "T":
             for q in inst.targets_copy():
                 sim.do_t_dag(q.qubit_value)
+        elif inst.name == "I" and inst.tag:
+            result = parse_parametric_tag(inst.tag)
+            if result is not None:
+                gate_name, params = result
+                for q in inst.targets_copy():
+                    if gate_name == "R_Z":
+                        sim.do_r_z(q.qubit_value, float(params["theta"]))
+                    elif gate_name == "R_X":
+                        sim.do_r_x(q.qubit_value, float(params["theta"]))
+                    elif gate_name == "R_Y":
+                        sim.do_r_y(q.qubit_value, float(params["theta"]))
+                    elif gate_name == "U3":
+                        sim.do_u3(
+                            q.qubit_value,
+                            theta=float(params["theta"]),
+                            phi=float(params["phi"]),
+                            lam=float(params["lambda"]),
+                        )
         else:
             sim.do_stim_instruction(
                 inst,

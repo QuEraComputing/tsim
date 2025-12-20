@@ -4,6 +4,9 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Callable
 
+from pyzx.graph.graph_s import GraphS
+from pyzx.utils import EdgeType, VertexType
+
 from tsim.channels import (
     Depolarize1,
     Depolarize2,
@@ -12,8 +15,6 @@ from tsim.channels import (
     PauliChannel1,
     PauliChannel2,
 )
-from tsim.external.pyzx.graph.graph_s import GraphS
-from tsim.external.pyzx.utils import EdgeType, VertexType
 
 
 @dataclass
