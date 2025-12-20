@@ -128,11 +128,12 @@ def parse_stim_circuit(
 
         for i_target in range(0, len(targets), num_qubits):
             chunk = targets[i_target : i_target + num_qubits]
+            cc_chunk = is_classically_controlled[i_target : i_target + num_qubits]
             assert not (invert[i_target] and is_classically_controlled[i_target])
             if invert[i_target]:
                 gate_func(b, *chunk, *args, invert=True)
-            elif is_classically_controlled[i_target]:
-                gate_func(b, *chunk, *args, classically_controlled=True)
+            elif any(cc_chunk):
+                gate_func(b, *chunk, *args, classically_controlled=cc_chunk)
             else:
                 gate_func(b, *chunk, *args)
 

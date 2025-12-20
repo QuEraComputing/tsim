@@ -463,6 +463,62 @@ def test_rec_controlled_effective_reset():
     assert not np.any(samples[:, 1])
 
 
+def test_rec_controlled_xcz_ycz_zcz():
+    c = Circuit(
+        """
+        RX 0 1
+        M 1
+        ZCZ 0 rec[-1]
+        MX 0
+        """
+    )
+    sampler = c.compile_sampler()
+    samples = sampler.sample(shots=10)
+    assert np.all(samples[:, 0] == samples[:, 1])
+
+    c = Circuit(
+        """
+        R 0
+        RX 1
+        M 1
+        XCZ 0 rec[-1]
+        M 0
+        """
+    )
+    sampler = c.compile_sampler()
+    samples = sampler.sample(shots=10)
+    assert np.all(samples[:, 0] == samples[:, 1])
+
+    c = Circuit(
+        """
+        R 0
+        RX 1
+        M 1
+        YCZ 0 rec[-1]
+        M 0
+        """
+    )
+    sampler = c.compile_sampler()
+    samples = sampler.sample(shots=10)
+    assert np.all(samples[:, 0] == samples[:, 1])
+
+
+def test_rec_controlled_raises_error():
+    c = Circuit(
+        """
+        R 0
+        RX 1
+        M 1
+        YCZ rec[-1] 0
+        M 0
+        """
+    )
+    with pytest.raises(
+        ValueError, match="Measurement record editing is not supported."
+    ):
+        c.compile_sampler()
+
+
 @pytest.mark.parametrize("alpha", [0.34, 0.24, 0.49])
 @pytest.mark.parametrize("basis", ["X", "Y", "Z"])
 def test_rot_gates(alpha: float, basis: str):

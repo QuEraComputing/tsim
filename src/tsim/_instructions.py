@@ -257,13 +257,20 @@ def _cx_cz(
     is_cx: bool,
     control: int,
     target: int,
-    classically_controlled: bool = False,
+    classically_controlled: list[bool] | None = None,
 ) -> None:
     edge_type = EdgeType.SIMPLE if is_cx else EdgeType.HADAMARD
     vertex_type = VertexType.X if is_cx else VertexType.Z
 
     m_vertex = 0
     if classically_controlled:
+        assert len(classically_controlled) == 2
+        if classically_controlled[1] and not is_cx:
+            # Only control is allowed to be classically controlled, swap control and target for symmetric CZ gate
+            classically_controlled = classically_controlled[::-1]
+            control, target = target, control
+        if classically_controlled[1]:
+            raise ValueError("Measurement record editing is not supported.")
         m_vertex = b.rec[control]
         control = b.graph.qubit(m_vertex)
     ensure_lane(b, control)
@@ -299,7 +306,7 @@ def cnot(
     b: GraphRepresentation,
     control: int,
     target: int,
-    classically_controlled: bool = False,
+    classically_controlled: list[bool] | None = None,
 ) -> None:
     _cx_cz(b, True, control, target, classically_controlled)
 
@@ -308,7 +315,7 @@ def cy(
     b: GraphRepresentation,
     control: int,
     target: int,
-    classically_controlled: bool = False,
+    classically_controlled: list[bool] | None = None,
 ) -> None:
     s_dag(b, target)
     cnot(b, control, target, classically_controlled)
@@ -319,7 +326,7 @@ def cz(
     b: GraphRepresentation,
     control: int,
     target: int,
-    classically_controlled: bool = False,
+    classically_controlled: list[bool] | None = None,
 ) -> None:
     _cx_cz(b, False, control, target, classically_controlled)
 
@@ -419,9 +426,19 @@ def xcy(b: GraphRepresentation, control: int, target: int) -> None:
     h(b, control)
 
 
-def xcz(b: GraphRepresentation, control: int, target: int) -> None:
+def xcz(
+    b: GraphRepresentation,
+    control: int,
+    target: int,
+    classically_controlled: list[bool] | None = None,
+) -> None:
     """X-controlled Z gate. Applies Z to target if control is in |-> state."""
-    cnot(b, target, control)
+    cnot(
+        b,
+        target,
+        control,
+        classically_controlled[::-1] if classically_controlled else None,
+    )
 
 
 def ycx(b: GraphRepresentation, control: int, target: int) -> None:
@@ -438,11 +455,19 @@ def ycy(b: GraphRepresentation, control: int, target: int) -> None:
     h_yz(b, control)
 
 
-def ycz(b: GraphRepresentation, control: int, target: int) -> None:
+def ycz(
+    b: GraphRepresentation,
+    control: int,
+    target: int,
+    classically_controlled: list[bool] | None = None,
+) -> None:
     """Y-controlled Z gate. Applies Z to target if control is in |-i> state."""
-    h_yz(b, control)
-    cz(b, control, target)
-    h_yz(b, control)
+    cy(
+        b,
+        target,
+        control,
+        classically_controlled[::-1] if classically_controlled else None,
+    )
 
 
 # =============================================================================
