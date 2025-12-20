@@ -88,9 +88,15 @@ plugins:
   - blog
   - mkdocs-jupyter:
       allow_errors: false
-      execute: false
+      execute: true
       execute_ignore:
-          - "notebooks/*"
+          - "adder.ipynb"
+          - "aist_demo.ipynb"
+          - "decoding_demo.ipynb"
+          - "demo.ipynb"
+          - "qec_demo.ipynb"
+          - "tutorial.ipynb"
+          - "u3_demo.ipynb"
           - "*.py"
 
 extra_css:
