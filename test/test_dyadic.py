@@ -2,8 +2,7 @@ import math
 import random
 
 import numpy as np
-
-from tsim.external.pyzx.graph.scalar import DyadicNumber
+from pyzx.graph.scalar import DyadicNumber
 
 
 def test_mul():

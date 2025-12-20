@@ -14,6 +14,7 @@ dependencies = [
     "lxml>=6.0.2",
     "numpy>=2.2.6",
     "pyperclip>=1.11.0",
+    "pyzx",
     "stim>=1.15.0",
     "sympy>=1.14.0",
     "tqdm>=4.67.1",
@@ -135,3 +136,6 @@ norecursedirs = ["pyzx"]
 [tool.pyright]
 include = ["src", "test"]
 exclude = ["src/tsim/external"]
+
+[tool.uv.sources]
+pyzx = { git = "https://github.com/rafaelha/pyzx.git", rev = "paramzx" }

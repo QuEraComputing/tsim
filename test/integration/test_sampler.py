@@ -2,9 +2,9 @@ import os
 import sys
 
 import pymatching
+import pyzx as zx
 from tqdm import tqdm
 
-import tsim.external.pyzx as zx
 from tsim.sampler import CompiledStateProbs
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
