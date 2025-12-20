@@ -1,8 +1,8 @@
 import numpy as np
+import pyzx as zx
 import stim
 
 import tsim
-import tsim.external.pyzx as zx
 from tsim.graph_util import squash_graph, transform_error_basis
 
 
@@ -114,6 +114,21 @@ class TransversalEncoder:
     def initialize(
         self, program_text: str, encoding_program_text: str | None = None
     ) -> None:
+        """
+        Provide a state preparation program for k qubits. The encoder will apply
+        this program and then apply an encoding circuit to encode the state into n qubits.
+        Optionally, the encoding program can be provided separately.
+
+        Args:
+            program_text: The state preparation program for k qubits. Generally, this
+                should be a simple program that prepares each of the k qubits in a
+                single-qubit state.
+            encoding_program_text (optional): An encoding circuit for a single logical
+                qubit. This should encode a single logical qubit at input
+                `self.encoding_qubit` into a state of n qubits.
+                If not provided, the encoder will use a noiseless default encoding.
+        """
+
         encoding = encoding_program_text or self.encoding_program_text
         if not encoding:
             raise ValueError("Encoding program text is required")
@@ -140,7 +155,14 @@ class TransversalEncoder:
             )
         )
 
-    def append(self, program_text: str) -> None:
+    def encode_transversally(self, program_text: str) -> None:
+        """
+        Encode a program on m qubits transversally into a program on n * m qubits
+        by replacing each gate with a transversal gate.
+
+        Args:
+            program_text: The program to encode transversally.
+        """
         mod_circ = _transform_circuit(
             program_text,
             stride=self.n,
@@ -261,7 +283,7 @@ if __name__ == "__main__":
         H 0 1 2 3 4
         """
     )
-    encoder.append(
+    encoder.encode_transversally(
         """
         SQRT_X 0 1 4
         CZ 0 1 2 3
