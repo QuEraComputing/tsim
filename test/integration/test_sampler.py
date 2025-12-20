@@ -2,10 +2,9 @@ import os
 import sys
 
 import pymatching
+import pyzx as zx
 from tqdm import tqdm
 
-import tsim.external.pyzx as zx
-from tsim.parse import parse_stim_circuit
 from tsim.sampler import CompiledStateProbs
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -218,13 +217,12 @@ def simulate_with_pyzx_tensor(stim_circuit: stim.Circuit) -> np.ndarray:
     """
     stim_circuit_without_noise = stim.Circuit(
         str(stim_circuit).replace("X_ERROR(1)", "X").replace("Z_ERROR(1)", "Z")
+        + "\nM "
+        + " ".join([str(i) for i in range(stim_circuit.num_qubits)])
     )
-    built = parse_stim_circuit(stim_circuit_without_noise)
-    g = built.graph
-    g.normalize()
-    zx.full_reduce(g, paramSafe=True)
-
-    state_probs = np.abs(g.to_matrix()[:, 0]) ** 2
+    c = Circuit.from_stim_program(stim_circuit_without_noise)
+    g = c.get_sampling_graph()
+    state_probs = g.to_tensor().reshape((-1,))
     return state_probs / np.sum(state_probs)
 
 
@@ -245,30 +243,75 @@ def test_compare_to_statevector_simulator_and_pyzx_tensor(num_qubits, seed):
     assert np.allclose(tsim_state_vector, pyzx_state_vector)
 
 
+@pytest.mark.parametrize("num_qubits", [3, 4])
+@pytest.mark.parametrize("seed", [2, 42])
+def test_compare_to_statevector_simulator_and_pyzx_tensor_with_arbitrary_rotations(
+    num_qubits, seed
+):
+    stim_circuit = gen_stim_circuit(
+        num_qubits,
+        20,
+        include_measurements=False,
+        seed=seed,
+        p_r_x=1,
+        p_r_y=1,
+        p_r_z=1,
+        p_u3=1,
+    )
+    c = Circuit.from_stim_program(stim_circuit)
+    assert zx.simplify.u3_count(c.get_graph()) > 0
+
+    tsim_state_vector = simulate_with_tsim(stim_circuit)
+    pyzx_state_vector = simulate_with_pyzx_tensor(stim_circuit)
+    stim_state_vector = simulate_with_vec_sampler(stim_circuit)
+
+    tol = 1e-6
+    assert np.allclose(stim_state_vector, pyzx_state_vector, atol=tol, rtol=tol)
+    assert np.allclose(tsim_state_vector, pyzx_state_vector, atol=tol, rtol=tol)
+
+
 if __name__ == "__main__":
     # Debugging code...
     import random
     from test.helpers.util import plot_comparison
 
-    random.seed(random.randint(0, int(1e10)))
+    initial_seed = random.randint(0, int(1e10))
     for i in tqdm(range(100_000)):
-        seed = random.randint(0, int(1e10))
+        seed = initial_seed + i
         random.seed(seed)
         stim_circuit = gen_stim_circuit(
-            3,
-            100,
+            qubits=3,
+            depth=10,  # reduce depth when using U3 gates
             include_measurements=False,
-            seed=0,
+            seed=seed,
+            p_r_x=1,
+            p_r_y=1,
+            p_r_z=1,
+            p_u3=1,
         )
         tsim_state_vector = simulate_with_tsim(stim_circuit)
         pyzx_state_vector = simulate_with_pyzx_tensor(stim_circuit)
         stim_state_vector = simulate_with_vec_sampler(stim_circuit)
 
-        if not np.allclose(stim_state_vector, pyzx_state_vector) or not np.allclose(
-            tsim_state_vector, pyzx_state_vector
-        ):
+        tol = 1e-6  # reduce tolerance when using U3 gates, since it uses fp32
+        if not np.allclose(
+            tsim_state_vector, pyzx_state_vector, atol=tol, rtol=tol
+        ) or not np.allclose(stim_state_vector, pyzx_state_vector, atol=tol, rtol=tol):
+            c = Circuit.from_stim_program(stim_circuit)
+            from IPython.display import display
 
-            plot_comparison(stim_state_vector, tsim_state_vector, pyzx_state_vector)
+            display(c.diagram("timeline-svg"))
 
-            assert np.allclose(stim_state_vector, pyzx_state_vector), f"Seed: {seed}"
-            assert np.allclose(tsim_state_vector, pyzx_state_vector), f"Seed: {seed}"
+            plot_comparison(
+                tsim_state_vector,
+                tsim_state_vector,
+                pyzx_state_vector,
+                plot_difference=False,
+            )
+
+            assert np.allclose(
+                stim_state_vector, pyzx_state_vector, atol=tol, rtol=tol
+            ), f"Seed: {seed}"
+            assert np.allclose(
+                tsim_state_vector, pyzx_state_vector, atol=tol, rtol=tol
+            ), f"Seed: {seed}"

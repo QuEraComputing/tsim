@@ -23,6 +23,10 @@ def gen_stim_circuit(
     p_depolarize2: float = 0,
     p_pauli_channel_1: float = 0,
     p_pauli_channel_2: float = 0,
+    p_r_x: float = 0,
+    p_r_y: float = 0,
+    p_r_z: float = 0,
+    p_u3: float = 0,
     seed: int | None = None,
 ) -> stim.Circuit:
     """Generate a random stim circuit with specified gate probabilities.
@@ -62,6 +66,10 @@ def gen_stim_circuit(
             2,
             p_pauli_channel_2,
         ),
+        ("I[R_X(theta=0.31*pi)]", 1, p_r_x),
+        ("I[R_Y(theta=0.32*pi)]", 1, p_r_y),
+        ("I[R_Z(theta=0.33*pi)]", 1, p_r_z),
+        ("I[U3(theta=0.34*pi, phi=0.21*pi, lambda=0.46*pi)]", 1, p_u3),
     ]
 
     # Filter to gates with non-zero probability
