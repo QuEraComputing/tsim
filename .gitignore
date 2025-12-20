@@ -1,3 +1,6 @@
+*.png
+*.stim
+# *.ipynb
 *.DS_Store
 *.pyspy
 .vscode
