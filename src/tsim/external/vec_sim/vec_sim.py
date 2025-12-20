@@ -320,6 +320,24 @@ class VecSim:
     def do_t(self, q: Any) -> None:
         self.state[self.state_slicer({q: True})] *= (1 + 1j) / np.sqrt(2)
 
+    def do_r_z(self, q: Any, theta: float) -> None:
+        self.state[self.state_slicer({q: True})] *= np.exp(1j * theta * np.pi)
+
+    def do_r_x(self, q: Any, theta: float) -> None:
+        self.do_h(q)
+        self.do_r_z(q, theta)
+        self.do_h(q)
+
+    def do_r_y(self, q: Any, theta: float) -> None:
+        self.do_h_yz(q)
+        self.do_r_z(q, theta)
+        self.do_h_yz(q)
+
+    def do_u3(self, q: Any, theta: float, phi: float, lam: float) -> None:
+        self.do_r_z(q, lam)
+        self.do_r_y(q, theta)
+        self.do_r_z(q, phi)
+
     def do_t_dag(self, q: Any) -> None:
         self.state[self.state_slicer({q: True})] *= (1 - 1j) / np.sqrt(2)
 

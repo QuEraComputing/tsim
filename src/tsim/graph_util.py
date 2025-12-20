@@ -6,14 +6,13 @@ from fractions import Fraction
 from typing import Any, Dict, Sequence, Tuple
 
 import numpy as np
+from pyzx.graph.base import BaseGraph
+from pyzx.graph.graph import Graph
+from pyzx.graph.graph_s import GraphS
+from pyzx.graph.scalar import Scalar
+from pyzx.utils import VertexType
 
-import tsim.external.pyzx as zx
 from tsim._instructions import GraphRepresentation
-from tsim.external.pyzx import VertexType
-from tsim.external.pyzx.graph.base import BaseGraph
-from tsim.external.pyzx.graph.graph import Graph
-from tsim.external.pyzx.graph.graph_s import GraphS
-from tsim.external.pyzx.graph.scalar import Scalar
 from tsim.util.linalg import find_basis
 
 
@@ -366,5 +365,5 @@ def evaluate_graph(g: GraphS, vals: dict[str, Fraction] | None = None) -> np.nda
             param_phase += vals[p]
         g.set_phase(v, param_phase, clearParams=True)
     scalar_val = g.scalar.evaluate_scalar(vals)
-    g.scalar = zx.Scalar()
+    g.scalar = Scalar()
     return g.to_tensor() * scalar_val

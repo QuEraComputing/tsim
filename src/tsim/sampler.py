@@ -4,8 +4,9 @@ from typing import Literal, overload
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pyzx as zx
+from pyzx.graph.scalar import Scalar
 
-import tsim.external.pyzx as zx
 from tsim.channels import ChannelSampler, create_channels_from_specs
 from tsim.circuit import Circuit
 from tsim.decomposer import Decomposer, DecomposerArray, DecompositionMode
@@ -63,7 +64,7 @@ class _CompiledSamplerBase:
         # Remove the scalar. Since we have not started the stabilizer rank decomposition,
         # it is safe to remove the overall scalar. This removes many scalar terms
         # and speeds up compilation and evaluation.
-        graph.scalar = zx.Scalar()
+        graph.scalar = Scalar()
 
         self.channel_sampler = ChannelSampler(
             error_channels=error_channels, error_transform=error_transform
