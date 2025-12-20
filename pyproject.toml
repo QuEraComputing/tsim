@@ -47,7 +47,7 @@ dev = [
     "pytest>=8.3.3",
     "ruff>=0.7.3",
     "rust-just>=1.36.0",
-    "sinter>=1.15.0",
+    "sinter~=1.16.dev",
     "tesseract-decoder>=0.1.1.dev20251113222502",
     "tqdm>=4.67.1",
 ]
