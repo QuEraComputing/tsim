@@ -43,4 +43,5 @@ jobs:
       - name: Deploy preview
         uses: rossjrw/pr-preview-action@v1
         with:
+          pages-base-url: studious-adventure-r67917v.pages.github.io
           source-dir: ./site
