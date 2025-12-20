@@ -24,6 +24,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
       - name: Install Documentation dependencies
+        env:
+          UV_EXTRA_INDEX_URL: ${{ secrets.UV_INDEX_URL }}
         run: uv sync --group doc
       - name: Set up build cache
         uses: actions/cache@v5
