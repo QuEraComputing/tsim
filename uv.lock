@@ -3080,7 +3080,7 @@ wheels = [
 
 [[package]]
 name = "sinter"
-version = "1.15.0"
+version = "1.16.dev1761611832"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "matplotlib" },
@@ -3088,10 +3088,7 @@ dependencies = [
     { name = "scipy" },
     { name = "stim" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/78/ce/ba7f22ac1535b95b16f046678d133b2af65288effb6e4e99c28b576ef54d/sinter-1.15.0.tar.gz", hash = "sha256:47c7e4412d73bcbd5cabca49b6d9bfc0b33eb18d333f525076512e0efa873d45", size = 176702, upload-time = "2025-05-07T06:19:38.872Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/62/45/be8193757e44880348dc9561bedadce0b815b408c959ceaf56c1863fd65d/sinter-1.15.0-py3-none-any.whl", hash = "sha256:6bec05cc643e301192c2acaca9ede464576572635c5e25a592e48294b7e53bed", size = 196891, upload-time = "2025-05-07T06:19:37.398Z" },
-]
+sdist = { url = "https://files.pythonhosted.org/packages/f1/bb/35ad88fb155f63fe1dd2df0d24fecd60fc32cbbe0412f42d2c88890b4223/sinter-1.16.dev1761611832.tar.gz", hash = "sha256:2602cf6bacfe938b2ae492c2a57a4b30f4843bc9c2d4eb84a95512dfe6eb64c9", size = 176868, upload-time = "2025-10-28T01:03:55.224Z" }
 
 [[package]]
 name = "six"
@@ -3338,7 +3335,7 @@ dev = [
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "ruff", specifier = ">=0.7.3" },
     { name = "rust-just", specifier = ">=1.36.0" },
-    { name = "sinter", specifier = ">=1.15.0" },
+    { name = "sinter", specifier = "~=1.16.dev0" },
     { name = "tesseract-decoder", specifier = ">=0.1.1.dev20251113222502" },
     { name = "tqdm", specifier = ">=4.67.1" },
 ]
