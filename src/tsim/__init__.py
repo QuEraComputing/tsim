@@ -1,7 +1,7 @@
 """
 tsim is a ZX-calculus based circuit sampler that supports fast sampling from universal
 quantum circuits with few non-Clifford gates.
-It `Circuit`, `CompiledDetectorSampler`, and `CompiledMeasurementSampler`, which follow the Stim API.
+It exposes `Circuit`, `CompiledDetectorSampler`, and `CompiledMeasurementSampler` objects, which follow the Stim API.
 
 The repo is organized as follows:
 

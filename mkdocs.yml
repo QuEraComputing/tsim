@@ -87,7 +87,7 @@ plugins:
       minify_html: true
   - mkdocs-jupyter:
       allow_errors: false
-      execute: false
+      execute: true
       execute_ignore:
           - "adder.ipynb"
           - "aist_demo.ipynb"
