@@ -11,7 +11,7 @@ nav:
   - Home:
     - index.md
     - Installation: install.md
-    - Getting Started: demos/intro.ipynb
+    - Overview: demos/intro.ipynb
     - Contributing: contrib.md
   - Tutorials:
     - demos/encoding_demo.ipynb
