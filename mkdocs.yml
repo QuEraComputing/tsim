@@ -11,7 +11,7 @@ nav:
   - Home:
     - index.md
     - Installation: install.md
-    - Getting Started: getting_started.md
+    - Getting Started: demos/intro.ipynb
     - Contributing: contrib.md
   - Tutorials:
     - demos/encoding_demo.ipynb
@@ -85,10 +85,9 @@ plugins:
       nav_file: SUMMARY.txt
   - minify:
       minify_html: true
-  - blog
   - mkdocs-jupyter:
       allow_errors: false
-      execute: true
+      execute: false
       execute_ignore:
           - "adder.ipynb"
           - "aist_demo.ipynb"
