@@ -76,6 +76,7 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
 
     # ========================================================================
     # Type A compilation (phase-node)
+    # Terms of the form exp(i * (α + parity(params)) * pi).
     # ========================================================================
     a_const_phases_list = []
     a_param_bits_list = []
@@ -94,21 +95,11 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
             a_const_phases_list.append(const_term)
             a_param_bits_list.append(bitstr)
 
-    a_const_phases = (
-        jnp.array(a_const_phases_list, dtype=jnp.uint8)
-        if a_const_phases_list
-        else jnp.zeros((0,), dtype=jnp.uint8)
+    a_const_phases = jnp.array(a_const_phases_list, dtype=jnp.uint8)
+    a_param_bits = jnp.array(a_param_bits_list, dtype=jnp.uint8).reshape(
+        len(a_param_bits_list), n_params
     )
-    a_param_bits = (
-        jnp.array(a_param_bits_list, dtype=jnp.uint8)
-        if a_param_bits_list
-        else jnp.zeros((0, n_params), dtype=jnp.uint8)
-    )
-    a_graph_ids = (
-        jnp.array(g_coord_a, dtype=jnp.int32)
-        if g_coord_a
-        else jnp.zeros((0,), dtype=jnp.int32)
-    )
+    a_graph_ids = jnp.array(g_coord_a, dtype=jnp.int32)
 
     # ========================================================================
     # Type B compilation (half-π)
@@ -144,24 +135,15 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
             b_term_types_list.append(combined_j * 2)
             b_param_bits_list.append(list(bitstr_key))
 
-    b_term_types = (
-        jnp.array(b_term_types_list, dtype=jnp.uint8)
-        if b_term_types_list
-        else jnp.zeros((0,), dtype=jnp.uint8)
+    b_term_types = jnp.array(b_term_types_list, dtype=jnp.uint8)
+    b_param_bits = jnp.array(b_param_bits_list, dtype=jnp.uint8).reshape(
+        len(b_param_bits_list), n_params
     )
-    b_param_bits = (
-        jnp.array(b_param_bits_list, dtype=jnp.uint8)
-        if b_param_bits_list
-        else jnp.zeros((0, n_params), dtype=jnp.uint8)
-    )
-    b_graph_ids = (
-        jnp.array(g_coord_b, dtype=jnp.int32)
-        if g_coord_b
-        else jnp.zeros((0,), dtype=jnp.int32)
-    )
+    b_graph_ids = jnp.array(g_coord_b, dtype=jnp.int32)
 
     # ========================================================================
     # Type C compilation (π-pair)
+    # Terms of the form (-1)^(ψ * φ) where ψ and φ are parities.
     # ========================================================================
     c_const_bits_a_list = []
     c_param_bits_a_list = []
@@ -192,34 +174,20 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
             c_const_bits_b_list.append(const_bit_b)
             c_param_bits_b_list.append(param_bits_b)
 
-    c_const_bits_a = (
-        jnp.array(c_const_bits_a_list, dtype=jnp.uint8)
-        if c_const_bits_a_list
-        else jnp.zeros((0,), dtype=jnp.uint8)
+    n_c_terms = len(c_const_bits_a_list)
+    c_const_bits_a = jnp.array(c_const_bits_a_list, dtype=jnp.uint8)
+    c_param_bits_a = jnp.array(c_param_bits_a_list, dtype=jnp.uint8).reshape(
+        n_c_terms, n_params
     )
-    c_param_bits_a = (
-        jnp.array(c_param_bits_a_list, dtype=jnp.uint8)
-        if c_param_bits_a_list
-        else jnp.zeros((0, n_params), dtype=jnp.uint8)
+    c_const_bits_b = jnp.array(c_const_bits_b_list, dtype=jnp.uint8)
+    c_param_bits_b = jnp.array(c_param_bits_b_list, dtype=jnp.uint8).reshape(
+        n_c_terms, n_params
     )
-    c_const_bits_b = (
-        jnp.array(c_const_bits_b_list, dtype=jnp.uint8)
-        if c_const_bits_b_list
-        else jnp.zeros((0,), dtype=jnp.uint8)
-    )
-    c_param_bits_b = (
-        jnp.array(c_param_bits_b_list, dtype=jnp.uint8)
-        if c_param_bits_b_list
-        else jnp.zeros((0, n_params), dtype=jnp.uint8)
-    )
-    c_graph_ids = (
-        jnp.array(g_coord_c, dtype=jnp.int32)
-        if g_coord_c
-        else jnp.zeros((0,), dtype=jnp.int32)
-    )
+    c_graph_ids = jnp.array(g_coord_c, dtype=jnp.int32)
 
     # ========================================================================
     # Type D compilation (phase-pair)
+    # Terms of the form 1 + e^(i*alpha) + e^(i*beta) - e^(i*(alpha+beta))
     # ========================================================================
     d_const_alpha_list = []
     d_const_beta_list = []
@@ -247,31 +215,16 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
             d_param_bits_a_list.append(param_bits_a)
             d_param_bits_b_list.append(param_bits_b)
 
-    d_const_alpha = (
-        jnp.array(d_const_alpha_list, dtype=jnp.uint8)
-        if d_const_alpha_list
-        else jnp.zeros((0,), dtype=jnp.uint8)
+    n_d_terms = len(d_const_alpha_list)
+    d_const_alpha = jnp.array(d_const_alpha_list, dtype=jnp.uint8)
+    d_const_beta = jnp.array(d_const_beta_list, dtype=jnp.uint8)
+    d_param_bits_a = jnp.array(d_param_bits_a_list, dtype=jnp.uint8).reshape(
+        n_d_terms, n_params
     )
-    d_const_beta = (
-        jnp.array(d_const_beta_list, dtype=jnp.uint8)
-        if d_const_beta_list
-        else jnp.zeros((0,), dtype=jnp.uint8)
+    d_param_bits_b = jnp.array(d_param_bits_b_list, dtype=jnp.uint8).reshape(
+        n_d_terms, n_params
     )
-    d_param_bits_a = (
-        jnp.array(d_param_bits_a_list, dtype=jnp.uint8)
-        if d_param_bits_a_list
-        else jnp.zeros((0, n_params), dtype=jnp.uint8)
-    )
-    d_param_bits_b = (
-        jnp.array(d_param_bits_b_list, dtype=jnp.uint8)
-        if d_param_bits_b_list
-        else jnp.zeros((0, n_params), dtype=jnp.uint8)
-    )
-    d_graph_ids = (
-        jnp.array(g_coord_d, dtype=jnp.int32)
-        if g_coord_d
-        else jnp.zeros((0,), dtype=jnp.int32)
-    )
+    d_graph_ids = jnp.array(g_coord_d, dtype=jnp.int32)
 
     # ========================================================================
     # Static data
