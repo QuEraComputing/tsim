@@ -230,7 +230,9 @@ def build_sampling_graph(
             assert len(vs) == 1
             v = vs[0]
             row = g.row(v)
-            vb = g.add_vertex(VertexType.BOUNDARY, qubit=-2, row=row)
+            vb = g.add_vertex(
+                VertexType.BOUNDARY, qubit=-2 if "det" in label else -2.5, row=row
+            )
             g.add_edge((v, vb))
             g.set_phase(v, 0)
             outputs.append(vb)
@@ -305,7 +307,6 @@ def squash_graph(g: BaseGraph) -> None:
     # Normalize output positions: consecutive rows at qubit = num_outputs
     num_outputs = len(outputs)
     for row, v in enumerate(outputs):
-        g.set_qubit(v, num_outputs)
         g.set_row(v, row)
 
     # Track occupied positions and placed vertices
@@ -409,3 +410,14 @@ def get_params(g: BaseGraph) -> set[str]:
         active |= var_set
 
     return active
+
+
+def scale_horizontally(g: BaseGraph, scale: float) -> None:
+    """Scale the graph horizontally by a factor of ``scale``.
+
+    Args:
+        g: A ZX graph
+        scale: The factor to scale the graph by
+    """
+    for v in g.vertices():
+        g.set_row(v, g.row(v) * scale)

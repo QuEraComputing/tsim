@@ -375,6 +375,8 @@ class Circuit:
         self,
         type: Literal[
             "pyzx",
+            "pyzx-dets",
+            "pyzx-meas",
             "timeline-svg",
             "timeslice-svg",
         ] = "timeline-svg",
@@ -390,6 +392,10 @@ class Circuit:
         Args:
             type: The type of diagram. Available types are:
                 "pyzx": A pyzx SVG of the ZX diagram of the circuit.
+                "pyzx-dets": A pyzx SVG of the ZX diagram that is used to compute
+                    probabilities of detectors and observables.
+                "pyzx-meas": A pyzx SVG of the ZX diagram that is used to compute
+                    probabilities of measurements.
                 "timeline-svg": An SVG image of the operations applied by
                     the circuit over time. Includes annotations showing the
                     measurement record index that each measurement writes
@@ -443,6 +449,8 @@ class Circuit:
                 height=height,
             )
         elif type == "pyzx":
+            from tsim.graph_util import scale_horizontally
+
             built = parse_stim_circuit(self._stim_circ)
             g = built.graph
 
@@ -453,6 +461,24 @@ class Circuit:
             max_row = max(g.row(v) for v in built.last_vertex.values())
             for q in built.last_vertex:
                 g.set_row(built.last_vertex[q], max_row)
+
+            if kwargs.get("scale_horizontally", False):
+                scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
+            zx.draw(g, **kwargs)
+            return g
+        elif type in ["pyzx-dets", "pyzx-meas"]:
+            from tsim.graph_util import (
+                scale_horizontally,
+                squash_graph,
+                transform_error_basis,
+            )
+
+            g = self.get_sampling_graph(sample_detectors=type == "pyzx-dets")
+            zx.full_reduce(g, paramSafe=True)
+            g, _ = transform_error_basis(g)
+            squash_graph(g)
+            if kwargs.get("scale_horizontally", False):
+                scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
             zx.draw(g, **kwargs)
             return g
         else:
