@@ -23,6 +23,8 @@ class Decomposer:
     plugged_graphs: list[BaseGraph] | None = None
     compiled_circuits: list[CompiledCircuit] | None = None
     f_selection: jax.Array | None = None
+    param_indices: list[jnp.ndarray] | None = None  # Precomputed indices for sampling
+    active_params: list[list[str]] | None = None  # Active params per circuit
 
     def plug_outputs(self, outputs_to_plug: list[int]) -> list[BaseGraph]:
         """Create graphs with specified numbers of outputs plugged.
@@ -60,10 +62,14 @@ class Decomposer:
         if self.plugged_graphs is None:
             raise ValueError("Graphs not plugged")
 
+        from tsim.graph_util import get_params
+
         graphs = self.plugged_graphs
         circuits: list[CompiledCircuit] = []
-        chars = self.f_chars + self.m_chars
-        num_errors = len(self.f_chars)
+        active_params_list: list[list[str]] = []
+        param_indices_list: list[jnp.ndarray] = []
+        full_chars = self.f_chars + self.m_chars
+        char_to_idx = {c: j for j, c in enumerate(full_chars)}
 
         power2 = 0
         for i, graph in enumerate(graphs):
@@ -77,11 +83,22 @@ class Decomposer:
                 power2 = g_copy.scalar.power2
             g_copy.scalar.add_power(-power2)
 
+            # Determine which parameters actually appear in the graph
+            active_params_set = get_params(g_copy)
+            active_params = [c for c in full_chars if c in active_params_set]
+            active_params_list.append(active_params)
+            indices = jnp.array(
+                [char_to_idx[p] for p in active_params], dtype=jnp.int32
+            )
+            param_indices_list.append(indices)
+
             g_list = find_stab(g_copy)
-            n_params = num_errors + self.outputs_to_plug[i]
-            circuits.append(compile_circuit(g_list, n_params, chars))
+            circuit = compile_circuit(g_list, active_params)
+            circuits.append(circuit)
 
         self.compiled_circuits = circuits
+        self.active_params = active_params_list
+        self.param_indices = param_indices_list
         self.f_selection = jnp.array(
             [int(f_char[1:]) for f_char in self.f_chars], dtype=jnp.int32
         )

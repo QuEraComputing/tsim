@@ -53,15 +53,13 @@ class CompiledCircuit(NamedTuple):
     floatfactor: jnp.ndarray  # shape: (num_graphs, 4), dtype: int32
 
 
-def compile_circuit(
-    g_list: list[BaseGraph], n_params: int, chars: list[str]
-) -> CompiledCircuit:
+def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircuit:
     """Compile ZX-graph list into JAX-compatible structure for fast evaluation.
 
     Args:
-        g_list: List of ZX-graphs to compile
-        n_params: Number of parameters (error bits + measurements/observables)
-        chars: List of parameter names
+        g_list: List of ZX-graphs to compile (must be scalar graphs with no vertices)
+        params: List of parameter names used by this circuit. Each parameter will correspond to columns in
+            the jax.Arrays of the compiled circuit.
 
     Returns:
         CompiledCircuit with all data in static-shaped arrays
@@ -70,8 +68,10 @@ def compile_circuit(
         assert (
             len(list(g.vertices())) == 0
         ), f"Only scalar graphs can be compiled but graph {i} has {len(list(g.vertices()))} vertices"
+
+    n_params = len(params)
     num_graphs = len(g_list)
-    char_to_idx = {char: i for i, char in enumerate(chars)}
+    char_to_idx = {char: i for i, char in enumerate(params)}
 
     # ========================================================================
     # Type A compilation (phase-node)
