@@ -47,13 +47,13 @@ samples = detector_sampler.sample(shots=100)
 ## Installation
 
 ```bash
-uv add tsim
+uv add git+https://github.com/QuEraComputing/tsim.git
 ```
 
 For GPU acceleration, use
 
 ```bash
-uv add "tsim[cuda13]"
+uv add "git+https://github.com/QuEraComputing/tsim.git#egg=tsim[cuda13]"
 ```
 
 See [Installation](install.md) for more options.

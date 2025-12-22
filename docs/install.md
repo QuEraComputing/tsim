@@ -7,29 +7,29 @@ tsim requires Python 3.10 or later.
 We recommend using [`uv`](https://docs.astral.sh/uv/) for dependency management.
 
 ```bash
-uv add tsim
+uv add git+https://github.com/QuEraComputing/tsim.git
 ```
 
 For GPU acceleration with CUDA:
 
 ```bash
-# For CUDA 12
-uv add "tsim[cuda12]"
-
 # For CUDA 13
-uv add "tsim[cuda13]"
+uv add "git+https://github.com/QuEraComputing/tsim.git#egg=tsim[cuda13]"
+
+# For CUDA 12
+uv add "git+https://github.com/QuEraComputing/tsim.git#egg=tsim[cuda12]"
 ```
 
 ## Using pip
 
 ```bash
-pip install tsim
+pip install git+https://github.com/QuEraComputing/tsim.git
 ```
 
 For GPU acceleration with CUDA:
 
 ```bash
-pip install "tsim[cuda13]"
+pip install "git+https://github.com/QuEraComputing/tsim.git#egg=tsim[cuda13]"
 ```
 
 ## Development Setup
