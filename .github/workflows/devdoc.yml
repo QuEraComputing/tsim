@@ -1,0 +1,50 @@
+name: Deploy Devopment Branch Docs
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  documentation:
+    name: Deploy dev documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+        # Install a specific version of uv.
+          version: "0.6.14"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Install Documentation dependencies
+        env:
+          UV_EXTRA_INDEX_URL: ${{ secrets.UV_INDEX_URL }}
+        run: uv sync --group doc
+      - name: Set up build cache
+        uses: actions/cache@v5
+        id: cache
+        with:
+          key: mkdocs-material-${{ github.ref }}
+          path: .cache
+          restore-keys: |
+            mkdocs-material-
+      # derived from:
+      # https://github.com/RemoteCloud/public-documentation/blob/dev/.github/workflows/build_docs.yml
+      - name: Configure Git user
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+      - name: Deploy documentation
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GOOGLE_ANALYTICS_KEY: ${{ secrets.GOOGLE_ANALYTICS_KEY }}
+        run: |
+          git fetch origin gh-pages --depth=1
+          uv run mike deploy -p dev

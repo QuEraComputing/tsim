@@ -11,13 +11,12 @@ nav:
   - Home:
     - index.md
     - Installation: install.md
-    - Getting Started: getting_started.md
+    - Overview: demos/overview.ipynb
     - Contributing: contrib.md
-  - Examples:
+  - Tutorials:
     - demos/encoding_demo.ipynb
+    - demos/magic_state_distillation.ipynb
   - API Reference: reference/
-  - Blog:
-    - blog/index.md
 
 
 
@@ -86,12 +85,17 @@ plugins:
       nav_file: SUMMARY.txt
   - minify:
       minify_html: true
-  - blog
   - mkdocs-jupyter:
       allow_errors: false
       execute: true
       execute_ignore:
-          - "demos/demo.ipynb"
+          - "adder.ipynb"
+          - "aist_demo.ipynb"
+          - "decoding_demo.ipynb"
+          - "demo.ipynb"
+          - "qec_demo.ipynb"
+          - "tutorial.ipynb"
+          - "u3_demo.ipynb"
           - "*.py"
 
 extra_css:

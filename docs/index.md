@@ -63,11 +63,3 @@ See [Installation](install.md) for more options.
 `tsim` uses stabilizer rank decomposition based on the ZX calculus and is built on top of `pyzx`.
 Circuits are converted into ZX diagrams where noise channels are injected as parametrized Pauli vertices. For efficient sampling on
 CPU and GPU, the diagram is compiled into contiguous jax arrays, following the approach described in [arXiv:2403.06777](https://arxiv.org/abs/2403.06777).
-
-
-
-
-## Learn More
-
-- [Getting Started](getting_started.md) - Detailed usage guide
-- [Contributing](contrib.md) - Development workflow
