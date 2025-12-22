@@ -46,5 +46,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GOOGLE_ANALYTICS_KEY: ${{ secrets.GOOGLE_ANALYTICS_KEY }}
         run: |
-          git fetch origin gh-pages --depth=1
+          git fetch origin gh-pages
           uv run mike deploy -p dev
