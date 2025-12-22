@@ -165,8 +165,8 @@ class _CompiledSamplerBase:
                 c_d_terms.append(len(circuit.d_graph_ids))
                 num_circuits += 1
         return (
-            f"CompiledSampler({num_circuits} outputs, {np.sum(c_graphs)} graphs, "
-            f"{np.sum(c_params)} parameters, {np.sum(c_a_terms)} A terms, "
+            f"CompiledSampler({np.sum(c_graphs)} graphs, "
+            f"{np.max(c_params)} parameters, {np.sum(c_a_terms)} A terms, "
             f"{np.sum(c_b_terms)} B terms, "
             f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms)"
         )

@@ -1,3 +1,4 @@
+from collections import defaultdict
 from fractions import Fraction
 from typing import NamedTuple
 
@@ -26,7 +27,7 @@ class CompiledCircuit(NamedTuple):
     a_graph_ids: jnp.ndarray  # shape: (n_a_terms,), dtype: int32
 
     # Type B: Half-Pi Terms (e^(i*beta))
-    b_term_types: jnp.ndarray  # shape: (n_b_terms,), dtype: uint8, values: {2, 6}
+    b_term_types: jnp.ndarray  # shape: (n_b_terms,), dtype: uint8, values: {2, 4, 6}
     b_param_bits: jnp.ndarray  # shape: (n_b_terms, n_params), dtype: uint8
     b_graph_ids: jnp.ndarray  # shape: (n_b_terms,), dtype: int32
 
@@ -111,6 +112,7 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
 
     # ========================================================================
     # Type B compilation (half-π)
+    # Phase terms of the form exp(1j * π * j * parity(params) / 2) where j ∈ {1, 3}.
     # ========================================================================
     b_term_types_list = []
     b_param_bits_list = []
@@ -119,6 +121,11 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
     for i in range(num_graphs):
         g_i = g_list[i]
         assert set(g_i.scalar.phasevars_halfpi.keys()) <= {1, 3}
+
+        # Accumulate j values per bitstring for this graph
+        # Key: tuple(bitstr), Value: accumulated j mod 4
+        bitstr_to_j: dict[tuple[int, ...], int] = defaultdict(int)
+
         for j in [1, 3]:
             if j not in g_i.scalar.phasevars_halfpi:
                 continue
@@ -126,12 +133,16 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
                 bitstr = [0] * n_params
                 for v in g_i.scalar.phasevars_halfpi[j][term]:
                     bitstr[char_to_idx[v]] = 1
-                ttype = int((j / 2) * 4)
-                assert ttype != 4
+                bitstr_key = tuple(bitstr)
+                bitstr_to_j[bitstr_key] = (bitstr_to_j[bitstr_key] + j) % 4
 
-                g_coord_b.append(i)
-                b_term_types_list.append(ttype)
-                b_param_bits_list.append(bitstr)
+        for bitstr_key, combined_j in bitstr_to_j.items():
+            if combined_j == 0:
+                # Discard terms that cancelled out
+                continue
+            g_coord_b.append(i)
+            b_term_types_list.append(combined_j * 2)
+            b_param_bits_list.append(list(bitstr_key))
 
     b_term_types = (
         jnp.array(b_term_types_list, dtype=jnp.uint8)
