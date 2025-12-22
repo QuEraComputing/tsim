@@ -367,3 +367,45 @@ def evaluate_graph(g: GraphS, vals: dict[str, Fraction] | None = None) -> np.nda
     scalar_val = g.scalar.evaluate_scalar(vals)
     g.scalar = Scalar()
     return g.to_tensor() * scalar_val
+
+
+def get_params(g: BaseGraph) -> set[str]:
+    """Get all parameter variables that appear in the graph and its scalar.
+
+    Collects variables from:
+    - Vertex phases (g._phaseVars)
+    - Scalar phase variables (phasevars_pi, phasevars_pi_pair, phasevars_halfpi)
+    - Scalar phase pairs (phasepairs with paramsA, paramsB)
+    - Scalar phase nodes (phasenodevars)
+
+    Args:
+        g: A ZX graph with parametrized phases
+
+    Returns:
+        Set of all variable names (e.g., {'f0', 'f2', 'm1'}) that appear in the graph
+    """
+    active: set[str] = set()
+
+    for v in g.vertices():
+        active |= g._phaseVars[v]
+
+    scalar = g.scalar
+
+    active |= scalar.phasevars_pi
+
+    for pair in scalar.phasevars_pi_pair:
+        for var_set in pair:
+            active |= var_set
+
+    for coeff in scalar.phasevars_halfpi:  # coeff is 1 or 3
+        for var_set in scalar.phasevars_halfpi[coeff]:
+            active |= var_set
+
+    for spider_pair in scalar.phasepairs:
+        active |= spider_pair.paramsA
+        active |= spider_pair.paramsB
+
+    for var_set in scalar.phasenodevars:
+        active |= var_set
+
+    return active

@@ -102,23 +102,32 @@ class _CompiledSamplerBase:
         for component in self.program.components:
             assert component.f_selection is not None
             assert component.compiled_circuits is not None
+            assert component.param_indices is not None
 
-            params = f_samples[:, component.f_selection]
-            num_errors = params.shape[1]
+            f_params = f_samples[:, component.f_selection]
+            num_errors = f_params.shape[1]
 
             key, self._key = jax.random.split(self._key)
 
             # circuits[0] is normalization, circuits[1:] are for sequential bits
             norm_circuit = component.compiled_circuits[0]
+            norm_indices = component.param_indices[0]
             bit_circuits = component.compiled_circuits[1:]
+            bit_indices = component.param_indices[1:]
 
-            # Compute normalization once
-            prev = np.abs(evaluate_batch_numpy(norm_circuit, params))
+            # Start with just error params
+            full_params = f_params
 
-            for circuit in bit_circuits:
+            # Compute normalization once, only using active params
+            active_params = full_params[:, norm_indices]
+            prev = np.abs(evaluate_batch_numpy(norm_circuit, active_params))
+
+            for circuit, indices in zip(bit_circuits, bit_indices):
                 # Only evaluate with bit=1 (chain rule: p0 = prev - p1)
-                state_1 = jnp.hstack([params, ones])
-                p1 = np.abs(evaluate_batch_numpy(circuit, state_1))
+                full_params = jnp.hstack([full_params, ones])
+
+                active_params = full_params[:, indices]
+                p1 = np.abs(evaluate_batch_numpy(circuit, active_params))
 
                 # P(bit=1) = p1 / prev
                 p1_norm = p1 / prev
@@ -129,9 +138,10 @@ class _CompiledSamplerBase:
                 # Chain rule: new_prev = p1 if bit=1, else prev - p1
                 prev = jnp.where(measurement, p1, prev - p1)
 
-                params = jnp.hstack([params, measurement[:, None]])
+                # Update full_params with actual measurement (replace the last column)
+                full_params = jnp.hstack([full_params[:, :-1], measurement[:, None]])
 
-            component_samples.append(params[:, num_errors:])
+            component_samples.append(full_params[:, num_errors:])
 
         return np.concatenate(component_samples, axis=1)[:, np.argsort(output_order)]
 
@@ -208,19 +218,23 @@ class CompiledStateProbs(_CompiledSamplerBase):
         for component in self.program.components:
             assert component.f_selection is not None
             assert component.compiled_circuits is not None
+            assert component.param_indices is not None
             assert len(component.compiled_circuits) == 2
 
-            params = f_samples[:, component.f_selection]
+            f_params = f_samples[:, component.f_selection]
             norm_circuit, joint_circuit = component.compiled_circuits
+            norm_indices, joint_indices = component.param_indices
 
             # Normalization: circuit[0] with only error params
-            p_norm *= np.abs(evaluate_batch_numpy(norm_circuit, params))
+            active_norm_params = f_params[:, norm_indices]
+            p_norm *= np.abs(evaluate_batch_numpy(norm_circuit, active_norm_params))
 
             # Joint probability: circuit[1] with error params + state
             component_state = state[component.output_indices]
             tiled_state = jnp.tile(component_state, (batch_size, 1))
-            full_params = jnp.hstack([params, tiled_state])
-            p_joint *= np.abs(evaluate_batch_numpy(joint_circuit, full_params))
+            full_params = jnp.hstack([f_params, tiled_state])
+            active_joint_params = full_params[:, joint_indices]
+            p_joint *= np.abs(evaluate_batch_numpy(joint_circuit, active_joint_params))
 
         return p_joint / p_norm
 
