@@ -171,6 +171,18 @@ class _CompiledSamplerBase:
             f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms)"
         )
 
+    def _print_t_info(self):
+        for i, component in enumerate(self.program.components):
+            if component.plugged_graphs is None:
+                continue
+            t_counts = [
+                zx.tcount(g) + zx.simplify.u3_count(g) for g in component.plugged_graphs
+            ]
+            print(
+                f"Component {i}: {len(component.graph.outputs())} output(s), "
+                f"non-Clifford gates: {t_counts}"
+            )
+
 
 class CompiledStateProbs(_CompiledSamplerBase):
     """Computes measurement probabilities for a given state.
