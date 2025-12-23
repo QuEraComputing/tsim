@@ -1,0 +1,97 @@
+"""Core data types for the tsim compilation and sampling pipeline.
+
+This module defines immutable data structures that represent the different
+stages of circuit compilation:
+
+1. PreparedGraph: Result of parsing and reducing a circuit graph
+2. CompiledComponent: A single compiled connected component
+3. CompiledProgram: The full compiled circuit ready for sampling
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+import numpy as np
+
+if TYPE_CHECKING:
+    from pyzx.graph.base import BaseGraph
+
+    from tsim.channels import ErrorSpec
+    from tsim.compile import CompiledCircuit
+
+
+@dataclass(frozen=True)
+class PreparedGraph:
+    """Result of the graph preparation phase.
+
+    This represents a circuit that has been:
+    1. Parsed from stim format
+    2. Converted to a ZX graph
+    3. Doubled (composed with adjoint)
+    4. Reduced via zx.full_reduce
+    5. Had its error basis transformed (Gaussian elimination: e → f)
+
+    Attributes:
+        graph: The prepared ZX graph with f-parameters on vertices.
+        error_transform: Matrix of shape (num_e, num_f) for e→f basis conversion.
+            f_samples = (e_samples @ error_transform) % 2
+        error_specs: Specifications for creating error channel samplers.
+        num_outputs: Number of output vertices (measurements or detectors).
+        num_detectors: Number of detector outputs (for detector sampling).
+    """
+
+    graph: BaseGraph
+    error_transform: dict[str, set[str]]
+    error_specs: list[ErrorSpec]
+    num_outputs: int
+    num_detectors: int
+
+
+@dataclass(frozen=True)
+class CompiledComponent:
+    """A single compiled connected component of a circuit.
+
+    Each component is independent and can be sampled separately. The results
+    are then combined according to output_indices.
+
+    Attributes:
+        output_indices: Which global output indices this component owns.
+            Used to reassemble component outputs into the final result.
+        f_selection: Indices into the global f_params array to select this
+            component's required f-parameters. Shape: (num_f_for_component,)
+        circuits: Compiled circuits for sampling. For sequential mode:
+            - circuits[0]: Normalization (no outputs plugged)
+            - circuits[i]: First i outputs plugged
+            For joint mode:
+            - circuits[0]: Normalization
+            - circuits[1]: All outputs plugged
+    """
+
+    output_indices: tuple[int, ...]
+    f_selection: np.ndarray
+    circuits: tuple[CompiledCircuit, ...]
+
+
+@dataclass(frozen=True)
+class CompiledProgram:
+    """A fully compiled circuit program ready for sampling.
+
+    This is the result of compiling a PreparedGraph and contains everything
+    needed to sample from the circuit.
+
+    Attributes:
+        components: The compiled components, sorted by number of outputs.
+        output_order: Array for reordering component outputs to final order.
+            final_samples = combined[:, np.argsort(output_order)]
+        num_outputs: Total number of outputs across all components.
+        num_f_params: Total number of f-parameters.
+        num_detectors: Number of detector outputs (for detector sampling).
+    """
+
+    components: tuple[CompiledComponent, ...]
+    output_order: np.ndarray
+    num_outputs: int
+    num_f_params: int
+    num_detectors: int
