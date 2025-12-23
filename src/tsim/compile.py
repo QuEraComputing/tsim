@@ -70,6 +70,8 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
             len(list(g.vertices())) == 0
         ), f"Only scalar graphs can be compiled but graph {i} has {len(list(g.vertices()))} vertices"
 
+    g_list = [g for g in g_list if not g.scalar.is_zero]
+
     n_params = len(params)
     num_graphs = len(g_list)
     char_to_idx = {char: i for i, char in enumerate(params)}
