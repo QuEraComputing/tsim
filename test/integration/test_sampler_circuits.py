@@ -357,6 +357,168 @@ def test_mpp_inverted_record(basis: str):
     assert (~samples).all()
 
 
+def test_cx_rec_control():
+    c = Circuit(
+        """
+        X 0
+        M 0
+        X 0
+        H 0
+        CNOT rec[-1] 1
+        M 1
+        """
+    )
+    s = c.compile_sampler()
+    samples = s.sample(100)
+    assert np.all(samples)
+
+
+def test_cz_rec_control():
+    c = Circuit(
+        """
+        X 0
+        M 0
+        RX 1
+        CZ rec[-1] 1
+        H 1
+        M 1
+        """
+    )
+    s = c.compile_sampler()
+    samples = s.sample(100)
+    assert np.all(samples)
+
+
+def test_rec_control_with_singlet():
+    singlet = """
+        R 0 1
+        X 0
+        H 1
+        CNOT 1 0
+        Z 0
+        """
+
+    c = Circuit(
+        f"""
+        {singlet}
+        M !0 0
+        CNOT rec[-2] 0
+        CNOT rec[-1] 1
+        M 0 1
+        """
+    )
+    s = c.compile_sampler()
+    samples = s.sample(100)
+    assert np.all(samples[:, 2:])
+
+    c = Circuit(
+        f"""
+        {singlet}
+        MX !0 0
+        CZ rec[-2] 0
+        CZ rec[-1] 1
+        MX 0 1
+        """
+    )
+    s = c.compile_sampler()
+    samples = s.sample(100)
+    assert np.all(samples[:, 2:])
+
+
+def test_rec_controlled_effective_reset():
+    c = Circuit(
+        """
+        RX 0
+        M 0
+        CNOT rec[-1] 0
+        M 0
+        """
+    )
+    s = c.compile_sampler()
+    samples = s.sample(100)
+    assert not np.any(samples[:, 1])
+
+    c = Circuit(
+        """
+        R 0
+        MX 0
+        CZ rec[-1] 0
+        MX 0
+        """
+    )
+    s = c.compile_sampler()
+    samples = s.sample(100)
+    assert not np.any(samples[:, 1])
+
+    c = Circuit(
+        """
+        R 0
+        MX 0
+        CY rec[-1] 0
+        MX 0
+        """
+    )
+    s = c.compile_sampler()
+    samples = s.sample(100)
+    assert not np.any(samples[:, 1])
+
+
+def test_rec_controlled_xcz_ycz_zcz():
+    c = Circuit(
+        """
+        RX 0 1
+        M 1
+        ZCZ 0 rec[-1]
+        MX 0
+        """
+    )
+    sampler = c.compile_sampler()
+    samples = sampler.sample(shots=10)
+    assert np.all(samples[:, 0] == samples[:, 1])
+
+    c = Circuit(
+        """
+        R 0
+        RX 1
+        M 1
+        XCZ 0 rec[-1]
+        M 0
+        """
+    )
+    sampler = c.compile_sampler()
+    samples = sampler.sample(shots=10)
+    assert np.all(samples[:, 0] == samples[:, 1])
+
+    c = Circuit(
+        """
+        R 0
+        RX 1
+        M 1
+        YCZ 0 rec[-1]
+        M 0
+        """
+    )
+    sampler = c.compile_sampler()
+    samples = sampler.sample(shots=10)
+    assert np.all(samples[:, 0] == samples[:, 1])
+
+
+def test_rec_controlled_raises_error():
+    c = Circuit(
+        """
+        R 0
+        RX 1
+        M 1
+        YCZ rec[-1] 0
+        M 0
+        """
+    )
+    with pytest.raises(
+        ValueError, match="Measurement record editing is not supported."
+    ):
+        c.compile_sampler()
+
+
 @pytest.mark.parametrize("alpha", [0.34, 0.24, 0.49])
 @pytest.mark.parametrize("basis", ["X", "Y", "Z"])
 def test_rot_gates(alpha: float, basis: str):
