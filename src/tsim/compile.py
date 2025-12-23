@@ -5,6 +5,7 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax import Array
 from pyzx.graph.base import BaseGraph
 from pyzx.graph.scalar import DyadicNumber
 
@@ -23,36 +24,36 @@ class CompiledCircuit(NamedTuple):
     n_params: int
 
     # Type A: Node Terms (1 + e^(i*alpha))
-    a_const_phases: jnp.ndarray  # shape: (n_a_terms,), dtype: uint8, values: 0-7
-    a_param_bits: jnp.ndarray  # shape: (n_a_terms, n_params), dtype: uint8
-    a_graph_ids: jnp.ndarray  # shape: (n_a_terms,), dtype: int32
+    a_const_phases: Array  # shape: (n_a_terms,), dtype: uint8, values: 0-7
+    a_param_bits: Array  # shape: (n_a_terms, n_params), dtype: uint8
+    a_graph_ids: Array  # shape: (n_a_terms,), dtype: int32
 
     # Type B: Half-Pi Terms (e^(i*beta))
-    b_term_types: jnp.ndarray  # shape: (n_b_terms,), dtype: uint8, values: {2, 4, 6}
-    b_param_bits: jnp.ndarray  # shape: (n_b_terms, n_params), dtype: uint8
-    b_graph_ids: jnp.ndarray  # shape: (n_b_terms,), dtype: int32
+    b_term_types: Array  # shape: (n_b_terms,), dtype: uint8, values: {2, 4, 6}
+    b_param_bits: Array  # shape: (n_b_terms, n_params), dtype: uint8
+    b_graph_ids: Array  # shape: (n_b_terms,), dtype: int32
 
     # Type C: Pi-Pair Terms (e^(i*Psi*Phi))
-    c_const_bits_a: jnp.ndarray  # shape: (n_c_terms,), dtype: uint8, values: {0, 1}
-    c_param_bits_a: jnp.ndarray  # shape: (n_c_terms, n_params), dtype: uint8
-    c_const_bits_b: jnp.ndarray  # shape: (n_c_terms,), dtype: uint8, values: {0, 1}
-    c_param_bits_b: jnp.ndarray  # shape: (n_c_terms, n_params), dtype: uint8
-    c_graph_ids: jnp.ndarray  # shape: (n_c_terms,), dtype: int32
+    c_const_bits_a: Array  # shape: (n_c_terms,), dtype: uint8, values: {0, 1}
+    c_param_bits_a: Array  # shape: (n_c_terms, n_params), dtype: uint8
+    c_const_bits_b: Array  # shape: (n_c_terms,), dtype: uint8, values: {0, 1}
+    c_param_bits_b: Array  # shape: (n_c_terms, n_params), dtype: uint8
+    c_graph_ids: Array  # shape: (n_c_terms,), dtype: int32
 
     # Type D: Phase Pairs (1 + e^a + e^b - e^(a+b))
-    d_const_alpha: jnp.ndarray  # shape: (n_d_terms,), dtype: uint8, values: 0-7
-    d_const_beta: jnp.ndarray  # shape: (n_d_terms,), dtype: uint8, values: 0-7
-    d_param_bits_a: jnp.ndarray  # shape: (n_d_terms, n_params), dtype: uint8
-    d_param_bits_b: jnp.ndarray  # shape: (n_d_terms, n_params), dtype: uint8
-    d_graph_ids: jnp.ndarray  # shape: (n_d_terms,), dtype: int32
+    d_const_alpha: Array  # shape: (n_d_terms,), dtype: uint8, values: 0-7
+    d_const_beta: Array  # shape: (n_d_terms,), dtype: uint8, values: 0-7
+    d_param_bits_a: Array  # shape: (n_d_terms, n_params), dtype: uint8
+    d_param_bits_b: Array  # shape: (n_d_terms, n_params), dtype: uint8
+    d_graph_ids: Array  # shape: (n_d_terms,), dtype: int32
 
     # Static per-graph data
-    phase_indices: jnp.ndarray  # shape: (num_graphs,), dtype: uint8 (values 0-7)
+    phase_indices: Array  # shape: (num_graphs,), dtype: uint8 (values 0-7)
     has_approximate_floatfactors: bool  # shape: (1,), dtype: bool
     # TODO: use complex128
-    approximate_floatfactors: jnp.ndarray  # shape: (num_graphs,), dtype: complex64
-    power2: jnp.ndarray  # shape: (num_graphs,), dtype: int32
-    floatfactor: jnp.ndarray  # shape: (num_graphs, 4), dtype: int32
+    approximate_floatfactors: Array  # shape: (num_graphs,), dtype: complex64
+    power2: Array  # shape: (num_graphs,), dtype: int32
+    floatfactor: Array  # shape: (num_graphs, 4), dtype: int32
 
 
 def _flatten_compiled_circuit(circuit: CompiledCircuit):
@@ -84,9 +85,7 @@ def _flatten_compiled_circuit(circuit: CompiledCircuit):
     return children, aux_data
 
 
-def _unflatten_compiled_circuit(
-    aux_data: bool, children
-) -> CompiledCircuit:
+def _unflatten_compiled_circuit(aux_data: bool, children) -> CompiledCircuit:
     (
         num_graphs,
         n_params,

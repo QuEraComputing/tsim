@@ -10,7 +10,7 @@ from jax import Array
 class Channel(abc.ABC):
     """Abstract base class for quantum error channels."""
 
-    logits: jnp.ndarray
+    logits: Array
     num_bits: int
 
     def __init__(self, key: Array):

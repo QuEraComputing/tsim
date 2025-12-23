@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import jax
-import jax.numpy as jnp
+from jax import Array
 
 if TYPE_CHECKING:
     from pyzx.graph.base import BaseGraph
@@ -71,7 +71,7 @@ class CompiledComponent:
     """
 
     output_indices: tuple[int, ...]
-    f_selection: jnp.ndarray
+    f_selection: Array
     circuits: tuple[CompiledCircuit, ...]
 
 
@@ -92,7 +92,7 @@ class CompiledProgram:
     """
 
     components: tuple[CompiledComponent, ...]
-    output_order: jnp.ndarray
+    output_order: Array
     num_outputs: int
     num_f_params: int
     num_detectors: int
@@ -107,7 +107,7 @@ def _flatten_compiled_component(component: CompiledComponent):
 
 
 def _unflatten_compiled_component(
-    aux_data: tuple[int, ...], children: tuple[jnp.ndarray, tuple]
+    aux_data: tuple[int, ...], children: tuple[Array, tuple]
 ) -> CompiledComponent:
     f_selection, circuits = children
     return CompiledComponent(

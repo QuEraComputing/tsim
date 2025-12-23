@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-import numpy as np
+import jax.numpy as jnp
 import pyzx as zx
 from pyzx.graph.base import BaseGraph
 
@@ -69,7 +69,7 @@ def compile_program(
 
     return CompiledProgram(
         components=tuple(compiled_components),
-        output_order=np.array(output_order, dtype=np.int32),
+        output_order=jnp.array(output_order, dtype=jnp.int32),
         num_outputs=num_outputs,
         num_f_params=len(f_indices_global),
         num_detectors=prepared.num_detectors,
@@ -147,7 +147,7 @@ def _compile_component(
 
     return CompiledComponent(
         output_indices=tuple(output_indices),
-        f_selection=np.array(f_selection, dtype=np.int32),
+        f_selection=jnp.array(f_selection, dtype=jnp.int32),
         circuits=tuple(circuits),
     )
 

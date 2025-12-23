@@ -4,6 +4,7 @@ from typing import Literal, overload
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax import Array
 
 from tsim.compile import CompiledCircuit
 from tsim.exact_scalar import ExactScalarArray
@@ -12,7 +13,7 @@ from tsim.exact_scalar import ExactScalarArray
 @overload
 def evaluate(
     circuit: CompiledCircuit,
-    param_vals: jnp.ndarray,
+    param_vals: Array,
     has_approximate_floatfactor: Literal[False],
 ) -> ExactScalarArray: ...
 
@@ -20,23 +21,23 @@ def evaluate(
 @overload
 def evaluate(
     circuit: CompiledCircuit,
-    param_vals: jnp.ndarray,
+    param_vals: Array,
     has_approximate_floatfactor: Literal[True],
-) -> jnp.ndarray: ...
+) -> Array: ...
 
 
 @overload
 def evaluate(
     circuit: CompiledCircuit,
-    param_vals: jnp.ndarray,
+    param_vals: Array,
     has_approximate_floatfactor: bool,
-) -> ExactScalarArray | jnp.ndarray: ...
+) -> ExactScalarArray | Array: ...
 
 
 @functools.partial(jax.jit, static_argnums=(2,))
 def evaluate(
-    circuit: CompiledCircuit, param_vals: jnp.ndarray, has_approximate_floatfactor: bool
-) -> ExactScalarArray | jnp.ndarray:
+    circuit: CompiledCircuit, param_vals: Array, has_approximate_floatfactor: bool
+) -> ExactScalarArray | Array:
     """Evaluate compiled circuit with parameter values.
 
     Args:
@@ -201,21 +202,17 @@ def evaluate(
 evaluate_batch = jax.vmap(evaluate, in_axes=(None, 0, None))
 
 
-def evaluate_batch_jax(
-    circuit: CompiledCircuit, param_vals: jnp.ndarray
-) -> jnp.ndarray:
+def evaluate_batch_jax(circuit: CompiledCircuit, param_vals: Array) -> Array:
     """Evaluate compiled circuit with batched parameters, returning JAX array."""
     result = evaluate_batch(circuit, param_vals, circuit.has_approximate_floatfactors)
     if circuit.has_approximate_floatfactors:
-        assert isinstance(result, jnp.ndarray)
+        assert isinstance(result, Array)
         return result
     assert isinstance(result, ExactScalarArray)
     return result.to_complex()
 
 
-def evaluate_batch_numpy(
-    circuit: CompiledCircuit, param_vals: jnp.ndarray
-) -> np.ndarray:
+def evaluate_batch_numpy(circuit: CompiledCircuit, param_vals: Array) -> np.ndarray:
     """Evaluate compiled circuit with batched parameters, returning numpy array."""
     if not circuit.has_approximate_floatfactors:
         return evaluate_batch(
