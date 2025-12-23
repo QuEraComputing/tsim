@@ -2,6 +2,7 @@ from collections import defaultdict
 from fractions import Fraction
 from typing import NamedTuple
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from pyzx.graph.base import BaseGraph
@@ -52,6 +53,95 @@ class CompiledCircuit(NamedTuple):
     approximate_floatfactors: jnp.ndarray  # shape: (num_graphs,), dtype: complex64
     power2: jnp.ndarray  # shape: (num_graphs,), dtype: int32
     floatfactor: jnp.ndarray  # shape: (num_graphs, 4), dtype: int32
+
+
+def _flatten_compiled_circuit(circuit: CompiledCircuit):
+    children = (
+        circuit.num_graphs,
+        circuit.n_params,
+        circuit.a_const_phases,
+        circuit.a_param_bits,
+        circuit.a_graph_ids,
+        circuit.b_term_types,
+        circuit.b_param_bits,
+        circuit.b_graph_ids,
+        circuit.c_const_bits_a,
+        circuit.c_param_bits_a,
+        circuit.c_const_bits_b,
+        circuit.c_param_bits_b,
+        circuit.c_graph_ids,
+        circuit.d_const_alpha,
+        circuit.d_const_beta,
+        circuit.d_param_bits_a,
+        circuit.d_param_bits_b,
+        circuit.d_graph_ids,
+        circuit.phase_indices,
+        circuit.approximate_floatfactors,
+        circuit.power2,
+        circuit.floatfactor,
+    )
+    aux_data = circuit.has_approximate_floatfactors
+    return children, aux_data
+
+
+def _unflatten_compiled_circuit(
+    aux_data: bool, children
+) -> CompiledCircuit:
+    (
+        num_graphs,
+        n_params,
+        a_const_phases,
+        a_param_bits,
+        a_graph_ids,
+        b_term_types,
+        b_param_bits,
+        b_graph_ids,
+        c_const_bits_a,
+        c_param_bits_a,
+        c_const_bits_b,
+        c_param_bits_b,
+        c_graph_ids,
+        d_const_alpha,
+        d_const_beta,
+        d_param_bits_a,
+        d_param_bits_b,
+        d_graph_ids,
+        phase_indices,
+        approximate_floatfactors,
+        power2,
+        floatfactor,
+    ) = children
+
+    return CompiledCircuit(
+        num_graphs=num_graphs,
+        n_params=n_params,
+        a_const_phases=a_const_phases,
+        a_param_bits=a_param_bits,
+        a_graph_ids=a_graph_ids,
+        b_term_types=b_term_types,
+        b_param_bits=b_param_bits,
+        b_graph_ids=b_graph_ids,
+        c_const_bits_a=c_const_bits_a,
+        c_param_bits_a=c_param_bits_a,
+        c_const_bits_b=c_const_bits_b,
+        c_param_bits_b=c_param_bits_b,
+        c_graph_ids=c_graph_ids,
+        d_const_alpha=d_const_alpha,
+        d_const_beta=d_const_beta,
+        d_param_bits_a=d_param_bits_a,
+        d_param_bits_b=d_param_bits_b,
+        d_graph_ids=d_graph_ids,
+        phase_indices=phase_indices,
+        has_approximate_floatfactors=aux_data,
+        approximate_floatfactors=approximate_floatfactors,
+        power2=power2,
+        floatfactor=floatfactor,
+    )
+
+
+jax.tree_util.register_pytree_node(
+    CompiledCircuit, _flatten_compiled_circuit, _unflatten_compiled_circuit
+)
 
 
 def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircuit:

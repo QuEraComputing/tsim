@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from math import ceil
 from typing import TYPE_CHECKING, Literal, overload
 
@@ -8,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from tsim.channels import ChannelSampler, create_channels_from_specs
-from tsim.evaluate import evaluate_batch_numpy
+from tsim.evaluate import evaluate_batch_jax, evaluate_batch_numpy
 from tsim.graph_util import prepare_graph
 from tsim.program import compile_program
 from tsim.types import CompiledComponent, CompiledProgram, PreparedGraph
@@ -19,12 +18,12 @@ if TYPE_CHECKING:
     from tsim.circuit import Circuit
 
 
-def sample_component(
+def _sample_component_impl(
     component: CompiledComponent,
-    f_params: jnp.ndarray,
+    f_params: jax.Array,
     key: PRNGKey,
-) -> tuple[np.ndarray, PRNGKey]:
-    """Sample outputs from a single component using autoregressive sampling.
+) -> tuple[jax.Array, PRNGKey]:
+    """Implementation of component sampling using autoregressive sampling.
 
     Args:
         component: The compiled component to sample from.
@@ -38,13 +37,13 @@ def sample_component(
     batch_size = f_params.shape[0]
 
     # Select this component's f-parameters
-    f_selected = jnp.asarray(f_params[:, component.f_selection], dtype=jnp.bool_)
+    f_selected = f_params[:, component.f_selection].astype(jnp.bool_)
 
     # Initialize m_accumulated as empty
     m_accumulated = jnp.empty((batch_size, 0), dtype=jnp.bool_)
 
     # First circuit is normalization (only f-params)
-    prev = np.abs(evaluate_batch_numpy(component.circuits[0], f_selected))
+    prev = jnp.abs(evaluate_batch_jax(component.circuits[0], f_selected))
 
     # Autoregressive sampling for remaining circuits
     for circuit in component.circuits[1:]:
@@ -53,7 +52,7 @@ def sample_component(
         params = jnp.hstack([f_selected, m_accumulated, ones])
 
         # Evaluate P(bit=1 | previous bits)
-        p1 = np.abs(evaluate_batch_numpy(circuit, params))
+        p1 = jnp.abs(evaluate_batch_jax(circuit, params))
 
         # Sample from Bernoulli
         key, subkey = jax.random.split(key)
@@ -65,14 +64,46 @@ def sample_component(
         # Accumulate the sampled bit
         m_accumulated = jnp.hstack([m_accumulated, bits[:, None]])
 
-    return np.asarray(m_accumulated, dtype=np.bool_), key
+    return m_accumulated, key
+
+
+@jax.jit
+def _sample_component_jit(
+    component: CompiledComponent,
+    f_params: jax.Array,
+    key: PRNGKey,
+) -> tuple[jax.Array, PRNGKey]:
+    """JIT-compiled version of component sampling."""
+    return _sample_component_impl(component, f_params, key)
+
+
+def sample_component(
+    component: CompiledComponent,
+    f_params: jax.Array,
+    key: PRNGKey,
+) -> tuple[jax.Array, PRNGKey]:
+    """Sample outputs from a single component using autoregressive sampling.
+
+    Args:
+        component: The compiled component to sample from.
+        f_params: Error parameters, shape (batch_size, num_f_global).
+        key: JAX random key.
+
+    Returns:
+        Tuple of (samples, next_key) where samples has shape
+        (batch_size, num_outputs_for_component).
+    """
+    # Skip JIT for small components (overhead not worth it)
+    if len(component.output_indices) <= 1:
+        return _sample_component_impl(component, f_params, key)
+    return _sample_component_jit(component, f_params, key)
 
 
 def sample_program(
     program: CompiledProgram,
-    f_params: jnp.ndarray,
+    f_params: jax.Array,
     key: PRNGKey,
-) -> np.ndarray:
+) -> jax.Array:
     """Sample all outputs from a compiled program.
 
     Args:
@@ -84,17 +115,17 @@ def sample_program(
         Samples array of shape (batch_size, num_outputs), reordered to
         match the original output indices.
     """
-    results: list[np.ndarray] = []
+    results: list[jax.Array] = []
 
     for component in program.components:
         samples, key = sample_component(component, f_params, key)
         results.append(samples)
 
     # Combine results from all components
-    combined = np.concatenate(results, axis=1)
+    combined = jnp.concatenate(results, axis=1)
 
     # Reorder to original output order
-    return combined[:, np.argsort(program.output_order)]
+    return combined[:, jnp.argsort(program.output_order)]
 
 
 # =============================================================================
@@ -154,7 +185,7 @@ class CompiledMeasurementSampler:
         if shots < batch_size:
             batch_size = shots
 
-        batches: list[np.ndarray] = []
+        batches: list[jax.Array] = []
         for _ in range(ceil(shots / batch_size)):
             f_params = self._channel_sampler.sample(batch_size)
             self._key, subkey = jax.random.split(self._key)
@@ -266,7 +297,7 @@ class CompiledDetectorSampler:
         if shots < batch_size:
             batch_size = shots
 
-        batches: list[np.ndarray] = []
+        batches: list[jax.Array] = []
         for _ in range(ceil(shots / batch_size)):
             f_params = self._channel_sampler.sample(batch_size)
             self._key, subkey = jax.random.split(self._key)

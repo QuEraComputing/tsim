@@ -201,9 +201,22 @@ def evaluate(
 evaluate_batch = jax.vmap(evaluate, in_axes=(None, 0, None))
 
 
+def evaluate_batch_jax(
+    circuit: CompiledCircuit, param_vals: jnp.ndarray
+) -> jnp.ndarray:
+    """Evaluate compiled circuit with batched parameters, returning JAX array."""
+    result = evaluate_batch(circuit, param_vals, circuit.has_approximate_floatfactors)
+    if circuit.has_approximate_floatfactors:
+        assert isinstance(result, jnp.ndarray)
+        return result
+    assert isinstance(result, ExactScalarArray)
+    return result.to_complex()
+
+
 def evaluate_batch_numpy(
     circuit: CompiledCircuit, param_vals: jnp.ndarray
 ) -> np.ndarray:
+    """Evaluate compiled circuit with batched parameters, returning numpy array."""
     if not circuit.has_approximate_floatfactors:
         return evaluate_batch(
             circuit, param_vals, circuit.has_approximate_floatfactors

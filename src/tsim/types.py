@@ -13,7 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import numpy as np
+import jax
+import jax.numpy as jnp
 
 if TYPE_CHECKING:
     from pyzx.graph.base import BaseGraph
@@ -70,7 +71,7 @@ class CompiledComponent:
     """
 
     output_indices: tuple[int, ...]
-    f_selection: np.ndarray
+    f_selection: jnp.ndarray
     circuits: tuple[CompiledCircuit, ...]
 
 
@@ -91,7 +92,31 @@ class CompiledProgram:
     """
 
     components: tuple[CompiledComponent, ...]
-    output_order: np.ndarray
+    output_order: jnp.ndarray
     num_outputs: int
     num_f_params: int
     num_detectors: int
+
+
+# Register CompiledComponent as a pytree so it can be used as a dynamic JAX
+# argument (instead of being treated as a static, hashable object).
+def _flatten_compiled_component(component: CompiledComponent):
+    children = (component.f_selection, component.circuits)
+    aux_data = component.output_indices
+    return children, aux_data
+
+
+def _unflatten_compiled_component(
+    aux_data: tuple[int, ...], children: tuple[jnp.ndarray, tuple]
+) -> CompiledComponent:
+    f_selection, circuits = children
+    return CompiledComponent(
+        output_indices=aux_data,
+        f_selection=f_selection,
+        circuits=tuple(circuits),
+    )
+
+
+jax.tree_util.register_pytree_node(
+    CompiledComponent, _flatten_compiled_component, _unflatten_compiled_component
+)
