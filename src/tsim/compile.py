@@ -23,9 +23,10 @@ class CompiledScalarGraphs(eqx.Module):
     n_params: int
 
     # Type A: Node Terms (1 + e^(i*alpha))
-    # Padded with const_phase=0 which gives (1+e^0)=2; compensated in power2
+    # Padded terms are masked to the multiplicative identity at evaluation time.
     a_const_phases: Array  # shape: (num_graphs, max_a), dtype: uint8, values: 0-7
     a_param_bits: Array  # shape: (num_graphs, max_a, n_params), dtype: uint8
+    a_num_terms: Array  # shape: (num_graphs,), dtype: int32
 
     # Type B: Half-Pi Terms (e^(i*beta))
     b_term_types: Array  # shape: (num_graphs, max_b), dtype: uint8, values: {0,2,4,6}
@@ -38,11 +39,12 @@ class CompiledScalarGraphs(eqx.Module):
     c_param_bits_b: Array  # shape: (num_graphs, max_c, n_params), dtype: uint8
 
     # Type D: Phase Pairs (1 + e^a + e^b - e^(a+b))
-    # Padded with alpha=0, beta=0 which gives 1+1+1-1=2; compensated in power2
+    # Padded terms are masked to the multiplicative identity at evaluation time.
     d_const_alpha: Array  # shape: (num_graphs, max_d), dtype: uint8, values: 0-7
     d_const_beta: Array  # shape: (num_graphs, max_d), dtype: uint8, values: 0-7
     d_param_bits_a: Array  # shape: (num_graphs, max_d, n_params), dtype: uint8
     d_param_bits_b: Array  # shape: (num_graphs, max_d, n_params), dtype: uint8
+    d_num_terms: Array  # shape: (num_graphs,), dtype: int32
 
     # Static per-graph data
     phase_indices: Array  # shape: (num_graphs,), dtype: uint8 (values 0-7)
@@ -96,7 +98,8 @@ def compile_scalar_graphs(
             const_term = int(g_i.scalar.phasenodes[term] * 4)  # type: ignore[arg-type]
             a_terms_per_graph[i].append((const_term, bitstr))
 
-    max_a = max((len(terms) for terms in a_terms_per_graph), default=0)
+    a_num_terms = np.array([len(terms) for terms in a_terms_per_graph], dtype=np.int32)
+    max_a = int(a_num_terms.max()) if a_num_terms.size else 0
     max_a = max(max_a, 1)
 
     # Pad with const_phase=0, param_bits=0 -> (1+e^0)=2; compensated in power2.
@@ -219,7 +222,8 @@ def compile_scalar_graphs(
                 (const_alpha, const_beta, param_bits_a, param_bits_b)
             )
 
-    max_d = max((len(terms) for terms in d_terms_per_graph), default=0)
+    d_num_terms = np.array([len(terms) for terms in d_terms_per_graph], dtype=np.int32)
+    max_d = int(d_num_terms.max()) if d_num_terms.size else 0
     max_d = max(max_d, 1)
 
     # Pad with alpha=0, beta=0 -> 1+1+1-1=2; compensated in power2.
@@ -270,13 +274,7 @@ def compile_scalar_graphs(
         p_sqrt2 -= 2 * dn.k
         dn.k = 0
 
-        # Padding compensation: each padded A/D term contributes factor of 2.
-        # power2 is in powers of 2, so subtract 1 per padded term.
-        n_padded_a = max_a - len(a_terms_per_graph[i])
-        n_padded_d = max_d - len(d_terms_per_graph[i])
-        padding_compensation = n_padded_a + n_padded_d
-
-        power2.append(p_sqrt2 // 2 - padding_compensation)
+        power2.append(p_sqrt2 // 2)
         exact_floatfactor.append([dn.a, dn.b, dn.c, dn.d])
 
     return CompiledScalarGraphs(
@@ -284,6 +282,7 @@ def compile_scalar_graphs(
         n_params=n_params,
         a_const_phases=jnp.array(a_const_phases),
         a_param_bits=jnp.array(a_param_bits),
+        a_num_terms=jnp.array(a_num_terms, dtype=jnp.int32),
         b_term_types=jnp.array(b_term_types),
         b_param_bits=jnp.array(b_param_bits),
         c_const_bits_a=jnp.array(c_const_bits_a),
@@ -294,6 +293,7 @@ def compile_scalar_graphs(
         d_const_beta=jnp.array(d_const_beta),
         d_param_bits_a=jnp.array(d_param_bits_a),
         d_param_bits_b=jnp.array(d_param_bits_b),
+        d_num_terms=jnp.array(d_num_terms, dtype=jnp.int32),
         phase_indices=phase_indices,
         has_approximate_floatfactors=has_approximate_floatfactors,
         approximate_floatfactors=approximate_floatfactors,

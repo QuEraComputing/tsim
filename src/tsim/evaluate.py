@@ -69,7 +69,7 @@ def evaluate(
     # ====================================================================
     # TYPE A: Node Terms (1 + e^(i*alpha))
     # Shape: (num_graphs, max_a) -> (num_graphs, max_a, 4) -> prod -> (num_graphs, 4)
-    # Padded values (const_phase=0) give (1+e^0)=2, compensated in power2.
+    # Padded values are masked to multiplicative identity.
     # ====================================================================
     # a_param_bits: (num_graphs, max_a, n_params), param_vals: (n_params,)
     # Broadcast: (num_graphs, max_a, n_params) * (n_params,) -> sum over last axis
@@ -77,6 +77,13 @@ def evaluate(
     phase_idx_a = (4 * rowsum_a + circuit.a_const_phases) % 8
 
     term_vals_a_exact = one_plus_phases_exact[phase_idx_a]  # (num_graphs, max_a, 4)
+    a_mask = (
+        jnp.arange(circuit.a_const_phases.shape[1])[None, :]
+        < circuit.a_num_terms[:, None]
+    )
+    term_vals_a_exact = jnp.where(
+        a_mask[..., None], term_vals_a_exact, jnp.array([1, 0, 0, 0], dtype=jnp.int32)
+    )
 
     term_vals_a = ExactScalarArray(term_vals_a_exact)
     summands_a = term_vals_a.prod(axis=1)  # (num_graphs, 4)
@@ -117,7 +124,7 @@ def evaluate(
 
     # ====================================================================
     # TYPE D: Phase Pairs (1 + e^a + e^b - e^g)
-    # Padded values (alpha=0, beta=0) give 1+1+1-1=2, compensated in power2.
+    # Padded values are masked to multiplicative identity.
     # ====================================================================
     rowsum_a_d = jnp.sum(circuit.d_param_bits_a * param_vals, axis=-1) % 2
     rowsum_b_d = jnp.sum(circuit.d_param_bits_b * param_vals, axis=-1) % 2
@@ -132,6 +139,13 @@ def evaluate(
         + unit_phases_exact[alpha]
         + unit_phases_exact[beta]
         - unit_phases_exact[gamma]
+    )
+    d_mask = (
+        jnp.arange(circuit.d_const_alpha.shape[1])[None, :]
+        < circuit.d_num_terms[:, None]
+    )
+    term_vals_d_exact = jnp.where(
+        d_mask[..., None], term_vals_d_exact, jnp.array([1, 0, 0, 0], dtype=jnp.int32)
     )
 
     term_vals_d = ExactScalarArray(term_vals_d_exact)
