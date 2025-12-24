@@ -196,7 +196,11 @@ class CompiledMeasurementSampler:
         return np.concatenate(batches)[:shots]
 
     def __repr__(self) -> str:
-        return _program_repr(self._program, "CompiledMeasurementSampler")
+        return _program_repr(
+            self._program,
+            len(self._channel_sampler.error_channels),
+            "CompiledMeasurementSampler",
+        )
 
 
 def maybe_bit_pack(array: np.ndarray, *, do_nothing: bool = False) -> np.ndarray:
@@ -329,7 +333,11 @@ class CompiledDetectorSampler:
         # TODO: don't compute observables if they are discarded here
 
     def __repr__(self) -> str:
-        return _program_repr(self._program, "CompiledDetectorSampler")
+        return _program_repr(
+            self._program,
+            len(self._channel_sampler.error_channels),
+            "CompiledDetectorSampler",
+        )
 
 
 class CompiledStateProbs:
@@ -403,10 +411,14 @@ class CompiledStateProbs:
         return p_joint / p_norm
 
     def __repr__(self) -> str:
-        return _program_repr(self._program, "CompiledStateProbs")
+        return _program_repr(
+            self._program,
+            len(self._channel_sampler.error_channels),
+            "CompiledStateProbs",
+        )
 
 
-def _program_repr(program: CompiledProgram, class_name: str) -> str:
+def _program_repr(program: CompiledProgram, num_channels: int, class_name: str) -> str:
     """Generate a repr string for a compiled sampler."""
     c_graphs = []
     c_params = []
@@ -415,9 +427,12 @@ def _program_repr(program: CompiledProgram, class_name: str) -> str:
     c_c_terms = []
     c_d_terms = []
     num_circuits = 0
+    total_memory_bytes = 0
+    num_outputs = []
 
     for component in program.components:
         for circuit in component.circuits:
+            num_outputs.append(len(component.output_indices))
             c_graphs.append(circuit.num_graphs)
             c_params.append(circuit.n_params)
             c_a_terms.append(len(circuit.a_graph_ids))
@@ -426,9 +441,38 @@ def _program_repr(program: CompiledProgram, class_name: str) -> str:
             c_d_terms.append(len(circuit.d_graph_ids))
             num_circuits += 1
 
+            # Calculate memory usage of all jax.Array fields in CompiledCircuit
+            total_memory_bytes += (
+                circuit.a_const_phases.nbytes
+                + circuit.a_param_bits.nbytes
+                + circuit.a_graph_ids.nbytes
+                + circuit.b_term_types.nbytes
+                + circuit.b_param_bits.nbytes
+                + circuit.b_graph_ids.nbytes
+                + circuit.c_const_bits_a.nbytes
+                + circuit.c_param_bits_a.nbytes
+                + circuit.c_const_bits_b.nbytes
+                + circuit.c_param_bits_b.nbytes
+                + circuit.c_graph_ids.nbytes
+                + circuit.d_const_alpha.nbytes
+                + circuit.d_const_beta.nbytes
+                + circuit.d_param_bits_a.nbytes
+                + circuit.d_param_bits_b.nbytes
+                + circuit.d_graph_ids.nbytes
+                + circuit.phase_indices.nbytes
+                + circuit.approximate_floatfactors.nbytes
+                + circuit.power2.nbytes
+                + circuit.floatfactor.nbytes
+            )
+
+    total_memory_gb = total_memory_bytes / (1024**2)
+
     return (
         f"{class_name}({np.sum(c_graphs)} graphs, "
+        f"{num_channels} error channels, "
+        f"{np.max(num_outputs)} outputs for largest cc, "
         f"{np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
         f"{np.sum(c_b_terms)} B terms, "
-        f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms)"
+        f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms, "
+        f"{total_memory_gb:.3f} MB)"
     )

@@ -252,22 +252,36 @@ class ChannelSampler:
         ]
 
         self.error_channels = [ch for ch, _ in filtered]
-        kept_evars = [evar for _, evars in filtered for evar in evars]
-        e2idx = {evar: i for i, evar in enumerate(kept_evars)}
+        filtered_evars = [evars for _, evars in filtered]
 
-        # Build transformation matrix: shape (num_e_vars, num_f_vars)
-        transform = np.zeros((len(e2idx), len(error_transform)), dtype=np.uint8)
-        for col, e_vars in enumerate(error_transform.values()):
-            transform[[e2idx[evar] for evar in e_vars], col] = 1
+        # Build per-channel transform slices: each channel's e-vars map to f-vars
+        # This allows direct accumulation without concatenation
+        num_f = len(error_transform)
+        f_var_list = list(error_transform.keys())
+        f2idx = {f: i for i, f in enumerate(f_var_list)}
 
-        self.error_transform = jnp.array(transform).astype(jnp.float32)
+        self.channel_transforms: list[jax.Array] = []
+        for evars in filtered_evars:
+            # Build transform slice for this channel: shape (num_bits, num_f)
+            slice_transform = np.zeros((len(evars), num_f), dtype=np.uint8)
+            for row, evar in enumerate(evars):
+                for f_var, e_set in error_transform.items():
+                    if evar in e_set:
+                        slice_transform[row, f2idx[f_var]] = 1
+            self.channel_transforms.append(jnp.array(slice_transform, dtype=jnp.uint8))
+
+        self.num_f = num_f
 
     def sample(self, num_samples: int = 1) -> jax.Array:
         """Sample from all error channels and transform to new error basis."""
-        if len(self.error_channels) == 0:
-            return jnp.zeros((num_samples, 0), dtype=jnp.bool)
-        samples = []
-        for channel in self.error_channels:
-            samples.append(channel.sample(num_samples))
-        total_samples = jnp.concatenate(samples, axis=1).astype(jnp.float32)
-        return (total_samples @ self.error_transform % 2).astype(jnp.bool)
+        # Initialize result accumulator
+        result = jnp.zeros((num_samples, self.num_f), dtype=jnp.uint8)
+
+        # Sample each channel and directly accumulate into result
+        for channel, transform in zip(self.error_channels, self.channel_transforms):
+            channel_samples = channel.sample(
+                num_samples
+            )  # shape: (num_samples, num_bits)
+            result = result + (channel_samples @ transform)
+
+        return (result % 2).astype(jnp.bool)
