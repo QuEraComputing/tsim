@@ -5,13 +5,13 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
-from tsim.compile import CompiledCircuit
+from tsim.compile import CompiledScalarGraphs
 from tsim.exact_scalar import ExactScalarArray
 
 
 @overload
 def evaluate(
-    circuit: CompiledCircuit,
+    circuit: CompiledScalarGraphs,
     param_vals: Array,
     has_approximate_floatfactor: Literal[False],
 ) -> ExactScalarArray: ...
@@ -19,7 +19,7 @@ def evaluate(
 
 @overload
 def evaluate(
-    circuit: CompiledCircuit,
+    circuit: CompiledScalarGraphs,
     param_vals: Array,
     has_approximate_floatfactor: Literal[True],
 ) -> Array: ...
@@ -27,7 +27,7 @@ def evaluate(
 
 @overload
 def evaluate(
-    circuit: CompiledCircuit,
+    circuit: CompiledScalarGraphs,
     param_vals: Array,
     has_approximate_floatfactor: bool,
 ) -> ExactScalarArray | Array: ...
@@ -35,7 +35,7 @@ def evaluate(
 
 @functools.partial(jax.jit, static_argnums=(2,))
 def evaluate(
-    circuit: CompiledCircuit, param_vals: Array, has_approximate_floatfactor: bool
+    circuit: CompiledScalarGraphs, param_vals: Array, has_approximate_floatfactor: bool
 ) -> ExactScalarArray | Array:
     """Evaluate compiled circuit with parameter values.
 
@@ -178,7 +178,7 @@ def evaluate(
 _evaluate_batch = jax.vmap(evaluate, in_axes=(None, 0, None))
 
 
-def evaluate_batch(circuit: CompiledCircuit, param_vals: Array) -> Array:
+def evaluate_batch(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
     """Evaluate compiled circuit with batched parameters, returning JAX array."""
     if circuit.has_approximate_floatfactors:
         return _evaluate_batch(circuit, param_vals, True)

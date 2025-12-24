@@ -11,7 +11,7 @@ from tsim.channels import ChannelSampler, create_channels_from_specs
 from tsim.evaluate import evaluate_batch
 from tsim.graph_util import prepare_graph
 from tsim.program import compile_program
-from tsim.types import CompiledComponent, CompiledProgram, PreparedGraph
+from tsim.types import CompiledComponent, CompiledProgram, SamplingGraph
 
 if TYPE_CHECKING:
     from jax import Array as PRNGKey
@@ -134,7 +134,7 @@ def sample_program(
 # =============================================================================
 
 
-def _create_channel_sampler(prepared: PreparedGraph, key: PRNGKey) -> ChannelSampler:
+def _create_channel_sampler(prepared: SamplingGraph, key: PRNGKey) -> ChannelSampler:
     """Create a channel sampler from a prepared graph."""
     error_channels = create_channels_from_specs(prepared.error_specs, key)
     return ChannelSampler(

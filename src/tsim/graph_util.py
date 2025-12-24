@@ -15,7 +15,7 @@ from pyzx.utils import VertexType
 
 from tsim._instructions import GraphRepresentation
 from tsim.parse import parse_stim_circuit
-from tsim.types import PreparedGraph
+from tsim.types import SamplingGraph
 from tsim.util.linalg import find_basis
 
 if TYPE_CHECKING:
@@ -429,7 +429,7 @@ def scale_horizontally(g: BaseGraph, scale: float) -> None:
         g.set_row(v, g.row(v) * scale)
 
 
-def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> PreparedGraph:
+def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> SamplingGraph:
     """Prepare a circuit for compilation.
 
     This function performs the graph preparation phase:
@@ -462,7 +462,7 @@ def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> PreparedGraph:
     # This avoids computing scalars that would cancel out anyway during normalization.
     graph.scalar = Scalar()
 
-    return PreparedGraph(
+    return SamplingGraph(
         graph=graph,
         error_transform=error_transform_dict,
         error_specs=built.error_specs,

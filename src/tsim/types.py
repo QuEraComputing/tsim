@@ -20,12 +20,13 @@ if TYPE_CHECKING:
     from pyzx.graph.base import BaseGraph
 
     from tsim.channels import ErrorSpec
-    from tsim.compile import CompiledCircuit
+    from tsim.compile import CompiledScalarGraphs
 
 
 @dataclass(frozen=True)
-class PreparedGraph:
-    """Result of the graph preparation phase.
+class SamplingGraph:
+    """Result of the graph preparation phase, contained all data structures needed for
+    sampling.
 
     This represents a circuit that has been:
     1. Parsed from stim format
@@ -36,11 +37,10 @@ class PreparedGraph:
 
     Attributes:
         graph: The prepared ZX graph with f-parameters on vertices.
-        error_transform: Matrix of shape (num_e, num_f) for e→f basis conversion.
-            f_samples = (e_samples @ error_transform) % 2
-        error_specs: Specifications for creating error channel samplers.
+        error_transform: Dictionary mapping error variable names to sets of f-variables.
+        error_specs: Specifications for creating error channels.
         num_outputs: Number of output vertices (measurements or detectors).
-        num_detectors: Number of detector outputs (for detector sampling).
+        num_detectors: Number of detector vertices.
     """
 
     graph: BaseGraph
@@ -72,7 +72,7 @@ class CompiledComponent:
 
     output_indices: tuple[int, ...]
     f_selection: Array
-    circuits: tuple[CompiledCircuit, ...]
+    circuits: tuple[CompiledScalarGraphs, ...]
 
 
 @dataclass(frozen=True)
@@ -98,8 +98,7 @@ class CompiledProgram:
     num_detectors: int
 
 
-# Register CompiledComponent as a pytree so it can be used as a dynamic JAX
-# argument (instead of being treated as a static, hashable object).
+# Register CompiledComponent as a pytree so it can be used as a dynamic JAX argument.
 def _flatten_compiled_component(component: CompiledComponent):
     children = (component.f_selection, component.circuits)
     aux_data = component.output_indices

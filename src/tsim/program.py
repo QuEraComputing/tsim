@@ -1,11 +1,3 @@
-"""Program compilation for the tsim sampling pipeline.
-
-This module handles compiling a prepared graph into an executable program:
-1. Split graph into connected components
-2. For each component, plug outputs and compile
-3. Create the CompiledProgram with all metadata for sampling
-"""
-
 from __future__ import annotations
 
 from typing import Literal
@@ -14,16 +6,16 @@ import jax.numpy as jnp
 import pyzx as zx
 from pyzx.graph.base import BaseGraph
 
-from tsim.compile import CompiledCircuit, compile_circuit
+from tsim.compile import CompiledScalarGraphs, compile_scalar_graphs
 from tsim.graph_util import ConnectedComponent, connected_components, get_params
 from tsim.stabrank import find_stab
-from tsim.types import CompiledComponent, CompiledProgram, PreparedGraph
+from tsim.types import CompiledComponent, CompiledProgram, SamplingGraph
 
 DecompositionMode = Literal["sequential", "joint"]
 
 
 def compile_program(
-    prepared: PreparedGraph,
+    prepared: SamplingGraph,
     *,
     mode: DecompositionMode,
 ) -> CompiledProgram:
@@ -113,7 +105,7 @@ def _compile_component(
         outputs_to_plug = [0, num_component_outputs]
 
     # Plug outputs and compile each graph
-    circuits: list[CompiledCircuit] = []
+    circuits: list[CompiledScalarGraphs] = []
 
     component_m_chars = [f"m{i}" for i in output_indices]
     plugged_graphs = _plug_outputs(graph, component_m_chars, outputs_to_plug)
@@ -142,7 +134,7 @@ def _compile_component(
 
         # Perform stabilizer rank decomposition and compile
         g_list = find_stab(g_copy)
-        compiled = compile_circuit(g_list, param_names)
+        compiled = compile_scalar_graphs(g_list, param_names)
         circuits.append(compiled)
 
     return CompiledComponent(

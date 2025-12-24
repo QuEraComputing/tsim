@@ -10,8 +10,8 @@ from pyzx.graph.base import BaseGraph
 from pyzx.graph.scalar import DyadicNumber
 
 
-class CompiledCircuit(NamedTuple):
-    """JAX-compatible compiled circuit representation.
+class CompiledScalarGraphs(NamedTuple):
+    """JAX-compatible compiled scalar graphs representation.
 
     All fields are static-shaped Jax arrays
 
@@ -29,9 +29,7 @@ class CompiledCircuit(NamedTuple):
     a_param_bits: Array  # shape: (num_graphs, max_a, n_params), dtype: uint8
 
     # Type B: Half-Pi Terms (e^(i*beta))
-    b_term_types: (
-        Array  # shape: (num_graphs, max_b), dtype: uint8, values: {0, 2, 4, 6}
-    )
+    b_term_types: Array  # shape: (num_graphs, max_b), dtype: uint8, values: {0,2,4,6}
     b_param_bits: Array  # shape: (num_graphs, max_b, n_params), dtype: uint8
 
     # Type C: Pi-Pair Terms (e^(i*Psi*Phi))
@@ -56,7 +54,7 @@ class CompiledCircuit(NamedTuple):
     floatfactor: Array  # shape: (num_graphs, 4), dtype: int32
 
 
-def _flatten_compiled_circuit(circuit: CompiledCircuit):
+def _flatten_compiled_scalar_graphs(circuit: CompiledScalarGraphs):
     children = (
         circuit.num_graphs,
         circuit.n_params,
@@ -81,7 +79,7 @@ def _flatten_compiled_circuit(circuit: CompiledCircuit):
     return children, aux_data
 
 
-def _unflatten_compiled_circuit(aux_data: bool, children) -> CompiledCircuit:
+def _unflatten_compiled_scalar_graphs(aux_data: bool, children) -> CompiledScalarGraphs:
     (
         num_graphs,
         n_params,
@@ -103,7 +101,7 @@ def _unflatten_compiled_circuit(aux_data: bool, children) -> CompiledCircuit:
         floatfactor,
     ) = children
 
-    return CompiledCircuit(
+    return CompiledScalarGraphs(
         num_graphs=num_graphs,
         n_params=n_params,
         a_const_phases=a_const_phases,
@@ -127,11 +125,15 @@ def _unflatten_compiled_circuit(aux_data: bool, children) -> CompiledCircuit:
 
 
 jax.tree_util.register_pytree_node(
-    CompiledCircuit, _flatten_compiled_circuit, _unflatten_compiled_circuit
+    CompiledScalarGraphs,
+    _flatten_compiled_scalar_graphs,
+    _unflatten_compiled_scalar_graphs,
 )
 
 
-def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircuit:
+def compile_scalar_graphs(
+    g_list: list[BaseGraph], params: list[str]
+) -> CompiledScalarGraphs:
     """Compile ZX-graph list into JAX-compatible structure for fast evaluation.
 
     Args:
@@ -140,7 +142,7 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
             the jax.Arrays of the compiled circuit.
 
     Returns:
-        CompiledCircuit with all data in static-shaped arrays
+        CompiledScalarGraphs with all data in static-shaped JAX arrays
     """
     for i, g in enumerate(g_list):
         assert (
@@ -355,7 +357,7 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
         power2.append(p_sqrt2 // 2 - padding_compensation)
         exact_floatfactor.append([dn.a, dn.b, dn.c, dn.d])
 
-    return CompiledCircuit(
+    return CompiledScalarGraphs(
         num_graphs=num_graphs,
         n_params=n_params,
         a_const_phases=jnp.array(a_const_phases),
