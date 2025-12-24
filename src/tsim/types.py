@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import jax
+import equinox as eqx
 from jax import Array
 
 if TYPE_CHECKING:
@@ -50,8 +50,7 @@ class SamplingGraph:
     num_detectors: int
 
 
-@dataclass(frozen=True)
-class CompiledComponent:
+class CompiledComponent(eqx.Module):
     """A single compiled connected component of a circuit.
 
     Each component is independent and can be sampled separately. The results
@@ -70,7 +69,7 @@ class CompiledComponent:
             - circuits[1]: All outputs plugged
     """
 
-    output_indices: tuple[int, ...]
+    output_indices: tuple[int, ...] = eqx.field(static=True)
     f_selection: Array
     circuits: tuple[CompiledScalarGraphs, ...]
 
@@ -96,26 +95,3 @@ class CompiledProgram:
     num_outputs: int
     num_f_params: int
     num_detectors: int
-
-
-# Register CompiledComponent as a pytree so it can be used as a dynamic JAX argument.
-def _flatten_compiled_component(component: CompiledComponent):
-    children = (component.f_selection, component.circuits)
-    aux_data = component.output_indices
-    return children, aux_data
-
-
-def _unflatten_compiled_component(
-    aux_data: tuple[int, ...], children: tuple[Array, tuple]
-) -> CompiledComponent:
-    f_selection, circuits = children
-    return CompiledComponent(
-        output_indices=aux_data,
-        f_selection=f_selection,
-        circuits=tuple(circuits),
-    )
-
-
-jax.tree_util.register_pytree_node(
-    CompiledComponent, _flatten_compiled_component, _unflatten_compiled_component
-)

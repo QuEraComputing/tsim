@@ -1,8 +1,7 @@
 from collections import defaultdict
 from fractions import Fraction
-from typing import NamedTuple
 
-import jax
+import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
@@ -10,10 +9,10 @@ from pyzx.graph.base import BaseGraph
 from pyzx.graph.scalar import DyadicNumber
 
 
-class CompiledScalarGraphs(NamedTuple):
+class CompiledScalarGraphs(eqx.Module):
     """JAX-compatible compiled scalar graphs representation.
 
-    All fields are static-shaped Jax arrays
+    All fields are static-shaped JAX arrays.
 
     Term arrays are 2D with shape (num_graphs, max_terms_per_graph) and padded
     with identity values (1 for products, 0 for sums) for graphs with fewer terms.
@@ -47,88 +46,11 @@ class CompiledScalarGraphs(NamedTuple):
 
     # Static per-graph data
     phase_indices: Array  # shape: (num_graphs,), dtype: uint8 (values 0-7)
-    has_approximate_floatfactors: bool
+    has_approximate_floatfactors: bool = eqx.field(static=True)
     # TODO: use complex128
     approximate_floatfactors: Array  # shape: (num_graphs,), dtype: complex64
     power2: Array  # shape: (num_graphs,), dtype: int32
     floatfactor: Array  # shape: (num_graphs, 4), dtype: int32
-
-
-def _flatten_compiled_scalar_graphs(circuit: CompiledScalarGraphs):
-    children = (
-        circuit.num_graphs,
-        circuit.n_params,
-        circuit.a_const_phases,
-        circuit.a_param_bits,
-        circuit.b_term_types,
-        circuit.b_param_bits,
-        circuit.c_const_bits_a,
-        circuit.c_param_bits_a,
-        circuit.c_const_bits_b,
-        circuit.c_param_bits_b,
-        circuit.d_const_alpha,
-        circuit.d_const_beta,
-        circuit.d_param_bits_a,
-        circuit.d_param_bits_b,
-        circuit.phase_indices,
-        circuit.approximate_floatfactors,
-        circuit.power2,
-        circuit.floatfactor,
-    )
-    aux_data = circuit.has_approximate_floatfactors
-    return children, aux_data
-
-
-def _unflatten_compiled_scalar_graphs(aux_data: bool, children) -> CompiledScalarGraphs:
-    (
-        num_graphs,
-        n_params,
-        a_const_phases,
-        a_param_bits,
-        b_term_types,
-        b_param_bits,
-        c_const_bits_a,
-        c_param_bits_a,
-        c_const_bits_b,
-        c_param_bits_b,
-        d_const_alpha,
-        d_const_beta,
-        d_param_bits_a,
-        d_param_bits_b,
-        phase_indices,
-        approximate_floatfactors,
-        power2,
-        floatfactor,
-    ) = children
-
-    return CompiledScalarGraphs(
-        num_graphs=num_graphs,
-        n_params=n_params,
-        a_const_phases=a_const_phases,
-        a_param_bits=a_param_bits,
-        b_term_types=b_term_types,
-        b_param_bits=b_param_bits,
-        c_const_bits_a=c_const_bits_a,
-        c_param_bits_a=c_param_bits_a,
-        c_const_bits_b=c_const_bits_b,
-        c_param_bits_b=c_param_bits_b,
-        d_const_alpha=d_const_alpha,
-        d_const_beta=d_const_beta,
-        d_param_bits_a=d_param_bits_a,
-        d_param_bits_b=d_param_bits_b,
-        phase_indices=phase_indices,
-        has_approximate_floatfactors=aux_data,
-        approximate_floatfactors=approximate_floatfactors,
-        power2=power2,
-        floatfactor=floatfactor,
-    )
-
-
-jax.tree_util.register_pytree_node(
-    CompiledScalarGraphs,
-    _flatten_compiled_scalar_graphs,
-    _unflatten_compiled_scalar_graphs,
-)
 
 
 def compile_scalar_graphs(

@@ -440,7 +440,9 @@ def _program_repr(program: CompiledProgram, num_channels: int, class_name: str) 
             num_circuits += 1
 
             total_memory_bytes += sum(
-                v.nbytes for v in circuit if isinstance(v, jax.Array)
+                v.nbytes
+                for v in jax.tree_util.tree_leaves(circuit)
+                if isinstance(v, jax.Array)
             )
 
     total_memory_mb = total_memory_bytes / (1024**2)
