@@ -1,5 +1,3 @@
-import time
-
 import jax
 import jax.numpy as jnp
 import pytest
@@ -26,47 +24,32 @@ def test_scalar_multiplication(random_scalars):
     assert jnp.allclose(prod_exact.to_complex(), prod_complex)
 
 
-def test_segment_prod(random_scalars):
-
-    N = len(random_scalars)
-    num_segments = 10
-    segment_ids = jnp.sort(
-        jax.random.randint(jax.random.PRNGKey(1), (N,), 0, num_segments)
-    )
+def test_prod(random_scalars):
+    """Test product along axis."""
+    # Reshape to (10, 10, 4) to test product along axis 1
+    scalars = random_scalars.reshape(10, 10, 4)
 
     # Exact computation
-    dyadic_array = ExactScalarArray(random_scalars)
-    prod_exact = dyadic_array.segment_prod(
-        segment_ids, num_segments=num_segments, indices_are_sorted=True
-    )
+    dyadic_array = ExactScalarArray(scalars)
+    prod_exact = dyadic_array.prod(axis=1)
 
-    # Complex verification
-    complex_vals = dyadic_array.to_complex()
-    prod_complex_ref = jax.ops.segment_prod(
-        complex_vals, segment_ids, num_segments=num_segments, indices_are_sorted=True
-    )
+    # Complex verification: manually compute product along axis 1
+    complex_vals = dyadic_array.to_complex()  # (10, 10)
+
+    # Compute product along axis 1 using reduce
+    prod_complex_ref = jnp.prod(complex_vals, axis=1)  # (10,)
 
     assert jnp.allclose(prod_exact.to_complex(), prod_complex_ref, atol=1e-5)
 
 
-def test_segment_prod_unsorted(random_scalars):
-    N = len(random_scalars)
-    num_segments = 10
-    segment_ids = jax.random.randint(jax.random.PRNGKey(1), (N,), 0, num_segments)
+def test_prod_single_element():
+    """Test product of a single element."""
+    scalars = jnp.array([[[1, 2, 0, -1]]])  # (1, 1, 4)
+    dyadic_array = ExactScalarArray(scalars)
+    prod_exact = dyadic_array.prod(axis=1)
 
-    # Exact computation
-    dyadic_array = ExactScalarArray(random_scalars)
-    prod_exact = dyadic_array.segment_prod(
-        segment_ids, num_segments=num_segments, indices_are_sorted=False
-    )
-
-    # Complex verification
-    complex_vals = dyadic_array.to_complex()
-    prod_complex_ref = jax.ops.segment_prod(
-        complex_vals, segment_ids, num_segments=num_segments, indices_are_sorted=False
-    )
-
-    assert jnp.allclose(prod_exact.to_complex(), prod_complex_ref, atol=1e-5)
+    assert prod_exact.coeffs.shape == (1, 4)
+    assert jnp.array_equal(prod_exact.coeffs, jnp.array([[1, 2, 0, -1]]))
 
 
 def test_dyadic_reduce():
@@ -100,64 +83,3 @@ def test_dyadic_reduce():
 
     assert jnp.array_equal(reduced.coeffs, coeffs)
     assert jnp.array_equal(reduced.power, power)
-
-
-if __name__ == "__main__":
-    # Benchmark
-    N_vals = [1000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000]
-    num_segments_ratio = 0.1
-
-    print(f"{'N':<10} | {'Exact (ms)':<15} | {'Complex (ms)':<15} | {'Ratio':<10}")
-    print("-" * 55)
-
-    for N in N_vals:
-        num_segments = int(N * num_segments_ratio)
-        key = jax.random.PRNGKey(0)
-
-        # Data generation
-        scalars = jax.random.randint(key, (N, 4), -5, 5)
-        segment_ids = jnp.sort(jax.random.randint(key, (N,), 0, num_segments))
-        dyadic_vals = ExactScalarArray(scalars)
-        complex_vals = dyadic_vals.to_complex()
-
-        # Warmup
-        _ = dyadic_vals.segment_prod(
-            segment_ids, num_segments, True
-        ).coeffs.block_until_ready()
-        _ = jax.ops.segment_prod(
-            complex_vals.real, segment_ids, num_segments, True
-        ).block_until_ready()  # without .real this leads to segmentation fault on GPU
-
-        # Time Exact
-        start = time.time()
-        for _ in range(10):
-            _ = dyadic_vals.segment_prod(
-                segment_ids, num_segments, True
-            ).coeffs.block_until_ready()
-        end = time.time()
-        time_exact = (end - start) / 10 * 1000
-
-        # Time Complex
-        start = time.time()
-        for _ in range(10):
-            _ = jax.ops.segment_prod(
-                complex_vals.real, segment_ids, num_segments, True
-            ).block_until_ready()
-        end = time.time()
-        time_complex = (end - start) / 10 * 1000
-
-        print(
-            f"{N:<10} | {time_exact:<15.3f} | {time_complex:<15.3f} | {time_exact/time_complex:<10.2f}"
-        )
-
-        # CPU:
-        # N          | Exact (ms)      | Complex (ms)    | Ratio
-        # -------------------------------------------------------
-        # 1000       | 0.165           | 0.128           | 1.29
-        # 10000      | 0.213           | 0.204           | 1.05
-        # 100000     | 0.917           | 0.519           | 1.77
-        # 1000000    | 8.231           | 3.114           | 2.64
-        # 10000000   | 118.212         | 27.932          | 4.23
-        # 100000000  | 1305.727        | 275.444         | 4.74
-
-        # TODO: improve performance. Can we match jax.ops.segment_prod?

@@ -435,37 +435,17 @@ def _program_repr(program: CompiledProgram, num_channels: int, class_name: str) 
             num_outputs.append(len(component.output_indices))
             c_graphs.append(circuit.num_graphs)
             c_params.append(circuit.n_params)
-            c_a_terms.append(len(circuit.a_graph_ids))
-            c_b_terms.append(len(circuit.b_graph_ids))
-            c_c_terms.append(len(circuit.c_graph_ids))
-            c_d_terms.append(len(circuit.d_graph_ids))
+            c_a_terms.append(circuit.a_const_phases.size)
+            c_b_terms.append(circuit.b_term_types.size)
+            c_c_terms.append(circuit.c_const_bits_a.size)
+            c_d_terms.append(circuit.d_const_alpha.size + circuit.d_const_beta.size)
             num_circuits += 1
 
-            # Calculate memory usage of all jax.Array fields in CompiledCircuit
-            total_memory_bytes += (
-                circuit.a_const_phases.nbytes
-                + circuit.a_param_bits.nbytes
-                + circuit.a_graph_ids.nbytes
-                + circuit.b_term_types.nbytes
-                + circuit.b_param_bits.nbytes
-                + circuit.b_graph_ids.nbytes
-                + circuit.c_const_bits_a.nbytes
-                + circuit.c_param_bits_a.nbytes
-                + circuit.c_const_bits_b.nbytes
-                + circuit.c_param_bits_b.nbytes
-                + circuit.c_graph_ids.nbytes
-                + circuit.d_const_alpha.nbytes
-                + circuit.d_const_beta.nbytes
-                + circuit.d_param_bits_a.nbytes
-                + circuit.d_param_bits_b.nbytes
-                + circuit.d_graph_ids.nbytes
-                + circuit.phase_indices.nbytes
-                + circuit.approximate_floatfactors.nbytes
-                + circuit.power2.nbytes
-                + circuit.floatfactor.nbytes
+            total_memory_bytes += sum(
+                v.nbytes for v in circuit if isinstance(v, jax.Array)
             )
 
-    total_memory_gb = total_memory_bytes / (1024**2)
+    total_memory_mb = total_memory_bytes / (1024**2)
 
     return (
         f"{class_name}({np.sum(c_graphs)} graphs, "
@@ -474,5 +454,5 @@ def _program_repr(program: CompiledProgram, num_channels: int, class_name: str) 
         f"{np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
         f"{np.sum(c_b_terms)} B terms, "
         f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms, "
-        f"{total_memory_gb:.3f} MB)"
+        f"{total_memory_mb:.3f} MB)"
     )

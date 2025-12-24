@@ -1,4 +1,3 @@
-from functools import partial
 from typing import Optional
 
 import jax
@@ -7,11 +6,11 @@ import numpy as np
 from jax import lax
 
 """
-This module implements exact scalar multiplication and segmentation for the exact scalar
-arithmetic.
+This module implements exact scalar arithmetic for complex numbers of the form:
+    (a + b*e^(i*pi/4) + c*i + d*e^(-i*pi/4)) * 2^power
 
-The exact scalar arithmetic is defined as the arithmetic of the complex numbers
-of the form (a + b*e^(i*pi/4) + c*i + d*e^(-i*pi/4)) * 2^power
+This representation enables exact computation of phases in ZX-calculus graphs
+without floating-point errors.
 
 TODO: this representation can silently overflow. Add a check and raise an error.
 """
@@ -45,83 +44,6 @@ def _scalar_to_complex(data: jax.Array) -> jax.Array:
     e4 = jnp.exp(1j * jnp.pi / 4)
     e4d = jnp.exp(-1j * jnp.pi / 4)
     return data[..., 0] + data[..., 1] * e4 + data[..., 2] * 1j + data[..., 3] * e4d
-
-
-def _segment_mul_op(a, b):
-    """Associative scan operator for segmented multiplication."""
-    val_a, id_a = a
-    val_b, id_b = b
-
-    # If IDs match, multiply (accumulate).
-    # If IDs differ, it means 'b' is the start of a new segment (or a jump),
-    # so we just take 'val_b' as the new accumulator value.
-    is_same = id_a == id_b
-
-    prod = _scalar_mul(val_a, val_b)
-
-    new_val = jnp.where(is_same[..., None], prod, val_b)
-
-    # The ID always propagates from the right operand in the scan
-    return new_val, id_b
-
-
-@partial(jax.jit, static_argnames=["num_segments", "indices_are_sorted"])
-def segment_scalar_prod(
-    data: jax.Array,
-    segment_ids: jax.Array,
-    num_segments: int,
-    indices_are_sorted: bool = False,
-) -> jax.Array:
-    """
-    Compute the product of scalars within segments.
-
-    Similar to jax.ops.segment_prod but for ExactScalar arithmetic.
-
-    Args:
-        data: Shape (..., 4) array of coefficients.
-        segment_ids: Shape (...,) array of segment indices.
-        num_segments: Total number of segments (determines output size).
-        indices_are_sorted: If True, assumes segment_ids are sorted.
-
-    Returns:
-        Shape (..., num_segments, 4) array of products.
-    """
-    N = data.shape[0]
-    if N == 0:
-        return jnp.tile(jnp.array([1, 0, 0, 0], dtype=data.dtype), (num_segments, 1))
-
-    if not indices_are_sorted:
-        perm = jnp.argsort(segment_ids)
-        data = data[perm]
-        segment_ids = segment_ids[perm]
-
-    # Associative scan to compute cumulative products within segments
-    scanned_vals, _ = lax.associative_scan(_segment_mul_op, (data, segment_ids))
-
-    # Identify the last element of each contiguous block of segment_ids
-    # The last element holds the total product for that segment block.
-    #
-    # We must ensure that we only write once to each segment location to avoid
-    # non-deterministic behavior on GPU (where scatter collisions are undefined).
-    # Since segment_ids is sorted, we can identify the last occurrence of each ID.
-
-    is_last = jnp.concatenate([segment_ids[:-1] != segment_ids[1:], jnp.array([True])])
-
-    # Use a dummy index for non-last elements.
-    # We extend res by 1 to have a trash bin at index 'num_segments'.
-    dump_idx = num_segments
-    scatter_indices = jnp.where(is_last, segment_ids, dump_idx)
-
-    # Initialize result with multiplicative identity [1, 0, 0, 0]
-    # Add one extra row for the dump
-    res = jnp.tile(jnp.array([1, 0, 0, 0], dtype=data.dtype), (num_segments + 1, 1))
-
-    # Scatter values. Only the last value of each segment is written to a valid index.
-    # The rest go to the dump index.
-    res = res.at[scatter_indices].set(scanned_vals)
-
-    # Remove the dump row
-    return res[:num_segments]
 
 
 @jax.tree_util.register_pytree_node_class
@@ -198,21 +120,34 @@ class ExactScalarArray:
         summed_coeffs = jnp.sum(aligned_coeffs, axis=-2)
         return ExactScalarArray(summed_coeffs, min_power)
 
-    def segment_prod(
-        self, segment_ids: jax.Array, num_segments: int, indices_are_sorted: bool = True
-    ) -> "ExactScalarArray":
+    def prod(self, axis: int = -1) -> "ExactScalarArray":
         """
-        Segmented product reduction.
-        Generalizes segment_scalar_prod to ExactScalarArray.
+        Compute product along the specified axis using associative scan.
+
+        Args:
+            axis: The axis along which to compute the product.
+
+        Returns:
+            ExactScalarArray with the product computed along the axis.
         """
-        return ExactScalarArray(
-            segment_scalar_prod(
-                self.coeffs, segment_ids, num_segments, indices_are_sorted
-            ),
-            jax.ops.segment_sum(
-                self.power, segment_ids, num_segments, indices_are_sorted
-            ),
-        )
+        # Move the reduction axis to position 0 for easier processing
+        coeffs = jnp.moveaxis(self.coeffs, axis, 0)
+        power = jnp.moveaxis(self.power, axis, 0)
+
+        # Use associative scan to compute cumulative products, then take the last
+        def scan_fn(a, b):
+            return _scalar_mul(a, b)
+
+        # lax.associative_scan computes cumulative products
+        scanned = lax.associative_scan(scan_fn, coeffs, axis=0)
+
+        # Take the last element along axis 0 (the final product)
+        result_coeffs = scanned[-1]
+
+        # Sum powers along the reduction axis
+        result_power = jnp.sum(power, axis=0)
+
+        return ExactScalarArray(result_coeffs, result_power)
 
     def to_complex(self) -> jax.Array:
         """Converts to complex number."""
