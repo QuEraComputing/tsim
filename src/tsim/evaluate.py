@@ -163,8 +163,10 @@ def evaluate(
 
     if not has_approximate_floatfactor:
         # Add initial power2 from circuit compilation
-        total_summands.power = total_summands.power + circuit.power2
-        total_summands.reduce()
+        total_summands = ExactScalarArray(
+            total_summands.coeffs, total_summands.power + circuit.power2
+        )
+        total_summands = total_summands.reduce()
         return total_summands.sum()
     else:
         return jnp.sum(

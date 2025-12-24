@@ -1,9 +1,9 @@
 from typing import Optional
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
-import numpy as np
-from jax import lax
+from jax import Array, lax
 
 """
 This module implements exact scalar arithmetic for complex numbers of the form:
@@ -46,9 +46,11 @@ def _scalar_to_complex(data: jax.Array) -> jax.Array:
     return data[..., 0] + data[..., 1] * e4 + data[..., 2] * 1j + data[..., 3] * e4d
 
 
-@jax.tree_util.register_pytree_node_class
-class ExactScalarArray:
-    def __init__(self, coeffs: jax.Array, power: Optional[jax.Array] = None):
+class ExactScalarArray(eqx.Module):
+    coeffs: Array
+    power: Array
+
+    def __init__(self, coeffs: Array, power: Optional[Array] = None):
         """
         Represents values of the form:
             (c_0 + c_1*omega + c_2*omega^2 + c_3*omega^3) * 2^power
@@ -64,13 +66,6 @@ class ExactScalarArray:
     def from_scalar_coeffs(cls, coeffs: jax.Array) -> "ExactScalarArray":
         """Creates ExactScalarArray with power=0"""
         return cls(coeffs)
-
-    def tree_flatten(self):
-        return ((self.coeffs, self.power), None)
-
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        return cls(*children)
 
     def __mul__(self, other: "ExactScalarArray") -> "ExactScalarArray":
         """Element-wise multiplication."""
@@ -101,10 +96,10 @@ class ExactScalarArray:
             power = jnp.where(reducible, power + 1, power)
             return coeffs, power
 
-        self.coeffs, self.power = jax.lax.while_loop(
+        new_coeffs, new_power = jax.lax.while_loop(
             cond_fun, body_fun, (self.coeffs, self.power)
         )
-        return self
+        return ExactScalarArray(new_coeffs, new_power)
 
     def sum(self) -> "ExactScalarArray":
         """
@@ -130,22 +125,12 @@ class ExactScalarArray:
         Returns:
             ExactScalarArray with the product computed along the axis.
         """
-        # Move the reduction axis to position 0 for easier processing
-        coeffs = jnp.moveaxis(self.coeffs, axis, 0)
-        power = jnp.moveaxis(self.power, axis, 0)
+        scanned = lax.associative_scan(_scalar_mul, self.coeffs, axis=axis)
 
-        # Use associative scan to compute cumulative products, then take the last
-        def scan_fn(a, b):
-            return _scalar_mul(a, b)
+        # Take the last element along the reduction axis
+        result_coeffs = jnp.take(scanned, indices=-1, axis=axis)
 
-        # lax.associative_scan computes cumulative products
-        scanned = lax.associative_scan(scan_fn, coeffs, axis=0)
-
-        # Take the last element along axis 0 (the final product)
-        result_coeffs = scanned[-1]
-
-        # Sum powers along the reduction axis
-        result_power = jnp.sum(power, axis=0)
+        result_power = jnp.sum(self.power, axis=axis)
 
         return ExactScalarArray(result_coeffs, result_power)
 
@@ -154,14 +139,3 @@ class ExactScalarArray:
         c_val = _scalar_to_complex(self.coeffs)
         scale = jnp.pow(2.0, self.power)
         return c_val * scale
-
-    def to_numpy(self) -> np.ndarray:
-        """Converts to complex128 numpy array."""
-        numpy_data = np.array(self.coeffs)
-        power = np.array(self.power)
-        return 2.0**power * (
-            numpy_data[..., 0]
-            + numpy_data[..., 1] * np.exp(1j * np.pi / 4)
-            + numpy_data[..., 2] * 1j
-            + numpy_data[..., 3] * np.exp(-1j * np.pi / 4)
-        )
