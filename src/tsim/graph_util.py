@@ -144,7 +144,7 @@ def _induced_subgraph(
 def build_sampling_graph(
     built: GraphRepresentation, sample_detectors: bool = False
 ) -> BaseGraph:
-    """Build a ZX graph for sampling from a BuiltGraph.
+    """Build a ZX graph for sampling from a GraphRepresentation.
 
     This is the internal implementation of get_sampling_graph.
     """
@@ -445,7 +445,7 @@ def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> SamplingGraph:
             If False, prepare for measurement sampling.
 
     Returns:
-        A PreparedGraph containing the reduced graph and error transformation.
+        A SamplingGraph containing the reduced graph and error transformation.
     """
     built = parse_stim_circuit(circuit._stim_circ)
 

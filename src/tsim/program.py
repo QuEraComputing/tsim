@@ -27,7 +27,7 @@ def compile_program(
        - Plug outputs according to mode (sequential or joint)
        - Reduce each plugged graph
        - Perform stabilizer rank decomposition
-       - Compile into CompiledCircuit objects
+       - Compile into CompiledScalarGraphs objects
     3. Assemble into CompiledProgram with output ordering
 
     Args:
@@ -98,14 +98,13 @@ def _compile_component(
     component_f_set = set(_get_f_indices(graph))
     f_selection = [i for i in f_indices_global if i in component_f_set]
 
-    # Determine outputs to plug based on mode
     if mode == "sequential":
         outputs_to_plug = list(range(num_component_outputs + 1))
     else:  # joint
         outputs_to_plug = [0, num_component_outputs]
 
     # Plug outputs and compile each graph
-    circuits: list[CompiledScalarGraphs] = []
+    compiled_graphs: list[CompiledScalarGraphs] = []
 
     component_m_chars = [f"m{i}" for i in output_indices]
     plugged_graphs = _plug_outputs(graph, component_m_chars, outputs_to_plug)
@@ -114,7 +113,6 @@ def _compile_component(
     power2_base: int | None = None
 
     for num_m_plugged, plugged_graph in zip(outputs_to_plug, plugged_graphs):
-        # Reduce the plugged graph
         g_copy = plugged_graph.copy()
         zx.full_reduce(g_copy, paramSafe=True)
         g_copy.normalize()
@@ -124,7 +122,8 @@ def _compile_component(
             power2_base = g_copy.scalar.power2
         g_copy.scalar.add_power(-power2_base)
 
-        # Remove parametrized global phase terms (safe after reduction)
+        # Remove parametrized global phase terms. Global phases only matter once we
+        # have started stabilizer rank decomposition.
         g_copy.scalar.phasevars_halfpi = dict()
         g_copy.scalar.phasevars_pi_pair = []
 
@@ -135,12 +134,12 @@ def _compile_component(
         # Perform stabilizer rank decomposition and compile
         g_list = find_stab(g_copy)
         compiled = compile_scalar_graphs(g_list, param_names)
-        circuits.append(compiled)
+        compiled_graphs.append(compiled)
 
     return CompiledComponent(
         output_indices=tuple(output_indices),
         f_selection=jnp.array(f_selection, dtype=jnp.int32),
-        circuits=tuple(circuits),
+        compiled_scalar_graphs=tuple(compiled_graphs),
     )
 
 
@@ -167,16 +166,16 @@ def _plug_outputs(
         g = graph.copy()
         output_vertices = list(g.outputs())
 
-        # Apply effect: "0" for plugged outputs, "+" for unplugged
+        # Plug outputs either with an X vertex with phase m_char[i]
+        # or with a Z vertex. Z vertices are equal to |0> + |1> and therefore
+        # implement a trace.
         effect = "0" * num_plugged + "+" * (num_outputs - num_plugged)
         g.apply_effect(effect)
+        for i, v in enumerate(output_vertices[:num_plugged]):
+            g.set_phase(v, m_chars[i])  # type: ignore[arg-type]
 
         # Compensate power for trace of unplugged outputs
         g.scalar.add_power(num_outputs - num_plugged)
-
-        # Set phases on plugged vertices to m parameters
-        for i, v in enumerate(output_vertices[:num_plugged]):
-            g.set_phase(v, m_chars[i])  # type: ignore[arg-type]
 
         graphs.append(g)
 

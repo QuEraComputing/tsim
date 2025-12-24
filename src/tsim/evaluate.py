@@ -41,10 +41,14 @@ def evaluate(
 
     Args:
         circuit: Compiled circuit representation
-        param_vals: Binary parameter values (error bits + measurement/detector outcomes)
+        param_vals: Binary parameter values (error bits + measurement/detector outcomes),
+            shape (n_params,)
+        has_approximate_floatfactor: Whether the circuit has approximate float factors.
+            Determines the return type and evaluation strategy.
 
     Returns:
-        Complex amplitude for given parameter configuration
+        ExactScalarArray if has_approximate_floatfactor is False, otherwise a complex Array
+        representing the amplitude for the given parameter configuration.
     """
     num_graphs = circuit.power2.shape[0]
 

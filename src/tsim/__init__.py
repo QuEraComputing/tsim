@@ -9,7 +9,7 @@ The repo is organized as follows:
 2. `_instructions.py` represents every instruction as ZX diagrams that are used internally to transform a `Circuit` into a ZX graph.
 3. `compile.py` compiles circuits together with Pauli noise models into contiguous `jax.Array` data structures using
    stabilizer rank decomposition.
-4. `evaluate.py` evaluates compiled models to generate probability ampltiudes.
+4. `evaluate.py` evaluates compiled models to generate probability amplitudes.
 5. `sampler.py` orchestrates diagram construction, compilation, and evaluation to compute marginals and autoregressively build measurement or detector samples.
 """
 

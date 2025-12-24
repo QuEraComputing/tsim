@@ -28,7 +28,7 @@ def _sample_component_impl(
 
     Args:
         component: The compiled component to sample from.
-        f_params: Error parameters, shape (batch_size, num_f_global).
+        f_params: Error parameters, shape (batch_size, num_f_params).
         key: JAX random key.
 
     Returns:
@@ -44,10 +44,10 @@ def _sample_component_impl(
     m_accumulated = jnp.empty((batch_size, 0), dtype=jnp.bool_)
 
     # First circuit is normalization (only f-params)
-    prev = jnp.abs(evaluate_batch(component.circuits[0], f_selected))
+    prev = jnp.abs(evaluate_batch(component.compiled_scalar_graphs[0], f_selected))
 
     # Autoregressive sampling for remaining circuits
-    for circuit in component.circuits[1:]:
+    for circuit in component.compiled_scalar_graphs[1:]:
         # Build params: [f_selected, m_accumulated, trying_bit=1]
         ones = jnp.ones((batch_size, 1), dtype=jnp.bool_)
         params = jnp.hstack([f_selected, m_accumulated, ones])
@@ -87,7 +87,7 @@ def sample_component(
 
     Args:
         component: The compiled component to sample from.
-        f_params: Error parameters, shape (batch_size, num_f_global).
+        f_params: Error parameters, shape (batch_size, num_f_params).
         key: JAX random key.
 
     Returns:
@@ -147,8 +147,8 @@ class CompiledMeasurementSampler:
     """Samples measurement outcomes from a quantum circuit.
 
     Uses sequential decomposition [0, 1, 2, ..., n] where:
-    - circuits[0]: normalization (0 outputs plugged)
-    - circuits[i]: cumulative probability up to bit i
+    - compiled_scalar_graphs[0]: normalization (0 outputs plugged)
+    - compiled_scalar_graphs[i]: cumulative probability up to bit i
     """
 
     def __init__(self, circuit: Circuit, *, seed: int | None = None):
@@ -344,8 +344,8 @@ class CompiledStateProbs:
     """Computes measurement probabilities for a given state.
 
     Uses joint decomposition [0, n] where:
-    - circuits[0]: normalization (0 outputs plugged)
-    - circuits[1]: full joint probability (all outputs plugged)
+    - compiled_scalar_graphs[0]: normalization (0 outputs plugged)
+    - compiled_scalar_graphs[1]: full joint probability (all outputs plugged)
     """
 
     def __init__(
@@ -390,12 +390,14 @@ class CompiledStateProbs:
         p_joint = jnp.ones(batch_size)
 
         for component in self._program.components:
-            assert len(component.circuits) == 2  # joint mode: [norm, full]
+            assert (
+                len(component.compiled_scalar_graphs) == 2
+            )  # joint mode: [norm, full]
 
             # Select this component's f-params
             f_selected = f_samples[:, component.f_selection]
 
-            norm_circuit, joint_circuit = component.circuits
+            norm_circuit, joint_circuit = component.compiled_scalar_graphs
 
             # Normalization: only f-params
             p_norm = p_norm * jnp.abs(evaluate_batch(norm_circuit, f_selected))
@@ -429,7 +431,7 @@ def _program_repr(program: CompiledProgram, num_channels: int, class_name: str) 
     num_outputs = []
 
     for component in program.components:
-        for circuit in component.circuits:
+        for circuit in component.compiled_scalar_graphs:
             num_outputs.append(len(component.output_indices))
             c_graphs.append(circuit.num_graphs)
             c_params.append(circuit.n_params)

@@ -40,7 +40,7 @@ def _scalar_mul(d1: jax.Array, d2: jax.Array) -> jax.Array:
 
 
 def _scalar_to_complex(data: jax.Array) -> jax.Array:
-    """Convert a (N, 4) array of coefficients to a (N,) array of numbers."""
+    """Convert a (N, 4) array of coefficients to a (N,) array of complex numbers."""
     e4 = jnp.exp(1j * jnp.pi / 4)
     e4d = jnp.exp(-1j * jnp.pi / 4)
     return data[..., 0] + data[..., 1] * e4 + data[..., 2] * 1j + data[..., 3] * e4d
@@ -103,7 +103,7 @@ class ExactScalarArray(eqx.Module):
 
     def sum(self) -> "ExactScalarArray":
         """
-        Sum elements along axis.
+        Sum elements along the last axis (axis=-2).
         Aligns powers to the minimum power before summing.
         """
         # TODO: check for overflow and potentially refactor sum routine to scan

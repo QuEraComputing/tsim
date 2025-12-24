@@ -24,7 +24,7 @@ class Channel(abc.ABC):
             num_samples: Number of samples to draw from the channel.
 
         Returns:
-            A jax.numpy array of shape (num_samples, num_qubits) containing the
+            A jax.numpy array of shape (num_samples, num_bits) containing the
             sampled errors.
 
         """
@@ -211,7 +211,8 @@ class ChannelSampler:
 
     Attributes:
         error_channels: Filtered list of channels that contribute to the transform.
-        error_transform: Matrix of shape (num_e, num_f) for basis conversion.
+        error_transform: Dictionary mapping new basis variables to sets of original
+            variables. Each new variable f_i is the XOR of its associated e variables.
 
     Example:
         >>> channels = [Error(0.1, key1), Error(0.2, key2)]  # produces e0, e1

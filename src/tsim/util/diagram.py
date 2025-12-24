@@ -52,7 +52,6 @@ def wrap_svg(
         svg: Raw SVG markup.
         width: Explicit width for the container.
         height: Desired height; used to infer width from viewBox if width is not given.
-        scroll: Whether to make the container horizontally scrollable.
     """
     computed_width = width
     if (
@@ -97,7 +96,7 @@ def placeholders_to_t(
     Args:
         svg_string: The SVG string from stim's diagram() method containing I_ERROR
         placeholder gates whose p-value are used as identifiers.
-        replace_dict: Mapping from identifier (float), i.e. the p values of
+        placeholder_id_to_labels: Mapping from identifier (float), i.e. the p values of
         I_ERROR gates, to GateLabel.
 
     Returns:

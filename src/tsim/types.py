@@ -3,7 +3,7 @@
 This module defines immutable data structures that represent the different
 stages of circuit compilation:
 
-1. PreparedGraph: Result of parsing and reducing a circuit graph
+1. SamplingGraph: Result of parsing and reducing a circuit graph
 2. CompiledComponent: A single compiled connected component
 3. CompiledProgram: The full compiled circuit ready for sampling
 """
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class SamplingGraph:
-    """Result of the graph preparation phase, contained all data structures needed for
+    """Result of the graph preparation phase, containing all data structures needed for
     sampling.
 
     This represents a circuit that has been:
@@ -37,7 +37,7 @@ class SamplingGraph:
 
     Attributes:
         graph: The prepared ZX graph with f-parameters on vertices.
-        error_transform: Dictionary mapping error variable names to sets of f-variables.
+        error_transform: Dictionary mapping f-variable names to sets of e-variables.
         error_specs: Specifications for creating error channels.
         num_outputs: Number of output vertices (measurements or detectors).
         num_detectors: Number of detector vertices.
@@ -61,24 +61,24 @@ class CompiledComponent(eqx.Module):
             Used to reassemble component outputs into the final result.
         f_selection: Indices into the global f_params array to select this
             component's required f-parameters. Shape: (num_f_for_component,)
-        circuits: Compiled circuits for sampling. For sequential mode:
-            - circuits[0]: Normalization (no outputs plugged)
-            - circuits[i]: First i outputs plugged
+        compiled_scalar_graphs: Compiled circuits for sampling. For sequential mode:
+            - compiled_scalar_graphs[0]: Normalization (no outputs plugged)
+            - compiled_scalar_graphs[i]: First i outputs plugged
             For joint mode:
-            - circuits[0]: Normalization
-            - circuits[1]: All outputs plugged
+            - compiled_scalar_graphs[0]: Normalization
+            - compiled_scalar_graphs[1]: All outputs plugged
     """
 
     output_indices: tuple[int, ...] = eqx.field(static=True)
     f_selection: Array
-    circuits: tuple[CompiledScalarGraphs, ...]
+    compiled_scalar_graphs: tuple[CompiledScalarGraphs, ...]
 
 
 @dataclass(frozen=True)
 class CompiledProgram:
     """A fully compiled circuit program ready for sampling.
 
-    This is the result of compiling a PreparedGraph and contains everything
+    This is the result of compiling a SamplingGraph and contains everything
     needed to sample from the circuit.
 
     Attributes:
