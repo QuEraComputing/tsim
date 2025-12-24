@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from tsim.channels import ChannelSampler, create_channels_from_specs
-from tsim.evaluate import evaluate_batch_jax, evaluate_batch_numpy
+from tsim.evaluate import evaluate_batch
 from tsim.graph_util import prepare_graph
 from tsim.program import compile_program
 from tsim.types import CompiledComponent, CompiledProgram, PreparedGraph
@@ -44,7 +44,7 @@ def _sample_component_impl(
     m_accumulated = jnp.empty((batch_size, 0), dtype=jnp.bool_)
 
     # First circuit is normalization (only f-params)
-    prev = jnp.abs(evaluate_batch_jax(component.circuits[0], f_selected))
+    prev = jnp.abs(evaluate_batch(component.circuits[0], f_selected))
 
     # Autoregressive sampling for remaining circuits
     for circuit in component.circuits[1:]:
@@ -53,7 +53,7 @@ def _sample_component_impl(
         params = jnp.hstack([f_selected, m_accumulated, ones])
 
         # Evaluate P(bit=1 | previous bits)
-        p1 = jnp.abs(evaluate_batch_jax(circuit, params))
+        p1 = jnp.abs(evaluate_batch(circuit, params))
 
         # Sample from Bernoulli
         key, subkey = jax.random.split(key)
@@ -386,8 +386,8 @@ class CompiledStateProbs:
             Array of probabilities P(state | error_sample) for each error sample.
         """
         f_samples = self._channel_sampler.sample(batch_size)
-        p_norm = np.ones(batch_size, dtype=np.float64)
-        p_joint = np.ones(batch_size, dtype=np.float64)
+        p_norm = jnp.ones(batch_size)
+        p_joint = jnp.ones(batch_size)
 
         for component in self._program.components:
             assert len(component.circuits) == 2  # joint mode: [norm, full]
@@ -398,17 +398,15 @@ class CompiledStateProbs:
             norm_circuit, joint_circuit = component.circuits
 
             # Normalization: only f-params
-            p_norm *= np.abs(
-                evaluate_batch_numpy(norm_circuit, jnp.asarray(f_selected))
-            )
+            p_norm = p_norm * jnp.abs(evaluate_batch(norm_circuit, f_selected))
 
             # Joint probability: f-params + state
             component_state = state[list(component.output_indices)]
             tiled_state = jnp.tile(component_state, (batch_size, 1))
             joint_params = jnp.hstack([f_selected, tiled_state])
-            p_joint *= np.abs(evaluate_batch_numpy(joint_circuit, joint_params))
+            p_joint = p_joint * jnp.abs(evaluate_batch(joint_circuit, joint_params))
 
-        return p_joint / p_norm
+        return np.asarray(p_joint / p_norm)
 
     def __repr__(self) -> str:
         return _program_repr(
@@ -454,5 +452,5 @@ def _program_repr(program: CompiledProgram, num_channels: int, class_name: str) 
         f"{np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
         f"{np.sum(c_b_terms)} B terms, "
         f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms, "
-        f"{total_memory_mb:.3f} MB)"
+        f"{total_memory_mb:.2f} MB)"
     )
