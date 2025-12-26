@@ -275,14 +275,10 @@ class ChannelSampler:
 
     def sample(self, num_samples: int = 1) -> jax.Array:
         """Sample from all error channels and transform to new error basis."""
-        # Initialize result accumulator
         result = jnp.zeros((num_samples, self.num_f), dtype=jnp.uint8)
 
-        # Sample each channel and directly accumulate into result
         for channel, transform in zip(self.error_channels, self.channel_transforms):
-            channel_samples = channel.sample(
-                num_samples
-            )  # shape: (num_samples, num_bits)
+            channel_samples = channel.sample(num_samples)
             result = result + (channel_samples @ transform)
 
         return (result % 2).astype(jnp.bool)
