@@ -1,20 +1,21 @@
 from collections import defaultdict
 from fractions import Fraction
-from typing import NamedTuple
 
+import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
+from jax import Array
 from pyzx.graph.base import BaseGraph
 from pyzx.graph.scalar import DyadicNumber
 
 
-class CompiledCircuit(NamedTuple):
-    """JAX-compatible compiled circuit representation.
+class CompiledScalarGraphs(eqx.Module):
+    """JAX-compatible compiled scalar graphs representation.
 
-    All fields are static-shaped NumPy arrays, making them directly
-    convertible to JAX arrays for GPU execution and JIT compilation.
+    All fields are static-shaped JAX arrays.
 
-    Constants and parameter-dependent data are separated for cleaner evaluation.
+    Term arrays are 2D with shape (num_graphs, max_terms_per_graph) and padded
+    with identity values (1 for products, 0 for sums) for graphs with fewer terms.
     """
 
     # Metadata
@@ -22,39 +23,41 @@ class CompiledCircuit(NamedTuple):
     n_params: int
 
     # Type A: Node Terms (1 + e^(i*alpha))
-    a_const_phases: jnp.ndarray  # shape: (n_a_terms,), dtype: uint8, values: 0-7
-    a_param_bits: jnp.ndarray  # shape: (n_a_terms, n_params), dtype: uint8
-    a_graph_ids: jnp.ndarray  # shape: (n_a_terms,), dtype: int32
+    # Padded terms are masked to the multiplicative identity at evaluation time.
+    a_const_phases: Array  # shape: (num_graphs, max_a), dtype: uint8, values: 0-7
+    a_param_bits: Array  # shape: (num_graphs, max_a, n_params), dtype: uint8
+    a_num_terms: Array  # shape: (num_graphs,), dtype: int32
 
     # Type B: Half-Pi Terms (e^(i*beta))
-    b_term_types: jnp.ndarray  # shape: (n_b_terms,), dtype: uint8, values: {2, 4, 6}
-    b_param_bits: jnp.ndarray  # shape: (n_b_terms, n_params), dtype: uint8
-    b_graph_ids: jnp.ndarray  # shape: (n_b_terms,), dtype: int32
+    b_term_types: Array  # shape: (num_graphs, max_b), dtype: uint8, values: {0,2,4,6}
+    b_param_bits: Array  # shape: (num_graphs, max_b, n_params), dtype: uint8
 
     # Type C: Pi-Pair Terms (e^(i*Psi*Phi))
-    c_const_bits_a: jnp.ndarray  # shape: (n_c_terms,), dtype: uint8, values: {0, 1}
-    c_param_bits_a: jnp.ndarray  # shape: (n_c_terms, n_params), dtype: uint8
-    c_const_bits_b: jnp.ndarray  # shape: (n_c_terms,), dtype: uint8, values: {0, 1}
-    c_param_bits_b: jnp.ndarray  # shape: (n_c_terms, n_params), dtype: uint8
-    c_graph_ids: jnp.ndarray  # shape: (n_c_terms,), dtype: int32
+    c_const_bits_a: Array  # shape: (num_graphs, max_c), dtype: uint8, values: {0, 1}
+    c_param_bits_a: Array  # shape: (num_graphs, max_c, n_params), dtype: uint8
+    c_const_bits_b: Array  # shape: (num_graphs, max_c), dtype: uint8, values: {0, 1}
+    c_param_bits_b: Array  # shape: (num_graphs, max_c, n_params), dtype: uint8
 
     # Type D: Phase Pairs (1 + e^a + e^b - e^(a+b))
-    d_const_alpha: jnp.ndarray  # shape: (n_d_terms,), dtype: uint8, values: 0-7
-    d_const_beta: jnp.ndarray  # shape: (n_d_terms,), dtype: uint8, values: 0-7
-    d_param_bits_a: jnp.ndarray  # shape: (n_d_terms, n_params), dtype: uint8
-    d_param_bits_b: jnp.ndarray  # shape: (n_d_terms, n_params), dtype: uint8
-    d_graph_ids: jnp.ndarray  # shape: (n_d_terms,), dtype: int32
+    # Padded terms are masked to the multiplicative identity at evaluation time.
+    d_const_alpha: Array  # shape: (num_graphs, max_d), dtype: uint8, values: 0-7
+    d_const_beta: Array  # shape: (num_graphs, max_d), dtype: uint8, values: 0-7
+    d_param_bits_a: Array  # shape: (num_graphs, max_d, n_params), dtype: uint8
+    d_param_bits_b: Array  # shape: (num_graphs, max_d, n_params), dtype: uint8
+    d_num_terms: Array  # shape: (num_graphs,), dtype: int32
 
     # Static per-graph data
-    phase_indices: jnp.ndarray  # shape: (num_graphs,), dtype: uint8 (values 0-7)
-    has_approximate_floatfactors: bool  # shape: (1,), dtype: bool
+    phase_indices: Array  # shape: (num_graphs,), dtype: uint8 (values 0-7)
+    has_approximate_floatfactors: bool = eqx.field(static=True)
     # TODO: use complex128
-    approximate_floatfactors: jnp.ndarray  # shape: (num_graphs,), dtype: complex64
-    power2: jnp.ndarray  # shape: (num_graphs,), dtype: int32
-    floatfactor: jnp.ndarray  # shape: (num_graphs, 4), dtype: int32
+    approximate_floatfactors: Array  # shape: (num_graphs,), dtype: complex64
+    power2: Array  # shape: (num_graphs,), dtype: int32
+    floatfactor: Array  # shape: (num_graphs, 4), dtype: int32
 
 
-def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircuit:
+def compile_scalar_graphs(
+    g_list: list[BaseGraph], params: list[str]
+) -> CompiledScalarGraphs:
     """Compile ZX-graph list into JAX-compatible structure for fast evaluation.
 
     Args:
@@ -63,12 +66,14 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
             the jax.Arrays of the compiled circuit.
 
     Returns:
-        CompiledCircuit with all data in static-shaped arrays
+        CompiledScalarGraphs with all data in static-shaped JAX arrays
     """
     for i, g in enumerate(g_list):
         assert (
             len(list(g.vertices())) == 0
         ), f"Only scalar graphs can be compiled but graph {i} has {len(list(g.vertices()))} vertices"
+
+    g_list = [g for g in g_list if not g.scalar.is_zero]
 
     n_params = len(params)
     num_graphs = len(g_list)
@@ -77,10 +82,11 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
     # ========================================================================
     # Type A compilation (phase-node)
     # Terms of the form exp(i * (α + parity(params)) * pi).
+    # Collect per-graph lists, then pad to 2D arrays.
     # ========================================================================
-    a_const_phases_list = []
-    a_param_bits_list = []
-    g_coord_a = []
+    a_terms_per_graph: list[list[tuple[int, list[int]]]] = [
+        [] for _ in range(num_graphs)
+    ]
 
     for i in range(num_graphs):
         g_i = g_list[i]
@@ -90,31 +96,34 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
                 bitstr[char_to_idx[v]] = 1
             assert g_i.scalar.phasenodes[term].denominator in [1, 2, 4]
             const_term = int(g_i.scalar.phasenodes[term] * 4)  # type: ignore[arg-type]
+            a_terms_per_graph[i].append((const_term, bitstr))
 
-            g_coord_a.append(i)
-            a_const_phases_list.append(const_term)
-            a_param_bits_list.append(bitstr)
+    a_num_terms = np.array([len(terms) for terms in a_terms_per_graph], dtype=np.int32)
+    max_a = int(a_num_terms.max()) if a_num_terms.size else 0
+    max_a = max(max_a, 1)
 
-    a_const_phases = jnp.array(a_const_phases_list, dtype=jnp.uint8)
-    a_param_bits = jnp.array(a_param_bits_list, dtype=jnp.uint8).reshape(
-        len(a_param_bits_list), n_params
-    )
-    a_graph_ids = jnp.array(g_coord_a, dtype=jnp.int32)
+    # Pad with const_phase=0, param_bits=0 -> (1+e^0)=2; compensated in power2.
+    a_const_phases = np.zeros((num_graphs, max_a), dtype=np.uint8)
+    a_param_bits = np.zeros((num_graphs, max_a, n_params), dtype=np.uint8)
+
+    for i, terms in enumerate(a_terms_per_graph):
+        for j, (const_phase, param_bit) in enumerate(terms):
+            a_const_phases[i, j] = const_phase
+            a_param_bits[i, j] = param_bit
 
     # ========================================================================
     # Type B compilation (half-π)
     # Phase terms of the form exp(1j * π * j * parity(params) / 2) where j ∈ {1, 3}.
     # ========================================================================
-    b_term_types_list = []
-    b_param_bits_list = []
-    g_coord_b = []
+    b_terms_per_graph: list[list[tuple[int, list[int]]]] = [
+        [] for _ in range(num_graphs)
+    ]
 
     for i in range(num_graphs):
         g_i = g_list[i]
         assert set(g_i.scalar.phasevars_halfpi.keys()) <= {1, 3}
 
         # Accumulate j values per bitstring for this graph
-        # Key: tuple(bitstr), Value: accumulated j mod 4
         bitstr_to_j: dict[tuple[int, ...], int] = defaultdict(int)
 
         for j in [1, 3]:
@@ -129,71 +138,71 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
 
         for bitstr_key, combined_j in bitstr_to_j.items():
             if combined_j == 0:
-                # Discard terms that cancelled out
                 continue
-            g_coord_b.append(i)
-            b_term_types_list.append(combined_j * 2)
-            b_param_bits_list.append(list(bitstr_key))
+            b_terms_per_graph[i].append((combined_j * 2, list(bitstr_key)))
 
-    b_term_types = jnp.array(b_term_types_list, dtype=jnp.uint8)
-    b_param_bits = jnp.array(b_param_bits_list, dtype=jnp.uint8).reshape(
-        len(b_param_bits_list), n_params
-    )
-    b_graph_ids = jnp.array(g_coord_b, dtype=jnp.int32)
+    max_b = max((len(terms) for terms in b_terms_per_graph), default=0)
+    max_b = max(max_b, 1)
+
+    # Pad with 0 (additive identity for phase sums)
+    b_term_types = np.zeros((num_graphs, max_b), dtype=np.uint8)
+    b_param_bits = np.zeros((num_graphs, max_b, n_params), dtype=np.uint8)
+
+    for i, terms in enumerate(b_terms_per_graph):
+        for j, (term_type, param_bit) in enumerate(terms):
+            b_term_types[i, j] = term_type
+            b_param_bits[i, j] = param_bit
 
     # ========================================================================
     # Type C compilation (π-pair)
     # Terms of the form (-1)^(ψ * φ) where ψ and φ are parities.
     # ========================================================================
-    c_const_bits_a_list = []
-    c_param_bits_a_list = []
-    c_const_bits_b_list = []
-    c_param_bits_b_list = []
-    g_coord_c = []
+    c_terms_per_graph: list[list[tuple[int, list[int], int, list[int]]]] = [
+        [] for _ in range(num_graphs)
+    ]
 
     for i in range(num_graphs):
         graph = g_list[i]
         for p_set in graph.scalar.phasevars_pi_pair:
-            # Parse set A
             const_bit_a = 1 if "1" in p_set[0] else 0
             param_bits_a = [0] * n_params
             for p in p_set[0]:
                 if p != "1":
                     param_bits_a[char_to_idx[p]] = 1
 
-            # Parse set B
             const_bit_b = 1 if "1" in p_set[1] else 0
             param_bits_b = [0] * n_params
             for p in p_set[1]:
                 if p != "1":
                     param_bits_b[char_to_idx[p]] = 1
 
-            g_coord_c.append(i)
-            c_const_bits_a_list.append(const_bit_a)
-            c_param_bits_a_list.append(param_bits_a)
-            c_const_bits_b_list.append(const_bit_b)
-            c_param_bits_b_list.append(param_bits_b)
+            c_terms_per_graph[i].append(
+                (const_bit_a, param_bits_a, const_bit_b, param_bits_b)
+            )
 
-    n_c_terms = len(c_const_bits_a_list)
-    c_const_bits_a = jnp.array(c_const_bits_a_list, dtype=jnp.uint8)
-    c_param_bits_a = jnp.array(c_param_bits_a_list, dtype=jnp.uint8).reshape(
-        n_c_terms, n_params
-    )
-    c_const_bits_b = jnp.array(c_const_bits_b_list, dtype=jnp.uint8)
-    c_param_bits_b = jnp.array(c_param_bits_b_list, dtype=jnp.uint8).reshape(
-        n_c_terms, n_params
-    )
-    c_graph_ids = jnp.array(g_coord_c, dtype=jnp.int32)
+    max_c = max((len(terms) for terms in c_terms_per_graph), default=0)
+    max_c = max(max_c, 1)
+
+    # Pad with 0 (additive identity for exponent sums)
+    c_const_bits_a = np.zeros((num_graphs, max_c), dtype=np.uint8)
+    c_param_bits_a = np.zeros((num_graphs, max_c, n_params), dtype=np.uint8)
+    c_const_bits_b = np.zeros((num_graphs, max_c), dtype=np.uint8)
+    c_param_bits_b = np.zeros((num_graphs, max_c, n_params), dtype=np.uint8)
+
+    for i, terms in enumerate(c_terms_per_graph):
+        for j, (cba, pba, cbb, pbb) in enumerate(terms):
+            c_const_bits_a[i, j] = cba
+            c_param_bits_a[i, j] = pba
+            c_const_bits_b[i, j] = cbb
+            c_param_bits_b[i, j] = pbb
 
     # ========================================================================
     # Type D compilation (phase-pair)
     # Terms of the form 1 + e^(i*alpha) + e^(i*beta) - e^(i*(alpha+beta))
     # ========================================================================
-    d_const_alpha_list = []
-    d_const_beta_list = []
-    d_param_bits_a_list = []
-    d_param_bits_b_list = []
-    g_coord_d = []
+    d_terms_per_graph: list[list[tuple[int, int, list[int], list[int]]]] = [
+        [] for _ in range(num_graphs)
+    ]
 
     for i in range(num_graphs):
         graph = g_list[i]
@@ -209,29 +218,32 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
             const_alpha = int(graph.scalar.phasepairs[pp].alpha)
             const_beta = int(graph.scalar.phasepairs[pp].beta)
 
-            g_coord_d.append(i)
-            d_const_alpha_list.append(const_alpha)
-            d_const_beta_list.append(const_beta)
-            d_param_bits_a_list.append(param_bits_a)
-            d_param_bits_b_list.append(param_bits_b)
+            d_terms_per_graph[i].append(
+                (const_alpha, const_beta, param_bits_a, param_bits_b)
+            )
 
-    n_d_terms = len(d_const_alpha_list)
-    d_const_alpha = jnp.array(d_const_alpha_list, dtype=jnp.uint8)
-    d_const_beta = jnp.array(d_const_beta_list, dtype=jnp.uint8)
-    d_param_bits_a = jnp.array(d_param_bits_a_list, dtype=jnp.uint8).reshape(
-        n_d_terms, n_params
-    )
-    d_param_bits_b = jnp.array(d_param_bits_b_list, dtype=jnp.uint8).reshape(
-        n_d_terms, n_params
-    )
-    d_graph_ids = jnp.array(g_coord_d, dtype=jnp.int32)
+    d_num_terms = np.array([len(terms) for terms in d_terms_per_graph], dtype=np.int32)
+    max_d = int(d_num_terms.max()) if d_num_terms.size else 0
+    max_d = max(max_d, 1)
+
+    # Pad with alpha=0, beta=0 -> 1+1+1-1=2; compensated in power2.
+    d_const_alpha = np.zeros((num_graphs, max_d), dtype=np.uint8)
+    d_const_beta = np.zeros((num_graphs, max_d), dtype=np.uint8)
+    d_param_bits_a = np.zeros((num_graphs, max_d, n_params), dtype=np.uint8)
+    d_param_bits_b = np.zeros((num_graphs, max_d, n_params), dtype=np.uint8)
+
+    for i, terms in enumerate(d_terms_per_graph):
+        for j, (ca, cb, pba, pbb) in enumerate(terms):
+            d_const_alpha[i, j] = ca
+            d_const_beta[i, j] = cb
+            d_param_bits_a[i, j] = pba
+            d_param_bits_b[i, j] = pbb
 
     # ========================================================================
     # Static data
     # ========================================================================
     for g in g_list:
         if g.scalar.phase.denominator not in [1, 2, 4]:
-
             g.scalar.approximate_floatfactor *= np.exp(1j * g.scalar.phase * np.pi)
             g.scalar.phase = Fraction(0, 1)
 
@@ -249,7 +261,7 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
     exact_floatfactor = []
     power2 = []
 
-    for g in g_list:
+    for i, g in enumerate(g_list):
         dn = g.scalar.floatfactor.copy()
 
         p_sqrt2 = g.scalar.power2
@@ -265,25 +277,23 @@ def compile_circuit(g_list: list[BaseGraph], params: list[str]) -> CompiledCircu
         power2.append(p_sqrt2 // 2)
         exact_floatfactor.append([dn.a, dn.b, dn.c, dn.d])
 
-    return CompiledCircuit(
+    return CompiledScalarGraphs(
         num_graphs=num_graphs,
         n_params=n_params,
-        a_const_phases=a_const_phases,
-        a_param_bits=a_param_bits,
-        a_graph_ids=a_graph_ids,
-        b_term_types=b_term_types,
-        b_param_bits=b_param_bits,
-        b_graph_ids=b_graph_ids,
-        c_const_bits_a=c_const_bits_a,
-        c_param_bits_a=c_param_bits_a,
-        c_const_bits_b=c_const_bits_b,
-        c_param_bits_b=c_param_bits_b,
-        c_graph_ids=c_graph_ids,
-        d_const_alpha=d_const_alpha,
-        d_const_beta=d_const_beta,
-        d_param_bits_a=d_param_bits_a,
-        d_param_bits_b=d_param_bits_b,
-        d_graph_ids=d_graph_ids,
+        a_const_phases=jnp.array(a_const_phases),
+        a_param_bits=jnp.array(a_param_bits),
+        a_num_terms=jnp.array(a_num_terms, dtype=jnp.int32),
+        b_term_types=jnp.array(b_term_types),
+        b_param_bits=jnp.array(b_param_bits),
+        c_const_bits_a=jnp.array(c_const_bits_a),
+        c_param_bits_a=jnp.array(c_param_bits_a),
+        c_const_bits_b=jnp.array(c_const_bits_b),
+        c_param_bits_b=jnp.array(c_param_bits_b),
+        d_const_alpha=jnp.array(d_const_alpha),
+        d_const_beta=jnp.array(d_const_beta),
+        d_param_bits_a=jnp.array(d_param_bits_a),
+        d_param_bits_b=jnp.array(d_param_bits_b),
+        d_num_terms=jnp.array(d_num_terms, dtype=jnp.int32),
         phase_indices=phase_indices,
         has_approximate_floatfactors=has_approximate_floatfactors,
         approximate_floatfactors=approximate_floatfactors,

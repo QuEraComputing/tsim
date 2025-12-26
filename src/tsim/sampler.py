@@ -1,262 +1,154 @@
+from __future__ import annotations
+
 from math import ceil
-from typing import Literal, overload
+from typing import TYPE_CHECKING, Literal, overload
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-import pyzx as zx
-from pyzx.graph.scalar import Scalar
 
 from tsim.channels import ChannelSampler, create_channels_from_specs
-from tsim.circuit import Circuit
-from tsim.decomposer import Decomposer, DecomposerArray, DecompositionMode
-from tsim.evaluate import evaluate_batch_numpy
-from tsim.graph_util import (
-    build_sampling_graph,
-    connected_components,
-    squash_graph,
-    transform_error_basis,
-)
-from tsim.parse import parse_stim_circuit
+from tsim.evaluate import evaluate_batch
+from tsim.graph_util import prepare_graph
+from tsim.program import compile_program
+from tsim.types import CompiledComponent, CompiledProgram, SamplingGraph
+
+if TYPE_CHECKING:
+    from jax import Array as PRNGKey
+
+    from tsim.circuit import Circuit
 
 
-class _CompiledSamplerBase:
-    """Base class with common initialization logic for all compiled samplers."""
+def _sample_component_impl(
+    component: CompiledComponent,
+    f_params: jax.Array,
+    key: PRNGKey,
+) -> tuple[jax.Array, PRNGKey]:
+    """Implementation of component sampling using autoregressive sampling.
 
-    def __init__(
-        self,
-        circuit: Circuit,
-        *,
-        sample_detectors: bool,
-        mode: DecompositionMode,
-        seed: int | None,
-    ):
-        """Initialize the sampler with common graph preparation.
+    Args:
+        component: The compiled component to sample from.
+        f_params: Error parameters, shape (batch_size, num_f_params).
+        key: JAX random key.
 
-        Args:
-            circuit: The quantum circuit to compile.
-            sample_detectors: If True, sample detectors/observables; if False, sample measurements.
-            mode: Decomposition mode:
-                - "sequential": For sampling - [0, 1, 2, ..., n] per component
-                - "joint": For probability estimation - [0, n] per component
-            seed: Random seed for JAX. If None, a random seed is generated.
-        """
-        self.circuit = circuit
-
-        if seed is None:
-            seed = int(np.random.default_rng().integers(0, 2**31))
-        self._key = jax.random.key(seed)
-
-        built = parse_stim_circuit(circuit._stim_circ)
-
-        self._num_detectors = len(built.detectors)
-
-        self._key, subkey = jax.random.split(self._key)
-        error_channels = create_channels_from_specs(built.error_specs, subkey)
-
-        graph = build_sampling_graph(built, sample_detectors=sample_detectors)
-
-        zx.full_reduce(graph, paramSafe=True)
-        squash_graph(graph)
-
-        graph, error_transform = transform_error_basis(graph)
-
-        # Remove the scalar. Since we have not started the stabilizer rank decomposition,
-        # it is safe to remove the overall scalar. This removes many scalar terms
-        # and speeds up compilation and evaluation.
-        graph.scalar = Scalar()
-
-        self.channel_sampler = ChannelSampler(
-            error_channels=error_channels, error_transform=error_transform
-        )
-
-        m_chars = [f"m{i}" for i in range(len(graph.outputs()))]
-
-        decomposers: list[Decomposer] = []
-        for component in connected_components(graph):
-            error_chars = set()
-            for v in component.graph.vertices():
-                error_chars |= component.graph._phaseVars[v]
-
-            decomposers.append(
-                Decomposer(
-                    graph=component.graph,
-                    output_indices=component.output_indices,
-                    f_chars=sorted(error_chars),
-                    m_chars=m_chars,
-                )
-            )
-        sorted_decomposers = sorted(decomposers, key=lambda x: len(x.output_indices))
-        self.program = DecomposerArray(components=sorted_decomposers)
-
-        self.program.decompose(mode=mode)
-
-    def _sample_batch(self, batch_size: int) -> np.ndarray:
-        """Sample a batch of measurement outcomes."""
-        f_samples = self.channel_sampler.sample(batch_size)
-        ones = jnp.ones((batch_size, 1), dtype=jnp.bool)
-
-        component_samples = []
-        output_order = self.program.output_order
-
-        for component in self.program.components:
-            assert component.f_selection is not None
-            assert component.compiled_circuits is not None
-            assert component.param_indices is not None
-
-            f_params = f_samples[:, component.f_selection]
-            num_errors = f_params.shape[1]
-
-            key, self._key = jax.random.split(self._key)
-
-            # circuits[0] is normalization, circuits[1:] are for sequential bits
-            norm_circuit = component.compiled_circuits[0]
-            norm_indices = component.param_indices[0]
-            bit_circuits = component.compiled_circuits[1:]
-            bit_indices = component.param_indices[1:]
-
-            # Start with just error params
-            full_params = f_params
-
-            # Compute normalization once, only using active params
-            active_params = full_params[:, norm_indices]
-            prev = np.abs(evaluate_batch_numpy(norm_circuit, active_params))
-
-            for circuit, indices in zip(bit_circuits, bit_indices):
-                # Only evaluate with bit=1 (chain rule: p0 = prev - p1)
-                full_params = jnp.hstack([full_params, ones])
-
-                active_params = full_params[:, indices]
-                p1 = np.abs(evaluate_batch_numpy(circuit, active_params))
-
-                # P(bit=1) = p1 / prev
-                p1_norm = p1 / prev
-
-                _, key = jax.random.split(key)
-                measurement = jax.random.bernoulli(key, p=p1_norm)
-
-                # Chain rule: new_prev = p1 if bit=1, else prev - p1
-                prev = jnp.where(measurement, p1, prev - p1)
-
-                # Update full_params with actual measurement (replace the last column)
-                full_params = jnp.hstack([full_params[:, :-1], measurement[:, None]])
-
-            component_samples.append(full_params[:, num_errors:])
-
-        return np.concatenate(component_samples, axis=1)[:, np.argsort(output_order)]
-
-    def __repr__(self):
-        c_graphs = []
-        c_params = []
-        c_a_terms = []
-        c_b_terms = []
-        c_c_terms = []
-        c_d_terms = []
-        num_circuits = 0
-        for component in self.program.components:
-            if component.compiled_circuits is None:
-                continue
-            for circuit in component.compiled_circuits:
-                c_graphs.append(circuit.num_graphs)
-                c_params.append(circuit.n_params)
-                c_a_terms.append(len(circuit.a_graph_ids))
-                c_b_terms.append(len(circuit.b_graph_ids))
-                c_c_terms.append(len(circuit.c_graph_ids))
-                c_d_terms.append(len(circuit.d_graph_ids))
-                num_circuits += 1
-        return (
-            f"CompiledSampler({np.sum(c_graphs)} graphs, "
-            f"{np.max(c_params)} parameters, {np.sum(c_a_terms)} A terms, "
-            f"{np.sum(c_b_terms)} B terms, "
-            f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms)"
-        )
-
-    def _print_t_info(self):
-        for i, component in enumerate(self.program.components):
-            if component.plugged_graphs is None:
-                continue
-            t_counts = [
-                zx.tcount(g) + zx.simplify.u3_count(g) for g in component.plugged_graphs
-            ]
-            print(
-                f"Component {i}: {len(component.graph.outputs())} output(s), "
-                f"non-Clifford gates: {t_counts}"
-            )
-
-
-class CompiledStateProbs(_CompiledSamplerBase):
-    """Computes measurement probabilities for a given state.
-
-    Uses joint decomposition [0, n] where:
-    - circuits[0]: normalization (0 outputs plugged)
-    - circuits[1]: full joint probability (all outputs plugged)
+    Returns:
+        Tuple of (samples, next_key) where samples has shape
+        (batch_size, num_outputs_for_component).
     """
+    batch_size = f_params.shape[0]
 
-    def __init__(
-        self,
-        circuit: Circuit,
-        *,
-        sample_detectors: bool = False,
-        seed: int | None = None,
-    ):
-        """Create a probability estimator.
+    # Select this component's f-parameters
+    f_selected = f_params[:, component.f_selection].astype(jnp.bool_)
 
-        Args:
-            circuit: The quantum circuit to compile.
-            sample_detectors: If True, compute detector/observable probabilities.
-            seed: Random seed for JAX. If None, a random seed is generated.
-        """
-        super().__init__(
-            circuit,
-            sample_detectors=sample_detectors,
-            mode="joint",
-            seed=seed,
-        )
+    # Initialize m_accumulated as empty
+    m_accumulated = jnp.empty((batch_size, 0), dtype=jnp.bool_)
 
-    def probability_of(self, state: np.ndarray, *, batch_size: int) -> np.ndarray:
-        """Compute probabilities for a batch of error samples given a measurement state.
+    # First circuit is normalization (only f-params)
+    prev = jnp.abs(evaluate_batch(component.compiled_scalar_graphs[0], f_selected))
 
-        Args:
-            state: The measurement outcome state to compute probability for.
-            batch_size: Number of error samples to use for estimation.
+    # Autoregressive sampling for remaining circuits
+    for circuit in component.compiled_scalar_graphs[1:]:
+        # Build params: [f_selected, m_accumulated, trying_bit=1]
+        ones = jnp.ones((batch_size, 1), dtype=jnp.bool_)
+        params = jnp.hstack([f_selected, m_accumulated, ones])
 
-        Returns:
-            Array of probabilities P(state | error_sample) for each error sample.
-        """
-        f_samples = self.channel_sampler.sample(batch_size)
-        p_norm = np.ones(batch_size, dtype=np.float64)
-        p_joint = np.ones(batch_size, dtype=np.float64)
+        # Evaluate P(bit=1 | previous bits)
+        p1 = jnp.abs(evaluate_batch(circuit, params))
 
-        for component in self.program.components:
-            assert component.f_selection is not None
-            assert component.compiled_circuits is not None
-            assert component.param_indices is not None
-            assert len(component.compiled_circuits) == 2
+        # Sample from Bernoulli
+        key, subkey = jax.random.split(key)
+        bits = jax.random.bernoulli(subkey, p=p1 / prev)
 
-            f_params = f_samples[:, component.f_selection]
-            norm_circuit, joint_circuit = component.compiled_circuits
-            norm_indices, joint_indices = component.param_indices
+        # Update prev using chain rule: new_prev = p1 if bit=1, else prev - p1
+        prev = jnp.where(bits, p1, prev - p1)
 
-            # Normalization: circuit[0] with only error params
-            active_norm_params = f_params[:, norm_indices]
-            p_norm *= np.abs(evaluate_batch_numpy(norm_circuit, active_norm_params))
+        # Accumulate the sampled bit
+        m_accumulated = jnp.hstack([m_accumulated, bits[:, None]])
 
-            # Joint probability: circuit[1] with error params + state
-            component_state = state[component.output_indices]
-            tiled_state = jnp.tile(component_state, (batch_size, 1))
-            full_params = jnp.hstack([f_params, tiled_state])
-            active_joint_params = full_params[:, joint_indices]
-            p_joint *= np.abs(evaluate_batch_numpy(joint_circuit, active_joint_params))
-
-        return p_joint / p_norm
+    return m_accumulated, key
 
 
-class CompiledMeasurementSampler(_CompiledSamplerBase):
+@jax.jit
+def _sample_component_jit(
+    component: CompiledComponent,
+    f_params: jax.Array,
+    key: PRNGKey,
+) -> tuple[jax.Array, PRNGKey]:
+    """JIT-compiled version of component sampling."""
+    return _sample_component_impl(component, f_params, key)
+
+
+def sample_component(
+    component: CompiledComponent,
+    f_params: jax.Array,
+    key: PRNGKey,
+) -> tuple[jax.Array, PRNGKey]:
+    """Sample outputs from a single component using autoregressive sampling.
+
+    Args:
+        component: The compiled component to sample from.
+        f_params: Error parameters, shape (batch_size, num_f_params).
+        key: JAX random key.
+
+    Returns:
+        Tuple of (samples, next_key) where samples has shape
+        (batch_size, num_outputs_for_component).
+    """
+    # Skip JIT for small components (overhead not worth it)
+    if len(component.output_indices) <= 1:
+        return _sample_component_impl(component, f_params, key)
+    return _sample_component_jit(component, f_params, key)
+
+
+def sample_program(
+    program: CompiledProgram,
+    f_params: jax.Array,
+    key: PRNGKey,
+) -> jax.Array:
+    """Sample all outputs from a compiled program.
+
+    Args:
+        program: The compiled program to sample from.
+        f_params: Error parameters, shape (batch_size, num_f_params).
+        key: JAX random key.
+
+    Returns:
+        Samples array of shape (batch_size, num_outputs), reordered to
+        match the original output indices.
+    """
+    results: list[jax.Array] = []
+
+    for component in program.components:
+        samples, key = sample_component(component, f_params, key)
+        results.append(samples)
+
+    # Combine results from all components
+    combined = jnp.concatenate(results, axis=1)
+
+    # Reorder to original output order
+    return combined[:, jnp.argsort(program.output_order)]
+
+
+# =============================================================================
+# Compiled Samplers
+# =============================================================================
+
+
+def _create_channel_sampler(prepared: SamplingGraph, key: PRNGKey) -> ChannelSampler:
+    """Create a channel sampler from a prepared graph."""
+    error_channels = create_channels_from_specs(prepared.error_specs, key)
+    return ChannelSampler(
+        error_channels=error_channels,
+        error_transform=prepared.error_transform,
+    )
+
+
+class CompiledMeasurementSampler:
     """Samples measurement outcomes from a quantum circuit.
 
     Uses sequential decomposition [0, 1, 2, ..., n] where:
-    - circuits[0]: normalization (0 outputs plugged)
-    - circuits[i]: cumulative probability up to bit i
+    - compiled_scalar_graphs[0]: normalization (0 outputs plugged)
+    - compiled_scalar_graphs[i]: cumulative probability up to bit i
     """
 
     def __init__(self, circuit: Circuit, *, seed: int | None = None):
@@ -266,12 +158,18 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             seed: Random seed for JAX. If None, a random seed is generated.
         """
-        super().__init__(
-            circuit,
-            sample_detectors=False,
-            mode="sequential",
-            seed=seed,
-        )
+        if seed is None:
+            seed = int(np.random.default_rng().integers(0, 2**31))
+
+        self._key = jax.random.key(seed)
+
+        prepared = prepare_graph(circuit, sample_detectors=False)
+        self._program = compile_program(prepared, mode="sequential")
+
+        self._key, subkey = jax.random.split(self._key)
+        self._channel_sampler = _create_channel_sampler(prepared, subkey)
+
+        self.circuit = circuit
 
     def sample(self, shots: int, *, batch_size: int = 1024) -> np.ndarray:
         """Sample measurement outcomes from the circuit.
@@ -287,10 +185,22 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         """
         if shots < batch_size:
             batch_size = shots
-        batches = []
+
+        batches: list[jax.Array] = []
         for _ in range(ceil(shots / batch_size)):
-            batches.append(self._sample_batch(batch_size))
+            f_params = self._channel_sampler.sample(batch_size)
+            self._key, subkey = jax.random.split(self._key)
+            samples = sample_program(self._program, f_params, subkey)
+            batches.append(samples)
+
         return np.concatenate(batches)[:shots]
+
+    def __repr__(self) -> str:
+        return _program_repr(
+            self._program,
+            len(self._channel_sampler.error_channels),
+            "CompiledMeasurementSampler",
+        )
 
 
 def maybe_bit_pack(array: np.ndarray, *, do_nothing: bool = False) -> np.ndarray:
@@ -308,7 +218,7 @@ def maybe_bit_pack(array: np.ndarray, *, do_nothing: bool = False) -> np.ndarray
     return np.packbits(array.astype(np.bool_), axis=1, bitorder="little")
 
 
-class CompiledDetectorSampler(_CompiledSamplerBase):
+class CompiledDetectorSampler:
     """Samples detector and observable outcomes from a quantum circuit."""
 
     def __init__(self, circuit: Circuit, *, seed: int | None = None):
@@ -318,12 +228,19 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             seed: Random seed for JAX. If None, a random seed is generated.
         """
-        super().__init__(
-            circuit,
-            sample_detectors=True,
-            mode="sequential",
-            seed=seed,
-        )
+        if seed is None:
+            seed = int(np.random.default_rng().integers(0, 2**31))
+
+        self._key = jax.random.key(seed)
+
+        prepared = prepare_graph(circuit, sample_detectors=True)
+        self._program = compile_program(prepared, mode="sequential")
+
+        self._key, subkey = jax.random.split(self._key)
+        self._channel_sampler = _create_channel_sampler(prepared, subkey)
+
+        self.circuit = circuit
+        self._num_detectors = prepared.num_detectors
 
     @overload
     def sample(
@@ -384,9 +301,14 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         """
         if shots < batch_size:
             batch_size = shots
-        batches = []
+
+        batches: list[jax.Array] = []
         for _ in range(ceil(shots / batch_size)):
-            batches.append(self._sample_batch(batch_size))
+            f_params = self._channel_sampler.sample(batch_size)
+            self._key, subkey = jax.random.split(self._key)
+            samples = sample_program(self._program, f_params, subkey)
+            batches.append(samples)
+
         samples = np.concatenate(batches)[:shots]
 
         if append_observables:
@@ -397,7 +319,10 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         obs_samples = samples[:, num_detectors:]
 
         if prepend_observables:
-            return np.concatenate([obs_samples, det_samples], axis=1)
+            return maybe_bit_pack(
+                np.concatenate([obs_samples, det_samples], axis=1),
+                do_nothing=not bit_packed,
+            )
         if separate_observables:
             return (
                 maybe_bit_pack(det_samples, do_nothing=not bit_packed),
@@ -406,3 +331,130 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
 
         return maybe_bit_pack(det_samples, do_nothing=not bit_packed)
         # TODO: don't compute observables if they are discarded here
+
+    def __repr__(self) -> str:
+        return _program_repr(
+            self._program,
+            len(self._channel_sampler.error_channels),
+            "CompiledDetectorSampler",
+        )
+
+
+class CompiledStateProbs:
+    """Computes measurement probabilities for a given state.
+
+    Uses joint decomposition [0, n] where:
+    - compiled_scalar_graphs[0]: normalization (0 outputs plugged)
+    - compiled_scalar_graphs[1]: full joint probability (all outputs plugged)
+    """
+
+    def __init__(
+        self,
+        circuit: Circuit,
+        *,
+        sample_detectors: bool = False,
+        seed: int | None = None,
+    ):
+        """Create a probability estimator.
+
+        Args:
+            circuit: The quantum circuit to compile.
+            sample_detectors: If True, compute detector/observable probabilities.
+            seed: Random seed for JAX. If None, a random seed is generated.
+        """
+        if seed is None:
+            seed = int(np.random.default_rng().integers(0, 2**31))
+
+        key = jax.random.key(seed)
+
+        prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
+        self._program = compile_program(prepared, mode="joint")
+
+        _, subkey = jax.random.split(key)
+        self._channel_sampler = _create_channel_sampler(prepared, subkey)
+
+        self.circuit = circuit
+
+    def probability_of(self, state: np.ndarray, *, batch_size: int) -> np.ndarray:
+        """Compute probabilities for a batch of error samples given a measurement state.
+
+        Args:
+            state: The measurement outcome state to compute probability for.
+            batch_size: Number of error samples to use for estimation.
+
+        Returns:
+            Array of probabilities P(state | error_sample) for each error sample.
+        """
+        f_samples = self._channel_sampler.sample(batch_size)
+        p_norm = jnp.ones(batch_size)
+        p_joint = jnp.ones(batch_size)
+
+        for component in self._program.components:
+            assert (
+                len(component.compiled_scalar_graphs) == 2
+            )  # joint mode: [norm, full]
+
+            # Select this component's f-params
+            f_selected = f_samples[:, component.f_selection]
+
+            norm_circuit, joint_circuit = component.compiled_scalar_graphs
+
+            # Normalization: only f-params
+            p_norm = p_norm * jnp.abs(evaluate_batch(norm_circuit, f_selected))
+
+            # Joint probability: f-params + state
+            component_state = state[list(component.output_indices)]
+            tiled_state = jnp.tile(component_state, (batch_size, 1))
+            joint_params = jnp.hstack([f_selected, tiled_state])
+            p_joint = p_joint * jnp.abs(evaluate_batch(joint_circuit, joint_params))
+
+        return np.asarray(p_joint / p_norm)
+
+    def __repr__(self) -> str:
+        return _program_repr(
+            self._program,
+            len(self._channel_sampler.error_channels),
+            "CompiledStateProbs",
+        )
+
+
+def _program_repr(program: CompiledProgram, num_channels: int, class_name: str) -> str:
+    """Generate a repr string for a compiled sampler."""
+    c_graphs = []
+    c_params = []
+    c_a_terms = []
+    c_b_terms = []
+    c_c_terms = []
+    c_d_terms = []
+    num_circuits = 0
+    total_memory_bytes = 0
+    num_outputs = []
+
+    for component in program.components:
+        for circuit in component.compiled_scalar_graphs:
+            num_outputs.append(len(component.output_indices))
+            c_graphs.append(circuit.num_graphs)
+            c_params.append(circuit.n_params)
+            c_a_terms.append(circuit.a_const_phases.size)
+            c_b_terms.append(circuit.b_term_types.size)
+            c_c_terms.append(circuit.c_const_bits_a.size)
+            c_d_terms.append(circuit.d_const_alpha.size + circuit.d_const_beta.size)
+            num_circuits += 1
+
+            total_memory_bytes += sum(
+                v.nbytes
+                for v in jax.tree_util.tree_leaves(circuit)
+                if isinstance(v, jax.Array)
+            )
+
+    total_memory_mb = total_memory_bytes / (1024**2)
+
+    return (
+        f"{class_name}({np.sum(c_graphs)} graphs, "
+        f"{num_channels} error channels, "
+        f"{np.max(num_outputs)} outputs for largest cc, "
+        f"{np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
+        f"{np.sum(c_b_terms)} B terms, "
+        f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms, "
+        f"{total_memory_mb:.2f} MB)"
+    )

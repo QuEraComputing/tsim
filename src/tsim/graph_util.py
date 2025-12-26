@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Any, Dict, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Sequence, Tuple
 
 import numpy as np
+import pyzx as zx
 from pyzx.graph.base import BaseGraph
 from pyzx.graph.graph import Graph
 from pyzx.graph.graph_s import GraphS
@@ -13,7 +14,12 @@ from pyzx.graph.scalar import Scalar
 from pyzx.utils import VertexType
 
 from tsim._instructions import GraphRepresentation
+from tsim.parse import parse_stim_circuit
+from tsim.types import SamplingGraph
 from tsim.util.linalg import find_basis
+
+if TYPE_CHECKING:
+    from tsim.circuit import Circuit
 
 
 @dataclass
@@ -138,7 +144,7 @@ def _induced_subgraph(
 def build_sampling_graph(
     built: GraphRepresentation, sample_detectors: bool = False
 ) -> BaseGraph:
-    """Build a ZX graph for sampling from a BuiltGraph.
+    """Build a ZX graph for sampling from a GraphRepresentation.
 
     This is the internal implementation of get_sampling_graph.
     """
@@ -421,3 +427,45 @@ def scale_horizontally(g: BaseGraph, scale: float) -> None:
     """
     for v in g.vertices():
         g.set_row(v, g.row(v) * scale)
+
+
+def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> SamplingGraph:
+    """Prepare a circuit for compilation.
+
+    This function performs the graph preparation phase:
+    1. Parse the stim circuit into a ZX graph
+    2. Build the sampling graph (compose with adjoint, add outputs)
+    3. Reduce the graph via zx.full_reduce
+    4. Transform error basis via Gaussian elimination (e → f)
+    5. Clear the scalar (safe before stabilizer rank decomposition)
+
+    Args:
+        circuit: The quantum circuit to prepare.
+        sample_detectors: If True, prepare for detector sampling.
+            If False, prepare for measurement sampling.
+
+    Returns:
+        A SamplingGraph containing the reduced graph and error transformation.
+    """
+    built = parse_stim_circuit(circuit._stim_circ)
+
+    # Build sampling graph (doubles the diagram)
+    graph = build_sampling_graph(built, sample_detectors=sample_detectors)
+
+    zx.full_reduce(graph, paramSafe=True)
+    squash_graph(graph)
+
+    # Transform error basis: e-params → f-params via Gaussian elimination
+    graph, error_transform_dict = transform_error_basis(graph)
+
+    # Since we compute normalization separately, discard all scalar terms.
+    # This avoids computing scalars that would cancel out anyway during normalization.
+    graph.scalar = Scalar()
+
+    return SamplingGraph(
+        graph=graph,
+        error_transform=error_transform_dict,
+        error_specs=built.error_specs,
+        num_outputs=len(graph.outputs()),
+        num_detectors=len(built.detectors),
+    )
