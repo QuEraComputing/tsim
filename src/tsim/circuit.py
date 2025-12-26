@@ -15,8 +15,8 @@ from tsim.util.program_text import shorthand_to_stim, stim_to_shorthand
 
 class Circuit:
     """Quantum circuit as a thin wrapper around stim.Circuit.
-    _
-        Circuits are constructed like stim circuits:
+
+    Circuits are constructed like stim circuits:
 
             >>> circuit = Circuit('''
             ...     H 0

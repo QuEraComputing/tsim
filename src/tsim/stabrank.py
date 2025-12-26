@@ -47,6 +47,18 @@ def find_stab_u3(graphs: Iterable[BaseGraph]) -> list[BaseGraph]:
 
 
 def find_stab(graph: BaseGraph) -> list[BaseGraph]:
+    """Decompose a ZX-graph into a sum of stabilizer components.
+
+    This is the main entry point for stabilizer rank decomposition. It first removes
+    U3 phases, then decomposes T gates via BSS decompositions, producing a sum of
+    scalar graphs.
+
+    Args:
+        graph: The ZX graph to decompose.
+
+    Returns:
+        A list of scalar graphs whose sum equals the original graph.
+    """
     zx.full_reduce(graph, paramSafe=True)
     graphs = find_stab_u3([graph])
     return find_stab_magic(graphs)
