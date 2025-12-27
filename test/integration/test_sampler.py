@@ -131,11 +131,11 @@ def test_memory_error_correction_and_compare_to_stim(code_task: str):
         sampler = c.compile_detector_sampler(seed=0)
         if isinstance(c, Circuit):
             detection_events, observable_flips = sampler.sample(
-                10_000, batch_size=10_000, separate_observables=True
+                30_000, batch_size=30_000, separate_observables=True
             )
         else:
             detection_events, observable_flips = sampler.sample(
-                10_000, separate_observables=True
+                30_000, separate_observables=True
             )
 
         detector_error_model = circ.detector_error_model(decompose_errors=True)

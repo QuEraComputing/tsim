@@ -1,200 +1,393 @@
-import abc
+from collections import defaultdict
 from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jax import Array
-
-
-class Channel(abc.ABC):
-    """Abstract base class for quantum error channels."""
-
-    logits: Array
-    num_bits: int
-
-    def __init__(self, key: Array):
-        self._key = key
-
-    @abc.abstractmethod
-    def sample(self, num_samples: int = 1) -> jax.Array:
-        """Sample errors from the channel.
-
-        Args:
-            num_samples: Number of samples to draw from the channel.
-
-        Returns:
-            A jax.numpy array of shape (num_samples, num_bits) containing the
-            sampled errors.
-
-        """
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}(probs={jnp.exp(self.logits)})"
-
-
-class PauliChannel1(Channel):
-    """Single-qubit Pauli error channel."""
-
-    def __init__(self, px: float, py: float, pz: float, key: Array):
-        """Initialize channel with X, Y, Z error probabilities."""
-        self.num_bits = 2
-        self._key = key
-        probs = jnp.array([1 - px - py - pz, pz, px, py])
-        self.logits = jnp.log(probs)
-
-    def sample(self, num_samples: int = 1) -> jax.Array:
-        self._key, subkey = jax.random.split(self._key)
-        samples = jax.random.categorical(subkey, self.logits, shape=(num_samples,))
-        bits = ((samples[:, None] >> jnp.arange(2)) & 1).astype(jnp.uint8)
-        return bits
-
-
-class Depolarize1(PauliChannel1):
-    """Single-qubit depolarizing channel."""
-
-    def __init__(self, p: float, key: Array):
-        """Initialize with total depolarizing probability p."""
-        super().__init__(p / 3, p / 3, p / 3, key=key)
-
-
-class PauliChannel2(Channel):
-    """Two-qubit Pauli error channel."""
-
-    def __init__(
-        self,
-        pix: float,
-        piy: float,
-        piz: float,
-        pxi: float,
-        pxx: float,
-        pxy: float,
-        pxz: float,
-        pyi: float,
-        pyx: float,
-        pyy: float,
-        pyz: float,
-        pzi: float,
-        pzx: float,
-        pzy: float,
-        pzz: float,
-        key: Array,
-    ):
-        """Initialize with probabilities for all 15 two-qubit Pauli errors."""
-        self._key = key
-        remainder = (
-            1
-            - pix
-            - piy
-            - piz
-            - pxi
-            - pxx
-            - pxy
-            - pxz
-            - pyi
-            - pyx
-            - pyy
-            - pyz
-            - pzi
-            - pzx
-            - pzy
-            - pzz
-        )
-        self.num_bits = 4
-        probs = jnp.array(
-            [
-                remainder,  # 00,00
-                pzi,  # 10,00
-                pxi,  # 01,00
-                pyi,  # 11,00
-                piz,  # 00,10
-                pzz,  # 10,10
-                pxz,  # 01,10
-                pyz,  # 11,10
-                pix,  # 00,01
-                pzx,  # 10,01
-                pxx,  # 01,01
-                pyx,  # 11,01
-                piy,  # 00,11
-                pzy,  # 10,11
-                pxy,  # 01,11
-                pyy,  # 11,11
-            ]
-        )
-        self.logits = jnp.log(probs)
-
-    def sample(self, num_samples: int = 1) -> jax.Array:
-        self._key, subkey = jax.random.split(self._key)
-        samples = jax.random.categorical(subkey, self.logits, shape=(num_samples,))
-        bits = ((samples[:, None] >> jnp.arange(4)) & 1).astype(jnp.uint8)
-        return bits
-
-
-class Depolarize2(PauliChannel2):
-    """Two-qubit depolarizing channel."""
-
-    def __init__(self, p: float, key: Array):
-        """Initialize with total depolarizing probability p."""
-        super().__init__(
-            p / 15,
-            p / 15,
-            p / 15,
-            p / 15,
-            p / 15,
-            p / 15,
-            p / 15,
-            p / 15,
-            p / 15,
-            p / 15,
-            p / 15,
-            p / 15,
-            p / 15,
-            p / 15,
-            p / 15,
-            key=key,
-        )
-
-
-class Error(Channel):
-    """Single bit error channel used to sample X/Y/Z flips."""
-
-    def __init__(self, p: float, key: Array):
-        """Initialize with error probability p."""
-        self.num_bits = 1
-        self._key = key
-        self.p = p
-
-    def sample(self, num_samples: int = 1) -> jax.Array:
-        self._key, subkey = jax.random.split(self._key)
-        samples = jax.random.bernoulli(subkey, self.p, shape=(num_samples,)).astype(
-            jnp.uint8
-        )
-        return samples[:, None]
 
 
 @dataclass
-class ErrorSpec:
-    """Specification of an error channel.
+class Channel:
+    """A probability distribution over error outcomes.
 
-    Used during graph building to record what errors exist. Actual Channel
-    objects are created later when a sampler is compiled with a key.
+    Attributes:
+        probs: Shape (2^k,) probability array, sums to 1, dtype float64
+        unique_col_ids: Tuple of column IDs, where each ID corresponds to a bit of the channel.
     """
 
-    error_type: type[Channel]
-    params: tuple[float, ...]
+    probs: np.ndarray
+    unique_col_ids: tuple[int, ...]
 
-    def create_channel(self, key: Array) -> Channel:
-        """Create the actual Channel with the given random key."""
-        return self.error_type(*self.params, key=key)
+    @property
+    def num_bits(self) -> int:
+        return int(np.log2(len(self.probs)))
+
+    @property
+    def logits(self) -> jax.Array:
+        """Convert to logits for JAX sampling."""
+        return jnp.log(jnp.array(self.probs))
 
 
-def create_channels_from_specs(specs: list[ErrorSpec], key: Array) -> list[Channel]:
-    """Create Channel objects from ErrorSpecs with the given random key."""
-    channels = []
-    for spec in specs:
-        key, subkey = jax.random.split(key)
-        channels.append(spec.create_channel(subkey))
+def error_probs(p: float) -> np.ndarray:
+    """Single-bit error channel. Returns shape (2,)."""
+    return np.array([1 - p, p], dtype=np.float64)
+
+
+def y_error_probs(p: float) -> np.ndarray:
+    """Y error channel (correlated X and Z). Returns shape (4,).
+
+    A Y error is equivalent to both X and Z errors occurring together.
+    Outcomes: 00 (no error), 01 (Z only), 10 (X only), 11 (Y = XZ).
+    Only 00 and 11 have non-zero probability.
+    """
+    return np.array([1 - p, 0, 0, p], dtype=np.float64)
+
+
+def pauli_channel_1_probs(px: float, py: float, pz: float) -> np.ndarray:
+    """Single-qubit Pauli channel. Returns shape (4,).
+
+    Order: [I, Z, X, Y] mapped to bits [00, 01, 10, 11].
+    """
+    return np.array([1 - px - py - pz, pz, px, py], dtype=np.float64)
+
+
+def pauli_channel_2_probs(
+    pix: float,
+    piy: float,
+    piz: float,
+    pxi: float,
+    pxx: float,
+    pxy: float,
+    pxz: float,
+    pyi: float,
+    pyx: float,
+    pyy: float,
+    pyz: float,
+    pzi: float,
+    pzx: float,
+    pzy: float,
+    pzz: float,
+) -> np.ndarray:
+    """Two-qubit Pauli channel. Returns shape (16,)."""
+    remainder = (
+        1
+        - pix
+        - piy
+        - piz
+        - pxi
+        - pxx
+        - pxy
+        - pxz
+        - pyi
+        - pyx
+        - pyy
+        - pyz
+        - pzi
+        - pzx
+        - pzy
+        - pzz
+    )
+    probs = np.array(
+        [
+            remainder,  # 00,00
+            pzi,  # 10,00
+            pxi,  # 01,00
+            pyi,  # 11,00
+            piz,  # 00,10
+            pzz,  # 10,10
+            pxz,  # 01,10
+            pyz,  # 11,10
+            pix,  # 00,01
+            pzx,  # 10,01
+            pxx,  # 01,01
+            pyx,  # 11,01
+            piy,  # 00,11
+            pzy,  # 10,11
+            pxy,  # 01,11
+            pyy,  # 11,11
+        ],
+        dtype=np.float64,
+    )
+    return probs
+
+
+def xor_convolve(probs_a: np.ndarray, probs_b: np.ndarray) -> np.ndarray:
+    """XOR convolution of two probability distributions.
+
+    Computes P(A XOR B = o) = sum_{a ^ b = o} P(A=a) * P(B=b)
+
+    Args:
+        probs_a: Shape (2^k,) probabilities for channel A
+        probs_b: Shape (2^k,) probabilities for channel B (same size as A)
+
+    Returns:
+        Shape (2^k,) probabilities for the combined channel
+    """
+    n = len(probs_a)
+    assert len(probs_b) == n, "Both channels must have same number of outcomes"
+
+    result = np.zeros(n, dtype=np.float64)
+    for a in range(n):
+        for b in range(n):
+            o = a ^ b
+            result[o] += probs_a[a] * probs_b[b]
+
+    return result
+
+
+def reduce_null_bits(
+    channels: list[Channel], null_col_id: int | None = None
+) -> list[Channel]:
+    """Remove bits corresponding to the null column (all-zero column).
+
+    If a channel has bits mapped to null_col_id (representing an all-zero
+    column in the transform matrix), those bits don't affect any f-variable
+    and can be marginalized out by summing over them.
+
+    Args:
+        channels: List of channels
+        null_col_id: Column ID representing the all-zero column, or None if
+            there is no all-zero column.
+
+    Returns:
+        List of channels with null bits marginalized out. Channels with all
+        null entries are removed entirely (they have no effect on outputs).
+    """
+    if null_col_id is None:
+        # No null column, nothing to reduce
+        return channels
+
+    result: list[Channel] = []
+
+    for channel in channels:
+        # Find which positions are null vs non-null
+        null_positions = [
+            i
+            for i, col_id in enumerate(channel.unique_col_ids)
+            if col_id == null_col_id
+        ]
+        non_null_positions = [
+            i
+            for i, col_id in enumerate(channel.unique_col_ids)
+            if col_id != null_col_id
+        ]
+
+        if len(null_positions) == 0:
+            # No null entries, keep as-is
+            result.append(channel)
+            continue
+
+        if len(non_null_positions) == 0:
+            # All entries are null, channel has no effect - remove it
+            continue
+
+        # Marginalize out the null bits by summing over them
+        new_col_ids = tuple(channel.unique_col_ids[i] for i in non_null_positions)
+        new_num_bits = len(non_null_positions)
+        new_probs = np.zeros(2**new_num_bits, dtype=np.float64)
+
+        # For each old outcome, compute the new outcome and add probability
+        for old_idx in range(len(channel.probs)):
+            # Extract only the bits at non_null_positions
+            new_idx = 0
+            for new_bit_pos, old_bit_pos in enumerate(non_null_positions):
+                if (old_idx >> old_bit_pos) & 1:
+                    new_idx |= 1 << new_bit_pos
+            new_probs[new_idx] += channel.probs[old_idx]
+
+        result.append(Channel(probs=new_probs, unique_col_ids=new_col_ids))
+
+    return result
+
+
+def expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel:
+    """Expand a channel's distribution to a larger signature set.
+
+    The channel's existing signatures must be a subset of target_col_ids.
+    New bit positions are treated as "don't care" (uniformly 0).
+
+    Args:
+        channel: Channel to expand
+        target_col_ids: Target signature set (must be superset of channel's)
+
+    Returns:
+        New channel with expanded distribution
+    """
+    source_col_ids = channel.unique_col_ids
+    source_set = set(source_col_ids)
+    target_set = set(target_col_ids)
+    assert source_set <= target_set, "Source must be subset of target"
+
+    if source_set == target_set:
+        # Same signatures, just reorder if needed
+        if source_col_ids == target_col_ids:
+            return channel
+        # Need to reorder bits
+        source_to_target = {s: target_col_ids.index(s) for s in source_col_ids}
+        n_target = len(target_col_ids)
+        new_probs = np.zeros(2**n_target, dtype=np.float64)
+
+        for old_idx in range(len(channel.probs)):
+            # Map old bit pattern to new bit pattern
+            new_idx = 0
+            for src_pos, src_col in enumerate(source_col_ids):
+                if (old_idx >> src_pos) & 1:
+                    new_idx |= 1 << source_to_target[src_col]
+            new_probs[new_idx] += channel.probs[old_idx]
+
+        return Channel(probs=new_probs, unique_col_ids=target_col_ids)
+
+    # Expand to larger set: new bits are always 0
+    source_to_target = {s: target_col_ids.index(s) for s in source_col_ids}
+    n_target = len(target_col_ids)
+    new_probs = np.zeros(2**n_target, dtype=np.float64)
+
+    for old_idx in range(len(channel.probs)):
+        # Map old bit pattern to new bit pattern (new bits stay 0)
+        new_idx = 0
+        for src_pos, src_col in enumerate(source_col_ids):
+            if (old_idx >> src_pos) & 1:
+                new_idx |= 1 << source_to_target[src_col]
+        new_probs[new_idx] += channel.probs[old_idx]
+
+    return Channel(probs=new_probs, unique_col_ids=target_col_ids)
+
+
+def merge_identical_channels(channels: list[Channel]) -> list[Channel]:
+    """Phase 1: Merge all channels with identical signature sets.
+
+    Groups channels by their unique_col_ids and convolves all channels
+    in each group into a single channel.
+
+    Args:
+        channels: List of channels
+
+    Returns:
+        List with at most one channel per unique signature set
+    """
+
+    groups: dict[tuple[int, ...], list[Channel]] = defaultdict(list)
+
+    for channel in channels:
+        key = channel.unique_col_ids
+        groups[key].append(channel)
+
+    result: list[Channel] = []
+
+    for col_ids, group in groups.items():
+        if len(group) == 1:
+            result.append(group[0])
+        else:
+            # Convolve all channels in the group
+            combined_probs = group[0].probs.copy()
+            for channel in group[1:]:
+                combined_probs = xor_convolve(combined_probs, channel.probs)
+            result.append(Channel(probs=combined_probs, unique_col_ids=col_ids))
+
+    return result
+
+
+def absorb_subset_channels(channels: list[Channel], max_bits: int = 4) -> list[Channel]:
+    """Phase 2: Absorb channels whose signatures are subsets of others.
+
+    If channel A's signatures are a strict subset of channel B's signatures,
+    and |B| <= max_bits, then A is absorbed into B.
+
+    Args:
+        channels: List of channels
+        max_bits: Maximum number of bits allowed per channel
+
+    Returns:
+        List with no channel being a strict subset of another
+    """
+    # Sort by number of bits (largest first) for efficient processing
+    channels = sorted(channels, key=lambda c: -len(c.unique_col_ids))
+
+    result: list[Channel] = []
+    absorbed: set[int] = set()
+
+    for i, channel_i in enumerate(channels):
+        if i in absorbed:
+            continue
+
+        set_i = set(channel_i.unique_col_ids)
+
+        # Try to absorb smaller channels into this one
+        current_probs = channel_i.probs.copy()
+        current_col_ids = channel_i.unique_col_ids
+
+        for j, channel_j in enumerate(channels):
+            if j <= i or j in absorbed:
+                continue
+
+            set_j = set(channel_j.unique_col_ids)
+
+            # Check if j is a strict subset of i
+            if set_j < set_i and len(set_i) <= max_bits:
+                # Expand channel_j to match channel_i's signatures and convolve
+                expanded_j = expand_channel(channel_j, current_col_ids)
+                current_probs = xor_convolve(current_probs, expanded_j.probs)
+                absorbed.add(j)
+
+        result.append(Channel(probs=current_probs, unique_col_ids=current_col_ids))
+
+    return result
+
+
+def simplify_channels(
+    channels: list[Channel], max_bits: int = 4, null_col_id: int | None = None
+) -> list[Channel]:
+    """Simplify channels by removing null columns, merging identical and absorbing subsets.
+
+    Args:
+        channels: List of channels to simplify
+        max_bits: Maximum number of bits allowed per channel
+        null_col_id: Column ID representing the all-zero column, or None if
+            there is no all-zero column.
+
+    Returns:
+        Simplified list of channels
+    """
+    channels = reduce_null_bits(channels, null_col_id)
+    channels = merge_identical_channels(channels)
+    channels = absorb_subset_channels(channels, max_bits)
     return channels
+
+
+def _sample_channels(
+    key: jax.Array,
+    channels: list[Channel],
+    matrix: jax.Array,
+    num_samples: int,
+) -> jax.Array:
+    """Sample from multiple channels and combine results via XOR.
+
+    Args:
+        key: JAX random key
+        channels: List of channels to sample from
+        matrix: Signature matrix of shape (num_signatures, num_outputs)
+        num_samples: Number of samples to draw
+
+    Returns:
+        Samples array of shape (num_samples, num_outputs).
+    """
+    num_outputs = matrix.shape[1]
+    res = jnp.zeros((num_samples, num_outputs), dtype=jnp.uint8)
+
+    keys = jax.random.split(key, len(channels))
+
+    for channel, subkey in zip(channels, keys, strict=True):
+        num_bits = channel.num_bits
+
+        samples = jax.random.categorical(subkey, channel.logits, shape=(num_samples,))
+        # Extract individual bits from sampled indices
+        bits = ((samples[:, None] >> jnp.arange(num_bits)) & 1).astype(jnp.uint8)
+
+        # XOR contribution from each bit into the result
+        for i, col_id in enumerate(channel.unique_col_ids):
+            res = res ^ (bits[:, i : i + 1] * matrix[col_id : col_id + 1, :])
+
+    return res
 
 
 class ChannelSampler:
@@ -206,79 +399,73 @@ class ChannelSampler:
 
     f_i = error_transform_ij * e_j mod 2
 
-    Channels whose variables don't appear in the transform are automatically filtered
-    out to avoid unnecessary sampling.
-
-    Attributes:
-        error_channels: Filtered list of channels that contribute to the transform.
-        error_transform: Dictionary mapping new basis variables to sets of original
-            variables. Each new variable f_i is the XOR of its associated e variables.
+    Channels are automatically simplified by:
+    1. Removing bits that correspond to all-zero columns (no effect on outputs)
+    2. Merging channels with identical column signatures
+    3. Absorbing channels whose signatures are subsets of others
 
     Example:
-        >>> channels = [Error(0.1, key1), Error(0.2, key2)]  # produces e0, e1
-        >>> transform = {"f0": {"e0", "e1"}}  # f0 = e0 XOR e1
-        >>> sampler = ChannelSampler(channels, transform)
+        >>> probs = [error_probs(0.1), error_probs(0.2)]  # two 1-bit channels
+        >>> transform = np.array([[1, 1]])  # f0 = e0 XOR e1
+        >>> sampler = ChannelSampler(probs, transform)
         >>> samples = sampler.sample(1000)  # shape (1000, 1)
     """
 
     def __init__(
         self,
-        error_channels: list[Channel],
-        error_transform: dict[str, set[str]],
+        channel_probs: list[np.ndarray],
+        error_transform: np.ndarray,
+        seed: int | None = None,
     ):
-        """Initialize the sampler with error channels and a basis transformation.
+        """Initialize the sampler with channel probabilities and a basis transformation.
 
         Args:
-            error_channels: List of channels. Channel i produces error bits starting
-                at index sum(channels[0:i].num_bits). For example, if channels have
-                num_bits [2, 1, 2], they produce variables [e0,e1], [e2], [e3,e4].
-            error_transform: Mapping from new basis variables to sets of original
-                variables. Each new variable f_i is the XOR of its associated e
-                variables. E.g., {"f0": {"e1", "e3"}, "f1": {"e2"}} means
-                f0 = e1 XOR e3 and f1 = e2.
+            channel_probs: List of probability arrays. Channel i has shape (2^k_i,)
+                and produces k_i error bits starting at index sum(k_0:k_{i-1}).
+                For example, if channels have shapes [(4,), (2,), (4,)], they
+                produce variables [e0,e1], [e2], [e3,e4].
+            error_transform: Binary matrix of shape (num_f, num_e) where entry [i, j] = 1
+                means f_i depends on e_j. For example, if row 0 is [0, 1, 0, 1],
+                then f0 = e1 XOR e3.
+            seed: Random seed for sampling. If None, a random seed is generated.
         """
-        from itertools import count
+        unique_cols, inverse = np.unique(error_transform, axis=1, return_inverse=True)
 
-        counter = count()
-        channel_evars: list[list[str]] = [
-            [f"e{next(counter)}" for _ in range(ch.num_bits)] for ch in error_channels
-        ]
+        # Signature matrix: each row is a unique column signature
+        signature_matrix = unique_cols.T  # shape (num_signatures, num_f)
 
-        # Filter to channels whose variables are used
-        used_evars = set().union(*error_transform.values())
-        filtered = [
-            (ch, evars)
-            for ch, evars in zip(error_channels, channel_evars)
-            if set(evars) & used_evars
-        ]
+        # Find null_col_id: the index of the all-zero column (or None)
+        zero_col_indices = np.flatnonzero(np.all(unique_cols == 0, axis=0))
+        null_col_id = int(zero_col_indices[0]) if len(zero_col_indices) else None
 
-        self.error_channels = [ch for ch, _ in filtered]
-        filtered_evars = [evars for _, evars in filtered]
+        # Create Channel objects with unique_col_ids from inverse mapping
+        channels: list[Channel] = []
+        e_offset = 0
+        for probs in channel_probs:
+            num_bits = int(np.log2(len(probs)))
+            col_ids = tuple(int(inverse[e_offset + i]) for i in range(num_bits))
+            channels.append(Channel(probs=probs, unique_col_ids=col_ids))
+            e_offset += num_bits
 
-        # Build per-channel transform slices: each channel's e-vars map to f-vars
-        # This allows direct accumulation without concatenation
-        num_f = len(error_transform)
-        f_var_list = list(error_transform.keys())
-        f2idx = {f: i for i, f in enumerate(f_var_list)}
+        self.channels = simplify_channels(channels, null_col_id=null_col_id)
+        self.signature_matrix = jnp.array(signature_matrix, dtype=jnp.uint8)
 
-        self.channel_transforms: list[jax.Array] = []
-        for evars in filtered_evars:
-            # Build transform slice for this channel: shape (num_bits, num_f)
-            slice_transform = np.zeros((len(evars), num_f), dtype=np.uint8)
-            for row, evar in enumerate(evars):
-                for f_var, e_set in error_transform.items():
-                    if evar in e_set:
-                        slice_transform[row, f2idx[f_var]] = 1
-            self.channel_transforms.append(jnp.array(slice_transform, dtype=jnp.uint8))
-
-        self.num_f = num_f
+        self._key = jax.random.key(
+            seed if seed is not None else np.random.randint(0, 2**31)
+        )
 
     def sample(self, num_samples: int = 1) -> jax.Array:
-        """Sample from all error channels and transform to new error basis."""
-        result = jnp.zeros((num_samples, self.num_f), dtype=jnp.uint8)
+        """Sample from all error channels and transform to new error basis.
 
-        for channel, transform in zip(self.error_channels, self.channel_transforms):
-            channel_samples = channel.sample(num_samples)
-            result = result + (channel_samples @ transform)
+        Args:
+            num_samples: Number of samples to draw.
 
-        return (result % 2).astype(jnp.bool)
+        Returns:
+            Array of shape (num_samples, num_f) with boolean values indicating
+            which f-variables are set for each sample.
+        """
+        self._key, subkey = jax.random.split(self._key)
+        samples = _sample_channels(
+            subkey, self.channels, self.signature_matrix, num_samples
+        )
+        return samples

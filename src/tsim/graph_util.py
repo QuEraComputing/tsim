@@ -248,7 +248,9 @@ def build_sampling_graph(
     return g
 
 
-def transform_error_basis(g: BaseGraph) -> tuple[BaseGraph, dict[str, set[str]]]:
+def transform_error_basis(
+    g: BaseGraph, num_e: int | None = None
+) -> tuple[BaseGraph, np.ndarray]:
     """Transform phase variables from the original 'e' basis to a reduced 'f' basis.
 
     This function finds a linearly independent basis for the phase variables
@@ -258,12 +260,16 @@ def transform_error_basis(g: BaseGraph) -> tuple[BaseGraph, dict[str, set[str]]]
 
     Args:
         g: A ZX graph with phase variables attached to vertices.
+        num_e: Total number of e-variables. If provided, the returned matrix
+            will have exactly this many columns (padded with zeros if needed).
+            If None, the matrix will have only the columns that appear in the graph.
 
     Returns:
         A tuple containing:
             - The modified graph (same object, mutated in place)
-            - A mapping from new basis variables to original variables,
-              e.g. {"f0": {"e1", "e3"}, "f1": {"e2"}}
+            - A binary matrix of shape (num_f, num_e) where entry [i, j] = 1
+              means f_i depends on e_j. For example, if row 0 is [0, 1, 0, 1],
+              then f0 = e1 XOR e3.
     """
     parametrized_vertices = [
         v for v in g.vertices() if v in g._phaseVars and g._phaseVars[v]
@@ -271,13 +277,18 @@ def transform_error_basis(g: BaseGraph) -> tuple[BaseGraph, dict[str, set[str]]]
 
     if not parametrized_vertices:
         g.scalar = Scalar()
-        return g, {}
+        num_cols = num_e if num_e is not None else 0
+        return g, np.zeros((0, num_cols), dtype=np.uint8)
 
     # Parse variable indices and find the dimension
     error_indices = [
         [int(var[1:]) for var in g._phaseVars[v]] for v in parametrized_vertices
     ]
     num_errors = max(max(indices) for indices in error_indices) + 1
+
+    # Use provided num_e if larger
+    if num_e is not None and num_e > num_errors:
+        num_errors = num_e
 
     # Build binary matrix representation
     error_matrix = np.zeros((len(error_indices), num_errors), dtype=np.uint8)
@@ -291,12 +302,7 @@ def transform_error_basis(g: BaseGraph) -> tuple[BaseGraph, dict[str, set[str]]]
         new_vars = {f"f{j}" for j in np.nonzero(transform_row)[0]}
         g._phaseVars[v] = new_vars
 
-    error_transform = {
-        f"f{i}": {f"e{j}" for j in np.nonzero(basis_vec)[0]}
-        for i, basis_vec in enumerate(basis)
-    }
-
-    return g, error_transform
+    return g, basis
 
 
 def squash_graph(g: BaseGraph) -> None:
@@ -456,7 +462,7 @@ def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> SamplingGraph:
     squash_graph(graph)
 
     # Transform error basis: e-params → f-params via Gaussian elimination
-    graph, error_transform_dict = transform_error_basis(graph)
+    graph, error_transform = transform_error_basis(graph, num_e=built.num_error_bits)
 
     # Since we compute normalization separately, discard all scalar terms.
     # This avoids computing scalars that would cancel out anyway during normalization.
@@ -464,8 +470,8 @@ def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> SamplingGraph:
 
     return SamplingGraph(
         graph=graph,
-        error_transform=error_transform_dict,
-        error_specs=built.error_specs,
+        error_transform=error_transform,
+        channel_probs=built.channel_probs,
         num_outputs=len(graph.outputs()),
         num_detectors=len(built.detectors),
     )

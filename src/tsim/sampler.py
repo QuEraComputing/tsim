@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tsim.channels import ChannelSampler, create_channels_from_specs
+from tsim.channels import ChannelSampler
 from tsim.evaluate import evaluate_batch
 from tsim.graph_util import prepare_graph
 from tsim.program import compile_program
@@ -134,12 +134,14 @@ def sample_program(
 # =============================================================================
 
 
-def _create_channel_sampler(prepared: SamplingGraph, key: PRNGKey) -> ChannelSampler:
+def _create_channel_sampler(
+    prepared: SamplingGraph, seed: int | None
+) -> ChannelSampler:
     """Create a channel sampler from a prepared graph."""
-    error_channels = create_channels_from_specs(prepared.error_specs, key)
     return ChannelSampler(
-        error_channels=error_channels,
+        channel_probs=prepared.channel_probs,
         error_transform=prepared.error_transform,
+        seed=seed,
     )
 
 
@@ -167,7 +169,8 @@ class CompiledMeasurementSampler:
         self._program = compile_program(prepared, mode="sequential")
 
         self._key, subkey = jax.random.split(self._key)
-        self._channel_sampler = _create_channel_sampler(prepared, subkey)
+        channel_seed = int(jax.random.randint(subkey, (), 0, 2**30))
+        self._channel_sampler = _create_channel_sampler(prepared, channel_seed)
 
         self.circuit = circuit
 
@@ -198,7 +201,7 @@ class CompiledMeasurementSampler:
     def __repr__(self) -> str:
         return _program_repr(
             self._program,
-            len(self._channel_sampler.error_channels),
+            len(self._channel_sampler.channels),
             "CompiledMeasurementSampler",
         )
 
@@ -237,7 +240,8 @@ class CompiledDetectorSampler:
         self._program = compile_program(prepared, mode="sequential")
 
         self._key, subkey = jax.random.split(self._key)
-        self._channel_sampler = _create_channel_sampler(prepared, subkey)
+        channel_seed = int(jax.random.randint(subkey, (), 0, 2**30))
+        self._channel_sampler = _create_channel_sampler(prepared, channel_seed)
 
         self.circuit = circuit
         self._num_detectors = prepared.num_detectors
@@ -335,7 +339,7 @@ class CompiledDetectorSampler:
     def __repr__(self) -> str:
         return _program_repr(
             self._program,
-            len(self._channel_sampler.error_channels),
+            len(self._channel_sampler.channels),
             "CompiledDetectorSampler",
         )
 
@@ -371,7 +375,8 @@ class CompiledStateProbs:
         self._program = compile_program(prepared, mode="joint")
 
         _, subkey = jax.random.split(key)
-        self._channel_sampler = _create_channel_sampler(prepared, subkey)
+        channel_seed = int(jax.random.randint(subkey, (), 0, 2**30))
+        self._channel_sampler = _create_channel_sampler(prepared, channel_seed)
 
         self.circuit = circuit
 
@@ -413,7 +418,7 @@ class CompiledStateProbs:
     def __repr__(self) -> str:
         return _program_repr(
             self._program,
-            len(self._channel_sampler.error_channels),
+            len(self._channel_sampler.channels),
             "CompiledStateProbs",
         )
 
