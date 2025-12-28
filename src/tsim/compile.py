@@ -100,7 +100,6 @@ def compile_scalar_graphs(
 
     a_num_terms = np.array([len(terms) for terms in a_terms_per_graph], dtype=np.int32)
     max_a = int(a_num_terms.max()) if a_num_terms.size else 0
-    max_a = max(max_a, 1)
 
     a_const_phases = np.zeros((num_graphs, max_a), dtype=np.uint8)
     a_param_bits = np.zeros((num_graphs, max_a, n_params), dtype=np.uint8)
@@ -141,7 +140,6 @@ def compile_scalar_graphs(
             b_terms_per_graph[i].append((combined_j * 2, list(bitstr_key)))
 
     max_b = max((len(terms) for terms in b_terms_per_graph), default=0)
-    max_b = max(max_b, 1)
 
     # Pad with 0 (additive identity for phase sums)
     b_term_types = np.zeros((num_graphs, max_b), dtype=np.uint8)
@@ -180,7 +178,6 @@ def compile_scalar_graphs(
             )
 
     max_c = max((len(terms) for terms in c_terms_per_graph), default=0)
-    max_c = max(max_c, 1)
 
     # Pad with 0 (additive identity for exponent sums)
     c_const_bits_a = np.zeros((num_graphs, max_c), dtype=np.uint8)
@@ -223,7 +220,6 @@ def compile_scalar_graphs(
 
     d_num_terms = np.array([len(terms) for terms in d_terms_per_graph], dtype=np.int32)
     max_d = int(d_num_terms.max()) if d_num_terms.size else 0
-    max_d = max(max_d, 1)
 
     d_const_alpha = np.zeros((num_graphs, max_d), dtype=np.uint8)
     d_const_beta = np.zeros((num_graphs, max_d), dtype=np.uint8)
