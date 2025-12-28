@@ -75,6 +75,13 @@ def _get_f_indices(graph: BaseGraph) -> list[int]:
     return f_indices
 
 
+def _remove_phase_terms(graph: BaseGraph) -> None:
+    """Remove phase terms from the graph."""
+    graph.scalar.phasevars_halfpi = dict()
+    graph.scalar.phasevars_pi_pair = []
+    # TODO: clear additional phase terms
+
+
 def _compile_component(
     component: ConnectedComponent,
     f_indices_global: list[int],
@@ -124,8 +131,7 @@ def _compile_component(
 
         # Remove parametrized global phase terms. Global phases only matter once we
         # have started stabilizer rank decomposition.
-        g_copy.scalar.phasevars_halfpi = dict()
-        g_copy.scalar.phasevars_pi_pair = []
+        _remove_phase_terms(g_copy)
 
         # Parameter names: all f-params + m-params plugged so far
         param_names = [f"f{i}" for i in f_selection]
@@ -133,6 +139,11 @@ def _compile_component(
 
         # Perform stabilizer rank decomposition and compile
         g_list = find_stab(g_copy)
+
+        if len(g_list) == 1:
+            # This is a Clifford graph, we can clear the global phase terms
+            _remove_phase_terms(g_list[0])
+
         compiled = compile_scalar_graphs(g_list, param_names)
         compiled_graphs.append(compiled)
 
