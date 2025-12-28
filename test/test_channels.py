@@ -12,6 +12,7 @@ from tsim.channels import (
     error_probs,
     expand_channel,
     merge_identical_channels,
+    normalize_channels,
     pauli_channel_1_probs,
     pauli_channel_2_probs,
     reduce_null_bits,
@@ -272,13 +273,90 @@ class TestExpandChannel:
         np.testing.assert_allclose(expanded.probs[2], 0.3, rtol=1e-5)  # 0b10
         np.testing.assert_allclose(expanded.probs[3], 0.0, rtol=1e-5)  # 0b11
 
-    def test_expand_same_set_no_change(self):
-        """Expanding to same signature set should return equivalent channel."""
-        c = Channel(probs=error_probs(0.3), unique_col_ids=(0,))
 
-        expanded = expand_channel(c, (0,))
+class TestNormalizeChannels:
+    """Tests for normalize_channels."""
 
-        np.testing.assert_allclose(expanded.probs, c.probs, rtol=1e-5)
+    def test_already_sorted_unchanged(self):
+        """A channel with sorted col_ids should be unchanged."""
+        c = Channel(probs=error_probs(0.3), unique_col_ids=(0, 1))
+        result = normalize_channels([c])
+
+        assert len(result) == 1
+        assert result[0].unique_col_ids == (0, 1)
+        np.testing.assert_allclose(result[0].probs, c.probs)
+
+    def test_2bit_reorder(self):
+        """A 2-bit channel with reversed col_ids should be reordered."""
+        # probs[0] = P(00), probs[1] = P(01), probs[2] = P(10), probs[3] = P(11)
+        # With col_ids (1, 0): bit 0 -> col 1, bit 1 -> col 0
+        probs = np.array([0.5, 0.2, 0.2, 0.1], dtype=np.float64)
+        c = Channel(probs=probs, unique_col_ids=(1, 0))
+
+        result = normalize_channels([c])
+
+        assert len(result) == 1
+        assert result[0].unique_col_ids == (0, 1)
+        # After normalization to (0, 1): bit 0 -> col 0, bit 1 -> col 1
+        # new[0] = old[0] (00 -> 00)
+        # new[1] = old[2] (01 in new = col0=1 = old bit1=1 -> old index 10)
+        # new[2] = old[1] (10 in new = col1=1 = old bit0=1 -> old index 01)
+        # new[3] = old[3] (11 -> 11)
+        expected = np.array([0.5, 0.2, 0.2, 0.1], dtype=np.float64)
+        np.testing.assert_allclose(result[0].probs, expected)
+
+    def test_3bit_reorder(self):
+        """A 3-bit channel with unsorted col_ids should be reordered correctly."""
+        # col_ids (2, 0, 1): bit 0 -> col 2, bit 1 -> col 0, bit 2 -> col 1
+        probs = np.array([0.4, 0.1, 0.15, 0.05, 0.1, 0.05, 0.1, 0.05], dtype=np.float64)
+        c = Channel(probs=probs, unique_col_ids=(2, 0, 1))
+
+        result = normalize_channels([c])
+
+        assert len(result) == 1
+        assert result[0].unique_col_ids == (0, 1, 2)
+        # Verify probs sum to 1
+        np.testing.assert_allclose(np.sum(result[0].probs), 1.0)
+
+    def test_preserves_sampling_statistics(self):
+        """Normalization should preserve sampling statistics."""
+        # Create a channel with unsorted col_ids
+        probs = np.array([0.6, 0.15, 0.15, 0.1], dtype=np.float64)
+        c = Channel(probs=probs, unique_col_ids=(1, 0))
+
+        result = normalize_channels([c])
+
+        # Sample from both and compare marginals
+        mat_before = jnp.eye(2, dtype=jnp.uint8)
+        mat_after = jnp.eye(2, dtype=jnp.uint8)
+
+        key1 = jax.random.key(42)
+        samples_before = _sample_channels(key1, [c], mat_before, 100_000)
+
+        key2 = jax.random.key(43)
+        samples_after = _sample_channels(key2, result, mat_after, 100_000)
+
+        # Marginal frequencies should match
+        freq_before = np.mean(np.asarray(samples_before), axis=0)
+        freq_after = np.mean(np.asarray(samples_after), axis=0)
+
+        np.testing.assert_allclose(freq_before, freq_after, rtol=0.05)
+
+    def test_enables_merging(self):
+        """Two channels with same cols but different order should merge after normalization."""
+        # Channel A: col_ids (0, 1)
+        # Channel B: col_ids (1, 0) - same columns, different order
+        c1 = Channel(probs=np.array([0.7, 0.1, 0.1, 0.1]), unique_col_ids=(0, 1))
+        c2 = Channel(probs=np.array([0.8, 0.1, 0.05, 0.05]), unique_col_ids=(1, 0))
+
+        # Without normalization, these have different keys
+        merged_without = merge_identical_channels([c1, c2])
+        assert len(merged_without) == 2  # Not merged
+
+        # With normalization, they should merge
+        normalized = normalize_channels([c1, c2])
+        merged_with = merge_identical_channels(normalized)
+        assert len(merged_with) == 1  # Merged into one
 
 
 class TestAbsorbSubsetChannels:

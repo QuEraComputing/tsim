@@ -200,44 +200,70 @@ def reduce_null_bits(
     return result
 
 
+def normalize_channel(channel: Channel) -> Channel:
+    """Normalize a channel by sorting unique_col_ids, permuting probs accordingly.
+
+    Args:
+        channel: Channel to normalize
+
+    Returns:
+        Channel with sorted unique_col_ids and permuted probs
+    """
+    source_col_ids = channel.unique_col_ids
+    sorted_col_ids = tuple(sorted(source_col_ids))
+
+    if source_col_ids == sorted_col_ids:
+        return channel
+
+    # Need to reorder bits: map old bit positions to new positions
+    source_to_target = {s: sorted_col_ids.index(s) for s in source_col_ids}
+    n = len(source_col_ids)
+    new_probs = np.zeros(2**n, dtype=np.float64)
+
+    for old_idx in range(len(channel.probs)):
+        new_idx = 0
+        for src_pos, src_col in enumerate(source_col_ids):
+            if (old_idx >> src_pos) & 1:
+                new_idx |= 1 << source_to_target[src_col]
+        new_probs[new_idx] += channel.probs[old_idx]
+
+    return Channel(probs=new_probs, unique_col_ids=sorted_col_ids)
+
+
+def normalize_channels(channels: list[Channel]) -> list[Channel]:
+    """Normalize channels by sorting unique_col_ids, permuting probs accordingly.
+
+    This ensures channels affecting the same set of columns have identical
+    unique_col_ids tuples, enabling merge_identical_channels to group them.
+
+    Args:
+        channels: List of channels
+
+    Returns:
+        List of channels with sorted unique_col_ids
+    """
+    return [normalize_channel(c) for c in channels]
+
+
 def expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel:
     """Expand a channel's distribution to a larger signature set.
 
-    The channel's existing signatures must be a subset of target_col_ids.
-    New bit positions are treated as "don't care" (uniformly 0).
+    The channel's existing col_ids must be a strict subset of target_col_ids.
+    Both must be sorted. New bit positions are treated as "don't care" (always 0).
 
     Args:
-        channel: Channel to expand
-        target_col_ids: Target signature set (must be superset of channel's)
+        channel: Channel to expand (must have sorted unique_col_ids)
+        target_col_ids: Target signature set (must be sorted superset)
 
     Returns:
         New channel with expanded distribution
     """
     source_col_ids = channel.unique_col_ids
-    source_set = set(source_col_ids)
-    target_set = set(target_col_ids)
-    assert source_set <= target_set, "Source must be subset of target"
+    assert source_col_ids == tuple(sorted(source_col_ids)), "Source must be sorted"
+    assert target_col_ids == tuple(sorted(target_col_ids)), "Target must be sorted"
+    assert set(source_col_ids) < set(target_col_ids), "Source must be strict subset"
 
-    if source_set == target_set:
-        # Same signatures, just reorder if needed
-        if source_col_ids == target_col_ids:
-            return channel
-        # Need to reorder bits
-        source_to_target = {s: target_col_ids.index(s) for s in source_col_ids}
-        n_target = len(target_col_ids)
-        new_probs = np.zeros(2**n_target, dtype=np.float64)
-
-        for old_idx in range(len(channel.probs)):
-            # Map old bit pattern to new bit pattern
-            new_idx = 0
-            for src_pos, src_col in enumerate(source_col_ids):
-                if (old_idx >> src_pos) & 1:
-                    new_idx |= 1 << source_to_target[src_col]
-            new_probs[new_idx] += channel.probs[old_idx]
-
-        return Channel(probs=new_probs, unique_col_ids=target_col_ids)
-
-    # Expand to larger set: new bits are always 0
+    # Map source columns to their positions in target
     source_to_target = {s: target_col_ids.index(s) for s in source_col_ids}
     n_target = len(target_col_ids)
     new_probs = np.zeros(2**n_target, dtype=np.float64)
@@ -349,6 +375,7 @@ def simplify_channels(
         Simplified list of channels
     """
     channels = reduce_null_bits(channels, null_col_id)
+    channels = normalize_channels(channels)
     channels = merge_identical_channels(channels)
     channels = absorb_subset_channels(channels, max_bits)
     return channels
