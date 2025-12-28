@@ -124,7 +124,8 @@ def xor_convolve(probs_a: np.ndarray, probs_b: np.ndarray) -> np.ndarray:
         Shape (2^k,) probabilities for the combined channel
     """
     n = len(probs_a)
-    assert len(probs_b) == n, "Both channels must have same number of outcomes"
+    if len(probs_b) != n:
+        raise ValueError("Both channels must have same number of outcomes")
 
     result = np.zeros(n, dtype=np.float64)
     for a in range(n):

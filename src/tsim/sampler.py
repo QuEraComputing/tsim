@@ -165,6 +165,7 @@ class _CompiledSamplerBase:
         return np.concatenate(batches)[:shots]
 
     def __repr__(self) -> str:
+        """Return a string representation with compilation statistics."""
         c_graphs = []
         c_params = []
         c_a_terms = []
@@ -247,8 +248,9 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         return self._sample_batches(shots, batch_size)
 
 
-def _maybe_bit_pack(array: np.ndarray, *, do_nothing: bool = False) -> np.ndarray:
-    if do_nothing:
+def _maybe_bit_pack(array: np.ndarray, *, bit_packed: bool) -> np.ndarray:
+    """Optionally bit-pack a boolean array."""
+    if not bit_packed:
         return array
     return np.packbits(array.astype(np.bool_), axis=1, bitorder="little")
 
@@ -325,24 +327,22 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         samples = self._sample_batches(shots, batch_size)
 
         if append_observables:
-            return _maybe_bit_pack(samples, do_nothing=not bit_packed)
+            return _maybe_bit_pack(samples, bit_packed=bit_packed)
 
         num_detectors = self._num_detectors
         det_samples = samples[:, :num_detectors]
         obs_samples = samples[:, num_detectors:]
 
         if prepend_observables:
-            return _maybe_bit_pack(
-                np.concatenate([obs_samples, det_samples], axis=1),
-                do_nothing=not bit_packed,
-            )
+            combined = np.concatenate([obs_samples, det_samples], axis=1)
+            return _maybe_bit_pack(combined, bit_packed=bit_packed)
         if separate_observables:
             return (
-                _maybe_bit_pack(det_samples, do_nothing=not bit_packed),
-                _maybe_bit_pack(obs_samples, do_nothing=not bit_packed),
+                _maybe_bit_pack(det_samples, bit_packed=bit_packed),
+                _maybe_bit_pack(obs_samples, bit_packed=bit_packed),
             )
 
-        return _maybe_bit_pack(det_samples, do_nothing=not bit_packed)
+        return _maybe_bit_pack(det_samples, bit_packed=bit_packed)
         # TODO: don't compute observables if they are discarded here
 
 

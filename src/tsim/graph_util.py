@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import TYPE_CHECKING, Any, Dict, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Sequence
 
 import numpy as np
 import pyzx as zx
@@ -89,14 +89,14 @@ def _collect_vertices(
 def _induced_subgraph(
     g: BaseGraph,
     vertices: Sequence[Any],
-) -> tuple[BaseGraph, Dict[Any, Any]]:
+) -> tuple[BaseGraph, dict[Any, Any]]:
     """Build the subgraph that is induced by ``vertices``."""
 
     subgraph = Graph()
     subgraph.track_phases = g.track_phases
     subgraph.merge_vdata = g.merge_vdata
 
-    vert_map: Dict[Any, Any] = {}
+    vert_map: dict[Any, Any] = {}
     phases = g.phases()
     qubits = g.qubits()
     rows = g.rows()
@@ -121,7 +121,7 @@ def _induced_subgraph(
 
         vert_map[vertex] = new_vertex
 
-    added_edges: set[Tuple[Any, Any]] = set()
+    added_edges: set[tuple[Any, Any]] = set()
     for vertex in vertices:
         for neighbor in g.neighbors(vertex):
             if neighbor not in vert_map:
@@ -285,10 +285,8 @@ def transform_error_basis(
         [int(var[1:]) for var in g._phaseVars[v]] for v in parametrized_vertices
     ]
     num_errors = max(max(indices) for indices in error_indices) + 1
-
-    # Use provided num_e if larger
-    if num_e is not None and num_e > num_errors:
-        num_errors = num_e
+    if num_e is not None:
+        num_errors = max(num_errors, num_e)
 
     # Build binary matrix representation
     error_matrix = np.zeros((len(error_indices), num_errors), dtype=np.uint8)

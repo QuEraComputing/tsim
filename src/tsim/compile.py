@@ -69,9 +69,11 @@ def compile_scalar_graphs(
         CompiledScalarGraphs with all data in static-shaped JAX arrays
     """
     for i, g in enumerate(g_list):
-        assert (
-            len(list(g.vertices())) == 0
-        ), f"Only scalar graphs can be compiled but graph {i} has {len(list(g.vertices()))} vertices"
+        n_vertices = len(list(g.vertices()))
+        if n_vertices != 0:
+            raise ValueError(
+                f"Only scalar graphs can be compiled but graph {i} has {n_vertices} vertices"
+            )
 
     g_list = [g for g in g_list if not g.scalar.is_zero]
 
