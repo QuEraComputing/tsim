@@ -17,7 +17,6 @@ from tsim.channels import (
     reduce_null_bits,
     simplify_channels,
     xor_convolve,
-    y_error_probs,
 )
 
 
@@ -31,18 +30,6 @@ class TestProbabilityConstructors:
         assert probs.dtype == np.float64
         assert_allclose(probs[0], 0.9, rtol=1e-10)
         assert_allclose(probs[1], 0.1, rtol=1e-10)
-        assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
-
-    def test_y_error(self):
-        """Test Y error (correlated X and Z) probability distribution."""
-        probs = y_error_probs(0.2)
-        assert probs.shape == (4,)
-        assert probs.dtype == np.float64
-        # Only 00 (no error) and 11 (Y error) have probability
-        assert_allclose(probs[0], 0.8, rtol=1e-10)  # 00
-        assert_allclose(probs[1], 0.0, rtol=1e-10)  # 01
-        assert_allclose(probs[2], 0.0, rtol=1e-10)  # 10
-        assert_allclose(probs[3], 0.2, rtol=1e-10)  # 11
         assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
 
     def test_pauli_channel_1(self):
@@ -674,21 +661,6 @@ class TestChannelSampler:
         # P(odd number of 1s) = 3*0.1*0.9^2 + 0.1^3 = 0.244
         expected = 3 * 0.1 * 0.9**2 + 0.1**3
         assert_allclose(freq, expected, rtol=0.05)
-
-    def test_y_error_correlated(self):
-        """Test that Y error produces correlated X and Z."""
-        probs = [y_error_probs(0.3)]
-        transform = np.array([[1, 0], [0, 1]], dtype=np.uint8)  # f0=e0, f1=e1
-
-        sampler = ChannelSampler(probs, transform, seed=42)
-        samples = sampler.sample(100_000)
-
-        # Both bits should be equal (Y = XZ, so both flip together)
-        both_zero = np.mean((samples[:, 0] == 0) & (samples[:, 1] == 0))
-        both_one = np.mean((samples[:, 0] == 1) & (samples[:, 1] == 1))
-
-        assert_allclose(both_zero, 0.7, rtol=0.05)
-        assert_allclose(both_one, 0.3, rtol=0.05)
 
     def test_empty_transform(self):
         """Test with no f-variables (empty transform)."""

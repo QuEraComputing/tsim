@@ -12,7 +12,6 @@ from tsim.channels import (
     error_probs,
     pauli_channel_1_probs,
     pauli_channel_2_probs,
-    y_error_probs,
 )
 
 
@@ -558,10 +557,11 @@ def x_error(b: GraphRepresentation, qubit: int, p: float) -> None:
 
 
 def y_error(b: GraphRepresentation, qubit: int, p: float) -> None:
-    b.channel_probs.append(y_error_probs(p))
+    b.channel_probs.append(error_probs(p))
+    # Y = X·Z, so both vertices use the same error bit
     _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
-    _error(b, qubit, VertexType.X, f"e{b.num_error_bits + 1}")
-    b.num_error_bits += 2
+    _error(b, qubit, VertexType.X, f"e{b.num_error_bits}")
+    b.num_error_bits += 1
 
 
 def z_error(b: GraphRepresentation, qubit: int, p: float) -> None:

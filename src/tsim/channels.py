@@ -33,16 +33,6 @@ def error_probs(p: float) -> np.ndarray:
     return np.array([1 - p, p], dtype=np.float64)
 
 
-def y_error_probs(p: float) -> np.ndarray:
-    """Y error channel (correlated X and Z). Returns shape (4,).
-
-    A Y error is equivalent to both X and Z errors occurring together.
-    Outcomes: 00 (no error), 01 (Z only), 10 (X only), 11 (Y = XZ).
-    Only 00 and 11 have non-zero probability.
-    """
-    return np.array([1 - p, 0, 0, p], dtype=np.float64)
-
-
 def pauli_channel_1_probs(px: float, py: float, pz: float) -> np.ndarray:
     """Single-qubit Pauli channel. Returns shape (4,).
 
