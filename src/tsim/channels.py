@@ -160,20 +160,14 @@ def reduce_null_bits(
     result: list[Channel] = []
 
     for channel in channels:
-        # Find which positions are null vs non-null
-        null_positions = [
-            i
-            for i, col_id in enumerate(channel.unique_col_ids)
-            if col_id == null_col_id
-        ]
         non_null_positions = [
             i
             for i, col_id in enumerate(channel.unique_col_ids)
             if col_id != null_col_id
         ]
 
-        if len(null_positions) == 0:
-            # No null entries, keep as-is
+        if len(non_null_positions) == channel.num_bits:
+            # No null entries (all columns are non-null), keep channel as-is
             result.append(channel)
             continue
 
@@ -188,7 +182,6 @@ def reduce_null_bits(
 
         # For each old outcome, compute the new outcome and add probability
         for old_idx in range(len(channel.probs)):
-            # Extract only the bits at non_null_positions
             new_idx = 0
             for new_bit_pos, old_bit_pos in enumerate(non_null_positions):
                 if (old_idx >> old_bit_pos) & 1:
@@ -198,36 +191,6 @@ def reduce_null_bits(
         result.append(Channel(probs=new_probs, unique_col_ids=new_col_ids))
 
     return result
-
-
-def normalize_channel(channel: Channel) -> Channel:
-    """Normalize a channel by sorting unique_col_ids, permuting probs accordingly.
-
-    Args:
-        channel: Channel to normalize
-
-    Returns:
-        Channel with sorted unique_col_ids and permuted probs
-    """
-    source_col_ids = channel.unique_col_ids
-    sorted_col_ids = tuple(sorted(source_col_ids))
-
-    if source_col_ids == sorted_col_ids:
-        return channel
-
-    # Need to reorder bits: map old bit positions to new positions
-    source_to_target = {s: sorted_col_ids.index(s) for s in source_col_ids}
-    n = len(source_col_ids)
-    new_probs = np.zeros(2**n, dtype=np.float64)
-
-    for old_idx in range(len(channel.probs)):
-        new_idx = 0
-        for src_pos, src_col in enumerate(source_col_ids):
-            if (old_idx >> src_pos) & 1:
-                new_idx |= 1 << source_to_target[src_col]
-        new_probs[new_idx] += channel.probs[old_idx]
-
-    return Channel(probs=new_probs, unique_col_ids=sorted_col_ids)
 
 
 def normalize_channels(channels: list[Channel]) -> list[Channel]:
@@ -242,7 +205,31 @@ def normalize_channels(channels: list[Channel]) -> list[Channel]:
     Returns:
         List of channels with sorted unique_col_ids
     """
-    return [normalize_channel(c) for c in channels]
+    result: list[Channel] = []
+
+    for channel in channels:
+        source_col_ids = channel.unique_col_ids
+        sorted_col_ids = tuple(sorted(source_col_ids))
+
+        if source_col_ids == sorted_col_ids:
+            result.append(channel)
+            continue
+
+        # Need to reorder bits: map old bit positions to new positions
+        source_to_target = {s: sorted_col_ids.index(s) for s in source_col_ids}
+        n = len(source_col_ids)
+        new_probs = np.zeros(2**n, dtype=np.float64)
+
+        for old_idx in range(len(channel.probs)):
+            new_idx = 0
+            for src_pos, src_col in enumerate(source_col_ids):
+                if (old_idx >> src_pos) & 1:
+                    new_idx |= 1 << source_to_target[src_col]
+            new_probs[new_idx] += channel.probs[old_idx]
+
+        result.append(Channel(probs=new_probs, unique_col_ids=sorted_col_ids))
+
+    return result
 
 
 def expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel:
@@ -280,7 +267,7 @@ def expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel
 
 
 def merge_identical_channels(channels: list[Channel]) -> list[Channel]:
-    """Phase 1: Merge all channels with identical signature sets.
+    """Merge all channels with identical signature sets.
 
     Groups channels by their unique_col_ids and convolves all channels
     in each group into a single channel.
@@ -314,7 +301,7 @@ def merge_identical_channels(channels: list[Channel]) -> list[Channel]:
 
 
 def absorb_subset_channels(channels: list[Channel], max_bits: int = 4) -> list[Channel]:
-    """Phase 2: Absorb channels whose signatures are subsets of others.
+    """Absorb channels whose signatures are subsets of others.
 
     If channel A's signatures are a strict subset of channel B's signatures,
     and |B| <= max_bits, then A is absorbed into B.
@@ -427,9 +414,11 @@ class ChannelSampler:
     f_i = error_transform_ij * e_j mod 2
 
     Channels are automatically simplified by:
-    1. Removing bits that correspond to all-zero columns (no effect on outputs)
-    2. Merging channels with identical column signatures
-    3. Absorbing channels whose signatures are subsets of others
+    1. Removing bits e_i that do not affect any f-variable (i.e. all-zero columns in error_transform)
+    2. Merging channels with identical column signatures, i.e. channels whose corresponding
+        columns in error_transform are identical.
+    3. Absorbing channels whose signatures are subsets of others, i.e. channels whose corresponding
+        columns in error_transform are a strict subset of another channel's columns.
 
     Example:
         >>> probs = [error_probs(0.1), error_probs(0.2)]  # two 1-bit channels
@@ -478,7 +467,7 @@ class ChannelSampler:
         self.signature_matrix = jnp.array(signature_matrix, dtype=jnp.uint8)
 
         self._key = jax.random.key(
-            seed if seed is not None else np.random.randint(0, 2**31)
+            seed if seed is not None else np.random.randint(0, 2**30)
         )
 
     def sample(self, num_samples: int = 1) -> jax.Array:

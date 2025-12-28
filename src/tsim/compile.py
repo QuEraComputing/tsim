@@ -102,7 +102,6 @@ def compile_scalar_graphs(
     max_a = int(a_num_terms.max()) if a_num_terms.size else 0
     max_a = max(max_a, 1)
 
-    # Pad with const_phase=0, param_bits=0 -> (1+e^0)=2; compensated in power2.
     a_const_phases = np.zeros((num_graphs, max_a), dtype=np.uint8)
     a_param_bits = np.zeros((num_graphs, max_a, n_params), dtype=np.uint8)
 
@@ -226,7 +225,6 @@ def compile_scalar_graphs(
     max_d = int(d_num_terms.max()) if d_num_terms.size else 0
     max_d = max(max_d, 1)
 
-    # Pad with alpha=0, beta=0 -> 1+1+1-1=2; compensated in power2.
     d_const_alpha = np.zeros((num_graphs, max_d), dtype=np.uint8)
     d_const_beta = np.zeros((num_graphs, max_d), dtype=np.uint8)
     d_param_bits_a = np.zeros((num_graphs, max_d, n_params), dtype=np.uint8)

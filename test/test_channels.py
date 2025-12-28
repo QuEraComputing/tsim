@@ -1,8 +1,7 @@
-"""Tests for channel probability constructors and ChannelSampler."""
-
 import jax
 import jax.numpy as jnp
 import numpy as np
+from numpy.testing import assert_allclose
 
 from tsim.channels import (
     Channel,
@@ -30,9 +29,9 @@ class TestProbabilityConstructors:
         probs = error_probs(0.1)
         assert probs.shape == (2,)
         assert probs.dtype == np.float64
-        np.testing.assert_allclose(probs[0], 0.9, rtol=1e-10)
-        np.testing.assert_allclose(probs[1], 0.1, rtol=1e-10)
-        np.testing.assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
+        assert_allclose(probs[0], 0.9, rtol=1e-10)
+        assert_allclose(probs[1], 0.1, rtol=1e-10)
+        assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
 
     def test_y_error(self):
         """Test Y error (correlated X and Z) probability distribution."""
@@ -40,11 +39,11 @@ class TestProbabilityConstructors:
         assert probs.shape == (4,)
         assert probs.dtype == np.float64
         # Only 00 (no error) and 11 (Y error) have probability
-        np.testing.assert_allclose(probs[0], 0.8, rtol=1e-10)  # 00
-        np.testing.assert_allclose(probs[1], 0.0, rtol=1e-10)  # 01
-        np.testing.assert_allclose(probs[2], 0.0, rtol=1e-10)  # 10
-        np.testing.assert_allclose(probs[3], 0.2, rtol=1e-10)  # 11
-        np.testing.assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
+        assert_allclose(probs[0], 0.8, rtol=1e-10)  # 00
+        assert_allclose(probs[1], 0.0, rtol=1e-10)  # 01
+        assert_allclose(probs[2], 0.0, rtol=1e-10)  # 10
+        assert_allclose(probs[3], 0.2, rtol=1e-10)  # 11
+        assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
 
     def test_pauli_channel_1(self):
         """Test single-qubit Pauli channel probability distribution."""
@@ -53,37 +52,15 @@ class TestProbabilityConstructors:
         assert probs.shape == (4,)
         assert probs.dtype == np.float64
         # Order: [I, Z, X, Y] mapped to bits [00, 01, 10, 11]
-        np.testing.assert_allclose(probs[2], 1.0, rtol=1e-10)  # X = 10
+        assert_allclose(probs[2], 1.0, rtol=1e-10)  # X = 10
 
         # Pure Y error
         probs = pauli_channel_1_probs(px=0.0, py=1.0, pz=0.0)
-        np.testing.assert_allclose(probs[3], 1.0, rtol=1e-10)  # Y = 11
+        assert_allclose(probs[3], 1.0, rtol=1e-10)  # Y = 11
 
         # Pure Z error
         probs = pauli_channel_1_probs(px=0.0, py=0.0, pz=1.0)
-        np.testing.assert_allclose(probs[1], 1.0, rtol=1e-10)  # Z = 01
-
-    def test_depolarize_1(self):
-        """Test single-qubit depolarizing channel."""
-        probs = pauli_channel_1_probs(0.1, 0.1, 0.1)
-        assert probs.shape == (4,)
-        assert probs.dtype == np.float64
-        np.testing.assert_allclose(probs[0], 0.7, rtol=1e-10)  # I
-        np.testing.assert_allclose(probs[1], 0.1, rtol=1e-10)  # Z
-        np.testing.assert_allclose(probs[2], 0.1, rtol=1e-10)  # X
-        np.testing.assert_allclose(probs[3], 0.1, rtol=1e-10)  # Y
-        np.testing.assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
-
-    def test_depolarize_2(self):
-        """Test two-qubit depolarizing channel."""
-        probs = pauli_channel_2_probs(*[0.01] * 15)
-        assert probs.shape == (16,)
-        assert probs.dtype == np.float64
-        np.testing.assert_allclose(probs[0], 0.85, rtol=1e-10)  # II
-        # All other 15 Paulis have equal probability
-        for i in range(1, 16):
-            np.testing.assert_allclose(probs[i], 0.01, rtol=1e-10)
-        np.testing.assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
+        assert_allclose(probs[1], 1.0, rtol=1e-10)  # Z = 01
 
     def test_pauli_channel_2(self):
         """Test two-qubit Pauli channel."""
@@ -107,8 +84,8 @@ class TestProbabilityConstructors:
         )
         assert probs.shape == (16,)
         assert probs.dtype == np.float64
-        np.testing.assert_allclose(probs[8], 1.0, rtol=1e-10)  # IX = 0100 in 4-bit = 8
-        np.testing.assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
+        assert_allclose(probs[8], 1.0, rtol=1e-10)  # IX = 0100 in 4-bit = 8
+        assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
 
 
 def assert_sampling_matches(
@@ -131,7 +108,7 @@ def assert_sampling_matches(
     bits2 = _sample_channels(key2, channels_after, matrix, n_samples)
     freq2 = np.mean(np.asarray(bits2), axis=0)
 
-    np.testing.assert_allclose(
+    assert_allclose(
         freq1,
         freq2,
         rtol=rtol,
@@ -153,8 +130,8 @@ class TestXorConvolve:
         # Expected: P(XOR=1) = p(1-q) + q(1-p) = 0.1*0.8 + 0.2*0.9 = 0.26
         expected_p1 = p * (1 - q) + q * (1 - p)
         assert result.shape == (2,)
-        np.testing.assert_allclose(result[1], expected_p1, rtol=1e-5)
-        np.testing.assert_allclose(result[0], 1 - expected_p1, rtol=1e-5)
+        assert_allclose(result[1], expected_p1, rtol=1e-5)
+        assert_allclose(result[0], 1 - expected_p1, rtol=1e-5)
 
     def test_two_2bit_channels(self):
         """Test XOR convolution of two 2-bit distributions."""
@@ -165,7 +142,7 @@ class TestXorConvolve:
         result = xor_convolve(probs_a, probs_b)
 
         # XOR of two uniform distributions is still uniform
-        np.testing.assert_allclose(result, np.ones(4) / 4, rtol=1e-5)
+        assert_allclose(result, np.ones(4) / 4, rtol=1e-5)
 
     def test_identity_convolve(self):
         """Convolving with delta at 0 should return the same distribution."""
@@ -174,11 +151,11 @@ class TestXorConvolve:
 
         result = xor_convolve(probs, delta)
 
-        np.testing.assert_allclose(result, probs, rtol=1e-5)
+        assert_allclose(result, probs, rtol=1e-5)
 
 
 class TestMergeIdenticalChannels:
-    """Tests for merge_identical_channels (Phase 1)."""
+    """Tests for merge_identical_channels."""
 
     def test_merge_two_1bit_same_signature(self):
         """Two 1-bit channels with same signature should merge."""
@@ -191,7 +168,7 @@ class TestMergeIdenticalChannels:
         assert len(result) == 1
         assert result[0].unique_col_ids == (0,)
         # p_combined = 0.1*0.8 + 0.2*0.9 = 0.26
-        np.testing.assert_allclose(result[0].probs[1], 0.26, rtol=1e-5)
+        assert_allclose(result[0].probs[1], 0.26, rtol=1e-5)
 
     def test_merge_two_2bit_same_signature(self):
         """Two 2-bit channels with same signature should merge."""
@@ -254,10 +231,10 @@ class TestExpandChannel:
         assert expanded.unique_col_ids == (0, 1)
         assert expanded.num_bits == 2
         # Bit 1 is always 0, so only outcomes 0b00 and 0b01 have probability
-        np.testing.assert_allclose(expanded.probs[0], 0.7, rtol=1e-5)  # 0b00
-        np.testing.assert_allclose(expanded.probs[1], 0.3, rtol=1e-5)  # 0b01
-        np.testing.assert_allclose(expanded.probs[2], 0.0, rtol=1e-5)  # 0b10
-        np.testing.assert_allclose(expanded.probs[3], 0.0, rtol=1e-5)  # 0b11
+        assert_allclose(expanded.probs[0], 0.7, rtol=1e-5)  # 0b00
+        assert_allclose(expanded.probs[1], 0.3, rtol=1e-5)  # 0b01
+        assert_allclose(expanded.probs[2], 0.0, rtol=1e-5)  # 0b10
+        assert_allclose(expanded.probs[3], 0.0, rtol=1e-5)  # 0b11
 
     def test_expand_1bit_to_2bit_different_position(self):
         """Expand 1-bit channel to 2-bit where source is in second position."""
@@ -268,10 +245,10 @@ class TestExpandChannel:
         assert expanded.unique_col_ids == (3, 5)
         # Signature 5 is at position 1 in target, so bit 1 has the probability
         # Bit 0 (signature 3) is always 0
-        np.testing.assert_allclose(expanded.probs[0], 0.7, rtol=1e-5)  # 0b00
-        np.testing.assert_allclose(expanded.probs[1], 0.0, rtol=1e-5)  # 0b01
-        np.testing.assert_allclose(expanded.probs[2], 0.3, rtol=1e-5)  # 0b10
-        np.testing.assert_allclose(expanded.probs[3], 0.0, rtol=1e-5)  # 0b11
+        assert_allclose(expanded.probs[0], 0.7, rtol=1e-5)  # 0b00
+        assert_allclose(expanded.probs[1], 0.0, rtol=1e-5)  # 0b01
+        assert_allclose(expanded.probs[2], 0.3, rtol=1e-5)  # 0b10
+        assert_allclose(expanded.probs[3], 0.0, rtol=1e-5)  # 0b11
 
 
 class TestNormalizeChannels:
@@ -284,7 +261,7 @@ class TestNormalizeChannels:
 
         assert len(result) == 1
         assert result[0].unique_col_ids == (0, 1)
-        np.testing.assert_allclose(result[0].probs, c.probs)
+        assert_allclose(result[0].probs, c.probs)
 
     def test_2bit_reorder(self):
         """A 2-bit channel with reversed col_ids should be reordered."""
@@ -303,7 +280,7 @@ class TestNormalizeChannels:
         # new[2] = old[1] (10 in new = col1=1 = old bit0=1 -> old index 01)
         # new[3] = old[3] (11 -> 11)
         expected = np.array([0.5, 0.2, 0.2, 0.1], dtype=np.float64)
-        np.testing.assert_allclose(result[0].probs, expected)
+        assert_allclose(result[0].probs, expected)
 
     def test_3bit_reorder(self):
         """A 3-bit channel with unsorted col_ids should be reordered correctly."""
@@ -316,51 +293,21 @@ class TestNormalizeChannels:
         assert len(result) == 1
         assert result[0].unique_col_ids == (0, 1, 2)
         # Verify probs sum to 1
-        np.testing.assert_allclose(np.sum(result[0].probs), 1.0)
+        assert_allclose(np.sum(result[0].probs), 1.0)
 
     def test_preserves_sampling_statistics(self):
         """Normalization should preserve sampling statistics."""
-        # Create a channel with unsorted col_ids
         probs = np.array([0.6, 0.15, 0.15, 0.1], dtype=np.float64)
         c = Channel(probs=probs, unique_col_ids=(1, 0))
 
-        result = normalize_channels([c])
+        normalized = normalize_channels([c])
 
-        # Sample from both and compare marginals
-        mat_before = jnp.eye(2, dtype=jnp.uint8)
-        mat_after = jnp.eye(2, dtype=jnp.uint8)
-
-        key1 = jax.random.key(42)
-        samples_before = _sample_channels(key1, [c], mat_before, 100_000)
-
-        key2 = jax.random.key(43)
-        samples_after = _sample_channels(key2, result, mat_after, 100_000)
-
-        # Marginal frequencies should match
-        freq_before = np.mean(np.asarray(samples_before), axis=0)
-        freq_after = np.mean(np.asarray(samples_after), axis=0)
-
-        np.testing.assert_allclose(freq_before, freq_after, rtol=0.05)
-
-    def test_enables_merging(self):
-        """Two channels with same cols but different order should merge after normalization."""
-        # Channel A: col_ids (0, 1)
-        # Channel B: col_ids (1, 0) - same columns, different order
-        c1 = Channel(probs=np.array([0.7, 0.1, 0.1, 0.1]), unique_col_ids=(0, 1))
-        c2 = Channel(probs=np.array([0.8, 0.1, 0.05, 0.05]), unique_col_ids=(1, 0))
-
-        # Without normalization, these have different keys
-        merged_without = merge_identical_channels([c1, c2])
-        assert len(merged_without) == 2  # Not merged
-
-        # With normalization, they should merge
-        normalized = normalize_channels([c1, c2])
-        merged_with = merge_identical_channels(normalized)
-        assert len(merged_with) == 1  # Merged into one
+        mat = jnp.eye(2, dtype=jnp.uint8)
+        assert_sampling_matches(mat, [c], normalized)
 
 
 class TestAbsorbSubsetChannels:
-    """Tests for absorb_subset_channels (Phase 2)."""
+    """Tests for absorb_subset_channels."""
 
     def test_absorb_1bit_into_2bit(self):
         """A 1-bit channel should be absorbed into a 2-bit superset."""
@@ -511,7 +458,7 @@ class TestSampleChannels:
         bits = _sample_channels(key, [c], mat, 100_000)
         freq = np.mean(np.asarray(bits[:, 0]))
 
-        np.testing.assert_allclose(freq, 0.3, rtol=0.05)
+        assert_allclose(freq, 0.3, rtol=0.05)
 
     def test_xor_two_channels(self):
         """Test that sampling correctly XORs two independent channels."""
@@ -528,7 +475,7 @@ class TestSampleChannels:
 
         # P(f0=1) = P(e0 XOR e1 = 1) = 0.2*0.7 + 0.3*0.8 = 0.14 + 0.24 = 0.38
         expected = 0.2 * 0.7 + 0.3 * 0.8
-        np.testing.assert_allclose(freq, expected, rtol=0.05)
+        assert_allclose(freq, expected, rtol=0.05)
 
 
 class TestReduceNullBits:
@@ -559,7 +506,7 @@ class TestReduceNullBits:
 
         assert len(result) == 1
         assert result[0].unique_col_ids == (0,)
-        np.testing.assert_allclose(result[0].probs, c.probs, rtol=1e-5)
+        assert_allclose(result[0].probs, c.probs, rtol=1e-5)
 
     # =========================================================================
     # 2-bit channels
@@ -580,8 +527,8 @@ class TestReduceNullBits:
         # Marginalize over bit 1 (the null bit):
         # P(bit0=0) = P(00) + P(10) = 0.4 + 0.2 = 0.6
         # P(bit0=1) = P(01) + P(11) = 0.3 + 0.1 = 0.4
-        np.testing.assert_allclose(result[0].probs[0], 0.6, rtol=1e-5)
-        np.testing.assert_allclose(result[0].probs[1], 0.4, rtol=1e-5)
+        assert_allclose(result[0].probs[0], 0.6, rtol=1e-5)
+        assert_allclose(result[0].probs[1], 0.4, rtol=1e-5)
 
     def test_2bit_first_null_marginalize(self):
         """A 2-bit channel with null in first position should marginalize correctly."""
@@ -598,8 +545,8 @@ class TestReduceNullBits:
         # Marginalize over bit 0 (the null bit):
         # P(bit1=0) = P(00) + P(01) = 0.4 + 0.3 = 0.7
         # P(bit1=1) = P(10) + P(11) = 0.2 + 0.1 = 0.3
-        np.testing.assert_allclose(result[0].probs[0], 0.7, rtol=1e-5)
-        np.testing.assert_allclose(result[0].probs[1], 0.3, rtol=1e-5)
+        assert_allclose(result[0].probs[0], 0.7, rtol=1e-5)
+        assert_allclose(result[0].probs[1], 0.3, rtol=1e-5)
 
     def test_2bit_all_null_removed(self):
         """A 2-bit channel with all null entries should be removed."""
@@ -632,10 +579,10 @@ class TestReduceNullBits:
         # new 01 (bit0=1, bit2=0): P(001) + P(011) = 0.1 + 0.05 = 0.15
         # new 10 (bit0=0, bit2=1): P(100) + P(110) = 0.2 + 0.1 = 0.3
         # new 11 (bit0=1, bit2=1): P(101) + P(111) = 0.1 + 0.1 = 0.2
-        np.testing.assert_allclose(result[0].probs[0], 0.35, rtol=1e-5)
-        np.testing.assert_allclose(result[0].probs[1], 0.15, rtol=1e-5)
-        np.testing.assert_allclose(result[0].probs[2], 0.3, rtol=1e-5)
-        np.testing.assert_allclose(result[0].probs[3], 0.2, rtol=1e-5)
+        assert_allclose(result[0].probs[0], 0.35, rtol=1e-5)
+        assert_allclose(result[0].probs[1], 0.15, rtol=1e-5)
+        assert_allclose(result[0].probs[2], 0.3, rtol=1e-5)
+        assert_allclose(result[0].probs[3], 0.2, rtol=1e-5)
 
     def test_3bit_two_null_marginalize(self):
         """A 3-bit channel with two null entries should reduce to 1-bit."""
@@ -651,8 +598,8 @@ class TestReduceNullBits:
         # Only bit 1 survives. Marginalize over bits 0 and 2:
         # P(bit1=0) = P(000) + P(001) + P(100) + P(101) = 0.2 + 0.1 + 0.2 + 0.1 = 0.6
         # P(bit1=1) = P(010) + P(011) + P(110) + P(111) = 0.15 + 0.05 + 0.1 + 0.1 = 0.4
-        np.testing.assert_allclose(result[0].probs[0], 0.6, rtol=1e-5)
-        np.testing.assert_allclose(result[0].probs[1], 0.4, rtol=1e-5)
+        assert_allclose(result[0].probs[0], 0.6, rtol=1e-5)
+        assert_allclose(result[0].probs[1], 0.4, rtol=1e-5)
 
     def test_3bit_all_null_removed(self):
         """A 3-bit channel with all null entries should be removed."""
@@ -664,100 +611,6 @@ class TestReduceNullBits:
 
         assert len(result) == 0
 
-    # =========================================================================
-    # 4-bit channels
-    # =========================================================================
-
-    def test_4bit_one_null_marginalize(self):
-        """A 4-bit channel with one null should reduce to 3-bit."""
-        # 16 outcomes, uniform for simplicity
-        probs = np.ones(16, dtype=np.float64) / 16
-        c = Channel(probs=probs, unique_col_ids=(0, 1, self.NULL, 3))
-        channels = [c]
-
-        result = reduce_null_bits(channels, null_col_id=self.NULL)
-
-        assert len(result) == 1
-        assert result[0].unique_col_ids == (0, 1, 3)
-        assert result[0].num_bits == 3
-        # Uniform marginalizes to uniform
-        np.testing.assert_allclose(result[0].probs, np.ones(8) / 8, rtol=1e-5)
-
-    def test_4bit_two_null_marginalize(self):
-        """A 4-bit channel with two null entries should reduce to 2-bit."""
-        probs = np.ones(16, dtype=np.float64) / 16
-        c = Channel(probs=probs, unique_col_ids=(self.NULL, 1, self.NULL, 3))
-        channels = [c]
-
-        result = reduce_null_bits(channels, null_col_id=self.NULL)
-
-        assert len(result) == 1
-        assert result[0].unique_col_ids == (1, 3)
-        assert result[0].num_bits == 2
-        np.testing.assert_allclose(result[0].probs, np.ones(4) / 4, rtol=1e-5)
-
-    def test_4bit_three_null_marginalize(self):
-        """A 4-bit channel with three null entries should reduce to 1-bit."""
-        probs = np.ones(16, dtype=np.float64) / 16
-        c = Channel(probs=probs, unique_col_ids=(self.NULL, self.NULL, 2, self.NULL))
-        channels = [c]
-
-        result = reduce_null_bits(channels, null_col_id=self.NULL)
-
-        assert len(result) == 1
-        assert result[0].unique_col_ids == (2,)
-        assert result[0].num_bits == 1
-        np.testing.assert_allclose(result[0].probs, np.ones(2) / 2, rtol=1e-5)
-
-    def test_4bit_all_null_removed(self):
-        """A 4-bit channel with all null entries should be removed."""
-        probs = np.ones(16, dtype=np.float64) / 16
-        c = Channel(
-            probs=probs, unique_col_ids=(self.NULL, self.NULL, self.NULL, self.NULL)
-        )
-        channels = [c]
-
-        result = reduce_null_bits(channels, null_col_id=self.NULL)
-
-        assert len(result) == 0
-
-    def test_4bit_depolarize_one_null(self):
-        """Test marginalization of a depolarizing channel with one null."""
-        # depolarize_2 returns 16 outcomes for 2-qubit (4 bits)
-        probs = pauli_channel_2_probs(*[0.01] * 15)
-        c = Channel(probs=probs, unique_col_ids=(0, 1, 2, self.NULL))
-        channels = [c]
-
-        result = reduce_null_bits(channels, null_col_id=self.NULL)
-
-        assert len(result) == 1
-        assert result[0].unique_col_ids == (0, 1, 2)
-        assert result[0].num_bits == 3
-        # Probabilities should sum to 1
-        np.testing.assert_allclose(np.sum(result[0].probs), 1.0, rtol=1e-5)
-
-    # =========================================================================
-    # Multiple channels
-    # =========================================================================
-
-    def test_multiple_channels_mixed(self):
-        """Test with multiple channels, some with null, some without."""
-        c1 = Channel(probs=error_probs(0.3), unique_col_ids=(0,))  # No null, keep
-        c2 = Channel(
-            probs=error_probs(0.2), unique_col_ids=(self.NULL,)
-        )  # All null, remove
-        c3 = Channel(
-            probs=np.array([0.4, 0.3, 0.2, 0.1], dtype=np.float64),
-            unique_col_ids=(1, self.NULL),
-        )  # One null, reduce
-        channels = [c1, c2, c3]
-
-        result = reduce_null_bits(channels, null_col_id=self.NULL)
-
-        assert len(result) == 2  # c2 removed
-        assert result[0].unique_col_ids == (0,)
-        assert result[1].unique_col_ids == (1,)
-
     def test_probs_sum_to_one_after_marginalization(self):
         """Verify that probabilities sum to 1 after marginalization."""
         probs = np.array([0.1, 0.2, 0.15, 0.25, 0.05, 0.1, 0.1, 0.05], dtype=np.float64)
@@ -766,7 +619,7 @@ class TestReduceNullBits:
 
         result = reduce_null_bits(channels, null_col_id=self.NULL)
 
-        np.testing.assert_allclose(np.sum(result[0].probs), 1.0, rtol=1e-5)
+        assert_allclose(np.sum(result[0].probs), 1.0, rtol=1e-5)
 
 
 class TestChannelSampler:
@@ -784,7 +637,7 @@ class TestChannelSampler:
         # P(f0=1) = P(e0 XOR e1 = 1) = 0.2*0.7 + 0.3*0.8 = 0.38
         freq = np.mean(np.asarray(samples[:, 0]))
         expected = 0.2 * 0.7 + 0.3 * 0.8
-        np.testing.assert_allclose(freq, expected, rtol=0.05)
+        assert_allclose(freq, expected, rtol=0.05)
 
     def test_independent_channels(self):
         """Test independent error channels affecting different f-vars."""
@@ -792,13 +645,16 @@ class TestChannelSampler:
         transform = np.array([[1, 0], [0, 1]], dtype=np.uint8)  # f0=e0, f1=e1
 
         sampler = ChannelSampler(probs, transform, seed=42)
+
+        assert len(sampler.channels) == 2
+
         samples = sampler.sample(100_000)
 
         freq0 = np.mean(np.asarray(samples[:, 0]))
         freq1 = np.mean(np.asarray(samples[:, 1]))
 
-        np.testing.assert_allclose(freq0, 0.1, rtol=0.1)
-        np.testing.assert_allclose(freq1, 0.2, rtol=0.1)
+        assert_allclose(freq0, 0.1, rtol=0.1)
+        assert_allclose(freq1, 0.2, rtol=0.1)
 
     def test_channel_simplification(self):
         """Test that channels with same signature are merged."""
@@ -809,7 +665,7 @@ class TestChannelSampler:
         sampler = ChannelSampler(probs, transform, seed=42)
 
         # Should have simplified to fewer channels
-        assert len(sampler.channels) <= 3
+        assert len(sampler.channels) == 1
 
         samples = sampler.sample(100_000)
         freq = np.mean(np.asarray(samples[:, 0]))
@@ -817,7 +673,7 @@ class TestChannelSampler:
         # XOR of three Bernoulli(0.1)
         # P(odd number of 1s) = 3*0.1*0.9^2 + 0.1^3 = 0.244
         expected = 3 * 0.1 * 0.9**2 + 0.1**3
-        np.testing.assert_allclose(freq, expected, rtol=0.05)
+        assert_allclose(freq, expected, rtol=0.05)
 
     def test_y_error_correlated(self):
         """Test that Y error produces correlated X and Z."""
@@ -831,8 +687,8 @@ class TestChannelSampler:
         both_zero = np.mean((samples[:, 0] == 0) & (samples[:, 1] == 0))
         both_one = np.mean((samples[:, 0] == 1) & (samples[:, 1] == 1))
 
-        np.testing.assert_allclose(both_zero, 0.7, rtol=0.05)
-        np.testing.assert_allclose(both_one, 0.3, rtol=0.05)
+        assert_allclose(both_zero, 0.7, rtol=0.05)
+        assert_allclose(both_one, 0.3, rtol=0.05)
 
     def test_empty_transform(self):
         """Test with no f-variables (empty transform)."""

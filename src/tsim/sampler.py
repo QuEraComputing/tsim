@@ -11,7 +11,7 @@ from tsim.channels import ChannelSampler
 from tsim.evaluate import evaluate_batch
 from tsim.graph_util import prepare_graph
 from tsim.program import compile_program
-from tsim.types import CompiledComponent, CompiledProgram, SamplingGraph
+from tsim.types import CompiledComponent, CompiledProgram
 
 if TYPE_CHECKING:
     from jax import Array as PRNGKey
@@ -134,17 +134,6 @@ def sample_program(
 # =============================================================================
 
 
-def _create_channel_sampler(
-    prepared: SamplingGraph, seed: int | None
-) -> ChannelSampler:
-    """Create a channel sampler from a prepared graph."""
-    return ChannelSampler(
-        channel_probs=prepared.channel_probs,
-        error_transform=prepared.error_transform,
-        seed=seed,
-    )
-
-
 class CompiledMeasurementSampler:
     """Samples measurement outcomes from a quantum circuit.
 
@@ -161,7 +150,7 @@ class CompiledMeasurementSampler:
             seed: Random seed for JAX. If None, a random seed is generated.
         """
         if seed is None:
-            seed = int(np.random.default_rng().integers(0, 2**31))
+            seed = int(np.random.default_rng().integers(0, 2**30))
 
         self._key = jax.random.key(seed)
 
@@ -170,7 +159,11 @@ class CompiledMeasurementSampler:
 
         self._key, subkey = jax.random.split(self._key)
         channel_seed = int(jax.random.randint(subkey, (), 0, 2**30))
-        self._channel_sampler = _create_channel_sampler(prepared, channel_seed)
+        self._channel_sampler = ChannelSampler(
+            channel_probs=prepared.channel_probs,
+            error_transform=prepared.error_transform,
+            seed=channel_seed,
+        )
 
         self.circuit = circuit
 
@@ -232,7 +225,7 @@ class CompiledDetectorSampler:
             seed: Random seed for JAX. If None, a random seed is generated.
         """
         if seed is None:
-            seed = int(np.random.default_rng().integers(0, 2**31))
+            seed = int(np.random.default_rng().integers(0, 2**30))
 
         self._key = jax.random.key(seed)
 
@@ -241,7 +234,11 @@ class CompiledDetectorSampler:
 
         self._key, subkey = jax.random.split(self._key)
         channel_seed = int(jax.random.randint(subkey, (), 0, 2**30))
-        self._channel_sampler = _create_channel_sampler(prepared, channel_seed)
+        self._channel_sampler = ChannelSampler(
+            channel_probs=prepared.channel_probs,
+            error_transform=prepared.error_transform,
+            seed=channel_seed,
+        )
 
         self.circuit = circuit
         self._num_detectors = prepared.num_detectors
@@ -367,7 +364,7 @@ class CompiledStateProbs:
             seed: Random seed for JAX. If None, a random seed is generated.
         """
         if seed is None:
-            seed = int(np.random.default_rng().integers(0, 2**31))
+            seed = int(np.random.default_rng().integers(0, 2**30))
 
         key = jax.random.key(seed)
 
@@ -376,7 +373,11 @@ class CompiledStateProbs:
 
         _, subkey = jax.random.split(key)
         channel_seed = int(jax.random.randint(subkey, (), 0, 2**30))
-        self._channel_sampler = _create_channel_sampler(prepared, channel_seed)
+        self._channel_sampler = ChannelSampler(
+            channel_probs=prepared.channel_probs,
+            error_transform=prepared.error_transform,
+            seed=channel_seed,
+        )
 
         self.circuit = circuit
 
