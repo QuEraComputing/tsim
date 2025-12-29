@@ -3,6 +3,9 @@ import jax
 import jax.numpy as jnp
 from jax import Array, lax
 
+_E4 = jnp.exp(1j * jnp.pi / 4)  # e^(i*pi/4)
+_E4D = jnp.exp(-1j * jnp.pi / 4)  # e^(-i*pi/4)
+
 """
 This module implements exact scalar arithmetic for complex numbers of the form:
     (a + b*e^(i*pi/4) + c*i + d*e^(-i*pi/4)) * 2^power
@@ -39,9 +42,7 @@ def _scalar_mul(d1: jax.Array, d2: jax.Array) -> jax.Array:
 
 def _scalar_to_complex(data: jax.Array) -> jax.Array:
     """Convert a (N, 4) array of coefficients to a (N,) array of complex numbers."""
-    e4 = jnp.exp(1j * jnp.pi / 4)
-    e4d = jnp.exp(-1j * jnp.pi / 4)
-    return data[..., 0] + data[..., 1] * e4 + data[..., 2] * 1j + data[..., 3] * e4d
+    return data[..., 0] + data[..., 1] * _E4 + data[..., 2] * 1j + data[..., 3] * _E4D
 
 
 class ExactScalarArray(eqx.Module):

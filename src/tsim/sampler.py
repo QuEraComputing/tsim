@@ -36,26 +36,30 @@ def _sample_component(
         (batch_size, num_outputs_for_component).
     """
     batch_size = f_params.shape[0]
+    num_outputs = len(component.compiled_scalar_graphs) - 1
 
     f_selected = f_params[:, component.f_selection].astype(jnp.bool_)
 
-    m_accumulated = jnp.empty((batch_size, 0), dtype=jnp.bool_)
+    # Pre-allocate output array with final shape to avoid dynamic hstack
+    m_accumulated = jnp.zeros((batch_size, num_outputs), dtype=jnp.bool_)
 
     # First circuit is normalization (only f-params)
     prev = jnp.abs(evaluate_batch(component.compiled_scalar_graphs[0], f_selected))
 
+    # Pre-allocate the ones column used in each iteration
+    ones = jnp.ones((batch_size, 1), dtype=jnp.bool_)
+
     # Autoregressive sampling for remaining circuits
-    for circuit in component.compiled_scalar_graphs[1:]:
-        # Build params: [f_selected, m_accumulated, trying_bit=1]
-        ones = jnp.ones((batch_size, 1), dtype=jnp.bool_)
-        params = jnp.hstack([f_selected, m_accumulated, ones])
+    for i, circuit in enumerate(component.compiled_scalar_graphs[1:]):
+        # Build params: [f_selected, m_accumulated[:, :i], trying_bit=1]
+        params = jnp.hstack([f_selected, m_accumulated[:, :i], ones])
 
         # Evaluate P(bit=1 | previous bits)
         p1 = jnp.abs(evaluate_batch(circuit, params))
 
         key, subkey = jax.random.split(key)
         bits = jax.random.bernoulli(subkey, p=p1 / prev)
-        m_accumulated = jnp.hstack([m_accumulated, bits[:, None]])
+        m_accumulated = m_accumulated.at[:, i].set(bits)
 
         # Update prev using chain rule
         prev = jnp.where(bits, p1, prev - p1)

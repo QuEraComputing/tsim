@@ -26,6 +26,8 @@ _UNIT_PHASES_EXACT = jnp.array(
 # Lookup table for exact scalars (1 + omega^k)
 _ONE_PLUS_PHASES_EXACT = _UNIT_PHASES_EXACT.at[:, 0].add(1)
 
+_EXACT_IDENTITY = jnp.array([1, 0, 0, 0], dtype=jnp.int32)
+
 
 @overload
 def evaluate(
@@ -85,9 +87,7 @@ def evaluate(
         jnp.arange(circuit.a_const_phases.shape[1])[None, :]
         < circuit.a_num_terms[:, None]
     )
-    term_vals_a_exact = jnp.where(
-        a_mask[..., None], term_vals_a_exact, jnp.array([1, 0, 0, 0], dtype=jnp.int32)
-    )
+    term_vals_a_exact = jnp.where(a_mask[..., None], term_vals_a_exact, _EXACT_IDENTITY)
 
     term_vals_a = ExactScalarArray(term_vals_a_exact)
     summands_a = term_vals_a.prod(axis=1)  # (num_graphs, 4)
@@ -139,7 +139,7 @@ def evaluate(
 
     # 1 + e^a + e^b - e^g, shape: (num_graphs, max_d, 4)
     term_vals_d_exact = (
-        jnp.array([1, 0, 0, 0], dtype=jnp.int32)
+        _EXACT_IDENTITY
         + _UNIT_PHASES_EXACT[alpha]
         + _UNIT_PHASES_EXACT[beta]
         - _UNIT_PHASES_EXACT[gamma]
@@ -148,9 +148,7 @@ def evaluate(
         jnp.arange(circuit.d_const_alpha.shape[1])[None, :]
         < circuit.d_num_terms[:, None]
     )
-    term_vals_d_exact = jnp.where(
-        d_mask[..., None], term_vals_d_exact, jnp.array([1, 0, 0, 0], dtype=jnp.int32)
-    )
+    term_vals_d_exact = jnp.where(d_mask[..., None], term_vals_d_exact, _EXACT_IDENTITY)
 
     term_vals_d = ExactScalarArray(term_vals_d_exact)
     summands_d = term_vals_d.prod(axis=1)  # (num_graphs, 4)
