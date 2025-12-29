@@ -8,6 +8,24 @@ from jax import Array
 from tsim.compile import CompiledScalarGraphs
 from tsim.exact_scalar import ExactScalarArray
 
+# Pre-computed exact scalars for phase values, for powers of omega = e^(i*pi/4)
+_UNIT_PHASES_EXACT = jnp.array(
+    [
+        [1, 0, 0, 0],  # 0: 1
+        [0, 1, 0, 0],  # 1: e^i
+        [0, 0, 1, 0],  # 2: i
+        [0, 0, 0, -1],  # 3: e^3pi/4 = -e^-pi/4
+        [-1, 0, 0, 0],  # 4: -1
+        [0, -1, 0, 0],  # 5: e^5pi/4 = -e^pi/4
+        [0, 0, -1, 0],  # 6: -i
+        [0, 0, 0, 1],  # 7: -i*e^pi/4 = e^-pi/4
+    ],
+    dtype=jnp.int32,
+)
+
+# Lookup table for exact scalars (1 + omega^k)
+_ONE_PLUS_PHASES_EXACT = _UNIT_PHASES_EXACT.at[:, 0].add(1)
+
 
 @overload
 def evaluate(
@@ -52,24 +70,6 @@ def evaluate(
     """
     num_graphs = circuit.power2.shape[0]
 
-    # Pre-compute exact scalars for phase values, for powers of omega = e^(i*pi/4)
-    unit_phases_exact = jnp.array(
-        [
-            [1, 0, 0, 0],  # 0: 1
-            [0, 1, 0, 0],  # 1: e^i
-            [0, 0, 1, 0],  # 2: i
-            [0, 0, 0, -1],  # 3: e^3pi/4 = -e^-pi/4
-            [-1, 0, 0, 0],  # 4: -1
-            [0, -1, 0, 0],  # 5: e^5pi/4 =-e^pi/4
-            [0, 0, -1, 0],  # 6: -i
-            [0, 0, 0, 1],  # 7: -i*e^pi/4 = e^-pi/4
-        ],
-        dtype=jnp.int32,
-    )
-
-    # Lookup table for exact scalars (1 + omega^k)
-    one_plus_phases_exact = unit_phases_exact.at[:, 0].add(1)
-
     # ====================================================================
     # TYPE A: Node Terms (1 + e^(i*alpha))
     # Shape: (num_graphs, max_a) -> (num_graphs, max_a, 4) -> prod -> (num_graphs, 4)
@@ -80,7 +80,7 @@ def evaluate(
     rowsum_a = jnp.sum(circuit.a_param_bits * param_vals, axis=-1) % 2
     phase_idx_a = (4 * rowsum_a + circuit.a_const_phases) % 8
 
-    term_vals_a_exact = one_plus_phases_exact[phase_idx_a]  # (num_graphs, max_a, 4)
+    term_vals_a_exact = _ONE_PLUS_PHASES_EXACT[phase_idx_a]  # (num_graphs, max_a, 4)
     a_mask = (
         jnp.arange(circuit.a_const_phases.shape[1])[None, :]
         < circuit.a_num_terms[:, None]
@@ -103,7 +103,7 @@ def evaluate(
     sum_phases_b = jnp.sum(phase_idx_b, axis=1) % 8  # (num_graphs,)
 
     # Convert final summed phase to ExactScalar
-    summands_b_exact = unit_phases_exact[sum_phases_b]  # (num_graphs, 4)
+    summands_b_exact = _UNIT_PHASES_EXACT[sum_phases_b]  # (num_graphs, 4)
     summands_b = ExactScalarArray(summands_b_exact)
 
     # ====================================================================
@@ -140,9 +140,9 @@ def evaluate(
     # 1 + e^a + e^b - e^g, shape: (num_graphs, max_d, 4)
     term_vals_d_exact = (
         jnp.array([1, 0, 0, 0], dtype=jnp.int32)
-        + unit_phases_exact[alpha]
-        + unit_phases_exact[beta]
-        - unit_phases_exact[gamma]
+        + _UNIT_PHASES_EXACT[alpha]
+        + _UNIT_PHASES_EXACT[beta]
+        - _UNIT_PHASES_EXACT[gamma]
     )
     d_mask = (
         jnp.arange(circuit.d_const_alpha.shape[1])[None, :]
@@ -159,7 +159,7 @@ def evaluate(
     # FINAL COMBINATION
     # ====================================================================
 
-    static_phases = ExactScalarArray(unit_phases_exact[circuit.phase_indices])
+    static_phases = ExactScalarArray(_UNIT_PHASES_EXACT[circuit.phase_indices])
     float_factor = ExactScalarArray(circuit.floatfactor)
 
     total_summands = functools.reduce(
