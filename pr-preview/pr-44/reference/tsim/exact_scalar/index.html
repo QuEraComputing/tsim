@@ -16,8 +16,7 @@
                   return '';
                 }
               });
-            </script> <p>where omega = e^{i*pi/4}.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/exact_scalar.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>51</span>
-<span class=normal>52</span>
+            </script> <p>where omega = e^{i*pi/4}.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/exact_scalar.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>52</span>
 <span class=normal>53</span>
 <span class=normal>54</span>
 <span class=normal>55</span>
@@ -26,7 +25,8 @@
 <span class=normal>58</span>
 <span class=normal>59</span>
 <span class=normal>60</span>
-<span class=normal>61</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>coeffs</span><span class=p>:</span> <span class=n>Array</span><span class=p>,</span> <span class=n>power</span><span class=p>:</span> <span class=n>Array</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>):</span>
+<span class=normal>61</span>
+<span class=normal>62</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>coeffs</span><span class=p>:</span> <span class=n>Array</span><span class=p>,</span> <span class=n>power</span><span class=p>:</span> <span class=n>Array</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>):</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;</span>
 <span class=sd>    Represents values of the form:</span>
 <span class=sd>        (c_0 + c_1*omega + c_2*omega^2 + c_3*omega^3) * 2^power</span>
@@ -38,18 +38,17 @@
     <span class=k>else</span><span class=p>:</span>
         <span class=bp>self</span><span class=o>.</span><span class=n>power</span> <span class=o>=</span> <span class=n>power</span>
 </code></pre></div></td></tr></table></div> </details> <div class="doc doc-children"> <div class="doc doc-object doc-function"> <h3 id=tsim.exact_scalar.ExactScalarArray.__mul__ class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">__mul__</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>__mul__</span><span class=p>(</span><span class=n>other</span><span class=p>:</span> <span class=n>ExactScalarArray</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>ExactScalarArray</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Element-wise multiplication.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/exact_scalar.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>63</span>
-<span class=normal>64</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Element-wise multiplication.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/exact_scalar.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>64</span>
 <span class=normal>65</span>
 <span class=normal>66</span>
-<span class=normal>67</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__mul__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>other</span><span class=p>:</span> <span class=s2>&quot;ExactScalarArray&quot;</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=s2>&quot;ExactScalarArray&quot;</span><span class=p>:</span>
+<span class=normal>67</span>
+<span class=normal>68</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__mul__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>other</span><span class=p>:</span> <span class=s2>&quot;ExactScalarArray&quot;</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=s2>&quot;ExactScalarArray&quot;</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Element-wise multiplication.&quot;&quot;&quot;</span>
     <span class=n>new_coeffs</span> <span class=o>=</span> <span class=n>_scalar_mul</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>coeffs</span><span class=p>,</span> <span class=n>other</span><span class=o>.</span><span class=n>coeffs</span><span class=p>)</span>
     <span class=n>new_power</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>power</span> <span class=o>+</span> <span class=n>other</span><span class=o>.</span><span class=n>power</span>
     <span class=k>return</span> <span class=n>ExactScalarArray</span><span class=p>(</span><span class=n>new_coeffs</span><span class=p>,</span> <span class=n>new_power</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.exact_scalar.ExactScalarArray.prod class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">prod</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>prod</span><span class=p>(</span><span class=n>axis</span><span class=p>:</span> <span class=nb>int</span> <span class=o>=</span> <span class=o>-</span><span class=mi>1</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>ExactScalarArray</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Compute product along the specified axis using associative scan.</p> <p>Returns identity (1+0i with power 0) for empty reductions.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>axis</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The axis along which to compute the product.</p> </div> </td> <td> <code>-1</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">ExactScalarArray</span> (<code>tsim.exact_scalar.ExactScalarArray</code>)' href=#tsim.exact_scalar.ExactScalarArray>ExactScalarArray</a></code> </td> <td> <div class=doc-md-description> <p>ExactScalarArray with the product computed along the axis.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/exact_scalar.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>111</span>
-<span class=normal>112</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Compute product along the specified axis using associative scan.</p> <p>Returns identity (1+0i with power 0) for empty reductions.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>axis</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The axis along which to compute the product.</p> </div> </td> <td> <code>-1</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">ExactScalarArray</span> (<code>tsim.exact_scalar.ExactScalarArray</code>)' href=#tsim.exact_scalar.ExactScalarArray>ExactScalarArray</a></code> </td> <td> <div class=doc-md-description> <p>ExactScalarArray with the product computed along the axis.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/exact_scalar.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>112</span>
 <span class=normal>113</span>
 <span class=normal>114</span>
 <span class=normal>115</span>
@@ -78,7 +77,8 @@
 <span class=normal>138</span>
 <span class=normal>139</span>
 <span class=normal>140</span>
-<span class=normal>141</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>prod</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>axis</span><span class=p>:</span> <span class=nb>int</span> <span class=o>=</span> <span class=o>-</span><span class=mi>1</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=s2>&quot;ExactScalarArray&quot;</span><span class=p>:</span>
+<span class=normal>141</span>
+<span class=normal>142</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>prod</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>axis</span><span class=p>:</span> <span class=nb>int</span> <span class=o>=</span> <span class=o>-</span><span class=mi>1</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=s2>&quot;ExactScalarArray&quot;</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;</span>
 <span class=sd>    Compute product along the specified axis using associative scan.</span>
 
@@ -110,8 +110,7 @@
 
     <span class=k>return</span> <span class=n>ExactScalarArray</span><span class=p>(</span><span class=n>result_coeffs</span><span class=p>,</span> <span class=n>result_power</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.exact_scalar.ExactScalarArray.reduce class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">reduce</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>reduce</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>ExactScalarArray</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Maximizes the power by dividing coefficients by 2 while they are all even.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/exact_scalar.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>69</span>
-<span class=normal>70</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Maximizes the power by dividing coefficients by 2 while they are all even.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/exact_scalar.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>70</span>
 <span class=normal>71</span>
 <span class=normal>72</span>
 <span class=normal>73</span>
@@ -136,7 +135,8 @@
 <span class=normal>92</span>
 <span class=normal>93</span>
 <span class=normal>94</span>
-<span class=normal>95</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>reduce</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=s2>&quot;ExactScalarArray&quot;</span><span class=p>:</span>
+<span class=normal>95</span>
+<span class=normal>96</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>reduce</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=s2>&quot;ExactScalarArray&quot;</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;</span>
 <span class=sd>    Maximizes the power by dividing coefficients by 2 while they are all even.</span>
 <span class=sd>    &quot;&quot;&quot;</span>
@@ -164,8 +164,7 @@
     <span class=p>)</span>
     <span class=k>return</span> <span class=n>ExactScalarArray</span><span class=p>(</span><span class=n>new_coeffs</span><span class=p>,</span> <span class=n>new_power</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.exact_scalar.ExactScalarArray.sum class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">sum</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>sum</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>ExactScalarArray</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Sum elements along the last axis (axis=-2). Aligns powers to the minimum power before summing.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/exact_scalar.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 97</span>
-<span class=normal> 98</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Sum elements along the last axis (axis=-2). Aligns powers to the minimum power before summing.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/exact_scalar.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 98</span>
 <span class=normal> 99</span>
 <span class=normal>100</span>
 <span class=normal>101</span>
@@ -176,7 +175,8 @@
 <span class=normal>106</span>
 <span class=normal>107</span>
 <span class=normal>108</span>
-<span class=normal>109</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sum</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=s2>&quot;ExactScalarArray&quot;</span><span class=p>:</span>
+<span class=normal>109</span>
+<span class=normal>110</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sum</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=s2>&quot;ExactScalarArray&quot;</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;</span>
 <span class=sd>    Sum elements along the last axis (axis=-2).</span>
 <span class=sd>    Aligns powers to the minimum power before summing.</span>
@@ -190,11 +190,11 @@
     <span class=n>summed_coeffs</span> <span class=o>=</span> <span class=n>jnp</span><span class=o>.</span><span class=n>sum</span><span class=p>(</span><span class=n>aligned_coeffs</span><span class=p>,</span> <span class=n>axis</span><span class=o>=-</span><span class=mi>2</span><span class=p>)</span>
     <span class=k>return</span> <span class=n>ExactScalarArray</span><span class=p>(</span><span class=n>summed_coeffs</span><span class=p>,</span> <span class=n>min_power</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.exact_scalar.ExactScalarArray.to_complex class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">to_complex</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>to_complex</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>jax</span><span class=o>.</span><span class=n>Array</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Converts to complex number.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/exact_scalar.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>143</span>
-<span class=normal>144</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Converts to complex number.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/exact_scalar.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>144</span>
 <span class=normal>145</span>
 <span class=normal>146</span>
-<span class=normal>147</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>to_complex</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>jax</span><span class=o>.</span><span class=n>Array</span><span class=p>:</span>
+<span class=normal>147</span>
+<span class=normal>148</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>to_complex</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>jax</span><span class=o>.</span><span class=n>Array</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Converts to complex number.&quot;&quot;&quot;</span>
     <span class=n>c_val</span> <span class=o>=</span> <span class=n>_scalar_to_complex</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>coeffs</span><span class=p>)</span>
     <span class=n>scale</span> <span class=o>=</span> <span class=n>jnp</span><span class=o>.</span><span class=n>pow</span><span class=p>(</span><span class=mf>2.0</span><span class=p>,</span> <span class=bp>self</span><span class=o>.</span><span class=n>power</span><span class=p>)</span>
