@@ -1,5 +1,6 @@
 import re
 from fractions import Fraction
+from typing import Literal
 
 import stim
 
@@ -103,8 +104,36 @@ def parse_stim_circuit(
             tick(b)
             continue
         if name == "MPP":
-            args = str(instruction).split(" ")[1:]
-            mpp(b, args)
+            current_paulis: list[tuple[Literal["X", "Y", "Z"], int]] = []
+            invert = False
+            targets = instruction.targets_copy()
+
+            for i, target in enumerate(targets):
+                # Products are separated by non-combiner boundaries
+                if target.is_combiner:
+                    continue
+
+                if target.is_x_target:
+                    pauli_type = "X"
+                elif target.is_y_target:
+                    pauli_type = "Y"
+                elif target.is_z_target:
+                    pauli_type = "Z"
+                else:
+                    raise ValueError(f"Invalid MPP target: {target}")
+
+                # XOR all inversions - only parity matters (sign is global)
+                invert ^= target.is_inverted_result_target
+
+                current_paulis.append((pauli_type, target.value))
+
+                # Product ends if next target is not a combiner (or end of list)
+                next_idx = i + 1
+                if next_idx >= len(targets) or not targets[next_idx].is_combiner:
+                    mpp(b, current_paulis, invert)
+                    current_paulis = []
+                    invert = False
+
             continue
         if name == "E" or name == "ELSE_CORRELATED_ERROR":
             if name == "E":

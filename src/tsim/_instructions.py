@@ -678,36 +678,34 @@ def m(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) ->
         x(b, qubit)
 
 
-def mpp(b: GraphRepresentation, pp: str | list[str]) -> None:
-    if isinstance(pp, list):
-        for pp_ in pp:
-            mpp(b, pp_)
-        return
+def mpp(
+    b: GraphRepresentation,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+    invert: bool = False,
+) -> None:
+    """Measure a single Pauli product.
 
+    Args:
+        b: The graph representation to modify.
+        paulis: List of (pauli_type, qubit) pairs defining the Pauli product.
+        invert: Whether to invert the measurement result.
+    """
     aux = -2
     r(b, aux)
     h(b, aux)
 
-    invert_rec = pp[0] == "!"
-    if invert_rec:
-        pp = pp[1:]
-
-    components = pp.split("*")
-
-    for comp in components:
-        p, idx = comp[0].lower(), int(comp[1:])
-
-        if p == "x":
-            cnot(b, aux, idx)
-        elif p == "z":
-            cz(b, aux, idx)
-        elif p == "y":
-            cy(b, aux, idx)
+    for pauli_type, qubit in paulis:
+        if pauli_type == "X":
+            cnot(b, aux, qubit)
+        elif pauli_type == "Z":
+            cz(b, aux, qubit)
+        elif pauli_type == "Y":
+            cy(b, aux, qubit)
         else:
-            raise ValueError(f"Invalid Pauli operator: {p}")
+            raise ValueError(f"Invalid Pauli operator: {pauli_type}")
 
     h(b, aux)
-    m(b, aux, invert=invert_rec)
+    m(b, aux, invert=invert)
 
 
 def mr(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
