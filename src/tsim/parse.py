@@ -139,7 +139,7 @@ def parse_stim_circuit(
             if name == "E":
                 finalize_correlated_error(b)
             targets = [t.value for t in instruction.targets_copy()]
-            types = []
+            types: list[Literal["X", "Y", "Z"]] = []
             for t in instruction.targets_copy():
                 if t.is_x_target:
                     types.append("X")

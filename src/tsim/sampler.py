@@ -150,9 +150,9 @@ class _CompiledSamplerBase:
         self.circuit = circuit
         self._num_detectors = prepared.num_detectors
 
-    def _sample_batches(self, shots: int, batch_size: int) -> np.ndarray:
+    def _sample_batches(self, shots: int, batch_size: int | None = None) -> np.ndarray:
         """Sample in batches and concatenate results."""
-        if shots < batch_size:
+        if batch_size is None:
             batch_size = shots
 
         batches: list[jax.Array] = []
@@ -272,7 +272,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         self,
         shots: int,
         *,
-        batch_size: int = 1024,
+        batch_size: int | None = None,
         prepend_observables: bool = False,
         append_observables: bool = False,
         separate_observables: Literal[True],
@@ -284,7 +284,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         self,
         shots: int,
         *,
-        batch_size: int = 1024,
+        batch_size: int | None = None,
         prepend_observables: bool = False,
         append_observables: bool = False,
         separate_observables: Literal[False] = False,
@@ -295,7 +295,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         self,
         shots: int,
         *,
-        batch_size: int = 1024,
+        batch_size: int | None = None,
         prepend_observables: bool = False,
         append_observables: bool = False,
         separate_observables: bool = False,
