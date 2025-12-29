@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from fractions import Fraction
-from typing import Callable
+from typing import Callable, Literal
 
 import numpy as np
 from pyzx.graph.graph_s import GraphS
 from pyzx.utils import EdgeType, VertexType
 
 from tsim.channels import (
+    correlated_error_probs,
     error_probs,
     pauli_channel_1_probs,
     pauli_channel_2_probs,
@@ -30,7 +31,9 @@ class GraphRepresentation:
     first_vertex: dict[int, int] = field(default_factory=dict)
     last_vertex: dict[int, int] = field(default_factory=dict)
     channel_probs: list[np.ndarray] = field(default_factory=list)
+    correlated_error_probs: list[float] = field(default_factory=list)
     num_error_bits: int = 0
+    num_correlated_error_bits: int = 0
 
     @property
     def observables(self) -> list[int]:
@@ -568,6 +571,59 @@ def z_error(b: GraphRepresentation, qubit: int, p: float) -> None:
     b.channel_probs.append(error_probs(p))
     _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
     b.num_error_bits += 1
+
+
+def finalize_correlated_error(b: GraphRepresentation) -> None:
+    """Finalize the current correlated error channel.
+
+    1. Rename all "c{i}" phases to "e{num_error_bits + i}" in the graph
+    2. Compute and append the 2^k probability array to channel_probs
+    3. Increment num_error_bits by k
+    4. Reset num_correlated_error_bits to 0 and correlated_error_probs to []
+    """
+    k = b.num_correlated_error_bits
+
+    if k == 0:
+        return
+
+    # Rename "c{i}" phases to "e{num_error_bits + i}" in the graph
+    for v in b.graph.vertices():
+        phase_vars = b.graph._phaseVars.get(v, set())
+        new_phase_vars = set()
+        for var in phase_vars:
+            if isinstance(var, str) and var.startswith("c"):
+                # Extract the bit index from "c{i}"
+                bit_idx = int(var[1:])
+                new_phase_vars.add(f"e{b.num_error_bits + bit_idx}")
+            else:
+                new_phase_vars.add(var)
+        b.graph._phaseVars[v] = new_phase_vars
+
+    # Compute probability array from conditional probabilities
+    probs = correlated_error_probs(b.correlated_error_probs)
+    b.channel_probs.append(probs)
+
+    b.num_error_bits += k
+
+    # Reset correlated error state
+    b.num_correlated_error_bits = 0
+    b.correlated_error_probs = []
+
+
+def correlated_error(
+    b: GraphRepresentation,
+    qubits: list[int],
+    types: list[Literal["X", "Y", "Z"]],
+    p: float,
+) -> None:
+    for qubit, type_ in zip(qubits, types):
+        if type_ == "X" or type_ == "Y":
+            _error(b, qubit, VertexType.X, f"c{b.num_correlated_error_bits}")
+        if type_ == "Z" or type_ == "Y":
+            _error(b, qubit, VertexType.Z, f"c{b.num_correlated_error_bits}")
+
+    b.correlated_error_probs.append(p)
+    b.num_correlated_error_bits += 1
 
 
 # =============================================================================

@@ -164,6 +164,53 @@ def test_memory_error_correction_and_compare_to_stim(code_task: str):
     )
 
 
+@pytest.mark.parametrize(
+    "stim_program",
+    [
+        """
+        CORRELATED_ERROR(0.1) X0
+        M 0
+        """,
+        """
+        CORRELATED_ERROR(0.1) X0
+        ELSE_CORRELATED_ERROR(0.2) Y1
+        CORRELATED_ERROR(0.3) X2
+        H 3
+        CORRELATED_ERROR(0.5) Z3
+        H 3
+        M 0 1 2 3
+        """,
+        """
+        CORRELATED_ERROR(0.1) X0
+        CORRELATED_ERROR(0.2) X1
+        M 0 1
+        """,
+        """
+        CORRELATED_ERROR(0.1) X0
+        ELSE_CORRELATED_ERROR(0.3) Y2
+        CORRELATED_ERROR(0.2) X1
+        ELSE_CORRELATED_ERROR(0.3) Y2
+        M 0 1 2
+        """,
+    ],
+    ids=[
+        "single_correlated_error",
+        "mixed_else_and_h",
+        "two_correlated_errors",
+        "two_correlated_errors_with_else",
+    ],
+)
+def test_correlated_error(stim_program: str):
+    stim_circuit = stim.Circuit(stim_program)
+
+    n_samples = 10_000
+    stim_samples = stim_circuit.compile_sampler().sample(n_samples)
+    tsim_samples = (
+        Circuit.from_stim_program(stim_circuit).compile_sampler().sample(n_samples)
+    )
+    assert_samples_match(stim_samples, tsim_samples)
+
+
 def test_channel_simplification():
     c = Circuit(
         """

@@ -6,7 +6,9 @@ import stim
 from tsim._instructions import (
     GATE_TABLE,
     GraphRepresentation,
+    correlated_error,
     detector,
+    finalize_correlated_error,
     mpp,
     observable_include,
     r_x,
@@ -104,6 +106,22 @@ def parse_stim_circuit(
             args = str(instruction).split(" ")[1:]
             mpp(b, args)
             continue
+        if name == "E" or name == "ELSE_CORRELATED_ERROR":
+            if name == "E":
+                finalize_correlated_error(b)
+            targets = [t.value for t in instruction.targets_copy()]
+            types = []
+            for t in instruction.targets_copy():
+                if t.is_x_target:
+                    types.append("X")
+                elif t.is_y_target:
+                    types.append("Y")
+                elif t.is_z_target:
+                    types.append("Z")
+                else:
+                    raise ValueError(f"Invalid target: {t}")
+            correlated_error(b, targets, types, instruction.gate_args_copy()[0])
+            continue
         if name == "DETECTOR":
             targets = [t.value for t in instruction.targets_copy()]
             detector(b, targets)
@@ -137,4 +155,5 @@ def parse_stim_circuit(
             else:
                 gate_func(b, *chunk, *args)
 
+    finalize_correlated_error(b)
     return b
