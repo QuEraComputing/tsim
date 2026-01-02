@@ -20,7 +20,8 @@ class Channel:
 
     @property
     def num_bits(self) -> int:
-        return int(np.log2(len(self.probs)))
+        assert len(self.unique_col_ids) == int(np.log2(len(self.probs)))
+        return len(self.unique_col_ids)
 
     @property
     def logits(self) -> jax.Array:
@@ -194,26 +195,15 @@ def normalize_channels(channels: list[Channel]) -> list[Channel]:
     result: list[Channel] = []
 
     for channel in channels:
-        source_col_ids = channel.unique_col_ids
-        sorted_col_ids = tuple(sorted(source_col_ids))
+        n = channel.num_bits
+        source_col_ids = np.array(channel.unique_col_ids)
+        axis_perm = np.argsort(source_col_ids, stable=True)
+        probs_tensor = channel.probs.reshape((2,) * n, order="F")
+        new_probs = probs_tensor.transpose(axis_perm).reshape(2**n, order="F")
 
-        if source_col_ids == sorted_col_ids:
-            result.append(channel)
-            continue
-
-        # Need to reorder bits: map old bit positions to new positions
-        source_to_target = {s: sorted_col_ids.index(s) for s in source_col_ids}
-        n = len(source_col_ids)
-        new_probs = np.zeros(2**n, dtype=np.float64)
-
-        for old_idx in range(len(channel.probs)):
-            new_idx = 0
-            for src_pos, src_col in enumerate(source_col_ids):
-                if (old_idx >> src_pos) & 1:
-                    new_idx |= 1 << source_to_target[src_col]
-            new_probs[new_idx] += channel.probs[old_idx]
-
-        result.append(Channel(probs=new_probs, unique_col_ids=sorted_col_ids))
+        result.append(
+            Channel(probs=new_probs, unique_col_ids=tuple(source_col_ids[axis_perm]))
+        )
 
     return result
 
