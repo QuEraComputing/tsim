@@ -151,13 +151,14 @@ def reduce_null_bits(
     result: list[Channel] = []
 
     for channel in channels:
+        n = channel.num_bits
         non_null_positions = [
             i
             for i, col_id in enumerate(channel.unique_col_ids)
             if col_id != null_col_id
         ]
 
-        if len(non_null_positions) == channel.num_bits:
+        if len(non_null_positions) == n:
             # No null entries (all columns are non-null), keep channel as-is
             result.append(channel)
             continue
@@ -169,15 +170,9 @@ def reduce_null_bits(
         # Marginalize out the null bits by summing over them
         new_col_ids = tuple(channel.unique_col_ids[i] for i in non_null_positions)
         new_num_bits = len(non_null_positions)
-        new_probs = np.zeros(2**new_num_bits, dtype=np.float64)
-
-        # For each old outcome, compute the new outcome and add probability
-        for old_idx in range(len(channel.probs)):
-            new_idx = 0
-            for new_bit_pos, old_bit_pos in enumerate(non_null_positions):
-                if (old_idx >> old_bit_pos) & 1:
-                    new_idx |= 1 << new_bit_pos
-            new_probs[new_idx] += channel.probs[old_idx]
+        sum_axes = tuple(i for i in range(n) if i not in non_null_positions)
+        probs_tensor = channel.probs.reshape((2,) * n, order="F")
+        new_probs = probs_tensor.sum(axis=sum_axes).reshape(2**new_num_bits, order="F")
 
         result.append(Channel(probs=new_probs, unique_col_ids=new_col_ids))
 
