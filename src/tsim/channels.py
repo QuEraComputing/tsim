@@ -159,11 +159,6 @@ def reduce_null_bits(
             if col_id != null_col_id
         ]
 
-        if len(non_null_positions) == n:
-            # No null entries (all columns are non-null), keep channel as-is
-            result.append(channel)
-            continue
-
         if len(non_null_positions) == 0:
             # All entries are null, channel has no effect - remove it
             continue
