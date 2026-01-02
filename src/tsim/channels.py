@@ -118,6 +118,9 @@ def xor_convolve(probs_a: np.ndarray, probs_b: np.ndarray) -> np.ndarray:
     if len(probs_b) != n:
         raise ValueError("Both channels must have same number of outcomes")
 
+    # NOTE: The convolution could be done in O(n*log(n)) using Walsh-Hadamard transform.
+    # But since probability arrays are usually limited to <=16 entries, this is not
+    # worth the complexity.
     result = np.zeros(n, dtype=np.float64)
     for a in range(n):
         for b in range(n):
