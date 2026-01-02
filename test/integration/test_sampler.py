@@ -301,7 +301,7 @@ def test_compare_to_statevector_simulator_and_pyzx_tensor_with_arbitrary_rotatio
     assert np.allclose(tsim_state_vector, pyzx_state_vector, atol=tol, rtol=tol)
 
 
-if __name__ == "__main__2":
+if __name__ == "__main__":
     # Debugging code...
     import random
     from test.helpers.util import plot_comparison
