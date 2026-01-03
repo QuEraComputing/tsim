@@ -2,130 +2,130 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/contrib/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/install/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/demos/aist_demo/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/demos/decoding_demo/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/demos/demo/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/demos/encoding_demo/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/demos/magic_state_distillation/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/demos/overview/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/demos/tutorial/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/demos/u3_demo/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/demos/utils/encoder/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/demos/utils/no_decoder/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/_instructions/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/channels/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/circuit/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/compile/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/dem/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/evaluate/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/exact_scalar/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/graph_util/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/parse/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/program/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/sampler/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/stabrank/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/types/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/util/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/util/diagram/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/util/linalg/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/reference/tsim/util/program_text/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
     <url>
          <loc>https://github.com/QuEraComputing/tsim/dev/scripts/gen_ref_nav/</loc>
-         <lastmod>2025-12-26</lastmod>
+         <lastmod>2026-01-03</lastmod>
     </url>
 </urlset>

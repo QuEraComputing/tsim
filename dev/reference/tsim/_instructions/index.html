@@ -6,7 +6,7 @@
     <span class=n>observables_dict</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>int</span><span class=p>,</span> <span class=nb>int</span><span class=p>]</span> <span class=o>=</span> <span class=nb>dict</span><span class=p>(),</span>
     <span class=n>first_vertex</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>int</span><span class=p>,</span> <span class=nb>int</span><span class=p>]</span> <span class=o>=</span> <span class=nb>dict</span><span class=p>(),</span>
     <span class=n>last_vertex</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>int</span><span class=p>,</span> <span class=nb>int</span><span class=p>]</span> <span class=o>=</span> <span class=nb>dict</span><span class=p>(),</span>
-    <span class=n>error_specs</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>ErrorSpec</span><span class=p>]</span> <span class=o>=</span> <span class=nb>list</span><span class=p>(),</span>
+    <span class=n>channel_probs</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>ndarray</span><span class=p>]</span> <span class=o>=</span> <span class=nb>list</span><span class=p>(),</span>
     <span class=n>num_error_bits</span><span class=p>:</span> <span class=nb>int</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span>
 <span class=p>)</span>
 </code></pre></div> <div class="doc doc-contents "> <p>ZX graph built from a stim circuit.</p> <p>Contains the graph and all auxiliary data needed for sampling.</p> <div class="doc doc-children"> <div class="doc doc-object doc-attribute"> <h3 id=tsim._instructions.GraphRepresentation.observables class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code> <span class="doc doc-object-name doc-attribute-name">observables</span> <span class="doc doc-labels"> <small class="doc doc-label doc-label-property"><code>property</code></small> </span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=n>observables</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]</span>
@@ -15,15 +15,15 @@
     <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=n>row</span><span class=p>:</span> <span class=nb>float</span> <span class=o>|</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Add a dummy boundary vertex for a qubit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>55</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Add a dummy boundary vertex for a qubit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>53</span>
+<span class=normal>54</span>
+<span class=normal>55</span>
 <span class=normal>56</span>
 <span class=normal>57</span>
 <span class=normal>58</span>
 <span class=normal>59</span>
 <span class=normal>60</span>
-<span class=normal>61</span>
-<span class=normal>62</span>
-<span class=normal>63</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>add_dummy</span><span class=p>(</span>
+<span class=normal>61</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>add_dummy</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>row</span><span class=p>:</span> <span class=nb>float</span> <span class=o>|</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Add a dummy boundary vertex for a qubit.&quot;&quot;&quot;</span>
@@ -33,14 +33,14 @@
     <span class=n>b</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>[</span><span class=n>qubit</span><span class=p>]</span> <span class=o>=</span> <span class=n>v1</span>
     <span class=k>return</span> <span class=n>v1</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.add_lane class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">add_lane</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>add_lane</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Initialize a qubit lane if it doesn't exist.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>66</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Initialize a qubit lane if it doesn't exist.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>64</span>
+<span class=normal>65</span>
+<span class=normal>66</span>
 <span class=normal>67</span>
 <span class=normal>68</span>
 <span class=normal>69</span>
 <span class=normal>70</span>
-<span class=normal>71</span>
-<span class=normal>72</span>
-<span class=normal>73</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>add_lane</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span><span class=p>:</span>
+<span class=normal>71</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>add_lane</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Initialize a qubit lane if it doesn&#39;t exist.&quot;&quot;&quot;</span>
     <span class=n>v1</span> <span class=o>=</span> <span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>add_vertex</span><span class=p>(</span><span class=n>VertexType</span><span class=o>.</span><span class=n>BOUNDARY</span><span class=p>,</span> <span class=n>qubit</span><span class=o>=</span><span class=n>qubit</span><span class=p>,</span> <span class=n>row</span><span class=o>=</span><span class=mi>0</span><span class=p>)</span>
     <span class=n>v2</span> <span class=o>=</span> <span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>add_vertex</span><span class=p>(</span><span class=n>VertexType</span><span class=o>.</span><span class=n>BOUNDARY</span><span class=p>,</span> <span class=n>qubit</span><span class=o>=</span><span class=n>qubit</span><span class=p>,</span> <span class=n>row</span><span class=o>=</span><span class=mi>1</span><span class=p>)</span>
@@ -49,59 +49,59 @@
     <span class=n>b</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>[</span><span class=n>qubit</span><span class=p>]</span> <span class=o>=</span> <span class=n>v2</span>
     <span class=k>return</span> <span class=n>v1</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.c_xyz class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">c_xyz</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>c_xyz</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Right handed period 3 axis cycling gate, sending X -&gt; Y -&gt; Z -&gt; X.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>173</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Right handed period 3 axis cycling gate, sending X -&gt; Y -&gt; Z -&gt; X.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>171</span>
+<span class=normal>172</span>
+<span class=normal>173</span>
 <span class=normal>174</span>
-<span class=normal>175</span>
-<span class=normal>176</span>
-<span class=normal>177</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>c_xyz</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>175</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>c_xyz</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Right handed period 3 axis cycling gate, sending X -&gt; Y -&gt; Z -&gt; X.&quot;&quot;&quot;</span>
     <span class=n>s_dag</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
     <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
     <span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>scalar</span><span class=o>.</span><span class=n>add_phase</span><span class=p>(</span><span class=n>Fraction</span><span class=p>(</span><span class=o>-</span><span class=mi>1</span><span class=p>,</span> <span class=mi>4</span><span class=p>))</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.c_zyx class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">c_zyx</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>c_zyx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Left handed period 3 axis cycling gate, sending Z -&gt; Y -&gt; X -&gt; Z.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>180</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Left handed period 3 axis cycling gate, sending Z -&gt; Y -&gt; X -&gt; Z.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>178</span>
+<span class=normal>179</span>
+<span class=normal>180</span>
 <span class=normal>181</span>
-<span class=normal>182</span>
-<span class=normal>183</span>
-<span class=normal>184</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>c_zyx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>182</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>c_zyx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Left handed period 3 axis cycling gate, sending Z -&gt; Y -&gt; X -&gt; Z.&quot;&quot;&quot;</span>
     <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
     <span class=n>s</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
     <span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>scalar</span><span class=o>.</span><span class=n>add_phase</span><span class=p>(</span><span class=n>Fraction</span><span class=p>(</span><span class=mi>1</span><span class=p>,</span> <span class=mi>4</span><span class=p>))</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.ensure_lane class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">ensure_lane</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>ensure_lane</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Ensure qubit lane exists.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>76</span>
-<span class=normal>77</span>
-<span class=normal>78</span>
-<span class=normal>79</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>ensure_lane</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Ensure qubit lane exists.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>74</span>
+<span class=normal>75</span>
+<span class=normal>76</span>
+<span class=normal>77</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>ensure_lane</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Ensure qubit lane exists.&quot;&quot;&quot;</span>
     <span class=k>if</span> <span class=n>qubit</span> <span class=ow>not</span> <span class=ow>in</span> <span class=n>b</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>:</span>
         <span class=n>add_lane</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.h_xy class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">h_xy</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>h_xy</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Variant of Hadamard gate that swaps the X and Y axes (instead of X and Z).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>200</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Variant of Hadamard gate that swaps the X and Y axes (instead of X and Z).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>198</span>
+<span class=normal>199</span>
+<span class=normal>200</span>
 <span class=normal>201</span>
-<span class=normal>202</span>
-<span class=normal>203</span>
-<span class=normal>204</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>h_xy</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>202</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>h_xy</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Variant of Hadamard gate that swaps the X and Y axes (instead of X and Z).&quot;&quot;&quot;</span>
     <span class=n>x</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
     <span class=n>s</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
     <span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>scalar</span><span class=o>.</span><span class=n>add_phase</span><span class=p>(</span><span class=n>Fraction</span><span class=p>(</span><span class=o>-</span><span class=mi>1</span><span class=p>,</span> <span class=mi>4</span><span class=p>))</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.h_yz class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">h_yz</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>h_yz</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>207</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>205</span>
+<span class=normal>206</span>
+<span class=normal>207</span>
 <span class=normal>208</span>
-<span class=normal>209</span>
-<span class=normal>210</span>
-<span class=normal>211</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>h_yz</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>209</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>h_yz</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z).&quot;&quot;&quot;</span>
     <span class=n>sqrt_x</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
     <span class=n>z</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
     <span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>scalar</span><span class=o>.</span><span class=n>add_phase</span><span class=p>(</span><span class=n>Fraction</span><span class=p>(</span><span class=o>-</span><span class=mi>1</span><span class=p>,</span> <span class=mi>4</span><span class=p>))</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.i class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">i</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>i</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Apply identity (advances the row).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>147</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Apply identity (advances the row).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>145</span>
+<span class=normal>146</span>
+<span class=normal>147</span>
 <span class=normal>148</span>
-<span class=normal>149</span>
-<span class=normal>150</span>
-<span class=normal>151</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>i</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>149</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>i</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Apply identity (advances the row).&quot;&quot;&quot;</span>
     <span class=n>ensure_lane</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
     <span class=n>v</span> <span class=o>=</span> <span class=n>b</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>[</span><span class=n>qubit</span><span class=p>]</span>
@@ -109,12 +109,12 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.iswap class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">iswap</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>iswap</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Swaps two qubits and phases the -1 eigenspace of the ZZ observable by i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>347</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Swaps two qubits and phases the -1 eigenspace of the ZZ observable by i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>345</span>
+<span class=normal>346</span>
+<span class=normal>347</span>
 <span class=normal>348</span>
 <span class=normal>349</span>
-<span class=normal>350</span>
-<span class=normal>351</span>
-<span class=normal>352</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>iswap</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>350</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>iswap</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Swaps two qubits and phases the -1 eigenspace of the ZZ observable by i.&quot;&quot;&quot;</span>
     <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
     <span class=n>s</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
@@ -123,41 +123,41 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.iswap_dag class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">iswap_dag</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>iswap_dag</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Swaps two qubits and phases the -1 eigenspace of the ZZ observable by -i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>355</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Swaps two qubits and phases the -1 eigenspace of the ZZ observable by -i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>353</span>
+<span class=normal>354</span>
+<span class=normal>355</span>
 <span class=normal>356</span>
 <span class=normal>357</span>
-<span class=normal>358</span>
-<span class=normal>359</span>
-<span class=normal>360</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>iswap_dag</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>358</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>iswap_dag</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Swaps two qubits and phases the -1 eigenspace of the ZZ observable by -i.&quot;&quot;&quot;</span>
     <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
     <span class=n>s_dag</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
     <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
     <span class=n>swap</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.last_edge class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">last_edge</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>last_edge</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Get the last edge for a qubit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>48</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Get the last edge for a qubit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>46</span>
+<span class=normal>47</span>
+<span class=normal>48</span>
 <span class=normal>49</span>
-<span class=normal>50</span>
-<span class=normal>51</span>
-<span class=normal>52</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>last_edge</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>):</span>
+<span class=normal>50</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>last_edge</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>):</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Get the last edge for a qubit.&quot;&quot;&quot;</span>
     <span class=n>edges</span> <span class=o>=</span> <span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>incident_edges</span><span class=p>(</span><span class=n>b</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>[</span><span class=n>qubit</span><span class=p>])</span>
     <span class=k>assert</span> <span class=nb>len</span><span class=p>(</span><span class=n>edges</span><span class=p>)</span> <span class=o>==</span> <span class=mi>1</span>
     <span class=k>return</span> <span class=n>edges</span><span class=p>[</span><span class=mi>0</span><span class=p>]</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.last_row class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">last_row</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>last_row</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>float</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Get the row of the last vertex for a qubit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>43</span>
-<span class=normal>44</span>
-<span class=normal>45</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>last_row</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>float</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Get the row of the last vertex for a qubit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>41</span>
+<span class=normal>42</span>
+<span class=normal>43</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>last_row</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>float</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Get the row of the last vertex for a qubit.&quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>row</span><span class=p>(</span><span class=n>b</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>[</span><span class=n>qubit</span><span class=p>])</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.sqrt_xx class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">sqrt_xx</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>sqrt_xx</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Phases the -1 eigenspace of the XX observable by i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>363</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Phases the -1 eigenspace of the XX observable by i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>361</span>
+<span class=normal>362</span>
+<span class=normal>363</span>
 <span class=normal>364</span>
-<span class=normal>365</span>
-<span class=normal>366</span>
-<span class=normal>367</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sqrt_xx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>365</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sqrt_xx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Phases the -1 eigenspace of the XX observable by i.&quot;&quot;&quot;</span>
     <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
     <span class=n>sqrt_x</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>)</span>
@@ -165,11 +165,11 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.sqrt_xx_dag class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">sqrt_xx_dag</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>sqrt_xx_dag</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Phases the -1 eigenspace of the XX observable by -i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>370</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Phases the -1 eigenspace of the XX observable by -i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>368</span>
+<span class=normal>369</span>
+<span class=normal>370</span>
 <span class=normal>371</span>
-<span class=normal>372</span>
-<span class=normal>373</span>
-<span class=normal>374</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sqrt_xx_dag</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>372</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sqrt_xx_dag</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Phases the -1 eigenspace of the XX observable by -i.&quot;&quot;&quot;</span>
     <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
     <span class=n>sqrt_x_dag</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>)</span>
@@ -177,15 +177,15 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.sqrt_yy class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">sqrt_yy</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>sqrt_yy</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Phases the -1 eigenspace of the YY observable by i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>377</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Phases the -1 eigenspace of the YY observable by i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>375</span>
+<span class=normal>376</span>
+<span class=normal>377</span>
 <span class=normal>378</span>
 <span class=normal>379</span>
 <span class=normal>380</span>
 <span class=normal>381</span>
 <span class=normal>382</span>
-<span class=normal>383</span>
-<span class=normal>384</span>
-<span class=normal>385</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sqrt_yy</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>383</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sqrt_yy</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Phases the -1 eigenspace of the YY observable by i.&quot;&quot;&quot;</span>
     <span class=n>s</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>)</span>
     <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>)</span>
@@ -197,15 +197,15 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.sqrt_yy_dag class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">sqrt_yy_dag</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>sqrt_yy_dag</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Phases the -1 eigenspace of the YY observable by -i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>388</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Phases the -1 eigenspace of the YY observable by -i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>386</span>
+<span class=normal>387</span>
+<span class=normal>388</span>
 <span class=normal>389</span>
 <span class=normal>390</span>
 <span class=normal>391</span>
 <span class=normal>392</span>
 <span class=normal>393</span>
-<span class=normal>394</span>
-<span class=normal>395</span>
-<span class=normal>396</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sqrt_yy_dag</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>394</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sqrt_yy_dag</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Phases the -1 eigenspace of the YY observable by -i.&quot;&quot;&quot;</span>
     <span class=n>s_dag</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>)</span>
     <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>)</span>
@@ -217,11 +217,11 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.sqrt_zz class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">sqrt_zz</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>sqrt_zz</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Phases the -1 eigenspace of the ZZ observable by i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>399</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Phases the -1 eigenspace of the ZZ observable by i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>397</span>
+<span class=normal>398</span>
+<span class=normal>399</span>
 <span class=normal>400</span>
-<span class=normal>401</span>
-<span class=normal>402</span>
-<span class=normal>403</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sqrt_zz</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>401</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sqrt_zz</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Phases the -1 eigenspace of the ZZ observable by i.&quot;&quot;&quot;</span>
     <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
     <span class=n>s</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
@@ -229,13 +229,13 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.sqrt_zz_dag class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">sqrt_zz_dag</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>sqrt_zz_dag</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Phases the -1 eigenspace of the ZZ observable by -i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>406</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Phases the -1 eigenspace of the ZZ observable by -i.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>404</span>
+<span class=normal>405</span>
+<span class=normal>406</span>
 <span class=normal>407</span>
 <span class=normal>408</span>
 <span class=normal>409</span>
-<span class=normal>410</span>
-<span class=normal>411</span>
-<span class=normal>412</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sqrt_zz_dag</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>410</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sqrt_zz_dag</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Phases the -1 eigenspace of the ZZ observable by -i.&quot;&quot;&quot;</span>
     <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
     <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
@@ -243,13 +243,13 @@
     <span class=n>s_dag</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>)</span>
     <span class=n>s_dag</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.tick class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">tick</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>tick</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Add a tick to the circuit (align all qubits to same row).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>738</span>
-<span class=normal>739</span>
-<span class=normal>740</span>
-<span class=normal>741</span>
-<span class=normal>742</span>
-<span class=normal>743</span>
-<span class=normal>744</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>tick</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Add a tick to the circuit (align all qubits to same row).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>746</span>
+<span class=normal>747</span>
+<span class=normal>748</span>
+<span class=normal>749</span>
+<span class=normal>750</span>
+<span class=normal>751</span>
+<span class=normal>752</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>tick</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Add a tick to the circuit (align all qubits to same row).&quot;&quot;&quot;</span>
     <span class=k>if</span> <span class=nb>len</span><span class=p>(</span><span class=n>b</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>)</span> <span class=o>==</span> <span class=mi>0</span><span class=p>:</span>
         <span class=k>return</span>
@@ -259,11 +259,11 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.xcx class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">xcx</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>xcx</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>target</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>X-controlled X gate. Applies X to target if control is in |-&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>415</span>
+</code></pre></div> <div class="doc doc-contents "> <p>X-controlled X gate. Applies X to target if control is in |-&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>413</span>
+<span class=normal>414</span>
+<span class=normal>415</span>
 <span class=normal>416</span>
-<span class=normal>417</span>
-<span class=normal>418</span>
-<span class=normal>419</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>xcx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>417</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>xcx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;X-controlled X gate. Applies X to target if control is in |-&gt; state.&quot;&quot;&quot;</span>
     <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>control</span><span class=p>)</span>
     <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>control</span><span class=p>,</span> <span class=n>target</span><span class=p>)</span>
@@ -271,11 +271,11 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.xcy class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">xcy</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>xcy</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>target</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>X-controlled Y gate. Applies Y to target if control is in |-&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>422</span>
+</code></pre></div> <div class="doc doc-contents "> <p>X-controlled Y gate. Applies Y to target if control is in |-&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>420</span>
+<span class=normal>421</span>
+<span class=normal>422</span>
 <span class=normal>423</span>
-<span class=normal>424</span>
-<span class=normal>425</span>
-<span class=normal>426</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>xcy</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>424</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>xcy</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;X-controlled Y gate. Applies Y to target if control is in |-&gt; state.&quot;&quot;&quot;</span>
     <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>control</span><span class=p>)</span>
     <span class=n>cy</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>control</span><span class=p>,</span> <span class=n>target</span><span class=p>)</span>
@@ -286,7 +286,9 @@
     <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=n>classically_controlled</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>bool</span><span class=p>]</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>X-controlled Z gate. Applies Z to target if control is in |-&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>429</span>
+</code></pre></div> <div class="doc doc-contents "> <p>X-controlled Z gate. Applies Z to target if control is in |-&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>427</span>
+<span class=normal>428</span>
+<span class=normal>429</span>
 <span class=normal>430</span>
 <span class=normal>431</span>
 <span class=normal>432</span>
@@ -296,9 +298,7 @@
 <span class=normal>436</span>
 <span class=normal>437</span>
 <span class=normal>438</span>
-<span class=normal>439</span>
-<span class=normal>440</span>
-<span class=normal>441</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>xcz</span><span class=p>(</span>
+<span class=normal>439</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>xcz</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span>
     <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
@@ -314,11 +314,11 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.ycx class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">ycx</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>ycx</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>target</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Y-controlled X gate. Applies X to target if control is in |-i&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>444</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Y-controlled X gate. Applies X to target if control is in |-i&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>442</span>
+<span class=normal>443</span>
+<span class=normal>444</span>
 <span class=normal>445</span>
-<span class=normal>446</span>
-<span class=normal>447</span>
-<span class=normal>448</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>ycx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>446</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>ycx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Y-controlled X gate. Applies X to target if control is in |-i&gt; state.&quot;&quot;&quot;</span>
     <span class=n>h_yz</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>control</span><span class=p>)</span>
     <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>control</span><span class=p>,</span> <span class=n>target</span><span class=p>)</span>
@@ -326,11 +326,11 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim._instructions.ycy class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">ycy</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>ycy</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>target</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Y-controlled Y gate. Applies Y to target if control is in |-i&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>451</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Y-controlled Y gate. Applies Y to target if control is in |-i&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>449</span>
+<span class=normal>450</span>
+<span class=normal>451</span>
 <span class=normal>452</span>
-<span class=normal>453</span>
-<span class=normal>454</span>
-<span class=normal>455</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>ycy</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>453</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>ycy</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Y-controlled Y gate. Applies Y to target if control is in |-i&gt; state.&quot;&quot;&quot;</span>
     <span class=n>h_yz</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>control</span><span class=p>)</span>
     <span class=n>cy</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>control</span><span class=p>,</span> <span class=n>target</span><span class=p>)</span>
@@ -341,7 +341,9 @@
     <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=n>classically_controlled</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>bool</span><span class=p>]</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Y-controlled Z gate. Applies Z to target if control is in |-i&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>458</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Y-controlled Z gate. Applies Z to target if control is in |-i&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/_instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>456</span>
+<span class=normal>457</span>
+<span class=normal>458</span>
 <span class=normal>459</span>
 <span class=normal>460</span>
 <span class=normal>461</span>
@@ -351,9 +353,7 @@
 <span class=normal>465</span>
 <span class=normal>466</span>
 <span class=normal>467</span>
-<span class=normal>468</span>
-<span class=normal>469</span>
-<span class=normal>470</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>ycz</span><span class=p>(</span>
+<span class=normal>468</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>ycz</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span>
     <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
