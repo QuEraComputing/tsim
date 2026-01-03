@@ -42,3 +42,16 @@ def test_seed():
         assert np.count_nonzero(sampler.sample(100)) == 52
         assert np.count_nonzero(sampler.sample(100)) == 50
         assert np.count_nonzero(sampler.sample(100)) == 48
+
+
+def test_sampler_repr():
+    c = Circuit(
+        """
+        X_ERROR(0.1) 0 1
+        M 0 1
+        """
+    )
+    sampler = c.compile_sampler()
+    repr_str = repr(sampler)
+    assert "CompiledMeasurementSampler" in repr_str
+    assert "2 error channel bits" in repr_str

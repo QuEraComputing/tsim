@@ -131,11 +131,11 @@ def test_memory_error_correction_and_compare_to_stim(code_task: str):
         sampler = c.compile_detector_sampler(seed=0)
         if isinstance(c, Circuit):
             detection_events, observable_flips = sampler.sample(
-                10_000, batch_size=10_000, separate_observables=True
+                30_000, batch_size=30_000, separate_observables=True
             )
         else:
             detection_events, observable_flips = sampler.sample(
-                10_000, separate_observables=True
+                30_000, separate_observables=True
             )
 
         detector_error_model = circ.detector_error_model(decompose_errors=True)
@@ -162,6 +162,37 @@ def test_memory_error_correction_and_compare_to_stim(code_task: str):
         / stim_errors_after_correction
         <= 0.3
     )
+
+
+def test_channel_simplification():
+    c = Circuit(
+        """
+        X_ERROR(0.1) 0
+        X_ERROR(0.1) 0
+        X_ERROR(0.1) 0
+        M 0
+        """
+    )
+    sampler = c.compile_sampler(seed=42)
+
+    # Check that channels were simplified into a single equivalent channel
+    assert len(sampler._channel_sampler.channels) == 1
+
+    n_samples = 100_000
+    samples = sampler.sample(n_samples)
+
+    # Three independent X_ERROR(0.1) channels combine via XOR convolution
+    p = 0.1
+    p_combined = 3 * p * (1 - p) ** 2 + p**3
+
+    # Count how many samples have measurement result 1
+    measured_ones = np.sum(samples[:, 0])
+    observed_rate = measured_ones / n_samples
+    std_err = np.sqrt(p_combined * (1 - p_combined) / n_samples)
+
+    assert (
+        abs(observed_rate - p_combined) < 4 * std_err
+    ), f"Expected rate {p_combined:.4f}, got {observed_rate:.4f}, std_err={std_err:.4f}"
 
 
 def simulate_with_vec_sampler(stim_circuit: stim.Circuit) -> np.ndarray:

@@ -14,12 +14,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import equinox as eqx
+import numpy as np
 from jax import Array
 
 if TYPE_CHECKING:
     from pyzx.graph.base import BaseGraph
 
-    from tsim.channels import ErrorSpec
     from tsim.compile import CompiledScalarGraphs
 
 
@@ -37,15 +37,16 @@ class SamplingGraph:
 
     Attributes:
         graph: The prepared ZX graph with f-parameters on vertices.
-        error_transform: Dictionary mapping f-variable names to sets of e-variables.
-        error_specs: Specifications for creating error channels.
+        error_transform: Binary matrix of shape (num_f, num_e) where entry [i, j] = 1
+            means f_i depends on e_j (i.e., f_i = XOR of e_j where matrix[i,j] = 1).
+        channel_probs: List of probability arrays for error channels.
         num_outputs: Number of output vertices (measurements or detectors).
         num_detectors: Number of detector vertices.
     """
 
     graph: BaseGraph
-    error_transform: dict[str, set[str]]
-    error_specs: list[ErrorSpec]
+    error_transform: np.ndarray
+    channel_probs: list[np.ndarray]
     num_outputs: int
     num_detectors: int
 

@@ -1,5 +1,3 @@
-from typing import Optional
-
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -50,7 +48,7 @@ class ExactScalarArray(eqx.Module):
     coeffs: Array
     power: Array
 
-    def __init__(self, coeffs: Array, power: Optional[Array] = None):
+    def __init__(self, coeffs: Array, power: Array | None = None):
         """
         Represents values of the form:
             (c_0 + c_1*omega + c_2*omega^2 + c_3*omega^3) * 2^power
@@ -61,11 +59,6 @@ class ExactScalarArray(eqx.Module):
             self.power = jnp.zeros(coeffs.shape[:-1], dtype=jnp.int32)
         else:
             self.power = power
-
-    @classmethod
-    def from_scalar_coeffs(cls, coeffs: jax.Array) -> "ExactScalarArray":
-        """Creates ExactScalarArray with power=0"""
-        return cls(coeffs)
 
     def __mul__(self, other: "ExactScalarArray") -> "ExactScalarArray":
         """Element-wise multiplication."""
@@ -119,17 +112,30 @@ class ExactScalarArray(eqx.Module):
         """
         Compute product along the specified axis using associative scan.
 
+        Returns identity (1+0i with power 0) for empty reductions.
+
         Args:
             axis: The axis along which to compute the product.
 
         Returns:
             ExactScalarArray with the product computed along the axis.
         """
+        if axis < 0:
+            axis = self.coeffs.ndim + axis
+
+        if self.coeffs.shape[axis] == 0:
+            # Product of empty sequence is identity: [1, 0, 0, 0] * 2^0
+            coeffs_shape = self.coeffs.shape[:axis] + self.coeffs.shape[axis + 1 :]
+            result_coeffs = jnp.zeros(coeffs_shape, dtype=self.coeffs.dtype)
+            result_coeffs = result_coeffs.at[..., 0].set(1)
+
+            power_shape = self.power.shape[:axis] + self.power.shape[axis + 1 :]
+            result_power = jnp.zeros(power_shape, dtype=self.power.dtype)
+
+            return ExactScalarArray(result_coeffs, result_power)
+
         scanned = lax.associative_scan(_scalar_mul, self.coeffs, axis=axis)
-
-        # Take the last element along the reduction axis
         result_coeffs = jnp.take(scanned, indices=-1, axis=axis)
-
         result_power = jnp.sum(self.power, axis=axis)
 
         return ExactScalarArray(result_coeffs, result_power)

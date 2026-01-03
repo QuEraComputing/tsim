@@ -162,21 +162,9 @@ def evaluate(
     static_phases = ExactScalarArray(unit_phases_exact[circuit.phase_indices])
     float_factor = ExactScalarArray(circuit.floatfactor)
 
-    def mul_all(terms):
-        res = terms[0]
-        for t in terms[1:]:
-            res = res * t
-        return res
-
-    total_summands = mul_all(
-        [
-            summands_a,
-            summands_b,
-            summands_c,
-            summands_d,
-            static_phases,
-            float_factor,
-        ]
+    total_summands = functools.reduce(
+        lambda a, b: a * b,
+        [summands_a, summands_b, summands_c, summands_d, static_phases, float_factor],
     )
 
     if not has_approximate_floatfactor:

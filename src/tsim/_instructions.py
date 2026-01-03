@@ -4,16 +4,14 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Callable
 
+import numpy as np
 from pyzx.graph.graph_s import GraphS
 from pyzx.utils import EdgeType, VertexType
 
 from tsim.channels import (
-    Depolarize1,
-    Depolarize2,
-    Error,
-    ErrorSpec,
-    PauliChannel1,
-    PauliChannel2,
+    error_probs,
+    pauli_channel_1_probs,
+    pauli_channel_2_probs,
 )
 
 
@@ -31,7 +29,7 @@ class GraphRepresentation:
     observables_dict: dict[int, int] = field(default_factory=dict)
     first_vertex: dict[int, int] = field(default_factory=dict)
     last_vertex: dict[int, int] = field(default_factory=dict)
-    error_specs: list[ErrorSpec] = field(default_factory=list)
+    channel_probs: list[np.ndarray] = field(default_factory=list)
     num_error_bits: int = 0
 
     @property
@@ -471,7 +469,7 @@ def ycz(
 
 
 # =============================================================================
-# Error Channels (creates ErrorSpecs, not actual channels)
+# Error Channels (stores probability arrays for channel sampling)
 # =============================================================================
 
 
@@ -485,26 +483,10 @@ def _error(b: GraphRepresentation, qubit: int, error_type: int, phase: str) -> N
     b.graph.set_phase(v1, phase)
 
 
-def depolarize1(b: GraphRepresentation, qubit: int, p: float) -> None:
-    b.error_specs.append(ErrorSpec(Depolarize1, (p,)))
-    _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
-    _error(b, qubit, VertexType.X, f"e{b.num_error_bits + 1}")
-    b.num_error_bits += 2
-
-
-def depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) -> None:
-    b.error_specs.append(ErrorSpec(Depolarize2, (p,)))
-    _error(b, qubit_i, VertexType.Z, f"e{b.num_error_bits}")
-    _error(b, qubit_i, VertexType.X, f"e{b.num_error_bits + 1}")
-    _error(b, qubit_j, VertexType.Z, f"e{b.num_error_bits + 2}")
-    _error(b, qubit_j, VertexType.X, f"e{b.num_error_bits + 3}")
-    b.num_error_bits += 4
-
-
 def pauli_channel_1(
     b: GraphRepresentation, qubit: int, px: float, py: float, pz: float
 ) -> None:
-    b.error_specs.append(ErrorSpec(PauliChannel1, (px, py, pz)))
+    b.channel_probs.append(pauli_channel_1_probs(px, py, pz))
     _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
     _error(b, qubit, VertexType.X, f"e{b.num_error_bits + 1}")
     b.num_error_bits += 2
@@ -530,10 +512,9 @@ def pauli_channel_2(
     pzy: float = 0,
     pzz: float = 0,
 ) -> None:
-    b.error_specs.append(
-        ErrorSpec(
-            PauliChannel2,
-            (pix, piy, piz, pxi, pxx, pxy, pxz, pyi, pyx, pyy, pyz, pzi, pzx, pzy, pzz),
+    b.channel_probs.append(
+        pauli_channel_2_probs(
+            pix, piy, piz, pxi, pxx, pxy, pxz, pyi, pyx, pyy, pyz, pzi, pzx, pzy, pzz
         )
     )
     _error(b, qubit_i, VertexType.Z, f"e{b.num_error_bits}")
@@ -543,21 +524,48 @@ def pauli_channel_2(
     b.num_error_bits += 4
 
 
+def depolarize1(b: GraphRepresentation, qubit: int, p: float) -> None:
+    pauli_channel_1(b, qubit, p / 3, p / 3, p / 3)
+
+
+def depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) -> None:
+    pauli_channel_2(
+        b,
+        qubit_i,
+        qubit_j,
+        p / 15,
+        p / 15,
+        p / 15,
+        p / 15,
+        p / 15,
+        p / 15,
+        p / 15,
+        p / 15,
+        p / 15,
+        p / 15,
+        p / 15,
+        p / 15,
+        p / 15,
+        p / 15,
+    )
+
+
 def x_error(b: GraphRepresentation, qubit: int, p: float) -> None:
-    b.error_specs.append(ErrorSpec(Error, (p,)))
+    b.channel_probs.append(error_probs(p))
     _error(b, qubit, VertexType.X, f"e{b.num_error_bits}")
     b.num_error_bits += 1
 
 
 def y_error(b: GraphRepresentation, qubit: int, p: float) -> None:
-    b.error_specs.append(ErrorSpec(Error, (p,)))
+    b.channel_probs.append(error_probs(p))
+    # Y = X·Z, so both vertices use the same error bit
     _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
     _error(b, qubit, VertexType.X, f"e{b.num_error_bits}")
     b.num_error_bits += 1
 
 
 def z_error(b: GraphRepresentation, qubit: int, p: float) -> None:
-    b.error_specs.append(ErrorSpec(Error, (p,)))
+    b.channel_probs.append(error_probs(p))
     _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
     b.num_error_bits += 1
 

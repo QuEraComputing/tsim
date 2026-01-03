@@ -69,9 +69,11 @@ def compile_scalar_graphs(
         CompiledScalarGraphs with all data in static-shaped JAX arrays
     """
     for i, g in enumerate(g_list):
-        assert (
-            len(list(g.vertices())) == 0
-        ), f"Only scalar graphs can be compiled but graph {i} has {len(list(g.vertices()))} vertices"
+        n_vertices = len(list(g.vertices()))
+        if n_vertices != 0:
+            raise ValueError(
+                f"Only scalar graphs can be compiled but graph {i} has {n_vertices} vertices"
+            )
 
     g_list = [g for g in g_list if not g.scalar.is_zero]
 
@@ -100,9 +102,7 @@ def compile_scalar_graphs(
 
     a_num_terms = np.array([len(terms) for terms in a_terms_per_graph], dtype=np.int32)
     max_a = int(a_num_terms.max()) if a_num_terms.size else 0
-    max_a = max(max_a, 1)
 
-    # Pad with const_phase=0, param_bits=0 -> (1+e^0)=2; compensated in power2.
     a_const_phases = np.zeros((num_graphs, max_a), dtype=np.uint8)
     a_param_bits = np.zeros((num_graphs, max_a, n_params), dtype=np.uint8)
 
@@ -142,7 +142,6 @@ def compile_scalar_graphs(
             b_terms_per_graph[i].append((combined_j * 2, list(bitstr_key)))
 
     max_b = max((len(terms) for terms in b_terms_per_graph), default=0)
-    max_b = max(max_b, 1)
 
     # Pad with 0 (additive identity for phase sums)
     b_term_types = np.zeros((num_graphs, max_b), dtype=np.uint8)
@@ -181,7 +180,6 @@ def compile_scalar_graphs(
             )
 
     max_c = max((len(terms) for terms in c_terms_per_graph), default=0)
-    max_c = max(max_c, 1)
 
     # Pad with 0 (additive identity for exponent sums)
     c_const_bits_a = np.zeros((num_graphs, max_c), dtype=np.uint8)
@@ -224,9 +222,7 @@ def compile_scalar_graphs(
 
     d_num_terms = np.array([len(terms) for terms in d_terms_per_graph], dtype=np.int32)
     max_d = int(d_num_terms.max()) if d_num_terms.size else 0
-    max_d = max(max_d, 1)
 
-    # Pad with alpha=0, beta=0 -> 1+1+1-1=2; compensated in power2.
     d_const_alpha = np.zeros((num_graphs, max_d), dtype=np.uint8)
     d_const_beta = np.zeros((num_graphs, max_d), dtype=np.uint8)
     d_param_bits_a = np.zeros((num_graphs, max_d, n_params), dtype=np.uint8)
