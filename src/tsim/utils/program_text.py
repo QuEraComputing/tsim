@@ -1,3 +1,5 @@
+"""Conversion utilities between tsim shorthand and stim program text."""
+
 import re
 
 

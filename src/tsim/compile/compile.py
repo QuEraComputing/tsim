@@ -1,3 +1,5 @@
+"""Compilation of ZX graphs into JAX-compatible data structures."""
+
 from collections import defaultdict
 from fractions import Fraction
 
@@ -67,6 +69,7 @@ def compile_scalar_graphs(
 
     Returns:
         CompiledScalarGraphs with all data in static-shaped JAX arrays
+
     """
     for i, g in enumerate(g_list):
         n_vertices = len(list(g.vertices()))

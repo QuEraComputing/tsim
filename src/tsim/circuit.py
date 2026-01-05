@@ -1,3 +1,5 @@
+"""Quantum circuit wrapper around stim.Circuit with non-Clifford gate support."""
+
 from __future__ import annotations
 
 from typing import Any, Iterable, Literal, cast, overload
@@ -34,6 +36,7 @@ class Circuit:
         Args:
             stim_program_text: Stim program text to parse. If empty, creates an
                 empty circuit.
+
         """
         self._stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text))
 
@@ -46,13 +49,14 @@ class Circuit:
 
         Returns:
             A new Circuit instance.
+
         """
         c = cls.__new__(cls)
         c._stim_circ = stim_circuit.flattened()
         return c
 
     def append_from_stim_program_text(self, stim_program_text: str) -> None:
-        """Appends operations described by a STIM format program into the circuit.
+        """Append operations described by a STIM format program into the circuit.
 
         Supports the same shorthand syntax as the constructor.
         """
@@ -69,6 +73,7 @@ class Circuit:
 
         Returns:
             A new Circuit instance.
+
         """
         with open(filename, "r", encoding="utf-8") as f:
             stim_program_text = f.read()
@@ -76,20 +81,25 @@ class Circuit:
         return cls.from_stim_program(stim_circ)
 
     def __repr__(self) -> str:
+        """Return a string representation that can recreate the circuit."""
         return f"tsim.Circuit('''\n{str(self)}\n''')"
 
     def __str__(self) -> str:
+        """Return the circuit as program text."""
         return stim_to_shorthand(str(self._stim_circ))
 
     def __len__(self) -> int:
+        """Return the number of instructions in the circuit."""
         return len(self._stim_circ)
 
     def __eq__(self, other: object) -> bool:
+        """Check equality with another circuit."""
         if isinstance(other, Circuit):
             return self._stim_circ == other._stim_circ
         return NotImplemented
 
     def __iadd__(self, other: Circuit | stim.Circuit) -> Circuit:
+        """Append another circuit to this circuit in-place."""
         if isinstance(other, Circuit):
             self._stim_circ += other._stim_circ
         else:
@@ -97,19 +107,23 @@ class Circuit:
         return self
 
     def __add__(self, other: Circuit | stim.Circuit) -> Circuit:
+        """Return a new circuit with another circuit appended."""
         result = Circuit.from_stim_program(self._stim_circ.copy())
         result += other
         return result
 
     def __imul__(self, repetitions: int) -> Circuit:
+        """Repeat this circuit in-place."""
         self._stim_circ *= repetitions
         self._stim_circ = self._stim_circ.flattened()
         return self
 
     def __mul__(self, repetitions: int) -> Circuit:
+        """Return a new circuit repeated the given number of times."""
         return Circuit.from_stim_program(self._stim_circ * repetitions)
 
     def __rmul__(self, repetitions: int) -> Circuit:
+        """Return a new circuit repeated the given number of times."""
         return self * repetitions
 
     @overload
@@ -130,7 +144,7 @@ class Circuit:
         self,
         index_or_slice: object,
     ) -> object:
-        """Returns copies of instructions from the circuit.
+        """Return copies of instructions from the circuit.
 
         Args:
             index_or_slice: An integer index picking out an instruction to return, or a
@@ -140,6 +154,7 @@ class Circuit:
             If the index was an integer, then an instruction from the circuit.
             If the index was a slice, then a circuit made up of the instructions in that
             slice.
+
         """
         if isinstance(index_or_slice, int):
             return self._stim_circ[index_or_slice]
@@ -154,7 +169,7 @@ class Circuit:
         *,
         atol: float,
     ) -> bool:
-        """Checks if a circuit is approximately equal to another circuit.
+        """Check if a circuit is approximately equal to another circuit.
 
         Two circuits are approximately equal if they are equal up to slight
         perturbations of instruction arguments such as probabilities. For example,
@@ -170,6 +185,7 @@ class Circuit:
         Returns:
             True if the given object is a circuit approximately equal up to the
             receiving circuit up to the given tolerance, otherwise False.
+
         """
         if isinstance(other, Circuit):
             return self._stim_circ.approx_equals(other._stim_circ, atol=atol)
@@ -183,7 +199,7 @@ class Circuit:
         *,
         skip_reference_sample: bool = False,
     ) -> stim.CompiledMeasurementsToDetectionEventsConverter:
-        """Creates a measurement-to-detection-event converter for the given circuit.
+        """Create a measurement-to-detection-event converter for the given circuit.
 
         The converter can efficiently compute detection events and observable flips
         from raw measurement data.
@@ -206,6 +222,7 @@ class Circuit:
 
         Returns:
             An initialized stim.CompiledMeasurementsToDetectionEventsConverter.
+
         """
         return self._stim_circ.compile_m2d_converter(
             skip_reference_sample=skip_reference_sample
@@ -252,6 +269,7 @@ class Circuit:
 
         Returns:
             The number of ticks executed by the circuit.
+
         """
         return self._stim_circ.num_ticks
 
@@ -269,6 +287,7 @@ class Circuit:
 
         Raises:
             IndexError: The given index is outside the bounds of the circuit.
+
         """
         el = self._stim_circ.pop(index)
         assert not isinstance(el, stim.CircuitRepeatBlock)
@@ -302,7 +321,7 @@ class Circuit:
         ignore_decomposition_failures: bool = False,
         block_decomposition_from_introducing_remnant_edges: bool = False,
     ) -> stim.DetectorErrorModel:
-        """Returns a stim.DetectorErrorModel describing the error processes in the circuit.
+        """Return a stim.DetectorErrorModel describing the error processes in the circuit.
 
         Unlike the stim.Circuit.detector_error_model() method, this method allows for non-deterministic observables
         when `allow_gauge_detectors` is set to true.
@@ -359,6 +378,7 @@ class Circuit:
                 decoder making misinformed choices when decoding).
 
                 Irrelevant unless decompose_errors=True.
+
         """
         return get_detector_error_model(
             self._stim_circ,
@@ -387,7 +407,7 @@ class Circuit:
         width: float | None = None,
         **kwargs: Any,
     ) -> Any:
-        """Returns a diagram of the circuit, from a variety of options.
+        """Return a diagram of the circuit, from a variety of options.
 
         Args:
             type: The type of diagram. Available types are:
@@ -427,6 +447,9 @@ class Circuit:
                 be included), a stim.DemTarget (specifying a detector or observable
                 to include), a string like "D5" or "L0" specifying a detector or
                 observable to include.
+            height: Optional height for the rendered diagram.
+            width: Optional width for the rendered diagram.
+            **kwargs: Additional keyword arguments passed to the underlying diagram renderer.
 
         Returns:
             An object whose `__str__` method returns the diagram, so that
@@ -434,6 +457,7 @@ class Circuit:
             object may also define methods such as `_repr_html_`, so that
             ipython notebooks recognize it can be shown using a specialized
             viewer instead of as raw text.
+
         """
         if type in [
             "timeline-svg",
@@ -504,7 +528,7 @@ class Circuit:
         return zx.tcount(built.graph)
 
     def get_graph(self) -> BaseGraph:
-        """Construct the ZX graph"""
+        """Construct the ZX graph."""
         built = parse_stim_circuit(self._stim_circ)
         return built.graph
 
@@ -530,6 +554,7 @@ class Circuit:
 
         Returns:
             A ZX graph for sampling.
+
         """
         built = parse_stim_circuit(self._stim_circ)
         return build_sampling_graph(built, sample_detectors=sample_detectors)
@@ -542,6 +567,7 @@ class Circuit:
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
+
         """
         from tsim.sampler import CompiledMeasurementSampler
 
@@ -555,6 +581,7 @@ class Circuit:
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.
+
         """
         from tsim.sampler import CompiledDetectorSampler
 

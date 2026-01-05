@@ -25,10 +25,10 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class SamplingGraph:
-    """Result of the graph preparation phase, containing all data structures needed for
-    sampling.
+    """Result of the graph preparation phase for sampling.
 
-    This represents a circuit that has been:
+    Contains all data structures needed for sampling. This represents a circuit
+    that has been:
     1. Parsed from stim format
     2. Converted to a ZX graph
     3. Doubled (composed with adjoint)
@@ -42,6 +42,7 @@ class SamplingGraph:
         channel_probs: List of probability arrays for error channels.
         num_outputs: Number of output vertices (measurements or detectors).
         num_detectors: Number of detector vertices.
+
     """
 
     graph: BaseGraph
@@ -68,6 +69,7 @@ class CompiledComponent(eqx.Module):
             For joint mode:
             - compiled_scalar_graphs[0]: Normalization
             - compiled_scalar_graphs[1]: All outputs plugged
+
     """
 
     output_indices: tuple[int, ...] = eqx.field(static=True)
@@ -89,6 +91,7 @@ class CompiledProgram:
         num_outputs: Total number of outputs across all components.
         num_f_params: Total number of f-parameters.
         num_detectors: Number of detector outputs (for detector sampling).
+
     """
 
     components: tuple[CompiledComponent, ...]

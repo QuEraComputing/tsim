@@ -1,3 +1,5 @@
+"""Parser for converting stim circuits to ZX graph representations."""
+
 import re
 from fractions import Fraction
 from typing import Literal
@@ -31,6 +33,7 @@ def parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
 
     Returns:
         Tuple of (gate_name, params_dict) or None if not a valid parametric tag.
+
     """
     match = re.match(r"^(\w+)\((.*)\)$", tag)
     if not match:
@@ -65,6 +68,7 @@ def parse_stim_circuit(
 
     Returns:
         A GraphRepresentation containing the ZX graph and all auxiliary data.
+
     """
     b = GraphRepresentation()
 
