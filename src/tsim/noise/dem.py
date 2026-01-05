@@ -1,3 +1,5 @@
+"""Detector error model generation for QEC decoder integration."""
+
 from collections import defaultdict
 
 import stim
@@ -14,7 +16,7 @@ def get_detector_error_model(
     ignore_decomposition_failures: bool = False,
     block_decomposition_from_introducing_remnant_edges: bool = False,
 ) -> stim.DetectorErrorModel:
-    """Returns a stim.DetectorErrorModel describing the error processes in the circuit.
+    """Return a stim.DetectorErrorModel describing the error processes in the circuit.
 
     Unlike the stim.Circuit.detector_error_model() method, this method allows for non-deterministic observables
     when `allow_gauge_detectors` is set to true. This is achieved by converting logical
@@ -83,6 +85,7 @@ def get_detector_error_model(
             decoder making misinformed choices when decoding).
 
             Irrelevant unless decompose_errors=True.
+
     """
     if allow_non_deterministic_observables and decompose_errors:
         raise ValueError(

@@ -1,3 +1,12 @@
+"""Exact scalar arithmetic for ZX-calculus phase computations.
+
+Implements exact arithmetic for complex numbers of the form:
+    (a + b*e^(i*pi/4) + c*i + d*e^(-i*pi/4)) * 2^power
+
+This representation enables exact computation of phases in ZX-calculus graphs
+without floating-point errors.
+"""
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -6,21 +15,10 @@ from jax import Array, lax
 _E4 = jnp.exp(1j * jnp.pi / 4)  # e^(i*pi/4)
 _E4D = jnp.exp(-1j * jnp.pi / 4)  # e^(-i*pi/4)
 
-"""
-This module implements exact scalar arithmetic for complex numbers of the form:
-    (a + b*e^(i*pi/4) + c*i + d*e^(-i*pi/4)) * 2^power
-
-This representation enables exact computation of phases in ZX-calculus graphs
-without floating-point errors.
-
-TODO: this representation can silently overflow. Add a check and raise an error.
-"""
-
 
 @jax.jit
 def _scalar_mul(d1: jax.Array, d2: jax.Array) -> jax.Array:
-    """
-    Multiply two exact scalar coefficient arrays.
+    """Multiply two exact scalar coefficient arrays.
 
     Args:
         d1: Shape (..., 4) array of coefficients.
@@ -28,6 +26,7 @@ def _scalar_mul(d1: jax.Array, d2: jax.Array) -> jax.Array:
 
     Returns:
         Shape (..., 4) array of product coefficients.
+
     """
     a1, b1, c1, d1_coeff = d1[..., 0], d1[..., 1], d1[..., 2], d1[..., 3]
     a2, b2, c2, d2_coeff = d2[..., 0], d2[..., 1], d2[..., 2], d2[..., 3]
@@ -46,13 +45,24 @@ def _scalar_to_complex(data: jax.Array) -> jax.Array:
 
 
 class ExactScalarArray(eqx.Module):
+    """Exact scalar array for ZX-calculus phase arithmetic using dyadic representation.
+
+    Represents values of the form (c_0 + c_1·ω + c_2·ω² + c_3·ω³) × 2^power
+    where ω = e^(iπ/4). This enables exact computation without floating-point errors.
+
+    Attributes:
+        coeffs: Array of shape (..., 4) containing dyadic coefficients.
+        power: Array of powers of 2 for scaling.
+
+    """
+
     coeffs: Array
     power: Array
 
     def __init__(self, coeffs: Array, power: Array | None = None):
-        """
-        Represents values of the form:
-            (c_0 + c_1*omega + c_2*omega^2 + c_3*omega^3) * 2^power
+        """Initialize from coefficients and optional power.
+
+        The value represented is (c_0 + c_1*omega + c_2*omega^2 + c_3*omega^3) * 2^power
         where omega = e^{i*pi/4}.
         """
         self.coeffs = coeffs
@@ -68,9 +78,7 @@ class ExactScalarArray(eqx.Module):
         return ExactScalarArray(new_coeffs, new_power)
 
     def reduce(self) -> "ExactScalarArray":
-        """
-        Maximizes the power by dividing coefficients by 2 while they are all even.
-        """
+        """Reduce power by dividing coefficients by 2 while they are all even."""
 
         def cond_fun(carry):
             coeffs, _ = carry
@@ -96,8 +104,8 @@ class ExactScalarArray(eqx.Module):
         return ExactScalarArray(new_coeffs, new_power)
 
     def sum(self) -> "ExactScalarArray":
-        """
-        Sum elements along the last axis (axis=-2).
+        """Sum elements along the last axis (axis=-2).
+
         Aligns powers to the minimum power before summing.
         """
         # TODO: check for overflow and potentially refactor sum routine to scan
@@ -110,8 +118,7 @@ class ExactScalarArray(eqx.Module):
         return ExactScalarArray(summed_coeffs, min_power)
 
     def prod(self, axis: int = -1) -> "ExactScalarArray":
-        """
-        Compute product along the specified axis using associative scan.
+        """Compute product along the specified axis using associative scan.
 
         Returns identity (1+0i with power 0) for empty reductions.
 
@@ -120,6 +127,7 @@ class ExactScalarArray(eqx.Module):
 
         Returns:
             ExactScalarArray with the product computed along the axis.
+
         """
         if axis < 0:
             axis = self.coeffs.ndim + axis
@@ -142,7 +150,7 @@ class ExactScalarArray(eqx.Module):
         return ExactScalarArray(result_coeffs, result_power)
 
     def to_complex(self) -> jax.Array:
-        """Converts to complex number."""
+        """Convert to complex number."""
         c_val = _scalar_to_complex(self.coeffs)
         scale = jnp.pow(2.0, self.power)
         return c_val * scale

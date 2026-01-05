@@ -1,3 +1,5 @@
+"""Pauli noise channels and error sampling infrastructure."""
+
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -13,6 +15,7 @@ class Channel:
     Attributes:
         probs: Shape (2^k,) probability array, sums to 1, dtype float64
         unique_col_ids: Tuple of column IDs, where each ID corresponds to a bit of the channel.
+
     """
 
     probs: np.ndarray
@@ -20,6 +23,7 @@ class Channel:
 
     @property
     def num_bits(self) -> int:
+        """Number of bits in the channel (k where probs has shape 2^k)."""
         return int(np.log2(len(self.probs)))
 
     @property
@@ -118,6 +122,7 @@ def correlated_error_probs(probabilities: list[float]) -> np.ndarray:
 
     Returns:
         Array of shape (2^k,) with probabilities for each outcome.
+
     """
     k = len(probabilities)
     probs = np.zeros(2**k, dtype=np.float64)
@@ -142,6 +147,7 @@ def xor_convolve(probs_a: np.ndarray, probs_b: np.ndarray) -> np.ndarray:
 
     Returns:
         Shape (2^k,) probabilities for the combined channel
+
     """
     n = len(probs_a)
     if len(probs_b) != n:
@@ -176,6 +182,7 @@ def reduce_null_bits(
     Returns:
         List of channels with null bits marginalized out. Channels with all
         null entries are removed entirely (they have no effect on outputs).
+
     """
     if null_col_id is None:
         # No null column, nothing to reduce
@@ -218,6 +225,7 @@ def normalize_channels(channels: list[Channel]) -> list[Channel]:
 
     Returns:
         List of channels with sorted unique_col_ids
+
     """
     result: list[Channel] = []
 
@@ -247,6 +255,7 @@ def expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel
 
     Returns:
         New channel with expanded distribution
+
     """
     source_col_ids = channel.unique_col_ids
     assert source_col_ids == tuple(sorted(source_col_ids)), "Source must be sorted"
@@ -280,8 +289,8 @@ def merge_identical_channels(channels: list[Channel]) -> list[Channel]:
 
     Returns:
         List with at most one channel per unique signature set
-    """
 
+    """
     groups: dict[tuple[int, ...], list[Channel]] = defaultdict(list)
 
     for channel in channels:
@@ -315,6 +324,7 @@ def absorb_subset_channels(channels: list[Channel], max_bits: int = 4) -> list[C
 
     Returns:
         List with no channel being a strict subset of another
+
     """
     # Sort by number of bits (largest first) for efficient processing
     channels = sorted(channels, key=lambda c: -len(c.unique_col_ids))
@@ -363,6 +373,7 @@ def simplify_channels(
 
     Returns:
         Simplified list of channels
+
     """
     channels = reduce_null_bits(channels, null_col_id)
     channels = normalize_channels(channels)
@@ -387,6 +398,7 @@ def _sample_channels(
 
     Returns:
         Samples array of shape (num_samples, num_outputs).
+
     """
     num_outputs = matrix.shape[1]
     res = jnp.zeros((num_samples, num_outputs), dtype=jnp.uint8)
@@ -428,6 +440,7 @@ class ChannelSampler:
         >>> transform = np.array([[1, 1]])  # f0 = e0 XOR e1
         >>> sampler = ChannelSampler(probs, transform)
         >>> samples = sampler.sample(1000)  # shape (1000, 1)
+
     """
 
     def __init__(
@@ -447,6 +460,7 @@ class ChannelSampler:
                 means f_i depends on e_j. For example, if row 0 is [0, 1, 0, 1],
                 then f0 = e1 XOR e3.
             seed: Random seed for sampling. If None, a random seed is generated.
+
         """
         unique_cols, inverse = np.unique(error_transform, axis=1, return_inverse=True)
 
@@ -482,6 +496,7 @@ class ChannelSampler:
         Returns:
             Array of shape (num_samples, num_f) with boolean values indicating
             which f-variables are set for each sample.
+
         """
         self._key, subkey = jax.random.split(self._key)
         samples = _sample_channels(

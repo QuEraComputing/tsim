@@ -1,3 +1,5 @@
+"""ZX graph representations of quantum gates and instructions."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -86,6 +88,7 @@ def ensure_lane(b: GraphRepresentation, qubit: int) -> None:
 
 
 def x_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
+    """Apply X-axis rotation to qubit. This is equivalent to `r_x` up to a phase."""
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
     b.graph.set_type(v1, VertexType.X)
@@ -95,6 +98,7 @@ def x_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
 
 
 def z_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
+    """Apply Z-axis phase rotation to qubit. This is equivalent to `r_z` up to a phase."""
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
     b.graph.set_type(v1, VertexType.Z)
@@ -104,24 +108,29 @@ def z_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
 
 
 def t(b: GraphRepresentation, qubit: int) -> None:
+    """Apply T gate (π/4 Z rotation)."""
     z_phase(b, qubit, Fraction(1, 4))
 
 
 def t_dag(b: GraphRepresentation, qubit: int) -> None:
+    """Apply T† gate (-π/4 Z rotation)."""
     z_phase(b, qubit, Fraction(-1, 4))
 
 
 def r_z(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
+    """Apply R_Z rotation gate with given phase (in units of π)."""
     z_phase(b, qubit, phase)
     b.graph.scalar.add_phase(-phase / 2)
 
 
 def r_x(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
+    """Apply R_X rotation gate with given phase (in units of π)."""
     x_phase(b, qubit, phase)
     b.graph.scalar.add_phase(-phase / 2)
 
 
 def r_y(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
+    """Apply R_Y rotation gate with given phase (in units of π)."""
     h_yz(b, qubit)
     r_z(b, qubit, phase)
     h_yz(b, qubit)
@@ -134,6 +143,7 @@ def u3(
     phi: Fraction,
     lambda_: Fraction,
 ) -> None:
+    """Apply U3 gate: U3(θ,φ,λ) = R_Z(φ)·R_Y(θ)·R_Z(λ)."""
     r_z(b, qubit, lambda_)
     r_y(b, qubit, theta)
     r_z(b, qubit, phi)
@@ -153,16 +163,19 @@ def i(b: GraphRepresentation, qubit: int) -> None:
 
 
 def x(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Pauli X gate."""
     x_phase(b, qubit, Fraction(1, 1))
 
 
 def y(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Pauli Y gate."""
     z(b, qubit)
     x(b, qubit)
     b.graph.scalar.add_phase(Fraction(1, 2))
 
 
 def z(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Pauli Z gate."""
     z_phase(b, qubit, Fraction(1, 1))
 
 
@@ -186,6 +199,7 @@ def c_zyx(b: GraphRepresentation, qubit: int) -> None:
 
 
 def h(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Hadamard gate."""
     ensure_lane(b, qubit)
     e = last_edge(b, qubit)
     b.graph.set_edge_type(
@@ -199,52 +213,60 @@ def h(b: GraphRepresentation, qubit: int) -> None:
 
 
 def h_xy(b: GraphRepresentation, qubit: int) -> None:
-    """Variant of Hadamard gate that swaps the X and Y axes (instead of X and Z)."""
+    """Apply variant of Hadamard gate that swaps the X and Y axes (instead of X and Z)."""
     x(b, qubit)
     s(b, qubit)
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
 def h_yz(b: GraphRepresentation, qubit: int) -> None:
-    """Variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z)."""
+    """Apply variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z)."""
     sqrt_x(b, qubit)
     z(b, qubit)
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
 def s(b: GraphRepresentation, qubit: int) -> None:
+    """Apply S gate (π/2 Z rotation)."""
     z_phase(b, qubit, Fraction(1, 2))
 
 
 def sqrt_x(b: GraphRepresentation, qubit: int) -> None:
+    """Apply √X gate (π/2 X rotation)."""
     x_phase(b, qubit, Fraction(1, 2))
 
 
 def sqrt_x_dag(b: GraphRepresentation, qubit: int) -> None:
+    """Apply √X† gate (-π/2 X rotation)."""
     x_phase(b, qubit, Fraction(-1, 2))
 
 
 def sqrt_y(b: GraphRepresentation, qubit: int) -> None:
+    """Apply √Y gate (π/2 Y rotation)."""
     z(b, qubit)
     h(b, qubit)
     b.graph.scalar.add_phase(Fraction(1, 4))
 
 
 def sqrt_y_dag(b: GraphRepresentation, qubit: int) -> None:
+    """Apply √Y† gate (-π/2 Y rotation)."""
     h(b, qubit)
     z(b, qubit)
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
 def sqrt_z(b: GraphRepresentation, qubit: int) -> None:
+    """Apply √Z gate (alias for S gate)."""
     s(b, qubit)
 
 
 def sqrt_z_dag(b: GraphRepresentation, qubit: int) -> None:
+    """Apply √Z† gate (alias for S† gate)."""
     s_dag(b, qubit)
 
 
 def s_dag(b: GraphRepresentation, qubit: int) -> None:
+    """Apply S† gate (-π/2 Z rotation)."""
     z_phase(b, qubit, Fraction(-1, 2))
 
 
@@ -260,6 +282,7 @@ def _cx_cz(
     target: int,
     classically_controlled: list[bool] | None = None,
 ) -> None:
+    """Implement CNOT or CZ gate depending on is_cx flag."""
     edge_type = EdgeType.SIMPLE if is_cx else EdgeType.HADAMARD
     vertex_type = VertexType.X if is_cx else VertexType.Z
 
@@ -309,6 +332,7 @@ def cnot(
     target: int,
     classically_controlled: list[bool] | None = None,
 ) -> None:
+    """Apply CNOT (controlled-X) gate."""
     _cx_cz(b, True, control, target, classically_controlled)
 
 
@@ -318,6 +342,7 @@ def cy(
     target: int,
     classically_controlled: list[bool] | None = None,
 ) -> None:
+    """Apply controlled-Y gate."""
     s_dag(b, target)
     cnot(b, control, target, classically_controlled)
     s(b, target)
@@ -329,10 +354,12 @@ def cz(
     target: int,
     classically_controlled: list[bool] | None = None,
 ) -> None:
+    """Apply controlled-Z gate."""
     _cx_cz(b, False, control, target, classically_controlled)
 
 
 def swap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+    """Apply SWAP gate."""
     ensure_lane(b, qubit1)
     ensure_lane(b, qubit2)
 
@@ -346,7 +373,7 @@ def swap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
 
 
 def iswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
-    """Swaps two qubits and phases the -1 eigenspace of the ZZ observable by i."""
+    """Swap two qubits and phase the -1 eigenspace of the ZZ observable by i."""
     cnot(b, qubit1, qubit2)
     s(b, qubit2)
     cnot(b, qubit1, qubit2)
@@ -354,7 +381,7 @@ def iswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
 
 
 def iswap_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
-    """Swaps two qubits and phases the -1 eigenspace of the ZZ observable by -i."""
+    """Swap two qubits and phase the -1 eigenspace of the ZZ observable by -i."""
     cnot(b, qubit1, qubit2)
     s_dag(b, qubit2)
     cnot(b, qubit1, qubit2)
@@ -477,6 +504,7 @@ def ycz(
 
 
 def _error(b: GraphRepresentation, qubit: int, error_type: int, phase: str) -> None:
+    """Insert a parametrized error vertex for noise modeling."""
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
     v2 = add_dummy(b, qubit)
@@ -489,6 +517,7 @@ def _error(b: GraphRepresentation, qubit: int, error_type: int, phase: str) -> N
 def pauli_channel_1(
     b: GraphRepresentation, qubit: int, px: float, py: float, pz: float
 ) -> None:
+    """Apply single-qubit Pauli channel with given X, Y, Z error probabilities."""
     b.channel_probs.append(pauli_channel_1_probs(px, py, pz))
     _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
     _error(b, qubit, VertexType.X, f"e{b.num_error_bits + 1}")
@@ -515,6 +544,7 @@ def pauli_channel_2(
     pzy: float = 0,
     pzz: float = 0,
 ) -> None:
+    """Apply two-qubit Pauli channel with given error probabilities for all 15 Pauli pairs."""
     b.channel_probs.append(
         pauli_channel_2_probs(
             pix, piy, piz, pxi, pxx, pxy, pxz, pyi, pyx, pyy, pyz, pzi, pzx, pzy, pzz
@@ -528,10 +558,12 @@ def pauli_channel_2(
 
 
 def depolarize1(b: GraphRepresentation, qubit: int, p: float) -> None:
+    """Apply single-qubit depolarizing channel with total error probability p."""
     pauli_channel_1(b, qubit, p / 3, p / 3, p / 3)
 
 
 def depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) -> None:
+    """Apply two-qubit depolarizing channel with total error probability p."""
     pauli_channel_2(
         b,
         qubit_i,
@@ -554,12 +586,14 @@ def depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) ->
 
 
 def x_error(b: GraphRepresentation, qubit: int, p: float) -> None:
+    """Apply X error with probability p."""
     b.channel_probs.append(error_probs(p))
     _error(b, qubit, VertexType.X, f"e{b.num_error_bits}")
     b.num_error_bits += 1
 
 
 def y_error(b: GraphRepresentation, qubit: int, p: float) -> None:
+    """Apply Y error with probability p."""
     b.channel_probs.append(error_probs(p))
     # Y = X·Z, so both vertices use the same error bit
     _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
@@ -568,6 +602,7 @@ def y_error(b: GraphRepresentation, qubit: int, p: float) -> None:
 
 
 def z_error(b: GraphRepresentation, qubit: int, p: float) -> None:
+    """Apply Z error with probability p."""
     b.channel_probs.append(error_probs(p))
     _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
     b.num_error_bits += 1
@@ -616,6 +651,7 @@ def correlated_error(
     types: list[Literal["X", "Y", "Z"]],
     p: float,
 ) -> None:
+    """Add a correlated error term affecting multiple qubits with given Pauli types."""
     for qubit, type_ in zip(qubits, types):
         if type_ == "X" or type_ == "Y":
             _error(b, qubit, VertexType.X, f"c{b.num_correlated_error_bits}")
@@ -632,7 +668,7 @@ def correlated_error(
 
 
 def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -> None:
-    """Internal measurement implementation."""
+    """Perform measurement on qubit with optional error probability."""
     if p > 0:
         x_error(b, qubit, p)
     ensure_lane(b, qubit)
@@ -650,6 +686,7 @@ def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -
 
 
 def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
+    """Perform reset on qubit, optionally tracing out previous state."""
     if qubit not in b.last_vertex:
         v1 = add_lane(b, qubit)
         b.graph.set_type(v1, VertexType.X)
@@ -671,6 +708,7 @@ def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
 
 
 def m(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+    """Measure qubit in Z basis with optional bit-flip error probability p."""
     if invert:
         x(b, qubit)
     _m(b, qubit, p, silent=False)
@@ -689,6 +727,7 @@ def mpp(
         b: The graph representation to modify.
         paulis: List of (pauli_type, qubit) pairs defining the Pauli product.
         invert: Whether to invert the measurement result.
+
     """
     aux = -2
     r(b, aux)
@@ -709,6 +748,11 @@ def mpp(
 
 
 def mr(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+    """Z-basis demolition measurement (optionally noisy).
+
+    Projects each target qubit into |0> or |1>, reports its value (false=|0>, true=|1>),
+    then resets to |0>.
+    """
     if p > 0:
         x_error(b, qubit, p)
     m(b, qubit, p=p, invert=invert)
@@ -716,6 +760,11 @@ def mr(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -
 
 
 def mrx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+    """X-basis demolition measurement (optionally noisy).
+
+    Projects each target qubit into |+> or |->, reports its value (false=|+>, true=|->),
+    then resets to |+>.
+    """
     h(b, qubit)
     if p > 0:
         x_error(b, qubit, p)
@@ -725,6 +774,11 @@ def mrx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) 
 
 
 def mry(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+    """Y-basis demolition measurement (optionally noisy).
+
+    Projects each target qubit into |i> or |-i>, reports its value (false=|i>, true=|-i>),
+    then resets to |i>.
+    """
     h_yz(b, qubit)
     if p > 0:
         x_error(b, qubit, p)
@@ -734,22 +788,34 @@ def mry(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) 
 
 
 def mx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+    """Measure qubit in X basis."""
     h(b, qubit)
     m(b, qubit, p=p, invert=invert)
     h(b, qubit)
 
 
 def my(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+    """Measure qubit in Y basis."""
     h_yz(b, qubit)
     m(b, qubit, p=p, invert=invert)
     h_yz(b, qubit)
 
 
 def r(b: GraphRepresentation, qubit: int) -> None:
+    """Z-basis reset.
+
+    Forces each target qubit into the |0> state by silently measuring it in the Z basis
+    and applying an X gate if it ended up in the |1> state.
+    """
     _r(b, qubit, perform_trace=True)
 
 
 def rx(b: GraphRepresentation, qubit: int) -> None:
+    """X-basis reset.
+
+    Forces each target qubit into the |+> state by silently measuring it in the X basis
+    and applying a Z gate if it ended up in the |-> state.
+    """
     if qubit in b.last_vertex:
         h(b, qubit)
     r(b, qubit)
@@ -757,6 +823,11 @@ def rx(b: GraphRepresentation, qubit: int) -> None:
 
 
 def ry(b: GraphRepresentation, qubit: int) -> None:
+    """Y-basis reset.
+
+    Forces each target qubit into the |i> state by silently measuring it in the Y basis
+    and applying an X gate if it ended up in the |-i> state.
+    """
     if qubit in b.last_vertex:
         h_yz(b, qubit)
     r(b, qubit)
@@ -769,6 +840,7 @@ def ry(b: GraphRepresentation, qubit: int) -> None:
 
 
 def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
+    """Add detector annotation that XORs the given measurement record bits."""
     row = min(set([b.graph.row(b.rec[r]) for r in rec])) - 0.5
     d_rows = set([b.graph.row(d) for d in b.detectors + b.observables])
     while row in d_rows:
@@ -782,6 +854,7 @@ def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
 
 
 def observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None:
+    """Add observable annotation that XORs the given measurement record bits."""
     idx = int(idx)
 
     if idx not in b.observables_dict:

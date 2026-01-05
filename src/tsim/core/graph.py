@@ -1,3 +1,5 @@
+"""ZX graph construction, manipulation, and preparation for sampling."""
+
 from __future__ import annotations
 
 from collections import defaultdict, deque
@@ -24,6 +26,8 @@ if TYPE_CHECKING:
 
 @dataclass
 class ConnectedComponent:
+    """A connected subgraph with its associated output indices."""
+
     graph: BaseGraph
     output_indices: list[int]
 
@@ -67,7 +71,6 @@ def _collect_vertices(
     visited: set[Any],
 ) -> list[Any]:
     """Breadth-first search to collect the connected component of ``start``."""
-
     queue: deque[Any] = deque([start])
     component: list[Any] = []
 
@@ -91,7 +94,6 @@ def _induced_subgraph(
     vertices: Sequence[Any],
 ) -> tuple[BaseGraph, dict[Any, Any]]:
     """Build the subgraph that is induced by ``vertices``."""
-
     subgraph = Graph()
     subgraph.track_phases = g.track_phases
     subgraph.merge_vdata = g.merge_vdata
@@ -270,6 +272,7 @@ def transform_error_basis(
             - A binary matrix of shape (num_f, num_e) where entry [i, j] = 1
               means f_i depends on e_j. For example, if row 0 is [0, 1, 0, 1],
               then f0 = e1 XOR e3.
+
     """
     parametrized_vertices = [
         v for v in g.vertices() if v in g._phaseVars and g._phaseVars[v]
@@ -367,6 +370,7 @@ def squash_graph(g: BaseGraph) -> None:
 
 
 def evaluate_graph(g: GraphS, vals: dict[str, Fraction] | None = None) -> np.ndarray:
+    """Evaluate a ZX graph to a tensor with given parameter values."""
     if vals is None:
         vals = defaultdict(lambda: Fraction(0, 1))
     g = g.copy()  # type: ignore
@@ -394,6 +398,7 @@ def get_params(g: BaseGraph) -> set[str]:
 
     Returns:
         Set of all variable names (e.g., {'f0', 'f2', 'm1'}) that appear in the graph
+
     """
     active: set[str] = set()
 
@@ -423,11 +428,12 @@ def get_params(g: BaseGraph) -> set[str]:
 
 
 def scale_horizontally(g: BaseGraph, scale: float) -> None:
-    """Scale the graph horizontally by a factor of ``scale``.
+    """Scale horizontal positions of graph vertices by a factor of ``scale``.
 
     Args:
         g: A ZX graph
         scale: The factor to scale the graph by
+
     """
     for v in g.vertices():
         g.set_row(v, g.row(v) * scale)
@@ -450,6 +456,7 @@ def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> SamplingGraph:
 
     Returns:
         A SamplingGraph containing the reduced graph and error transformation.
+
     """
     built = parse_stim_circuit(circuit._stim_circ)
 

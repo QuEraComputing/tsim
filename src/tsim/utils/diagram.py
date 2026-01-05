@@ -1,3 +1,5 @@
+"""SVG diagram rendering for quantum circuits."""
+
 import re
 from dataclasses import dataclass
 from fractions import Fraction
@@ -9,13 +11,18 @@ from lxml import etree  # type: ignore
 
 
 class Diagram:
+    """Wrapper for SVG diagram with Jupyter notebook display support."""
+
     def __init__(self, svg: str):
+        """Create a diagram from SVG markup."""
         self._svg = svg
 
     def __str__(self) -> str:
+        """Return the raw SVG string."""
         return self._svg
 
     def _repr_html_(self) -> Any:
+        """Return HTML representation for Jupyter notebook display."""
         return self._svg
 
 
@@ -45,13 +52,13 @@ def wrap_svg(
     width: float | None = None,
     height: float | None = None,
 ) -> str:
-    """
-    Optionally wrap an SVG string in a scrolling container.
+    """Optionally wrap an SVG string in a scrolling container.
 
     Args:
         svg: Raw SVG markup.
         width: Explicit width for the container.
         height: Desired height; used to infer width from viewBox if width is not given.
+
     """
     computed_width = width
     if (
@@ -89,9 +96,9 @@ def _is_err_element(elem: etree._Element) -> bool:
 def placeholders_to_t(
     svg_string: str, placeholder_id_to_labels: dict[float, GateLabel]
 ) -> str:
-    """
-    Replace I_ERROR placeholder gates in an SVG diagram with the actual gate names,
-    e.g., T, T†, R_Z, R_X, R_Y, U_3
+    """Replace I_ERROR placeholder gates in an SVG diagram with actual gate names.
+
+    Supported gates are T, T†, R_Z, R_X, R_Y, U_3.
 
     Args:
         svg_string: The SVG string from stim's diagram() method containing I_ERROR
@@ -101,6 +108,7 @@ def placeholders_to_t(
 
     Returns:
         Modified SVG string with I_ERROR gates replaced by the actual gate names.
+
     """
     root = etree.fromstring(svg_string.encode())
 
@@ -189,9 +197,10 @@ def _parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
 def tagged_gates_to_placeholder(
     circuit: stim.Circuit,
 ) -> tuple[stim.Circuit, dict[float, GateLabel]]:
-    """
-    Replaces tagged gates S[T], S_DAG[T], I[R_X(...)], I[R_Y(...)], I[R_Z(...)],
-    I[U3(...)] with I_ERROR placeholder gates whose p-values are used as identifiers.
+    """Replace tagged gates with I_ERROR placeholder gates for rendering.
+
+    Converts S[T], S_DAG[T], I[R_X(...)], I[R_Y(...)], I[R_Z(...)], I[U3(...)]
+    to I_ERROR placeholder gates whose p-values are used as identifiers.
 
     Args:
         circuit: The stim circuit to replace tagged gates with I_ERROR placeholder gates.
@@ -199,6 +208,7 @@ def tagged_gates_to_placeholder(
     Returns:
         A tuple containing the modified circuit and a dictionary mapping the p-values
         of the I_ERROR placeholder gates to the actual gate names.
+
     """
     modified_circ = stim.Circuit()
     replace_dict: dict[float, GateLabel] = {}
@@ -258,9 +268,7 @@ def render_svg(
     width: float | None = None,
     height: float | None = None,
 ) -> Diagram:
-    """
-    Render a stim circuit timeline/timeslice diagram with custom labels applied.
-    """
+    """Render a stim circuit timeline/timeslice diagram with custom labels."""
     modified_circ, placeholder_id_to_labels = tagged_gates_to_placeholder(c)
     svg_with_placeholders = str(
         modified_circ.diagram(type, tick=tick, filter_coords=filter_coords, rows=rows)

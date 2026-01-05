@@ -1,3 +1,5 @@
+"""Compilation pipeline from prepared graphs to executable programs."""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -38,6 +40,7 @@ def compile_program(
 
     Returns:
         A CompiledProgram ready for sampling.
+
     """
     components = connected_components(prepared.graph)
 
@@ -96,6 +99,7 @@ def _compile_component(
 
     Returns:
         A CompiledComponent ready for sampling.
+
     """
     graph = component.graph
     output_indices = component.output_indices
@@ -169,6 +173,7 @@ def _plug_outputs(
 
     Returns:
         List of graphs with outputs plugged according to outputs_to_plug.
+
     """
     graphs: list[BaseGraph] = []
     num_outputs = len(graph.outputs())

@@ -1,3 +1,5 @@
+"""Compiled samplers for measurements and detectors."""
+
 from __future__ import annotations
 
 from math import ceil
@@ -24,7 +26,7 @@ def _sample_component(
     f_params: jax.Array,
     key: PRNGKey,
 ) -> tuple[jax.Array, PRNGKey]:
-    """Implementation of component sampling using autoregressive sampling.
+    """Sample from component using autoregressive sampling.
 
     Args:
         component: The compiled component to sample from.
@@ -34,6 +36,7 @@ def _sample_component(
     Returns:
         Tuple of (samples, next_key) where samples has shape
         (batch_size, num_outputs_for_component).
+
     """
     batch_size = f_params.shape[0]
     num_outputs = len(component.compiled_scalar_graphs) - 1
@@ -72,6 +75,7 @@ def _sample_component_jit(
     f_params: jax.Array,
     key: PRNGKey,
 ) -> tuple[jax.Array, PRNGKey]:
+    """JIT-compiled version of _sample_component."""
     return _sample_component(component, f_params, key)
 
 
@@ -90,6 +94,7 @@ def sample_component(
     Returns:
         Tuple of (samples, next_key) where samples has shape
         (batch_size, num_outputs_for_component).
+
     """
     # Skip JIT for small components (overhead not worth it)
     if len(component.output_indices) <= 1:
@@ -112,6 +117,7 @@ def sample_program(
     Returns:
         Samples array of shape (batch_size, num_outputs), reordered to
         match the original output indices.
+
     """
     results: list[jax.Array] = []
 
@@ -134,6 +140,15 @@ class _CompiledSamplerBase:
         mode: Literal["sequential", "joint"],
         seed: int | None = None,
     ):
+        """Initialize the sampler by compiling the circuit.
+
+        Args:
+            circuit: The quantum circuit to compile.
+            sample_detectors: If True, sample detectors/observables instead of measurements.
+            mode: Compilation mode - "sequential" for autoregressive, "joint" for probabilities.
+            seed: Random seed. If None, a random seed is generated.
+
+        """
         if seed is None:
             seed = int(np.random.default_rng().integers(0, 2**30))
 
@@ -233,6 +248,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         Args:
             circuit: The quantum circuit to compile.
             seed: Random seed for JAX. If None, a random seed is generated.
+
         """
         super().__init__(circuit, sample_detectors=False, mode="sequential", seed=seed)
 
@@ -247,6 +263,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
 
         Returns:
             A numpy array containing the measurement samples.
+
         """
         return self._sample_batches(shots, batch_size)
 
@@ -267,6 +284,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         Args:
             circuit: The quantum circuit to compile.
             seed: Random seed for JAX. If None, a random seed is generated.
+
         """
         super().__init__(circuit, sample_detectors=True, mode="sequential", seed=seed)
 
@@ -304,7 +322,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         separate_observables: bool = False,
         bit_packed: bool = False,
     ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
-        """Returns detector samples from the circuit.
+        """Return detector samples from the circuit.
 
         The circuit must define the detectors using DETECTOR instructions. Observables
         defined by OBSERVABLE_INCLUDE instructions can also be included in the results
@@ -326,6 +344,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
 
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.
+
         """
         samples = self._sample_batches(shots, batch_size)
 
@@ -370,6 +389,7 @@ class CompiledStateProbs(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             sample_detectors: If True, compute detector/observable probabilities.
             seed: Random seed for JAX. If None, a random seed is generated.
+
         """
         super().__init__(
             circuit, sample_detectors=sample_detectors, mode="joint", seed=seed
@@ -384,6 +404,7 @@ class CompiledStateProbs(_CompiledSamplerBase):
 
         Returns:
             Array of probabilities P(state | error_sample) for each error sample.
+
         """
         f_samples = self._channel_sampler.sample(batch_size)
         p_norm = jnp.ones(batch_size)

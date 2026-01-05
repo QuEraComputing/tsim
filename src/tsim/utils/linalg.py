@@ -1,9 +1,10 @@
+"""Linear algebra utilities for GF(2) operations."""
+
 import numpy as np
 
 
 def find_basis(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Decompose a set of binary vectors into a basis subset and a transformation matrix over GF(2).
+    """Decompose a set of binary vectors into a basis subset and a transformation matrix over GF(2).
 
     Given a set of vectors V, this function finds a maximal linearly independent subset B
     (the basis) and computes a transformation matrix T such that the original vectors can be
@@ -19,6 +20,7 @@ def find_basis(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         A tuple `(basis, transform)` where:
             basis: The subset of independent vectors, shape `(K, D)`, where `K` is the rank.
             transform: The transformation matrix, shape `(N, K)`.
+
     """
     vecs = np.array(vectors, dtype=np.uint8)
     num_vectors, _ = vecs.shape

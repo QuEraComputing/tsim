@@ -1,3 +1,5 @@
+"""Evaluation of compiled scalar graphs using exact arithmetic."""
+
 import functools
 from typing import Literal, overload
 
@@ -69,6 +71,7 @@ def evaluate(
     Returns:
         ExactScalarArray if has_approximate_floatfactor is False, otherwise a complex Array
         representing the amplitude for the given parameter configuration.
+
     """
     num_graphs = circuit.power2.shape[0]
 
@@ -182,7 +185,16 @@ _evaluate_batch = jax.vmap(evaluate, in_axes=(None, 0, None))
 
 
 def evaluate_batch(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
-    """Evaluate compiled circuit with batched parameters, returning JAX array."""
+    """Evaluate compiled circuit with batched parameter values.
+
+    Args:
+        circuit: Compiled circuit representation.
+        param_vals: Binary parameter values, shape (batch_size, n_params).
+
+    Returns:
+        Complex amplitudes for each parameter configuration, shape (batch_size,).
+
+    """
     if circuit.has_approximate_floatfactors:
         return _evaluate_batch(circuit, param_vals, True)
     return _evaluate_batch(circuit, param_vals, False).to_complex()

@@ -1,3 +1,5 @@
+"""Transversal encoder utilities for QEC code experiments."""
+
 import stim
 
 import tsim
@@ -24,7 +26,7 @@ def _transform_circuit(
     stabilizer_generators: list[list[int]] | None = None,
     observables: list[list[int]] | None = None,
 ) -> stim.Circuit:
-    """Generic helper to expand/duplicate instructions with broadcast_targets."""
+    """Expand and duplicate instructions with broadcast targets for encoding."""
     stim_circ = tsim.Circuit(program_text)._stim_circ
     stim_circ = tsim.Circuit(program_text)._stim_circ
     mod_circ = stim.Circuit()
@@ -87,6 +89,8 @@ def _transform_circuit(
 
 
 class TransversalEncoder:
+    """Base class for transversal quantum error correction encoders."""
+
     n: int
     encoding_qubit: int
 
@@ -99,6 +103,7 @@ class TransversalEncoder:
         observables: list[list[int]],
         logical_gate_expansions: dict[str, list[str]] | None = None,
     ):
+        """Initialize the transversal encoder with code parameters."""
         self.n = n
         self.encoding_qubit = encoding_qubit
         self.circuit = tsim.Circuit()
@@ -111,10 +116,10 @@ class TransversalEncoder:
     def initialize(
         self, program_text: str, encoding_program_text: str | None = None
     ) -> None:
-        """
-        Provide a state preparation program for k qubits. The encoder will apply
-        this program and then apply an encoding circuit to encode the state into n qubits.
-        Optionally, the encoding program can be provided separately.
+        """Initialize state preparation and apply encoding circuit.
+
+        Apply the state preparation program for k qubits, then apply an encoding
+        circuit to encode the state into n qubits.
 
         Args:
             program_text: The state preparation program for k qubits. Generally, this
@@ -124,8 +129,8 @@ class TransversalEncoder:
                 qubit. This should encode a single logical qubit at input
                 `self.encoding_qubit` into a state of n qubits.
                 If not provided, the encoder will use a noiseless default encoding.
-        """
 
+        """
         encoding = encoding_program_text or self.encoding_program_text
         if not encoding:
             raise ValueError("Encoding program text is required")
@@ -153,12 +158,13 @@ class TransversalEncoder:
         )
 
     def encode_transversally(self, program_text: str) -> None:
-        """
-        Encode a program on m qubits transversally into a program on n * m qubits
-        by replacing each gate with a transversal gate.
+        """Encode a program transversally by replacing  physicalgates with transversal gates.
+
+        Transform a program on m qubits into a program on n * m qubits (consisting of n code blocks).
 
         Args:
             program_text: The program to encode transversally.
+
         """
         mod_circ = _transform_circuit(
             program_text,
@@ -171,16 +177,20 @@ class TransversalEncoder:
         self.circuit.append_from_stim_program_text(str(mod_circ))
 
     def diagram(self, **kwargs):
+        """Return a timeline-svg diagram of the encoded circuit."""
         return self.circuit.diagram("timeline-svg", **kwargs)
 
     def encoding_flow_generators(self):
+        """Return the Pauli flow generators for the encoding circuit."""
         assert self.encoding_program_text is not None
         return stim.Circuit(self.encoding_program_text).flow_generators()
 
 
 class SteaneEncoder(TransversalEncoder):
+    """Transversal encoder for the [[7,1,3]] Steane code."""
 
     def __init__(self):
+        """Initialize the Steane code encoder."""
         encoding_program = """
         R 0 1 2 3 4 5
         TICK
@@ -218,7 +228,10 @@ class SteaneEncoder(TransversalEncoder):
 
 
 class ColorEncoder5(TransversalEncoder):
+    """Transversal encoder for the [[17,1,5]] 2D color code."""
+
     def __init__(self):
+        """Initialize the color code encoder."""
         encoding_program = """
         R 0 1 2 3 4 5 6 8 9 10 11 12 13 14 15 16
         SQRT_Y 0 1 2 3 4 5 6 8 9 10 11 12 13 14 15 16

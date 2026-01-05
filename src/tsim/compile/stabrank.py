@@ -1,3 +1,5 @@
+"""Stabilizer rank decomposition for non-Clifford ZX graphs."""
+
 from typing import Iterable, Sequence
 
 import pyzx as zx
@@ -9,7 +11,7 @@ def _decompose(
     count_fn,
     replace_fn,
 ) -> list[BaseGraph]:
-    """Generic recursive stabilizer decomposition helper."""
+    """Recursively decompose graphs using stabilizer rank decomposition."""
     results: list[BaseGraph] = []
     for graph in graphs:
         if count_fn(graph) == 0:
@@ -58,6 +60,7 @@ def find_stab(graph: BaseGraph) -> list[BaseGraph]:
 
     Returns:
         A list of scalar graphs whose sum equals the original graph.
+
     """
     zx.full_reduce(graph, paramSafe=True)
     graphs = find_stab_u3([graph])
