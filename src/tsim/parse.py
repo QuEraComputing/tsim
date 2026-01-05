@@ -1,12 +1,15 @@
 import re
 from fractions import Fraction
+from typing import Literal
 
 import stim
 
 from tsim._instructions import (
     GATE_TABLE,
     GraphRepresentation,
+    correlated_error,
     detector,
+    finalize_correlated_error,
     mpp,
     observable_include,
     r_x,
@@ -101,8 +104,52 @@ def parse_stim_circuit(
             tick(b)
             continue
         if name == "MPP":
-            args = str(instruction).split(" ")[1:]
-            mpp(b, args)
+            current_paulis: list[tuple[Literal["X", "Y", "Z"], int]] = []
+            invert = False
+            targets = instruction.targets_copy()
+
+            for i, target in enumerate(targets):
+                # Products are separated by non-combiner boundaries
+                if target.is_combiner:
+                    continue
+
+                if target.is_x_target:
+                    pauli_type = "X"
+                elif target.is_y_target:
+                    pauli_type = "Y"
+                elif target.is_z_target:
+                    pauli_type = "Z"
+                else:
+                    raise ValueError(f"Invalid MPP target: {target}")
+
+                # XOR all inversions - only parity matters (sign is global)
+                invert ^= target.is_inverted_result_target
+
+                current_paulis.append((pauli_type, target.value))
+
+                # Product ends if next target is not a combiner (or end of list)
+                next_idx = i + 1
+                if next_idx >= len(targets) or not targets[next_idx].is_combiner:
+                    mpp(b, current_paulis, invert)
+                    current_paulis = []
+                    invert = False
+
+            continue
+        if name == "E" or name == "ELSE_CORRELATED_ERROR":
+            if name == "E":
+                finalize_correlated_error(b)
+            targets = [t.value for t in instruction.targets_copy()]
+            types: list[Literal["X", "Y", "Z"]] = []
+            for t in instruction.targets_copy():
+                if t.is_x_target:
+                    types.append("X")
+                elif t.is_y_target:
+                    types.append("Y")
+                elif t.is_z_target:
+                    types.append("Z")
+                else:
+                    raise ValueError(f"Invalid target: {t}")
+            correlated_error(b, targets, types, instruction.gate_args_copy()[0])
             continue
         if name == "DETECTOR":
             targets = [t.value for t in instruction.targets_copy()]
@@ -137,4 +184,5 @@ def parse_stim_circuit(
             else:
                 gate_func(b, *chunk, *args)
 
+    finalize_correlated_error(b)
     return b

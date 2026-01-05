@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial release
 - Clifford+T circuit simulation via stabilizer rank decomposition
 - Stabilizer decomposition backend based on pyzx and the [paramzx-extension](https://github.com/mjsutcliffe99/ParamZX) by [(2025) M Sutcliffe and A Kissinger](https://arxiv.org/pdf/2403.06777)
-- Support for all [Stim](https://github.com/quantumlib/Stim) instructions, except `CORRELATED_ERROR` and `ELSE_CORRELATED_ERROR`
+- Support for all [Stim](https://github.com/quantumlib/Stim) instructions
 - `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, and `U3` instructions
 - Arbitrary rotations gates via magic cat state decomposition from Eq. 10 of [(2021) Qassim et al.](https://arxiv.org/pdf/2106.07740)
 - GPU acceleration via jax
