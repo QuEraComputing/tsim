@@ -6,10 +6,10 @@ import jax.numpy as jnp
 import pyzx as zx
 from pyzx.graph.base import BaseGraph
 
-from tsim.compile import CompiledScalarGraphs, compile_scalar_graphs
-from tsim.graph_util import ConnectedComponent, connected_components, get_params
-from tsim.stabrank import find_stab
-from tsim.types import CompiledComponent, CompiledProgram, SamplingGraph
+from tsim.compile.compile import CompiledScalarGraphs, compile_scalar_graphs
+from tsim.compile.stabrank import find_stab
+from tsim.core.graph import ConnectedComponent, connected_components, get_params
+from tsim.core.types import CompiledComponent, CompiledProgram, SamplingGraph
 
 DecompositionMode = Literal["sequential", "joint"]
 

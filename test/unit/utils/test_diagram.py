@@ -4,7 +4,7 @@ import pytest
 import stim
 
 from tsim.circuit import Circuit
-from tsim.util.diagram import (
+from tsim.utils.diagram import (
     GateLabel,
     _width_from_viewbox,
     placeholders_to_t,

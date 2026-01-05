@@ -5,20 +5,20 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
-from tsim.compile import CompiledScalarGraphs
-from tsim.exact_scalar import ExactScalarArray
+from tsim.compile.compile import CompiledScalarGraphs
+from tsim.core.exact_scalar import ExactScalarArray
 
 # Pre-computed exact scalars for phase values, for powers of omega = e^(i*pi/4)
 _UNIT_PHASES = jnp.array(
     [
-        [1, 0, 0, 0],  # 0: 1
-        [0, 1, 0, 0],  # 1: e^i
-        [0, 0, 1, 0],  # 2: i
-        [0, 0, 0, -1],  # 3: e^3pi/4 = -e^-pi/4
-        [-1, 0, 0, 0],  # 4: -1
-        [0, -1, 0, 0],  # 5: e^5pi/4 = -e^pi/4
-        [0, 0, -1, 0],  # 6: -i
-        [0, 0, 0, 1],  # 7: -i*e^pi/4 = e^-pi/4
+        [1, 0, 0, 0],  # omega^0 = 1
+        [0, 1, 0, 0],  # omega^1
+        [0, 0, 1, 0],  # omega^2 = i
+        [0, 0, 0, -1],  # omega^3
+        [-1, 0, 0, 0],  # omega^4 = -1
+        [0, -1, 0, 0],  # omega^5
+        [0, 0, -1, 0],  # omega^6 = -i
+        [0, 0, 0, 1],  # omega^7
     ],
     dtype=jnp.int32,
 )

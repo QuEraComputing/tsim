@@ -8,7 +8,7 @@ import numpy as np
 from pyzx.graph.graph_s import GraphS
 from pyzx.utils import EdgeType, VertexType
 
-from tsim.channels import (
+from tsim.noise.channels import (
     correlated_error_probs,
     error_probs,
     pauli_channel_1_probs,

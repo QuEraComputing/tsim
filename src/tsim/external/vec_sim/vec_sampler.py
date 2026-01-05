@@ -19,8 +19,8 @@ from typing import Literal, Union, overload
 import numpy as np
 import stim
 
+from tsim.core.parse import parse_parametric_tag
 from tsim.external.vec_sim import VecSim
-from tsim.parse import parse_parametric_tag
 
 
 class VecSampler:

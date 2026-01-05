@@ -89,14 +89,9 @@ plugins:
       allow_errors: false
       execute: true
       execute_ignore:
-          - "adder.ipynb"
-          - "aist_demo.ipynb"
-          - "decoding_demo.ipynb"
-          - "demo.ipynb"
-          - "qec_demo.ipynb"
           - "tutorial.ipynb"
-          - "u3_demo.ipynb"
           - "*.py"
+          - "draft/*"
 
 extra_css:
 

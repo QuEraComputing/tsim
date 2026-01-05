@@ -6,11 +6,11 @@ import pyzx as zx
 import stim
 from pyzx.graph.base import BaseGraph
 
-from tsim.dem import get_detector_error_model
-from tsim.graph_util import build_sampling_graph
-from tsim.parse import parse_stim_circuit
-from tsim.util.diagram import render_svg
-from tsim.util.program_text import shorthand_to_stim, stim_to_shorthand
+from tsim.core.graph import build_sampling_graph
+from tsim.core.parse import parse_stim_circuit
+from tsim.noise.dem import get_detector_error_model
+from tsim.utils.diagram import render_svg
+from tsim.utils.program_text import shorthand_to_stim, stim_to_shorthand
 
 
 class Circuit:
@@ -449,7 +449,7 @@ class Circuit:
                 height=height,
             )
         elif type == "pyzx":
-            from tsim.graph_util import scale_horizontally
+            from tsim.core.graph import scale_horizontally
 
             built = parse_stim_circuit(self._stim_circ)
             g = built.graph
@@ -467,7 +467,7 @@ class Circuit:
             zx.draw(g, **kwargs)
             return g
         elif type in ["pyzx-dets", "pyzx-meas"]:
-            from tsim.graph_util import (
+            from tsim.core.graph import (
                 scale_horizontally,
                 squash_graph,
                 transform_error_basis,

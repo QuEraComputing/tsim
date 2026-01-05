@@ -4,7 +4,7 @@ from typing import Literal
 
 import stim
 
-from tsim._instructions import (
+from tsim.core.instructions import (
     GATE_TABLE,
     GraphRepresentation,
     correlated_error,

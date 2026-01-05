@@ -13,10 +13,10 @@ from pyzx.graph.graph_s import GraphS
 from pyzx.graph.scalar import Scalar
 from pyzx.utils import VertexType
 
-from tsim._instructions import GraphRepresentation
-from tsim.parse import parse_stim_circuit
-from tsim.types import SamplingGraph
-from tsim.util.linalg import find_basis
+from tsim.core.instructions import GraphRepresentation
+from tsim.core.parse import parse_stim_circuit
+from tsim.core.types import SamplingGraph
+from tsim.utils.linalg import find_basis
 
 if TYPE_CHECKING:
     from tsim.circuit import Circuit
