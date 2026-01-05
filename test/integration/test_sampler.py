@@ -1,22 +1,15 @@
-import os
-import sys
-
-import pymatching
-import pyzx as zx
-from tqdm import tqdm
-
-from tsim.sampler import CompiledStateProbs
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-
 from test.helpers.gen import gen_stim_circuit
 
 import numpy as np
+import pymatching
 import pytest
+import pyzx as zx
 import stim
+from tqdm import tqdm
 
 from tsim.circuit import Circuit
 from tsim.external.vec_sim.vec_sampler import VecSampler
+from tsim.sampler import CompiledStateProbs
 
 
 def bitstring_to_int(samples: np.ndarray) -> np.ndarray:

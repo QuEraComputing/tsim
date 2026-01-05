@@ -1,9 +1,6 @@
-import numpy as np
-import pyzx as zx
 import stim
 
 import tsim
-from tsim.graph_util import squash_graph, transform_error_basis
 
 
 def broadcast_targets(
@@ -270,78 +267,3 @@ class ColorEncoder5(TransversalEncoder):
 
 
 ColorEncoder3 = SteaneEncoder
-
-
-if __name__ == "__main__":
-    from IPython.display import display
-
-    encoder = ColorEncoder3()
-    encoder.initialize(
-        """
-        RX 0 1 2 3 4
-        S 0 1 2 3 4
-        H 0 1 2 3 4
-        """
-    )
-    encoder.encode_transversally(
-        """
-        SQRT_X 0 1 4
-        CZ 0 1 2 3
-        SQRT_Y 0 3
-        CZ 0 2 3 4
-        TICK
-        SQRT_X_DAG 0
-        CZ 0 4
-        TICK
-        CZ 1 3
-        TICK
-        SQRT_X_DAG 0 1 2 3 4
-        DEPOLARIZE1(0.0) 0 1 2 3 4
-        M 0 1 2 3 4
-        DETECTOR rec[-5]
-        DETECTOR rec[-4]
-        DETECTOR rec[-3]
-        DETECTOR rec[-2]
-        DETECTOR rec[-1]
-        OBSERVABLE_INCLUDE(0) rec[-5]
-        OBSERVABLE_INCLUDE(1) rec[-4]
-        OBSERVABLE_INCLUDE(2) rec[-3]
-        OBSERVABLE_INCLUDE(3) rec[-2]
-        OBSERVABLE_INCLUDE(4) rec[-1]
-        """
-    )
-    display(
-        encoder.circuit.diagram(
-            "timeline-svg",
-            # height=800,
-        )
-    )
-
-    g = encoder.circuit.get_sampling_graph(sample_detectors=True)
-    zx.full_reduce(g)
-    squash_graph(g)
-    g, _ = transform_error_basis(g)
-    zx.draw(g)
-    # print(code.circuit)
-    # print(encoder.encoding_flow_generators())
-    # for gen in encoder.circuit._stim_circ.flow_generators():
-    #     print(gen)
-
-    sampler = encoder.circuit.compile_detector_sampler()
-    # sampler = encoder.circuit._stim_circ.compile_detector_sampler()
-
-    det_samples, obs_samples = sampler.sample(
-        shots=100_000, batch_size=100_000, separate_observables=True
-    )
-    assert np.count_nonzero(det_samples) == 0
-
-    distilled_output = obs_samples[:, 0]
-    distillation_syndromes = obs_samples[:, 1:]
-
-    print(np.count_nonzero(distilled_output) / len(distilled_output))
-
-    sel = np.all(distillation_syndromes == np.array([1, 0, 1, 1]), axis=1)
-
-    post_selected_output = distilled_output[sel]
-    print(np.count_nonzero(post_selected_output) / len(post_selected_output))
-    print(len(post_selected_output) / len(distilled_output))
