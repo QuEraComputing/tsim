@@ -308,7 +308,10 @@ class TestNormalizeChannels:
 
     def test_already_sorted_unchanged(self):
         """A channel with sorted col_ids should be unchanged."""
-        c = Channel(probs=error_probs(0.3), unique_col_ids=(0, 1))
+        c = Channel(
+            probs=np.array([0.2, 0.3, 0.4, 0.1], dtype=np.float64),
+            unique_col_ids=(0, 1),
+        )
         result = normalize_channels([c])
 
         assert len(result) == 1

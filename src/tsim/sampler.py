@@ -46,7 +46,6 @@ def _sample_component(
     # First circuit is normalization (only f-params)
     prev = jnp.abs(evaluate_batch(component.compiled_scalar_graphs[0], f_selected))
 
-    # Pre-allocate the ones column used in each iteration
     ones = jnp.ones((batch_size, 1), dtype=jnp.bool_)
 
     # Autoregressive sampling for remaining circuits

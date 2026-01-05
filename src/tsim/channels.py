@@ -147,6 +147,9 @@ def xor_convolve(probs_a: np.ndarray, probs_b: np.ndarray) -> np.ndarray:
     if len(probs_b) != n:
         raise ValueError("Both channels must have same number of outcomes")
 
+    # NOTE: The convolution could be done in O(n*log(n)) using Walsh-Hadamard transform.
+    # But since probability arrays are usually limited to <=16 entries, this is not
+    # worth the complexity.
     result = np.zeros(n, dtype=np.float64)
     for a in range(n):
         for b in range(n):
@@ -181,16 +184,12 @@ def reduce_null_bits(
     result: list[Channel] = []
 
     for channel in channels:
+        n = channel.num_bits
         non_null_positions = [
             i
             for i, col_id in enumerate(channel.unique_col_ids)
             if col_id != null_col_id
         ]
-
-        if len(non_null_positions) == channel.num_bits:
-            # No null entries (all columns are non-null), keep channel as-is
-            result.append(channel)
-            continue
 
         if len(non_null_positions) == 0:
             # All entries are null, channel has no effect - remove it
@@ -199,15 +198,9 @@ def reduce_null_bits(
         # Marginalize out the null bits by summing over them
         new_col_ids = tuple(channel.unique_col_ids[i] for i in non_null_positions)
         new_num_bits = len(non_null_positions)
-        new_probs = np.zeros(2**new_num_bits, dtype=np.float64)
-
-        # For each old outcome, compute the new outcome and add probability
-        for old_idx in range(len(channel.probs)):
-            new_idx = 0
-            for new_bit_pos, old_bit_pos in enumerate(non_null_positions):
-                if (old_idx >> old_bit_pos) & 1:
-                    new_idx |= 1 << new_bit_pos
-            new_probs[new_idx] += channel.probs[old_idx]
+        sum_axes = tuple(i for i in range(n) if i not in non_null_positions)
+        probs_tensor = channel.probs.reshape((2,) * n, order="F")
+        new_probs = probs_tensor.sum(axis=sum_axes).reshape(2**new_num_bits, order="F")
 
         result.append(Channel(probs=new_probs, unique_col_ids=new_col_ids))
 
@@ -229,26 +222,15 @@ def normalize_channels(channels: list[Channel]) -> list[Channel]:
     result: list[Channel] = []
 
     for channel in channels:
-        source_col_ids = channel.unique_col_ids
-        sorted_col_ids = tuple(sorted(source_col_ids))
+        n = channel.num_bits
+        source_col_ids = np.array(channel.unique_col_ids)
+        axis_perm = np.argsort(source_col_ids, stable=True)
+        probs_tensor = channel.probs.reshape((2,) * n, order="F")
+        new_probs = probs_tensor.transpose(axis_perm).reshape(2**n, order="F")
 
-        if source_col_ids == sorted_col_ids:
-            result.append(channel)
-            continue
-
-        # Need to reorder bits: map old bit positions to new positions
-        source_to_target = {s: sorted_col_ids.index(s) for s in source_col_ids}
-        n = len(source_col_ids)
-        new_probs = np.zeros(2**n, dtype=np.float64)
-
-        for old_idx in range(len(channel.probs)):
-            new_idx = 0
-            for src_pos, src_col in enumerate(source_col_ids):
-                if (old_idx >> src_pos) & 1:
-                    new_idx |= 1 << source_to_target[src_col]
-            new_probs[new_idx] += channel.probs[old_idx]
-
-        result.append(Channel(probs=new_probs, unique_col_ids=sorted_col_ids))
+        result.append(
+            Channel(probs=new_probs, unique_col_ids=tuple(source_col_ids[axis_perm]))
+        )
 
     return result
 
