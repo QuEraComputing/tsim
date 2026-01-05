@@ -20,8 +20,7 @@ class Channel:
 
     @property
     def num_bits(self) -> int:
-        assert len(self.unique_col_ids) == int(np.log2(len(self.probs)))
-        return len(self.unique_col_ids)
+        return int(np.log2(len(self.probs)))
 
     @property
     def logits(self) -> jax.Array:
@@ -99,6 +98,36 @@ def pauli_channel_2_probs(
         ],
         dtype=np.float64,
     )
+    return probs
+
+
+def correlated_error_probs(probabilities: list[float]) -> np.ndarray:
+    """Build probability distribution for correlated error chain.
+
+    Given conditional probabilities [p1, p2, ..., pk] from a chain of
+    CORRELATED_ERROR(p1) ELSE_CORRELATED_ERROR(p2) ... ELSE_CORRELATED_ERROR(pk),
+    computes the joint probability distribution over 2^k outcomes.
+
+    Since errors are mutually exclusive, only outcomes with at most one bit set
+    have non-zero probability:
+    - P(0) = (1-p1)(1-p2)...(1-pk)  (no error)
+    - P(2^i) = (1-p1)...(1-p_i) * p_{i+1}  (error i+1 occurred)
+
+    Args:
+        probabilities: List of conditional probabilities [p1, p2, ..., pk]
+
+    Returns:
+        Array of shape (2^k,) with probabilities for each outcome.
+    """
+    k = len(probabilities)
+    probs = np.zeros(2**k, dtype=np.float64)
+
+    no_error_so_far = 1.0
+    for i, p in enumerate(probabilities):
+        probs[1 << i] = no_error_so_far * p
+        no_error_so_far *= 1 - p
+
+    probs[0] = no_error_so_far
     return probs
 
 

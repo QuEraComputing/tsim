@@ -164,6 +164,132 @@ def test_memory_error_correction_and_compare_to_stim(code_task: str):
     )
 
 
+@pytest.mark.parametrize(
+    "stim_program",
+    [
+        """
+        CORRELATED_ERROR(0.1) X0
+        M 0
+        """,
+        """
+        CORRELATED_ERROR(0.1) X0
+        ELSE_CORRELATED_ERROR(0.2) Y1
+        CORRELATED_ERROR(0.3) X2
+        H 3
+        CORRELATED_ERROR(0.5) Z3
+        H 3
+        M 0 1 2 3
+        """,
+        """
+        CORRELATED_ERROR(0.1) X0
+        CORRELATED_ERROR(0.2) X1
+        M 0 1
+        """,
+        """
+        CORRELATED_ERROR(0.1) X0
+        ELSE_CORRELATED_ERROR(0.3) Y2
+        CORRELATED_ERROR(0.2) X1
+        ELSE_CORRELATED_ERROR(0.3) Y2
+        M 0 1 2
+        """,
+    ],
+    ids=[
+        "single_correlated_error",
+        "mixed_else_and_h",
+        "two_correlated_errors",
+        "two_correlated_errors_with_else",
+    ],
+)
+def test_correlated_error(stim_program: str):
+    n_samples = 10_000
+    stim_samples = stim.Circuit(stim_program).compile_sampler().sample(n_samples)
+    tsim_samples = Circuit(stim_program).compile_sampler().sample(n_samples)
+    assert_samples_match(stim_samples, tsim_samples)
+
+
+@pytest.mark.parametrize(
+    "stim_program",
+    [
+        # Single-qubit MPP
+        """
+        H 0
+        MPP X0
+        """,
+        # Two-qubit product
+        """
+        H 0 1
+        CZ 0 1
+        MPP X0*Z1
+        """,
+        # Inversion on first Pauli
+        """
+        H 0 1
+        CZ 0 1
+        MPP !X0*Z1
+        """,
+        # Inversion on second Pauli (should be equivalent to first)
+        """
+        H 0 1
+        CZ 0 1
+        MPP X0*!Z1
+        """,
+        # Double inversion (cancels out)
+        """
+        H 0 1
+        CZ 0 1
+        MPP !X0*!Z1
+        """,
+        # Three-qubit product with single inversion
+        """
+        H 0 1 2
+        CZ 0 1
+        CZ 0 2
+        MPP !X0*Z1*Z2
+        """,
+        # Three-qubit product with inversion on middle
+        """
+        H 0 1 2
+        CZ 0 1
+        CZ 0 2
+        MPP X0*!Z1*Z2
+        """,
+        # Three-qubit product with triple inversion (odd = inverted) and noise
+        """
+        H 0 1 2
+        CZ 0 1
+        CZ 0 2
+        Z_ERROR(0.1) 0
+        Y_ERROR(0.1) 1 2
+        MPP !X0*!Z1*!Z2
+        """,
+        # Multiple products with different inversions
+        """
+        H 0 1 2
+        CZ 0 1
+        CZ 0 2
+        MPP X0*Z1*Z2 X0*Z1*!Z2 X0*!Z1*!Z2 !X0*!Z1*!Z2
+        """,
+    ],
+    ids=[
+        "single_qubit",
+        "two_qubit_product",
+        "invert_first",
+        "invert_second",
+        "invert_both_cancels",
+        "three_qubit_invert_first",
+        "three_qubit_invert_middle",
+        "three_qubit_triple_invert_and_noise",
+        "multiple_products",
+    ],
+)
+def test_mpp_inversion_parity(stim_program: str):
+    """Test that MPP correctly handles inversions on any Pauli (only parity matters)."""
+    n_samples = 10_000
+    stim_samples = stim.Circuit(stim_program).compile_sampler().sample(n_samples)
+    tsim_samples = Circuit(stim_program).compile_sampler().sample(n_samples)
+    assert_samples_match(stim_samples, tsim_samples)
+
+
 def test_channel_simplification():
     c = Circuit(
         """

@@ -8,6 +8,7 @@ from tsim.channels import (
     ChannelSampler,
     _sample_channels,
     absorb_subset_channels,
+    correlated_error_probs,
     error_probs,
     expand_channel,
     merge_identical_channels,
@@ -73,6 +74,70 @@ class TestProbabilityConstructors:
         assert probs.dtype == np.float64
         assert_allclose(probs[8], 1.0, rtol=1e-10)  # IX = 0100 in 4-bit = 8
         assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
+
+
+class TestCorrelatedErrorProbs:
+    """Tests for correlated_error_probs probability constructor."""
+
+    def test_single_error(self):
+        """Single error with probability p."""
+        probs = correlated_error_probs([0.3])
+        assert probs.shape == (2,)
+        assert_allclose(probs[0], 0.7)  # No error
+        assert_allclose(probs[1], 0.3)  # Error occurred
+        assert_allclose(np.sum(probs), 1.0)
+
+    def test_two_errors(self):
+        """Chain of two errors."""
+        probs = correlated_error_probs([0.2, 0.25])
+        assert probs.shape == (4,)
+        # P(00) = (1-0.2)*(1-0.25) = 0.8*0.75 = 0.6
+        # P(01) = 0.2 (first error)
+        # P(10) = (1-0.2)*0.25 = 0.8*0.25 = 0.2 (second error)
+        # P(11) = 0 (mutually exclusive)
+        assert_allclose(probs[0], 0.6)
+        assert_allclose(probs[1], 0.2)
+        assert_allclose(probs[2], 0.2)
+        assert_allclose(probs[3], 0.0)
+        assert_allclose(np.sum(probs), 1.0)
+
+    def test_three_errors_uniform(self):
+        """The example from stim docs: 60% distributed uniformly among 3 errors."""
+        # CORRELATED_ERROR(0.2) -> ELSE(0.25) -> ELSE(0.333...)
+        # P1 = 0.2, P2 = 0.8*0.25 = 0.2, P3 = 0.8*0.75*0.333... = 0.2
+        probs = correlated_error_probs([0.2, 0.25, 1 / 3])
+        assert probs.shape == (8,)
+        assert_allclose(probs[0], 0.4, rtol=1e-5)  # No error: 40%
+        assert_allclose(probs[1], 0.2, rtol=1e-5)  # First: 20%
+        assert_allclose(probs[2], 0.2, rtol=1e-5)  # Second: 20%
+        assert_allclose(probs[4], 0.2, rtol=1e-5)  # Third: 20%
+        # All multi-bit outcomes are 0
+        assert_allclose(probs[3], 0.0)
+        assert_allclose(probs[5], 0.0)
+        assert_allclose(probs[6], 0.0)
+        assert_allclose(probs[7], 0.0)
+        assert_allclose(np.sum(probs), 1.0)
+
+    def test_zero_probability(self):
+        """Test with zero probability (always no error)."""
+        probs = correlated_error_probs([0.0])
+        assert_allclose(probs[0], 1.0)
+        assert_allclose(probs[1], 0.0)
+
+    def test_one_probability(self):
+        """Test with probability 1 (always error)."""
+        probs = correlated_error_probs([1.0])
+        assert_allclose(probs[0], 0.0)
+        assert_allclose(probs[1], 1.0)
+
+    def test_chain_with_certain_first_error(self):
+        """If first error is certain, subsequent errors have 0 probability."""
+        probs = correlated_error_probs([1.0, 0.5, 0.5])
+        assert probs.shape == (8,)
+        assert_allclose(probs[0], 0.0)  # No error
+        assert_allclose(probs[1], 1.0)  # First error (certain)
+        assert_allclose(probs[2], 0.0)  # Second error (blocked)
+        assert_allclose(probs[4], 0.0)  # Third error (blocked)
 
 
 def assert_sampling_matches(

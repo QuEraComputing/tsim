@@ -28,7 +28,7 @@ pip install "git+https://github.com/QuEraComputing/tsim.git#egg=tsim[cuda13]"
 ## Quick Start
 An introductory tutorial is available [here](https://github.com/QuEraComputing/tsim/blob/main/docs/demos/encoding_demo.ipynb).
 
-For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and currently supports all [Stim gates](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference), except `CORRELATED_ERROR` and `ELSE_CORRELATED_ERROR`.
+For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and currently supports all [Stim gates](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference).
 
 Additionally, Tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, and `U3` (see below for more details).
 ```python
@@ -81,7 +81,7 @@ These samplers manage a contiguous data structure that allows for efficient samp
 
 ## Supported Instructions
 
-Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference), except currently `CORRELATED_ERROR` and `ELSE_CORRELATED_ERROR`.
+Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference).
 
 In addition, Tsim supports the following non-Clifford instructions:
 
