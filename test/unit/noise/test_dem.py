@@ -1,7 +1,7 @@
 import pytest
 import stim
 
-from tsim.dem import get_detector_error_model
+from tsim.noise.dem import get_detector_error_model
 
 
 def test_get_detector_error_model():

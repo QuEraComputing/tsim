@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from tsim.exact_scalar import ExactScalarArray
+from tsim.core.exact_scalar import ExactScalarArray
 
 
 @pytest.fixture

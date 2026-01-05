@@ -1,4 +1,4 @@
-from tsim.util.program_text import shorthand_to_stim, stim_to_shorthand
+from tsim.utils.program_text import shorthand_to_stim, stim_to_shorthand
 
 
 def test_shorthand_to_stim_t_and_t_dag():

@@ -7,11 +7,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tsim.channels import ChannelSampler
-from tsim.evaluate import evaluate_batch
-from tsim.graph_util import prepare_graph
-from tsim.program import compile_program
-from tsim.types import CompiledComponent, CompiledProgram
+from tsim.compile.evaluate import evaluate_batch
+from tsim.compile.pipeline import compile_program
+from tsim.core.graph import prepare_graph
+from tsim.core.types import CompiledComponent, CompiledProgram
+from tsim.noise.channels import ChannelSampler
 
 if TYPE_CHECKING:
     from jax import Array as PRNGKey

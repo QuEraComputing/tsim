@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from galois import GF2
 
-from tsim.util.linalg import find_basis
+from tsim.utils.linalg import find_basis
 
 
 def verify_basis_decomposition(vectors: list[list[int]] | np.ndarray) -> None:

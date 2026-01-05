@@ -1,7 +1,7 @@
 import stim
 from numpy.testing import assert_allclose
 
-from tsim.parse import parse_stim_circuit
+from tsim.core.parse import parse_stim_circuit
 
 
 class TestParseCorrelatedError:

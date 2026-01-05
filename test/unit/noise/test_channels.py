@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 from numpy.testing import assert_allclose
 
-from tsim.channels import (
+from tsim.noise.channels import (
     Channel,
     ChannelSampler,
     _sample_channels,
