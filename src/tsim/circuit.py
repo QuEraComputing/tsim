@@ -9,7 +9,7 @@ import stim
 from pyzx.graph.base import BaseGraph
 
 from tsim.core.graph import build_sampling_graph
-from tsim.core.parse import parse_stim_circuit
+from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.diagram import render_svg
 from tsim.utils.program_text import shorthand_to_stim, stim_to_shorthand
@@ -130,15 +130,13 @@ class Circuit:
     def __getitem__(
         self,
         index_or_slice: int,
-    ) -> stim.CircuitInstruction:
-        pass
+    ) -> stim.CircuitInstruction: ...
 
     @overload
     def __getitem__(
         self,
         index_or_slice: slice,
-    ) -> Circuit:
-        pass
+    ) -> Circuit: ...
 
     def __getitem__(
         self,
@@ -506,7 +504,7 @@ class Circuit:
             zx.draw(g, **kwargs)
             return g
         else:
-            return self._stim_circ.diagram(type=type, **kwargs)
+            return self._stim_circ.diagram(type=type, **kwargs)  # pragma: no cover
 
     def to_tensor(self) -> Any:
         """Convert circuit to tensor representation."""
@@ -589,8 +587,39 @@ class Circuit:
 
     def cast_to_stim(self) -> stim.Circuit:
         """Return self with type cast to stim.Circuit. This is useful for passing the circuit to functions that expect a stim.Circuit."""
-        return cast(stim.Circuit, self)
+        return cast(stim.Circuit, self)  # pragma: no cover
 
     def inverse(self) -> Circuit:
         """Return the inverse of the circuit."""
-        return Circuit.from_stim_program(self._stim_circ.inverse())
+        inv_stim_raw = self._stim_circ.inverse()
+
+        # Stim will only invert Clifford gates (and S[T] / S_DAG[T])
+        # Post-process to fix non-Clifford rotation gates stored as I[tag]
+        inv_stim = stim.Circuit()
+        for instr in inv_stim_raw:
+            assert not isinstance(instr, stim.CircuitRepeatBlock)
+            name = instr.name
+            tag = instr.tag
+            targets = [t.value for t in instr.targets_copy()]
+            args = instr.gate_args_copy()
+
+            if name == "I" and tag:
+                result = parse_parametric_tag(tag)
+                if result is not None:
+                    gate_name, params = result
+                    if gate_name == "U3":
+                        # U3(θ, φ, λ)⁻¹ = U3(-θ, -λ, -φ)
+                        theta = float(-params["theta"])
+                        phi = float(-params["lambda"])
+                        lam = float(-params["phi"])
+                        new_tag = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
+                    else:
+                        theta = float(-params["theta"])
+                        new_tag = f"{gate_name}(theta={theta}*pi)"
+                    inv_stim.append("I", targets, args, tag=new_tag)
+                    continue
+
+            # All other instructions are correct from stim's inverse
+            inv_stim.append(instr)
+
+        return Circuit.from_stim_program(inv_stim)
