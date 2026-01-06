@@ -195,8 +195,8 @@ def test_memory_error_correction_and_compare_to_stim(code_task: str):
 )
 def test_correlated_error(stim_program: str):
     n_samples = 10_000
-    stim_samples = stim.Circuit(stim_program).compile_sampler().sample(n_samples)
-    tsim_samples = Circuit(stim_program).compile_sampler().sample(n_samples)
+    stim_samples = stim.Circuit(stim_program).compile_sampler(seed=0).sample(n_samples)
+    tsim_samples = Circuit(stim_program).compile_sampler(seed=0).sample(n_samples)
     assert_samples_match(stim_samples, tsim_samples)
 
 
@@ -278,8 +278,8 @@ def test_correlated_error(stim_program: str):
 def test_mpp_inversion_parity(stim_program: str):
     """Test that MPP correctly handles inversions on any Pauli (only parity matters)."""
     n_samples = 10_000
-    stim_samples = stim.Circuit(stim_program).compile_sampler().sample(n_samples)
-    tsim_samples = Circuit(stim_program).compile_sampler().sample(n_samples)
+    stim_samples = stim.Circuit(stim_program).compile_sampler(seed=0).sample(n_samples)
+    tsim_samples = Circuit(stim_program).compile_sampler(seed=0).sample(n_samples)
     assert_samples_match(stim_samples, tsim_samples)
 
 
