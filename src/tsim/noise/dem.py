@@ -122,7 +122,9 @@ def get_detector_error_model(
             "MY",
             "MZ",
         ]:
-            num_meas = len(instruction.targets_copy())
+            num_meas = (
+                1 if instruction.name == "MPP" else len(instruction.targets_copy())
+            )
             for idx in obs:
                 # update measurement rec indices for the OBSERVABLE_INCLUDE instructions
                 obs[idx] = [t - num_meas for t in obs[idx]]
@@ -162,6 +164,7 @@ def get_detector_error_model(
     )
 
     new_dem = stim.DetectorErrorModel()
+
     for instruction in dem:
         assert not isinstance(instruction, stim.DemRepeatBlock)
 
@@ -185,9 +188,9 @@ def get_detector_error_model(
             new_targets,
         )
 
-        if instruction.args_copy() == [0.5]:
-            # remove gauge statements "error(0.5) L<idx>"
-            continue
+        # if instruction.args_copy() == [0.5]:
+        #     # remove gauge statements "error(0.5) L<idx>"
+        #     continue
 
         new_dem.append(new_instruction)
 
