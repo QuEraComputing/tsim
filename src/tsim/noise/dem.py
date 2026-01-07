@@ -122,9 +122,15 @@ def get_detector_error_model(
             "MY",
             "MZ",
         ]:
-            num_meas = (
-                1 if instruction.name == "MPP" else len(instruction.targets_copy())
-            )
+            targets = instruction.targets_copy()
+            if instruction.name == "MPP":
+                # MPP produces one measurement per Pauli product.
+                # Products are separated by spaces; within a product, Paulis are joined by '*' (combiners).
+                # num_measurements = num_non_combiner_targets - num_combiners
+                num_combiners = sum(1 for t in targets if t.is_combiner)
+                num_meas = len(targets) - 2 * num_combiners
+            else:
+                num_meas = len(targets)
             for idx in obs:
                 # update measurement rec indices for the OBSERVABLE_INCLUDE instructions
                 obs[idx] = [t - num_meas for t in obs[idx]]
