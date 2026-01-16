@@ -211,7 +211,14 @@
 <span class=normal>207</span>
 <span class=normal>208</span>
 <span class=normal>209</span>
-<span class=normal>210</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>get_detector_error_model</span><span class=p>(</span>
+<span class=normal>210</span>
+<span class=normal>211</span>
+<span class=normal>212</span>
+<span class=normal>213</span>
+<span class=normal>214</span>
+<span class=normal>215</span>
+<span class=normal>216</span>
+<span class=normal>217</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>get_detector_error_model</span><span class=p>(</span>
     <span class=n>stim_circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
     <span class=n>allow_non_deterministic_observables</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>True</span><span class=p>,</span>
@@ -385,7 +392,7 @@
         <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>instruction</span><span class=o>.</span><span class=n>targets_copy</span><span class=p>():</span>
             <span class=k>if</span> <span class=p>(</span>
                 <span class=nb>isinstance</span><span class=p>(</span><span class=n>t</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>DemTarget</span><span class=p>)</span>
-                <span class=ow>and</span> <span class=n>t</span><span class=o>.</span><span class=n>is_relative_detector_id</span>
+                <span class=ow>and</span> <span class=n>t</span><span class=o>.</span><span class=n>is_relative_detector_id</span><span class=p>()</span>
                 <span class=ow>and</span> <span class=n>t</span><span class=o>.</span><span class=n>val</span> <span class=ow>in</span> <span class=n>mapping</span>
             <span class=p>):</span>
                 <span class=n>new_targets</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>stim</span><span class=o>.</span><span class=n>target_logical_observable_id</span><span class=p>(</span><span class=n>mapping</span><span class=p>[</span><span class=n>t</span><span class=o>.</span><span class=n>val</span><span class=p>]))</span>
@@ -400,9 +407,16 @@
             <span class=n>new_targets</span><span class=p>,</span>
         <span class=p>)</span>
 
-        <span class=c1># if instruction.args_copy() == [0.5]:</span>
-        <span class=c1>#     # remove gauge statements &quot;error(0.5) L&lt;idx&gt;&quot;</span>
-        <span class=c1>#     continue</span>
+        <span class=c1># Remove gauge statements that only affect logical observables (e.g., &quot;error(0.5) L0&quot;).</span>
+        <span class=c1># These arise from non-deterministic observables and should not appear in the final DEM.</span>
+        <span class=k>if</span> <span class=n>instruction</span><span class=o>.</span><span class=n>args_copy</span><span class=p>()</span> <span class=o>==</span> <span class=p>[</span><span class=mf>0.5</span><span class=p>]:</span>
+            <span class=c1># Check if all targets are logical observables (no detectors)</span>
+            <span class=n>all_logical</span> <span class=o>=</span> <span class=nb>all</span><span class=p>(</span>
+                <span class=nb>isinstance</span><span class=p>(</span><span class=n>t</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>DemTarget</span><span class=p>)</span> <span class=ow>and</span> <span class=n>t</span><span class=o>.</span><span class=n>is_logical_observable_id</span><span class=p>()</span>
+                <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>new_targets</span>
+            <span class=p>)</span>
+            <span class=k>if</span> <span class=n>all_logical</span><span class=p>:</span>
+                <span class=k>continue</span>
 
         <span class=n>new_dem</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>new_instruction</span><span class=p>)</span>
 

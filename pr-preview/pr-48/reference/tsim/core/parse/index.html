@@ -207,7 +207,10 @@
 <span class=normal>189</span>
 <span class=normal>190</span>
 <span class=normal>191</span>
-<span class=normal>192</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
+<span class=normal>192</span>
+<span class=normal>193</span>
+<span class=normal>194</span>
+<span class=normal>195</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
     <span class=n>stim_circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>GraphRepresentation</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Parse a stim circuit into a GraphRepresentation.</span>
@@ -227,6 +230,9 @@
         <span class=n>name</span> <span class=o>=</span> <span class=n>instruction</span><span class=o>.</span><span class=n>name</span>
         <span class=k>if</span> <span class=n>name</span> <span class=ow>in</span> <span class=p>[</span><span class=s2>&quot;QUBIT_COORDS&quot;</span><span class=p>,</span> <span class=s2>&quot;SHIFT_COORDS&quot;</span><span class=p>]:</span>
             <span class=c1># TODO: handle these visualization annotations</span>
+            <span class=k>continue</span>
+
+        <span class=k>if</span> <span class=n>name</span> <span class=o>==</span> <span class=s2>&quot;I_ERROR&quot;</span><span class=p>:</span>
             <span class=k>continue</span>
 
         <span class=k>if</span> <span class=n>name</span> <span class=o>==</span> <span class=s2>&quot;S&quot;</span> <span class=ow>and</span> <span class=n>instruction</span><span class=o>.</span><span class=n>tag</span> <span class=o>==</span> <span class=s2>&quot;T&quot;</span><span class=p>:</span>
