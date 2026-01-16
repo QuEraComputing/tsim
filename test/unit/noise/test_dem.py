@@ -72,8 +72,11 @@ def test_get_detector_error_model_with_gauge_detectors():
         DETECTOR rec[-2]
         """
     )
+    # Gauge errors that only trigger observables (error(0.5) L0) are removed,
+    # but gauge errors that trigger detectors (error(0.5) D0) are kept.
     assert get_detector_error_model(c).approx_equals(
-        stim.DetectorErrorModel("error(0.01) D0 L0"), atol=1e-12
+        stim.DetectorErrorModel("error(0.5) D0\n error(0.01) D0 L0"),
+        atol=1e-12,
     )
 
 
@@ -111,7 +114,6 @@ def test_get_detector_error_model_no_errors():
 
 
 def test_get_detector_error_model_with_logical_observables():
-
     with pytest.raises(
         ValueError, match="The number of observables changed after conversion."
     ):
@@ -190,7 +192,13 @@ def test_get_detector_error_model_with_multiple_mpp_instructions():
 
 
 def test_get_detector_error_model_mpp_measurement_counting():
-    """Test correct measurement counting for MPP vs regular M measurements."""
+    """Test correct measurement counting for MPP vs regular M measurements.
+
+    This test verifies that rec indices are correctly adjusted when MPP instructions
+    produce multiple measurements. The circuit has a non-deterministic observable
+    (Z2*Z3 measured on |++⟩ state), which should raise a ValueError because stim
+    interprets it as a gauge and eliminates it.
+    """
     # Circuit with MPP producing 2 measurements + M producing 2 measurements
     c = stim.Circuit(
         """
@@ -206,6 +214,8 @@ def test_get_detector_error_model_mpp_measurement_counting():
     # MPP Z0*Z1 Z2*Z3 produces 2 measurements: rec[-4] and rec[-3] (before M)
     # M 0 1 produces 2 measurements: rec[-2] and rec[-1]
     # OBSERVABLE_INCLUDE(0) rec[-3] refers to the Z2*Z3 measurement
-    dem = get_detector_error_model(c)
-    assert dem.num_observables == 1
-    assert dem.num_detectors == 1
+    # Since the observable is non-deterministic (gauge), it gets eliminated
+    with pytest.raises(
+        ValueError, match="The number of observables changed after conversion."
+    ):
+        get_detector_error_model(c)

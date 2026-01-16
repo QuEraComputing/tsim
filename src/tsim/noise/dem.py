@@ -179,7 +179,7 @@ def get_detector_error_model(
         for t in instruction.targets_copy():
             if (
                 isinstance(t, stim.DemTarget)
-                and t.is_relative_detector_id
+                and t.is_relative_detector_id()
                 and t.val in mapping
             ):
                 new_targets.append(stim.target_logical_observable_id(mapping[t.val]))
@@ -194,9 +194,16 @@ def get_detector_error_model(
             new_targets,
         )
 
-        # if instruction.args_copy() == [0.5]:
-        #     # remove gauge statements "error(0.5) L<idx>"
-        #     continue
+        # Remove gauge statements that only affect logical observables (e.g., "error(0.5) L0").
+        # These arise from non-deterministic observables and should not appear in the final DEM.
+        if instruction.args_copy() == [0.5]:
+            # Check if all targets are logical observables (no detectors)
+            all_logical = all(
+                isinstance(t, stim.DemTarget) and t.is_logical_observable_id()
+                for t in new_targets
+            )
+            if all_logical:
+                continue
 
         new_dem.append(new_instruction)
 
