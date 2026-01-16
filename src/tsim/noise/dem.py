@@ -122,7 +122,15 @@ def get_detector_error_model(
             "MY",
             "MZ",
         ]:
-            num_meas = len(instruction.targets_copy())
+            targets = instruction.targets_copy()
+            if instruction.name == "MPP":
+                # MPP produces one measurement per Pauli product.
+                # Products are separated by spaces; within a product, Paulis are joined by '*' (combiners).
+                # num_measurements = num_non_combiner_targets - num_combiners
+                num_combiners = sum(1 for t in targets if t.is_combiner)
+                num_meas = len(targets) - 2 * num_combiners
+            else:
+                num_meas = len(targets)
             for idx in obs:
                 # update measurement rec indices for the OBSERVABLE_INCLUDE instructions
                 obs[idx] = [t - num_meas for t in obs[idx]]
@@ -162,6 +170,7 @@ def get_detector_error_model(
     )
 
     new_dem = stim.DetectorErrorModel()
+
     for instruction in dem:
         assert not isinstance(instruction, stim.DemRepeatBlock)
 
@@ -170,7 +179,7 @@ def get_detector_error_model(
         for t in instruction.targets_copy():
             if (
                 isinstance(t, stim.DemTarget)
-                and t.is_relative_detector_id
+                and t.is_relative_detector_id()
                 and t.val in mapping
             ):
                 new_targets.append(stim.target_logical_observable_id(mapping[t.val]))
@@ -185,9 +194,16 @@ def get_detector_error_model(
             new_targets,
         )
 
+        # Remove gauge statements that only affect logical observables (e.g., "error(0.5) L0").
+        # These arise from non-deterministic observables and should not appear in the final DEM.
         if instruction.args_copy() == [0.5]:
-            # remove gauge statements "error(0.5) L<idx>"
-            continue
+            # Check if all targets are logical observables (no detectors)
+            all_logical = all(
+                isinstance(t, stim.DemTarget) and t.is_logical_observable_id()
+                for t in new_targets
+            )
+            if all_logical:
+                continue
 
         new_dem.append(new_instruction)
 
