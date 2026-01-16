@@ -202,7 +202,23 @@
 <span class=normal>198</span>
 <span class=normal>199</span>
 <span class=normal>200</span>
-<span class=normal>201</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>get_detector_error_model</span><span class=p>(</span>
+<span class=normal>201</span>
+<span class=normal>202</span>
+<span class=normal>203</span>
+<span class=normal>204</span>
+<span class=normal>205</span>
+<span class=normal>206</span>
+<span class=normal>207</span>
+<span class=normal>208</span>
+<span class=normal>209</span>
+<span class=normal>210</span>
+<span class=normal>211</span>
+<span class=normal>212</span>
+<span class=normal>213</span>
+<span class=normal>214</span>
+<span class=normal>215</span>
+<span class=normal>216</span>
+<span class=normal>217</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>get_detector_error_model</span><span class=p>(</span>
     <span class=n>stim_circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
     <span class=n>allow_non_deterministic_observables</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>True</span><span class=p>,</span>
@@ -319,7 +335,15 @@
             <span class=s2>&quot;MY&quot;</span><span class=p>,</span>
             <span class=s2>&quot;MZ&quot;</span><span class=p>,</span>
         <span class=p>]:</span>
-            <span class=n>num_meas</span> <span class=o>=</span> <span class=nb>len</span><span class=p>(</span><span class=n>instruction</span><span class=o>.</span><span class=n>targets_copy</span><span class=p>())</span>
+            <span class=n>targets</span> <span class=o>=</span> <span class=n>instruction</span><span class=o>.</span><span class=n>targets_copy</span><span class=p>()</span>
+            <span class=k>if</span> <span class=n>instruction</span><span class=o>.</span><span class=n>name</span> <span class=o>==</span> <span class=s2>&quot;MPP&quot;</span><span class=p>:</span>
+                <span class=c1># MPP produces one measurement per Pauli product.</span>
+                <span class=c1># Products are separated by spaces; within a product, Paulis are joined by &#39;*&#39; (combiners).</span>
+                <span class=c1># num_measurements = num_non_combiner_targets - num_combiners</span>
+                <span class=n>num_combiners</span> <span class=o>=</span> <span class=nb>sum</span><span class=p>(</span><span class=mi>1</span> <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>targets</span> <span class=k>if</span> <span class=n>t</span><span class=o>.</span><span class=n>is_combiner</span><span class=p>)</span>
+                <span class=n>num_meas</span> <span class=o>=</span> <span class=nb>len</span><span class=p>(</span><span class=n>targets</span><span class=p>)</span> <span class=o>-</span> <span class=mi>2</span> <span class=o>*</span> <span class=n>num_combiners</span>
+            <span class=k>else</span><span class=p>:</span>
+                <span class=n>num_meas</span> <span class=o>=</span> <span class=nb>len</span><span class=p>(</span><span class=n>targets</span><span class=p>)</span>
             <span class=k>for</span> <span class=n>idx</span> <span class=ow>in</span> <span class=n>obs</span><span class=p>:</span>
                 <span class=c1># update measurement rec indices for the OBSERVABLE_INCLUDE instructions</span>
                 <span class=n>obs</span><span class=p>[</span><span class=n>idx</span><span class=p>]</span> <span class=o>=</span> <span class=p>[</span><span class=n>t</span> <span class=o>-</span> <span class=n>num_meas</span> <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>obs</span><span class=p>[</span><span class=n>idx</span><span class=p>]]</span>
@@ -359,6 +383,7 @@
     <span class=p>)</span>
 
     <span class=n>new_dem</span> <span class=o>=</span> <span class=n>stim</span><span class=o>.</span><span class=n>DetectorErrorModel</span><span class=p>()</span>
+
     <span class=k>for</span> <span class=n>instruction</span> <span class=ow>in</span> <span class=n>dem</span><span class=p>:</span>
         <span class=k>assert</span> <span class=ow>not</span> <span class=nb>isinstance</span><span class=p>(</span><span class=n>instruction</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>DemRepeatBlock</span><span class=p>)</span>
 
@@ -367,7 +392,7 @@
         <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>instruction</span><span class=o>.</span><span class=n>targets_copy</span><span class=p>():</span>
             <span class=k>if</span> <span class=p>(</span>
                 <span class=nb>isinstance</span><span class=p>(</span><span class=n>t</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>DemTarget</span><span class=p>)</span>
-                <span class=ow>and</span> <span class=n>t</span><span class=o>.</span><span class=n>is_relative_detector_id</span>
+                <span class=ow>and</span> <span class=n>t</span><span class=o>.</span><span class=n>is_relative_detector_id</span><span class=p>()</span>
                 <span class=ow>and</span> <span class=n>t</span><span class=o>.</span><span class=n>val</span> <span class=ow>in</span> <span class=n>mapping</span>
             <span class=p>):</span>
                 <span class=n>new_targets</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>stim</span><span class=o>.</span><span class=n>target_logical_observable_id</span><span class=p>(</span><span class=n>mapping</span><span class=p>[</span><span class=n>t</span><span class=o>.</span><span class=n>val</span><span class=p>]))</span>
@@ -382,9 +407,16 @@
             <span class=n>new_targets</span><span class=p>,</span>
         <span class=p>)</span>
 
+        <span class=c1># Remove gauge statements that only affect logical observables (e.g., &quot;error(0.5) L0&quot;).</span>
+        <span class=c1># These arise from non-deterministic observables and should not appear in the final DEM.</span>
         <span class=k>if</span> <span class=n>instruction</span><span class=o>.</span><span class=n>args_copy</span><span class=p>()</span> <span class=o>==</span> <span class=p>[</span><span class=mf>0.5</span><span class=p>]:</span>
-            <span class=c1># remove gauge statements &quot;error(0.5) L&lt;idx&gt;&quot;</span>
-            <span class=k>continue</span>
+            <span class=c1># Check if all targets are logical observables (no detectors)</span>
+            <span class=n>all_logical</span> <span class=o>=</span> <span class=nb>all</span><span class=p>(</span>
+                <span class=nb>isinstance</span><span class=p>(</span><span class=n>t</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>DemTarget</span><span class=p>)</span> <span class=ow>and</span> <span class=n>t</span><span class=o>.</span><span class=n>is_logical_observable_id</span><span class=p>()</span>
+                <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>new_targets</span>
+            <span class=p>)</span>
+            <span class=k>if</span> <span class=n>all_logical</span><span class=p>:</span>
+                <span class=k>continue</span>
 
         <span class=n>new_dem</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>new_instruction</span><span class=p>)</span>
 
