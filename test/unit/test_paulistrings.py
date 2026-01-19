@@ -516,7 +516,16 @@ class TestSpecialCircuits:
         assert np.allclose(results, [0.0, 1.0], atol=1e-6)
 
     def test_cz_gate(self):
-        """Test CZ gate creates correlation."""
+        """Test CZ gate on |++> state.
+
+        CZ|++> creates entanglement. The resulting state is:
+        (|00> + |01> + |10> - |11>)/2
+
+        This is a graph state with:
+        - All single-qubit expectations = 0
+        - <XZ> = 1 (stabilizer generator)
+        - <ZX> = 1 (stabilizer generator)
+        """
         c = Circuit(
             """
             H 0
@@ -525,19 +534,18 @@ class TestSpecialCircuits:
         """
         )
         ps = PauliStrings(c)
-        # After H H CZ, the state is entangled
-        # <ZZ> should be 1 (both qubits correlated)
         paulis = np.array(
             [
-                [0, 0, 1, 1],  # ZZ
-                [1, 1, 0, 0],  # XX
+                [0, 0, 1, 1],  # ZZ -> 0
+                [1, 1, 0, 0],  # XX -> 0
+                [1, 0, 0, 0],  # XI -> 0 (entanglement destroys local X)
+                [0, 1, 0, 0],  # IX -> 0
+                [1, 0, 0, 1],  # XZ -> 1 (stabilizer)
+                [0, 1, 1, 0],  # ZX -> 1 (stabilizer)
             ]
         )
         results = ps.evaluate(paulis)
-        # Note: The actual values depend on the specific entanglement
-        # For |++> after CZ: ZZ gives 0, XX gives 1
-        # But this needs verification based on actual circuit behavior
-        assert len(results) == 2
+        assert np.allclose(results, [0.0, 0.0, 0.0, 0.0, 1.0, 1.0], atol=1e-6)
 
 
 class TestProductStates:
