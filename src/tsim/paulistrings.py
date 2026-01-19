@@ -5,8 +5,8 @@ for quantum circuits without measurements or noise, where |ψ⟩ = U|0⟩ and P 
 a Pauli string.
 
 The implementation uses ZX-calculus to construct a diagram representing
-⟨0|U† P U|0⟩, which is then compiled and evaluated efficiently
-for various Pauli strings P.
+⟨0|U† P U|0⟩, where U is a quantum circuit without measurements or noise,
+which is then compiled and evaluated efficiently for various Pauli strings P.
 
 Example:
     >>> from tsim import Circuit
@@ -36,8 +36,31 @@ from tsim.compile.evaluate import evaluate_batch
 from tsim.compile.stabrank import find_stab
 from tsim.core.parse import parse_stim_circuit
 
+_UNSUPPORTED_INSTRUCTIONS = frozenset(
+    [
+        "M",
+        "MX",
+        "MY",
+        "MZ",
+        "MPP",
+        "MR",
+        "MRX",
+        "MRY",
+        "MRZ",
+        "DETECTOR",
+        "OBSERVABLE_INCLUDE",
+        "X_ERROR",
+        "Y_ERROR",
+        "Z_ERROR",
+        "DEPOLARIZE1",
+        "DEPOLARIZE2",
+        "PAULI_CHANNEL_1",
+        "PAULI_CHANNEL_2",
+    ]
+)
 
-def get_graph(circuit: Circuit) -> BaseGraph:
+
+def _get_graph(circuit: Circuit) -> BaseGraph:
     """Convert a circuit to a ZX graph with |0⟩ input states.
 
     Parses the circuit into a ZX graph representation and initializes
@@ -107,43 +130,25 @@ class PauliStrings:
 
         """
         for instruction in circuit._stim_circ:
-            if instruction.name in [
-                "M",
-                "MX",
-                "MY",
-                "MZ",
-                "MPP",
-                "MR",
-                "MRX",
-                "MRY",
-                "MRZ",
-                "DETECTOR",
-                "OBSERVABLE_INCLUDE",
-                "X_ERROR",
-                "Y_ERROR",
-                "Z_ERROR",
-                "DEPOLARIZE1",
-                "DEPOLARIZE2",
-                "PAULI_CHANNEL_1",
-                "PAULI_CHANNEL_2",
-            ]:
+            if instruction.name in _UNSUPPORTED_INSTRUCTIONS:
                 raise ValueError(
                     f"Circuit must not contain {instruction.name} instructions."
                 )
+
+        n = circuit.num_qubits
+        qubits = " ".join(map(str, range(n)))
+
         circuit_with_paulis = circuit.copy()
-        idx_str = " ".join(map(str, range(circuit.num_qubits)))
-        circuit_with_paulis.append_from_stim_program_text("X_ERROR(1) " + idx_str)
-        circuit_with_paulis.append_from_stim_program_text("Z_ERROR(1) " + idx_str)
+        circuit_with_paulis.append_from_stim_program_text(f"X_ERROR(1) {qubits}")
+        circuit_with_paulis.append_from_stim_program_text(f"Z_ERROR(1) {qubits}")
 
-        g = get_graph(circuit_with_paulis)
-        g_adj = get_graph(circuit).adjoint()
-        g.compose(g_adj)
-
+        g = _get_graph(circuit_with_paulis)
+        g.compose(_get_graph(circuit).adjoint())
         zx.full_reduce(g, paramSafe=True)
+
         g_list = find_stab(g)
-        param_names = [f"e{i}" for i in range(2 * circuit.num_qubits)]
-        self.compiled = compile_scalar_graphs(g_list, param_names)
-        self.num_qubits = circuit.num_qubits
+        self.compiled = compile_scalar_graphs(g_list, [f"e{i}" for i in range(2 * n)])
+        self.num_qubits = n
 
     def evaluate(self, paulis: np.ndarray) -> np.ndarray:
         """Evaluate expectation values for a batch of Pauli strings.
