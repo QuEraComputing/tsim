@@ -132,8 +132,8 @@ class PauliStrings:
                 )
         circuit_with_paulis = circuit.copy()
         idx_str = " ".join(map(str, range(circuit.num_qubits)))
-        circuit_with_paulis.append_from_stim_program_text("Z_ERROR(1) " + idx_str)
         circuit_with_paulis.append_from_stim_program_text("X_ERROR(1) " + idx_str)
+        circuit_with_paulis.append_from_stim_program_text("Z_ERROR(1) " + idx_str)
 
         g = get_graph(circuit_with_paulis)
         g_adj = get_graph(circuit).adjoint()
@@ -184,22 +184,16 @@ class PauliStrings:
         x_part = paulis[:, :n]
         z_part = paulis[:, n:]
 
-        # Reorder from [x|z] to [z|x] for internal processing
-        internal_paulis = np.hstack([z_part, x_part])
-
         # Count Y operators (where both x and z bits are set) per Pauli string
-        # ZX = -iY, so we need to multiply by i for each Y to get correct result
+        # XZ = iY, so we need to multiply by i for each Y to get correct result
         y_counts = np.sum(x_part & z_part, axis=1)
 
-        pp = jnp.vstack(
-            [np.zeros((1, 2 * self.num_qubits), dtype=np.uint8), internal_paulis]
-        )
-        # first row is all zeros to compute normalization factor
+        pp = jnp.vstack([np.zeros((1, 2 * self.num_qubits), dtype=np.uint8), paulis])
+        # first row of pp is all zeros to compute the normalization factor
 
         res = np.array(evaluate_batch(self.compiled, pp))
         normalized = res[1:] / res[0]
 
-        # Apply i^y_count correction for Y operators
-        # i^0 = 1, i^1 = i, i^2 = -1, i^3 = -i
-        correction = (1j) ** y_counts
+        # Apply (-i)^y_count correction for Y operators
+        correction = (-1j) ** y_counts
         return np.real(normalized * correction)
