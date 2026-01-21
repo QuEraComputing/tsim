@@ -145,6 +145,7 @@ class PauliStrings:
         g = _get_graph(circuit_with_paulis)
         g.compose(_get_graph(circuit).adjoint())
         zx.full_reduce(g, paramSafe=True)
+        g.scalar.power2 -= 2 * circuit.num_qubits
 
         g_list = find_stab(g)
         self.compiled = compile_scalar_graphs(g_list, [f"e{i}" for i in range(2 * n)])
