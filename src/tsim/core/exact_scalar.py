@@ -143,9 +143,38 @@ class ExactScalarArray(eqx.Module):
 
             return ExactScalarArray(result_coeffs, result_power)
 
-        scanned = lax.associative_scan(_scalar_mul, self.coeffs, axis=axis)
-        result_coeffs = jnp.take(scanned, indices=-1, axis=axis)
-        result_power = jnp.sum(self.power, axis=axis)
+        def mul_and_reduce(carry, x):
+            """Multiply two (coeffs, power) pairs and reduce to prevent overflow."""
+            c1, p1 = carry
+            c2, p2 = x
+            new_coeffs = _scalar_mul(c1, c2)
+            new_power = p1 + p2
+
+            # Extract common factors of 2 to prevent overflow
+            # Count trailing zeros (all coeffs divisible by 2)
+            def reduce_step(state):
+                coeffs, power = state
+                reducible = jnp.all(coeffs % 2 == 0, axis=-1) & jnp.any(
+                    coeffs != 0, axis=-1
+                )
+                coeffs = jnp.where(reducible[..., None], coeffs // 2, coeffs)
+                power = jnp.where(reducible, power + 1, power)
+                return coeffs, power
+
+            # Reduce up to 4 times per multiplication (handles factors up to 16)
+            for _ in range(4):
+                new_coeffs, new_power = reduce_step((new_coeffs, new_power))
+
+            return (new_coeffs, new_power), None
+
+        # Initial state for scan - move axis to front for easier processing
+        coeffs_t = jnp.moveaxis(self.coeffs, axis, 0)
+        power_t = jnp.moveaxis(self.power, axis, 0)
+
+        init = (coeffs_t[0], power_t[0])
+        (result_coeffs, result_power), _ = lax.scan(
+            mul_and_reduce, init, (coeffs_t[1:], power_t[1:])
+        )
 
         return ExactScalarArray(result_coeffs, result_power)
 
