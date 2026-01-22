@@ -592,11 +592,11 @@ wheels = [
 
 [[package]]
 name = "filelock"
-version = "3.20.1"
+version = "3.20.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a7/23/ce7a1126827cedeb958fc043d61745754464eb56c5937c35bbf2b8e26f34/filelock-3.20.1.tar.gz", hash = "sha256:b8360948b351b80f420878d8516519a2204b07aefcdcfd24912a5d33127f188c", size = 19476, upload-time = "2025-12-15T23:54:28.027Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1d/65/ce7f1b70157833bf3cb851b556a37d4547ceafc158aa9b34b36782f23696/filelock-3.20.3.tar.gz", hash = "sha256:18c57ee915c7ec61cff0ecf7f0f869936c7c30191bb0cf406f1341778d0834e1", size = 19485, upload-time = "2026-01-09T17:55:05.421Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e3/7f/a1a97644e39e7316d850784c642093c99df1290a460df4ede27659056834/filelock-3.20.1-py3-none-any.whl", hash = "sha256:15d9e9a67306188a44baa72f569d2bfd803076269365fdea0934385da4dc361a", size = 16666, upload-time = "2025-12-15T23:54:26.874Z" },
+    { url = "https://files.pythonhosted.org/packages/b5/36/7fb70f04bf00bc646cd5bb45aa9eddb15e19437a28b8fb2b4a5249fac770/filelock-3.20.3-py3-none-any.whl", hash = "sha256:4b0dda527ee31078689fc205ec4f1c1bf7d56cf88b6dc9426c4f230e46c2dce1", size = 16701, upload-time = "2026-01-09T17:55:04.334Z" },
 ]
 
 [[package]]
@@ -700,15 +700,15 @@ wheels = [
 
 [[package]]
 name = "griffe-kirin"
-version = "0.1.0"
-source = { registry = "https://quera.jfrog.io/artifactory/api/pypi/kirin/simple" }
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "griffe" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://quera.jfrog.io/artifactory/api/pypi/kirin/griffe-kirin/0.1.0/griffe_kirin-0.1.0.tar.gz", hash = "sha256:b5ed85a8c07da0219787ac8d57de0a4f2a6df3109fc3aab47d78a12f96dda04d" }
+sdist = { url = "https://files.pythonhosted.org/packages/a5/e0/9db75de974546903ab46a41179a95243abc84ceb2ba0b4101b5016f5301e/griffe_kirin-0.2.0.tar.gz", hash = "sha256:87d4280fbb1c77e1eb3fe7b627810b219295ec74651cf216748330b379a4ded5", size = 57664, upload-time = "2025-02-21T20:41:16.862Z" }
 wheels = [
-    { url = "https://quera.jfrog.io/artifactory/api/pypi/kirin/griffe-kirin/0.1.0/griffe_kirin-0.1.0-py3-none-any.whl", hash = "sha256:cdbc7a08c4fa5229f8f5f9137fd4de7dde35214166d3d448cbac8778079bd10a" },
+    { url = "https://files.pythonhosted.org/packages/38/b2/04bf90dc9e9e80f969b562731cf1619bd2eb0d0b726ba7befd38fda38131/griffe_kirin-0.2.0-py3-none-any.whl", hash = "sha256:81d999d6e1480cbe46e5c7b82933d2eee96863840dfbac283df620d85c13c2fc", size = 4063, upload-time = "2025-02-21T20:41:14.734Z" },
 ]
 
 [[package]]
@@ -3411,7 +3411,7 @@ requires-dist = [
     { name = "equinox", specifier = ">=0.13.2" },
     { name = "galois", specifier = ">=0.4.7" },
     { name = "ipywidgets", specifier = ">=8.1.8" },
-    { name = "jax", specifier = ">=0.8.0" },
+    { name = "jax", specifier = ">=0.5.0" },
     { name = "jax", extras = ["cuda12"], marker = "extra == 'cuda12'", specifier = ">=0.8.0" },
     { name = "jax", extras = ["cuda13"], marker = "extra == 'cuda13'", specifier = ">=0.8.0" },
     { name = "lxml", specifier = ">=6.0.2" },
