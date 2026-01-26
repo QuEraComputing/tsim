@@ -7,12 +7,12 @@ authors = [
     { name = "Chen Zhao", email = "czhao@quera.com" },
 ]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "equinox>=0.13.2",
     "galois>=0.4.7",
     "ipywidgets>=8.1.8",
-    "jax>=0.5.0",
+    "jax>=0.6.0",
     "lxml>=6.0.2",
     "numpy>=2.2.6",
     "pyperclip>=1.11.0",
@@ -23,8 +23,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cuda12 = ["jax[cuda12]>=0.8.0"]
-cuda13 = ["jax[cuda13]>=0.8.0"]
+cuda12 = ["jax[cuda12]>=0.6.0"]
+cuda13 = ["jax[cuda13]>=0.6.0"]
 
 [build-system]
 requires = ["hatchling"]
