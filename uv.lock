@@ -700,15 +700,15 @@ wheels = [
 
 [[package]]
 name = "griffe-kirin"
-version = "0.1.0"
-source = { registry = "https://quera.jfrog.io/artifactory/api/pypi/kirin/simple" }
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "griffe" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://quera.jfrog.io/artifactory/api/pypi/kirin/griffe-kirin/0.1.0/griffe_kirin-0.1.0.tar.gz", hash = "sha256:b5ed85a8c07da0219787ac8d57de0a4f2a6df3109fc3aab47d78a12f96dda04d" }
+sdist = { url = "https://files.pythonhosted.org/packages/a5/e0/9db75de974546903ab46a41179a95243abc84ceb2ba0b4101b5016f5301e/griffe_kirin-0.2.0.tar.gz", hash = "sha256:87d4280fbb1c77e1eb3fe7b627810b219295ec74651cf216748330b379a4ded5", size = 57664, upload-time = "2025-02-21T20:41:16.862Z" }
 wheels = [
-    { url = "https://quera.jfrog.io/artifactory/api/pypi/kirin/griffe-kirin/0.1.0/griffe_kirin-0.1.0-py3-none-any.whl", hash = "sha256:cdbc7a08c4fa5229f8f5f9137fd4de7dde35214166d3d448cbac8778079bd10a" },
+    { url = "https://files.pythonhosted.org/packages/38/b2/04bf90dc9e9e80f969b562731cf1619bd2eb0d0b726ba7befd38fda38131/griffe_kirin-0.2.0-py3-none-any.whl", hash = "sha256:81d999d6e1480cbe46e5c7b82933d2eee96863840dfbac283df620d85c13c2fc", size = 4063, upload-time = "2025-02-21T20:41:14.734Z" },
 ]
 
 [[package]]
@@ -3411,7 +3411,7 @@ requires-dist = [
     { name = "equinox", specifier = ">=0.13.2" },
     { name = "galois", specifier = ">=0.4.7" },
     { name = "ipywidgets", specifier = ">=8.1.8" },
-    { name = "jax", specifier = ">=0.8.0" },
+    { name = "jax", specifier = ">=0.5.0" },
     { name = "jax", extras = ["cuda12"], marker = "extra == 'cuda12'", specifier = ">=0.8.0" },
     { name = "jax", extras = ["cuda13"], marker = "extra == 'cuda13'", specifier = ">=0.8.0" },
     { name = "lxml", specifier = ">=6.0.2" },
@@ -3471,11 +3471,11 @@ wheels = [
 
 [[package]]
 name = "urllib3"
-version = "2.6.2"
+version = "2.6.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/1e/24/a2a2ed9addd907787d7aa0355ba36a6cadf1768b934c652ea78acbd59dcd/urllib3-2.6.2.tar.gz", hash = "sha256:016f9c98bb7e98085cb2b4b17b87d2c702975664e4f060c6532e64d1c1a5e797", size = 432930, upload-time = "2025-12-11T15:56:40.252Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c7/24/5f1b3bdffd70275f6661c76461e25f024d5a38a46f04aaca912426a2b1d3/urllib3-2.6.3.tar.gz", hash = "sha256:1b62b6884944a57dbe321509ab94fd4d3b307075e0c2eae991ac71ee15ad38ed", size = 435556, upload-time = "2026-01-07T16:24:43.925Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6d/b9/4095b668ea3678bf6a0af005527f39de12fb026516fb3df17495a733b7f8/urllib3-2.6.2-py3-none-any.whl", hash = "sha256:ec21cddfe7724fc7cb4ba4bea7aa8e2ef36f607a4bab81aa6ce42a13dc3f03dd", size = 131182, upload-time = "2025-12-11T15:56:38.584Z" },
+    { url = "https://files.pythonhosted.org/packages/39/08/aaaad47bc4e9dc8c725e68f9d04865dbcb2052843ff09c97b08904852d84/urllib3-2.6.3-py3-none-any.whl", hash = "sha256:bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4", size = 131584, upload-time = "2026-01-07T16:24:42.685Z" },
 ]
 
 [[package]]
