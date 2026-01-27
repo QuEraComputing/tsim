@@ -7,8 +7,8 @@ import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
-from pyzx.graph.base import BaseGraph
-from pyzx.graph.scalar import DyadicNumber
+from pyzx_param.graph.base import BaseGraph
+from pyzx_param.graph.scalar import DyadicNumber
 
 
 class CompiledScalarGraphs(eqx.Module):

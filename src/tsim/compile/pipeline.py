@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Literal
 
 import jax.numpy as jnp
-import pyzx as zx
-from pyzx.graph.base import BaseGraph
+import pyzx_param as zx
+from pyzx_param.graph.base import BaseGraph
 
 from tsim.compile.compile import CompiledScalarGraphs, compile_scalar_graphs
 from tsim.compile.stabrank import find_stab
