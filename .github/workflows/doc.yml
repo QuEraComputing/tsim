@@ -43,5 +43,5 @@ jobs:
       - name: Deploy preview
         uses: rossjrw/pr-preview-action@v1
         with:
-          pages-base-url: queracomputing.github.io
+          pages-base-url: queracomputing.github.io/tsim
           source-dir: ./site
