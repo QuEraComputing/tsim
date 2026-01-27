@@ -1,7 +1,12 @@
 :root {
   --md-primary-fg-color: #00ba7c;
   --md-accent-fg-color: #ff8208;
+}
 
+/* Hide the header and sidebar logo/icon */
+.md-header__button.md-logo,
+.md-nav__button.md-logo {
+  display: none;
 }
 
 
