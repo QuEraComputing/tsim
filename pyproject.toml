@@ -136,7 +136,6 @@ omit = ["src/tsim/external/*"]
 
 [tool.pytest.ini_options]
 testpaths = "test/"
-norecursedirs = ["pyzx"]
 
 [tool.pyright]
 include = ["src", "test"]
