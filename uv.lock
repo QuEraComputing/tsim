@@ -3466,9 +3466,9 @@ wheels = [
 ]
 
 [[package]]
-name = "pyzx"
+name = "pyzx-param"
 version = "0.9.0"
-source = { git = "https://github.com/rafaelha/pyzx.git?rev=paramzx#3784fc466505bccfdfa2e14fdd2bc737d7494432" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lark" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -3476,6 +3476,10 @@ dependencies = [
     { name = "pyperclip" },
     { name = "tqdm" },
     { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/07/e4/809af772f651f21ec33b81e28772ee353559b323f112d43764cf2413ef60/pyzx_param-0.9.0.tar.gz", hash = "sha256:3024b076ede675e29d14af185b1a68f9b4e1e567183c3dc71119d0a534cbea9f", size = 357612, upload-time = "2026-01-27T00:54:17.91Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6f/d2/278a012ad2631085e387c36ce1d1db5d082ceaf87fdfa938e3da324909f4/pyzx_param-0.9.0-py3-none-any.whl", hash = "sha256:8c5002aacbb85a0428c0f91f364467f55849eefa2707f8cdaf0bffed64c78776", size = 393806, upload-time = "2026-01-27T00:54:16.236Z" },
 ]
 
 [[package]]
@@ -4048,7 +4052,7 @@ dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pyperclip" },
-    { name = "pyzx" },
+    { name = "pyzx-param" },
     { name = "stim" },
     { name = "sympy" },
     { name = "tqdm" },
@@ -4112,7 +4116,7 @@ requires-dist = [
     { name = "lxml", specifier = ">=6.0.2" },
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "pyperclip", specifier = ">=1.11.0" },
-    { name = "pyzx", git = "https://github.com/rafaelha/pyzx.git?rev=paramzx" },
+    { name = "pyzx-param", specifier = ">=0.9.0" },
     { name = "stim", specifier = ">=1.15.0" },
     { name = "sympy", specifier = ">=1.14.0" },
     { name = "tqdm", specifier = ">=4.67.1" },

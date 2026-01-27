@@ -18,7 +18,7 @@ import numpy as np
 from jax import Array
 
 if TYPE_CHECKING:
-    from pyzx.graph.base import BaseGraph
+    from pyzx_param.graph.base import BaseGraph
 
     from tsim.compile.compile import CompiledScalarGraphs
 

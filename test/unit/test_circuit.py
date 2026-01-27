@@ -588,7 +588,7 @@ def test_diagram_timeslice_svg():
 
 def test_diagram_pyzx():
     c = Circuit("H 0\nCNOT 0 1")
-    with patch("pyzx.draw") as mock_draw:
+    with patch("pyzx_param.draw") as mock_draw:
         g = c.diagram(type="pyzx")
         mock_draw.assert_called_once()
     assert hasattr(g, "vertices")
@@ -597,7 +597,7 @@ def test_diagram_pyzx():
 
 def test_diagram_pyzx_empty():
     c = Circuit()
-    with patch("pyzx.draw") as mock_draw:
+    with patch("pyzx_param.draw") as mock_draw:
         g = c.diagram(type="pyzx")
         mock_draw.assert_not_called()
     assert len(g.vertices()) == 0
@@ -605,7 +605,7 @@ def test_diagram_pyzx_empty():
 
 def test_diagram_pyzx_meas():
     c = Circuit("H 0\nM 0")
-    with patch("pyzx.draw") as mock_draw:
+    with patch("pyzx_param.draw") as mock_draw:
         g = c.diagram(type="pyzx-meas")
         mock_draw.assert_called_once()
     assert hasattr(g, "vertices")
@@ -613,7 +613,7 @@ def test_diagram_pyzx_meas():
 
 def test_diagram_pyzx_dets():
     c = Circuit("H 0\nM 0\nDETECTOR rec[-1]")
-    with patch("pyzx.draw") as mock_draw:
+    with patch("pyzx_param.draw") as mock_draw:
         g = c.diagram(type="pyzx-dets")
         mock_draw.assert_called_once()
     assert hasattr(g, "vertices")
@@ -624,7 +624,7 @@ def test_diagram_pyzx_scale_horizontally(
     type: Literal["pyzx", "pyzx-meas", "pyzx-dets"],
 ):
     c = Circuit("H 0\nCNOT 0 1")
-    with patch("pyzx.draw") as mock_draw:
+    with patch("pyzx_param.draw") as mock_draw:
         g = c.diagram(type=type, scale_horizontally=2)
         mock_draw.assert_called_once()
     assert hasattr(g, "vertices")

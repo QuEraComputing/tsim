@@ -7,8 +7,8 @@ from fractions import Fraction
 from typing import Callable, Literal
 
 import numpy as np
-from pyzx.graph.graph_s import GraphS
-from pyzx.utils import EdgeType, VertexType
+from pyzx_param.graph.graph_s import GraphS
+from pyzx_param.utils import EdgeType, VertexType
 
 from tsim.noise.channels import (
     correlated_error_probs,

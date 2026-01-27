@@ -8,12 +8,12 @@ from fractions import Fraction
 from typing import TYPE_CHECKING, Any, Sequence
 
 import numpy as np
-import pyzx as zx
-from pyzx.graph.base import BaseGraph
-from pyzx.graph.graph import Graph
-from pyzx.graph.graph_s import GraphS
-from pyzx.graph.scalar import Scalar
-from pyzx.utils import VertexType
+import pyzx_param as zx
+from pyzx_param.graph.base import BaseGraph
+from pyzx_param.graph.graph import Graph
+from pyzx_param.graph.graph_s import GraphS
+from pyzx_param.graph.scalar import Scalar
+from pyzx_param.utils import VertexType
 
 from tsim.core.instructions import GraphRepresentation
 from tsim.core.parse import parse_stim_circuit
