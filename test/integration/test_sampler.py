@@ -3,7 +3,7 @@ from test.helpers.gen import gen_stim_circuit
 import numpy as np
 import pymatching
 import pytest
-import pyzx as zx
+import pyzx_param as zx
 import stim
 from tqdm import tqdm
 

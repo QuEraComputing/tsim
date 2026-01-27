@@ -2,8 +2,8 @@
 
 from typing import Iterable, Sequence
 
-import pyzx as zx
-from pyzx.graph.base import BaseGraph
+import pyzx_param as zx
+from pyzx_param.graph.base import BaseGraph
 
 
 def _decompose(

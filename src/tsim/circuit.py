@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Literal, cast, overload
 
-import pyzx as zx
+import pyzx_param as zx
 import stim
-from pyzx.graph.base import BaseGraph
+from pyzx_param.graph.base import BaseGraph
 
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
