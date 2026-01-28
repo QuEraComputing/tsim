@@ -140,6 +140,127 @@ css = [
 ]
 
 [[package]]
+name = "bloqade-tsim"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "equinox" },
+    { name = "galois" },
+    { name = "ipywidgets" },
+    { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "jax", version = "0.8.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "lxml" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pyperclip" },
+    { name = "pyzx-param" },
+    { name = "stim" },
+    { name = "sympy" },
+    { name = "tqdm" },
+]
+
+[package.optional-dependencies]
+cuda12 = [
+    { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, extra = ["cuda12"], marker = "python_full_version < '3.11'" },
+    { name = "jax", version = "0.8.2", source = { registry = "https://pypi.org/simple" }, extra = ["cuda12"], marker = "python_full_version >= '3.11'" },
+]
+cuda13 = [
+    { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "jax", version = "0.8.2", source = { registry = "https://pypi.org/simple" }, extra = ["cuda13"], marker = "python_full_version >= '3.11'" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "black", extra = ["jupyter"] },
+    { name = "coverage" },
+    { name = "ipykernel" },
+    { name = "ipython", version = "8.38.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "ipython", version = "9.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "isort" },
+    { name = "jupytext" },
+    { name = "matplotlib" },
+    { name = "mkdocs-jupyter" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "py-spy" },
+    { name = "pymatching" },
+    { name = "pyright", extra = ["nodejs"] },
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "rust-just" },
+    { name = "sinter" },
+    { name = "tesseract-decoder" },
+    { name = "tqdm" },
+]
+doc = [
+    { name = "griffe-inherited-docstrings" },
+    { name = "griffe-kirin" },
+    { name = "jupytext" },
+    { name = "mike" },
+    { name = "mkdocs" },
+    { name = "mkdocs-gen-files" },
+    { name = "mkdocs-jupyter" },
+    { name = "mkdocs-literate-nav" },
+    { name = "mkdocs-material" },
+    { name = "mkdocs-minify-plugin" },
+    { name = "mkdocstrings", extra = ["python"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "equinox", specifier = ">=0.13.2" },
+    { name = "galois", specifier = ">=0.4.7" },
+    { name = "ipywidgets", specifier = ">=8.1.8" },
+    { name = "jax", specifier = ">=0.6.0" },
+    { name = "jax", extras = ["cuda12"], marker = "extra == 'cuda12'", specifier = ">=0.6.0" },
+    { name = "jax", extras = ["cuda13"], marker = "extra == 'cuda13'", specifier = ">=0.6.0" },
+    { name = "lxml", specifier = ">=6.0.2" },
+    { name = "numpy", specifier = ">=2.2.6" },
+    { name = "pyperclip", specifier = ">=1.11.0" },
+    { name = "pyzx-param", specifier = ">=0.9.0" },
+    { name = "stim", specifier = ">=1.15.0" },
+    { name = "sympy", specifier = ">=1.14.0" },
+    { name = "tqdm", specifier = ">=4.67.1" },
+]
+provides-extras = ["cuda12", "cuda13"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "black", extras = ["jupyter"], specifier = ">=24.10.0" },
+    { name = "coverage", specifier = ">=7.6.4" },
+    { name = "ipykernel", specifier = ">=6.1.0" },
+    { name = "ipython", specifier = ">=8.29.0" },
+    { name = "isort", specifier = ">=5.13.2" },
+    { name = "jupytext", specifier = ">=1.17.2" },
+    { name = "matplotlib", specifier = ">=3.10.7" },
+    { name = "mkdocs-jupyter", specifier = ">=0.25.0" },
+    { name = "mypy", specifier = ">=1.13.0" },
+    { name = "pre-commit", specifier = ">=4.0.1" },
+    { name = "py-spy", specifier = ">=0.4.1" },
+    { name = "pymatching", specifier = ">=2.3.1" },
+    { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.388" },
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "ruff", specifier = ">=0.7.3" },
+    { name = "rust-just", specifier = ">=1.36.0" },
+    { name = "sinter", specifier = "~=1.16.dev0" },
+    { name = "tesseract-decoder", specifier = ">=0.1.1.dev20251113222502" },
+    { name = "tqdm", specifier = ">=4.67.1" },
+]
+doc = [
+    { name = "griffe-inherited-docstrings", specifier = ">=1.1.1" },
+    { name = "griffe-kirin", specifier = ">=0.1.0" },
+    { name = "jupytext", specifier = ">=1.17.2" },
+    { name = "mike", specifier = ">=2.1.3" },
+    { name = "mkdocs", specifier = ">=1.6.1" },
+    { name = "mkdocs-gen-files", specifier = ">=0.5.0" },
+    { name = "mkdocs-jupyter", specifier = ">=0.25.0" },
+    { name = "mkdocs-literate-nav", specifier = ">=0.6.1" },
+    { name = "mkdocs-material", specifier = ">=9.5.44" },
+    { name = "mkdocs-minify-plugin", specifier = ">=0.8.0" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.27.0" },
+]
+
+[[package]]
 name = "certifi"
 version = "2025.11.12"
 source = { registry = "https://pypi.org/simple" }
@@ -687,7 +808,7 @@ wheels = [
 
 [[package]]
 name = "equinox"
-version = "0.13.2"
+version = "0.13.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -696,9 +817,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "wadler-lindig" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/17/96a3b61a80c63c75974bd84318cee2818a23d60628e77fb6ed00eb623a69/equinox-0.13.2.tar.gz", hash = "sha256:509ad744ff99b7c684d45230d6890f9e78eac1a556d7a06db1eff664a3cac74f", size = 139386, upload-time = "2025-10-09T10:15:39.595Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2d/80/1704c3375a9c3cae4713a1be12b59dbd8ddff03808862264be622b333cd1/equinox-0.13.4.tar.gz", hash = "sha256:d4eed5d7f981a5ddcb7bc70e601707769fb4da20f777703cc6e01a6248af9758", size = 140981, upload-time = "2026-01-26T22:29:19.417Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c6/ce/c3bc53bdda6edb050859939a8e91e206123f96f50906e7ba7c027c6c535f/equinox-0.13.2-py3-none-any.whl", hash = "sha256:bc1ee687e4841945d8b776664403839639a05e2f2c02c1da353ff3386e0e43b0", size = 179235, upload-time = "2025-10-09T10:15:37.991Z" },
+    { url = "https://files.pythonhosted.org/packages/96/4c/eea4860010ba31d6793038073c66f2e1755c80d0adb704c4926d549e724a/equinox-0.13.4-py3-none-any.whl", hash = "sha256:8203b6b84c1641a58aad07c040c171fc5a38e2c3bc90c5feb2f221d398354378", size = 181231, upload-time = "2026-01-26T22:29:17.859Z" },
 ]
 
 [[package]]
@@ -799,7 +920,7 @@ wheels = [
 
 [[package]]
 name = "galois"
-version = "0.4.9"
+version = "0.4.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numba" },
@@ -807,9 +928,9 @@ dependencies = [
     { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/04/5fcdd0aa492581bbc080e2deaf136c6055feecdfb03a8f325386039fa77b/galois-0.4.9.tar.gz", hash = "sha256:312aff381ce94c0da3b8d7b8c195c1ed14bcf4c355c09cada101601e6d414075", size = 7395542, upload-time = "2025-12-21T18:22:20.125Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/13/54/ede3562049f1bb7f9546cbd86af8794b49733a835b0d1c40fedfbbcdbcc5/galois-0.4.10.tar.gz", hash = "sha256:94a371c995193a66798fceb079320dff154c21a0e3e0de388c06ba26f8eb574a", size = 7401288, upload-time = "2026-01-02T02:59:04.569Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d7/a6/005c46c24e22c6571f7562ef26dc36aa6c1125d9738a8ef45d2027e43bd1/galois-0.4.9-py3-none-any.whl", hash = "sha256:10c518818ae2bde855d196dbe67684ba16fb5e87a24070aa82d09d1aff71cfba", size = 4194064, upload-time = "2025-12-21T18:22:18.309Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/16/91e376aa4cad58203448510c907c267cce524d1fd2dd7f9f875f75b8584e/galois-0.4.10-py3-none-any.whl", hash = "sha256:9badf669915c92d9f298c7799cadad112baa21f53d816f427f55c4ec6ee9a2dc", size = 4196886, upload-time = "2026-01-02T02:59:02.332Z" },
 ]
 
 [[package]]
@@ -1318,14 +1439,14 @@ wheels = [
 
 [[package]]
 name = "jaxtyping"
-version = "0.3.4"
+version = "0.3.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "wadler-lindig" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5e/fe/90f8884647073ea77a0fc5ec27e1605288591c89e60e53a6dd1d849ca6fc/jaxtyping-0.3.4.tar.gz", hash = "sha256:b4aac576a1b6c62a363f76f543f21c7cd4c7bb8714816c2c875f28b7abcdb770", size = 45665, upload-time = "2025-12-15T19:26:06.056Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5d/25/0b2c2cd048fe03561d3ed8aa9d0242903606c31ee0ef329b2adae79ebc79/jaxtyping-0.3.6.tar.gz", hash = "sha256:88e5450c96a1bcaf37c74ae5ef60084b5d307727a198d31cc7eaeba9db3f42e7", size = 45681, upload-time = "2026-01-24T17:37:48.131Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cb/92/f30138ffa65d51791f85ec057eb76ae8eab125ed20f8f337918df3f1c775/jaxtyping-0.3.4-py3-none-any.whl", hash = "sha256:70e438db2f361575d04cccea50f77f9c8fe92f8b2086dc0ce89e5f1658bebaab", size = 56017, upload-time = "2025-12-15T19:26:04.835Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/87/944bcf3cb5b82a1f7fb86e825e866eb3a72220d4bb0f2c163d7b122772f2/jaxtyping-0.3.6-py3-none-any.whl", hash = "sha256:179df02f6b5b704d2ebafd1946cc857e745b489328d668ff4f8555b02e8aa944", size = 56053, upload-time = "2026-01-24T17:37:46.472Z" },
 ]
 
 [[package]]
@@ -4036,127 +4157,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/eb/79/72064e6a701c2183016abbbfedaba506d81e30e232a68c9f0d6f6fcd1574/traitlets-5.14.3.tar.gz", hash = "sha256:9ed0579d3502c94b4b3732ac120375cda96f923114522847de4b3bb98b96b6b7", size = 161621, upload-time = "2024-04-19T11:11:49.746Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/c0/8f5d070730d7836adc9c9b6408dec68c6ced86b304a9b26a14df072a6e8c/traitlets-5.14.3-py3-none-any.whl", hash = "sha256:b74e89e397b1ed28cc831db7aea759ba6640cb3de13090ca145426688ff1ac4f", size = 85359, upload-time = "2024-04-19T11:11:46.763Z" },
-]
-
-[[package]]
-name = "tsim"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "equinox" },
-    { name = "galois" },
-    { name = "ipywidgets" },
-    { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "jax", version = "0.8.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "lxml" },
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "pyperclip" },
-    { name = "pyzx-param" },
-    { name = "stim" },
-    { name = "sympy" },
-    { name = "tqdm" },
-]
-
-[package.optional-dependencies]
-cuda12 = [
-    { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, extra = ["cuda12"], marker = "python_full_version < '3.11'" },
-    { name = "jax", version = "0.8.2", source = { registry = "https://pypi.org/simple" }, extra = ["cuda12"], marker = "python_full_version >= '3.11'" },
-]
-cuda13 = [
-    { name = "jax", version = "0.6.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "jax", version = "0.8.2", source = { registry = "https://pypi.org/simple" }, extra = ["cuda13"], marker = "python_full_version >= '3.11'" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "black", extra = ["jupyter"] },
-    { name = "coverage" },
-    { name = "ipykernel" },
-    { name = "ipython", version = "8.38.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "ipython", version = "9.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "isort" },
-    { name = "jupytext" },
-    { name = "matplotlib" },
-    { name = "mkdocs-jupyter" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "py-spy" },
-    { name = "pymatching" },
-    { name = "pyright", extra = ["nodejs"] },
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "rust-just" },
-    { name = "sinter" },
-    { name = "tesseract-decoder" },
-    { name = "tqdm" },
-]
-doc = [
-    { name = "griffe-inherited-docstrings" },
-    { name = "griffe-kirin" },
-    { name = "jupytext" },
-    { name = "mike" },
-    { name = "mkdocs" },
-    { name = "mkdocs-gen-files" },
-    { name = "mkdocs-jupyter" },
-    { name = "mkdocs-literate-nav" },
-    { name = "mkdocs-material" },
-    { name = "mkdocs-minify-plugin" },
-    { name = "mkdocstrings", extra = ["python"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "equinox", specifier = ">=0.13.2" },
-    { name = "galois", specifier = ">=0.4.7" },
-    { name = "ipywidgets", specifier = ">=8.1.8" },
-    { name = "jax", specifier = ">=0.6.0" },
-    { name = "jax", extras = ["cuda12"], marker = "extra == 'cuda12'", specifier = ">=0.6.0" },
-    { name = "jax", extras = ["cuda13"], marker = "extra == 'cuda13'", specifier = ">=0.6.0" },
-    { name = "lxml", specifier = ">=6.0.2" },
-    { name = "numpy", specifier = ">=2.2.6" },
-    { name = "pyperclip", specifier = ">=1.11.0" },
-    { name = "pyzx-param", specifier = ">=0.9.0" },
-    { name = "stim", specifier = ">=1.15.0" },
-    { name = "sympy", specifier = ">=1.14.0" },
-    { name = "tqdm", specifier = ">=4.67.1" },
-]
-provides-extras = ["cuda12", "cuda13"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "black", extras = ["jupyter"], specifier = ">=24.10.0" },
-    { name = "coverage", specifier = ">=7.6.4" },
-    { name = "ipykernel", specifier = ">=6.1.0" },
-    { name = "ipython", specifier = ">=8.29.0" },
-    { name = "isort", specifier = ">=5.13.2" },
-    { name = "jupytext", specifier = ">=1.17.2" },
-    { name = "matplotlib", specifier = ">=3.10.7" },
-    { name = "mkdocs-jupyter", specifier = ">=0.25.0" },
-    { name = "mypy", specifier = ">=1.13.0" },
-    { name = "pre-commit", specifier = ">=4.0.1" },
-    { name = "py-spy", specifier = ">=0.4.1" },
-    { name = "pymatching", specifier = ">=2.3.1" },
-    { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.388" },
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "ruff", specifier = ">=0.7.3" },
-    { name = "rust-just", specifier = ">=1.36.0" },
-    { name = "sinter", specifier = "~=1.16.dev0" },
-    { name = "tesseract-decoder", specifier = ">=0.1.1.dev20251113222502" },
-    { name = "tqdm", specifier = ">=4.67.1" },
-]
-doc = [
-    { name = "griffe-inherited-docstrings", specifier = ">=1.1.1" },
-    { name = "griffe-kirin", specifier = ">=0.1.0" },
-    { name = "jupytext", specifier = ">=1.17.2" },
-    { name = "mike", specifier = ">=2.1.3" },
-    { name = "mkdocs", specifier = ">=1.6.1" },
-    { name = "mkdocs-gen-files", specifier = ">=0.5.0" },
-    { name = "mkdocs-jupyter", specifier = ">=0.25.0" },
-    { name = "mkdocs-literate-nav", specifier = ">=0.6.1" },
-    { name = "mkdocs-material", specifier = ">=9.5.44" },
-    { name = "mkdocs-minify-plugin", specifier = ">=0.8.0" },
-    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.27.0" },
 ]
 
 [[package]]

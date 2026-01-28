@@ -7,29 +7,29 @@ tsim requires Python 3.10 or later.
 We recommend using [`uv`](https://docs.astral.sh/uv/) for dependency management.
 
 ```bash
-uv add git+https://github.com/QuEraComputing/tsim.git
+uv add bloqade-tsim
 ```
 
 For GPU acceleration with CUDA:
 
 ```bash
 # For CUDA 13
-uv add "git+https://github.com/QuEraComputing/tsim.git#egg=tsim[cuda13]"
+uv add "bloqade-tsim[cuda13]"
 
 # For CUDA 12
-uv add "git+https://github.com/QuEraComputing/tsim.git#egg=tsim[cuda12]"
+uv add "bloqade-tsim[cuda12]"
 ```
 
 ## Using pip
 
 ```bash
-pip install git+https://github.com/QuEraComputing/tsim.git
+pip install bloqade-tsim
 ```
 
 For GPU acceleration with CUDA:
 
 ```bash
-pip install "git+https://github.com/QuEraComputing/tsim.git#egg=tsim[cuda13]"
+pip install "bloqade-tsim[cuda13]"
 ```
 
 ## Development Setup
@@ -48,4 +48,4 @@ Install pre-commit hooks to run linting checks automatically:
 pre-commit install
 ```
 
-This will run formatters and linters (black, isort, ruff, mypy) before each commit.
+This will run formatters and linters (black, isort, ruff, pyright) before each commit.
