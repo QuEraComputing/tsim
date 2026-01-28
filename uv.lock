@@ -217,7 +217,7 @@ requires-dist = [
     { name = "lxml", specifier = ">=6.0.2" },
     { name = "numpy", specifier = ">=2.2.6" },
     { name = "pyperclip", specifier = ">=1.11.0" },
-    { name = "pyzx-param", specifier = ">=0.9.0" },
+    { name = "pyzx-param", specifier = ">=0.9.1" },
     { name = "stim", specifier = ">=1.15.0" },
     { name = "sympy", specifier = ">=1.14.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
@@ -3588,7 +3588,7 @@ wheels = [
 
 [[package]]
 name = "pyzx-param"
-version = "0.9.0"
+version = "0.9.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lark" },
@@ -3598,9 +3598,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/07/e4/809af772f651f21ec33b81e28772ee353559b323f112d43764cf2413ef60/pyzx_param-0.9.0.tar.gz", hash = "sha256:3024b076ede675e29d14af185b1a68f9b4e1e567183c3dc71119d0a534cbea9f", size = 357612, upload-time = "2026-01-27T00:54:17.91Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/83/fd/7d5e164d381934fd20474ea1211784c3ad2715f53e2b3f5db534c4f71339/pyzx_param-0.9.1.tar.gz", hash = "sha256:d50dac3d2f1e0523573551aeb1105123952a86519b328aeee151fc8b256f4441", size = 357605, upload-time = "2026-01-28T21:46:31.563Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6f/d2/278a012ad2631085e387c36ce1d1db5d082ceaf87fdfa938e3da324909f4/pyzx_param-0.9.0-py3-none-any.whl", hash = "sha256:8c5002aacbb85a0428c0f91f364467f55849eefa2707f8cdaf0bffed64c78776", size = 393806, upload-time = "2026-01-27T00:54:16.236Z" },
+    { url = "https://files.pythonhosted.org/packages/22/fe/89b12a81be9c7c4c6b14776ff7414af0f53a38b77bdc7e8a5b4d9bd9a843/pyzx_param-0.9.1-py3-none-any.whl", hash = "sha256:a90d65025f55cae6586c1cb5d3f6c17be6271e02e5ebdbb2e78117f1394ff28e", size = 393796, upload-time = "2026-01-28T21:46:29.502Z" },
 ]
 
 [[package]]
