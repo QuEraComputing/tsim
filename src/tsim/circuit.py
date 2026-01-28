@@ -38,7 +38,7 @@ class Circuit:
                 empty circuit.
 
         """
-        self._stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text))
+        self._stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text)).flattened()
 
     @classmethod
     def from_stim_program(cls, stim_circuit: stim.Circuit) -> Circuit:
@@ -63,6 +63,7 @@ class Circuit:
         self._stim_circ.append_from_stim_program_text(
             shorthand_to_stim(stim_program_text)
         )
+        self._stim_circ = self._stim_circ.flattened()
 
     @classmethod
     def from_file(cls, filename: str) -> Circuit:
@@ -77,7 +78,7 @@ class Circuit:
         """
         with open(filename, "r", encoding="utf-8") as f:
             stim_program_text = f.read()
-        stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text))
+        stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text)).flattened()
         return cls.from_stim_program(stim_circ)
 
     def __repr__(self) -> str:
