@@ -16,6 +16,7 @@ nav:
   - Tutorials:
     - demos/encoding_demo.ipynb
     - demos/magic_state_distillation.ipynb
+    - demos/from_stim_to_tsim.ipynb
   - API Reference: reference/
 
 
