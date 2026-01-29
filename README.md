@@ -7,30 +7,29 @@ It is based on [Sutcliffe and Kissinger (2025)](https://arxiv.org/abs/2403.06777
 
 ## Installation
 
-Tsim is not yet released on PyPI. Install directly from GitHub:
-
+Install with pip:
 ```bash
-pip install git+https://github.com/QuEraComputing/tsim.git
+pip install bloqade-tsim
 ```
 
 Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv add git+https://github.com/QuEraComputing/tsim.git
+uv add bloqade-tsim
 ```
 
 If your machine has a GPU, use:
 ```bash
-pip install "git+https://github.com/QuEraComputing/tsim.git#egg=tsim[cuda13]"
+pip install "bloqade-tsim[cuda13]"
 ```
 
 
 ## Quick Start
-An introductory tutorial is available [here](https://github.com/QuEraComputing/tsim/blob/main/docs/demos/encoding_demo.ipynb).
+An introductory tutorial is available [here](https://queracomputing.github.io/tsim/latest/demos/encoding_demo/).
 
-For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and currently supports all [Stim gates](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference).
+For many existing scripts, replacing `stim` with `tsim` should just work. TSIM mirrors the STIM API and currently supports all [STIM gates](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference).
 
-Additionally, Tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, and `U3` (see below for more details).
+Additionally, TSIM supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, and `U3` (see below for more details).
 ```python
 import tsim
 
@@ -52,8 +51,8 @@ detector_sampler = c.compile_detector_sampler()
 samples = detector_sampler.sample(shots=100)
 ```
 
-Tsim supports non-deterministic detectors and observables. An important consequence is that
-Tsim will simulate actual detector samples, whereas Stim only reports detection flips (i.e. detection samples XORed with
+TSIM supports non-deterministic detectors and observables. An important consequence is that
+TSIM will simulate actual detector samples, whereas STIM only reports detection flips (i.e. detection samples XORed with
 a noiseless reference sample). Concretely,
 ```python
 c = tsim.Circuit(
@@ -69,21 +68,21 @@ print(samples)
 ```
 will report `True` values, whereas the same circuit would result in `False` values in Stim.
 
-## What is Tsim?
+## What is TSIM?
 
-Tsim is a quantum circuit simulator that supports fast sampling from Clifford+T circuits with Pauli noise. Its underlying algorithm is stabilizer rank decomposition, together with ZX-calculus simplification rules.
+TSIM is a quantum circuit simulator that supports fast sampling from Clifford+T circuits with Pauli noise. Its underlying algorithm is stabilizer rank decomposition, together with ZX-calculus simplification rules.
 
-As such, Tsim can simulate hundreds of qubits, as long as the circuit
+As such, TSIM can simulate hundreds of qubits, as long as the circuit
 does not have too many non-Clifford instructions.
 
-Just like Stim, Tsim compiles circuits into measurement or detector samplers.
+Just like STIM, TSIM compiles circuits into measurement or detector samplers.
 These samplers manage a contiguous data structure that allows for efficient sampling on CPU or GPU, following the approach described in [Sutcliffe and Kissinger (2025)](https://arxiv.org/abs/2403.06777).
 
 ## Supported Instructions
 
-Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference).
+TSIM supports all [STIM instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference).
 
-In addition, Tsim supports the following non-Clifford instructions:
+In addition, TSIM supports the following non-Clifford instructions:
 
 ### 'T' and 'T_DAG'
 

@@ -17,7 +17,7 @@ If the checks fail, the commit will be rejected.
 We use `pytest` for testing. To run the tests, simply run:
 
 ```bash
-pytest
+uv run pytest
 ```
 
 
@@ -30,7 +30,7 @@ good-to-have practices:
 
 - try not to use abbreviation as names, unless it's a common abbreviation like `idx` for `index`
 - try not create a lot of duplicated name prefix unless the extra information is necessary when accessing the class object.
-- try to use `snake_case` for naming variables and functions, and `CamelCase` for classes.
+- use `snake_case` for naming variables and functions, and `CamelCase` for classes.
 
 ### Comments
 
@@ -42,7 +42,7 @@ good-to-have practices:
 We use `just` for managing command line tools and scripts. It should be installed when you run `uv sync`. To build the documentation, simply run:
 
 ```bash
-just doc
+uv run just doc
 ```
 
-This will launch a local server to preview the documentation. You can also run `just doc-build` to build the documentation without launching the server.
+This will launch a local server to preview the documentation. You can also run `uv run just doc-build` to build the documentation without launching the server.

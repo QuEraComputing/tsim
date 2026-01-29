@@ -47,13 +47,13 @@ samples = detector_sampler.sample(shots=100)
 ## Installation
 
 ```bash
-uv add git+https://github.com/QuEraComputing/tsim.git
+uv add bloqade-tsim
 ```
 
 For GPU acceleration, use
 
 ```bash
-uv add "git+https://github.com/QuEraComputing/tsim.git#egg=tsim[cuda13]"
+uv add "bloqade-tsim[cuda13]"
 ```
 
 See [Installation](install.md) for more options.
