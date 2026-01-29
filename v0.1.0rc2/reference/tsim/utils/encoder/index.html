@@ -1,0 +1,416 @@
+<!doctype html><html lang=en class=no-js> <head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=description content=tsim><link href=https://github.com/QuEraComputing/tsim/v0.1.0rc2/reference/tsim/utils/encoder/ rel=canonical><link href=../diagram/ rel=prev><link href=../linalg/ rel=next><link rel=icon href=../../../../assets/images/favicon.png><meta name=generator content="mkdocs-1.6.1, mkdocs-material-9.7.1"><title>encoder - tsim</title><link rel=stylesheet href=../../../../assets/stylesheets/main.484c7ddc.min.css><link rel=stylesheet href=../../../../assets/stylesheets/palette.ab4e12ef.min.css><link rel=preconnect href=https://fonts.gstatic.com crossorigin><link rel=stylesheet href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback"><style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style><link rel=stylesheet href=../../../../assets/_mkdocstrings.css><link rel=stylesheet href=../../../../stylesheets/extra.css><link rel=stylesheet href=https://unpkg.com/katex@0/dist/katex.min.css><script>__md_scope=new URL("../../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script></head> <body dir=ltr data-md-color-scheme=default data-md-color-primary=custom data-md-color-accent=custom> <input class=md-toggle data-md-toggle=drawer type=checkbox id=__drawer autocomplete=off> <input class=md-toggle data-md-toggle=search type=checkbox id=__search autocomplete=off> <label class=md-overlay for=__drawer></label> <div data-md-component=skip> <a href=#tsim.utils.encoder class=md-skip> Skip to content </a> </div> <div data-md-component=announce> </div> <div data-md-color-scheme=default data-md-component=outdated hidden> </div> <header class=md-header data-md-component=header> <nav class="md-header__inner md-grid" aria-label=Header> <a href=../../../.. title=tsim class="md-header__button md-logo" aria-label=tsim data-md-component=logo> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg> </a> <label class="md-header__button md-icon" for=__drawer> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg> </label> <div class=md-header__title data-md-component=header-title> <div class=md-header__ellipsis> <div class=md-header__topic> <span class=md-ellipsis> tsim </span> </div> <div class=md-header__topic data-md-component=header-topic> <span class=md-ellipsis> encoder </span> </div> </div> </div> <form class=md-header__option data-md-component=palette> <input class=md-option data-md-color-media data-md-color-scheme=default data-md-color-primary=custom data-md-color-accent=custom aria-label="Switch to dark mode" type=radio name=__palette id=__palette_0> <label class="md-header__button md-icon" title="Switch to dark mode" for=__palette_1 hidden> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg> </label> <input class=md-option data-md-color-media data-md-color-scheme=slate data-md-color-primary=custom data-md-color-accent=custom aria-label="Switch to light mode" type=radio name=__palette id=__palette_1> <label class="md-header__button md-icon" title="Switch to light mode" for=__palette_0 hidden> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg> </label> </form> <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script> <label class="md-header__button md-icon" for=__search> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg> </label> <div class=md-search data-md-component=search role=dialog> <label class=md-search__overlay for=__search></label> <div class=md-search__inner role=search> <form class=md-search__form name=search> <input type=text class=md-search__input name=query aria-label=Search placeholder=Search autocapitalize=off autocorrect=off autocomplete=off spellcheck=false data-md-component=search-query required> <label class="md-search__icon md-icon" for=__search> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg> </label> <nav class=md-search__options aria-label=Search> <button type=reset class="md-search__icon md-icon" title=Clear aria-label=Clear tabindex=-1> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg> </button> </nav> <div class=md-search__suggest data-md-component=search-suggest></div> </form> <div class=md-search__output> <div class=md-search__scrollwrap tabindex=0 data-md-scrollfix> <div class=md-search-result data-md-component=search-result> <div class=md-search-result__meta> Initializing search </div> <ol class=md-search-result__list role=presentation></ol> </div> </div> </div> </div> </div> <div class=md-header__source> <a href=https://github.com/QuEraComputing/tsim title="Go to repository" class=md-source data-md-component=source> <div class="md-source__icon md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 448 512"><!-- Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg> </div> <div class=md-source__repository> tsim </div> </a> </div> </nav> </header> <div class=md-container data-md-component=container> <nav class=md-tabs aria-label=Tabs data-md-component=tabs> <div class=md-grid> <ul class=md-tabs__list> <li class=md-tabs__item> <a href=../../../.. class=md-tabs__link> Home </a> </li> <li class=md-tabs__item> <a href=../../../../demos/encoding_demo/ class=md-tabs__link> Tutorials </a> </li> <li class="md-tabs__item md-tabs__item--active"> <a href=../../ class=md-tabs__link> API Reference </a> </li> </ul> </div> </nav> <main class=md-main data-md-component=main> <div class="md-main__inner md-grid"> <div class="md-sidebar md-sidebar--primary" data-md-component=sidebar data-md-type=navigation> <div class=md-sidebar__scrollwrap> <div class=md-sidebar__inner> <nav class="md-nav md-nav--primary md-nav--lifted" aria-label=Navigation data-md-level=0> <label class=md-nav__title for=__drawer> <a href=../../../.. title=tsim class="md-nav__button md-logo" aria-label=tsim data-md-component=logo> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg> </a> tsim </label> <div class=md-nav__source> <a href=https://github.com/QuEraComputing/tsim title="Go to repository" class=md-source data-md-component=source> <div class="md-source__icon md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 448 512"><!-- Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg> </div> <div class=md-source__repository> tsim </div> </a> </div> <ul class=md-nav__list data-md-scrollfix> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_1> <div class="md-nav__link md-nav__container"> <a href=../../../.. class="md-nav__link "> <span class=md-ellipsis> Home </span> </a> <label class="md-nav__link " for=__nav_1 id=__nav_1_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=1 aria-labelledby=__nav_1_label aria-expanded=false> <label class=md-nav__title for=__nav_1> <span class="md-nav__icon md-icon"></span> Home </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../../../install/ class=md-nav__link> <span class=md-ellipsis> Installation </span> </a> </li> <li class=md-nav__item> <a href=../../../../demos/overview/ class=md-nav__link> <span class=md-ellipsis> Overview </span> </a> </li> <li class=md-nav__item> <a href=../../../../contrib/ class=md-nav__link> <span class=md-ellipsis> Contributing </span> </a> </li> </ul> </nav> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_2> <label class=md-nav__link for=__nav_2 id=__nav_2_label tabindex=0> <span class=md-ellipsis> Tutorials </span> <span class="md-nav__icon md-icon"></span> </label> <nav class=md-nav data-md-level=1 aria-labelledby=__nav_2_label aria-expanded=false> <label class=md-nav__title for=__nav_2> <span class="md-nav__icon md-icon"></span> Tutorials </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../../../demos/encoding_demo/ class=md-nav__link> <span class=md-ellipsis> Quantum State Encoding with a Color Code </span> </a> </li> <li class=md-nav__item> <a href=../../../../demos/magic_state_distillation/ class=md-nav__link> <span class=md-ellipsis> Logical magic state distillation </span> </a> </li> <li class=md-nav__item> <a href=../../../../demos/from_stim_to_tsim/ class=md-nav__link> <span class=md-ellipsis> From STIM to TSIM </span> </a> </li> </ul> </nav> </li> <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3 checked> <label class=md-nav__link for=__nav_3 id=__nav_3_label tabindex> <span class=md-ellipsis> API Reference </span> <span class="md-nav__icon md-icon"></span> </label> <nav class=md-nav data-md-level=1 aria-labelledby=__nav_3_label aria-expanded=true> <label class=md-nav__title for=__nav_3> <span class="md-nav__icon md-icon"></span> API Reference </label> <ul class=md-nav__list data-md-scrollfix> <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1 checked> <div class="md-nav__link md-nav__container"> <a href=../../ class="md-nav__link "> <span class=md-ellipsis> tsim </span> </a> <label class="md-nav__link " for=__nav_3_1 id=__nav_3_1_label tabindex> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=2 aria-labelledby=__nav_3_1_label aria-expanded=true> <label class=md-nav__title for=__nav_3_1> <span class="md-nav__icon md-icon"></span> tsim </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../circuit/ class=md-nav__link> <span class=md-ellipsis> circuit </span> </a> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1_3> <div class="md-nav__link md-nav__container"> <a href=../../compile/ class="md-nav__link "> <span class=md-ellipsis> compile </span> </a> <label class="md-nav__link " for=__nav_3_1_3 id=__nav_3_1_3_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=3 aria-labelledby=__nav_3_1_3_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1_3> <span class="md-nav__icon md-icon"></span> compile </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../compile/compile/ class=md-nav__link> <span class=md-ellipsis> compile </span> </a> </li> <li class=md-nav__item> <a href=../../compile/evaluate/ class=md-nav__link> <span class=md-ellipsis> evaluate </span> </a> </li> <li class=md-nav__item> <a href=../../compile/pipeline/ class=md-nav__link> <span class=md-ellipsis> pipeline </span> </a> </li> <li class=md-nav__item> <a href=../../compile/stabrank/ class=md-nav__link> <span class=md-ellipsis> stabrank </span> </a> </li> </ul> </nav> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1_4> <div class="md-nav__link md-nav__container"> <a href=../../core/ class="md-nav__link "> <span class=md-ellipsis> core </span> </a> <label class="md-nav__link " for=__nav_3_1_4 id=__nav_3_1_4_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=3 aria-labelledby=__nav_3_1_4_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1_4> <span class="md-nav__icon md-icon"></span> core </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../core/exact_scalar/ class=md-nav__link> <span class=md-ellipsis> exact_scalar </span> </a> </li> <li class=md-nav__item> <a href=../../core/graph/ class=md-nav__link> <span class=md-ellipsis> graph </span> </a> </li> <li class=md-nav__item> <a href=../../core/instructions/ class=md-nav__link> <span class=md-ellipsis> instructions </span> </a> </li> <li class=md-nav__item> <a href=../../core/parse/ class=md-nav__link> <span class=md-ellipsis> parse </span> </a> </li> <li class=md-nav__item> <a href=../../core/types/ class=md-nav__link> <span class=md-ellipsis> types </span> </a> </li> </ul> </nav> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1_5> <div class="md-nav__link md-nav__container"> <a href=../../noise/ class="md-nav__link "> <span class=md-ellipsis> noise </span> </a> <label class="md-nav__link " for=__nav_3_1_5 id=__nav_3_1_5_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=3 aria-labelledby=__nav_3_1_5_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1_5> <span class="md-nav__icon md-icon"></span> noise </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../noise/channels/ class=md-nav__link> <span class=md-ellipsis> channels </span> </a> </li> <li class=md-nav__item> <a href=../../noise/dem/ class=md-nav__link> <span class=md-ellipsis> dem </span> </a> </li> </ul> </nav> </li> <li class=md-nav__item> <a href=../../sampler/ class=md-nav__link> <span class=md-ellipsis> sampler </span> </a> </li> <li class="md-nav__item md-nav__item--active md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1_7 checked> <div class="md-nav__link md-nav__container"> <a href=../ class="md-nav__link "> <span class=md-ellipsis> utils </span> </a> <label class="md-nav__link " for=__nav_3_1_7 id=__nav_3_1_7_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=3 aria-labelledby=__nav_3_1_7_label aria-expanded=true> <label class=md-nav__title for=__nav_3_1_7> <span class="md-nav__icon md-icon"></span> utils </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../diagram/ class=md-nav__link> <span class=md-ellipsis> diagram </span> </a> </li> <li class="md-nav__item md-nav__item--active"> <input class="md-nav__toggle md-toggle" type=checkbox id=__toc> <label class="md-nav__link md-nav__link--active" for=__toc> <span class=md-ellipsis> encoder </span> <span class="md-nav__icon md-icon"></span> </label> <a href=./ class="md-nav__link md-nav__link--active"> <span class=md-ellipsis> encoder </span> </a> <nav class="md-nav md-nav--secondary" aria-label="Table of contents"> <label class=md-nav__title for=__toc> <span class="md-nav__icon md-icon"></span> Table of contents </label> <ul class=md-nav__list data-md-component=toc data-md-scrollfix> <li class=md-nav__item> <a href=#tsim.utils.encoder class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-module"></code>&nbsp;encoder </span> </a> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.ColorEncoder5 class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;ColorEncoder5 </span> </a> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.SteaneEncoder class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;SteaneEncoder </span> </a> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.TransversalEncoder class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;TransversalEncoder </span> </a> <nav class=md-nav aria-label= TransversalEncoder> <ul class=md-nav__list> <li class=md-nav__item> <a href=#tsim.utils.encoder.TransversalEncoder.diagram class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;diagram </span> </a> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.TransversalEncoder.encode_transversally class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;encode_transversally </span> </a> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.TransversalEncoder.encoding_flow_generators class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;encoding_flow_generators </span> </a> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.TransversalEncoder.initialize class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;initialize </span> </a> </li> </ul> </nav> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.broadcast_targets class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;broadcast_targets </span> </a> </li> </ul> </nav> </li> <li class=md-nav__item> <a href=../linalg/ class=md-nav__link> <span class=md-ellipsis> linalg </span> </a> </li> <li class=md-nav__item> <a href=../program_text/ class=md-nav__link> <span class=md-ellipsis> program_text </span> </a> </li> </ul> </nav> </li> </ul> </nav> </li> </ul> </nav> </li> </ul> </nav> </div> </div> </div> <div class="md-sidebar md-sidebar--secondary" data-md-component=sidebar data-md-type=toc> <div class=md-sidebar__scrollwrap> <div class=md-sidebar__inner> <nav class="md-nav md-nav--secondary" aria-label="Table of contents"> <label class=md-nav__title for=__toc> <span class="md-nav__icon md-icon"></span> Table of contents </label> <ul class=md-nav__list data-md-component=toc data-md-scrollfix> <li class=md-nav__item> <a href=#tsim.utils.encoder class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-module"></code>&nbsp;encoder </span> </a> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.ColorEncoder5 class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;ColorEncoder5 </span> </a> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.SteaneEncoder class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;SteaneEncoder </span> </a> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.TransversalEncoder class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;TransversalEncoder </span> </a> <nav class=md-nav aria-label= TransversalEncoder> <ul class=md-nav__list> <li class=md-nav__item> <a href=#tsim.utils.encoder.TransversalEncoder.diagram class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;diagram </span> </a> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.TransversalEncoder.encode_transversally class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;encode_transversally </span> </a> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.TransversalEncoder.encoding_flow_generators class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;encoding_flow_generators </span> </a> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.TransversalEncoder.initialize class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;initialize </span> </a> </li> </ul> </nav> </li> <li class=md-nav__item> <a href=#tsim.utils.encoder.broadcast_targets class=md-nav__link> <span class=md-ellipsis> <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;broadcast_targets </span> </a> </li> </ul> </nav> </div> </div> </div> <div class=md-content data-md-component=content> <article class="md-content__inner md-typeset"> <a href=https://github.com/QuEraComputing/tsim/edit/main/src/tsim/utils/encoder.py title="Edit this page" class="md-content__button md-icon" rel=edit> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg> </a> <a href=https://github.com/QuEraComputing/tsim/raw/main/src/tsim/utils/encoder.py title="View source of this page" class="md-content__button md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M17 18c.56 0 1 .44 1 1s-.44 1-1 1-1-.44-1-1 .44-1 1-1m0-3c-2.73 0-5.06 1.66-6 4 .94 2.34 3.27 4 6 4s5.06-1.66 6-4c-.94-2.34-3.27-4-6-4m0 6.5a2.5 2.5 0 0 1-2.5-2.5 2.5 2.5 0 0 1 2.5-2.5 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5M9.27 20H6V4h7v5h5v4.07c.7.08 1.36.25 2 .49V8l-6-6H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h4.5a8.2 8.2 0 0 1-1.23-2"/></svg> </a> <h1>encoder</h1> <div class="doc doc-object doc-module"> <a id=tsim.utils.encoder></a> <div class="doc doc-contents first"> <p>Transversal encoder utilities for QEC code experiments.</p> <div class="doc doc-children"> <div class="doc doc-object doc-class"> <h2 id=tsim.utils.encoder.ColorEncoder5 class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-class"></code> <span class="doc doc-object-name doc-class-name">ColorEncoder5</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>ColorEncoder5</span><span class=p>()</span>
+</code></pre></div> <div class="doc doc-contents "> <p class="doc doc-class-bases"> Bases: <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">TransversalEncoder</span> (<code>tsim.utils.encoder.TransversalEncoder</code>)' href=#tsim.utils.encoder.TransversalEncoder>TransversalEncoder</a></code></p> <div style="display: none"> <a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">ColorEncoder5</span> (<code>tsim.utils.encoder.ColorEncoder5</code>)' href=#tsim.utils.encoder.ColorEncoder5 id=mermaid-link-tsim.utils.encoder.ColorEncoder5></a> <a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">TransversalEncoder</span> (<code>tsim.utils.encoder.TransversalEncoder</code>)' href=#tsim.utils.encoder.TransversalEncoder id=mermaid-link-tsim.utils.encoder.TransversalEncoder></a> </div> <pre class=mermaid><code id=mermaid-diagram-tsim.utils.encoder.ColorEncoder5>
+              flowchart TD
+              tsim.utils.encoder.ColorEncoder5[ColorEncoder5]
+              tsim.utils.encoder.TransversalEncoder[TransversalEncoder]
+
+                              tsim.utils.encoder.TransversalEncoder --> tsim.utils.encoder.ColorEncoder5
+                
+
+
+              click tsim.utils.encoder.ColorEncoder5 href "" "tsim.utils.encoder.ColorEncoder5"
+              click tsim.utils.encoder.TransversalEncoder href "" "tsim.utils.encoder.TransversalEncoder"
+            </code></pre> <script>
+              var diagram = document.getElementById('mermaid-diagram-tsim.utils.encoder.ColorEncoder5');
+              diagram.innerHTML = diagram.innerHTML.replace(/click ([\w.]+) href "" "\1"/g, function(match, nodeID, offset) {
+                try {
+                  const link = document.getElementById("mermaid-link-" + nodeID).href;
+                  return `click ${nodeID} href "${link}" "${nodeID}"`
+                } catch (e) {
+                  return '';
+                }
+              });
+            </script> <p>Transversal encoder for the [[17,1,5]] 2D color code.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>233</span>
+<span class=normal>234</span>
+<span class=normal>235</span>
+<span class=normal>236</span>
+<span class=normal>237</span>
+<span class=normal>238</span>
+<span class=normal>239</span>
+<span class=normal>240</span>
+<span class=normal>241</span>
+<span class=normal>242</span>
+<span class=normal>243</span>
+<span class=normal>244</span>
+<span class=normal>245</span>
+<span class=normal>246</span>
+<span class=normal>247</span>
+<span class=normal>248</span>
+<span class=normal>249</span>
+<span class=normal>250</span>
+<span class=normal>251</span>
+<span class=normal>252</span>
+<span class=normal>253</span>
+<span class=normal>254</span>
+<span class=normal>255</span>
+<span class=normal>256</span>
+<span class=normal>257</span>
+<span class=normal>258</span>
+<span class=normal>259</span>
+<span class=normal>260</span>
+<span class=normal>261</span>
+<span class=normal>262</span>
+<span class=normal>263</span>
+<span class=normal>264</span>
+<span class=normal>265</span>
+<span class=normal>266</span>
+<span class=normal>267</span>
+<span class=normal>268</span>
+<span class=normal>269</span>
+<span class=normal>270</span>
+<span class=normal>271</span>
+<span class=normal>272</span>
+<span class=normal>273</span>
+<span class=normal>274</span>
+<span class=normal>275</span>
+<span class=normal>276</span>
+<span class=normal>277</span>
+<span class=normal>278</span>
+<span class=normal>279</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span><span class=bp>self</span><span class=p>):</span>
+<span class=w>    </span><span class=sd>&quot;&quot;&quot;Initialize the color code encoder.&quot;&quot;&quot;</span>
+    <span class=n>encoding_program</span> <span class=o>=</span> <span class=s2>&quot;&quot;&quot;</span>
+<span class=s2>    R 0 1 2 3 4 5 6 8 9 10 11 12 13 14 15 16</span>
+<span class=s2>    SQRT_Y 0 1 2 3 4 5 6 8 9 10 11 12 13 14 15 16</span>
+<span class=s2>    TICK</span>
+<span class=s2>    CZ 1 3 7 10 12 14 13 16</span>
+<span class=s2>    TICK</span>
+<span class=s2>    SQRT_Y_DAG 7 16</span>
+<span class=s2>    TICK</span>
+<span class=s2>    CZ 4 7 8 10 11 14 15 16</span>
+<span class=s2>    TICK</span>
+<span class=s2>    SQRT_Y_DAG 4 10 14 16</span>
+<span class=s2>    TICK</span>
+<span class=s2>    CZ 2 4 6 8 7 9 10 13</span>
+<span class=s2>    CZ 14 16</span>
+<span class=s2>    TICK</span>
+<span class=s2>    SQRT_Y 3 6 9 10 12 13</span>
+<span class=s2>    TICK</span>
+<span class=s2>    CZ 0 2 3 6 5 8 10 12 11 13</span>
+<span class=s2>    TICK</span>
+<span class=s2>    SQRT_Y 1 2 3 4 6 7 8 9 11 12 14</span>
+<span class=s2>    TICK</span>
+<span class=s2>    CZ 0 1 2 3 4 5 6 7 8 9 12 15</span>
+<span class=s2>    TICK</span>
+<span class=s2>    SQRT_Y_DAG 0 2 5 6 8 10 12</span>
+<span class=s2>    X 14 7 5 2 1 4</span>
+<span class=s2>    Z 11 6 4 2</span>
+<span class=s2>    &quot;&quot;&quot;</span>
+    <span class=n>stabs</span> <span class=o>=</span> <span class=p>[</span>
+        <span class=p>[</span><span class=mi>0</span><span class=p>,</span> <span class=mi>1</span><span class=p>,</span> <span class=mi>2</span><span class=p>,</span> <span class=mi>3</span><span class=p>],</span>
+        <span class=p>[</span><span class=mi>0</span><span class=p>,</span> <span class=mi>2</span><span class=p>,</span> <span class=mi>4</span><span class=p>,</span> <span class=mi>5</span><span class=p>],</span>
+        <span class=p>[</span><span class=mi>4</span><span class=p>,</span> <span class=mi>5</span><span class=p>,</span> <span class=mi>6</span><span class=p>,</span> <span class=mi>7</span><span class=p>],</span>
+        <span class=p>[</span><span class=mi>6</span><span class=p>,</span> <span class=mi>7</span><span class=p>,</span> <span class=mi>8</span><span class=p>,</span> <span class=mi>9</span><span class=p>],</span>
+        <span class=p>[</span><span class=mi>11</span><span class=p>,</span> <span class=mi>13</span><span class=p>,</span> <span class=mi>14</span><span class=p>,</span> <span class=mi>16</span><span class=p>],</span>
+        <span class=p>[</span><span class=mi>10</span><span class=p>,</span> <span class=mi>11</span><span class=p>,</span> <span class=mi>12</span><span class=p>,</span> <span class=mi>14</span><span class=p>],</span>
+        <span class=p>[</span><span class=mi>12</span><span class=p>,</span> <span class=mi>14</span><span class=p>,</span> <span class=mi>15</span><span class=p>,</span> <span class=mi>16</span><span class=p>],</span>
+        <span class=p>[</span><span class=mi>2</span><span class=p>,</span> <span class=mi>3</span><span class=p>,</span> <span class=mi>5</span><span class=p>,</span> <span class=mi>6</span><span class=p>,</span> <span class=mi>8</span><span class=p>,</span> <span class=mi>10</span><span class=p>,</span> <span class=mi>11</span><span class=p>,</span> <span class=mi>13</span><span class=p>],</span>
+    <span class=p>]</span>
+    <span class=n>obs</span> <span class=o>=</span> <span class=p>[[</span><span class=mi>1</span><span class=p>,</span> <span class=mi>3</span><span class=p>,</span> <span class=mi>10</span><span class=p>,</span> <span class=mi>12</span><span class=p>,</span> <span class=mi>15</span><span class=p>]]</span>
+    <span class=nb>super</span><span class=p>()</span><span class=o>.</span><span class=fm>__init__</span><span class=p>(</span>
+        <span class=n>n</span><span class=o>=</span><span class=mi>17</span><span class=p>,</span>
+        <span class=n>encoding_qubit</span><span class=o>=</span><span class=mi>7</span><span class=p>,</span>
+        <span class=n>encoding_program_text</span><span class=o>=</span><span class=n>encoding_program</span><span class=p>,</span>
+        <span class=n>stabilizer_generators</span><span class=o>=</span><span class=n>stabs</span><span class=p>,</span>
+        <span class=n>observables</span><span class=o>=</span><span class=n>obs</span><span class=p>,</span>
+    <span class=p>)</span>
+</code></pre></div></td></tr></table></div> </details> <div class="doc doc-children"> </div> </div> </div> <div class="doc doc-object doc-class"> <h2 id=tsim.utils.encoder.SteaneEncoder class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-class"></code> <span class="doc doc-object-name doc-class-name">SteaneEncoder</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>SteaneEncoder</span><span class=p>()</span>
+</code></pre></div> <div class="doc doc-contents "> <p class="doc doc-class-bases"> Bases: <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">TransversalEncoder</span> (<code>tsim.utils.encoder.TransversalEncoder</code>)' href=#tsim.utils.encoder.TransversalEncoder>TransversalEncoder</a></code></p> <div style="display: none"> <a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">SteaneEncoder</span> (<code>tsim.utils.encoder.SteaneEncoder</code>)' href=#tsim.utils.encoder.SteaneEncoder id=mermaid-link-tsim.utils.encoder.SteaneEncoder></a> <a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">TransversalEncoder</span> (<code>tsim.utils.encoder.TransversalEncoder</code>)' href=#tsim.utils.encoder.TransversalEncoder id=mermaid-link-tsim.utils.encoder.TransversalEncoder></a> </div> <pre class=mermaid><code id=mermaid-diagram-tsim.utils.encoder.SteaneEncoder>
+              flowchart TD
+              tsim.utils.encoder.SteaneEncoder[SteaneEncoder]
+              tsim.utils.encoder.TransversalEncoder[TransversalEncoder]
+
+                              tsim.utils.encoder.TransversalEncoder --> tsim.utils.encoder.SteaneEncoder
+                
+
+
+              click tsim.utils.encoder.SteaneEncoder href "" "tsim.utils.encoder.SteaneEncoder"
+              click tsim.utils.encoder.TransversalEncoder href "" "tsim.utils.encoder.TransversalEncoder"
+            </code></pre> <script>
+              var diagram = document.getElementById('mermaid-diagram-tsim.utils.encoder.SteaneEncoder');
+              diagram.innerHTML = diagram.innerHTML.replace(/click ([\w.]+) href "" "\1"/g, function(match, nodeID, offset) {
+                try {
+                  const link = document.getElementById("mermaid-link-" + nodeID).href;
+                  return `click ${nodeID} href "${link}" "${nodeID}"`
+                } catch (e) {
+                  return '';
+                }
+              });
+            </script> <p>Transversal encoder for the [[7,1,3]] Steane code.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>192</span>
+<span class=normal>193</span>
+<span class=normal>194</span>
+<span class=normal>195</span>
+<span class=normal>196</span>
+<span class=normal>197</span>
+<span class=normal>198</span>
+<span class=normal>199</span>
+<span class=normal>200</span>
+<span class=normal>201</span>
+<span class=normal>202</span>
+<span class=normal>203</span>
+<span class=normal>204</span>
+<span class=normal>205</span>
+<span class=normal>206</span>
+<span class=normal>207</span>
+<span class=normal>208</span>
+<span class=normal>209</span>
+<span class=normal>210</span>
+<span class=normal>211</span>
+<span class=normal>212</span>
+<span class=normal>213</span>
+<span class=normal>214</span>
+<span class=normal>215</span>
+<span class=normal>216</span>
+<span class=normal>217</span>
+<span class=normal>218</span>
+<span class=normal>219</span>
+<span class=normal>220</span>
+<span class=normal>221</span>
+<span class=normal>222</span>
+<span class=normal>223</span>
+<span class=normal>224</span>
+<span class=normal>225</span>
+<span class=normal>226</span>
+<span class=normal>227</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span><span class=bp>self</span><span class=p>):</span>
+<span class=w>    </span><span class=sd>&quot;&quot;&quot;Initialize the Steane code encoder.&quot;&quot;&quot;</span>
+    <span class=n>encoding_program</span> <span class=o>=</span> <span class=s2>&quot;&quot;&quot;</span>
+<span class=s2>    R 0 1 2 3 4 5</span>
+<span class=s2>    TICK</span>
+<span class=s2>    SQRT_Y_DAG 0 1 2 3 4 5</span>
+<span class=s2>    TICK</span>
+<span class=s2>    CZ 1 2 3 4 5 6</span>
+<span class=s2>    TICK</span>
+<span class=s2>    SQRT_Y 6</span>
+<span class=s2>    TICK</span>
+<span class=s2>    CZ 0 3 2 5 4 6</span>
+<span class=s2>    TICK</span>
+<span class=s2>    SQRT_Y 2 3 4 5 6</span>
+<span class=s2>    TICK</span>
+<span class=s2>    CZ 0 1 2 3 4 5</span>
+<span class=s2>    TICK</span>
+<span class=s2>    SQRT_Y 1 2 4</span>
+<span class=s2>    TICK</span>
+<span class=s2>    X 3</span>
+<span class=s2>    Z 5 1</span>
+<span class=s2>    TICK</span>
+<span class=s2>    &quot;&quot;&quot;</span>
+    <span class=nb>super</span><span class=p>()</span><span class=o>.</span><span class=fm>__init__</span><span class=p>(</span>
+        <span class=n>n</span><span class=o>=</span><span class=mi>7</span><span class=p>,</span>
+        <span class=n>encoding_qubit</span><span class=o>=</span><span class=mi>6</span><span class=p>,</span>
+        <span class=n>encoding_program_text</span><span class=o>=</span><span class=n>encoding_program</span><span class=p>,</span>
+        <span class=n>logical_gate_expansions</span><span class=o>=</span><span class=p>{</span>
+            <span class=s2>&quot;SQRT_X&quot;</span><span class=p>:</span> <span class=p>[</span><span class=s2>&quot;SQRT_X&quot;</span><span class=p>,</span> <span class=s2>&quot;X&quot;</span><span class=p>],</span>
+            <span class=s2>&quot;SQRT_X_DAG&quot;</span><span class=p>:</span> <span class=p>[</span><span class=s2>&quot;SQRT_X_DAG&quot;</span><span class=p>,</span> <span class=s2>&quot;X&quot;</span><span class=p>],</span>
+            <span class=s2>&quot;S&quot;</span><span class=p>:</span> <span class=p>[</span><span class=s2>&quot;S&quot;</span><span class=p>,</span> <span class=s2>&quot;Z&quot;</span><span class=p>],</span>
+            <span class=s2>&quot;S_DAG&quot;</span><span class=p>:</span> <span class=p>[</span><span class=s2>&quot;S_DAG&quot;</span><span class=p>,</span> <span class=s2>&quot;Z&quot;</span><span class=p>],</span>
+        <span class=p>},</span>
+        <span class=n>stabilizer_generators</span><span class=o>=</span><span class=p>[[</span><span class=mi>0</span><span class=p>,</span> <span class=mi>1</span><span class=p>,</span> <span class=mi>2</span><span class=p>,</span> <span class=mi>3</span><span class=p>],</span> <span class=p>[</span><span class=mi>1</span><span class=p>,</span> <span class=mi>2</span><span class=p>,</span> <span class=mi>4</span><span class=p>,</span> <span class=mi>5</span><span class=p>],</span> <span class=p>[</span><span class=mi>2</span><span class=p>,</span> <span class=mi>3</span><span class=p>,</span> <span class=mi>4</span><span class=p>,</span> <span class=mi>6</span><span class=p>]],</span>
+        <span class=n>observables</span><span class=o>=</span><span class=p>[[</span><span class=mi>0</span><span class=p>,</span> <span class=mi>1</span><span class=p>,</span> <span class=mi>5</span><span class=p>]],</span>
+    <span class=p>)</span>
+</code></pre></div></td></tr></table></div> </details> <div class="doc doc-children"> </div> </div> </div> <div class="doc doc-object doc-class"> <h2 id=tsim.utils.encoder.TransversalEncoder class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-class"></code> <span class="doc doc-object-name doc-class-name">TransversalEncoder</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>TransversalEncoder</span><span class=p>(</span>
+    <span class=n>n</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
+    <span class=n>encoding_qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
+    <span class=n>encoding_program_text</span><span class=p>:</span> <span class=nb>str</span> <span class=o>|</span> <span class=kc>None</span><span class=p>,</span>
+    <span class=n>stabilizer_generators</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]],</span>
+    <span class=n>observables</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]],</span>
+    <span class=n>logical_gate_expansions</span><span class=p>:</span> <span class=p>(</span>
+        <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=nb>list</span><span class=p>[</span><span class=nb>str</span><span class=p>]]</span> <span class=o>|</span> <span class=kc>None</span>
+    <span class=p>)</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
+<span class=p>)</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Base class for transversal quantum error correction encoders.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 97</span>
+<span class=normal> 98</span>
+<span class=normal> 99</span>
+<span class=normal>100</span>
+<span class=normal>101</span>
+<span class=normal>102</span>
+<span class=normal>103</span>
+<span class=normal>104</span>
+<span class=normal>105</span>
+<span class=normal>106</span>
+<span class=normal>107</span>
+<span class=normal>108</span>
+<span class=normal>109</span>
+<span class=normal>110</span>
+<span class=normal>111</span>
+<span class=normal>112</span>
+<span class=normal>113</span>
+<span class=normal>114</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
+    <span class=bp>self</span><span class=p>,</span>
+    <span class=n>n</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
+    <span class=n>encoding_qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
+    <span class=n>encoding_program_text</span><span class=p>:</span> <span class=nb>str</span> <span class=o>|</span> <span class=kc>None</span><span class=p>,</span>
+    <span class=n>stabilizer_generators</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]],</span>
+    <span class=n>observables</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]],</span>
+    <span class=n>logical_gate_expansions</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=nb>list</span><span class=p>[</span><span class=nb>str</span><span class=p>]]</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
+<span class=p>):</span>
+<span class=w>    </span><span class=sd>&quot;&quot;&quot;Initialize the transversal encoder with code parameters.&quot;&quot;&quot;</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>n</span> <span class=o>=</span> <span class=n>n</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>encoding_qubit</span> <span class=o>=</span> <span class=n>encoding_qubit</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>circuit</span> <span class=o>=</span> <span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>()</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>used_qubits</span><span class=p>:</span> <span class=nb>set</span><span class=p>[</span><span class=nb>int</span><span class=p>]</span> <span class=o>=</span> <span class=nb>set</span><span class=p>()</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>encoding_program_text</span> <span class=o>=</span> <span class=n>encoding_program_text</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>logical_gate_expansions</span> <span class=o>=</span> <span class=n>logical_gate_expansions</span> <span class=ow>or</span> <span class=p>{}</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>stabilizer_generators</span> <span class=o>=</span> <span class=n>stabilizer_generators</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>observables</span> <span class=o>=</span> <span class=n>observables</span>
+</code></pre></div></td></tr></table></div> </details> <div class="doc doc-children"> <div class="doc doc-object doc-function"> <h3 id=tsim.utils.encoder.TransversalEncoder.diagram class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">diagram</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>diagram</span><span class=p>(</span><span class=o>**</span><span class=n>kwargs</span><span class=p>)</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a timeline-svg diagram of the encoded circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>179</span>
+<span class=normal>180</span>
+<span class=normal>181</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>diagram</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=o>**</span><span class=n>kwargs</span><span class=p>):</span>
+<span class=w>    </span><span class=sd>&quot;&quot;&quot;Return a timeline-svg diagram of the encoded circuit.&quot;&quot;&quot;</span>
+    <span class=k>return</span> <span class=bp>self</span><span class=o>.</span><span class=n>circuit</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>&quot;timeline-svg&quot;</span><span class=p>,</span> <span class=o>**</span><span class=n>kwargs</span><span class=p>)</span>
+</code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.utils.encoder.TransversalEncoder.encode_transversally class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">encode_transversally</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>encode_transversally</span><span class=p>(</span><span class=n>program_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Encode a program transversally by replacing physicalgates with transversal gates.</p> <p>Transform a program on m qubits into a program on n * m qubits (consisting of n code blocks).</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>program_text</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>The program to encode transversally.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>160</span>
+<span class=normal>161</span>
+<span class=normal>162</span>
+<span class=normal>163</span>
+<span class=normal>164</span>
+<span class=normal>165</span>
+<span class=normal>166</span>
+<span class=normal>167</span>
+<span class=normal>168</span>
+<span class=normal>169</span>
+<span class=normal>170</span>
+<span class=normal>171</span>
+<span class=normal>172</span>
+<span class=normal>173</span>
+<span class=normal>174</span>
+<span class=normal>175</span>
+<span class=normal>176</span>
+<span class=normal>177</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>encode_transversally</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>program_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=w>    </span><span class=sd>&quot;&quot;&quot;Encode a program transversally by replacing  physicalgates with transversal gates.</span>
+
+<span class=sd>    Transform a program on m qubits into a program on n * m qubits (consisting of n code blocks).</span>
+
+<span class=sd>    Args:</span>
+<span class=sd>        program_text: The program to encode transversally.</span>
+
+<span class=sd>    &quot;&quot;&quot;</span>
+    <span class=n>mod_circ</span> <span class=o>=</span> <span class=n>_transform_circuit</span><span class=p>(</span>
+        <span class=n>program_text</span><span class=p>,</span>
+        <span class=n>stride</span><span class=o>=</span><span class=bp>self</span><span class=o>.</span><span class=n>n</span><span class=p>,</span>
+        <span class=n>offsets</span><span class=o>=</span><span class=nb>list</span><span class=p>(</span><span class=nb>range</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>n</span><span class=p>)),</span>
+        <span class=n>gate_expansions</span><span class=o>=</span><span class=bp>self</span><span class=o>.</span><span class=n>logical_gate_expansions</span><span class=p>,</span>
+        <span class=n>stabilizer_generators</span><span class=o>=</span><span class=bp>self</span><span class=o>.</span><span class=n>stabilizer_generators</span><span class=p>,</span>
+        <span class=n>observables</span><span class=o>=</span><span class=bp>self</span><span class=o>.</span><span class=n>observables</span><span class=p>,</span>
+    <span class=p>)</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>circuit</span><span class=o>.</span><span class=n>append_from_stim_program_text</span><span class=p>(</span><span class=nb>str</span><span class=p>(</span><span class=n>mod_circ</span><span class=p>))</span>
+</code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.utils.encoder.TransversalEncoder.encoding_flow_generators class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">encoding_flow_generators</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>encoding_flow_generators</span><span class=p>()</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return the Pauli flow generators for the encoding circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>183</span>
+<span class=normal>184</span>
+<span class=normal>185</span>
+<span class=normal>186</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>encoding_flow_generators</span><span class=p>(</span><span class=bp>self</span><span class=p>):</span>
+<span class=w>    </span><span class=sd>&quot;&quot;&quot;Return the Pauli flow generators for the encoding circuit.&quot;&quot;&quot;</span>
+    <span class=k>assert</span> <span class=bp>self</span><span class=o>.</span><span class=n>encoding_program_text</span> <span class=ow>is</span> <span class=ow>not</span> <span class=kc>None</span>
+    <span class=k>return</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>encoding_program_text</span><span class=p>)</span><span class=o>.</span><span class=n>flow_generators</span><span class=p>()</span>
+</code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.utils.encoder.TransversalEncoder.initialize class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">initialize</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>initialize</span><span class=p>(</span>
+    <span class=n>program_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>,</span>
+    <span class=n>encoding_program_text</span><span class=p>:</span> <span class=nb>str</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
+<span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Initialize state preparation and apply encoding circuit.</p> <p>Apply the state preparation program for k qubits, then apply an encoding circuit to encode the state into n qubits.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>program_text</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>The state preparation program for k qubits. Generally, this should be a simple program that prepares each of the k qubits in a single-qubit state.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>encoding_program_text</code> </td> <td> <code><span title=optional>optional</span></code> </td> <td> <div class=doc-md-description> <p>An encoding circuit for a single logical qubit. This should encode a single logical qubit at input <code>self.encoding_qubit</code> into a state of n qubits. If not provided, the encoder will use a noiseless default encoding.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>116</span>
+<span class=normal>117</span>
+<span class=normal>118</span>
+<span class=normal>119</span>
+<span class=normal>120</span>
+<span class=normal>121</span>
+<span class=normal>122</span>
+<span class=normal>123</span>
+<span class=normal>124</span>
+<span class=normal>125</span>
+<span class=normal>126</span>
+<span class=normal>127</span>
+<span class=normal>128</span>
+<span class=normal>129</span>
+<span class=normal>130</span>
+<span class=normal>131</span>
+<span class=normal>132</span>
+<span class=normal>133</span>
+<span class=normal>134</span>
+<span class=normal>135</span>
+<span class=normal>136</span>
+<span class=normal>137</span>
+<span class=normal>138</span>
+<span class=normal>139</span>
+<span class=normal>140</span>
+<span class=normal>141</span>
+<span class=normal>142</span>
+<span class=normal>143</span>
+<span class=normal>144</span>
+<span class=normal>145</span>
+<span class=normal>146</span>
+<span class=normal>147</span>
+<span class=normal>148</span>
+<span class=normal>149</span>
+<span class=normal>150</span>
+<span class=normal>151</span>
+<span class=normal>152</span>
+<span class=normal>153</span>
+<span class=normal>154</span>
+<span class=normal>155</span>
+<span class=normal>156</span>
+<span class=normal>157</span>
+<span class=normal>158</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>initialize</span><span class=p>(</span>
+    <span class=bp>self</span><span class=p>,</span> <span class=n>program_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>,</span> <span class=n>encoding_program_text</span><span class=p>:</span> <span class=nb>str</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
+<span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=w>    </span><span class=sd>&quot;&quot;&quot;Initialize state preparation and apply encoding circuit.</span>
+
+<span class=sd>    Apply the state preparation program for k qubits, then apply an encoding</span>
+<span class=sd>    circuit to encode the state into n qubits.</span>
+
+<span class=sd>    Args:</span>
+<span class=sd>        program_text: The state preparation program for k qubits. Generally, this</span>
+<span class=sd>            should be a simple program that prepares each of the k qubits in a</span>
+<span class=sd>            single-qubit state.</span>
+<span class=sd>        encoding_program_text (optional): An encoding circuit for a single logical</span>
+<span class=sd>            qubit. This should encode a single logical qubit at input</span>
+<span class=sd>            `self.encoding_qubit` into a state of n qubits.</span>
+<span class=sd>            If not provided, the encoder will use a noiseless default encoding.</span>
+
+<span class=sd>    &quot;&quot;&quot;</span>
+    <span class=n>encoding</span> <span class=o>=</span> <span class=n>encoding_program_text</span> <span class=ow>or</span> <span class=bp>self</span><span class=o>.</span><span class=n>encoding_program_text</span>
+    <span class=k>if</span> <span class=ow>not</span> <span class=n>encoding</span><span class=p>:</span>
+        <span class=k>raise</span> <span class=ne>ValueError</span><span class=p>(</span><span class=s2>&quot;Encoding program text is required&quot;</span><span class=p>)</span>
+
+    <span class=n>mod_circ</span> <span class=o>=</span> <span class=n>_transform_circuit</span><span class=p>(</span>
+        <span class=n>program_text</span><span class=p>,</span>
+        <span class=n>stride</span><span class=o>=</span><span class=bp>self</span><span class=o>.</span><span class=n>n</span><span class=p>,</span>
+        <span class=n>offsets</span><span class=o>=</span><span class=p>[</span><span class=bp>self</span><span class=o>.</span><span class=n>encoding_qubit</span><span class=p>],</span>
+        <span class=n>used_qubits</span><span class=o>=</span><span class=bp>self</span><span class=o>.</span><span class=n>used_qubits</span><span class=p>,</span>
+        <span class=n>stabilizer_generators</span><span class=o>=</span><span class=bp>self</span><span class=o>.</span><span class=n>stabilizer_generators</span><span class=p>,</span>
+        <span class=n>observables</span><span class=o>=</span><span class=bp>self</span><span class=o>.</span><span class=n>observables</span><span class=p>,</span>
+    <span class=p>)</span>
+
+    <span class=bp>self</span><span class=o>.</span><span class=n>circuit</span><span class=o>.</span><span class=n>append_from_stim_program_text</span><span class=p>(</span><span class=nb>str</span><span class=p>(</span><span class=n>mod_circ</span><span class=p>))</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>circuit</span><span class=o>.</span><span class=n>append_from_stim_program_text</span><span class=p>(</span>
+        <span class=nb>str</span><span class=p>(</span>
+            <span class=n>_transform_circuit</span><span class=p>(</span>
+                <span class=n>encoding</span><span class=p>,</span>
+                <span class=n>stride</span><span class=o>=</span><span class=mi>1</span><span class=p>,</span>
+                <span class=n>offsets</span><span class=o>=</span><span class=p>[</span><span class=bp>self</span><span class=o>.</span><span class=n>n</span> <span class=o>*</span> <span class=n>off</span> <span class=k>for</span> <span class=n>off</span> <span class=ow>in</span> <span class=nb>sorted</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>used_qubits</span><span class=p>)],</span>
+                <span class=n>stabilizer_generators</span><span class=o>=</span><span class=bp>self</span><span class=o>.</span><span class=n>stabilizer_generators</span><span class=p>,</span>
+                <span class=n>observables</span><span class=o>=</span><span class=bp>self</span><span class=o>.</span><span class=n>observables</span><span class=p>,</span>
+            <span class=p>)</span>
+        <span class=p>)</span>
+    <span class=p>)</span>
+</code></pre></div></td></tr></table></div> </details> </div> </div> </div> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.encoder.broadcast_targets class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">broadcast_targets</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>broadcast_targets</span><span class=p>(</span>
+    <span class=n>groups</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>list</span><span class=p>[</span><span class=n>GateTarget</span><span class=p>]],</span>
+    <span class=o>*</span><span class=p>,</span>
+    <span class=n>stride</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
+    <span class=n>offsets</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]</span>
+<span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Broadcast gate target groups with a stride and set of offsets.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 8</span>
+<span class=normal> 9</span>
+<span class=normal>10</span>
+<span class=normal>11</span>
+<span class=normal>12</span>
+<span class=normal>13</span>
+<span class=normal>14</span>
+<span class=normal>15</span>
+<span class=normal>16</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>broadcast_targets</span><span class=p>(</span>
+    <span class=n>groups</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>list</span><span class=p>[</span><span class=n>stim</span><span class=o>.</span><span class=n>GateTarget</span><span class=p>]],</span> <span class=o>*</span><span class=p>,</span> <span class=n>stride</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>offsets</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]</span>
+<span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]:</span>
+<span class=w>    </span><span class=sd>&quot;&quot;&quot;Broadcast gate target groups with a stride and set of offsets.&quot;&quot;&quot;</span>
+    <span class=n>out</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]</span> <span class=o>=</span> <span class=p>[]</span>
+    <span class=k>for</span> <span class=n>g</span> <span class=ow>in</span> <span class=n>groups</span><span class=p>:</span>
+        <span class=k>for</span> <span class=n>off</span> <span class=ow>in</span> <span class=n>offsets</span><span class=p>:</span>
+            <span class=n>out</span><span class=o>.</span><span class=n>extend</span><span class=p>([</span><span class=n>t</span><span class=o>.</span><span class=n>value</span> <span class=o>*</span> <span class=n>stride</span> <span class=o>+</span> <span class=n>off</span> <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>g</span><span class=p>])</span>
+    <span class=k>return</span> <span class=n>out</span>
+</code></pre></div></td></tr></table></div> </details> </div> </div> </div> </div> </div> </article> </div> <script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script> </div> <button type=button class="md-top md-icon" data-md-component=top hidden> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg> Back to top </button> </main> <footer class=md-footer> <nav class="md-footer__inner md-grid" aria-label=Footer> <a href=../diagram/ class="md-footer__link md-footer__link--prev" aria-label="Previous: diagram"> <div class="md-footer__button md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg> </div> <div class=md-footer__title> <span class=md-footer__direction> Previous </span> <div class=md-ellipsis> diagram </div> </div> </a> <a href=../linalg/ class="md-footer__link md-footer__link--next" aria-label="Next: linalg"> <div class=md-footer__title> <span class=md-footer__direction> Next </span> <div class=md-ellipsis> linalg </div> </div> <div class="md-footer__button md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg> </div> </a> </nav> <div class="md-footer-meta md-typeset"> <div class="md-footer-meta__inner md-grid"> <div class=md-copyright> <div class=md-copyright__highlight> Copyright &copy; 2025 QuEra Computing, Inc. </div> Made with <a href=https://squidfunk.github.io/mkdocs-material/ target=_blank rel=noopener> Material for MkDocs </a> </div> <div class=md-social> <a href=https://x.com/QueraComputing target=_blank rel=noopener title=x.com class=md-social__link> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"/></svg> </a> <a href=https://www.linkedin.com/company/quera-computing-inc/ target=_blank rel=noopener title=www.linkedin.com class=md-social__link> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 448 512"><!-- Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg> </a> </div> </div> </div> </footer> </div> <div class=md-dialog data-md-component=dialog> <div class="md-dialog__inner md-typeset"></div> </div> <script id=__config type=application/json>{"annotate": null, "base": "../../../..", "features": ["announce.dismiss", "content.action.view", "content.action.edit", "content.code.annotate", "content.code.copy", "content.tooltips", "navigation.indexes", "navigation.sections", "navigation.tabs", "navigation.top", "navigation.tracking", "navigation.footer", "search.highlight", "search.suggest", "toc.follow"], "search": "../../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script> <script src=../../../../assets/javascripts/bundle.79ae519e.min.js></script> <script src=../../../../scripts/katex.js></script> <script src=https://unpkg.com/katex@0/dist/katex.min.js></script> <script src=https://unpkg.com/katex@0/dist/contrib/auto-render.min.js></script> </body> </html>
