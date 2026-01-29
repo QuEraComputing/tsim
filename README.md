@@ -25,7 +25,7 @@ pip install "bloqade-tsim[cuda13]"
 
 
 ## Quick Start
-An introductory tutorial is available [here](https://queracomputing.github.io/tsim/dev/demos/encoding_demo/).
+An introductory tutorial is available [here](https://queracomputing.github.io/tsim/latest/demos/encoding_demo/).
 
 For many existing scripts, replacing `stim` with `tsim` should just work. TSIM mirrors the STIM API and currently supports all [STIM gates](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference).
 
