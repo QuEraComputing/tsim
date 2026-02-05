@@ -1,6 +1,6 @@
 [project]
 name = "bloqade-tsim"
-version = "0.1.0"
+version = "0.2.0-dev"
 description = "A low-magic universal quantum circuit sampler based on ZX stabilizer rank decomposition"
 authors = [
     { name = "Rafael Haenel", email = "rhaenel@quera.com" },
