@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing as mp
+import os
+import tempfile
 import time
 import typing
 from datetime import datetime, timezone
@@ -22,26 +25,32 @@ from benchmarks.circuits import random_clifford_t
 from benchmarks.metadata import collect_metadata
 
 # ---------------------------------------------------------------------------
-# Timing helper
+# Timing helper (subprocess-isolated)
 # ---------------------------------------------------------------------------
 
 
-def find_throughput(
-    sampler,
-    initial_batch_size: int = 32,
-    convergence_ratio: float = 0.8,
-) -> tuple[float, int]:
-    """Find optimal batch size and measure per-shot duration.
+def _find_throughput_worker(
+    progress_path: str,
+    n_qubits: int,
+    t_count: int,
+    seed: int,
+    initial_batch_size: int,
+    convergence_ratio: float,
+) -> None:
+    """Child-process target: compile sampler, run doubling loop, write results.
 
-    Doubles the batch size until the marginal per-shot improvement saturates,
-    i.e. until ``duration / best_so_far > convergence_ratio``.
-
-    Returns:
-        ``(duration_per_shot, batch_size)``
-
+    After each successful batch-size probe the current best
+    ``(duration_per_shot, batch_size)`` is written to *progress_path* so the
+    parent can recover the last good result if this process crashes
+    (e.g. LLVM OOM).
     """
+    circuit = random_clifford_t(n_qubits=n_qubits, t_count=t_count, seed=seed)
+    sampler = circuit.compile_sampler()
+
     best_duration = float("inf")
     batch_size = initial_batch_size
+    ppath = Path(progress_path)
+    probes: list[dict] = []
 
     while True:
         # Warmup (ensures JIT compilation / caching)
@@ -52,14 +61,93 @@ def find_throughput(
         sampler.sample(batch_size, batch_size=batch_size)
         duration = (time.perf_counter() - start) / batch_size
 
-        if duration / best_duration > convergence_ratio:
-            best_duration = min(best_duration, duration)
+        probes.append({"batch_size": batch_size, "duration_per_shot": duration})
+
+        converged = duration / best_duration > convergence_ratio
+        best_duration = min(best_duration, duration)
+
+        # Flush progress so the parent can recover after a crash.
+        ppath.write_text(
+            json.dumps(
+                {
+                    "best_duration": best_duration,
+                    "best_batch_size": batch_size,
+                    "probes": probes,
+                }
+            )
+        )
+
+        if converged:
             break
 
         batch_size *= 2
-        best_duration = min(best_duration, duration)
 
-    return best_duration, batch_size
+
+def find_throughput(
+    n_qubits: int,
+    t_count: int,
+    seed: int,
+    *,
+    initial_batch_size: int = 32,
+    convergence_ratio: float = 0.8,
+) -> dict | None:
+    """Find optimal batch size and measure per-shot duration.
+
+    The entire doubling loop runs in a **child process** so that a fatal
+    LLVM/XLA OOM crash does not kill the parent.  After each successful
+    probe the child writes its progress to a temporary file; the parent
+    reads the last written value and deletes the file.
+
+    Returns:
+        A dict with keys ``best_duration``, ``best_batch_size``, and
+        ``probes`` (a list of ``{"batch_size": int, "duration_per_shot":
+        float}`` for every doubling step), or ``None`` if the child crashed
+        before producing any result.
+
+    """
+    # Create a temp file for the child to write progress into.
+    fd, progress_path = tempfile.mkstemp(prefix="tsim_probe_", suffix=".json")
+    os.close(fd)
+
+    try:
+        ctx = mp.get_context("spawn")
+        proc = ctx.Process(
+            target=_find_throughput_worker,
+            args=(
+                progress_path,
+                n_qubits,
+                t_count,
+                seed,
+                initial_batch_size,
+                convergence_ratio,
+            ),
+        )
+        proc.start()
+        proc.join()
+
+        # Read whatever the child managed to write before exiting / crashing.
+        ppath = Path(progress_path)
+        if ppath.stat().st_size == 0:
+            # Child crashed before writing anything.
+            if proc.exitcode != 0:
+                print(
+                    f"    [child crashed (exit {proc.exitcode}) "
+                    f"before producing any result — skipping]"
+                )
+            return None
+
+        result = json.loads(ppath.read_text())
+
+        if proc.exitcode != 0:
+            print(
+                f"    [child crashed (exit {proc.exitcode}), "
+                f"using last good batch_size={result['best_batch_size']}]"
+            )
+
+        return result
+    finally:
+        # Always clean up the temp file.
+        Path(progress_path).unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -91,23 +179,26 @@ def t_count_scaling(
     for t_count in range(t_count_min, t_count_max + 1):
         print(f"T-count: {t_count}")
         for rep in range(repetitions):
-            circuit = random_clifford_t(n_qubits=n_qubits, t_count=t_count, seed=rep)
-            sampler = circuit.compile_sampler()
-
-            duration, batch_size = find_throughput(
-                sampler, initial_batch_size=initial_batch_size
+            result = find_throughput(
+                n_qubits,
+                t_count,
+                rep,
+                initial_batch_size=initial_batch_size,
             )
+            if result is None:
+                continue
             results.append(
                 {
                     "t_count": t_count,
                     "seed": rep,
-                    "duration_per_shot": duration,
-                    "best_batch_size": batch_size,
+                    "duration_per_shot": result["best_duration"],
+                    "best_batch_size": result["best_batch_size"],
+                    "probes": result["probes"],
                 }
             )
             print(
-                f"  rep={rep}  batch_size={batch_size:>8,}  "
-                f"duration={duration:.3e} s/shot"
+                f"  rep={rep}  batch_size={result['best_batch_size']:>8,}  "
+                f"duration={result['best_duration']:.3e} s/shot"
             )
 
         if on_t_count_done is not None:

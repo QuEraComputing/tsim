@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -186,7 +186,6 @@ dev = [
     { name = "ruff" },
     { name = "rust-just" },
     { name = "sinter" },
-    { name = "tesseract-decoder" },
     { name = "tqdm" },
 ]
 doc = [
@@ -237,7 +236,6 @@ dev = [
     { name = "ruff", specifier = ">=0.7.3" },
     { name = "rust-just", specifier = ">=1.36.0" },
     { name = "sinter", specifier = "~=1.16.dev0" },
-    { name = "tesseract-decoder", specifier = ">=0.1.1.dev20251113222502" },
     { name = "tqdm", specifier = ">=4.67.1" },
 ]
 doc = [
@@ -965,15 +963,15 @@ wheels = [
 
 [[package]]
 name = "griffe-kirin"
-version = "0.1.0"
-source = { registry = "https://quera.jfrog.io/artifactory/api/pypi/kirin/simple" }
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "griffe" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://quera.jfrog.io/artifactory/api/pypi/kirin/griffe-kirin/0.1.0/griffe_kirin-0.1.0.tar.gz", hash = "sha256:b5ed85a8c07da0219787ac8d57de0a4f2a6df3109fc3aab47d78a12f96dda04d" }
+sdist = { url = "https://files.pythonhosted.org/packages/a5/e0/9db75de974546903ab46a41179a95243abc84ceb2ba0b4101b5016f5301e/griffe_kirin-0.2.0.tar.gz", hash = "sha256:87d4280fbb1c77e1eb3fe7b627810b219295ec74651cf216748330b379a4ded5", size = 57664, upload-time = "2025-02-21T20:41:16.862Z" }
 wheels = [
-    { url = "https://quera.jfrog.io/artifactory/api/pypi/kirin/griffe-kirin/0.1.0/griffe_kirin-0.1.0-py3-none-any.whl", hash = "sha256:cdbc7a08c4fa5229f8f5f9137fd4de7dde35214166d3d448cbac8778079bd10a" },
+    { url = "https://files.pythonhosted.org/packages/38/b2/04bf90dc9e9e80f969b562731cf1619bd2eb0d0b726ba7befd38fda38131/griffe_kirin-0.2.0-py3-none-any.whl", hash = "sha256:81d999d6e1480cbe46e5c7b82933d2eee96863840dfbac283df620d85c13c2fc", size = 4063, upload-time = "2025-02-21T20:41:14.734Z" },
 ]
 
 [[package]]
@@ -4015,28 +4013,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/83/d3/803453b36afefb7c2bb238361cd4ae6125a569b4db67cd9e79846ba2d68c/sympy-1.14.0.tar.gz", hash = "sha256:d3d3fe8df1e5a0b42f0e7bdf50541697dbe7d23746e894990c030e2b05e72517", size = 7793921, upload-time = "2025-04-27T18:05:01.611Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a2/09/77d55d46fd61b4a135c444fc97158ef34a095e5681d0a6c10b75bf356191/sympy-1.14.0-py3-none-any.whl", hash = "sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5", size = 6299353, upload-time = "2025-04-27T18:04:59.103Z" },
-]
-
-[[package]]
-name = "tesseract-decoder"
-version = "0.1.1.dev20251113222502"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "stim" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b3/0d/6540e6ce86336d1abd1551ca244bd1a22eba60fda2c71637738f9bb9e013/tesseract_decoder-0.1.1.dev20251113222502-py310-none-macosx_11_0_arm64.whl", hash = "sha256:97657b329d9b1fe99f952e6e4b201cfc69813e11aaac9809e67567e09fb4fa68", size = 3166221, upload-time = "2025-11-13T22:30:39.907Z" },
-    { url = "https://files.pythonhosted.org/packages/c2/72/ed578033fdcfb2d079ed7770ca7c991caa3ab1a560bf6772b053713c2ac6/tesseract_decoder-0.1.1.dev20251113222502-py310-none-manylinux_2_35_x86_64.manylinux2014_x86_64.whl", hash = "sha256:baefc4e17f3c47c49abe85034889ea1eb67384f4f5cf69ff2502fa9df46012c7", size = 3610407, upload-time = "2025-11-13T22:30:42.051Z" },
-    { url = "https://files.pythonhosted.org/packages/4c/68/052304de216de19bc8cb0bd7d0117b62770137a862e2e2caf828af891f77/tesseract_decoder-0.1.1.dev20251113222502-py310-none-manylinux_2_39_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d9bcd401d9388505da4d58c47b3805ac33f6ad8ddb994661014cb18ba4bed12c", size = 3543756, upload-time = "2025-11-13T22:30:43.829Z" },
-    { url = "https://files.pythonhosted.org/packages/43/cc/5eb87837d30ceab0c0af2d8b545d51d72a8e6911e3836163adaee664698e/tesseract_decoder-0.1.1.dev20251113222502-py311-none-macosx_11_0_arm64.whl", hash = "sha256:0063c91d8c786d4ac96a03de657eaf98238a3e829171f74fec71fa1f6a288f4d", size = 3166023, upload-time = "2025-11-13T22:30:45.262Z" },
-    { url = "https://files.pythonhosted.org/packages/e5/60/067a6fcb68888c7130b78e95355b933b2f664c536d446e735c80ccfb11e6/tesseract_decoder-0.1.1.dev20251113222502-py311-none-manylinux_2_35_x86_64.manylinux2014_x86_64.whl", hash = "sha256:685f6b6626fcb59ef9fd88964dd1e675843879983a22103edc48c110244b68a0", size = 3609925, upload-time = "2025-11-13T22:30:46.658Z" },
-    { url = "https://files.pythonhosted.org/packages/b6/4c/037bb2b6bfe98fd2a8e28c2663fe8b6bb35e18a555ad9f6e7a795170e52f/tesseract_decoder-0.1.1.dev20251113222502-py311-none-manylinux_2_39_x86_64.manylinux2014_x86_64.whl", hash = "sha256:157d9c4e95932471c27da4ff9798bc556bd3a411384034670f1ab77a92fc8df9", size = 3543927, upload-time = "2025-11-13T22:30:47.928Z" },
-    { url = "https://files.pythonhosted.org/packages/7f/2a/e0fa86d473d16613a840b229c39ddd3197bb2b9a8155c4f51671ca944c3d/tesseract_decoder-0.1.1.dev20251113222502-py312-none-macosx_11_0_arm64.whl", hash = "sha256:4ca231e94fffd40d4034aeb0819c56b02f0612804bbb5abdbea21c22409229c0", size = 3163632, upload-time = "2025-11-13T22:30:51.066Z" },
-    { url = "https://files.pythonhosted.org/packages/65/90/c453d07f566f955cc105dbbc974403715535cf1517a4425d2e499ae47d69/tesseract_decoder-0.1.1.dev20251113222502-py312-none-manylinux_2_35_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5759bbc1c0221aab5f7bf143dbc0d07b111464478b3d4885029b9cb4f7154564", size = 3607954, upload-time = "2025-11-13T22:30:52.967Z" },
-    { url = "https://files.pythonhosted.org/packages/3c/67/72de6c0033636e80c759b539243df4f3efaff04b4fd1c19f6a25c8998188/tesseract_decoder-0.1.1.dev20251113222502-py312-none-manylinux_2_39_x86_64.manylinux2014_x86_64.whl", hash = "sha256:22a2c7047f0c1cfe4c767a70185e215a0333da2a8e9b39b1779d7037ac8ea448", size = 3540737, upload-time = "2025-11-13T22:30:54.634Z" },
-    { url = "https://files.pythonhosted.org/packages/90/fb/4b94b1175774c2a67cbb39ca7614561f39f020a90850b1978dbada319d1c/tesseract_decoder-0.1.1.dev20251113222502-py313-none-macosx_11_0_arm64.whl", hash = "sha256:71bdaf67c4de3dffd8f14175eaf10b22b21488e237633d0216b5def67c4afe9d", size = 3163787, upload-time = "2025-11-13T22:30:55.939Z" },
-    { url = "https://files.pythonhosted.org/packages/97/d5/1651009bb14bf8078906283b176c1e2557a426094423a44170008d3c9558/tesseract_decoder-0.1.1.dev20251113222502-py313-none-manylinux_2_35_x86_64.manylinux2014_x86_64.whl", hash = "sha256:838ba6499f03c3605951b9f8c46be7e9dedcfe54b5fcba94f0a6f072fa7aec13", size = 3607943, upload-time = "2025-11-13T22:30:57.341Z" },
-    { url = "https://files.pythonhosted.org/packages/68/c4/268680b37f46afb91f76a092cafa0a9b7afc014877bac0944157573f3e17/tesseract_decoder-0.1.1.dev20251113222502-py313-none-manylinux_2_39_x86_64.manylinux2014_x86_64.whl", hash = "sha256:aa7f08a75e7fe488668ab0026f48150e826d7e8e5df748ae57140dee61aa7077", size = 3541327, upload-time = "2025-11-13T22:30:59.081Z" },
 ]
 
 [[package]]
