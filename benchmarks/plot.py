@@ -27,7 +27,7 @@ import numpy as np
 
 REFERENCE_DATA: dict[str, dict] = {
     "arXiv:2202.09202": {
-        "t_count": [1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 37, 40, 43],
+        "t_count": [1, 4, 7, 10, 13, 16, 19],  # , 22, 25, 28, 31, 34, 37, 40, 43],
         "duration_per_shot": [
             1.9751864976758715e-06,
             2.5961750794608702e-05,
@@ -36,14 +36,14 @@ REFERENCE_DATA: dict[str, dict] = {
             2.308449951931215e-03,
             5.903900045168939e-03,
             2.4125742877835272e-02,
-            5.650977161878403e-02,
-            2.028575236911587e-01,
-            4.9443814581116835e-01,
-            1.713865884482384,
-            4.047989545803132,
-            13.888779807398137,
-            32.16862014131525,
-            91.69701795218768,
+            # 5.650977161878403e-02,
+            # 2.028575236911587e-01,
+            # 4.9443814581116835e-01,
+            # 1.713865884482384,
+            # 4.047989545803132,
+            # 13.888779807398137,
+            # 32.16862014131525,
+            # 91.69701795218768,
         ],
     },
 }
@@ -134,7 +134,7 @@ def plot_t_count_scaling(
         axes[0].errorbar(
             stats["t_count"],
             stats["duration_mean"],
-            yerr=stats["duration_std"],
+            # yerr=stats["duration_std"],
             fmt=f"{marker}-",
             color=color,
             capsize=3,
@@ -144,12 +144,28 @@ def plot_t_count_scaling(
         axes[1].errorbar(
             stats["t_count"],
             stats["batch_mean"],
-            yerr=stats["batch_std"],
+            # yerr=stats["batch_std"],
             fmt=f"{marker}-",
             color=color,
             capsize=3,
             markersize=5,
             label=f"tsim ({label})",
+        )
+
+        # Fit log2(duration) = alpha * T + beta to the second half of the data
+        n_pts = len(stats["t_count"])
+        half = n_pts // 2
+        t_fit = stats["t_count"][half:]
+        log2_dur = np.log2(stats["duration_mean"][half:])
+        alpha, beta = np.polyfit(t_fit, log2_dur, 1)
+        t_line = np.linspace(t_fit[0], t_fit[-1], 100)
+        axes[0].plot(
+            t_line,
+            2 ** (alpha * t_line + beta),
+            "--",
+            color=color,
+            alpha=0.7,
+            label=rf"$2^{{{alpha/2:.2f} \cdot 2 T}}$ ({label})",
         )
 
     # Reference data
@@ -162,6 +178,24 @@ def plot_t_count_scaling(
                 color="gray",
                 alpha=0.7,
                 label=name,
+            )
+
+            # Fit log2(duration) = alpha * T + beta to the second half
+            t_ref = np.array(data["t_count"])
+            dur_ref = np.array(data["duration_per_shot"])
+            n_ref = len(t_ref)
+            half_ref = n_ref // 2
+            t_ref_fit = t_ref[half_ref:]
+            log2_dur_ref = np.log2(dur_ref[half_ref:])
+            alpha_ref, beta_ref = np.polyfit(t_ref_fit, log2_dur_ref, 1)
+            t_ref_line = np.linspace(t_ref_fit[0], t_ref_fit[-1], 100)
+            axes[0].plot(
+                t_ref_line,
+                2 ** (alpha_ref * t_ref_line + beta_ref),
+                ":",
+                color="gray",
+                alpha=0.7,
+                label=rf"$2^{{{alpha_ref/2:.2f} \cdot 2 T}}$ ({name})",
             )
 
     # Axes formatting
