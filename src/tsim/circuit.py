@@ -575,6 +575,10 @@ class Circuit:
     def compile_detector_sampler(self, *, seed: int | None = None):
         """Compile circuit into a detector sampler.
 
+        Automatically uses a fast Clifford-only path when the reduced graph
+        has the simple structure (each output wired to a single parametrized
+        Z vertex). Otherwise falls back to the full autoregressive sampler.
+
         Args:
             seed: Random seed for the sampler. If None, a random seed will be generated.
 
@@ -582,8 +586,16 @@ class Circuit:
             A CompiledDetectorSampler that can be used to sample detectors and observables.
 
         """
-        from tsim.sampler import CompiledDetectorSampler
+        from tsim.core.graph import prepare_graph
+        from tsim.sampler import (
+            CompiledCliffordDetectorSampler,
+            CompiledDetectorSampler,
+            _is_clifford_detector_graph,
+        )
 
+        prepared = prepare_graph(self, sample_detectors=True)
+        if _is_clifford_detector_graph(prepared.graph):
+            return CompiledCliffordDetectorSampler(self, seed=seed, _prepared=prepared)
         return CompiledDetectorSampler(self, seed=seed)
 
     def cast_to_stim(self) -> stim.Circuit:

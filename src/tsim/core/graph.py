@@ -274,9 +274,25 @@ def transform_error_basis(
               then f0 = e1 XOR e3.
 
     """
-    parametrized_vertices = [
-        v for v in g.vertices() if v in g._phaseVars and g._phaseVars[v]
+    # Prioritize output-connected detector vertices so that f0, f1, ...
+    # are assigned in output order (avoids column reindexing at sample time).
+    output_detectors = []
+    for v_out in g.outputs():
+        neighbors = list(g.neighbors(v_out))
+        if (
+            len(neighbors) == 1
+            and neighbors[0] in g._phaseVars
+            and g._phaseVars[neighbors[0]]
+        ):
+            output_detectors.append(neighbors[0])
+
+    output_det_set = set(output_detectors)
+    rest = [
+        v
+        for v in g.vertices()
+        if v not in output_det_set and v in g._phaseVars and g._phaseVars[v]
     ]
+    parametrized_vertices = output_detectors + rest
 
     if not parametrized_vertices:
         g.scalar = Scalar()

@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from math import ceil
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pyzx_param as zx
 
 from tsim.compile.evaluate import evaluate_batch
 from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
-from tsim.core.types import CompiledComponent, CompiledProgram
+from tsim.core.types import CompiledComponent, CompiledProgram, SamplingGraph
 from tsim.noise.channels import ChannelSampler
 
 if TYPE_CHECKING:
@@ -163,6 +164,7 @@ class _CompiledSamplerBase:
             channel_probs=prepared.channel_probs,
             error_transform=prepared.error_transform,
             seed=channel_seed,
+            sparse=True,
         )
 
         self.circuit = circuit
@@ -427,3 +429,81 @@ class CompiledStateProbs(_CompiledSamplerBase):
             p_joint = p_joint * jnp.abs(evaluate_batch(joint_circuit, joint_params))
 
         return np.asarray(p_joint / p_norm)
+
+
+def _is_clifford_detector_graph(g: Any) -> bool:
+    """Check if a prepared graph has the simple Clifford detector structure.
+
+    A Clifford detector graph has every output connected to exactly one Z-type
+    vertex via a Hadamard edge, where that vertex has no other neighbors and
+    carries exactly one f-parameter aligned with the output index.
+    """
+    for i, v_out in enumerate(g.outputs()):
+        neighbors = list(g.neighbors(v_out))
+        if len(neighbors) != 1:
+            return False
+        v_det = neighbors[0]
+        if len(list(g.neighbors(v_det))) != 1:
+            return False
+        if g.type(v_det) != zx.utils.VertexType.Z:
+            return False
+        if g.edge_type((v_out, v_det)) != zx.utils.EdgeType.HADAMARD:
+            return False
+        params = g.get_params(v_det)
+        if params != {f"f{i}"}:
+            return False
+    return True
+
+
+class CompiledCliffordDetectorSampler(CompiledDetectorSampler):
+    """Fast detector sampler for Clifford circuits.
+
+    When the reduced graph has the simple Clifford structure (each output
+    connected to a single parametrized Z vertex), sampling reduces to
+    channel sampling + slicing -- no autoregressive evaluation needed.
+    """
+
+    def __init__(
+        self,
+        circuit: Circuit,
+        *,
+        seed: int | None = None,
+        _prepared: SamplingGraph | None = None,
+    ):
+        """Create a Clifford detector sampler.
+
+        Args:
+            circuit: The quantum circuit to compile.
+            seed: Random seed. If None, a random seed is generated.
+            _prepared: Pre-prepared sampling graph (to avoid recomputation).
+
+        """
+        if _prepared is None:
+            _prepared = prepare_graph(circuit, sample_detectors=True)
+
+        assert _is_clifford_detector_graph(_prepared.graph)
+
+        self._channel_sampler = ChannelSampler(
+            channel_probs=_prepared.channel_probs,
+            error_transform=_prepared.error_transform,
+            seed=(
+                seed
+                if seed is not None
+                else int(np.random.default_rng().integers(0, 2**30))
+            ),
+            sparse=True,
+        )
+        self._num_detectors = _prepared.num_detectors
+        self.circuit = circuit
+
+    def _sample_batches(self, shots: int, batch_size: int | None = None) -> np.ndarray:
+        """Sample in batches and concatenate results."""
+        return np.asarray(self._channel_sampler.sample(shots))
+
+    def __repr__(self) -> str:
+        """Return a string representation of the sampler."""
+        return (
+            f"CompiledCliffordDetectorSampler({self._num_detectors} detectors, "
+            f"{self.circuit.num_observables} observable(s), "
+            f"{len(self._channel_sampler.channels)} channels)"
+        )
