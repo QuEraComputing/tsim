@@ -1,5 +1,7 @@
 """Pauli noise channels and error sampling infrastructure."""
 
+from __future__ import annotations
+
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -382,43 +384,6 @@ def simplify_channels(
     return channels
 
 
-def _sample_channels(
-    key: jax.Array,
-    channels: list[Channel],
-    matrix: jax.Array,
-    num_samples: int,
-) -> jax.Array:
-    """Sample from multiple channels and combine results via XOR.
-
-    Args:
-        key: JAX random key
-        channels: List of channels to sample from
-        matrix: Signature matrix of shape (num_signatures, num_outputs)
-        num_samples: Number of samples to draw
-
-    Returns:
-        Samples array of shape (num_samples, num_outputs).
-
-    """
-    num_outputs = matrix.shape[1]
-    res = jnp.zeros((num_samples, num_outputs), dtype=jnp.uint8)
-
-    keys = jax.random.split(key, len(channels))
-
-    for channel, subkey in zip(channels, keys, strict=True):
-        num_bits = channel.num_bits
-
-        samples = jax.random.categorical(subkey, channel.logits, shape=(num_samples,))
-        # Extract individual bits from sampled indices
-        bits = ((samples[:, None] >> jnp.arange(num_bits)) & 1).astype(jnp.uint8)
-
-        # XOR contribution from each bit into the result
-        for i, col_id in enumerate(channel.unique_col_ids):
-            res = res ^ (bits[:, i : i + 1] * matrix[col_id : col_id + 1, :])
-
-    return res
-
-
 class ChannelSampler:
     """Samples from multiple error channels and transforms to a reduced basis.
 
@@ -448,6 +413,8 @@ class ChannelSampler:
         channel_probs: list[np.ndarray],
         error_transform: np.ndarray,
         seed: int | None = None,
+        *,
+        sparse: bool = True,
     ):
         """Initialize the sampler with channel probabilities and a basis transformation.
 
@@ -460,6 +427,8 @@ class ChannelSampler:
                 means f_i depends on e_j. For example, if row 0 is [0, 1, 0, 1],
                 then f0 = e1 XOR e3.
             seed: Random seed for sampling. If None, a random seed is generated.
+            sparse: If True, use geometric-skip sampling optimized for low-noise
+                regimes where P(non-identity) << 1 per channel.
 
         """
         unique_cols, inverse = np.unique(error_transform, axis=1, return_inverse=True)
@@ -487,6 +456,95 @@ class ChannelSampler:
             seed if seed is not None else np.random.randint(0, 2**30)
         )
 
+        if sparse:
+            np_seed = int(jax.random.bits(self._key, dtype=jnp.uint32))
+            self._rng = np.random.default_rng(np_seed)
+            self._sparse_data = self._precompute_sparse(
+                self.channels, np.asarray(self.signature_matrix)
+            )
+            self._do_sample = self._sample_sparse
+        else:
+            self._do_sample = self._sample_dense
+
+    @staticmethod
+    def _precompute_sparse(
+        channels: list[Channel], matrix_np: np.ndarray
+    ) -> list[tuple[float, np.ndarray, np.ndarray]]:
+        """Precompute per-channel data for geometric-skip sparse sampling.
+
+        For each channel with non-trivial fire probability, computes:
+        - p_fire: probability of any non-identity outcome
+        - cond_cdf: conditional CDF over non-identity outcomes
+        - xor_patterns: precomputed XOR output patterns per outcome
+
+        """
+        data: list[tuple[float, np.ndarray, np.ndarray]] = []
+        for ch in channels:
+            probs = ch.probs.astype(np.float64)
+            p_fire = 1.0 - float(probs[0])
+            n_outcomes = len(probs)
+
+            if p_fire <= 1e-15 or n_outcomes <= 1:
+                continue
+
+            cond_cdf = np.cumsum(probs[1:] / p_fire, dtype=np.float64)
+            cond_cdf /= cond_cdf[-1]
+
+            col_ids = np.asarray(ch.unique_col_ids)
+            num_bits = len(col_ids)
+            outcomes = np.arange(1, n_outcomes)
+            bits_mask = ((outcomes[:, None] >> np.arange(num_bits)) & 1).astype(
+                np.uint8
+            )
+            xor_patterns = (bits_mask @ matrix_np[col_ids] % 2).astype(np.uint8)
+
+            data.append((p_fire, cond_cdf, xor_patterns))
+        return data
+
+    def _sample_sparse(self, num_samples: int) -> jax.Array:
+        """Sample using geometric skip, optimized for low-noise regimes."""
+        num_outputs = self.signature_matrix.shape[1]
+        result = np.zeros((num_samples, num_outputs), dtype=np.uint8)
+
+        for p_fire, cond_cdf, xor_pats in self._sparse_data:
+            expected = num_samples * p_fire
+            n_draws = max(
+                int(expected + 6.0 * np.sqrt(expected * (1.0 - p_fire)) + 100), 100
+            )
+
+            positions = np.cumsum(self._rng.geometric(p_fire, size=n_draws)) - 1
+            positions = positions[positions < num_samples]
+
+            if len(positions) == 0:
+                continue
+
+            outcome_idx = np.searchsorted(
+                cond_cdf, self._rng.uniform(size=len(positions))
+            )
+            result[positions] ^= xor_pats[outcome_idx]
+
+        return jnp.asarray(result)
+
+    def _sample_dense(self, num_samples: int) -> jax.Array:
+        """Sample using JAX categorical sampling over full distributions."""
+        num_outputs = self.signature_matrix.shape[1]
+        self._key, *keys = jax.random.split(self._key, len(self.channels) + 1)
+
+        res = jnp.zeros((num_samples, num_outputs), dtype=jnp.uint8)
+        for channel, subkey in zip(self.channels, keys, strict=True):
+            num_bits = channel.num_bits
+            samples = jax.random.categorical(
+                subkey, channel.logits, shape=(num_samples,)
+            )
+            bits = ((samples[:, None] >> jnp.arange(num_bits)) & 1).astype(jnp.uint8)
+
+            for i, col_id in enumerate(channel.unique_col_ids):
+                res = res ^ (
+                    bits[:, i : i + 1] * self.signature_matrix[col_id : col_id + 1, :]
+                )
+
+        return res
+
     def sample(self, num_samples: int = 1) -> jax.Array:
         """Sample from all error channels and transform to new error basis.
 
@@ -498,8 +556,4 @@ class ChannelSampler:
             which f-variables are set for each sample.
 
         """
-        self._key, subkey = jax.random.split(self._key)
-        samples = _sample_channels(
-            subkey, self.channels, self.signature_matrix, num_samples
-        )
-        return samples
+        return self._do_sample(num_samples)

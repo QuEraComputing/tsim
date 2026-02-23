@@ -6,7 +6,6 @@ from numpy.testing import assert_allclose
 from tsim.noise.channels import (
     Channel,
     ChannelSampler,
-    _sample_channels,
     absorb_subset_channels,
     correlated_error_probs,
     error_probs,
@@ -140,6 +139,15 @@ class TestCorrelatedErrorProbs:
         assert_allclose(probs[4], 0.0)  # Third error (blocked)
 
 
+def _sample_dense(key, channels, matrix, n_samples):
+    """Thin wrapper to call ChannelSampler._sample_dense for testing."""
+    sampler = object.__new__(ChannelSampler)
+    sampler.channels = channels
+    sampler.signature_matrix = matrix
+    sampler._key = key
+    return sampler._sample_dense(n_samples)
+
+
 def assert_sampling_matches(
     matrix: jnp.ndarray,
     channels_before: list[Channel],
@@ -153,11 +161,11 @@ def assert_sampling_matches(
     Compares the mean of each output bit (f-variable) between the two channel sets.
     """
     key1 = jax.random.key(seed)
-    bits1 = _sample_channels(key1, channels_before, matrix, n_samples)
+    bits1 = _sample_dense(key1, channels_before, matrix, n_samples)
     freq1 = np.mean(np.asarray(bits1), axis=0)
 
     key2 = jax.random.key(seed + 1)
-    bits2 = _sample_channels(key2, channels_after, matrix, n_samples)
+    bits2 = _sample_dense(key2, channels_after, matrix, n_samples)
     freq2 = np.mean(np.asarray(bits2), axis=0)
 
     assert_allclose(
@@ -502,7 +510,7 @@ class TestSimplifyChannels:
 
 
 class TestSampleChannels:
-    """Tests for _sample_channels function."""
+    """Tests for dense channel sampling."""
 
     def test_single_channel(self):
         """Test that sampling produces correct frequencies for a single channel."""
@@ -510,22 +518,20 @@ class TestSampleChannels:
         c = Channel(probs=error_probs(0.3), unique_col_ids=(0,))
 
         key = jax.random.key(42)
-        bits = _sample_channels(key, [c], mat, 100_000)
+        bits = _sample_dense(key, [c], mat, 100_000)
         freq = np.mean(np.asarray(bits[:, 0]))
 
         assert_allclose(freq, 0.3, rtol=0.05)
 
     def test_xor_two_channels(self):
         """Test that sampling correctly XORs two independent channels."""
-        # Matrix shape: (num_signatures, num_f_vars)
-        # Both signatures (0 and 1) affect f0
         mat = jnp.array([[1], [1]], dtype=jnp.uint8)
 
         c1 = Channel(probs=error_probs(0.2), unique_col_ids=(0,))
         c2 = Channel(probs=error_probs(0.3), unique_col_ids=(1,))
 
         key = jax.random.key(42)
-        bits = _sample_channels(key, [c1, c2], mat, 100_000)
+        bits = _sample_dense(key, [c1, c2], mat, 100_000)
         freq = np.mean(np.asarray(bits[:, 0]))
 
         # P(f0=1) = P(e0 XOR e1 = 1) = 0.2*0.7 + 0.3*0.8 = 0.14 + 0.24 = 0.38
