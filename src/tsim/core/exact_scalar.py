@@ -111,11 +111,11 @@ class ExactScalarArray(eqx.Module):
         # TODO: check for overflow and potentially refactor sum routine to scan
         # the array and reduce scalars every couple steps
 
-        min_power = jnp.min(self.power, keepdims=False, axis=-1)
+        min_power = jnp.min(self.power, keepdims=True, axis=-1)
         pow = (self.power - min_power)[..., None]
         aligned_coeffs = self.coeffs * 2**pow
         summed_coeffs = jnp.sum(aligned_coeffs, axis=-2)
-        return ExactScalarArray(summed_coeffs, min_power)
+        return ExactScalarArray(summed_coeffs, min_power.squeeze(-1))
 
     def prod(self, axis: int = -1) -> "ExactScalarArray":
         """Compute product along the specified axis using associative scan.
