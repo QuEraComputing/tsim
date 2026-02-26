@@ -94,6 +94,9 @@ doc = [
     "jupytext>=1.17.2",
 ]
 
+[tool.uv.sources]
+pyzx-param = { git = "https://github.com/rafaelha/pyzx", branch = "paramzx-doubled-diagrams" }
+
 [tool.hatch.metadata]
 allow-direct-references = true
 

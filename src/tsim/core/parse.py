@@ -60,17 +60,19 @@ def parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
 
 def parse_stim_circuit(
     stim_circuit: stim.Circuit,
+    track_classical_wires: bool = False,
 ) -> GraphRepresentation:
     """Parse a stim circuit into a GraphRepresentation.
 
     Args:
         stim_circuit: The stim circuit to convert.
+        track_classical_wires: Whether to track classical wires.
 
     Returns:
         A GraphRepresentation containing the ZX graph and all auxiliary data.
 
     """
-    b = GraphRepresentation()
+    b = GraphRepresentation(track_classical_wires=track_classical_wires)
 
     for instruction in stim_circuit.flattened():
         assert not isinstance(instruction, stim.CircuitRepeatBlock)

@@ -7,6 +7,7 @@ from typing import Any, Iterable, Literal, cast, overload
 import pyzx_param as zx
 import stim
 from pyzx_param.graph.base import BaseGraph
+from pyzx_param.utils import VertexType
 
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
@@ -474,7 +475,7 @@ class Circuit:
         elif type == "pyzx":
             from tsim.core.graph import scale_horizontally
 
-            built = parse_stim_circuit(self._stim_circ)
+            built = parse_stim_circuit(self._stim_circ, track_classical_wires=True)
             g = built.graph
 
             if len(g.vertices()) == 0:
@@ -484,6 +485,20 @@ class Circuit:
             max_row = max(g.row(v) for v in built.last_vertex.values())
             for q in built.last_vertex:
                 g.set_row(built.last_vertex[q], max_row)
+
+            for v in list(g.vertices()):
+                phase_vars = g._phaseVars[v]
+                if len(phase_vars) != 1:
+                    continue
+                phase = list(phase_vars)[0]
+                if phase.startswith("det") or phase.startswith("obs"):
+                    row = g.row(v)
+                    vb = g.add_vertex(
+                        VertexType.BOUNDARY,
+                        qubit=-2,
+                        row=row,
+                    )
+                    g.add_edge((v, vb))
 
             if kwargs.get("scale_horizontally", False):
                 scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))

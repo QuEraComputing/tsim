@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Callable, Literal
@@ -36,6 +37,24 @@ class GraphRepresentation:
     correlated_error_probs: list[float] = field(default_factory=list)
     num_error_bits: int = 0
     num_correlated_error_bits: int = 0
+    track_classical_wires: bool = False
+    _is_classical_wire: defaultdict[int, bool] = field(
+        default_factory=lambda: defaultdict(bool), repr=False
+    )
+
+    def is_classical_wire(self, qubit: int) -> bool:
+        """Whether a qubit is classical."""
+        if self.track_classical_wires:
+            return self._is_classical_wire[qubit]
+        return True
+
+    def make_classical_wire(self, qubit: int) -> None:
+        """Make a qubit classical."""
+        self._is_classical_wire[qubit] = True
+
+    def make_quantum_wire(self, qubit: int) -> None:
+        """Make a qubit quantum."""
+        self._is_classical_wire[qubit] = False
 
     @property
     def observables(self) -> list[int]:
@@ -70,7 +89,9 @@ def add_lane(b: GraphRepresentation, qubit: int) -> int:
     """Initialize a qubit lane if it doesn't exist."""
     v1 = b.graph.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=0)
     v2 = b.graph.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=1)
-    b.graph.add_edge((v1, v2))
+    b.graph.add_edge(
+        (v1, v2), EdgeType.SIMPLE if b.is_classical_wire(qubit) else EdgeType.BOLD
+    )
     b.first_vertex[qubit] = v1
     b.last_vertex[qubit] = v2
     return v1
@@ -91,20 +112,28 @@ def x_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply X-axis rotation to qubit. This is equivalent to `r_x` up to a phase."""
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
-    b.graph.set_type(v1, VertexType.X)
+    b.graph.set_type(
+        v1, VertexType.X if b.is_classical_wire(qubit) else VertexType.X_BOLD
+    )
     b.graph.set_phase(v1, phase)
     v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2))
+    b.graph.add_edge(
+        (v1, v2), EdgeType.SIMPLE if b.is_classical_wire(qubit) else EdgeType.BOLD
+    )
 
 
 def z_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply Z-axis phase rotation to qubit. This is equivalent to `r_z` up to a phase."""
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
-    b.graph.set_type(v1, VertexType.Z)
+    b.graph.set_type(
+        v1, VertexType.Z if b.is_classical_wire(qubit) else VertexType.Z_BOLD
+    )
     b.graph.set_phase(v1, phase)
     v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2))
+    b.graph.add_edge(
+        (v1, v2), EdgeType.SIMPLE if b.is_classical_wire(qubit) else EdgeType.BOLD
+    )
 
 
 def t(b: GraphRepresentation, qubit: int) -> None:
@@ -202,14 +231,20 @@ def h(b: GraphRepresentation, qubit: int) -> None:
     """Apply Hadamard gate."""
     ensure_lane(b, qubit)
     e = last_edge(b, qubit)
-    b.graph.set_edge_type(
-        e,
-        (
-            EdgeType.HADAMARD
-            if b.graph.edge_type(e) == EdgeType.SIMPLE
-            else EdgeType.SIMPLE
-        ),
-    )
+    e_type = b.graph.edge_type(e)
+
+    if e_type == EdgeType.SIMPLE:
+        e_type_flipped = EdgeType.HADAMARD
+    elif e_type == EdgeType.HADAMARD:
+        e_type_flipped = EdgeType.SIMPLE
+    elif e_type == EdgeType.BOLD:
+        e_type_flipped = EdgeType.HADAMARD_BOLD
+    elif e_type == EdgeType.HADAMARD_BOLD:
+        e_type_flipped = EdgeType.BOLD
+    else:
+        raise ValueError(f"Unknown edge type: {e_type}")
+
+    b.graph.set_edge_type(e, e_type_flipped)
 
 
 def h_xy(b: GraphRepresentation, qubit: int) -> None:
@@ -286,6 +321,13 @@ def _cx_cz(
     edge_type = EdgeType.SIMPLE if is_cx else EdgeType.HADAMARD
     vertex_type = VertexType.X if is_cx else VertexType.Z
 
+    edge_type_bold = EdgeType.BOLD if is_cx else EdgeType.HADAMARD_BOLD
+    vertex_type_bold = VertexType.X_BOLD if is_cx else VertexType.Z_BOLD
+
+    if not b.is_classical_wire(target):
+        edge_type = edge_type_bold
+        vertex_type = vertex_type_bold
+
     m_vertex = 0
     if classically_controlled:
         assert len(classically_controlled) == 2
@@ -305,10 +347,14 @@ def _cx_cz(
     row = max(lr1, lr2)
 
     v1 = b.last_vertex[control]
-    b.graph.set_type(v1, VertexType.Z)
+    b.graph.set_type(
+        v1, VertexType.Z if b.is_classical_wire(control) else VertexType.Z_BOLD
+    )
     b.graph.set_row(v1, row)
     v3 = add_dummy(b, control, int(row + 1))
-    b.graph.add_edge((v1, v3))
+    b.graph.add_edge(
+        (v1, v3), EdgeType.SIMPLE if b.is_classical_wire(control) else EdgeType.BOLD
+    )
 
     if control == target:
         row += 1
@@ -317,7 +363,9 @@ def _cx_cz(
     b.graph.set_type(v2, vertex_type)
     b.graph.set_row(v2, row)
     v4 = add_dummy(b, target, int(row + 1))
-    b.graph.add_edge((v2, v4))
+    b.graph.add_edge(
+        (v2, v4), EdgeType.SIMPLE if b.is_classical_wire(target) else EdgeType.BOLD
+    )
 
     if classically_controlled:
         b.graph.add_edge((m_vertex, v2), edge_type)
@@ -508,7 +556,14 @@ def _error(b: GraphRepresentation, qubit: int, error_type: int, phase: str) -> N
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
     v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2))
+    b.graph.add_edge(
+        (v1, v2), EdgeType.SIMPLE if b.is_classical_wire(qubit) else EdgeType.BOLD
+    )
+
+    if not b.is_classical_wire(qubit):
+        error_type = (
+            VertexType.Z_BOLD if error_type == VertexType.Z else VertexType.X_BOLD
+        )
 
     b.graph.set_type(v1, error_type)
     b.graph.set_phase(v1, phase)
@@ -680,6 +735,7 @@ def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -
     else:
         b.graph.set_phase(v1, f"m[{len(b.silent_rec)}]")
         b.silent_rec.append(v1)
+    b.make_classical_wire(qubit)
     v2 = add_dummy(b, qubit)
     b.graph.add_edge((v1, v2))
     b.graph.scalar.add_power(-1)
@@ -687,9 +743,12 @@ def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -
 
 def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
     """Perform reset on qubit, optionally tracing out previous state."""
+    b.make_quantum_wire(qubit)
     if qubit not in b.last_vertex:
         v1 = add_lane(b, qubit)
-        b.graph.set_type(v1, VertexType.X)
+        b.graph.set_type(
+            v1, VertexType.X if b.is_classical_wire(qubit) else VertexType.X_BOLD
+        )
         b.graph.scalar.add_power(-1)
     else:
         v = b.last_vertex[qubit]
@@ -697,13 +756,18 @@ def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
         assert len(neighbors) == 1
         if perform_trace:
             _m(b, qubit, silent=True)
+            b.make_quantum_wire(qubit)
         row = last_row(b, qubit)
         v1 = b.last_vertex[qubit]
-        b.graph.set_type(v1, VertexType.X)
+        b.graph.set_type(
+            v1, VertexType.X if b.is_classical_wire(qubit) else VertexType.X_BOLD
+        )
         v2 = list(b.graph.neighbors(v1))[0]
         b.graph.remove_edge((v1, v2))
         v3 = add_dummy(b, qubit, row + 1)
-        b.graph.add_edge((v1, v3))
+        b.graph.add_edge(
+            (v1, v3), EdgeType.SIMPLE if b.is_classical_wire(qubit) else EdgeType.BOLD
+        )
         b.graph.scalar.add_power(-1)
 
 

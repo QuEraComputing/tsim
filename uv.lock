@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -212,7 +212,7 @@ requires-dist = [
     { name = "jax", extras = ["cuda13"], marker = "extra == 'cuda13'", specifier = ">=0.6.0" },
     { name = "lxml", specifier = ">=5.0.0" },
     { name = "numpy", specifier = ">=1.25.0" },
-    { name = "pyzx-param", specifier = ">=0.9.2" },
+    { name = "pyzx-param", git = "https://github.com/rafaelha/pyzx?branch=paramzx-doubled-diagrams" },
     { name = "stim", specifier = ">=1.0.0" },
 ]
 provides-extras = ["cuda12", "cuda13"]
@@ -965,15 +965,15 @@ wheels = [
 
 [[package]]
 name = "griffe-kirin"
-version = "0.2.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.1.0"
+source = { registry = "https://quera.jfrog.io/artifactory/api/pypi/kirin/simple" }
 dependencies = [
     { name = "griffe" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a5/e0/9db75de974546903ab46a41179a95243abc84ceb2ba0b4101b5016f5301e/griffe_kirin-0.2.0.tar.gz", hash = "sha256:87d4280fbb1c77e1eb3fe7b627810b219295ec74651cf216748330b379a4ded5", size = 57664, upload-time = "2025-02-21T20:41:16.862Z" }
+sdist = { url = "https://quera.jfrog.io/artifactory/api/pypi/kirin/griffe-kirin/0.1.0/griffe_kirin-0.1.0.tar.gz", hash = "sha256:b5ed85a8c07da0219787ac8d57de0a4f2a6df3109fc3aab47d78a12f96dda04d" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/38/b2/04bf90dc9e9e80f969b562731cf1619bd2eb0d0b726ba7befd38fda38131/griffe_kirin-0.2.0-py3-none-any.whl", hash = "sha256:81d999d6e1480cbe46e5c7b82933d2eee96863840dfbac283df620d85c13c2fc", size = 4063, upload-time = "2025-02-21T20:41:14.734Z" },
+    { url = "https://quera.jfrog.io/artifactory/api/pypi/kirin/griffe-kirin/0.1.0/griffe_kirin-0.1.0-py3-none-any.whl", hash = "sha256:cdbc7a08c4fa5229f8f5f9137fd4de7dde35214166d3d448cbac8778079bd10a" },
 ]
 
 [[package]]
@@ -3583,7 +3583,7 @@ wheels = [
 [[package]]
 name = "pyzx-param"
 version = "0.9.2"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/rafaelha/pyzx?branch=paramzx-doubled-diagrams#5da0c972407e3df3c955b20a900b3d11b494edf2" }
 dependencies = [
     { name = "lark" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -3592,10 +3592,6 @@ dependencies = [
     { name = "sympy" },
     { name = "tqdm" },
     { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/22/d3/160c226916130b4995de2e8e95949ed065fe26636c7d359fecabbf66884d/pyzx_param-0.9.2.tar.gz", hash = "sha256:8a4c7136f12c974f032934fa2fa0f66489b9b95eebd6850a3fa41e9adc6d7a98", size = 357647, upload-time = "2026-01-29T01:31:06.499Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9b/40/ca0b3e02add85fc8e3e7ad88c99c454f86a3f55e3cc3b08b02175be112ab/pyzx_param-0.9.2-py3-none-any.whl", hash = "sha256:32ccd56c172e88102e21e9660d5ba05deff00ea862ba35f080b73d9a130b45ee", size = 393805, upload-time = "2026-01-29T01:31:05.158Z" },
 ]
 
 [[package]]
