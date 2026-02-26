@@ -9,7 +9,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tsim.compile.evaluate import evaluate_batch
+from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram
@@ -47,7 +47,7 @@ def _sample_component(
     m_accumulated = jnp.zeros((batch_size, num_outputs), dtype=jnp.bool_)
 
     # First circuit is normalization (only f-params)
-    prev = jnp.abs(evaluate_batch(component.compiled_scalar_graphs[0], f_selected))
+    prev = jnp.abs(evaluate(component.compiled_scalar_graphs[0], f_selected))
 
     ones = jnp.ones((batch_size, 1), dtype=jnp.bool_)
 
@@ -57,7 +57,7 @@ def _sample_component(
         params = jnp.hstack([f_selected, m_accumulated[:, :i], ones])
 
         # Evaluate P(bit=1 | previous bits)
-        p1 = jnp.abs(evaluate_batch(circuit, params))
+        p1 = jnp.abs(evaluate(circuit, params))
 
         key, subkey = jax.random.split(key)
         bits = jax.random.bernoulli(subkey, p=p1 / prev)
@@ -418,12 +418,12 @@ class CompiledStateProbs(_CompiledSamplerBase):
             norm_circuit, joint_circuit = component.compiled_scalar_graphs
 
             # Normalization: only f-params
-            p_norm = p_norm * jnp.abs(evaluate_batch(norm_circuit, f_selected))
+            p_norm = p_norm * jnp.abs(evaluate(norm_circuit, f_selected))
 
             # Joint probability: f-params + state
             component_state = state[list(component.output_indices)]
             tiled_state = jnp.tile(component_state, (batch_size, 1))
             joint_params = jnp.hstack([f_selected, tiled_state])
-            p_joint = p_joint * jnp.abs(evaluate_batch(joint_circuit, joint_params))
+            p_joint = p_joint * jnp.abs(evaluate(joint_circuit, joint_params))
 
         return np.asarray(p_joint / p_norm)
