@@ -157,8 +157,7 @@ class _CompiledSamplerBase:
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
         self._program = compile_program(prepared, mode=mode)
 
-        self._key, subkey = jax.random.split(self._key)
-        channel_seed = int(jax.random.randint(subkey, (), 0, 2**30))
+        channel_seed = int(np.random.default_rng(seed).integers(0, 2**30))
         self._channel_sampler = ChannelSampler(
             channel_probs=prepared.channel_probs,
             error_transform=prepared.error_transform,
@@ -175,7 +174,8 @@ class _CompiledSamplerBase:
 
         batches: list[jax.Array] = []
         for _ in range(ceil(shots / batch_size)):
-            f_params = self._channel_sampler.sample(batch_size)
+            f_params_np = self._channel_sampler.sample(batch_size)
+            f_params = jnp.asarray(f_params_np)
             self._key, subkey = jax.random.split(self._key)
             samples = sample_program(self._program, f_params, subkey)
             batches.append(samples)
@@ -406,7 +406,7 @@ class CompiledStateProbs(_CompiledSamplerBase):
             Array of probabilities P(state | error_sample) for each error sample.
 
         """
-        f_samples = self._channel_sampler.sample(batch_size)
+        f_samples = jnp.asarray(self._channel_sampler.sample(batch_size))
         p_norm = jnp.ones(batch_size)
         p_joint = jnp.ones(batch_size)
 

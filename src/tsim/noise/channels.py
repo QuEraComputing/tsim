@@ -1,10 +1,10 @@
 """Pauli noise channels and error sampling infrastructure."""
 
+from __future__ import annotations
+
 from collections import defaultdict
 from dataclasses import dataclass
 
-import jax
-import jax.numpy as jnp
 import numpy as np
 
 
@@ -25,11 +25,6 @@ class Channel:
     def num_bits(self) -> int:
         """Number of bits in the channel (k where probs has shape 2^k)."""
         return int(np.log2(len(self.probs)))
-
-    @property
-    def logits(self) -> jax.Array:
-        """Convert to logits for JAX sampling."""
-        return jnp.log(jnp.array(self.probs))
 
 
 def error_probs(p: float) -> np.ndarray:
@@ -382,49 +377,13 @@ def simplify_channels(
     return channels
 
 
-def _sample_channels(
-    key: jax.Array,
-    channels: list[Channel],
-    matrix: jax.Array,
-    num_samples: int,
-) -> jax.Array:
-    """Sample from multiple channels and combine results via XOR.
-
-    Args:
-        key: JAX random key
-        channels: List of channels to sample from
-        matrix: Signature matrix of shape (num_signatures, num_outputs)
-        num_samples: Number of samples to draw
-
-    Returns:
-        Samples array of shape (num_samples, num_outputs).
-
-    """
-    num_outputs = matrix.shape[1]
-    res = jnp.zeros((num_samples, num_outputs), dtype=jnp.uint8)
-
-    keys = jax.random.split(key, len(channels))
-
-    for channel, subkey in zip(channels, keys, strict=True):
-        num_bits = channel.num_bits
-
-        samples = jax.random.categorical(subkey, channel.logits, shape=(num_samples,))
-        # Extract individual bits from sampled indices
-        bits = ((samples[:, None] >> jnp.arange(num_bits)) & 1).astype(jnp.uint8)
-
-        # XOR contribution from each bit into the result
-        for i, col_id in enumerate(channel.unique_col_ids):
-            res = res ^ (bits[:, i : i + 1] * matrix[col_id : col_id + 1, :])
-
-    return res
-
-
 class ChannelSampler:
     """Samples from multiple error channels and transforms to a reduced basis.
 
     This class combines multiple error channels (each producing error bits e0, e1, ...)
     and applies a linear transformation over GF(2) to convert samples from the original
-    "e" basis to a reduced "f" basis.
+    "e" basis to a reduced "f" basis using geometric-skip sampling optimized for
+    low-noise regimes.
 
     f_i = error_transform_ij * e_j mod 2
 
@@ -481,25 +440,93 @@ class ChannelSampler:
             e_offset += num_bits
 
         self.channels = simplify_channels(channels, null_col_id=null_col_id)
-        self.signature_matrix = jnp.array(signature_matrix, dtype=jnp.uint8)
+        self.signature_matrix = signature_matrix.astype(np.uint8)
 
-        self._key = jax.random.key(
-            seed if seed is not None else np.random.randint(0, 2**30)
+        self._rng = np.random.default_rng(
+            seed if seed is not None else np.random.default_rng().integers(0, 2**30)
+        )
+        self._sparse_data = self._precompute_sparse(
+            self.channels, self.signature_matrix
         )
 
-    def sample(self, num_samples: int = 1) -> jax.Array:
+    @staticmethod
+    def _precompute_sparse(
+        channels: list[Channel], signature_matrix: np.ndarray
+    ) -> list[tuple[float, np.ndarray, np.ndarray]]:
+        """Precompute per-channel data for geometric-skip sampling.
+
+        For each channel with non-trivial fire probability, computes:
+        - p_fire: probability of any non-identity outcome
+        - cond_cdf: conditional CDF over non-identity outcomes
+        - xor_patterns: precomputed XOR output patterns per outcome
+
+        Args:
+            channels: List of noise channels to precompute data for.
+            signature_matrix: Binary matrix of shape (num_e, num_f) mapping
+                error-variable columns to output f-variables.
+
+        Returns:
+            List of (p_fire, cond_cdf, xor_patterns) tuples, one per channel
+            with non-trivial fire probability. ``p_fire`` is a float,
+            ``cond_cdf`` is a float64 array of shape (n_outcomes - 1,), and
+            ``xor_patterns`` is a uint8 array of shape (n_outcomes - 1, num_f).
+
+        """
+        data: list[tuple[float, np.ndarray, np.ndarray]] = []
+        for ch in channels:
+            probs = ch.probs.astype(np.float64)
+            p_fire = 1.0 - float(probs[0])
+            n_outcomes = len(probs)
+
+            if p_fire <= 1e-15 or n_outcomes <= 1:
+                continue
+
+            cond_cdf = np.cumsum(probs[1:] / p_fire, dtype=np.float64)
+            cond_cdf /= cond_cdf[-1]
+
+            col_ids = np.asarray(ch.unique_col_ids)
+            num_bits = len(col_ids)
+            outcomes = np.arange(1, n_outcomes)
+            bits_mask = ((outcomes[:, None] >> np.arange(num_bits)) & 1).astype(
+                np.uint8
+            )
+            xor_patterns = (bits_mask @ signature_matrix[col_ids] % 2).astype(np.uint8)
+
+            data.append((p_fire, cond_cdf, xor_patterns))
+        return data
+
+    def sample(self, num_samples: int = 1) -> np.ndarray:
         """Sample from all error channels and transform to new error basis.
+
+        Uses geometric-skip sampling, optimized for low-noise regimes where
+        P(non-identity) << 1 per channel.
 
         Args:
             num_samples: Number of samples to draw.
 
         Returns:
-            Array of shape (num_samples, num_f) with boolean values indicating
+            NumPy array of shape (num_samples, num_f) with uint8 values indicating
             which f-variables are set for each sample.
 
         """
-        self._key, subkey = jax.random.split(self._key)
-        samples = _sample_channels(
-            subkey, self.channels, self.signature_matrix, num_samples
-        )
-        return samples
+        num_outputs = self.signature_matrix.shape[1]
+        result = np.zeros((num_samples, num_outputs), dtype=np.uint8)
+
+        for p_fire, cond_cdf, xor_pats in self._sparse_data:
+            expected = num_samples * p_fire
+            sigma = np.sqrt(expected * (1.0 - p_fire))
+            # At 7 sigma, we undersample in about 1 out of 1e12 cases
+            n_draws = int(expected + 7.0 * sigma) + 100
+
+            positions = np.cumsum(self._rng.geometric(p_fire, size=n_draws)) - 1
+            positions = positions[positions < num_samples]
+
+            if len(positions) == 0:
+                continue
+
+            outcome_idx = np.searchsorted(
+                cond_cdf, self._rng.uniform(size=len(positions))
+            )
+            result[positions] ^= xor_pats[outcome_idx]
+
+        return result
