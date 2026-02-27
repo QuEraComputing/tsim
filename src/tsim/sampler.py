@@ -121,6 +121,13 @@ def sample_program(
     """
     results: list[jax.Array] = []
 
+    if len(program.direct_f_indices) > 0:
+        direct_bits = (
+            f_params[:, program.direct_f_indices].astype(jnp.bool_)
+            ^ program.direct_flips
+        )
+        results.append(direct_bits)
+
     for component in program.components:
         samples, key = sample_component(component, f_params, key)
         results.append(samples)
@@ -184,6 +191,8 @@ class _CompiledSamplerBase:
 
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""
+        n_direct = len(self._program.direct_f_indices)
+
         c_graphs = []
         c_params = []
         c_a_terms = []
@@ -222,11 +231,13 @@ class _CompiledSamplerBase:
         error_channel_bits = sum(
             channel.num_bits for channel in self._channel_sampler.channels
         )
+        max_outputs = int(np.max(num_outputs)) if num_outputs else 0
 
         return (
-            f"{type(self).__name__}({np.sum(c_graphs)} graphs, "
+            f"{type(self).__name__}({n_direct} direct, "
+            f"{np.sum(c_graphs)} graphs, "
             f"{error_channel_bits} error channel bits, "
-            f"{np.max(num_outputs)} outputs for largest cc, "
+            f"{max_outputs} outputs for largest cc, "
             f"≤ {np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
             f"{np.sum(c_b_terms)} B terms, "
             f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms, "
@@ -409,6 +420,15 @@ class CompiledStateProbs(_CompiledSamplerBase):
         f_samples = jnp.asarray(self._channel_sampler.sample(batch_size))
         p_norm = jnp.ones(batch_size)
         p_joint = jnp.ones(batch_size)
+
+        if len(self._program.direct_f_indices) > 0:
+            bits = (
+                f_samples[:, self._program.direct_f_indices].astype(jnp.bool_)
+                ^ self._program.direct_flips
+            )
+            n_direct = len(self._program.direct_f_indices)
+            targets = state[self._program.output_order[:n_direct]]
+            p_joint = p_joint * (bits == targets).all(axis=1)
 
         for component in self._program.components:
             assert len(component.compiled_scalar_graphs) == 2

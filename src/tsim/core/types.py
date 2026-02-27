@@ -86,7 +86,11 @@ class CompiledProgram:
 
     Attributes:
         components: The compiled components, sorted by number of outputs.
+        direct_f_indices: Precomputed f-parameter indices for direct components.
+        direct_flips: Precomputed flip flags for direct components.
         output_order: Array for reordering component outputs to final order.
+            The first ``len(direct_f_indices)`` entries correspond to direct
+            components; the remainder to compiled components.
             final_samples = combined[:, np.argsort(output_order)]
         num_outputs: Total number of outputs across all components.
         num_f_params: Total number of f-parameters.
@@ -95,6 +99,8 @@ class CompiledProgram:
     """
 
     components: tuple[CompiledComponent, ...]
+    direct_f_indices: Array
+    direct_flips: Array
     output_order: Array
     num_outputs: int
     num_f_params: int
