@@ -65,6 +65,37 @@ class Circuit:
         )
         self._stim_circ = self._stim_circ.flattened()
 
+    def append(
+        self,
+        name: Any,
+        targets: Any = (),
+        arg: Any = (),
+        **kwargs: Any,
+    ) -> None:
+        """Append an operation into the circuit.
+
+        This is a wrapper around stim.Circuit.append that also supports tsim-specific
+        instructions like T, T_DAG, R_X, R_Y, R_Z, and U3.
+        """
+        if isinstance(name, str):
+            if name == "T":
+                name = "S"
+                kwargs["tag"] = "T"
+            elif name == "T_DAG":
+                name = "S_DAG"
+                kwargs["tag"] = "T"
+            elif name in ("R_X", "R_Y", "R_Z"):
+                angle = arg[0] if isinstance(arg, (list, tuple)) else arg
+                kwargs["tag"] = f"{name}(theta={angle}*pi)"
+                name = "I"
+                arg = ()
+            elif name == "U3":
+                theta, phi, lam = arg
+                kwargs["tag"] = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
+                name = "I"
+                arg = ()
+        self._stim_circ.append(name, targets, arg, **kwargs)
+
     @classmethod
     def from_file(cls, filename: str) -> Circuit:
         """Create a Circuit from a file.
