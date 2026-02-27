@@ -1,0 +1,45 @@
+:root {
+  --md-primary-fg-color: #00ba7c;
+  --md-accent-fg-color: #ff8208;
+}
+
+/* Hide the header and sidebar logo/icon */
+.md-header__button.md-logo,
+.md-nav__button.md-logo {
+  display: none;
+}
+
+
+#logo_light_mode {
+  display: var(--md-footer-logo-light-mode);
+}
+
+#logo_dark_mode {
+  display: var(--md-footer-logo-dark-mode);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-footer-logo-dark-mode:         block;
+  --md-footer-logo-light-mode:         none;
+}
+
+[data-md-color-scheme="default"] {
+  --md-footer-logo-dark-mode:           none;
+  --md-footer-logo-light-mode:         block;
+}
+
+/* Example for setting a maximum width for code blocks */
+pre code {
+    max-width: 800px; /* Adjust this value as needed (e.g., 100% for full width) */
+    overflow-x: auto; /* Adds horizontal scrollbar if content exceeds width */
+}
+
+/* Example for adjusting content area width for the Material theme */
+.md-grid {
+    max-width: 1240px; /* Increase the overall content area width */
+}
+
+/* Hide Jupyter notebook input/output prompts (In[ ] and Out[ ]) */
+.jp-InputPrompt, .jp-OutputPrompt {
+    display: none !important;
+}
