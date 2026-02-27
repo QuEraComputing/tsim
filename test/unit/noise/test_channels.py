@@ -1,5 +1,3 @@
-import jax
-import jax.numpy as jnp
 import numpy as np
 from numpy.testing import assert_allclose
 
@@ -139,17 +137,20 @@ class TestCorrelatedErrorProbs:
         assert_allclose(probs[4], 0.0)  # Third error (blocked)
 
 
-def _sample_dense(key, channels, matrix, n_samples):
-    """Thin wrapper to call ChannelSampler._sample_dense for testing."""
+def _sample_channels(channels, matrix, n_samples, seed=42):
+    """Sample from channels using the ChannelSampler infrastructure."""
     sampler = object.__new__(ChannelSampler)
     sampler.channels = channels
-    sampler.signature_matrix = matrix
-    sampler._key = key
-    return sampler._sample_dense(n_samples)
+    sampler.signature_matrix = np.asarray(matrix, dtype=np.uint8)
+    sampler._rng = np.random.default_rng(seed)
+    sampler._sparse_data = ChannelSampler._precompute_sparse(
+        channels, sampler.signature_matrix
+    )
+    return sampler.sample(n_samples)
 
 
 def assert_sampling_matches(
-    matrix: jnp.ndarray,
+    matrix: np.ndarray,
     channels_before: list[Channel],
     channels_after: list[Channel],
     n_samples: int = 500_000,
@@ -160,13 +161,11 @@ def assert_sampling_matches(
 
     Compares the mean of each output bit (f-variable) between the two channel sets.
     """
-    key1 = jax.random.key(seed)
-    bits1 = _sample_dense(key1, channels_before, matrix, n_samples)
-    freq1 = np.mean(np.asarray(bits1), axis=0)
+    bits1 = _sample_channels(channels_before, matrix, n_samples, seed=seed)
+    freq1 = np.mean(bits1, axis=0)
 
-    key2 = jax.random.key(seed + 1)
-    bits2 = _sample_dense(key2, channels_after, matrix, n_samples)
-    freq2 = np.mean(np.asarray(bits2), axis=0)
+    bits2 = _sample_channels(channels_after, matrix, n_samples, seed=seed + 1)
+    freq2 = np.mean(bits2, axis=0)
 
     assert_allclose(
         freq1,
@@ -259,13 +258,13 @@ class TestMergeIdenticalChannels:
 
     def test_sampling_matches_after_merge(self):
         """Sampling statistics should match before and after merging."""
-        mat = jnp.array(
+        mat = np.array(
             [
                 [1, 0, 0],
                 [0, 1, 0],
                 [1, 1, 0],
             ],
-            dtype=jnp.uint8,
+            dtype=np.uint8,
         )
 
         c1 = Channel(probs=error_probs(0.1), unique_col_ids=(0,))
@@ -365,7 +364,7 @@ class TestNormalizeChannels:
 
         normalized = normalize_channels([c])
 
-        mat = jnp.eye(2, dtype=jnp.uint8)
+        mat = np.eye(2, dtype=np.uint8)
         assert_sampling_matches(mat, [c], normalized)
 
 
@@ -414,13 +413,13 @@ class TestAbsorbSubsetChannels:
 
     def test_sampling_matches_after_absorb(self):
         """Sampling statistics should match before and after absorption."""
-        mat = jnp.array(
+        mat = np.array(
             [
                 [1, 0, 0],
                 [0, 1, 0],
                 [1, 1, 0],
             ],
-            dtype=jnp.uint8,
+            dtype=np.uint8,
         )
 
         # c1 has signature (0,), c2 has signatures (0, 1)
@@ -443,14 +442,14 @@ class TestSimplifyChannels:
 
     def test_simplify_mixed_channels(self):
         """Test simplification with a mix of channel types."""
-        mat = jnp.array(
+        mat = np.array(
             [
                 [1, 0, 0, 0],
                 [0, 1, 0, 0],
                 [0, 0, 1, 0],
                 [1, 1, 1, 0],
             ],
-            dtype=jnp.uint8,
+            dtype=np.uint8,
         )
 
         # Create channels:
@@ -475,7 +474,7 @@ class TestSimplifyChannels:
 
     def test_simplify_many_1bit_channels(self):
         """Test simplification of many 1-bit channels with same signature."""
-        mat = jnp.array([[1], [1]], dtype=jnp.uint8)
+        mat = np.array([[1], [1]], dtype=np.uint8)
 
         # 10 channels all with the same signature
         channels = [
@@ -489,13 +488,13 @@ class TestSimplifyChannels:
 
     def test_simplify_preserves_independent_channels(self):
         """Channels with disjoint signatures should remain separate."""
-        mat = jnp.array(
+        mat = np.array(
             [
                 [1, 0, 0],
                 [0, 1, 0],
                 [0, 0, 1],
             ],
-            dtype=jnp.uint8,
+            dtype=np.uint8,
         )
 
         c1 = Channel(probs=error_probs(0.1), unique_col_ids=(0,))
@@ -510,29 +509,27 @@ class TestSimplifyChannels:
 
 
 class TestSampleChannels:
-    """Tests for dense channel sampling."""
+    """Tests for channel sampling."""
 
     def test_single_channel(self):
         """Test that sampling produces correct frequencies for a single channel."""
-        mat = jnp.array([[1]], dtype=jnp.uint8)
+        mat = np.array([[1]], dtype=np.uint8)
         c = Channel(probs=error_probs(0.3), unique_col_ids=(0,))
 
-        key = jax.random.key(42)
-        bits = _sample_dense(key, [c], mat, 100_000)
-        freq = np.mean(np.asarray(bits[:, 0]))
+        bits = _sample_channels([c], mat, 100_000)
+        freq = np.mean(bits[:, 0])
 
         assert_allclose(freq, 0.3, rtol=0.05)
 
     def test_xor_two_channels(self):
         """Test that sampling correctly XORs two independent channels."""
-        mat = jnp.array([[1], [1]], dtype=jnp.uint8)
+        mat = np.array([[1], [1]], dtype=np.uint8)
 
         c1 = Channel(probs=error_probs(0.2), unique_col_ids=(0,))
         c2 = Channel(probs=error_probs(0.3), unique_col_ids=(1,))
 
-        key = jax.random.key(42)
-        bits = _sample_dense(key, [c1, c2], mat, 100_000)
-        freq = np.mean(np.asarray(bits[:, 0]))
+        bits = _sample_channels([c1, c2], mat, 100_000)
+        freq = np.mean(bits[:, 0])
 
         # P(f0=1) = P(e0 XOR e1 = 1) = 0.2*0.7 + 0.3*0.8 = 0.14 + 0.24 = 0.38
         expected = 0.2 * 0.7 + 0.3 * 0.8

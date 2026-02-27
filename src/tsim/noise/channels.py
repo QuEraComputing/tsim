@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-import jax
-import jax.numpy as jnp
 import numpy as np
 
 
@@ -27,11 +25,6 @@ class Channel:
     def num_bits(self) -> int:
         """Number of bits in the channel (k where probs has shape 2^k)."""
         return int(np.log2(len(self.probs)))
-
-    @property
-    def logits(self) -> jax.Array:
-        """Convert to logits for JAX sampling."""
-        return jnp.log(jnp.array(self.probs))
 
 
 def error_probs(p: float) -> np.ndarray:
@@ -389,7 +382,8 @@ class ChannelSampler:
 
     This class combines multiple error channels (each producing error bits e0, e1, ...)
     and applies a linear transformation over GF(2) to convert samples from the original
-    "e" basis to a reduced "f" basis.
+    "e" basis to a reduced "f" basis using geometric-skip sampling optimized for
+    low-noise regimes.
 
     f_i = error_transform_ij * e_j mod 2
 
@@ -413,8 +407,6 @@ class ChannelSampler:
         channel_probs: list[np.ndarray],
         error_transform: np.ndarray,
         seed: int | None = None,
-        *,
-        sparse: bool = True,
     ):
         """Initialize the sampler with channel probabilities and a basis transformation.
 
@@ -427,8 +419,6 @@ class ChannelSampler:
                 means f_i depends on e_j. For example, if row 0 is [0, 1, 0, 1],
                 then f0 = e1 XOR e3.
             seed: Random seed for sampling. If None, a random seed is generated.
-            sparse: If True, use geometric-skip sampling optimized for low-noise
-                regimes where P(non-identity) << 1 per channel.
 
         """
         unique_cols, inverse = np.unique(error_transform, axis=1, return_inverse=True)
@@ -450,32 +440,36 @@ class ChannelSampler:
             e_offset += num_bits
 
         self.channels = simplify_channels(channels, null_col_id=null_col_id)
-        self.signature_matrix = jnp.array(signature_matrix, dtype=jnp.uint8)
+        self.signature_matrix = signature_matrix.astype(np.uint8)
 
-        self._key = jax.random.key(
-            seed if seed is not None else np.random.randint(0, 2**30)
+        self._rng = np.random.default_rng(
+            seed if seed is not None else np.random.default_rng().integers(0, 2**30)
         )
-
-        if sparse:
-            np_seed = int(jax.random.bits(self._key, dtype=jnp.uint32))
-            self._rng = np.random.default_rng(np_seed)
-            self._sparse_data = self._precompute_sparse(
-                self.channels, np.asarray(self.signature_matrix)
-            )
-            self._do_sample = self._sample_sparse
-        else:
-            self._do_sample = self._sample_dense
+        self._sparse_data = self._precompute_sparse(
+            self.channels, self.signature_matrix
+        )
 
     @staticmethod
     def _precompute_sparse(
-        channels: list[Channel], matrix_np: np.ndarray
+        channels: list[Channel], signature_matrix: np.ndarray
     ) -> list[tuple[float, np.ndarray, np.ndarray]]:
-        """Precompute per-channel data for geometric-skip sparse sampling.
+        """Precompute per-channel data for geometric-skip sampling.
 
         For each channel with non-trivial fire probability, computes:
         - p_fire: probability of any non-identity outcome
         - cond_cdf: conditional CDF over non-identity outcomes
         - xor_patterns: precomputed XOR output patterns per outcome
+
+        Args:
+            channels: List of noise channels to precompute data for.
+            signature_matrix: Binary matrix of shape (num_e, num_f) mapping
+                error-variable columns to output f-variables.
+
+        Returns:
+            List of (p_fire, cond_cdf, xor_patterns) tuples, one per channel
+            with non-trivial fire probability. ``p_fire`` is a float,
+            ``cond_cdf`` is a float64 array of shape (n_outcomes - 1,), and
+            ``xor_patterns`` is a uint8 array of shape (n_outcomes - 1, num_f).
 
         """
         data: list[tuple[float, np.ndarray, np.ndarray]] = []
@@ -496,21 +490,33 @@ class ChannelSampler:
             bits_mask = ((outcomes[:, None] >> np.arange(num_bits)) & 1).astype(
                 np.uint8
             )
-            xor_patterns = (bits_mask @ matrix_np[col_ids] % 2).astype(np.uint8)
+            xor_patterns = (bits_mask @ signature_matrix[col_ids] % 2).astype(np.uint8)
 
             data.append((p_fire, cond_cdf, xor_patterns))
         return data
 
-    def _sample_sparse(self, num_samples: int) -> jax.Array:
-        """Sample using geometric skip, optimized for low-noise regimes."""
+    def sample(self, num_samples: int = 1) -> np.ndarray:
+        """Sample from all error channels and transform to new error basis.
+
+        Uses geometric-skip sampling, optimized for low-noise regimes where
+        P(non-identity) << 1 per channel.
+
+        Args:
+            num_samples: Number of samples to draw.
+
+        Returns:
+            NumPy array of shape (num_samples, num_f) with uint8 values indicating
+            which f-variables are set for each sample.
+
+        """
         num_outputs = self.signature_matrix.shape[1]
         result = np.zeros((num_samples, num_outputs), dtype=np.uint8)
 
         for p_fire, cond_cdf, xor_pats in self._sparse_data:
             expected = num_samples * p_fire
-            n_draws = max(
-                int(expected + 6.0 * np.sqrt(expected * (1.0 - p_fire)) + 100), 100
-            )
+            sigma = np.sqrt(expected * (1.0 - p_fire))
+            # At 7 sigma, we undersample in about 1 out of 1e12 cases
+            n_draws = int(expected + 7.0 * sigma) + 100
 
             positions = np.cumsum(self._rng.geometric(p_fire, size=n_draws)) - 1
             positions = positions[positions < num_samples]
@@ -523,37 +529,4 @@ class ChannelSampler:
             )
             result[positions] ^= xor_pats[outcome_idx]
 
-        return jnp.asarray(result)
-
-    def _sample_dense(self, num_samples: int) -> jax.Array:
-        """Sample using JAX categorical sampling over full distributions."""
-        num_outputs = self.signature_matrix.shape[1]
-        self._key, *keys = jax.random.split(self._key, len(self.channels) + 1)
-
-        res = jnp.zeros((num_samples, num_outputs), dtype=jnp.uint8)
-        for channel, subkey in zip(self.channels, keys, strict=True):
-            num_bits = channel.num_bits
-            samples = jax.random.categorical(
-                subkey, channel.logits, shape=(num_samples,)
-            )
-            bits = ((samples[:, None] >> jnp.arange(num_bits)) & 1).astype(jnp.uint8)
-
-            for i, col_id in enumerate(channel.unique_col_ids):
-                res = res ^ (
-                    bits[:, i : i + 1] * self.signature_matrix[col_id : col_id + 1, :]
-                )
-
-        return res
-
-    def sample(self, num_samples: int = 1) -> jax.Array:
-        """Sample from all error channels and transform to new error basis.
-
-        Args:
-            num_samples: Number of samples to draw.
-
-        Returns:
-            Array of shape (num_samples, num_f) with boolean values indicating
-            which f-variables are set for each sample.
-
-        """
-        return self._do_sample(num_samples)
+        return result
