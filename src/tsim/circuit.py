@@ -590,6 +590,11 @@ class Circuit:
     def compile_detector_sampler(self, *, seed: int | None = None):
         """Compile circuit into a detector sampler.
 
+        Connected components whose single output is deterministically given by
+        one f-variable are handled via a fast direct path (no compilation or
+        autoregressive sampling).  Remaining components go through the full
+        compilation pipeline.
+
         Args:
             seed: Random seed for the sampler. If None, a random seed will be generated.
 
