@@ -513,8 +513,10 @@ class Circuit:
 
             g = self.get_sampling_graph(sample_detectors=type == "pyzx-dets")
             zx.full_reduce(g, paramSafe=True)
-            g, _ = transform_error_basis(g)
+            if kwargs.pop("transform_error_basis", True):
+                g, _ = transform_error_basis(g)
             squash_graph(g)
+            zx.simplify.to_rg(g)
             if kwargs.get("scale_horizontally", False):
                 scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
             zx.draw(g, **kwargs)
