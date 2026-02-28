@@ -493,11 +493,13 @@ class Circuit:
                 phase = list(phase_vars)[0]
                 if phase.startswith("det") or phase.startswith("obs"):
                     row = g.row(v)
+                    g.set_phase(v, 0)
                     vb = g.add_vertex(
                         VertexType.BOUNDARY,
                         qubit=-2,
                         row=row,
                     )
+                    g.add_to_phase(vb, 0, set([phase]))
                     g.add_edge((v, vb))
 
             if kwargs.get("scale_horizontally", False):

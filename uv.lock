@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -3583,7 +3583,7 @@ wheels = [
 [[package]]
 name = "pyzx-param"
 version = "0.9.2"
-source = { git = "https://github.com/rafaelha/pyzx?branch=paramzx-doubled-diagrams#5da0c972407e3df3c955b20a900b3d11b494edf2" }
+source = { git = "https://github.com/rafaelha/pyzx?branch=paramzx-doubled-diagrams#68892faa58f9da334bc545c59df79303090147c8" }
 dependencies = [
     { name = "lark" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
