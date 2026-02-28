@@ -133,7 +133,9 @@ def sample_program(
         results.append(samples)
 
     combined = jnp.concatenate(results, axis=1)
-    return combined[:, jnp.argsort(program.output_order)]
+    if program.output_reindex is not None:
+        combined = combined[:, program.output_reindex]
+    return combined
 
 
 class _CompiledSamplerBase:
@@ -174,8 +176,25 @@ class _CompiledSamplerBase:
         self.circuit = circuit
         self._num_detectors = prepared.num_detectors
 
+        # Pre-cache numpy arrays for the direct fast path so we don't
+        # convert from JAX on every sample call.
+        prog = self._program
+        n_direct = len(prog.direct_f_indices)
+        self._direct_f_np = np.asarray(prog.direct_f_indices)
+        self._direct_fl_np = np.asarray(prog.direct_flips)
+        self._direct_reindex_np = (
+            np.asarray(prog.output_reindex) if prog.output_reindex is not None else None
+        )
+        self._direct_any_flips = bool(np.any(self._direct_fl_np))
+        self._direct_contiguous = n_direct > 0 and np.array_equal(
+            self._direct_f_np, np.arange(n_direct)
+        )
+
     def _sample_batches(self, shots: int, batch_size: int | None = None) -> np.ndarray:
         """Sample in batches and concatenate results."""
+        if not self._program.components:
+            return self._sample_direct(shots)
+
         if batch_size is None:
             batch_size = shots
 
@@ -188,6 +207,20 @@ class _CompiledSamplerBase:
             batches.append(samples)
 
         return np.concatenate(batches)[:shots]
+
+    def _sample_direct(self, shots: int) -> np.ndarray:
+        """Fast path when all components are direct (pure numpy, no JAX)."""
+        f_params = self._channel_sampler.sample(shots)
+        n = len(self._direct_f_np)
+        if self._direct_contiguous:
+            result = f_params[:, :n] if n < f_params.shape[1] else f_params
+        else:
+            result = f_params[:, self._direct_f_np]
+        if self._direct_any_flips:
+            result = result ^ self._direct_fl_np
+        if self._direct_reindex_np is not None:
+            result = result[:, self._direct_reindex_np]
+        return result
 
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""

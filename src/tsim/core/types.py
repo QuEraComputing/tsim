@@ -88,10 +88,11 @@ class CompiledProgram:
         components: The compiled components, sorted by number of outputs.
         direct_f_indices: Precomputed f-parameter indices for direct components.
         direct_flips: Precomputed flip flags for direct components.
-        output_order: Array for reordering component outputs to final order.
+        output_order: Maps concatenated position to original output index.
             The first ``len(direct_f_indices)`` entries correspond to direct
             components; the remainder to compiled components.
-            final_samples = combined[:, np.argsort(output_order)]
+        output_reindex: Precomputed ``argsort(output_order)`` permutation,
+            or ``None`` when the outputs are already in order.
         num_outputs: Total number of outputs across all components.
         num_f_params: Total number of f-parameters.
         num_detectors: Number of detector outputs (for detector sampling).
@@ -102,6 +103,7 @@ class CompiledProgram:
     direct_f_indices: Array
     direct_flips: Array
     output_order: Array
+    output_reindex: Array | None
     num_outputs: int
     num_f_params: int
     num_detectors: int

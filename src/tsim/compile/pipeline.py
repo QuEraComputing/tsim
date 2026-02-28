@@ -130,15 +130,32 @@ def compile_program(
             compiled_components.append(compiled)
             compiled_output_order.extend(component.output_indices)
 
+    # Sort direct entries by output index so that the concatenation layout
+    # in sample_program matches the original output order as closely as
+    # possible.  When transform_error_basis also prioritises outputs, this
+    # often yields an identity permutation and avoids reindexing at sample time.
+    if direct_output_order:
+        order = sorted(
+            range(len(direct_output_order)), key=direct_output_order.__getitem__
+        )
+        direct_f_indices = [direct_f_indices[i] for i in order]
+        direct_flips = [direct_flips[i] for i in order]
+        direct_output_order = [direct_output_order[i] for i in order]
+
     # output_order must match the concatenation layout in sample_program:
     # [direct bits, compiled_0 outputs, compiled_1 outputs, ...]
-    output_order = direct_output_order + compiled_output_order
+    output_order = jnp.array(
+        direct_output_order + compiled_output_order, dtype=jnp.int32
+    )
+    reindex = jnp.argsort(output_order)
+    is_identity = bool(jnp.all(reindex == jnp.arange(len(output_order))))
 
     return CompiledProgram(
         components=tuple(compiled_components),
         direct_f_indices=jnp.array(direct_f_indices, dtype=jnp.int32),
         direct_flips=jnp.array(direct_flips, dtype=jnp.bool_),
-        output_order=jnp.array(output_order, dtype=jnp.int32),
+        output_order=output_order,
+        output_reindex=None if is_identity else reindex,
         num_outputs=num_outputs,
         num_f_params=len(f_indices_global),
         num_detectors=prepared.num_detectors,
