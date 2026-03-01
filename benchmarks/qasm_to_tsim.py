@@ -34,6 +34,8 @@ _PP_RE = re.compile(
     re.IGNORECASE,
 )
 _QIDX_RE = re.compile(r"^q\[(\d+)\]$", re.IGNORECASE)
+_INT_TOKEN_RE = re.compile(r"^-?\d+$")
+_DEFAULT_NOISE_PROB = 1e-4
 
 
 def _parse_pi_expression(expr: str) -> float:
@@ -81,12 +83,51 @@ def _parse_pp_qubits(args: str) -> list[int]:
     return qubits
 
 
-def qasm_to_tsim_program(qasm: str, *, pp_phase: float = 0.25) -> str:
+def _extract_tsim_targets(line: str) -> list[int]:
+    """Extract integer target qubits from one TSIM/STIM instruction line."""
+    parts = line.split()
+    if len(parts) <= 1:
+        return []
+    targets: list[int] = []
+    for tok in parts[1:]:
+        if _INT_TOKEN_RE.match(tok):
+            targets.append(int(tok))
+    return targets
+
+
+def _append_depolarizing_noise(
+    out_lines: list[str], *, noise_prob: float = _DEFAULT_NOISE_PROB
+) -> list[str]:
+    """Insert DEPOLARIZE1/2 after 1q/2q instructions in converted program."""
+    noisy: list[str] = []
+    for line in out_lines:
+        noisy.append(line)
+        targets = _extract_tsim_targets(line)
+        if len(targets) == 1:
+            noisy.append(f"DEPOLARIZE1({noise_prob:g}) {targets[0]}")
+        elif len(targets) == 2:
+            noisy.append(f"DEPOLARIZE2({noise_prob:g}) {targets[0]} {targets[1]}")
+        elif len(targets) == 0:
+            pass
+        else:
+            raise ValueError(f"Unsupported number of targets: {len(targets)}")
+    return noisy
+
+
+def qasm_to_tsim_program(
+    qasm: str,
+    *,
+    pp_phase: float = 0.25,
+    add_noise: bool = False,
+    noise_prob: float = _DEFAULT_NOISE_PROB,
+) -> str:
     """Convert an OpenQASM string into a TSIM/STIM-style program string.
 
     Args:
         qasm: Input OpenQASM text.
         pp_phase: Phase parameter for ``pp`` in units of pi.
+        add_noise: If true, add depolarizing noise after 1q and 2q operations.
+        noise_prob: Depolarizing channel probability.
 
     Returns:
         A newline-separated TSIM program string.
@@ -135,7 +176,12 @@ def qasm_to_tsim_program(qasm: str, *, pp_phase: float = 0.25) -> str:
 
         raise ValueError(f"Unsupported QASM instruction: {raw!r}")
 
-    return "\n".join(out_lines)
+    final_lines = (
+        _append_depolarizing_noise(out_lines, noise_prob=noise_prob)
+        if add_noise
+        else out_lines
+    )
+    return "\n".join(final_lines)
 
 
 def json_result_to_tsim_program(
@@ -143,12 +189,19 @@ def json_result_to_tsim_program(
     *,
     qasm_key: str = "circuit_qasm",
     pp_phase: float = 0.25,
+    add_noise: bool = False,
+    noise_prob: float = _DEFAULT_NOISE_PROB,
 ) -> str:
     """Load a benchmark result JSON and convert its QASM circuit to TSIM text."""
     payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
     if qasm_key not in payload:
         raise KeyError(f"Missing key {qasm_key!r} in {json_path}")
-    return qasm_to_tsim_program(str(payload[qasm_key]), pp_phase=pp_phase)
+    return qasm_to_tsim_program(
+        str(payload[qasm_key]),
+        pp_phase=pp_phase,
+        add_noise=add_noise,
+        noise_prob=noise_prob,
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -177,6 +230,14 @@ def _build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional output path. If omitted, prints to stdout.",
     )
+    p.add_argument(
+        "--noise",
+        action="store_true",
+        help=(
+            "Add DEPOLARIZE1/2 channels after every 1q/2q gate "
+            f"(p={_DEFAULT_NOISE_PROB:g})."
+        ),
+    )
     return p
 
 
@@ -187,6 +248,7 @@ def main(argv: list[str] | None = None) -> None:
         args.json,
         qasm_key=args.qasm_key,
         pp_phase=args.pp_phase,
+        add_noise=args.noise,
     )
     if args.out:
         Path(args.out).write_text(program + "\n", encoding="utf-8")

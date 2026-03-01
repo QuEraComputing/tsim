@@ -180,6 +180,7 @@ def benchmark_quizx_json(
     initial_batch_size: int = 32,
     convergence_ratio: float = 0.8,
     max_circuits: int | None = None,
+    noise: bool = False,
 ) -> Path:
     """Run QASM->TSIM conversion + throughput tuning for each circuit record."""
     input_path = Path(input_path)
@@ -207,6 +208,7 @@ def benchmark_quizx_json(
             "initial_batch_size": initial_batch_size,
             "convergence_ratio": convergence_ratio,
             "max_circuits": max_circuits,
+            "noise": noise,
         },
     }
 
@@ -226,7 +228,7 @@ def benchmark_quizx_json(
             continue
 
         try:
-            tsim_program = qasm_to_tsim_program(qasm)
+            tsim_program = qasm_to_tsim_program(qasm, add_noise=noise)
             n_qubits = int(record.get("qubits", tsim.Circuit(tsim_program).num_qubits))
             bench_program = (
                 _append_measurements(tsim_program, n_qubits)
@@ -325,6 +327,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--initial-batch-size", type=int, default=32)
     p.add_argument("--convergence-ratio", type=float, default=1)
     p.add_argument(
+        "--noise",
+        action="store_true",
+        help=(
+            "Add DEPOLARIZE1(0.0001) after 1q gates and "
+            "DEPOLARIZE2(0.0001) after 2q gates in converted TSIM programs."
+        ),
+    )
+    p.add_argument(
         "--max-circuits",
         type=int,
         default=-1,
@@ -359,6 +369,7 @@ def main(argv: list[str] | None = None) -> Path:
         initial_batch_size=args.initial_batch_size,
         convergence_ratio=args.convergence_ratio,
         max_circuits=None if args.max_circuits < 0 else args.max_circuits,
+        noise=args.noise,
     )
     print(f"\nSaved enriched benchmark JSON to {output}")
     return output
