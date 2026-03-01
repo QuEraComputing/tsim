@@ -121,12 +121,21 @@ def sample_program(
     """
     results: list[jax.Array] = []
 
+    if len(program.direct_f_indices) > 0:
+        direct_bits = (
+            f_params[:, program.direct_f_indices].astype(jnp.bool_)
+            ^ program.direct_flips
+        )
+        results.append(direct_bits)
+
     for component in program.components:
         samples, key = sample_component(component, f_params, key)
         results.append(samples)
 
     combined = jnp.concatenate(results, axis=1)
-    return combined[:, jnp.argsort(program.output_order)]
+    if program.output_reindex is not None:
+        combined = combined[:, program.output_reindex]
+    return combined
 
 
 class _CompiledSamplerBase:
@@ -157,8 +166,7 @@ class _CompiledSamplerBase:
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
         self._program = compile_program(prepared, mode=mode)
 
-        self._key, subkey = jax.random.split(self._key)
-        channel_seed = int(jax.random.randint(subkey, (), 0, 2**30))
+        channel_seed = int(np.random.default_rng(seed).integers(0, 2**30))
         self._channel_sampler = ChannelSampler(
             channel_probs=prepared.channel_probs,
             error_transform=prepared.error_transform,
@@ -168,22 +176,56 @@ class _CompiledSamplerBase:
         self.circuit = circuit
         self._num_detectors = prepared.num_detectors
 
+        # Pre-cache numpy arrays for the direct fast path so we don't
+        # convert from JAX on every sample call.
+        prog = self._program
+        n_direct = len(prog.direct_f_indices)
+        self._direct_f_np = np.asarray(prog.direct_f_indices)
+        self._direct_fl_np = np.asarray(prog.direct_flips)
+        self._direct_reindex_np = (
+            np.asarray(prog.output_reindex) if prog.output_reindex is not None else None
+        )
+        self._direct_any_flips = bool(np.any(self._direct_fl_np))
+        self._direct_contiguous = n_direct > 0 and np.array_equal(
+            self._direct_f_np, np.arange(n_direct)
+        )
+
     def _sample_batches(self, shots: int, batch_size: int | None = None) -> np.ndarray:
         """Sample in batches and concatenate results."""
+        if not self._program.components:
+            return self._sample_direct(shots)
+
         if batch_size is None:
             batch_size = shots
 
         batches: list[jax.Array] = []
         for _ in range(ceil(shots / batch_size)):
-            f_params = self._channel_sampler.sample(batch_size)
+            f_params_np = self._channel_sampler.sample(batch_size)
+            f_params = jnp.asarray(f_params_np)
             self._key, subkey = jax.random.split(self._key)
             samples = sample_program(self._program, f_params, subkey)
             batches.append(samples)
 
         return np.concatenate(batches)[:shots]
 
+    def _sample_direct(self, shots: int) -> np.ndarray:
+        """Fast path when all components are direct (pure numpy, no JAX)."""
+        f_params = self._channel_sampler.sample(shots)
+        n = len(self._direct_f_np)
+        if self._direct_contiguous:
+            result = f_params[:, :n] if n < f_params.shape[1] else f_params
+        else:
+            result = f_params[:, self._direct_f_np]
+        if self._direct_any_flips:
+            result = result ^ self._direct_fl_np
+        if self._direct_reindex_np is not None:
+            result = result[:, self._direct_reindex_np]
+        return result
+
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""
+        n_direct = len(self._program.direct_f_indices)
+
         c_graphs = []
         c_params = []
         c_a_terms = []
@@ -222,11 +264,13 @@ class _CompiledSamplerBase:
         error_channel_bits = sum(
             channel.num_bits for channel in self._channel_sampler.channels
         )
+        max_outputs = int(np.max(num_outputs)) if num_outputs else 0
 
         return (
-            f"{type(self).__name__}({np.sum(c_graphs)} graphs, "
+            f"{type(self).__name__}({n_direct} direct, "
+            f"{np.sum(c_graphs)} graphs, "
             f"{error_channel_bits} error channel bits, "
-            f"{np.max(num_outputs)} outputs for largest cc, "
+            f"{max_outputs} outputs for largest cc, "
             f"≤ {np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
             f"{np.sum(c_b_terms)} B terms, "
             f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms, "
@@ -406,9 +450,18 @@ class CompiledStateProbs(_CompiledSamplerBase):
             Array of probabilities P(state | error_sample) for each error sample.
 
         """
-        f_samples = self._channel_sampler.sample(batch_size)
+        f_samples = jnp.asarray(self._channel_sampler.sample(batch_size))
         p_norm = jnp.ones(batch_size)
         p_joint = jnp.ones(batch_size)
+
+        if len(self._program.direct_f_indices) > 0:
+            bits = (
+                f_samples[:, self._program.direct_f_indices].astype(jnp.bool_)
+                ^ self._program.direct_flips
+            )
+            n_direct = len(self._program.direct_f_indices)
+            targets = state[self._program.output_order[:n_direct]]
+            p_joint = p_joint * (bits == targets).all(axis=1)
 
         for component in self._program.components:
             assert len(component.compiled_scalar_graphs) == 2
