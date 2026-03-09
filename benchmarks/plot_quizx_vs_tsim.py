@@ -23,8 +23,20 @@ INPUT_JSONS = (
         "/Users/rafaelhaenel/Documents/quera/tsim/benchmarks/quizx/results_tsim_gpu.json"
     ),
 )
-INPUT_LABELS = ("CPU (M4 Pro)", "GPU (GH200)")
-OUTPUT_PNG = Path("benchmarks/quizx/q50_d10_quizx_vs_tsim.png")
+
+# INPUT_JSONS = (
+#     Path(
+#         "/Users/rafaelhaenel/Documents/quera/tsim/benchmarks/quizx/results_tsim_noise.json"
+#     ),
+#     Path(
+#         "/Users/rafaelhaenel/Documents/quera/tsim/benchmarks/quizx/results_tsim_gpu_noise.json"
+#     ),
+# )
+INPUT_LABELS = (
+    "CPU (M4 Pro)",
+    "GPU (GH200)",
+)
+OUTPUT_PNG = Path("benchmarks/quizx/q50_d10_quizx_vs_tsim_noise.png")
 TARGET_QUBITS = 20
 plt.rcParams["text.usetex"] = True
 
@@ -118,9 +130,19 @@ def main() -> None:
     # Correlation scatter: QuZX duration vs TSIM best duration.
     scatter_fig, scatter_ax = plt.subplots(figsize=(4.2, 3.5))
     dataset_colors = ["tab:blue", "#76ba00"]
+    noisy_case = "noise" in str(INPUT_JSONS[0]).lower()
+    marker = "^" if noisy_case else "o"
     for idx, (label, _, quizx_i, tsim_i) in enumerate(datasets):
         color = dataset_colors[idx] if idx < len(dataset_colors) else None
-        scatter_ax.scatter(quizx_i, tsim_i, alpha=0.8, label=label, color=color)
+        scatter_ax.scatter(
+            quizx_i,
+            tsim_i,
+            alpha=0.8,
+            label=label,
+            color=color,
+            zorder=3,
+            marker=marker,
+        )
     scatter_ax.set_xscale("log")
     scatter_ax.set_yscale("log")
     scatter_ax.set_xlabel("Quizx time per shot (s)")
@@ -132,20 +154,22 @@ def main() -> None:
     all_tsim = np.concatenate([tsim_i for _, _, _, tsim_i in datasets])
     x_min, x_max = float(np.min(all_quizx)), float(np.max(all_quizx))
     y_min, y_max = float(np.min(all_tsim)), float(np.max(all_tsim))
-    scatter_ax.set_xlim(5e-4, 4e-1)
-    scatter_ax.set_ylim(4e-9, 5e-3)
+    scatter_ax.set_xlim(5e-4, 6e-1)
+    scatter_ax.set_ylim(4e-9, 9e-3)
 
-    x_left, x_right = scatter_ax.get_xlim()
-    x_line = np.array([x_left, x_right], dtype=float)
+    x_right = scatter_ax.get_xlim()[1]
+    x_line = np.array([1e-5, 1.0], dtype=float)
     for factor in (100, 1000, 10000, 100000):
         y_line = x_line / factor
-        scatter_ax.plot(x_line, y_line, "-", color="black", linewidth=1.0, alpha=0.7)
+        scatter_ax.plot(
+            x_line, y_line, "-", color="#4a4a4a", linewidth=1.0, alpha=0.7, zorder=1
+        )
         y_text = x_right / factor
         scatter_ax.text(
             1.03,
             y_text,
-            f"{factor}x",
-            color="black",
+            f"{factor:,}x",
+            color="#4a4a4a",
             fontsize=9,
             transform=scatter_ax.get_yaxis_transform(),
             ha="left",
@@ -157,7 +181,7 @@ def main() -> None:
 
     corr = np.corrcoef(quizx_durations, tsim_best_durations)[0, 1]
     # OUTPUT_PNG.parent.mkdir(parents=True, exist_ok=True)
-    scatter_fig.savefig("quizx_vs_tsim_scatter.svg", transparent=True)
+    scatter_fig.savefig("quizx_vs_tsim_scatter.pdf", transparent=True)
     plt.show()
 
     # print(f"Saved plot to: {OUTPUT_PNG}")
