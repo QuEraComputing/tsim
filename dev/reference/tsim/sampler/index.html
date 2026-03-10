@@ -347,7 +347,7 @@
 <span class=sd>        Array of probabilities P(state | error_sample) for each error sample.</span>
 
 <span class=sd>    &quot;&quot;&quot;</span>
-    <span class=n>f_samples</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_channel_sampler</span><span class=o>.</span><span class=n>sample</span><span class=p>(</span><span class=n>batch_size</span><span class=p>)</span>
+    <span class=n>f_samples</span> <span class=o>=</span> <span class=n>jnp</span><span class=o>.</span><span class=n>asarray</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_channel_sampler</span><span class=o>.</span><span class=n>sample</span><span class=p>(</span><span class=n>batch_size</span><span class=p>))</span>
     <span class=n>p_norm</span> <span class=o>=</span> <span class=n>jnp</span><span class=o>.</span><span class=n>ones</span><span class=p>(</span><span class=n>batch_size</span><span class=p>)</span>
     <span class=n>p_joint</span> <span class=o>=</span> <span class=n>jnp</span><span class=o>.</span><span class=n>ones</span><span class=p>(</span><span class=n>batch_size</span><span class=p>)</span>
 
