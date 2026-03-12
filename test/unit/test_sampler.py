@@ -38,10 +38,10 @@ def test_seed():
     )
     for _ in range(2):
         sampler = c.compile_sampler(seed=0)
+        assert np.count_nonzero(sampler.sample(100)) == 48
         assert np.count_nonzero(sampler.sample(100)) == 53
         assert np.count_nonzero(sampler.sample(100)) == 52
         assert np.count_nonzero(sampler.sample(100)) == 50
-        assert np.count_nonzero(sampler.sample(100)) == 48
 
 
 def test_sampler_repr():
