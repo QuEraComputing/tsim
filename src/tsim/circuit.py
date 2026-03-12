@@ -38,7 +38,7 @@ class Circuit:
                 empty circuit.
 
         """
-        self._stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text)).flattened()
+        self._stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text))
 
     @classmethod
     def from_stim_program(cls, stim_circuit: stim.Circuit) -> Circuit:
@@ -52,7 +52,7 @@ class Circuit:
 
         """
         c = cls.__new__(cls)
-        c._stim_circ = stim_circuit.flattened()
+        c._stim_circ = stim_circuit
         return c
 
     def append_from_stim_program_text(self, stim_program_text: str) -> None:
@@ -63,7 +63,6 @@ class Circuit:
         self._stim_circ.append_from_stim_program_text(
             shorthand_to_stim(stim_program_text)
         )
-        self._stim_circ = self._stim_circ.flattened()
 
     @overload
     def append(
@@ -158,8 +157,6 @@ class Circuit:
             self._stim_circ.append(name=name, targets=targets, arg=arg, tag=tag)  # type: ignore
         else:
             self._stim_circ.append(name=name)
-            if isinstance(name, stim.CircuitRepeatBlock):
-                self._stim_circ = self._stim_circ.flattened()
 
     @classmethod
     def from_file(cls, filename: str) -> Circuit:
@@ -174,7 +171,7 @@ class Circuit:
         """
         with open(filename, "r", encoding="utf-8") as f:
             stim_program_text = f.read()
-        stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text)).flattened()
+        stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text))
         return cls.from_stim_program(stim_circ)
 
     def __repr__(self) -> str:
@@ -212,7 +209,6 @@ class Circuit:
     def __imul__(self, repetitions: int) -> Circuit:
         """Repeat this circuit in-place."""
         self._stim_circ *= repetitions
-        self._stim_circ = self._stim_circ.flattened()
         return self
 
     def __mul__(self, repetitions: int) -> Circuit:
@@ -227,7 +223,7 @@ class Circuit:
     def __getitem__(
         self,
         index_or_slice: int,
-    ) -> stim.CircuitInstruction: ...
+    ) -> Union[stim.CircuitInstruction, stim.CircuitRepeatBlock]: ...
 
     @overload
     def __getitem__(
@@ -371,26 +367,28 @@ class Circuit:
     def pop(
         self,
         index: int = -1,
-    ) -> stim.CircuitInstruction:
+    ) -> Union[stim.CircuitInstruction, stim.CircuitRepeatBlock]:
         """Pops an operation from the end of the circuit, or at the given index.
 
         Args:
             index: Defaults to -1 (end of circuit). The index to pop from.
 
         Returns:
-            The popped instruction.
+            The popped instruction or repeat block.
 
         Raises:
             IndexError: The given index is outside the bounds of the circuit.
 
         """
-        el = self._stim_circ.pop(index)
-        assert not isinstance(el, stim.CircuitRepeatBlock)
-        return el
+        return self._stim_circ.pop(index)
 
     def copy(self) -> Circuit:
         """Create a copy of this circuit."""
         return Circuit.from_stim_program(self._stim_circ.copy())
+
+    def flattened(self) -> Circuit:
+        """Return a copy of the circuit with all repeat blocks expanded."""
+        return Circuit.from_stim_program(self._stim_circ.flattened())
 
     def without_noise(self) -> Circuit:
         """Return a copy of the circuit with all noise removed."""
@@ -399,7 +397,7 @@ class Circuit:
     def without_annotations(self) -> Circuit:
         """Return a copy of the circuit with all annotations removed."""
         circ = stim.Circuit()
-        for instr in self._stim_circ:
+        for instr in self._stim_circ.flattened():
             assert not isinstance(instr, stim.CircuitRepeatBlock)
             if instr.name in ["OBSERVABLE_INCLUDE", "DETECTOR"]:
                 continue
@@ -688,7 +686,7 @@ class Circuit:
 
     def inverse(self) -> Circuit:
         """Return the inverse of the circuit."""
-        inv_stim_raw = self._stim_circ.inverse()
+        inv_stim_raw = self._stim_circ.flattened().inverse()
 
         # Stim will only invert Clifford gates (and S[T] / S_DAG[T])
         # Post-process to fix non-Clifford rotation gates stored as I[tag]
