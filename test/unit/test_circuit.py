@@ -477,6 +477,31 @@ def test_tcount_with_t_gates():
     assert c.tcount() == 3
 
 
+def test_is_clifford_with_stim_gates():
+    c = Circuit("H 0\nCNOT 0 1\nM 0 1\nDETECTOR rec[-1]")
+    assert c.is_clifford
+
+
+def test_is_clifford_with_half_pi_parametric_gates():
+    c = Circuit("R_Z(0.5) 0\nR_X(-1.5) 0\nU3(0.5, -1.0, 1.5) 0")
+    assert c.is_clifford
+
+
+def test_is_clifford_rejects_t_gate():
+    c = Circuit("T 0")
+    assert not c.is_clifford
+
+
+def test_is_clifford_rejects_non_clifford_rotation():
+    c = Circuit("H 0\nR_Z(0.25) 0\nCNOT 0 1")
+    assert not c.is_clifford
+
+
+def test_is_clifford_rejects_non_clifford_u3():
+    c = Circuit("U3(0.5, 0.25, 1.0) 0")
+    assert not c.is_clifford
+
+
 def test_get_graph():
     """Test get_graph returns a ZX graph."""
     c = Circuit("H 0\nCNOT 0 1")
