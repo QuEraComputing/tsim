@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Literal, cast, overload
+from typing import Any, Iterable, Literal, Union, cast, overload
 
 import pyzx_param as zx
 import stim
@@ -65,36 +65,90 @@ class Circuit:
         )
         self._stim_circ = self._stim_circ.flattened()
 
+    @overload
     def append(
         self,
-        name: Any,
-        targets: Any = (),
-        arg: Any = (),
-        **kwargs: Any,
-    ) -> None:
-        """Append an operation into the circuit.
+        name: str,
+        targets: Union[int, stim.GateTarget, stim.PauliString, Iterable[Union[int, stim.GateTarget, stim.PauliString]]],
+        arg: Union[float, Iterable[float]] = (),
+        *,
+        tag: str = "",
+    ) -> None: ...
 
-        This is a wrapper around stim.Circuit.append that also supports tsim-specific
-        instructions like T, T_DAG, R_X, R_Y, R_Z, and U3.
+    @overload
+    def append(
+        self,
+        name: Union[stim.CircuitInstruction, stim.CircuitRepeatBlock, stim.Circuit],
+    ) -> None: ...
+
+    def append(
+        self,
+        name: object,
+        targets: object = (),
+        arg: object = None,
+        *,
+        tag: str = "",
+    ) -> None:
+        """Appends an operation into the circuit.
+
+        Args:
+            name: The name of the operation's gate (e.g. "H" or "M" or "CNOT").
+
+                This argument can also be set to a `stim.CircuitInstruction` or
+                `stim.CircuitInstructionBlock`, which results in the instruction or
+                block being appended to the circuit. The other arguments (targets
+                and arg) can't be specified when doing so.
+
+            targets: The objects operated on by the gate. This can be either a
+                single target or an iterable of multiple targets.
+
+                Each target can be:
+                    An int: The index of a targeted qubit.
+                    A `stim.GateTarget`: Could be a variety of things. Methods like
+                        `stim.target_rec`, `stim.target_sweet`, `stim.target_x`, and
+                        `stim.CircuitInstruction.__getitem__` all return this type.
+                    A `stim.PauliString`: This will automatically be expanded into
+                        a product of pauli targets like `X1*Y2*Z3`.
+            arg: The "parens arguments" for the gate, such as the probability for a
+                noise operation. A double or list of doubles parameterizing the
+                gate. Different gates take different parens arguments. For example,
+                X_ERROR takes a probability, OBSERVABLE_INCLUDE takes an observable
+                index, and PAULI_CHANNEL_1 takes three disjoint probabilities.
+
+            tag: A customizable string attached to the instruction.
+
         """
         if isinstance(name, str):
+            if arg is None:
+                arg = ()
             if name == "T":
                 name = "S"
-                kwargs["tag"] = "T"
+                tag = "T"
             elif name == "T_DAG":
                 name = "S_DAG"
-                kwargs["tag"] = "T"
+                tag = "T"
             elif name in ("R_X", "R_Y", "R_Z"):
                 angle = arg[0] if isinstance(arg, (list, tuple)) else arg
-                kwargs["tag"] = f"{name}(theta={angle}*pi)"
+                tag = f"{name}(theta={angle}*pi)"
                 name = "I"
                 arg = ()
             elif name == "U3":
                 theta, phi, lam = arg
-                kwargs["tag"] = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
+                tag = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
                 name = "I"
                 arg = ()
-        self._stim_circ.append(name, targets, arg, **kwargs)
+            
+            kwargs = {}
+            if tag:
+                kwargs["tag"] = tag
+            
+            self._stim_circ.append(name, targets, arg, **kwargs)
+        elif isinstance(name, (stim.CircuitInstruction, stim.CircuitRepeatBlock, stim.Circuit)):
+            self._stim_circ.append(name)
+            if isinstance(name, stim.CircuitRepeatBlock):
+                self._stim_circ = self._stim_circ.flattened()
+        else:
+            raise TypeError(f"Invalid type for name: {type(name)}")
 
     @classmethod
     def from_file(cls, filename: str) -> Circuit:

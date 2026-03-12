@@ -645,3 +645,25 @@ def test_circuit_append():
 
     c.append("U3", 0, arg=(0.3, 0.24, 0.49))
     assert "U3(0.3, 0.24, 0.49) 0" in str(c)
+
+
+def test_circuit_append_circuit_instruction():
+    c = Circuit()
+    c.append(stim.CircuitInstruction("H", [0]))
+    assert str(c) == "H 0"
+
+
+def test_circuit_append_circuit_repeat_block():
+    c = Circuit()
+    block = stim.CircuitRepeatBlock(3, stim.Circuit("H 0"))
+    c.append(block)
+    # Should be flattened
+    assert str(c) == "H 0 0 0"
+
+
+def test_circuit_append_circuit():
+    c = Circuit()
+    sub_c = stim.Circuit("H 0\nCNOT 0 1")
+    c.append(sub_c)
+    assert "H 0" in str(c)
+    assert "CX 0 1" in str(c) or "CNOT 0 1" in str(c)
