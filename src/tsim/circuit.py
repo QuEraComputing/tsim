@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Literal, Union, cast, overload
+from typing import Any, Iterable, Literal, Sequence, Union, cast, overload
 
 import pyzx_param as zx
 import stim
@@ -69,8 +69,13 @@ class Circuit:
     def append(
         self,
         name: str,
-        targets: Union[int, stim.GateTarget, stim.PauliString, Iterable[Union[int, stim.GateTarget, stim.PauliString]]],
-        arg: Union[float, Iterable[float]] = (),
+        targets: Union[
+            int,
+            stim.GateTarget,
+            stim.PauliString,
+            Iterable[Union[int, stim.GateTarget, stim.PauliString]],
+        ] = (),
+        arg: Union[float, Iterable[float], None] = None,
         *,
         tag: str = "",
     ) -> None: ...
@@ -83,13 +88,20 @@ class Circuit:
 
     def append(
         self,
-        name: object,
-        targets: object = (),
-        arg: object = None,
+        name: Union[
+            str, stim.CircuitInstruction, stim.CircuitRepeatBlock, stim.Circuit
+        ],
+        targets: Union[
+            int,
+            stim.GateTarget,
+            stim.PauliString,
+            Iterable[Union[int, stim.GateTarget, stim.PauliString]],
+        ] = (),
+        arg: Union[float, Iterable[float], None] = None,
         *,
         tag: str = "",
     ) -> None:
-        """Appends an operation into the circuit.
+        """Append an operation into the circuit.
 
         Args:
             name: The name of the operation's gate (e.g. "H" or "M" or "CNOT").
@@ -119,8 +131,6 @@ class Circuit:
 
         """
         if isinstance(name, str):
-            if arg is None:
-                arg = ()
             if name == "T":
                 name = "S"
                 tag = "T"
@@ -128,27 +138,28 @@ class Circuit:
                 name = "S_DAG"
                 tag = "T"
             elif name in ("R_X", "R_Y", "R_Z"):
-                angle = arg[0] if isinstance(arg, (list, tuple)) else arg
-                tag = f"{name}(theta={angle}*pi)"
+                assert arg is not None, f"For {name} gates, an angle must be provided."
+                args = list(arg) if isinstance(arg, Iterable) else [arg]
+                assert (
+                    len(args) == 1
+                ), f"For {name} gates, a single angle must be provided."
+                tag = f"{name}(theta={args[0]}*pi)"
                 name = "I"
-                arg = ()
+                arg = None
             elif name == "U3":
-                theta, phi, lam = arg
+                assert arg is not None and (
+                    isinstance(arg, Iterable) and len(list(arg)) == 3
+                ), f"For U3 gates, three rotation angles must be provided."
+                theta, phi, lam = list(arg)
                 tag = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
                 name = "I"
-                arg = ()
-            
-            kwargs = {}
-            if tag:
-                kwargs["tag"] = tag
-            
-            self._stim_circ.append(name, targets, arg, **kwargs)
-        elif isinstance(name, (stim.CircuitInstruction, stim.CircuitRepeatBlock, stim.Circuit)):
-            self._stim_circ.append(name)
+                arg = None
+
+            self._stim_circ.append(name=name, targets=targets, arg=arg, tag=tag)  # type: ignore
+        else:
+            self._stim_circ.append(name=name)
             if isinstance(name, stim.CircuitRepeatBlock):
                 self._stim_circ = self._stim_circ.flattened()
-        else:
-            raise TypeError(f"Invalid type for name: {type(name)}")
 
     @classmethod
     def from_file(cls, filename: str) -> Circuit:

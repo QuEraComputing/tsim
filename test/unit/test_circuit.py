@@ -629,6 +629,7 @@ def test_diagram_pyzx_scale_horizontally(
         mock_draw.assert_called_once()
     assert hasattr(g, "vertices")
 
+
 def test_circuit_append():
     c = Circuit()
     c.append("T", [0, 1])
