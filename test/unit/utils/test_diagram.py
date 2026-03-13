@@ -87,3 +87,16 @@ def test_render_svg_labels_all_gates(
 
     # U3 label
     assert '<tspan baseline-shift="sub" font-size="14">3</tspan>' in html
+
+
+def test_diagram_repeat_block():
+    c = Circuit(
+        """
+        T 0
+        REPEAT 100 {
+            T 0
+        }
+    """
+    )
+    diagram = c.diagram("timeline-svg", height=150)
+    assert "REP100" in str(diagram)

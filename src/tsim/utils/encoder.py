@@ -27,8 +27,7 @@ def _transform_circuit(
     observables: list[list[int]] | None = None,
 ) -> stim.Circuit:
     """Expand and duplicate instructions with broadcast targets for encoding."""
-    stim_circ = tsim.Circuit(program_text)._stim_circ
-    stim_circ = tsim.Circuit(program_text)._stim_circ
+    stim_circ = tsim.Circuit(program_text)._stim_circ.flattened()
     mod_circ = stim.Circuit()
 
     for instr in stim_circ:

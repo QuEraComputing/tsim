@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fractions import Fraction
-from typing import Any, Iterable, Literal, cast, overload
+from typing import Any, Iterable, Literal, Sequence, Union, cast, overload
 
 import pyzx_param as zx
 import stim
@@ -40,7 +40,7 @@ class Circuit:
                 empty circuit.
 
         """
-        self._stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text)).flattened()
+        self._stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text))
 
     @classmethod
     def from_stim_program(cls, stim_circuit: stim.Circuit) -> Circuit:
@@ -54,7 +54,7 @@ class Circuit:
 
         """
         c = cls.__new__(cls)
-        c._stim_circ = stim_circuit.flattened()
+        c._stim_circ = stim_circuit.copy()
         return c
 
     def append_from_stim_program_text(self, stim_program_text: str) -> None:
@@ -65,7 +65,100 @@ class Circuit:
         self._stim_circ.append_from_stim_program_text(
             shorthand_to_stim(stim_program_text)
         )
-        self._stim_circ = self._stim_circ.flattened()
+
+    @overload
+    def append(
+        self,
+        name: str,
+        targets: Union[
+            int,
+            stim.GateTarget,
+            stim.PauliString,
+            Iterable[Union[int, stim.GateTarget, stim.PauliString]],
+        ] = (),
+        arg: Union[float, Iterable[float], None] = None,
+        *,
+        tag: str = "",
+    ) -> None: ...
+
+    @overload
+    def append(
+        self,
+        name: Union[stim.CircuitInstruction, stim.CircuitRepeatBlock, stim.Circuit],
+    ) -> None: ...
+
+    def append(
+        self,
+        name: Union[
+            str, stim.CircuitInstruction, stim.CircuitRepeatBlock, stim.Circuit
+        ],
+        targets: Union[
+            int,
+            stim.GateTarget,
+            stim.PauliString,
+            Iterable[Union[int, stim.GateTarget, stim.PauliString]],
+        ] = (),
+        arg: Union[float, Iterable[float], None] = None,
+        *,
+        tag: str = "",
+    ) -> None:
+        """Append an operation into the circuit.
+
+        Args:
+            name: The name of the operation's gate (e.g. "H" or "M" or "CNOT").
+
+                This argument can also be set to a `stim.CircuitInstruction` or
+                `stim.CircuitInstructionBlock`, which results in the instruction or
+                block being appended to the circuit. The other arguments (targets
+                and arg) can't be specified when doing so.
+
+            targets: The objects operated on by the gate. This can be either a
+                single target or an iterable of multiple targets.
+
+                Each target can be:
+                    An int: The index of a targeted qubit.
+                    A `stim.GateTarget`: Could be a variety of things. Methods like
+                        `stim.target_rec`, `stim.target_sweet`, `stim.target_x`, and
+                        `stim.CircuitInstruction.__getitem__` all return this type.
+                    A `stim.PauliString`: This will automatically be expanded into
+                        a product of pauli targets like `X1*Y2*Z3`.
+            arg: The "parens arguments" for the gate, such as the probability for a
+                noise operation. A double or list of doubles parameterizing the
+                gate. Different gates take different parens arguments. For example,
+                X_ERROR takes a probability, OBSERVABLE_INCLUDE takes an observable
+                index, and PAULI_CHANNEL_1 takes three disjoint probabilities.
+
+            tag: A customizable string attached to the instruction.
+
+        """
+        if isinstance(name, str):
+            if name == "T":
+                name = "S"
+                tag = "T"
+            elif name == "T_DAG":
+                name = "S_DAG"
+                tag = "T"
+            elif name in ("R_X", "R_Y", "R_Z"):
+                assert arg is not None, f"For {name} gates, an angle must be provided."
+                args = list(arg) if isinstance(arg, Iterable) else [arg]
+                assert (
+                    len(args) == 1
+                ), f"For {name} gates, a single angle must be provided."
+                tag = f"{name}(theta={args[0]}*pi)"
+                name = "I"
+                arg = None
+            elif name == "U3":
+                assert arg is not None and (
+                    isinstance(arg, Iterable) and len(list(arg)) == 3
+                ), f"For U3 gates, three rotation angles must be provided."
+                theta, phi, lam = list(arg)
+                tag = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
+                name = "I"
+                arg = None
+
+            self._stim_circ.append(name=name, targets=targets, arg=arg, tag=tag)  # type: ignore
+        else:
+            self._stim_circ.append(name=name)
 
     @classmethod
     def from_file(cls, filename: str) -> Circuit:
@@ -80,7 +173,7 @@ class Circuit:
         """
         with open(filename, "r", encoding="utf-8") as f:
             stim_program_text = f.read()
-        stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text)).flattened()
+        stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text))
         return cls.from_stim_program(stim_circ)
 
     def __repr__(self) -> str:
@@ -118,7 +211,6 @@ class Circuit:
     def __imul__(self, repetitions: int) -> Circuit:
         """Repeat this circuit in-place."""
         self._stim_circ *= repetitions
-        self._stim_circ = self._stim_circ.flattened()
         return self
 
     def __mul__(self, repetitions: int) -> Circuit:
@@ -133,7 +225,7 @@ class Circuit:
     def __getitem__(
         self,
         index_or_slice: int,
-    ) -> stim.CircuitInstruction: ...
+    ) -> Union[stim.CircuitInstruction, stim.CircuitRepeatBlock]: ...
 
     @overload
     def __getitem__(
@@ -338,40 +430,49 @@ class Circuit:
     def pop(
         self,
         index: int = -1,
-    ) -> stim.CircuitInstruction:
+    ) -> Union[stim.CircuitInstruction, stim.CircuitRepeatBlock]:
         """Pops an operation from the end of the circuit, or at the given index.
 
         Args:
             index: Defaults to -1 (end of circuit). The index to pop from.
 
         Returns:
-            The popped instruction.
+            The popped instruction or repeat block.
 
         Raises:
             IndexError: The given index is outside the bounds of the circuit.
 
         """
-        el = self._stim_circ.pop(index)
-        assert not isinstance(el, stim.CircuitRepeatBlock)
-        return el
+        return self._stim_circ.pop(index)
 
     def copy(self) -> Circuit:
         """Create a copy of this circuit."""
         return Circuit.from_stim_program(self._stim_circ.copy())
+
+    def flattened(self) -> Circuit:
+        """Return a copy of the circuit with all repeat blocks expanded."""
+        return Circuit.from_stim_program(self._stim_circ.flattened())
 
     def without_noise(self) -> Circuit:
         """Return a copy of the circuit with all noise removed."""
         return Circuit.from_stim_program(self._stim_circ.without_noise())
 
     def without_annotations(self) -> Circuit:
-        """Return a copy of the circuit with all annotations removed."""
-        circ = stim.Circuit()
-        for instr in self._stim_circ:
-            assert not isinstance(instr, stim.CircuitRepeatBlock)
-            if instr.name in ["OBSERVABLE_INCLUDE", "DETECTOR"]:
-                continue
-            circ.append(instr)
-        return Circuit.from_stim_program(circ)
+        """Return a copy of the circuit with all detector and observable annotations removed."""
+
+        def strip(circuit: stim.Circuit) -> stim.Circuit:
+            result = stim.Circuit()
+            for instr in circuit:
+                if isinstance(instr, stim.CircuitRepeatBlock):
+                    stripped = strip(instr.body_copy())
+                    result.append(stim.CircuitRepeatBlock(instr.repeat_count, stripped))
+                    continue
+                if instr.name in ["OBSERVABLE_INCLUDE", "DETECTOR"]:
+                    continue
+                result.append(instr)
+            return result
+
+        return Circuit.from_stim_program(strip(self._stim_circ))
 
     def detector_error_model(
         self,
@@ -655,35 +756,43 @@ class Circuit:
 
     def inverse(self) -> Circuit:
         """Return the inverse of the circuit."""
-        inv_stim_raw = self._stim_circ.inverse()
 
-        # Stim will only invert Clifford gates (and S[T] / S_DAG[T])
-        # Post-process to fix non-Clifford rotation gates stored as I[tag]
-        inv_stim = stim.Circuit()
-        for instr in inv_stim_raw:
-            assert not isinstance(instr, stim.CircuitRepeatBlock)
-            name = instr.name
-            tag = instr.tag
-            targets = [t.value for t in instr.targets_copy()]
-            args = instr.gate_args_copy()
-
-            if name == "I" and tag:
-                result = parse_parametric_tag(tag)
-                if result is not None:
-                    gate_name, params = result
-                    if gate_name == "U3":
-                        # U3(θ, φ, λ)⁻¹ = U3(-θ, -λ, -φ)
-                        theta = float(-params["theta"])
-                        phi = float(-params["lambda"])
-                        lam = float(-params["phi"])
-                        new_tag = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
-                    else:
-                        theta = float(-params["theta"])
-                        new_tag = f"{gate_name}(theta={theta}*pi)"
-                    inv_stim.append("I", targets, args, tag=new_tag)
+        def fix_tags(circuit: stim.Circuit) -> stim.Circuit:
+            # Stim only inverts Clifford gates (and S[T] / S_DAG[T]).
+            # Non-Clifford rotations stored as I[tag] need their parameters
+            # negated (and reordered for U3).
+            result = stim.Circuit()
+            for instr in circuit:
+                if isinstance(instr, stim.CircuitRepeatBlock):
+                    fixed = fix_tags(instr.body_copy())
+                    result.append(stim.CircuitRepeatBlock(instr.repeat_count, fixed))
                     continue
 
-            # All other instructions are correct from stim's inverse
-            inv_stim.append(instr)
+                name = instr.name
+                tag = instr.tag
+                targets = [t.value for t in instr.targets_copy()]
+                args = instr.gate_args_copy()
 
+                if name == "I" and tag:
+                    parsed = parse_parametric_tag(tag)
+                    if parsed is not None:
+                        gate_name, params = parsed
+                        if gate_name == "U3":
+                            # U3(θ, φ, λ)⁻¹ = U3(-θ, -λ, -φ)
+                            theta = float(-params["theta"])
+                            phi = float(-params["lambda"])
+                            lam = float(-params["phi"])
+                            new_tag = (
+                                f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
+                            )
+                        else:
+                            theta = float(-params["theta"])
+                            new_tag = f"{gate_name}(theta={theta}*pi)"
+                        result.append("I", targets, args, tag=new_tag)
+                        continue
+
+                result.append(instr)
+            return result
+
+        inv_stim = fix_tags(self._stim_circ.inverse())
         return Circuit.from_stim_program(inv_stim)
