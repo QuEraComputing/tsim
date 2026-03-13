@@ -52,7 +52,7 @@ class Circuit:
 
         """
         c = cls.__new__(cls)
-        c._stim_circ = stim_circuit
+        c._stim_circ = stim_circuit.copy()
         return c
 
     def append_from_stim_program_text(self, stim_program_text: str) -> None:
@@ -686,35 +686,43 @@ class Circuit:
 
     def inverse(self) -> Circuit:
         """Return the inverse of the circuit."""
-        inv_stim_raw = self._stim_circ.flattened().inverse()
 
-        # Stim will only invert Clifford gates (and S[T] / S_DAG[T])
-        # Post-process to fix non-Clifford rotation gates stored as I[tag]
-        inv_stim = stim.Circuit()
-        for instr in inv_stim_raw:
-            assert not isinstance(instr, stim.CircuitRepeatBlock)
-            name = instr.name
-            tag = instr.tag
-            targets = [t.value for t in instr.targets_copy()]
-            args = instr.gate_args_copy()
-
-            if name == "I" and tag:
-                result = parse_parametric_tag(tag)
-                if result is not None:
-                    gate_name, params = result
-                    if gate_name == "U3":
-                        # U3(θ, φ, λ)⁻¹ = U3(-θ, -λ, -φ)
-                        theta = float(-params["theta"])
-                        phi = float(-params["lambda"])
-                        lam = float(-params["phi"])
-                        new_tag = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
-                    else:
-                        theta = float(-params["theta"])
-                        new_tag = f"{gate_name}(theta={theta}*pi)"
-                    inv_stim.append("I", targets, args, tag=new_tag)
+        def fix_tags(circuit: stim.Circuit) -> stim.Circuit:
+            # Stim only inverts Clifford gates (and S[T] / S_DAG[T]).
+            # Non-Clifford rotations stored as I[tag] need their parameters
+            # negated (and reordered for U3).
+            result = stim.Circuit()
+            for instr in circuit:
+                if isinstance(instr, stim.CircuitRepeatBlock):
+                    fixed = fix_tags(instr.body_copy())
+                    result.append(stim.CircuitRepeatBlock(instr.repeat_count, fixed))
                     continue
 
-            # All other instructions are correct from stim's inverse
-            inv_stim.append(instr)
+                name = instr.name
+                tag = instr.tag
+                targets = [t.value for t in instr.targets_copy()]
+                args = instr.gate_args_copy()
 
+                if name == "I" and tag:
+                    parsed = parse_parametric_tag(tag)
+                    if parsed is not None:
+                        gate_name, params = parsed
+                        if gate_name == "U3":
+                            # U3(θ, φ, λ)⁻¹ = U3(-θ, -λ, -φ)
+                            theta = float(-params["theta"])
+                            phi = float(-params["lambda"])
+                            lam = float(-params["phi"])
+                            new_tag = (
+                                f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
+                            )
+                        else:
+                            theta = float(-params["theta"])
+                            new_tag = f"{gate_name}(theta={theta}*pi)"
+                        result.append("I", targets, args, tag=new_tag)
+                        continue
+
+                result.append(instr)
+            return result
+
+        inv_stim = fix_tags(self._stim_circ.inverse())
         return Circuit.from_stim_program(inv_stim)

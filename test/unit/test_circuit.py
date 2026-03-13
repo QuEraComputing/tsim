@@ -569,6 +569,18 @@ def test_inverse_mixed_circuit():
     assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
 
 
+def test_inverse_with_repeat_block():
+    c = Circuit("H 0\nT 0\nR_Z(0.22) 0\nCNOT 0 1")
+    c_repeat = c * 3
+    c_inv = c_repeat.inverse()
+    # inverse should preserve repeat structure, not flatten
+    assert len(c_inv) == len(c_repeat)
+    assert isinstance(c_inv[0], stim.CircuitRepeatBlock)
+    assert c_inv.flattened() == c_repeat.flattened().inverse()
+    combined = (c_repeat + c_inv).to_matrix()
+    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+
+
 def test_diagram_timeline_svg():
     c = Circuit("H 0\nCNOT 0 1\nM 0 1")
     diagram = c.diagram(type="timeline-svg")
