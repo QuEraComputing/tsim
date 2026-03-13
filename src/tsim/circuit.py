@@ -395,14 +395,21 @@ class Circuit:
         return Circuit.from_stim_program(self._stim_circ.without_noise())
 
     def without_annotations(self) -> Circuit:
-        """Return a copy of the circuit with all annotations removed."""
-        circ = stim.Circuit()
-        for instr in self._stim_circ.flattened():
-            assert not isinstance(instr, stim.CircuitRepeatBlock)
-            if instr.name in ["OBSERVABLE_INCLUDE", "DETECTOR"]:
-                continue
-            circ.append(instr)
-        return Circuit.from_stim_program(circ)
+        """Return a copy of the circuit with all detector and observable annotations removed."""
+
+        def strip(circuit: stim.Circuit) -> stim.Circuit:
+            result = stim.Circuit()
+            for instr in circuit:
+                if isinstance(instr, stim.CircuitRepeatBlock):
+                    stripped = strip(instr.body_copy())
+                    result.append(stim.CircuitRepeatBlock(instr.repeat_count, stripped))
+                    continue
+                if instr.name in ["OBSERVABLE_INCLUDE", "DETECTOR"]:
+                    continue
+                result.append(instr)
+            return result
+
+        return Circuit.from_stim_program(strip(self._stim_circ))
 
     def detector_error_model(
         self,

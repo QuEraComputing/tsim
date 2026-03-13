@@ -242,6 +242,24 @@ def test_circuit_without_annotations():
     assert c_clean._stim_circ == stim.Circuit("H 0\nM 0")
 
 
+def test_without_annotations_repeat_block():
+    c = Circuit("H 0")
+    block = stim.CircuitRepeatBlock(
+        3, stim.Circuit("CNOT 0 1\nM 0\nDETECTOR rec[-1]\nM 0")
+    )
+    c.append(block)
+    c.append("OBSERVABLE_INCLUDE", [stim.target_rec(-1)], 0)
+
+    c_clean = c.without_annotations()
+    # structure should be preserved
+    assert len(c_clean) == 2
+    inst = c_clean[1]
+    assert isinstance(inst, stim.CircuitRepeatBlock)
+    assert inst.repeat_count == 3
+    # annotations should be stripped inside the repeat block too
+    assert c_clean.flattened() == c.flattened().without_annotations()
+
+
 def test_circuit_eq():
     c1 = Circuit("H 0")
     c2 = Circuit("H 0")
