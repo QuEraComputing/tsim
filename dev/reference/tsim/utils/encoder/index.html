@@ -20,7 +20,8 @@
                   return '';
                 }
               });
-            </script> <p>Transversal encoder for the [[17,1,5]] 2D color code.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>233</span>
+            </script> <p>Transversal encoder for the [[17,1,5]] 2D color code.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>232</span>
+<span class=normal>233</span>
 <span class=normal>234</span>
 <span class=normal>235</span>
 <span class=normal>236</span>
@@ -65,8 +66,7 @@
 <span class=normal>275</span>
 <span class=normal>276</span>
 <span class=normal>277</span>
-<span class=normal>278</span>
-<span class=normal>279</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span><span class=bp>self</span><span class=p>):</span>
+<span class=normal>278</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span><span class=bp>self</span><span class=p>):</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Initialize the color code encoder.&quot;&quot;&quot;</span>
     <span class=n>encoding_program</span> <span class=o>=</span> <span class=s2>&quot;&quot;&quot;</span>
 <span class=s2>    R 0 1 2 3 4 5 6 8 9 10 11 12 13 14 15 16</span>
@@ -135,7 +135,8 @@
                   return '';
                 }
               });
-            </script> <p>Transversal encoder for the [[7,1,3]] Steane code.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>192</span>
+            </script> <p>Transversal encoder for the [[7,1,3]] Steane code.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>191</span>
+<span class=normal>192</span>
 <span class=normal>193</span>
 <span class=normal>194</span>
 <span class=normal>195</span>
@@ -169,8 +170,7 @@
 <span class=normal>223</span>
 <span class=normal>224</span>
 <span class=normal>225</span>
-<span class=normal>226</span>
-<span class=normal>227</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span><span class=bp>self</span><span class=p>):</span>
+<span class=normal>226</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span><span class=bp>self</span><span class=p>):</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Initialize the Steane code encoder.&quot;&quot;&quot;</span>
     <span class=n>encoding_program</span> <span class=o>=</span> <span class=s2>&quot;&quot;&quot;</span>
 <span class=s2>    R 0 1 2 3 4 5</span>
@@ -216,7 +216,8 @@
         <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=nb>list</span><span class=p>[</span><span class=nb>str</span><span class=p>]]</span> <span class=o>|</span> <span class=kc>None</span>
     <span class=p>)</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
 <span class=p>)</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Base class for transversal quantum error correction encoders.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 97</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Base class for transversal quantum error correction encoders.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 96</span>
+<span class=normal> 97</span>
 <span class=normal> 98</span>
 <span class=normal> 99</span>
 <span class=normal>100</span>
@@ -232,8 +233,7 @@
 <span class=normal>110</span>
 <span class=normal>111</span>
 <span class=normal>112</span>
-<span class=normal>113</span>
-<span class=normal>114</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
+<span class=normal>113</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>n</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=n>encoding_qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
@@ -252,13 +252,14 @@
     <span class=bp>self</span><span class=o>.</span><span class=n>stabilizer_generators</span> <span class=o>=</span> <span class=n>stabilizer_generators</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>observables</span> <span class=o>=</span> <span class=n>observables</span>
 </code></pre></div></td></tr></table></div> </details> <div class="doc doc-children"> <div class="doc doc-object doc-function"> <h3 id=tsim.utils.encoder.TransversalEncoder.diagram class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">diagram</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>diagram</span><span class=p>(</span><span class=o>**</span><span class=n>kwargs</span><span class=p>)</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a timeline-svg diagram of the encoded circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>179</span>
-<span class=normal>180</span>
-<span class=normal>181</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>diagram</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=o>**</span><span class=n>kwargs</span><span class=p>):</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a timeline-svg diagram of the encoded circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>178</span>
+<span class=normal>179</span>
+<span class=normal>180</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>diagram</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=o>**</span><span class=n>kwargs</span><span class=p>):</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return a timeline-svg diagram of the encoded circuit.&quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=bp>self</span><span class=o>.</span><span class=n>circuit</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>&quot;timeline-svg&quot;</span><span class=p>,</span> <span class=o>**</span><span class=n>kwargs</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.utils.encoder.TransversalEncoder.encode_transversally class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">encode_transversally</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>encode_transversally</span><span class=p>(</span><span class=n>program_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Encode a program transversally by replacing physicalgates with transversal gates.</p> <p>Transform a program on m qubits into a program on n * m qubits (consisting of n code blocks).</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>program_text</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>The program to encode transversally.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>160</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Encode a program transversally by replacing physicalgates with transversal gates.</p> <p>Transform a program on m qubits into a program on n * m qubits (consisting of n code blocks).</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>program_text</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>The program to encode transversally.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>159</span>
+<span class=normal>160</span>
 <span class=normal>161</span>
 <span class=normal>162</span>
 <span class=normal>163</span>
@@ -274,8 +275,7 @@
 <span class=normal>173</span>
 <span class=normal>174</span>
 <span class=normal>175</span>
-<span class=normal>176</span>
-<span class=normal>177</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>encode_transversally</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>program_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>176</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>encode_transversally</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>program_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Encode a program transversally by replacing  physicalgates with transversal gates.</span>
 
 <span class=sd>    Transform a program on m qubits into a program on n * m qubits (consisting of n code blocks).</span>
@@ -294,10 +294,10 @@
     <span class=p>)</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>circuit</span><span class=o>.</span><span class=n>append_from_stim_program_text</span><span class=p>(</span><span class=nb>str</span><span class=p>(</span><span class=n>mod_circ</span><span class=p>))</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.utils.encoder.TransversalEncoder.encoding_flow_generators class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">encoding_flow_generators</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>encoding_flow_generators</span><span class=p>()</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return the Pauli flow generators for the encoding circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>183</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return the Pauli flow generators for the encoding circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>182</span>
+<span class=normal>183</span>
 <span class=normal>184</span>
-<span class=normal>185</span>
-<span class=normal>186</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>encoding_flow_generators</span><span class=p>(</span><span class=bp>self</span><span class=p>):</span>
+<span class=normal>185</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>encoding_flow_generators</span><span class=p>(</span><span class=bp>self</span><span class=p>):</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return the Pauli flow generators for the encoding circuit.&quot;&quot;&quot;</span>
     <span class=k>assert</span> <span class=bp>self</span><span class=o>.</span><span class=n>encoding_program_text</span> <span class=ow>is</span> <span class=ow>not</span> <span class=kc>None</span>
     <span class=k>return</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>encoding_program_text</span><span class=p>)</span><span class=o>.</span><span class=n>flow_generators</span><span class=p>()</span>
@@ -305,7 +305,8 @@
     <span class=n>program_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>,</span>
     <span class=n>encoding_program_text</span><span class=p>:</span> <span class=nb>str</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Initialize state preparation and apply encoding circuit.</p> <p>Apply the state preparation program for k qubits, then apply an encoding circuit to encode the state into n qubits.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>program_text</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>The state preparation program for k qubits. Generally, this should be a simple program that prepares each of the k qubits in a single-qubit state.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>encoding_program_text</code> </td> <td> <code><span title=optional>optional</span></code> </td> <td> <div class=doc-md-description> <p>An encoding circuit for a single logical qubit. This should encode a single logical qubit at input <code>self.encoding_qubit</code> into a state of n qubits. If not provided, the encoder will use a noiseless default encoding.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>116</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Initialize state preparation and apply encoding circuit.</p> <p>Apply the state preparation program for k qubits, then apply an encoding circuit to encode the state into n qubits.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>program_text</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>The state preparation program for k qubits. Generally, this should be a simple program that prepares each of the k qubits in a single-qubit state.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>encoding_program_text</code> </td> <td> <code><span title=optional>optional</span></code> </td> <td> <div class=doc-md-description> <p>An encoding circuit for a single logical qubit. This should encode a single logical qubit at input <code>self.encoding_qubit</code> into a state of n qubits. If not provided, the encoder will use a noiseless default encoding.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/encoder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>115</span>
+<span class=normal>116</span>
 <span class=normal>117</span>
 <span class=normal>118</span>
 <span class=normal>119</span>
@@ -346,8 +347,7 @@
 <span class=normal>154</span>
 <span class=normal>155</span>
 <span class=normal>156</span>
-<span class=normal>157</span>
-<span class=normal>158</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>initialize</span><span class=p>(</span>
+<span class=normal>157</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>initialize</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span> <span class=n>program_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>,</span> <span class=n>encoding_program_text</span><span class=p>:</span> <span class=nb>str</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Initialize state preparation and apply encoding circuit.</span>
