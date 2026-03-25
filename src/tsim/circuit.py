@@ -7,6 +7,7 @@ from typing import Any, Iterable, Literal, Sequence, Union, cast, overload
 import pyzx_param as zx
 import stim
 from pyzx_param.graph.base import BaseGraph
+from pyzx_param.simulate import DecompositionStrategy
 
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
@@ -659,10 +660,17 @@ class Circuit:
         built = parse_stim_circuit(self._stim_circ)
         return build_sampling_graph(built, sample_detectors=sample_detectors)
 
-    def compile_sampler(self, *, seed: int | None = None):
+    def compile_sampler(
+        self,
+        *,
+        strategy: DecompositionStrategy = "cat5",
+        seed: int | None = None,
+    ):
         """Compile circuit into a measurement sampler.
 
         Args:
+            strategy: Stabilizer rank decomposition strategy.
+                Must be one of "cat5", "bss", "cutting".
             seed: Random seed for the sampler. If None, a random seed will be generated.
 
         Returns:
@@ -671,12 +679,19 @@ class Circuit:
         """
         from tsim.sampler import CompiledMeasurementSampler
 
-        return CompiledMeasurementSampler(self, seed=seed)
+        return CompiledMeasurementSampler(self, seed=seed, strategy=strategy)
 
-    def compile_detector_sampler(self, *, seed: int | None = None):
+    def compile_detector_sampler(
+        self,
+        *,
+        strategy: DecompositionStrategy = "cat5",
+        seed: int | None = None,
+    ):
         """Compile circuit into a detector sampler.
 
         Args:
+            strategy: Stabilizer rank decomposition strategy.
+                Must be one of "cat5", "bss", "cutting".
             seed: Random seed for the sampler. If None, a random seed will be generated.
 
         Returns:
@@ -685,7 +700,7 @@ class Circuit:
         """
         from tsim.sampler import CompiledDetectorSampler
 
-        return CompiledDetectorSampler(self, seed=seed)
+        return CompiledDetectorSampler(self, seed=seed, strategy=strategy)
 
     def cast_to_stim(self) -> stim.Circuit:
         """Return self with type cast to stim.Circuit. This is useful for passing the circuit to functions that expect a stim.Circuit."""
