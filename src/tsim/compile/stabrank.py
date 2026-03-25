@@ -1,6 +1,6 @@
 """Stabilizer rank decomposition for non-Clifford ZX graphs."""
 
-from typing import Iterable, Literal, Sequence
+from typing import Iterable, Sequence
 
 import pyzx_param as zx
 from pyzx_param.graph.base import BaseGraph
