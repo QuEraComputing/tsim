@@ -19,12 +19,10 @@ class TestParseCorrelatedError:
 
     def test_parse_correlated_error_chain(self):
         """Parse a chain of CORRELATED_ERROR + ELSE_CORRELATED_ERROR."""
-        circuit = stim.Circuit(
-            """
+        circuit = stim.Circuit("""
             CORRELATED_ERROR(0.1) X0 Z1
             ELSE_CORRELATED_ERROR(0.2) X0 Z2
-            """
-        )
+            """)
         b = parse_stim_circuit(circuit)
 
         assert b.num_error_bits == 2
@@ -37,13 +35,11 @@ class TestParseCorrelatedError:
 
     def test_parse_two_separate_chains(self):
         """Parse two separate correlated error chains."""
-        circuit = stim.Circuit(
-            """
+        circuit = stim.Circuit("""
             CORRELATED_ERROR(0.1) X0
             ELSE_CORRELATED_ERROR(0.2) Z0
             CORRELATED_ERROR(0.3) X1
-            """
-        )
+            """)
         b = parse_stim_circuit(circuit)
 
         # First chain: 2 bits, second chain: 1 bit
@@ -89,12 +85,10 @@ class TestCorrelatedErrorGraph:
 
     def test_no_c_phases_after_finalization(self):
         """Verify no 'c' prefixed phases remain after finalization."""
-        circuit = stim.Circuit(
-            """
+        circuit = stim.Circuit("""
             CORRELATED_ERROR(0.1) X0 Z1
             ELSE_CORRELATED_ERROR(0.2) Y0
-        """
-        )
+        """)
         b = parse_stim_circuit(circuit)
 
         # Check that no vertices have "c" phases (stored in _phaseVars)
@@ -106,13 +100,11 @@ class TestCorrelatedErrorGraph:
 
     def test_chain_multiple_qubits(self):
         """Test a chain affecting multiple qubits."""
-        circuit = stim.Circuit(
-            """
+        circuit = stim.Circuit("""
             CORRELATED_ERROR(0.2) X1 Y2
             ELSE_CORRELATED_ERROR(0.25) Z2 Z3
             ELSE_CORRELATED_ERROR(0.33333333333) X1 Y2 Z3
-            """
-        )
+            """)
         b = parse_stim_circuit(circuit)
 
         assert b.num_error_bits == 3
@@ -125,6 +117,37 @@ class TestCorrelatedErrorGraph:
         assert_allclose(probs[1], 0.2, rtol=1e-5)  # First error
         assert_allclose(probs[2], 0.2, rtol=1e-5)  # Second error
         assert_allclose(probs[4], 0.2, rtol=1e-5)  # Third error
+
+
+class TestParseWithRepeatBlocks:
+    """Tests for parsing circuits that contain REPEAT blocks."""
+
+    def test_parse_circuit_with_repeat_block(self):
+        """parse_stim_circuit should flatten repeat blocks transparently."""
+        flat_circuit = stim.Circuit("H 0\nCNOT 0 1\nH 0\nCNOT 0 1\nH 0\nCNOT 0 1")
+        repeat_circuit = stim.Circuit("REPEAT 3 {\n    H 0\n    CNOT 0 1\n}")
+
+        b_flat = parse_stim_circuit(flat_circuit)
+        b_repeat = parse_stim_circuit(repeat_circuit)
+
+        assert len(b_flat.graph.vertices()) == len(b_repeat.graph.vertices())
+        assert list(b_flat.graph.edges()) == list(b_repeat.graph.edges())
+
+    def test_parse_repeat_block_with_measurements(self):
+        """Repeat blocks containing measurements should parse correctly."""
+        circuit = stim.Circuit("REPEAT 3 {\n    H 0\n    M 0\n}")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 3
+
+    def test_parse_nested_repeat_blocks(self):
+        """Nested repeat blocks should be fully flattened by the parser."""
+        circuit = stim.Circuit("REPEAT 2 {\n    REPEAT 3 {\n        H 0\n    }\n}")
+        flat = stim.Circuit("H 0\nH 0\nH 0\nH 0\nH 0\nH 0")
+
+        b_nested = parse_stim_circuit(circuit)
+        b_flat = parse_stim_circuit(flat)
+
+        assert len(b_nested.graph.vertices()) == len(b_flat.graph.vertices())
 
 
 class TestCorrelatedErrorState:
@@ -149,13 +172,11 @@ class TestCorrelatedErrorState:
 
     def test_mixed_errors(self):
         """Test correlated errors mixed with regular errors."""
-        circuit = stim.Circuit(
-            """
+        circuit = stim.Circuit("""
             X_ERROR(0.05) 0
             CORRELATED_ERROR(0.1) X1 Z2
             Z_ERROR(0.03) 1
-            """
-        )
+            """)
         b = parse_stim_circuit(circuit)
 
         # X_ERROR: 1 bit, CORRELATED_ERROR: 1 bit, Z_ERROR: 1 bit
