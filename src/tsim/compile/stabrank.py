@@ -1,9 +1,10 @@
 """Stabilizer rank decomposition for non-Clifford ZX graphs."""
 
-from typing import Iterable, Sequence
+from typing import Iterable, Literal, Sequence
 
 import pyzx_param as zx
 from pyzx_param.graph.base import BaseGraph
+from pyzx_param.simulate import DecompositionStrategy
 
 
 def _decompose(
@@ -30,25 +31,31 @@ def _decompose(
     return results
 
 
-def find_stab_magic(graphs: Iterable[BaseGraph]) -> list[BaseGraph]:
+def find_stab_magic(
+    graphs: Iterable[BaseGraph], strategy: DecompositionStrategy
+) -> list[BaseGraph]:
     """Recursively decompose ZX-graphs into stabilizer components via magic-state removal."""
     return _decompose(
         list(graphs),
         count_fn=zx.simplify.tcount,
-        replace_fn=lambda g: zx.simulate.replace_magic_states(g, pick_random=False),
+        replace_fn=lambda g: zx.simulate.replace_magic_states(
+            g, pick_random=False, strategy=strategy
+        ),
     )
 
 
-def find_stab_u3(graphs: Iterable[BaseGraph]) -> list[BaseGraph]:
+def find_stab_u3(
+    graphs: Iterable[BaseGraph], strategy: DecompositionStrategy
+) -> list[BaseGraph]:
     """Recursively decompose ZX-graphs by removing U3 phases."""
     return _decompose(
         list(graphs),
         count_fn=zx.simplify.u3_count,
-        replace_fn=zx.simulate.replace_u3_states,
+        replace_fn=lambda g: zx.simulate.replace_u3_states(g, strategy=strategy),
     )
 
 
-def find_stab(graph: BaseGraph) -> list[BaseGraph]:
+def find_stab(graph: BaseGraph, strategy: DecompositionStrategy) -> list[BaseGraph]:
     """Decompose a ZX-graph into a sum of stabilizer components.
 
     This is the main entry point for stabilizer rank decomposition. It first removes
@@ -57,11 +64,12 @@ def find_stab(graph: BaseGraph) -> list[BaseGraph]:
 
     Args:
         graph: The ZX graph to decompose.
+        strategy: Decomposition strategy. Must be one of "cat5", "bss", "cutting".
 
     Returns:
         A list of scalar graphs whose sum equals the original graph.
 
     """
     zx.full_reduce(graph, paramSafe=True)
-    graphs = find_stab_u3([graph])
-    return find_stab_magic(graphs)
+    graphs = find_stab_u3([graph], strategy=strategy)
+    return find_stab_magic(graphs, strategy=strategy)

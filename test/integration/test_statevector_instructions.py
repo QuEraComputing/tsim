@@ -30,15 +30,13 @@ from tsim.sampler import CompiledStateProbs
 @pytest.mark.parametrize("instruction", SINGLE_QUBIT_GATE_MATRICES.keys())
 def test_single_qubit_instructions(instruction: str):
     unitary = SINGLE_QUBIT_GATE_MATRICES[instruction]
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         R 0 1
         H 0
         CNOT 0 1
         {instruction} 0
         M 0 1
-        """
-    )
+        """)
     sampler = CompiledStateProbs(c)
     mat = get_matrix(sampler)
     assert np.allclose(mat, np.abs(unitary) ** 2)
@@ -47,15 +45,13 @@ def test_single_qubit_instructions(instruction: str):
 @pytest.mark.parametrize("instruction", TWO_QUBIT_GATE_MATRICES.keys())
 def test_two_qubit_instructions(instruction: str):
     unitary = TWO_QUBIT_GATE_MATRICES[instruction]
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         R 0 1 2 3
         H 0 1
         CNOT 0 2 1 3
         {instruction} 0 1
         M 0 1 2 3
-        """
-    )
+        """)
     sampler = CompiledStateProbs(c)
     mat = get_matrix(sampler)
     assert np.allclose(mat, np.abs(unitary) ** 2)
@@ -63,15 +59,13 @@ def test_two_qubit_instructions(instruction: str):
 
 @pytest.mark.parametrize("instruction", ["R_X", "R_Y", "R_Z"])
 def test_rot_instructions(instruction: str):
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         R 0 1
         H 0
         CNOT 0 1
         {instruction}(0.345) 0
         M 0 1
-        """
-    )
+        """)
     sampler = CompiledStateProbs(c)
     mat = get_matrix(sampler)
     expected = np.abs(ROT_GATE_MATRICES[instruction](0.345)) ** 2
@@ -79,15 +73,13 @@ def test_rot_instructions(instruction: str):
 
 
 def test_u3_instruction():
-    c = Circuit(
-        """
+    c = Circuit("""
         R 0 1
         H 0
         CNOT 0 1
         U3(0.345, 0.245, 0.495) 0
         M 0 1
-        """
-    )
+        """)
     sampler = CompiledStateProbs(c)
     mat = get_matrix(sampler)
     expected = np.abs(ROT_GATE_MATRICES["U3"](0.345, 0.245, 0.495)) ** 2
