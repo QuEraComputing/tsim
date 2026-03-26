@@ -212,7 +212,7 @@ requires-dist = [
     { name = "jax", extras = ["cuda13"], marker = "extra == 'cuda13'", specifier = ">=0.6.0" },
     { name = "lxml", specifier = ">=5.0.0" },
     { name = "numpy", specifier = ">=1.25.0" },
-    { name = "pyzx-param", git = "https://github.com/rafaelha/pyzx?rev=f4d440c299b71f576ccc369886ba319fb51dd2e2" },
+    { name = "pyzx-param", git = "https://github.com/rafaelha/pyzx?branch=paramzx-doubled-diagrams" },
     { name = "stim", specifier = ">=1.0.0" },
 ]
 provides-extras = ["cuda12", "cuda13"]
@@ -3613,7 +3613,7 @@ wheels = [
 [[package]]
 name = "pyzx-param"
 version = "0.9.2"
-source = { git = "https://github.com/rafaelha/pyzx?rev=f4d440c299b71f576ccc369886ba319fb51dd2e2#f4d440c299b71f576ccc369886ba319fb51dd2e2" }
+source = { git = "https://github.com/rafaelha/pyzx?branch=paramzx-doubled-diagrams#9b8e346b4a998ba025b8471c66766e2f07ef5129" }
 dependencies = [
     { name = "lark" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },

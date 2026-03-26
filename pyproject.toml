@@ -95,7 +95,7 @@ doc = [
 ]
 
 [tool.uv.sources]
-pyzx-param = { git = "https://github.com/rafaelha/pyzx", rev = "f4d440c299b71f576ccc369886ba319fb51dd2e2" }
+pyzx-param = { git = "https://github.com/rafaelha/pyzx", branch = "paramzx-doubled-diagrams" }
 
 [tool.hatch.metadata]
 allow-direct-references = true
