@@ -22,18 +22,18 @@ import numpy as np
 # ---------------------------------------------------------------------------
 
 INPUT_JSONS: tuple[Path, ...] = (
-    Path("benchmarks/stim/results_cpu.json"),
-    # Path("benchmarks/stim/results_gpu.json"),
+    Path("benchmarks/stim/results_m4.json"),
+    Path("benchmarks/stim/results_gh200.json"),
 )
 
 INPUT_LABELS: tuple[str, ...] = (
-    "CPU",
-    # "GPU",
+    "M4",
+    "GH200",
 )
 
 OUTPUT_FILE = Path("benchmarks/stim/tsim_vs_stim.pdf")
 
-plt.rcParams["text.usetex"] = True
+plt.rcParams["text.usetex"] = False
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -143,7 +143,7 @@ def main() -> None:
 
     ax.plot([lo, hi], [lo, hi], "--", color="gray", linewidth=1, zorder=1, label="1x")
 
-    for factor in (10, 100, 1000):
+    for factor in (0.1, 1):
         ax.plot(
             [lo, hi],
             [lo / factor, hi / factor],

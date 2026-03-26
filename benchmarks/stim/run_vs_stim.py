@@ -37,20 +37,32 @@ except ModuleNotFoundError:
 
 
 CIRCUITS = [
+    # {
+    #     "file": "benchmarks/stim/d=5_X.stim",
+    #     "label": "d=5 distillation",
+    #     "publication": "Rodriguez et al. 2025",
+    #     "strategy": "cat5",
+    # },
+    # {
+    #     "file": "benchmarks/stim/d=3_X.stim",
+    #     "label": "d=3 distillation",
+    #     "publication": "Rodriguez et al. 2025",
+    #     "strategy": "cat5",
+    # },
+    # {
+    #     "file": "benchmarks/stim/cultivation_d=3.stim",
+    #     "label": "d=3 cultivation",
+    #     "publication": "arXiv:2409.17595",
+    #     "strategy": "cutting",
+    # },
     {
-        "file": "benchmarks/stim/d=5_X.stim",
-        "label": "d=5 distillation",
-        "publication": "Rodriguez et al. 2025",
-        "strategy": "cat5",
+        "file": "benchmarks/stim/d=3-degenerate-basis=Y-p=0.001.stim",
+        "label": "d=3 cultivation",
+        "publication": "arXiv:2409.17595",
+        "strategy": "cutting",
     },
     {
-        "file": "benchmarks/stim/d=3_X.stim",
-        "label": "d=3 distillation",
-        "publication": "Rodriguez et al. 2025",
-        "strategy": "cat5",
-    },
-    {
-        "file": "benchmarks/stim/cultivation_d=3.stim",
+        "file": "benchmarks/stim/d=3-degenerate-basis=Y-p=0.001_T.stim",
         "label": "d=3 cultivation",
         "publication": "arXiv:2409.17595",
         "strategy": "cutting",
