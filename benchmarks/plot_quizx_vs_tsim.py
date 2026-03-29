@@ -18,10 +18,12 @@ import numpy as np
 # ---------------------------------------------------------------------------
 
 INPUT_JSONS = (
-    Path("/Users/rafaelhaenel/Documents/quera/tsim/benchmarks/quizx/results_tsim.json"),
     Path(
-        "/Users/rafaelhaenel/Documents/quera/tsim/benchmarks/quizx/results_tsim_gpu.json"
+        "/Users/rafaelhaenel/Documents/quera/tsim/benchmarks/quizx/results_tsim_bench.json"
     ),
+    # Path(
+    #     "/Users/rafaelhaenel/Documents/quera/tsim/benchmarks/quizx/results_tsim_gpu.json"
+    # ),
 )
 
 # INPUT_JSONS = (
@@ -34,7 +36,7 @@ INPUT_JSONS = (
 # )
 INPUT_LABELS = (
     "CPU (M4 Pro)",
-    "GPU (GH200)",
+    # "GPU (GH200)",
 )
 OUTPUT_PNG = Path("benchmarks/quizx/q50_d10_quizx_vs_tsim_noise.png")
 TARGET_QUBITS = 20
@@ -154,7 +156,7 @@ def main() -> None:
     all_tsim = np.concatenate([tsim_i for _, _, _, tsim_i in datasets])
     x_min, x_max = float(np.min(all_quizx)), float(np.max(all_quizx))
     y_min, y_max = float(np.min(all_tsim)), float(np.max(all_tsim))
-    scatter_ax.set_xlim(5e-4, 6e-1)
+    scatter_ax.set_xlim(1e-4, 6e-1)
     scatter_ax.set_ylim(4e-9, 9e-3)
 
     x_right = scatter_ax.get_xlim()[1]
