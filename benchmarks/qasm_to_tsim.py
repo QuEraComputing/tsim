@@ -35,7 +35,7 @@ _PP_RE = re.compile(
 )
 _QIDX_RE = re.compile(r"^q\[(\d+)\]$", re.IGNORECASE)
 _INT_TOKEN_RE = re.compile(r"^-?\d+$")
-_DEFAULT_NOISE_PROB = 1e-4
+_DEFAULT_NOISE_PROB = 1e-3
 
 
 def _parse_pi_expression(expr: str) -> float:
