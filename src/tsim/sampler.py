@@ -281,6 +281,13 @@ class _CompiledSamplerBase:
             f"{total_memory_str})"
         )
 
+    def num_graphs_of_largest_component(self) -> list[int]:
+        components = self._program.components
+        if len(components) == 0:
+            return [1]
+        largest_component = max(components, key=lambda c: len(c.output_indices))
+        return [c.num_graphs for c in largest_component.compiled_scalar_graphs]
+
 
 class CompiledMeasurementSampler(_CompiledSamplerBase):
     """Samples measurement outcomes from a quantum circuit.

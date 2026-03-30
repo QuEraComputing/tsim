@@ -36,36 +36,59 @@ except ModuleNotFoundError:
     from metadata import collect_metadata
 
 
+def rescale_circuit(c: stim.Circuit, rescaling_factor: float) -> stim.Circuit:
+    """Rescale a stim circuit by a factor."""
+    new_c = stim.Circuit()
+    for inst in c:
+        assert not isinstance(inst, stim.CircuitRepeatBlock)
+        args = inst.gate_args_copy()
+        args_new = args
+        if len(args) > 0 and inst.name not in [
+            "OBSERVABLE_INCLUDE",
+            "QUBIT_COORDS",
+            "DETECTOR",
+        ]:
+            args_new = [a * rescaling_factor for a in args]
+            # print(f"Rescaled {inst.name} from {args} to {args_new}")
+        new_c.append(inst.name, inst.targets_copy(), args_new, tag=inst.tag)
+    return new_c
+
+
 CIRCUITS = [
-    # {
-    #     "file": "benchmarks/stim/d=5_X.stim",
-    #     "label": "d=5 distillation",
-    #     "publication": "Rodriguez et al. 2025",
-    #     "strategy": "cat5",
-    # },
-    # {
-    #     "file": "benchmarks/stim/d=3_X.stim",
-    #     "label": "d=3 distillation",
-    #     "publication": "Rodriguez et al. 2025",
-    #     "strategy": "cat5",
-    # },
-    # {
-    #     "file": "benchmarks/stim/cultivation_d=3.stim",
-    #     "label": "d=3 cultivation",
-    #     "publication": "arXiv:2409.17595",
-    #     "strategy": "cutting",
-    # },
     {
-        "file": "benchmarks/stim/d=3-degenerate-basis=Y-p=0.001.stim",
-        "label": "d=3 cultivation",
-        "publication": "arXiv:2409.17595",
-        "strategy": "cutting",
+        "file": "benchmarks/stim/d=5_x.stim",
+        "label": "d=5 distillation",
+        "publication": "rodriguez et al. 2025",
+        "strategy": "cat5",
+        "rescale": [1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100],
     },
     {
-        "file": "benchmarks/stim/d=3-degenerate-basis=Y-p=0.001_T.stim",
+        "file": "benchmarks/stim/d=3_X.stim",
+        "label": "d=3 distillation",
+        "publication": "Rodriguez et al. 2025",
+        "strategy": "cat5",
+        "rescale": [1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100],
+    },
+    {
+        "file": "benchmarks/stim/cultivation_d=3.stim",
         "label": "d=3 cultivation",
         "publication": "arXiv:2409.17595",
         "strategy": "cutting",
+        "rescale": [1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100],
+    },
+    # {
+    #     "file": "benchmarks/stim/d=15_surface_code_rotated_0_001.stim",
+    #     "label": "d=15 surface code",
+    #     "publication": "Surface code",
+    #     "strategy": "cat5",
+    #     "rescale": [1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100],
+    # },
+    {
+        "file": "benchmarks/stim/d=7_surface_code_rotated_0_001.stim",
+        "label": "d=7 surface code",
+        "publication": "Surface code",
+        "strategy": "cat5",
+        "rescale": [1e-4, 1e-3, 1e-2, 1e-1, 1, 10, 100],
     },
 ]
 
@@ -88,8 +111,13 @@ def _tsim_worker(
     initial_batch_size: int,
     convergence_ratio: float,
     strategy: DecompositionStrategy = "cat5",
+    rescale_factor: float | None = None,
 ) -> None:
     circuit = tsim.Circuit.from_file(stim_file)
+    if rescale_factor is not None:
+        circuit = tsim.Circuit.from_stim_program(
+            rescale_circuit(circuit.stim_circuit, rescale_factor)
+        )
     sampler = circuit.compile_detector_sampler(strategy=strategy)
     print(f"  [tsim] strategy={strategy}  {sampler}")
     _autotune_detector_sampler(
@@ -97,6 +125,9 @@ def _tsim_worker(
         sampler,
         initial_batch_size,
         convergence_ratio,
+        extra_metadata={
+            "num_graphs_of_largest_component": sampler.num_graphs_of_largest_component(),
+        },
     )
 
 
@@ -105,9 +136,12 @@ def _stim_worker(
     stim_file: str,
     initial_batch_size: int,
     convergence_ratio: float,
+    rescale_factor: float | None = None,
 ) -> None:
-    circuit = tsim.Circuit.from_file(stim_file).stim_circuit
-    sampler = circuit.compile_detector_sampler()
+    stim_circuit = tsim.Circuit.from_file(stim_file).stim_circuit
+    if rescale_factor is not None:
+        stim_circuit = rescale_circuit(stim_circuit, rescale_factor)
+    sampler = stim_circuit.compile_detector_sampler()
     _autotune_detector_sampler(
         progress_path,
         sampler,
@@ -121,6 +155,7 @@ def _autotune_detector_sampler(
     sampler: Any,
     initial_batch_size: int,
     convergence_ratio: float,
+    extra_metadata: dict[str, Any] | None = None,
 ) -> None:
     """Doubling-loop autotuner identical to benchmarks/run.py."""
     best_duration = float("inf")
@@ -128,6 +163,7 @@ def _autotune_detector_sampler(
     batch_size = initial_batch_size
     probes: list[dict[str, float | int]] = []
     ppath = Path(progress_path)
+    base_payload: dict[str, Any] = extra_metadata or {}
 
     while True:
         sampler.sample(batch_size, append_observables=True)
@@ -152,6 +188,7 @@ def _autotune_detector_sampler(
         ppath.write_text(
             json.dumps(
                 {
+                    **base_payload,
                     "best_duration": best_duration,
                     "best_batch_size": best_batch_size,
                     "probes": probes,
@@ -171,6 +208,7 @@ def _run_in_subprocess(
     stim_file: str,
     initial_batch_size: int,
     convergence_ratio: float,
+    stall_timeout_secs: float = 120.0,
     **extra_kwargs: Any,
 ) -> dict[str, Any] | None:
     fd, progress_path = tempfile.mkstemp(prefix="tsim_stim_probe_", suffix=".json")
@@ -183,16 +221,45 @@ def _run_in_subprocess(
             kwargs=extra_kwargs,
         )
         proc.start()
-        proc.join()
 
         ppath = Path(progress_path)
+        last_progress_marker: tuple[int, int] | None = None
+        last_progress_time = time.monotonic()
+        timed_out = False
+
+        while proc.is_alive():
+            proc.join(timeout=1.0)
+            stat = ppath.stat()
+            progress_marker = (stat.st_mtime_ns, stat.st_size)
+            if stat.st_size > 0 and progress_marker != last_progress_marker:
+                last_progress_marker = progress_marker
+                last_progress_time = time.monotonic()
+
+            if time.monotonic() - last_progress_time > stall_timeout_secs:
+                print(
+                    f"    [no progress for {stall_timeout_secs:.0f}s; "
+                    "terminating child and continuing]"
+                )
+                proc.terminate()
+                proc.join(timeout=5.0)
+                if proc.is_alive():
+                    proc.kill()
+                    proc.join(timeout=5.0)
+                timed_out = True
+                break
+
         if ppath.stat().st_size == 0:
             if proc.exitcode != 0:
                 print(f"    [child crashed (exit {proc.exitcode}) before any result]")
             return None
 
         result = json.loads(ppath.read_text(encoding="utf-8"))
-        if proc.exitcode != 0:
+        if timed_out:
+            print(
+                f"    [timeout, using last good batch_size={result['best_batch_size']}]"
+            )
+            result["timed_out"] = True
+        elif proc.exitcode != 0:
             print(
                 f"    [child crashed (exit {proc.exitcode}), "
                 f"using last good batch_size={result['best_batch_size']}]"
@@ -213,11 +280,21 @@ def run_benchmarks(
     output_path: Path,
     initial_batch_size: int = 32,
     convergence_ratio: float = 1.2,
-    circuits: list[dict[str, str]] | None = None,
+    stall_timeout_secs: float = 120.0,
+    circuits: list[dict[str, Any]] | None = None,
 ) -> Path:
     """Run tsim and stim benchmarks for all circuits and save results."""
     if circuits is None:
         circuits = CIRCUITS
+
+    tasks: list[tuple[dict[str, Any], float | None]] = []
+    for entry in circuits:
+        rescale_factors = entry.get("rescale")
+        if rescale_factors:
+            for factor in rescale_factors:
+                tasks.append((entry, factor))
+        else:
+            tasks.append((entry, None))
 
     metadata = collect_metadata(machine_label)
     run_metadata: dict[str, Any] = {
@@ -227,17 +304,22 @@ def run_benchmarks(
         "parameters": {
             "initial_batch_size": initial_batch_size,
             "convergence_ratio": convergence_ratio,
+            "stall_timeout_secs": stall_timeout_secs,
         },
     }
 
     records: list[dict[str, Any]] = []
 
-    for idx, entry in enumerate(circuits):
+    for idx, (entry, rescale_factor) in enumerate(tasks):
         stim_file = entry["file"]
         label = entry["label"]
         strategy = entry.get("strategy", "cat5")
+        rescale_tag = (
+            f"  rescale={rescale_factor:g}" if rescale_factor is not None else ""
+        )
         print(
-            f"\n[{idx + 1}/{len(circuits)}] {label}  ({stim_file})  strategy={strategy}"
+            f"\n[{idx + 1}/{len(tasks)}] {label}  ({stim_file})  "
+            f"strategy={strategy}{rescale_tag}"
         )
 
         record: dict[str, Any] = {
@@ -245,6 +327,7 @@ def run_benchmarks(
             "label": label,
             "publication": entry.get("publication", ""),
             "strategy": strategy,
+            "rescale_factor": rescale_factor,
         }
 
         # --- tsim ---
@@ -254,14 +337,19 @@ def run_benchmarks(
             stim_file,
             initial_batch_size,
             convergence_ratio,
+            stall_timeout_secs=stall_timeout_secs,
             strategy=strategy,
+            rescale_factor=rescale_factor,
         )
         if tsim_result is not None:
             record["tsim"] = {
-                "status": "ok",
+                "status": "timed_out" if tsim_result.get("timed_out") else "ok",
                 "best_duration_per_shot_secs": tsim_result["best_duration"],
                 "best_batch_size": tsim_result["best_batch_size"],
                 "probes": tsim_result["probes"],
+                "num_graphs_of_largest_component": tsim_result.get(
+                    "num_graphs_of_largest_component"
+                ),
             }
         else:
             record["tsim"] = {"status": "crashed"}
@@ -269,11 +357,16 @@ def run_benchmarks(
         # --- stim ---
         print("  stim:")
         stim_result = _run_in_subprocess(
-            _stim_worker, stim_file, initial_batch_size, convergence_ratio
+            _stim_worker,
+            stim_file,
+            initial_batch_size,
+            convergence_ratio,
+            stall_timeout_secs=stall_timeout_secs,
+            rescale_factor=rescale_factor,
         )
         if stim_result is not None:
             record["stim"] = {
-                "status": "ok",
+                "status": "timed_out" if stim_result.get("timed_out") else "ok",
                 "best_duration_per_shot_secs": stim_result["best_duration"],
                 "best_batch_size": stim_result["best_batch_size"],
                 "probes": stim_result["probes"],
@@ -287,19 +380,19 @@ def run_benchmarks(
             "run_metadata": {
                 **run_metadata,
                 "completed_at": datetime.now(timezone.utc).isoformat(),
-                "records_total": len(circuits),
+                "records_total": len(tasks),
                 "records_done": len(records),
             },
             "records": records,
         }
         _save_json_atomic(output_path, incremental)
-        print(f"  [saved {len(records)}/{len(circuits)} to {output_path}]")
+        print(f"  [saved {len(records)}/{len(tasks)} to {output_path}]")
 
     final = {
         "run_metadata": {
             **run_metadata,
             "completed_at": datetime.now(timezone.utc).isoformat(),
-            "records_total": len(circuits),
+            "records_total": len(tasks),
             "records_done": len(records),
         },
         "records": records,
@@ -324,7 +417,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output JSON path. Default: benchmarks/stim/results_<machine>.json",
     )
     p.add_argument("--initial-batch-size", type=int, default=32)
-    p.add_argument("--convergence-ratio", type=float, default=1.5)
+    p.add_argument("--convergence-ratio", type=float, default=1.38)
+    p.add_argument(
+        "--stall-timeout-secs",
+        type=float,
+        default=120.0,
+        help="Terminate a worker if its progress file is unchanged for this long.",
+    )
     return p
 
 
@@ -348,6 +447,7 @@ def main(argv: list[str] | None = None) -> Path:
         output_path=output_path,
         initial_batch_size=args.initial_batch_size,
         convergence_ratio=args.convergence_ratio,
+        stall_timeout_secs=args.stall_timeout_secs,
     )
     print(f"\nResults saved to {result}")
     return result
