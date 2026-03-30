@@ -72,21 +72,25 @@ def _find_throughput_worker(
     ppath = Path(progress_path)
 
     while True:
-        # Warmup (JIT + caches)
-        sampler.sample(batch_size, batch_size=batch_size)
-
-        # Timed run
-        repeats = 0
-        start = time.perf_counter()
-        while True:
-            repeats += 1
+        try:
+            # Warmup (JIT + caches)
             sampler.sample(batch_size, batch_size=batch_size)
-            if time.perf_counter() - start > 1:
-                break
-        duration = (time.perf_counter() - start) / batch_size / repeats
+
+            # Timed run
+            repeats = 0
+            start = time.perf_counter()
+            while True:
+                repeats += 1
+                sampler.sample(batch_size, batch_size=batch_size)
+                if time.perf_counter() - start > 1:
+                    break
+            duration = (time.perf_counter() - start) / batch_size / repeats
+        except Exception as exc:
+            print(f"Batch size {batch_size} failed: {exc}")
+            break
 
         probes.append({"batch_size": batch_size, "duration_per_shot": duration})
-        print(f"Batch size: {batch_size}, Duration per shot: {duration * 1e6:.2f} us")
+        print(f"Batch size: {batch_size}, Duration per shot: {duration * 1e6:.4f} us")
 
         converged = duration / best_duration > convergence_ratio
         if duration < best_duration:
@@ -116,8 +120,13 @@ def find_throughput_for_program(
     sample_seed: int | None = None,
     initial_batch_size: int = 32,
     convergence_ratio: float = 0.8,
+    stall_timeout: float = 120.0,
 ) -> dict[str, Any] | None:
-    """Measure throughput for one TSIM/STIM program using crash-safe subprocess."""
+    """Measure throughput for one TSIM/STIM program using crash-safe subprocess.
+
+    If the child process makes no progress for *stall_timeout* seconds (e.g.
+    due to a GPU OOM retry loop), it is killed and partial results are returned.
+    """
     fd, progress_path = tempfile.mkstemp(prefix="tsim_program_probe_", suffix=".json")
     os.close(fd)
     try:
@@ -133,9 +142,33 @@ def find_throughput_for_program(
             ),
         )
         proc.start()
-        proc.join()
 
         ppath = Path(progress_path)
+        last_progress_time = time.monotonic()
+        last_file_mtime: float = 0
+
+        while proc.is_alive():
+            proc.join(timeout=5.0)
+            if not proc.is_alive():
+                break
+
+            try:
+                current_mtime = ppath.stat().st_mtime
+                if current_mtime != last_file_mtime:
+                    last_file_mtime = current_mtime
+                    last_progress_time = time.monotonic()
+            except OSError:
+                pass
+
+            if time.monotonic() - last_progress_time > stall_timeout:
+                print(
+                    f"    [child stalled for {stall_timeout:.0f}s "
+                    f"(likely GPU OOM), killing]"
+                )
+                proc.kill()
+                proc.join()
+                break
+
         if ppath.stat().st_size == 0:
             if proc.exitcode != 0:
                 print(f"    [child crashed (exit {proc.exitcode}) before any result]")
@@ -144,7 +177,7 @@ def find_throughput_for_program(
         result = json.loads(ppath.read_text(encoding="utf-8"))
         if proc.exitcode != 0:
             print(
-                f"    [child crashed (exit {proc.exitcode}), "
+                f"    [child exited (code {proc.exitcode}), "
                 f"using last good batch_size={result['best_batch_size']}]"
             )
         return result
@@ -181,6 +214,7 @@ def benchmark_quizx_json(
     convergence_ratio: float = 0.8,
     max_circuits: int | None = None,
     noise: bool = False,
+    stall_timeout: float = 120.0,
 ) -> Path:
     """Run QASM->TSIM conversion + throughput tuning for each circuit record."""
     input_path = Path(input_path)
@@ -243,6 +277,7 @@ def benchmark_quizx_json(
                 sample_seed=sample_seed,
                 initial_batch_size=initial_batch_size,
                 convergence_ratio=convergence_ratio,
+                stall_timeout=stall_timeout,
             )
             if include_tsim_program:
                 out_record["tsim_program"] = tsim_program
@@ -341,6 +376,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Benchmark only the first N circuits; -1 means all.",
     )
     p.add_argument(
+        "--stall-timeout",
+        type=float,
+        default=120.0,
+        help=(
+            "Kill the child process if no progress for this many seconds "
+            "(e.g. due to GPU OOM retry loop)."
+        ),
+    )
+    p.add_argument(
         "--include-tsim-program",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -370,6 +414,7 @@ def main(argv: list[str] | None = None) -> Path:
         convergence_ratio=args.convergence_ratio,
         max_circuits=None if args.max_circuits < 0 else args.max_circuits,
         noise=args.noise,
+        stall_timeout=args.stall_timeout,
     )
     print(f"\nSaved enriched benchmark JSON to {output}")
     return output
