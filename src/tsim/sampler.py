@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal, overload
 import jax
 import jax.numpy as jnp
 import numpy as np
+import psutil
 
 from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import compile_program
@@ -167,13 +168,44 @@ class _CompiledSamplerBase:
         self.circuit = circuit
         self._num_detectors = prepared.num_detectors
 
+    def _peak_bytes_per_sample(self) -> int:
+        """Estimate peak device memory per sample from compiled program structure."""
+        peak = 0
+        for component in self._program.components:
+            for circuit in component.compiled_scalar_graphs:
+                G = circuit.num_graphs
+                max_a = circuit.a_const_phases.shape[1]
+                max_b = circuit.b_term_types.shape[1]
+                max_c = circuit.c_const_bits_a.shape[1]
+                max_d = circuit.d_const_alpha.shape[1]
+                largest = max(max_a * 16, max_b * 4, max_c * 4, max_d * 16)
+                peak = max(peak, G * largest * 3)
+        return max(peak, 1)
+
+    def _estimate_batch_size(self) -> int:
+        """Estimate the largest batch size that fits in available device memory."""
+        device = jax.devices()[0]
+        if device.platform == "gpu":
+            stats = device.memory_stats()
+            available = stats["bytes_limit"] - stats["bytes_in_use"]
+            print(f"Bytes limit: {stats['bytes_limit'] / 1024**2:.2f} MB")
+            print(f"Bytes in use: {stats['bytes_in_use'] / 1024**2:.2f} MB")
+        else:
+            available = psutil.virtual_memory().available
+        print(f"Total available memory: {available / 1024**2:.2f} MB")
+
+        available = int(available * 0.5)
+        return max(1, available // self._peak_bytes_per_sample())
+
     def _sample_batches(self, shots: int, batch_size: int | None = None) -> np.ndarray:
         """Sample in batches and concatenate results."""
         if batch_size is None:
-            batch_size = shots
+            batch_size = min(shots, self._estimate_batch_size())
+            print(f"Auto-selected batch size: {batch_size}")
 
         batches: list[jax.Array] = []
         for _ in range(ceil(shots / batch_size)):
+            print(f"Sampling batch {_ + 1} of {ceil(shots / batch_size)}")
             f_params_np = self._channel_sampler.sample(batch_size)
             f_params = jnp.asarray(f_params_np)
             self._key, subkey = jax.random.split(self._key)
