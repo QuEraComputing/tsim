@@ -12,6 +12,10 @@ Usage::
 
 from __future__ import annotations
 
+import os
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
+
 import argparse
 import json
 import multiprocessing as mp
@@ -56,7 +60,7 @@ def rescale_circuit(c: stim.Circuit, rescaling_factor: float) -> stim.Circuit:
 
 CIRCUITS = [
     {
-        "file": "benchmarks/stim/d=5_x.stim",
+        "file": "benchmarks/stim/d=5_X.stim",
         "label": "d=5 distillation",
         "publication": "rodriguez et al. 2025",
         "strategy": "cat5",
