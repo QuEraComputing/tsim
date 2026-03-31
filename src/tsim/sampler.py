@@ -187,12 +187,14 @@ class _CompiledSamplerBase:
         device = jax.devices()[0]
         if device.platform == "gpu":
             stats = device.memory_stats()
-            available = stats["bytes_limit"] - stats["bytes_in_use"]
+            available = stats.get("bytes_limit", 8 * 1024**3) - stats.get(
+                "bytes_in_use", 0
+            )
         else:
             available = psutil.virtual_memory().available
 
-        available = int(available * 0.5)
-        return max(1, available // self._peak_bytes_per_sample())
+        half_of_available = int(available * 0.5)  # conservative estimate
+        return max(1, half_of_available // self._peak_bytes_per_sample())
 
     def _sample_batches(self, shots: int, batch_size: int | None = None) -> np.ndarray:
         """Sample in batches and concatenate results."""
