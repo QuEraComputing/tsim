@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal, overload
 import jax
 import jax.numpy as jnp
 import numpy as np
+import psutil
 
 from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import compile_program
@@ -167,10 +168,40 @@ class _CompiledSamplerBase:
         self.circuit = circuit
         self._num_detectors = prepared.num_detectors
 
+    def _peak_bytes_per_sample(self) -> int:
+        """Estimate peak device memory per sample from compiled program structure."""
+        peak = 0
+        for component in self._program.components:
+            for circuit in component.compiled_scalar_graphs:
+                G = circuit.num_graphs
+                max_a = circuit.a_const_phases.shape[1]
+                max_b = circuit.b_term_types.shape[1]
+                max_c = circuit.c_const_bits_a.shape[1]
+                max_d = circuit.d_const_alpha.shape[1]
+                largest = max(max_a * 16, max_b * 4, max_c * 4, max_d * 16)
+                peak = max(peak, G * largest * 3)
+        return max(peak, 1)
+
+    def _estimate_batch_size(self) -> int:
+        """Estimate the largest batch size that fits in available device memory."""
+        device = jax.devices()[0]
+        if device.platform == "gpu":
+            stats = device.memory_stats()
+            available = stats.get("bytes_limit", 8 * 1024**3) - stats.get(
+                "bytes_in_use", 0
+            )
+        else:
+            available = psutil.virtual_memory().available
+
+        half_of_available = int(available * 0.5)  # conservative estimate
+        return max(1, half_of_available // self._peak_bytes_per_sample())
+
     def _sample_batches(self, shots: int, batch_size: int | None = None) -> np.ndarray:
         """Sample in batches and concatenate results."""
         if batch_size is None:
-            batch_size = shots
+            max_batch_size = self._estimate_batch_size()
+            num_batches = max(1, ceil(shots / max_batch_size))
+            batch_size = ceil(shots / num_batches)
 
         batches: list[jax.Array] = []
         for _ in range(ceil(shots / batch_size)):
@@ -252,14 +283,15 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         """
         super().__init__(circuit, sample_detectors=False, mode="sequential", seed=seed)
 
-    def sample(self, shots: int, *, batch_size: int = 1024) -> np.ndarray:
+    def sample(self, shots: int, *, batch_size: int | None = None) -> np.ndarray:
         """Sample measurement outcomes from the circuit.
 
         Args:
             shots: The number of times to sample every measurement in the circuit.
-            batch_size: The number of samples to process in each batch. When using a
-                GPU, it is recommended to increase this value until VRAM is fully
-                utilized for maximum performance.
+            batch_size: The number of samples to process in each batch. Defaults to
+                None, which automatically chooses a batch size based on available
+                memory. When using a GPU, setting this explicitly can help fully
+                utilize VRAM for maximum performance.
 
         Returns:
             A numpy array containing the measurement samples.
@@ -330,9 +362,10 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
 
         Args:
             shots: The number of times to sample every detector in the circuit.
-            batch_size: The number of samples to process in each batch. When using a
-                GPU, it is recommended to increase this value until VRAM is fully
-                utilized for maximum performance.
+            batch_size: The number of samples to process in each batch. Defaults to
+                None, which automatically chooses a batch size based on available
+                memory. When using a GPU, setting this explicitly can help fully
+                utilize VRAM for maximum performance.
             separate_observables: Defaults to False. When set to True, the return value
                 is a (detection_events, observable_flips) tuple instead of a flat
                 detection_events array.

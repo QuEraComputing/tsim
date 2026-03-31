@@ -284,14 +284,12 @@ def test_mpp_inversion_parity(stim_program: str):
 
 
 def test_channel_simplification():
-    c = Circuit(
-        """
+    c = Circuit("""
         X_ERROR(0.1) 0
         X_ERROR(0.1) 0
         X_ERROR(0.1) 0
         M 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=42)
 
     # Check that channels were simplified into a single equivalent channel

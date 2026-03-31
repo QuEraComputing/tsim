@@ -7,15 +7,13 @@ from tsim.external.vec_sim.vec_sampler import VecSampler
 
 
 def test_vec_sampler_bell_state():
-    c = stim.Circuit(
-        """
+    c = stim.Circuit("""
         R 0 1
         H 0
         CNOT 0 1
         M 0 1
         DETECTOR rec[-1] rec[-2]
-        """
-    )
+        """)
     random.seed(0)
     sampler = VecSampler(c, False)
     m, d, _ = sampler.sample(10)
@@ -26,16 +24,14 @@ def test_vec_sampler_bell_state():
 
 
 def test_vec_sampler_bell_state_with_measurement_error():
-    c = stim.Circuit(
-        """
+    c = stim.Circuit("""
         R 0 1
         H 0
         CNOT 0 1
         X_ERROR(0.3) 0
         M 0 1
         DETECTOR rec[-1] rec[-2]
-        """
-    )
+        """)
     sampler = VecSampler(c, False)
 
     random.seed(0)
@@ -44,14 +40,12 @@ def test_vec_sampler_bell_state_with_measurement_error():
 
 
 def test_t_gate():
-    c = stim.Circuit(
-        """
+    c = stim.Circuit("""
         RX 0
         S[T] 0
         H 0
         M 0
-        """
-    )
+        """)
     random.seed(0)
     sampler = VecSampler(c, False)
     m, _, _ = sampler.sample(100)
@@ -59,14 +53,12 @@ def test_t_gate():
 
 
 def test_s_gate():
-    c = stim.Circuit(
-        """
+    c = stim.Circuit("""
         RX 0
         S 0
         H 0
         M 0
-        """
-    )
+        """)
     random.seed(0)
     sampler = VecSampler(c, False)
     m, _, _ = sampler.sample(100)
@@ -74,15 +66,13 @@ def test_s_gate():
 
 
 def test_t_dag_gate():
-    c = stim.Circuit(
-        """
+    c = stim.Circuit("""
         RX 0
         S[T] 0
         S_DAG[T] 0
         H 0
         M 0
-        """
-    )
+        """)
     random.seed(0)
     sampler = VecSampler(c, False)
     m, _, _ = sampler.sample(10)
@@ -90,15 +80,13 @@ def test_t_dag_gate():
 
 
 def test_s_dag_gate():
-    c = stim.Circuit(
-        """
+    c = stim.Circuit("""
         RX 0
         S 0
         S_DAG 0
         H 0
         M 0
-        """
-    )
+        """)
     random.seed(0)
     sampler = VecSampler(c, False)
     m, _, _ = sampler.sample(10)

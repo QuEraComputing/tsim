@@ -19,12 +19,10 @@ class TestParseCorrelatedError:
 
     def test_parse_correlated_error_chain(self):
         """Parse a chain of CORRELATED_ERROR + ELSE_CORRELATED_ERROR."""
-        circuit = stim.Circuit(
-            """
+        circuit = stim.Circuit("""
             CORRELATED_ERROR(0.1) X0 Z1
             ELSE_CORRELATED_ERROR(0.2) X0 Z2
-            """
-        )
+            """)
         b = parse_stim_circuit(circuit)
 
         assert b.num_error_bits == 2
@@ -37,13 +35,11 @@ class TestParseCorrelatedError:
 
     def test_parse_two_separate_chains(self):
         """Parse two separate correlated error chains."""
-        circuit = stim.Circuit(
-            """
+        circuit = stim.Circuit("""
             CORRELATED_ERROR(0.1) X0
             ELSE_CORRELATED_ERROR(0.2) Z0
             CORRELATED_ERROR(0.3) X1
-            """
-        )
+            """)
         b = parse_stim_circuit(circuit)
 
         # First chain: 2 bits, second chain: 1 bit
@@ -89,12 +85,10 @@ class TestCorrelatedErrorGraph:
 
     def test_no_c_phases_after_finalization(self):
         """Verify no 'c' prefixed phases remain after finalization."""
-        circuit = stim.Circuit(
-            """
+        circuit = stim.Circuit("""
             CORRELATED_ERROR(0.1) X0 Z1
             ELSE_CORRELATED_ERROR(0.2) Y0
-        """
-        )
+        """)
         b = parse_stim_circuit(circuit)
 
         # Check that no vertices have "c" phases (stored in _phaseVars)
@@ -106,13 +100,11 @@ class TestCorrelatedErrorGraph:
 
     def test_chain_multiple_qubits(self):
         """Test a chain affecting multiple qubits."""
-        circuit = stim.Circuit(
-            """
+        circuit = stim.Circuit("""
             CORRELATED_ERROR(0.2) X1 Y2
             ELSE_CORRELATED_ERROR(0.25) Z2 Z3
             ELSE_CORRELATED_ERROR(0.33333333333) X1 Y2 Z3
-            """
-        )
+            """)
         b = parse_stim_circuit(circuit)
 
         assert b.num_error_bits == 3
@@ -180,13 +172,11 @@ class TestCorrelatedErrorState:
 
     def test_mixed_errors(self):
         """Test correlated errors mixed with regular errors."""
-        circuit = stim.Circuit(
-            """
+        circuit = stim.Circuit("""
             X_ERROR(0.05) 0
             CORRELATED_ERROR(0.1) X1 Z2
             Z_ERROR(0.03) 1
-            """
-        )
+            """)
         b = parse_stim_circuit(circuit)
 
         # X_ERROR: 1 bit, CORRELATED_ERROR: 1 bit, Z_ERROR: 1 bit

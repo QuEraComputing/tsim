@@ -8,15 +8,13 @@ from tsim.sampler import CompiledStateProbs
 
 
 def test_sample_bell_state():
-    c = Circuit(
-        """
+    c = Circuit("""
         R 0 1
         H 0
         CNOT 0 1
         M 0 1
         DETECTOR rec[-1] rec[-2]
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     m = sampler.sample(100)
 
@@ -25,16 +23,14 @@ def test_sample_bell_state():
 
 
 def test_detector_sampler_bell_state_with_measurement_error():
-    c = Circuit(
-        """
+    c = Circuit("""
         R 0 1
         H 0
         CNOT 0 1
         X_ERROR(0.3) 0
         M 0 1
         DETECTOR rec[-1] rec[-2]
-        """
-    )
+        """)
     sampler = c.compile_detector_sampler(seed=1)
 
     d = sampler.sample(10)
@@ -42,66 +38,57 @@ def test_detector_sampler_bell_state_with_measurement_error():
 
 
 def test_t_gate():
-    c = Circuit(
-        """
+    c = Circuit("""
         RX 0
         S[T] 0
         H 0
         M 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     m = sampler.sample(100)
     assert np.count_nonzero(m) == 9
 
 
 def test_s_gate():
-    c = Circuit(
-        """
+    c = Circuit("""
         RX 0
         S 0
         H 0
         M 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     m = sampler.sample(100)
     assert np.count_nonzero(m) == 48
 
 
 def test_t_dag_gate():
-    c = Circuit(
-        """
+    c = Circuit("""
         RX 0
         S[T] 0
         S_DAG[T] 0
         H 0
         M 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     m = sampler.sample(10)
     assert np.count_nonzero(m) == 0
 
 
 def test_s_dag_gate():
-    c = Circuit(
-        """
+    c = Circuit("""
         RX 0
         S 0
         S_DAG 0
         H 0
         M 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     m = sampler.sample(10)
     assert np.count_nonzero(m) == 0
 
 
 def test_r_gate():
-    c = Circuit(
-        """
+    c = Circuit("""
         RX 0
         RX 0
         M 0
@@ -110,8 +97,7 @@ def test_r_gate():
         DETECTOR rec[-1] rec[-2]
         R 0
         M 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     m = sampler.sample(10)
     assert np.count_nonzero(m[:, 0]) == 7
@@ -131,16 +117,14 @@ def test_measurements_stay_same(reset_basis: str, measure_basis: str):
     if reset_basis == measure_basis:
         return
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         R{reset_basis} 0
         M{measure_basis} 0
         M{measure_basis} 0
         M{measure_basis} 0
         M{measure_basis} 0
         M{measure_basis} 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     res = sampler.sample(20)
     meas_stay_same = (res == res[:, [0]]).all(axis=1)
@@ -157,14 +141,12 @@ def test_measurements_stay_same(reset_basis: str, measure_basis: str):
     [("X", "Y"), ("X", "Z"), ("Y", "X"), ("Y", "Z"), ("Z", "X"), ("Z", "Y")],
 )
 def test_mr(measure_basis: str, reset_basis: str):
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         R{reset_basis} 0
         MR{measure_basis} 0
         M{measure_basis} 0
         M{measure_basis} 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     res = sampler.sample(20)
 
@@ -178,8 +160,7 @@ def test_mr(measure_basis: str, reset_basis: str):
 @pytest.mark.parametrize("basis", ["X", "Y", "Z"])
 def test_reset_same_basis_measurement_always_zero(basis: str):
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         H 0
         S[T] 0
         H 0
@@ -187,8 +168,7 @@ def test_reset_same_basis_measurement_always_zero(basis: str):
         M{basis} 0
         M{basis} 0
         M{basis} 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     res = sampler.sample(100)
     assert not np.any(res)
@@ -197,16 +177,14 @@ def test_reset_same_basis_measurement_always_zero(basis: str):
 @pytest.mark.parametrize("basis", ["X", "Y", "Z"])
 def test_mr_same_basis_subsequent_measurements_zero(basis: str):
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         H 0
         S[T] 0
         H 0
         MR{basis} 0
         M{basis} 0
         M{basis} 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     res = sampler.sample(100)
 
@@ -219,14 +197,12 @@ def test_reset_after_state_change(basis: str):
     reset_gate = "R" if basis == "Z" else f"R{basis}"
     measure_gate = "M" if basis == "Z" else f"M{basis}"
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         H 0
         S 0
         {reset_gate} 0
         {measure_gate} 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     res = sampler.sample(100)
     assert not np.any(res)
@@ -235,16 +211,14 @@ def test_reset_after_state_change(basis: str):
 @pytest.mark.parametrize("basis", ["X", "Y", "Z"])
 def test_multiple_resets_same_basis(basis: str):
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         H 0
         R{basis} 0
         R{basis} 0
         R{basis} 0
         M{basis} 0
         M{basis} 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     res = sampler.sample(100)
     assert not np.any(res)
@@ -256,12 +230,10 @@ def test_mr_on_eigenstate_returns_zero(basis: str):
     reset_gate = "R" if basis == "Z" else f"R{basis}"
     mr_gate = "MR" if basis == "Z" else f"MR{basis}"
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         {reset_gate} 0
         {mr_gate} 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     res = sampler.sample(100)
     # Reset puts qubit in +1 eigenstate, so MR should always measure 0
@@ -271,16 +243,14 @@ def test_mr_on_eigenstate_returns_zero(basis: str):
 @pytest.mark.parametrize("basis", ["X", "Y", "Z"])
 def test_singlet_state(basis: str):
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         R 0 1
         X 0
         H 1
         CNOT 1 0
         Z 0
         M{basis} 0 1
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=0)
     res = sampler.sample(20)
     assert (res[:, 0] != res[:, 1]).all()
@@ -288,16 +258,14 @@ def test_singlet_state(basis: str):
 
 @pytest.mark.parametrize("basis", ["X", "Y", "Z"])
 def test_m_inverted_record(basis: str):
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         R 0 1 2
         X 0
         H 1
         CNOT 1 0
         Z 0
         M{basis} 0 !0 !0 0
-        """
-    )
+        """)
     sampler = c.compile_sampler()
     samples = sampler.sample(20)
     assert (samples[:, 0] == samples[:, 3]).all()
@@ -307,16 +275,14 @@ def test_m_inverted_record(basis: str):
 
 @pytest.mark.parametrize("basis", ["X", "Y", "Z"])
 def test_mr_inverted_record(basis: str):
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         R 0 1 2
         X 0
         H 1
         CNOT 1 0
         Z 0
         MR{basis} 0 !0 !0 0
-        """
-    )
+        """)
     sampler = c.compile_sampler()
     samples = sampler.sample(20)
     print(samples)
@@ -335,55 +301,47 @@ def test_mpp_inverted_record(basis: str):
         Z 0
         """
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         {singlet}
         MPP {basis}0*{basis}1
-        """
-    )
+        """)
     sampler = c.compile_sampler()
     samples = sampler.sample(20)
     assert samples.all()
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         {singlet}
         MPP !{basis}0*{basis}1
         MPP !{basis}0*{basis}1
-        """
-    )
+        """)
     sampler = c.compile_sampler()
     samples = sampler.sample(20)
     assert (~samples).all()
 
 
 def test_cx_rec_control():
-    c = Circuit(
-        """
+    c = Circuit("""
         X 0
         M 0
         X 0
         H 0
         CNOT rec[-1] 1
         M 1
-        """
-    )
+        """)
     s = c.compile_sampler()
     samples = s.sample(100)
     assert np.all(samples)
 
 
 def test_cz_rec_control():
-    c = Circuit(
-        """
+    c = Circuit("""
         X 0
         M 0
         RX 1
         CZ rec[-1] 1
         H 1
         M 1
-        """
-    )
+        """)
     s = c.compile_sampler()
     samples = s.sample(100)
     assert np.all(samples)
@@ -398,121 +356,103 @@ def test_rec_control_with_singlet():
         Z 0
         """
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         {singlet}
         M !0 0
         CNOT rec[-2] 0
         CNOT rec[-1] 1
         M 0 1
-        """
-    )
+        """)
     s = c.compile_sampler()
     samples = s.sample(100)
     assert np.all(samples[:, 2:])
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         {singlet}
         MX !0 0
         CZ rec[-2] 0
         CZ rec[-1] 1
         MX 0 1
-        """
-    )
+        """)
     s = c.compile_sampler()
     samples = s.sample(100)
     assert np.all(samples[:, 2:])
 
 
 def test_rec_controlled_effective_reset():
-    c = Circuit(
-        """
+    c = Circuit("""
         RX 0
         M 0
         CNOT rec[-1] 0
         M 0
-        """
-    )
+        """)
     s = c.compile_sampler()
     samples = s.sample(100)
     assert not np.any(samples[:, 1])
 
-    c = Circuit(
-        """
+    c = Circuit("""
         R 0
         MX 0
         CZ rec[-1] 0
         MX 0
-        """
-    )
+        """)
     s = c.compile_sampler()
     samples = s.sample(100)
     assert not np.any(samples[:, 1])
 
-    c = Circuit(
-        """
+    c = Circuit("""
         R 0
         MX 0
         CY rec[-1] 0
         MX 0
-        """
-    )
+        """)
     s = c.compile_sampler()
     samples = s.sample(100)
     assert not np.any(samples[:, 1])
 
 
 def test_rec_controlled_xcz_ycz_zcz():
-    c = Circuit(
-        """
+    c = Circuit("""
         RX 0 1
         M 1
         ZCZ 0 rec[-1]
         MX 0
-        """
-    )
+        """)
     sampler = c.compile_sampler()
     samples = sampler.sample(shots=10)
     assert np.all(samples[:, 0] == samples[:, 1])
 
-    c = Circuit(
-        """
+    c = Circuit("""
         R 0
         RX 1
         M 1
         XCZ 0 rec[-1]
         M 0
-        """
-    )
+        """)
     sampler = c.compile_sampler()
     samples = sampler.sample(shots=10)
     assert np.all(samples[:, 0] == samples[:, 1])
 
-    c = Circuit(
-        """
+    c = Circuit("""
         R 0
         RX 1
         M 1
         YCZ 0 rec[-1]
         M 0
-        """
-    )
+        """)
     sampler = c.compile_sampler()
     samples = sampler.sample(shots=10)
     assert np.all(samples[:, 0] == samples[:, 1])
 
 
 def test_rec_controlled_raises_error():
-    c = Circuit(
-        """
+    c = Circuit("""
         R 0
         RX 1
         M 1
         YCZ rec[-1] 0
         M 0
-        """
-    )
+        """)
     with pytest.raises(
         ValueError, match="Measurement record editing is not supported."
     ):
@@ -524,8 +464,7 @@ def test_rec_controlled_raises_error():
 def test_rot_gates(alpha: float, basis: str):
     alpha_pi = alpha * np.pi
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         R 0 1
         H 0
         CNOT 0 1
@@ -533,10 +472,7 @@ def test_rot_gates(alpha: float, basis: str):
         R_{basis}({alpha}) 1
         H_X{basis} 1
         M 0 1
-        """.replace(
-            "H_XX 1", ""
-        )
-    )
+        """.replace("H_XX 1", ""))
     sampler = CompiledStateProbs(c)
     mat = get_matrix(sampler)
 
@@ -561,15 +497,13 @@ def test_u3_gate(theta: float, phi: float, lambda_: float):
     phi_pi = phi * np.pi
     lambda_pi = lambda_ * np.pi
 
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         R 0 1
         H 0
         CNOT 0 1
         U3({theta}, {phi}, {lambda_}) 1
         M 0 1
-        """
-    )
+        """)
     sampler = CompiledStateProbs(c)
     mat = get_matrix(sampler)
 
@@ -590,8 +524,7 @@ def test_u3_gate(theta: float, phi: float, lambda_: float):
 
 @pytest.mark.parametrize("basis", ["X", "Y", "Z"])
 def test_rot_gate_identity(basis: str):
-    c = Circuit(
-        f"""
+    c = Circuit(f"""
         R 0 1
         H 0
         CNOT 0 1
@@ -600,16 +533,14 @@ def test_rot_gate_identity(basis: str):
         R_{basis}(-0.34) 1
         DEPOLARIZE1(0.0) 1  # prevent simplification
         M 0 1
-        """
-    )
+        """)
     sampler = CompiledStateProbs(c)
     mat = get_matrix(sampler)
     assert np.allclose(mat, np.eye(2))
 
 
 def test_u3_gate_identity():
-    c = Circuit(
-        """
+    c = Circuit("""
         R 0 1
         H 0
         CNOT 0 1
@@ -618,8 +549,7 @@ def test_u3_gate_identity():
         U3(-0.34, -0.49, -0.24) 1
         DEPOLARIZE1(0.0) 1  # prevent simplification
         M 0 1
-        """
-    )
+        """)
     sampler = CompiledStateProbs(c)
     mat = get_matrix(sampler)
     assert np.allclose(mat, np.eye(2), atol=1e-6)
@@ -637,8 +567,7 @@ def test_many_rx_gates(n: int):
         + f"""
         R_X({a}) 1
         Z_ERROR(0.0) 1  # prevent simplification
-        """
-        * n
+        """ * n
         + f"""
         R_X({-a * n}) 1
         M 0 1

@@ -58,8 +58,7 @@ def test_render_svg_wraps_when_width_given():
 def test_render_svg_labels_all_gates(
     diagram_type: Literal["timeline-svg", "timeslice-svg"],
 ):
-    c = Circuit(
-        """
+    c = Circuit("""
         S[T] 0
         TICK
         S_DAG[T] 1
@@ -69,8 +68,7 @@ def test_render_svg_labels_all_gates(
         I[R_Y(theta=-0.75*pi)] 2
         TICK
         I[U3(theta=0.1*pi, phi=0.2*pi, lambda=0.3*pi)] 0
-        """
-    )
+        """)
     html = str(c.diagram(diagram_type))
 
     # T and T† labels
@@ -90,13 +88,11 @@ def test_render_svg_labels_all_gates(
 
 
 def test_diagram_repeat_block():
-    c = Circuit(
-        """
+    c = Circuit("""
         T 0
         REPEAT 100 {
             T 0
         }
-    """
-    )
+    """)
     diagram = c.diagram("timeline-svg", height=150)
     assert "REP100" in str(diagram)
