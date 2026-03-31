@@ -200,7 +200,9 @@ class _CompiledSamplerBase:
     def _sample_batches(self, shots: int, batch_size: int | None = None) -> np.ndarray:
         """Sample in batches and concatenate results."""
         if batch_size is None:
-            batch_size = min(shots, self._estimate_batch_size())
+            max_batch_size = self._estimate_batch_size()
+            num_batches = max(1, ceil(shots / max_batch_size))
+            batch_size = ceil(shots / num_batches)
             print(f"Auto-selected batch size: {batch_size}")
 
         batches: list[jax.Array] = []
