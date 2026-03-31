@@ -188,11 +188,8 @@ class _CompiledSamplerBase:
         if device.platform == "gpu":
             stats = device.memory_stats()
             available = stats["bytes_limit"] - stats["bytes_in_use"]
-            print(f"Bytes limit: {stats['bytes_limit'] / 1024**2:.2f} MB")
-            print(f"Bytes in use: {stats['bytes_in_use'] / 1024**2:.2f} MB")
         else:
             available = psutil.virtual_memory().available
-        print(f"Total available memory: {available / 1024**2:.2f} MB")
 
         available = int(available * 0.5)
         return max(1, available // self._peak_bytes_per_sample())
@@ -203,11 +200,9 @@ class _CompiledSamplerBase:
             max_batch_size = self._estimate_batch_size()
             num_batches = max(1, ceil(shots / max_batch_size))
             batch_size = ceil(shots / num_batches)
-            print(f"Auto-selected batch size: {batch_size}")
 
         batches: list[jax.Array] = []
         for _ in range(ceil(shots / batch_size)):
-            print(f"Sampling batch {_ + 1} of {ceil(shots / batch_size)}")
             f_params_np = self._channel_sampler.sample(batch_size)
             f_params = jnp.asarray(f_params_np)
             self._key, subkey = jax.random.split(self._key)
@@ -286,14 +281,15 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         """
         super().__init__(circuit, sample_detectors=False, mode="sequential", seed=seed)
 
-    def sample(self, shots: int, *, batch_size: int = 1024) -> np.ndarray:
+    def sample(self, shots: int, *, batch_size: int | None = None) -> np.ndarray:
         """Sample measurement outcomes from the circuit.
 
         Args:
             shots: The number of times to sample every measurement in the circuit.
-            batch_size: The number of samples to process in each batch. When using a
-                GPU, it is recommended to increase this value until VRAM is fully
-                utilized for maximum performance.
+            batch_size: The number of samples to process in each batch. Defaults to
+                None, which automatically chooses a batch size based on available
+                memory. When using a GPU, setting this explicitly can help fully
+                utilize VRAM for maximum performance.
 
         Returns:
             A numpy array containing the measurement samples.
@@ -364,9 +360,10 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
 
         Args:
             shots: The number of times to sample every detector in the circuit.
-            batch_size: The number of samples to process in each batch. When using a
-                GPU, it is recommended to increase this value until VRAM is fully
-                utilized for maximum performance.
+            batch_size: The number of samples to process in each batch. Defaults to
+                None, which automatically chooses a batch size based on available
+                memory. When using a GPU, setting this explicitly can help fully
+                utilize VRAM for maximum performance.
             separate_observables: Defaults to False. When set to True, the return value
                 is a (detection_events, observable_flips) tuple instead of a flat
                 detection_events array.
