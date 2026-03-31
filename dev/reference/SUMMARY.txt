@@ -16,6 +16,7 @@
         * [dem](tsim/noise/dem.md)
     * [sampler](tsim/sampler.md)
     * [utils](tsim/utils/index.md)
+        * [clifford](tsim/utils/clifford.md)
         * [diagram](tsim/utils/diagram.md)
         * [encoder](tsim/utils/encoder.md)
         * [linalg](tsim/utils/linalg.md)
