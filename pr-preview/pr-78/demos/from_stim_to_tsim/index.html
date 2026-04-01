@@ -1,4 +1,4 @@
-<!doctype html><html lang=en class=no-js> <head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=description content=tsim><link href=https://github.com/QuEraComputing/tsim/demos/from_stim_to_tsim/ rel=canonical><link href=../magic_state_distillation/ rel=prev><link href=../../reference/tsim/ rel=next><link rel=icon href=../../assets/images/favicon.png><meta name=generator content="mkdocs-1.6.1, mkdocs-material-9.7.1"><title>From STIM to TSIM - tsim</title><link rel=stylesheet href=../../assets/stylesheets/main.484c7ddc.min.css><link rel=stylesheet href=../../assets/stylesheets/palette.ab4e12ef.min.css><link rel=preconnect href=https://fonts.gstatic.com crossorigin><link rel=stylesheet href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback"><style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style><link rel=stylesheet href=../../assets/_mkdocstrings.css><link rel=stylesheet href=../../stylesheets/extra.css><link rel=stylesheet href=https://unpkg.com/katex@0/dist/katex.min.css><script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script></head> <body dir=ltr data-md-color-scheme=default data-md-color-primary=custom data-md-color-accent=custom> <input class=md-toggle data-md-toggle=drawer type=checkbox id=__drawer autocomplete=off> <input class=md-toggle data-md-toggle=search type=checkbox id=__search autocomplete=off> <label class=md-overlay for=__drawer></label> <div data-md-component=skip> <a href=#from-stim-to-tsim class=md-skip> Skip to content </a> </div> <div data-md-component=announce> </div> <div data-md-color-scheme=default data-md-component=outdated hidden> </div> <header class=md-header data-md-component=header> <nav class="md-header__inner md-grid" aria-label=Header> <a href=../.. title=tsim class="md-header__button md-logo" aria-label=tsim data-md-component=logo> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg> </a> <label class="md-header__button md-icon" for=__drawer> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg> </label> <div class=md-header__title data-md-component=header-title> <div class=md-header__ellipsis> <div class=md-header__topic> <span class=md-ellipsis> tsim </span> </div> <div class=md-header__topic data-md-component=header-topic> <span class=md-ellipsis> From STIM to TSIM </span> </div> </div> </div> <form class=md-header__option data-md-component=palette> <input class=md-option data-md-color-media data-md-color-scheme=default data-md-color-primary=custom data-md-color-accent=custom aria-label="Switch to dark mode" type=radio name=__palette id=__palette_0> <label class="md-header__button md-icon" title="Switch to dark mode" for=__palette_1 hidden> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg> </label> <input class=md-option data-md-color-media data-md-color-scheme=slate data-md-color-primary=custom data-md-color-accent=custom aria-label="Switch to light mode" type=radio name=__palette id=__palette_1> <label class="md-header__button md-icon" title="Switch to light mode" for=__palette_0 hidden> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg> </label> </form> <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script> <label class="md-header__button md-icon" for=__search> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg> </label> <div class=md-search data-md-component=search role=dialog> <label class=md-search__overlay for=__search></label> <div class=md-search__inner role=search> <form class=md-search__form name=search> <input type=text class=md-search__input name=query aria-label=Search placeholder=Search autocapitalize=off autocorrect=off autocomplete=off spellcheck=false data-md-component=search-query required> <label class="md-search__icon md-icon" for=__search> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg> </label> <nav class=md-search__options aria-label=Search> <button type=reset class="md-search__icon md-icon" title=Clear aria-label=Clear tabindex=-1> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg> </button> </nav> <div class=md-search__suggest data-md-component=search-suggest></div> </form> <div class=md-search__output> <div class=md-search__scrollwrap tabindex=0 data-md-scrollfix> <div class=md-search-result data-md-component=search-result> <div class=md-search-result__meta> Initializing search </div> <ol class=md-search-result__list role=presentation></ol> </div> </div> </div> </div> </div> <div class=md-header__source> <a href=https://github.com/QuEraComputing/tsim title="Go to repository" class=md-source data-md-component=source> <div class="md-source__icon md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 448 512"><!-- Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg> </div> <div class=md-source__repository> tsim </div> </a> </div> </nav> </header> <div class=md-container data-md-component=container> <nav class=md-tabs aria-label=Tabs data-md-component=tabs> <div class=md-grid> <ul class=md-tabs__list> <li class=md-tabs__item> <a href=../.. class=md-tabs__link> Home </a> </li> <li class="md-tabs__item md-tabs__item--active"> <a href=../encoding_demo/ class=md-tabs__link> Tutorials </a> </li> <li class=md-tabs__item> <a href=../../reference/tsim/ class=md-tabs__link> API Reference </a> </li> </ul> </div> </nav> <main class=md-main data-md-component=main> <div class="md-main__inner md-grid"> <div class="md-sidebar md-sidebar--primary" data-md-component=sidebar data-md-type=navigation> <div class=md-sidebar__scrollwrap> <div class=md-sidebar__inner> <nav class="md-nav md-nav--primary md-nav--lifted" aria-label=Navigation data-md-level=0> <label class=md-nav__title for=__drawer> <a href=../.. title=tsim class="md-nav__button md-logo" aria-label=tsim data-md-component=logo> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg> </a> tsim </label> <div class=md-nav__source> <a href=https://github.com/QuEraComputing/tsim title="Go to repository" class=md-source data-md-component=source> <div class="md-source__icon md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 448 512"><!-- Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg> </div> <div class=md-source__repository> tsim </div> </a> </div> <ul class=md-nav__list data-md-scrollfix> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_1> <div class="md-nav__link md-nav__container"> <a href=../.. class="md-nav__link "> <span class=md-ellipsis> Home </span> </a> <label class="md-nav__link " for=__nav_1 id=__nav_1_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=1 aria-labelledby=__nav_1_label aria-expanded=false> <label class=md-nav__title for=__nav_1> <span class="md-nav__icon md-icon"></span> Home </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../install/ class=md-nav__link> <span class=md-ellipsis> Installation </span> </a> </li> <li class=md-nav__item> <a href=../overview/ class=md-nav__link> <span class=md-ellipsis> Overview </span> </a> </li> <li class=md-nav__item> <a href=../../contrib/ class=md-nav__link> <span class=md-ellipsis> Contributing </span> </a> </li> </ul> </nav> </li> <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_2 checked> <label class=md-nav__link for=__nav_2 id=__nav_2_label tabindex> <span class=md-ellipsis> Tutorials </span> <span class="md-nav__icon md-icon"></span> </label> <nav class=md-nav data-md-level=1 aria-labelledby=__nav_2_label aria-expanded=true> <label class=md-nav__title for=__nav_2> <span class="md-nav__icon md-icon"></span> Tutorials </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../encoding_demo/ class=md-nav__link> <span class=md-ellipsis> Quantum State Encoding with a Color Code </span> </a> </li> <li class=md-nav__item> <a href=../magic_state_distillation/ class=md-nav__link> <span class=md-ellipsis> Logical magic state distillation </span> </a> </li> <li class="md-nav__item md-nav__item--active"> <input class="md-nav__toggle md-toggle" type=checkbox id=__toc> <label class="md-nav__link md-nav__link--active" for=__toc> <span class=md-ellipsis> From STIM to TSIM </span> <span class="md-nav__icon md-icon"></span> </label> <a href=./ class="md-nav__link md-nav__link--active"> <span class=md-ellipsis> From STIM to TSIM </span> </a> <nav class="md-nav md-nav--secondary" aria-label="Table of contents"> <label class=md-nav__title for=__toc> <span class="md-nav__icon md-icon"></span> Table of contents </label> <ul class=md-nav__list data-md-component=toc data-md-scrollfix> <li class=md-nav__item> <a href=#non-clifford-instructions class=md-nav__link> <span class=md-ellipsis> Non-Clifford instructions </span> </a> </li> <li class=md-nav__item> <a href=#detector-reference-samples class=md-nav__link> <span class=md-ellipsis> Detector Reference Samples </span> </a> </li> <li class=md-nav__item> <a href=#batch-size-and-just-in-time-compilation class=md-nav__link> <span class=md-ellipsis> Batch size and just-in-time compilation </span> </a> </li> <li class=md-nav__item> <a href=#visualization-methods class=md-nav__link> <span class=md-ellipsis> Visualization methods </span> </a> </li> <li class=md-nav__item> <a href=#instructions-are-flattened class=md-nav__link> <span class=md-ellipsis> instructions are flattened </span> </a> </li> </ul> </nav> </li> </ul> </nav> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3> <label class=md-nav__link for=__nav_3 id=__nav_3_label tabindex=0> <span class=md-ellipsis> API Reference </span> <span class="md-nav__icon md-icon"></span> </label> <nav class=md-nav data-md-level=1 aria-labelledby=__nav_3_label aria-expanded=false> <label class=md-nav__title for=__nav_3> <span class="md-nav__icon md-icon"></span> API Reference </label> <ul class=md-nav__list data-md-scrollfix> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1> <div class="md-nav__link md-nav__container"> <a href=../../reference/tsim/ class="md-nav__link "> <span class=md-ellipsis> tsim </span> </a> <label class="md-nav__link " for=__nav_3_1 id=__nav_3_1_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=2 aria-labelledby=__nav_3_1_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1> <span class="md-nav__icon md-icon"></span> tsim </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../reference/tsim/circuit/ class=md-nav__link> <span class=md-ellipsis> circuit </span> </a> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1_3> <div class="md-nav__link md-nav__container"> <a href=../../reference/tsim/compile/ class="md-nav__link "> <span class=md-ellipsis> compile </span> </a> <label class="md-nav__link " for=__nav_3_1_3 id=__nav_3_1_3_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=3 aria-labelledby=__nav_3_1_3_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1_3> <span class="md-nav__icon md-icon"></span> compile </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../reference/tsim/compile/compile/ class=md-nav__link> <span class=md-ellipsis> compile </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/compile/evaluate/ class=md-nav__link> <span class=md-ellipsis> evaluate </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/compile/pipeline/ class=md-nav__link> <span class=md-ellipsis> pipeline </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/compile/stabrank/ class=md-nav__link> <span class=md-ellipsis> stabrank </span> </a> </li> </ul> </nav> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1_4> <div class="md-nav__link md-nav__container"> <a href=../../reference/tsim/core/ class="md-nav__link "> <span class=md-ellipsis> core </span> </a> <label class="md-nav__link " for=__nav_3_1_4 id=__nav_3_1_4_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=3 aria-labelledby=__nav_3_1_4_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1_4> <span class="md-nav__icon md-icon"></span> core </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../reference/tsim/core/exact_scalar/ class=md-nav__link> <span class=md-ellipsis> exact_scalar </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/core/graph/ class=md-nav__link> <span class=md-ellipsis> graph </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/core/instructions/ class=md-nav__link> <span class=md-ellipsis> instructions </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/core/parse/ class=md-nav__link> <span class=md-ellipsis> parse </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/core/types/ class=md-nav__link> <span class=md-ellipsis> types </span> </a> </li> </ul> </nav> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1_5> <div class="md-nav__link md-nav__container"> <a href=../../reference/tsim/noise/ class="md-nav__link "> <span class=md-ellipsis> noise </span> </a> <label class="md-nav__link " for=__nav_3_1_5 id=__nav_3_1_5_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=3 aria-labelledby=__nav_3_1_5_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1_5> <span class="md-nav__icon md-icon"></span> noise </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../reference/tsim/noise/channels/ class=md-nav__link> <span class=md-ellipsis> channels </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/noise/dem/ class=md-nav__link> <span class=md-ellipsis> dem </span> </a> </li> </ul> </nav> </li> <li class=md-nav__item> <a href=../../reference/tsim/sampler/ class=md-nav__link> <span class=md-ellipsis> sampler </span> </a> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1_7> <div class="md-nav__link md-nav__container"> <a href=../../reference/tsim/utils/ class="md-nav__link "> <span class=md-ellipsis> utils </span> </a> <label class="md-nav__link " for=__nav_3_1_7 id=__nav_3_1_7_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=3 aria-labelledby=__nav_3_1_7_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1_7> <span class="md-nav__icon md-icon"></span> utils </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../reference/tsim/utils/diagram/ class=md-nav__link> <span class=md-ellipsis> diagram </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/utils/encoder/ class=md-nav__link> <span class=md-ellipsis> encoder </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/utils/linalg/ class=md-nav__link> <span class=md-ellipsis> linalg </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/utils/program_text/ class=md-nav__link> <span class=md-ellipsis> program_text </span> </a> </li> </ul> </nav> </li> </ul> </nav> </li> </ul> </nav> </li> </ul> </nav> </div> </div> </div> <div class="md-sidebar md-sidebar--secondary" data-md-component=sidebar data-md-type=toc> <div class=md-sidebar__scrollwrap> <div class=md-sidebar__inner> <nav class="md-nav md-nav--secondary" aria-label="Table of contents"> <label class=md-nav__title for=__toc> <span class="md-nav__icon md-icon"></span> Table of contents </label> <ul class=md-nav__list data-md-component=toc data-md-scrollfix> <li class=md-nav__item> <a href=#non-clifford-instructions class=md-nav__link> <span class=md-ellipsis> Non-Clifford instructions </span> </a> </li> <li class=md-nav__item> <a href=#detector-reference-samples class=md-nav__link> <span class=md-ellipsis> Detector Reference Samples </span> </a> </li> <li class=md-nav__item> <a href=#batch-size-and-just-in-time-compilation class=md-nav__link> <span class=md-ellipsis> Batch size and just-in-time compilation </span> </a> </li> <li class=md-nav__item> <a href=#visualization-methods class=md-nav__link> <span class=md-ellipsis> Visualization methods </span> </a> </li> <li class=md-nav__item> <a href=#instructions-are-flattened class=md-nav__link> <span class=md-ellipsis> instructions are flattened </span> </a> </li> </ul> </nav> </div> </div> </div> <div class=md-content data-md-component=content> <article class="md-content__inner md-typeset"> <a href=https://github.com/QuEraComputing/tsim/edit/main/docs/demos/from_stim_to_tsim.ipynb title="Edit this page" class="md-content__button md-icon" rel=edit> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg> </a> <a href=https://github.com/QuEraComputing/tsim/raw/main/docs/demos/from_stim_to_tsim.ipynb title="View source of this page" class="md-content__button md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M17 18c.56 0 1 .44 1 1s-.44 1-1 1-1-.44-1-1 .44-1 1-1m0-3c-2.73 0-5.06 1.66-6 4 .94 2.34 3.27 4 6 4s5.06-1.66 6-4c-.94-2.34-3.27-4-6-4m0 6.5a2.5 2.5 0 0 1-2.5-2.5 2.5 2.5 0 0 1 2.5-2.5 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5M9.27 20H6V4h7v5h5v4.07c.7.08 1.36.25 2 .49V8l-6-6H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h4.5a8.2 8.2 0 0 1-1.23-2"/></svg> </a> <script>
+<!doctype html><html lang=en class=no-js> <head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><meta name=description content=tsim><link href=https://github.com/QuEraComputing/tsim/demos/from_stim_to_tsim/ rel=canonical><link href=../magic_state_distillation/ rel=prev><link href=../../reference/tsim/ rel=next><link rel=icon href=../../assets/images/favicon.png><meta name=generator content="mkdocs-1.6.1, mkdocs-material-9.7.1"><title>From STIM to TSIM - tsim</title><link rel=stylesheet href=../../assets/stylesheets/main.484c7ddc.min.css><link rel=stylesheet href=../../assets/stylesheets/palette.ab4e12ef.min.css><link rel=preconnect href=https://fonts.gstatic.com crossorigin><link rel=stylesheet href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback"><style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style><link rel=stylesheet href=../../assets/_mkdocstrings.css><link rel=stylesheet href=../../stylesheets/extra.css><link rel=stylesheet href=https://unpkg.com/katex@0/dist/katex.min.css><script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script></head> <body dir=ltr data-md-color-scheme=default data-md-color-primary=custom data-md-color-accent=custom> <input class=md-toggle data-md-toggle=drawer type=checkbox id=__drawer autocomplete=off> <input class=md-toggle data-md-toggle=search type=checkbox id=__search autocomplete=off> <label class=md-overlay for=__drawer></label> <div data-md-component=skip> <a href=#from-stim-to-tsim class=md-skip> Skip to content </a> </div> <div data-md-component=announce> </div> <div data-md-color-scheme=default data-md-component=outdated hidden> </div> <header class=md-header data-md-component=header> <nav class="md-header__inner md-grid" aria-label=Header> <a href=../.. title=tsim class="md-header__button md-logo" aria-label=tsim data-md-component=logo> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg> </a> <label class="md-header__button md-icon" for=__drawer> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg> </label> <div class=md-header__title data-md-component=header-title> <div class=md-header__ellipsis> <div class=md-header__topic> <span class=md-ellipsis> tsim </span> </div> <div class=md-header__topic data-md-component=header-topic> <span class=md-ellipsis> From STIM to TSIM </span> </div> </div> </div> <form class=md-header__option data-md-component=palette> <input class=md-option data-md-color-media data-md-color-scheme=default data-md-color-primary=custom data-md-color-accent=custom aria-label="Switch to dark mode" type=radio name=__palette id=__palette_0> <label class="md-header__button md-icon" title="Switch to dark mode" for=__palette_1 hidden> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg> </label> <input class=md-option data-md-color-media data-md-color-scheme=slate data-md-color-primary=custom data-md-color-accent=custom aria-label="Switch to light mode" type=radio name=__palette id=__palette_1> <label class="md-header__button md-icon" title="Switch to light mode" for=__palette_0 hidden> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg> </label> </form> <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script> <label class="md-header__button md-icon" for=__search> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg> </label> <div class=md-search data-md-component=search role=dialog> <label class=md-search__overlay for=__search></label> <div class=md-search__inner role=search> <form class=md-search__form name=search> <input type=text class=md-search__input name=query aria-label=Search placeholder=Search autocapitalize=off autocorrect=off autocomplete=off spellcheck=false data-md-component=search-query required> <label class="md-search__icon md-icon" for=__search> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg> </label> <nav class=md-search__options aria-label=Search> <button type=reset class="md-search__icon md-icon" title=Clear aria-label=Clear tabindex=-1> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg> </button> </nav> <div class=md-search__suggest data-md-component=search-suggest></div> </form> <div class=md-search__output> <div class=md-search__scrollwrap tabindex=0 data-md-scrollfix> <div class=md-search-result data-md-component=search-result> <div class=md-search-result__meta> Initializing search </div> <ol class=md-search-result__list role=presentation></ol> </div> </div> </div> </div> </div> <div class=md-header__source> <a href=https://github.com/QuEraComputing/tsim title="Go to repository" class=md-source data-md-component=source> <div class="md-source__icon md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 448 512"><!-- Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg> </div> <div class=md-source__repository> tsim </div> </a> </div> </nav> </header> <div class=md-container data-md-component=container> <nav class=md-tabs aria-label=Tabs data-md-component=tabs> <div class=md-grid> <ul class=md-tabs__list> <li class=md-tabs__item> <a href=../.. class=md-tabs__link> Home </a> </li> <li class="md-tabs__item md-tabs__item--active"> <a href=../encoding_demo/ class=md-tabs__link> Tutorials </a> </li> <li class=md-tabs__item> <a href=../../reference/tsim/ class=md-tabs__link> API Reference </a> </li> </ul> </div> </nav> <main class=md-main data-md-component=main> <div class="md-main__inner md-grid"> <div class="md-sidebar md-sidebar--primary" data-md-component=sidebar data-md-type=navigation> <div class=md-sidebar__scrollwrap> <div class=md-sidebar__inner> <nav class="md-nav md-nav--primary md-nav--lifted" aria-label=Navigation data-md-level=0> <label class=md-nav__title for=__drawer> <a href=../.. title=tsim class="md-nav__button md-logo" aria-label=tsim data-md-component=logo> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg> </a> tsim </label> <div class=md-nav__source> <a href=https://github.com/QuEraComputing/tsim title="Go to repository" class=md-source data-md-component=source> <div class="md-source__icon md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 448 512"><!-- Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg> </div> <div class=md-source__repository> tsim </div> </a> </div> <ul class=md-nav__list data-md-scrollfix> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_1> <div class="md-nav__link md-nav__container"> <a href=../.. class="md-nav__link "> <span class=md-ellipsis> Home </span> </a> <label class="md-nav__link " for=__nav_1 id=__nav_1_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=1 aria-labelledby=__nav_1_label aria-expanded=false> <label class=md-nav__title for=__nav_1> <span class="md-nav__icon md-icon"></span> Home </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../install/ class=md-nav__link> <span class=md-ellipsis> Installation </span> </a> </li> <li class=md-nav__item> <a href=../overview/ class=md-nav__link> <span class=md-ellipsis> Overview </span> </a> </li> <li class=md-nav__item> <a href=../../contrib/ class=md-nav__link> <span class=md-ellipsis> Contributing </span> </a> </li> </ul> </nav> </li> <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_2 checked> <label class=md-nav__link for=__nav_2 id=__nav_2_label tabindex> <span class=md-ellipsis> Tutorials </span> <span class="md-nav__icon md-icon"></span> </label> <nav class=md-nav data-md-level=1 aria-labelledby=__nav_2_label aria-expanded=true> <label class=md-nav__title for=__nav_2> <span class="md-nav__icon md-icon"></span> Tutorials </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../encoding_demo/ class=md-nav__link> <span class=md-ellipsis> Quantum State Encoding with a Color Code </span> </a> </li> <li class=md-nav__item> <a href=../magic_state_distillation/ class=md-nav__link> <span class=md-ellipsis> Logical magic state distillation </span> </a> </li> <li class="md-nav__item md-nav__item--active"> <input class="md-nav__toggle md-toggle" type=checkbox id=__toc> <label class="md-nav__link md-nav__link--active" for=__toc> <span class=md-ellipsis> From STIM to TSIM </span> <span class="md-nav__icon md-icon"></span> </label> <a href=./ class="md-nav__link md-nav__link--active"> <span class=md-ellipsis> From STIM to TSIM </span> </a> <nav class="md-nav md-nav--secondary" aria-label="Table of contents"> <label class=md-nav__title for=__toc> <span class="md-nav__icon md-icon"></span> Table of contents </label> <ul class=md-nav__list data-md-component=toc data-md-scrollfix> <li class=md-nav__item> <a href=#non-clifford-instructions class=md-nav__link> <span class=md-ellipsis> Non-Clifford instructions </span> </a> </li> <li class=md-nav__item> <a href=#detector-reference-samples class=md-nav__link> <span class=md-ellipsis> Detector Reference Samples </span> </a> </li> <li class=md-nav__item> <a href=#batch-size-and-just-in-time-compilation class=md-nav__link> <span class=md-ellipsis> Batch size and just-in-time compilation </span> </a> </li> <li class=md-nav__item> <a href=#visualization-methods class=md-nav__link> <span class=md-ellipsis> Visualization methods </span> </a> </li> <li class=md-nav__item> <a href=#instructions-are-flattened class=md-nav__link> <span class=md-ellipsis> instructions are flattened </span> </a> </li> </ul> </nav> </li> </ul> </nav> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3> <label class=md-nav__link for=__nav_3 id=__nav_3_label tabindex=0> <span class=md-ellipsis> API Reference </span> <span class="md-nav__icon md-icon"></span> </label> <nav class=md-nav data-md-level=1 aria-labelledby=__nav_3_label aria-expanded=false> <label class=md-nav__title for=__nav_3> <span class="md-nav__icon md-icon"></span> API Reference </label> <ul class=md-nav__list data-md-scrollfix> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1> <div class="md-nav__link md-nav__container"> <a href=../../reference/tsim/ class="md-nav__link "> <span class=md-ellipsis> tsim </span> </a> <label class="md-nav__link " for=__nav_3_1 id=__nav_3_1_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=2 aria-labelledby=__nav_3_1_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1> <span class="md-nav__icon md-icon"></span> tsim </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../reference/tsim/circuit/ class=md-nav__link> <span class=md-ellipsis> circuit </span> </a> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1_3> <div class="md-nav__link md-nav__container"> <a href=../../reference/tsim/compile/ class="md-nav__link "> <span class=md-ellipsis> compile </span> </a> <label class="md-nav__link " for=__nav_3_1_3 id=__nav_3_1_3_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=3 aria-labelledby=__nav_3_1_3_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1_3> <span class="md-nav__icon md-icon"></span> compile </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../reference/tsim/compile/compile/ class=md-nav__link> <span class=md-ellipsis> compile </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/compile/evaluate/ class=md-nav__link> <span class=md-ellipsis> evaluate </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/compile/pipeline/ class=md-nav__link> <span class=md-ellipsis> pipeline </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/compile/stabrank/ class=md-nav__link> <span class=md-ellipsis> stabrank </span> </a> </li> </ul> </nav> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1_4> <div class="md-nav__link md-nav__container"> <a href=../../reference/tsim/core/ class="md-nav__link "> <span class=md-ellipsis> core </span> </a> <label class="md-nav__link " for=__nav_3_1_4 id=__nav_3_1_4_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=3 aria-labelledby=__nav_3_1_4_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1_4> <span class="md-nav__icon md-icon"></span> core </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../reference/tsim/core/exact_scalar/ class=md-nav__link> <span class=md-ellipsis> exact_scalar </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/core/graph/ class=md-nav__link> <span class=md-ellipsis> graph </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/core/instructions/ class=md-nav__link> <span class=md-ellipsis> instructions </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/core/parse/ class=md-nav__link> <span class=md-ellipsis> parse </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/core/types/ class=md-nav__link> <span class=md-ellipsis> types </span> </a> </li> </ul> </nav> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1_5> <div class="md-nav__link md-nav__container"> <a href=../../reference/tsim/noise/ class="md-nav__link "> <span class=md-ellipsis> noise </span> </a> <label class="md-nav__link " for=__nav_3_1_5 id=__nav_3_1_5_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=3 aria-labelledby=__nav_3_1_5_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1_5> <span class="md-nav__icon md-icon"></span> noise </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../reference/tsim/noise/channels/ class=md-nav__link> <span class=md-ellipsis> channels </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/noise/dem/ class=md-nav__link> <span class=md-ellipsis> dem </span> </a> </li> </ul> </nav> </li> <li class=md-nav__item> <a href=../../reference/tsim/sampler/ class=md-nav__link> <span class=md-ellipsis> sampler </span> </a> </li> <li class="md-nav__item md-nav__item--nested"> <input class="md-nav__toggle md-toggle " type=checkbox id=__nav_3_1_7> <div class="md-nav__link md-nav__container"> <a href=../../reference/tsim/utils/ class="md-nav__link "> <span class=md-ellipsis> utils </span> </a> <label class="md-nav__link " for=__nav_3_1_7 id=__nav_3_1_7_label tabindex=0> <span class="md-nav__icon md-icon"></span> </label> </div> <nav class=md-nav data-md-level=3 aria-labelledby=__nav_3_1_7_label aria-expanded=false> <label class=md-nav__title for=__nav_3_1_7> <span class="md-nav__icon md-icon"></span> utils </label> <ul class=md-nav__list data-md-scrollfix> <li class=md-nav__item> <a href=../../reference/tsim/utils/clifford/ class=md-nav__link> <span class=md-ellipsis> clifford </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/utils/diagram/ class=md-nav__link> <span class=md-ellipsis> diagram </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/utils/encoder/ class=md-nav__link> <span class=md-ellipsis> encoder </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/utils/linalg/ class=md-nav__link> <span class=md-ellipsis> linalg </span> </a> </li> <li class=md-nav__item> <a href=../../reference/tsim/utils/program_text/ class=md-nav__link> <span class=md-ellipsis> program_text </span> </a> </li> </ul> </nav> </li> </ul> </nav> </li> </ul> </nav> </li> </ul> </nav> </div> </div> </div> <div class="md-sidebar md-sidebar--secondary" data-md-component=sidebar data-md-type=toc> <div class=md-sidebar__scrollwrap> <div class=md-sidebar__inner> <nav class="md-nav md-nav--secondary" aria-label="Table of contents"> <label class=md-nav__title for=__toc> <span class="md-nav__icon md-icon"></span> Table of contents </label> <ul class=md-nav__list data-md-component=toc data-md-scrollfix> <li class=md-nav__item> <a href=#non-clifford-instructions class=md-nav__link> <span class=md-ellipsis> Non-Clifford instructions </span> </a> </li> <li class=md-nav__item> <a href=#detector-reference-samples class=md-nav__link> <span class=md-ellipsis> Detector Reference Samples </span> </a> </li> <li class=md-nav__item> <a href=#batch-size-and-just-in-time-compilation class=md-nav__link> <span class=md-ellipsis> Batch size and just-in-time compilation </span> </a> </li> <li class=md-nav__item> <a href=#visualization-methods class=md-nav__link> <span class=md-ellipsis> Visualization methods </span> </a> </li> <li class=md-nav__item> <a href=#instructions-are-flattened class=md-nav__link> <span class=md-ellipsis> instructions are flattened </span> </a> </li> </ul> </nav> </div> </div> </div> <div class=md-content data-md-component=content> <article class="md-content__inner md-typeset"> <a href=https://github.com/QuEraComputing/tsim/edit/main/docs/demos/from_stim_to_tsim.ipynb title="Edit this page" class="md-content__button md-icon" rel=edit> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg> </a> <a href=https://github.com/QuEraComputing/tsim/raw/main/docs/demos/from_stim_to_tsim.ipynb title="View source of this page" class="md-content__button md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M17 18c.56 0 1 .44 1 1s-.44 1-1 1-1-.44-1-1 .44-1 1-1m0-3c-2.73 0-5.06 1.66-6 4 .94 2.34 3.27 4 6 4s5.06-1.66 6-4c-.94-2.34-3.27-4-6-4m0 6.5a2.5 2.5 0 0 1-2.5-2.5 2.5 2.5 0 0 1 2.5-2.5 2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1-2.5 2.5M9.27 20H6V4h7v5h5v4.07c.7.08 1.36.25 2 .49V8l-6-6H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h4.5a8.2 8.2 0 0 1-1.23-2"/></svg> </a> <script>
 (function (global, factory) {
     typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
     typeof define === 'function' && define.amd ? define(factory) :
@@ -717,7 +717,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <span class=s2>    U3(0.1, 0.2, 0.3) 0</span>
 <span class=s2>"""</span><span class=p>)</span>
 <span class=n>c</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=n>height</span><span class=o>=</span><span class=mi>150</span><span class=p>)</span>
-</pre></div> <div class=clipboard-copy-txt id=cell-2>c = tsim.Circuit(""" T 0 T_DAG 0 R_X(0.1) 0 R_Y(0.2) 0 R_Z(0.3) 0 U3(0.1, 0.2, 0.3) 0 """) c.diagram(height=150)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class="jp-OutputArea-child jp-OutputArea-executeResult"> <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[2]:</div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type=text/html tabindex=0> <div style="overflow-x: scroll; "> <div style="width: 450.0px"> <svg version=1.1 viewbox="0 0 480 160" xmlns=http://www.w3.org/2000/svg> <g id=qubit_lines> <path d="M64,64 L448,64 " id=qubit_line:0 stroke=black></path> <text dominant-baseline=central font-family=monospace font-size=12 text-anchor=end x=64 y=64>q0</text> </g> <rect fill=white height=32 stroke=black width=32 x=80 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=96 y=64>T</text><rect fill=white height=32 stroke=black width=32 x=144 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=160 y=64>T<tspan baseline-shift=super font-size=14>†</tspan></text><rect fill=white height=32 stroke=black width=32 x=208 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=224 y=64>R<tspan baseline-shift=sub font-size=14>X</tspan></text><text dominant-baseline=hanging font-family=monospace font-size=10 stroke=black text-anchor=middle x=224 y=84>0.1π</text> <rect fill=white height=32 stroke=black width=32 x=272 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=288 y=64>R<tspan baseline-shift=sub font-size=14>Y</tspan></text><text dominant-baseline=hanging font-family=monospace font-size=10 stroke=black text-anchor=middle x=288 y=84>0.2π</text> <rect fill=white height=32 stroke=black width=32 x=336 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=352 y=64>R<tspan baseline-shift=sub font-size=14>Z</tspan></text><text dominant-baseline=hanging font-family=monospace font-size=10 stroke=black text-anchor=middle x=352 y=84>0.3π</text> <rect fill=white height=32 stroke=black width=32 x=400 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=416 y=64>U<tspan baseline-shift=sub font-size=14>3</tspan></text></svg> </div> </div> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=5"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <h3 id=detector-reference-samples>Detector Reference Samples<a class=anchor-link href=#detector-reference-samples>¶</a></h3><p>There are a few differences between the two packages. For example, STIM's detector sampler will output results relative to a noiseless reference sample. For example, in the following circuit, detector and observable bits will always be <code>False</code>:</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=6"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [3]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-3> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>circuit_str</span> <span class=o>=</span> <span class=s2>"""</span>
+</pre></div> <div class=clipboard-copy-txt id=cell-2>c = tsim.Circuit(""" T 0 T_DAG 0 R_X(0.1) 0 R_Y(0.2) 0 R_Z(0.3) 0 U3(0.1, 0.2, 0.3) 0 """) c.diagram(height=150)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class="jp-OutputArea-child jp-OutputArea-executeResult"> <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[2]:</div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type=text/html tabindex=0> <div style="overflow-x: scroll; background: white; width: fit-content;"> <div style="width: 450.0px"> <svg version=1.1 viewbox="0 0 480 160" xmlns=http://www.w3.org/2000/svg> <g id=qubit_lines> <path d="M64,64 L448,64 " id=qubit_line:0 stroke=black></path> <text dominant-baseline=central font-family=monospace font-size=12 text-anchor=end x=64 y=64>q0</text> </g> <rect fill=white height=32 stroke=black width=32 x=80 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=96 y=64>T</text><rect fill=white height=32 stroke=black width=32 x=144 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=160 y=64>T<tspan baseline-shift=super font-size=14>†</tspan></text><rect fill=white height=32 stroke=black width=32 x=208 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=224 y=64>R<tspan baseline-shift=sub font-size=14>X</tspan></text><text dominant-baseline=hanging font-family=monospace font-size=10 stroke=black text-anchor=middle x=224 y=84>0.1π</text> <rect fill=white height=32 stroke=black width=32 x=272 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=288 y=64>R<tspan baseline-shift=sub font-size=14>Y</tspan></text><text dominant-baseline=hanging font-family=monospace font-size=10 stroke=black text-anchor=middle x=288 y=84>0.2π</text> <rect fill=white height=32 stroke=black width=32 x=336 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=352 y=64>R<tspan baseline-shift=sub font-size=14>Z</tspan></text><text dominant-baseline=hanging font-family=monospace font-size=10 stroke=black text-anchor=middle x=352 y=84>0.3π</text> <rect fill=white height=32 stroke=black width=32 x=400 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=416 y=64>U<tspan baseline-shift=sub font-size=14>3</tspan></text></svg> </div> </div> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=5"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <h3 id=detector-reference-samples>Detector Reference Samples<a class=anchor-link href=#detector-reference-samples>¶</a></h3><p>There are a few differences between the two packages. For example, STIM's detector sampler will output results relative to a noiseless reference sample. For example, in the following circuit, detector and observable bits will always be <code>False</code>:</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=6"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [3]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-3> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>circuit_str</span> <span class=o>=</span> <span class=s2>"""</span>
 <span class=s2>    X 0</span>
 <span class=s2>    M 0</span>
 <span class=s2>    DETECTOR rec[-1]</span>
@@ -732,23 +732,44 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
  [False False]
  [False False]
  [False False]]
-</pre> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=7"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>In TSIM, actual detector and observable bits will always be reported.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=8"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [4]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-4> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span> <span class=o>=</span> <span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=n>circuit_str</span><span class=p>)</span>
+</pre> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=7"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>By default, TSIM reports actual detector and observable bits. To match STIM's behavior, set <code>use_detector_reference_sample=True</code> and <code>use_observable_reference_sample=True</code>. This computes a noiseless reference sample and XORs it with the results.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=8"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [4]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-4> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span> <span class=o>=</span> <span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=n>circuit_str</span><span class=p>)</span>
 <span class=n>tsim_sampler</span> <span class=o>=</span> <span class=n>c</span><span class=o>.</span><span class=n>compile_detector_sampler</span><span class=p>(</span><span class=n>seed</span><span class=o>=</span><span class=mi>0</span><span class=p>)</span>
+
+<span class=c1># Without reference sample (default): actual detector/observable values</span>
 <span class=n>samples</span> <span class=o>=</span> <span class=n>tsim_sampler</span><span class=o>.</span><span class=n>sample</span><span class=p>(</span><span class=n>shots</span><span class=o>=</span><span class=mi>5</span><span class=p>,</span> <span class=n>append_observables</span><span class=o>=</span><span class=kc>True</span><span class=p>)</span>
+<span class=nb>print</span><span class=p>(</span><span class=s2>"Without reference sample:"</span><span class=p>)</span>
 <span class=nb>print</span><span class=p>(</span><span class=n>samples</span><span class=p>)</span>
-</pre></div> <div class=clipboard-copy-txt id=cell-4>c = tsim.Circuit(circuit_str) tsim_sampler = c.compile_detector_sampler(seed=0) samples = tsim_sampler.sample(shots=5, append_observables=True) print(samples)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedText jp-OutputArea-output" data-mime-type=text/plain tabindex=0> <pre>[[ True  True]
+
+<span class=c1># With reference sample: matches STIM behavior</span>
+<span class=n>samples_ref</span> <span class=o>=</span> <span class=n>tsim_sampler</span><span class=o>.</span><span class=n>sample</span><span class=p>(</span>
+    <span class=n>shots</span><span class=o>=</span><span class=mi>5</span><span class=p>,</span>
+    <span class=n>append_observables</span><span class=o>=</span><span class=kc>True</span><span class=p>,</span>
+    <span class=n>use_detector_reference_sample</span><span class=o>=</span><span class=kc>True</span><span class=p>,</span>
+    <span class=n>use_observable_reference_sample</span><span class=o>=</span><span class=kc>True</span><span class=p>,</span>
+<span class=p>)</span>
+<span class=nb>print</span><span class=p>(</span><span class=s2>"</span><span class=se>\n</span><span class=s2>With reference sample:"</span><span class=p>)</span>
+<span class=nb>print</span><span class=p>(</span><span class=n>samples_ref</span><span class=p>)</span>
+</pre></div> <div class=clipboard-copy-txt id=cell-4>c = tsim.Circuit(circuit_str) tsim_sampler = c.compile_detector_sampler(seed=0) # Without reference sample (default): actual detector/observable values samples = tsim_sampler.sample(shots=5, append_observables=True) print("Without reference sample:") print(samples) # With reference sample: matches STIM behavior samples_ref = tsim_sampler.sample( shots=5, append_observables=True, use_detector_reference_sample=True, use_observable_reference_sample=True, ) print("\nWith reference sample:") print(samples_ref)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedText jp-OutputArea-output" data-mime-type=text/plain tabindex=0> <pre>Without reference sample:
+[[ True  True]
  [ True  True]
  [ True  True]
  [ True  True]
  [ True  True]]
-</pre> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=9"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <h3 id=batch-size-and-just-in-time-compilation>Batch size and just-in-time compilation<a class=anchor-link href=#batch-size-and-just-in-time-compilation>¶</a></h3> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=10"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>TSIM's samplers also have a <code>batch_size</code> argument, which does not exist in STIM. This parameter controls the number of shots sampled in parallel.</p> <p>To achieve maximum performance, it may be required to increase the <code>batch_size</code>. Especially when running on a GPU, it is recommended to increase the <code>batch_size</code> until VRAM is exhausted.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=11"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [5]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-5> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>tsim_sampler</span><span class=o>.</span><span class=n>sample</span><span class=p>(</span><span class=n>shots</span><span class=o>=</span><span class=mi>1_000_000</span><span class=p>,</span> <span class=n>batch_size</span><span class=o>=</span><span class=mi>100_000</span><span class=p>)</span>
+</pre> </div> </div> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedText jp-OutputArea-output" data-mime-type=text/plain tabindex=0> <pre>
+With reference sample:
+[[False False]
+ [False False]
+ [False False]
+ [False False]
+ [False False]]
+</pre> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=9"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <h3 id=batch-size-and-just-in-time-compilation>Batch size and just-in-time compilation<a class=anchor-link href=#batch-size-and-just-in-time-compilation>¶</a></h3> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=10"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>TSIM's samplers also have a <code>batch_size</code> argument, which does not exist in STIM. This parameter controls the number of shots sampled in parallel.</p> <p>When <code>batch_size</code> is not specified, it is automatically chosen based on available device memory (GPU VRAM or system RAM). To achieve maximum performance on a GPU, you can also set <code>batch_size</code> explicitly.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=11"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [5]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-5> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>tsim_sampler</span><span class=o>.</span><span class=n>sample</span><span class=p>(</span><span class=n>shots</span><span class=o>=</span><span class=mi>1_000_000</span><span class=p>,</span> <span class=n>batch_size</span><span class=o>=</span><span class=mi>100_000</span><span class=p>)</span>
 </pre></div> <div class=clipboard-copy-txt id=cell-5>tsim_sampler.sample(shots=1_000_000, batch_size=100_000)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class="jp-OutputArea-child jp-OutputArea-executeResult"> <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[5]:</div> <div class="jp-RenderedText jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type=text/plain tabindex=0> <pre>array([[ True],
        [ True],
        [ True],
        ...,
        [ True],
        [ True],
-       [ True]], shape=(1000000, 1))</pre> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=12"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>TSIM uses <code>jax</code> just-in-time compilation, which is triggered upon first execution of the <code>sample</code> function. This means that subsequent calls to <code>sample</code> with the same parameters will be faster. Note that recompilation is triggered whenever the <code>batch_size</code> is changed.</p> <p>When <code>batch_size</code> is not specified, it is set to <code>shots</code> by default.</p> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=13"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <h3 id=visualization-methods>Visualization methods<a class=anchor-link href=#visualization-methods>¶</a></h3> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=14"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>TSIM supports a subset of STIM's visualization methods. Since TSIM is based on ZX diagrams, it also provides visualization via <code>pyzx</code>.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=15"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [6]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-6> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span> <span class=o>=</span> <span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=s2>"""</span>
+       [ True]], shape=(1000000, 1))</pre> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=12"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>TSIM uses <code>jax</code> just-in-time compilation, which is triggered upon first execution of the <code>sample</code> function. This means that subsequent calls to <code>sample</code> with the same parameters will be faster. Note that recompilation is triggered whenever the <code>batch_size</code> is changed.</p> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=13"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <h3 id=visualization-methods>Visualization methods<a class=anchor-link href=#visualization-methods>¶</a></h3> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=14"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>TSIM supports a subset of STIM's visualization methods. Since TSIM is based on ZX diagrams, it also provides visualization via <code>pyzx</code>.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=15"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [6]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-6> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span> <span class=o>=</span> <span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=s2>"""</span>
 <span class=s2>    RX 0 1</span>
 <span class=s2>    TICK</span>
 <span class=s2>    T 0</span>
@@ -760,12 +781,12 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <span class=s2>    M 0 1</span>
 <span class=s2>"""</span><span class=p>)</span>
 <span class=n>c</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>"timeline-svg"</span><span class=p>,</span> <span class=n>height</span><span class=o>=</span><span class=mi>150</span><span class=p>)</span>
-</pre></div> <div class=clipboard-copy-txt id=cell-6>c = tsim.Circuit(""" RX 0 1 TICK T 0 TICK CNOT 0 1 TICK U3(0.1, 0.2, 0.3) 1 TICK M 0 1 """) c.diagram("timeline-svg", height=150)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class="jp-OutputArea-child jp-OutputArea-executeResult"> <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[6]:</div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type=text/html tabindex=0> <div style="overflow-x: scroll; "> <div style="width: 278.57142857142856px"> <svg version=1.1 viewbox="0 0 416 224" xmlns=http://www.w3.org/2000/svg> <g id=qubit_lines> <path d="M64,64 L384,64 " id=qubit_line:0 stroke=black></path> <text dominant-baseline=central font-family=monospace font-size=12 text-anchor=end x=64 y=64>q0</text> <path d="M64,128 L384,128 " id=qubit_line:1 stroke=black></path> <text dominant-baseline=central font-family=monospace font-size=12 text-anchor=end x=64 y=128>q1</text> </g> <rect fill=black height=32 stroke=black width=32 x=80 y=48></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=26 text-anchor=middle x=96 y=64>R<tspan baseline-shift=sub font-size=16>X</tspan></text> <rect fill=black height=32 stroke=black width=32 x=80 y=112></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=26 text-anchor=middle x=96 y=128>R<tspan baseline-shift=sub font-size=16>X</tspan></text> <rect fill=white height=32 stroke=black width=32 x=144 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=160 y=64>T</text><path d="M224,64 L224,128 " stroke=black></path> <circle cx=224 cy=64 fill=black r=12 stroke=none></circle> <circle cx=224 cy=128 fill=white r=12 stroke=black></circle> <path d="M212,128 L236,128 M224,116 L224,140 " stroke=black></path> <rect fill=white height=32 stroke=black width=32 x=272 y=112></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=288 y=128>U<tspan baseline-shift=sub font-size=14>3</tspan></text><rect fill=black height=32 stroke=black width=32 x=336 y=48></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=30 text-anchor=middle x=352 y=64>M</text> <text font-family=monospace font-size=8 text-anchor=middle x=352 y=44>rec[0]</text> <rect fill=black height=32 stroke=black width=32 x=336 y=112></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=30 text-anchor=middle x=352 y=128>M</text> <text font-family=monospace font-size=8 text-anchor=middle x=352 y=108>rec[1]</text> </svg> </div> </div> </div> </div> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=16"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [7]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-7> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>"timeslice-svg"</span><span class=p>,</span> <span class=n>height</span><span class=o>=</span><span class=mi>80</span><span class=p>,</span> <span class=n>rows</span><span class=o>=</span><span class=mi>1</span><span class=p>)</span>
-</pre></div> <div class=clipboard-copy-txt id=cell-7>c.diagram("timeslice-svg", height=80, rows=1)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class="jp-OutputArea-child jp-OutputArea-executeResult"> <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[7]:</div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type=text/html tabindex=0> <div style="overflow-x: scroll; "> <div style="width: 604.8px"> <svg version=1.1 viewbox="0 0 1209.6 160" xmlns=http://www.w3.org/2000/svg> <g id=qubit_dots> <circle cx=80 cy=80 fill=black id=qubit_dot:0:0 r=2 stroke=none></circle> <circle cx=144 cy=80 fill=black id=qubit_dot:1:0 r=2 stroke=none></circle> <circle cx=326.4 cy=80 fill=black id=qubit_dot:0:1 r=2 stroke=none></circle> <circle cx=390.4 cy=80 fill=black id=qubit_dot:1:1 r=2 stroke=none></circle> <circle cx=572.8 cy=80 fill=black id=qubit_dot:0:2 r=2 stroke=none></circle> <circle cx=636.8 cy=80 fill=black id=qubit_dot:1:2 r=2 stroke=none></circle> <circle cx=819.2 cy=80 fill=black id=qubit_dot:0:3 r=2 stroke=none></circle> <circle cx=883.2 cy=80 fill=black id=qubit_dot:1:3 r=2 stroke=none></circle> <circle cx=1065.6 cy=80 fill=black id=qubit_dot:0:4 r=2 stroke=none></circle> <circle cx=1129.6 cy=80 fill=black id=qubit_dot:1:4 r=2 stroke=none></circle> </g> <rect fill=black height=32 stroke=black width=32 x=64 y=64></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=26 text-anchor=middle x=80 y=80>R<tspan baseline-shift=sub font-size=16>X</tspan></text> <rect fill=black height=32 stroke=black width=32 x=128 y=64></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=26 text-anchor=middle x=144 y=80>R<tspan baseline-shift=sub font-size=16>X</tspan></text> <rect fill=white height=32 stroke=black width=32 x=310.4 y=64></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=326.4 y=80>T</text><path d="M572.8,80 L636.8,80 " fill=none stroke=black stroke-width=5></path> <circle cx=572.8 cy=80 fill=black r=12 stroke=none></circle> <circle cx=636.8 cy=80 fill=white r=12 stroke=black></circle> <path d="M624.8,80 L648.8,80 M636.8,68 L636.8,92 " stroke=black></path> <rect fill=white height=32 stroke=black width=32 x=867.2 y=64></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=883.2 y=80>U<tspan baseline-shift=sub font-size=14>3</tspan></text><rect fill=black height=32 stroke=black width=32 x=1049.6 y=64></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=30 text-anchor=middle x=1065.6 y=80>M</text> <rect fill=black height=32 stroke=black width=32 x=1113.6 y=64></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=30 text-anchor=middle x=1129.6 y=80>M</text> <g id=tick_borders> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-218>Tick 0</text> <rect fill=none height=160 id=tick_border:0:0_0:0 stroke=black width=224 x=0 y=0></rect> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-464.4>Tick 1</text> <rect fill=none height=160 id=tick_border:1:0_1:1 stroke=black width=224 x=246.4 y=0></rect> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-710.8>Tick 2</text> <rect fill=none height=160 id=tick_border:2:0_2:2 stroke=black width=224 x=492.8 y=0></rect> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-957.2>Tick 3</text> <rect fill=none height=160 id=tick_border:3:0_3:3 stroke=black width=224 x=739.2 y=0></rect> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-1203.6>Tick 4</text> <rect fill=none height=160 id=tick_border:4:0_4:4 stroke=black width=224 x=985.6 y=0></rect> </g> </svg> </div> </div> </div> </div> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=17"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [8]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-8> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>"pyzx"</span><span class=p>);</span>
-</pre></div> <div class=clipboard-copy-txt id=cell-8>c.diagram("pyzx");</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type=text/html tabindex=0> <div id=graph-output-5ZAUhFyh style="overflow:auto; background-color: white"></div> <script type=module>
+</pre></div> <div class=clipboard-copy-txt id=cell-6>c = tsim.Circuit(""" RX 0 1 TICK T 0 TICK CNOT 0 1 TICK U3(0.1, 0.2, 0.3) 1 TICK M 0 1 """) c.diagram("timeline-svg", height=150)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class="jp-OutputArea-child jp-OutputArea-executeResult"> <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[6]:</div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type=text/html tabindex=0> <div style="overflow-x: scroll; background: white; width: fit-content;"> <div style="width: 278.57142857142856px"> <svg version=1.1 viewbox="0 0 416 224" xmlns=http://www.w3.org/2000/svg> <g id=qubit_lines> <path d="M64,64 L384,64 " id=qubit_line:0 stroke=black></path> <text dominant-baseline=central font-family=monospace font-size=12 text-anchor=end x=64 y=64>q0</text> <path d="M64,128 L384,128 " id=qubit_line:1 stroke=black></path> <text dominant-baseline=central font-family=monospace font-size=12 text-anchor=end x=64 y=128>q1</text> </g> <rect fill=black height=32 stroke=black width=32 x=80 y=48></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=26 text-anchor=middle x=96 y=64>R<tspan baseline-shift=sub font-size=16>X</tspan></text> <rect fill=black height=32 stroke=black width=32 x=80 y=112></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=26 text-anchor=middle x=96 y=128>R<tspan baseline-shift=sub font-size=16>X</tspan></text> <rect fill=white height=32 stroke=black width=32 x=144 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=160 y=64>T</text><path d="M224,64 L224,128 " stroke=black></path> <circle cx=224 cy=64 fill=black r=12 stroke=none></circle> <circle cx=224 cy=128 fill=white r=12 stroke=black></circle> <path d="M212,128 L236,128 M224,116 L224,140 " stroke=black></path> <rect fill=white height=32 stroke=black width=32 x=272 y=112></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=288 y=128>U<tspan baseline-shift=sub font-size=14>3</tspan></text><rect fill=black height=32 stroke=black width=32 x=336 y=48></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=30 text-anchor=middle x=352 y=64>M</text> <text font-family=monospace font-size=8 text-anchor=middle x=352 y=44>rec[0]</text> <rect fill=black height=32 stroke=black width=32 x=336 y=112></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=30 text-anchor=middle x=352 y=128>M</text> <text font-family=monospace font-size=8 text-anchor=middle x=352 y=108>rec[1]</text> </svg> </div> </div> </div> </div> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=16"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [7]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-7> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>"timeslice-svg"</span><span class=p>,</span> <span class=n>height</span><span class=o>=</span><span class=mi>80</span><span class=p>,</span> <span class=n>rows</span><span class=o>=</span><span class=mi>1</span><span class=p>)</span>
+</pre></div> <div class=clipboard-copy-txt id=cell-7>c.diagram("timeslice-svg", height=80, rows=1)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class="jp-OutputArea-child jp-OutputArea-executeResult"> <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[7]:</div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type=text/html tabindex=0> <div style="overflow-x: scroll; background: white; width: fit-content;"> <div style="width: 604.8px"> <svg version=1.1 viewbox="0 0 1209.6 160" xmlns=http://www.w3.org/2000/svg> <g id=qubit_dots> <circle cx=80 cy=80 fill=black id=qubit_dot:0:0 r=2 stroke=none></circle> <circle cx=144 cy=80 fill=black id=qubit_dot:1:0 r=2 stroke=none></circle> <circle cx=326.4 cy=80 fill=black id=qubit_dot:0:1 r=2 stroke=none></circle> <circle cx=390.4 cy=80 fill=black id=qubit_dot:1:1 r=2 stroke=none></circle> <circle cx=572.8 cy=80 fill=black id=qubit_dot:0:2 r=2 stroke=none></circle> <circle cx=636.8 cy=80 fill=black id=qubit_dot:1:2 r=2 stroke=none></circle> <circle cx=819.2 cy=80 fill=black id=qubit_dot:0:3 r=2 stroke=none></circle> <circle cx=883.2 cy=80 fill=black id=qubit_dot:1:3 r=2 stroke=none></circle> <circle cx=1065.6 cy=80 fill=black id=qubit_dot:0:4 r=2 stroke=none></circle> <circle cx=1129.6 cy=80 fill=black id=qubit_dot:1:4 r=2 stroke=none></circle> </g> <rect fill=black height=32 stroke=black width=32 x=64 y=64></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=26 text-anchor=middle x=80 y=80>R<tspan baseline-shift=sub font-size=16>X</tspan></text> <rect fill=black height=32 stroke=black width=32 x=128 y=64></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=26 text-anchor=middle x=144 y=80>R<tspan baseline-shift=sub font-size=16>X</tspan></text> <rect fill=white height=32 stroke=black width=32 x=310.4 y=64></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=326.4 y=80>T</text><path d="M572.8,80 L636.8,80 " fill=none stroke=black stroke-width=5></path> <circle cx=572.8 cy=80 fill=black r=12 stroke=none></circle> <circle cx=636.8 cy=80 fill=white r=12 stroke=black></circle> <path d="M624.8,80 L648.8,80 M636.8,68 L636.8,92 " stroke=black></path> <rect fill=white height=32 stroke=black width=32 x=867.2 y=64></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=883.2 y=80>U<tspan baseline-shift=sub font-size=14>3</tspan></text><rect fill=black height=32 stroke=black width=32 x=1049.6 y=64></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=30 text-anchor=middle x=1065.6 y=80>M</text> <rect fill=black height=32 stroke=black width=32 x=1113.6 y=64></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=30 text-anchor=middle x=1129.6 y=80>M</text> <g id=tick_borders> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-218>Tick 0</text> <rect fill=none height=160 id=tick_border:0:0_0:0 stroke=black width=224 x=0 y=0></rect> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-464.4>Tick 1</text> <rect fill=none height=160 id=tick_border:1:0_1:1 stroke=black width=224 x=246.4 y=0></rect> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-710.8>Tick 2</text> <rect fill=none height=160 id=tick_border:2:0_2:2 stroke=black width=224 x=492.8 y=0></rect> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-957.2>Tick 3</text> <rect fill=none height=160 id=tick_border:3:0_3:3 stroke=black width=224 x=739.2 y=0></rect> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-1203.6>Tick 4</text> <rect fill=none height=160 id=tick_border:4:0_4:4 stroke=black width=224 x=985.6 y=0></rect> </g> </svg> </div> </div> </div> </div> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=17"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [8]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-8> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>"pyzx"</span><span class=p>);</span>
+</pre></div> <div class=clipboard-copy-txt id=cell-8>c.diagram("pyzx");</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type=text/html tabindex=0> <div id=graph-output-A5wkpBBS style="overflow:auto; background-color: white"></div> <script type=module>
 var d3;
 if (d3 == null) { d3 = await import("https://esm.sh/d3@5"); }
-var _settings_colors = JSON.parse('{"edge": "#000000", "Hedge": "#0088ff", "Xedge": "#999999", "boundary": "#000000", "X": "#ff8888", "Y": "#aabbff", "Z": "#ccffcc", "H": "#ffff66", "W": "#000000", "Zalt": "#ccffcc", "Walt": "#000000", "Xdark": "#ff8888", "Ydark": "#aabbff", "Zdark": "#99dd99"}');
+var _settings_colors = JSON.parse('{"edge": "#000000", "Hedge": "#0088ff", "Xedge": "#999999", "Bedge": "#000000", "HBedge": "#0088ff", "boundary": "#000000", "X": "#ff8888", "Y": "#aabbff", "Z": "#ccffcc", "H": "#ffff66", "W": "#000000", "Zalt": "#ccffcc", "Walt": "#000000", "Zbold": "#ccffcc", "Xbold": "#ff8888", "Xdark": "#ff8888", "Ydark": "#aabbff", "Zdark": "#99dd99"}');
 // PyZX - Python library for quantum circuit rewriting 
 //        and optimisation using the ZX-calculus
 // Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
@@ -791,12 +812,20 @@ function nodeColor(t) {
     else if (t == 4) return _settings_colors['W']; // "black";
     else if (t == 5) return _settings_colors['Walt']; // "black";
     else if (t == 6) return _settings_colors['Zalt']; // "#ccffcc";
+    else if (t == 7) return _settings_colors['Zbold']; // "#ccffcc" bold Z
+    else if (t == 8) return _settings_colors['Xbold']; // "#ff8888" bold X
 }
 
 function edgeColor(t) {
     if (t == 1) return _settings_colors['edge']; //"black";
     else if (t == 2) return _settings_colors['Hedge']; // "#08f";
     else if (t == 3) return _settings_colors['Xedge']; // "gray";
+    else if (t == 4) return _settings_colors['Bedge']; // "black" bold
+    else if (t == 5) return _settings_colors['HBedge']; // "#0088ff" bold hadamard
+}
+
+function isBoldEdge(t) {
+    return t == 4 || t == 5;
 }
 
 function webColor(t) {
@@ -806,8 +835,10 @@ function webColor(t) {
     else if (t == 'I') return '#dddddd';
 }
 
-function nodeStyle(selected) {
-    return selected ? "stroke-width: 2px; stroke: #00f" : "stroke-width: 1.5px";
+function nodeStyle(selected, t) {
+    var bold = (t == 7 || t == 8);
+    if (selected) return "stroke-width: " + (bold ? "4" : "2") + "px; stroke: #00f";
+    return "stroke-width: " + (bold ? "3" : "1.5") + "px";
 }
 
 var symbolGround = {
@@ -890,7 +921,7 @@ function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_
         .enter().append("path")
         .attr("stroke", function(d) { return edgeColor(d.t); })
         .attr("fill", "transparent")
-        .attr("style", "stroke-width: 1.5px");
+        .attr("style", function(d) { return isBoldEdge(d.t) ? "stroke-width: 3.5px" : "stroke-width: 1.5px"; });
 
     var brush = svg.append("g")
         .attr("class", "brush");
@@ -930,6 +961,7 @@ function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_
         })
         .attr("fill", function(d) { return nodeColor(d.t); })
         .attr("stroke", "black")
+        .attr("stroke-width", function(d) { return (d.t == 7 || d.t == 8) ? 3 : 1.5; })
         .attr("class", "selectable");
 
     var hbox = node.filter(function(d) { return d.t == 3; });
@@ -959,7 +991,7 @@ function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_
         .attr("stroke", "black")
         .attr("class", "selectable");
 
-    node.filter(function(d) { return d.phase != ''; })
+    node.filter(function(d) { return d.phase != '' && d.phase.indexOf('[') === -1; })
         .append("text")
         .attr("y", 0.7 * node_size + 14)
         .text(function (d) { return d.phase })
@@ -967,6 +999,16 @@ function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_
         .attr("font-size", "12px")
         .attr("font-family", "monospace")
         .attr("fill", "#00d")
+        .attr('style', 'pointer-events: none; user-select: none;');
+
+    node.filter(function(d) { return d.phase != '' && d.phase.indexOf('[') !== -1; })
+        .append("text")
+        .attr("y", -0.7 * node_size - 8)
+        .text(function (d) { return d.phase })
+        .attr("text-anchor", "middle")
+        .attr("font-size", "12px")
+        .attr("font-family", "monospace")
+        .attr("fill", "black")
         .attr('style', 'pointer-events: none; user-select: none;');
 
     if (show_labels) {
@@ -1080,10 +1122,10 @@ function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_
 
     node.on("mousedown", function(d) {
         if (shiftKey) {
-            d3.select(this).selectAll(".selectable").attr("style", nodeStyle(d.selected = !d.selected));
+            d3.select(this).selectAll(".selectable").attr("style", nodeStyle(d.selected = !d.selected, d.t));
             d3.event.stopImmediatePropagation();
         } else if (!d.selected) {
-            node.selectAll(".selectable").attr("style", function(p) { return nodeStyle(p.selected = d === p); });
+            node.selectAll(".selectable").attr("style", function(p) { return nodeStyle(p.selected = d === p, p.t); });
         }
     })
         .call(d3.drag().on("drag", function(d) {
@@ -1115,7 +1157,7 @@ function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_
                 node.selectAll(".selectable").attr("style", function(d) {
                     return nodeStyle(
                         d.selected = d.previouslySelected = shiftKey &&
-                        d.selected);
+                        d.selected, d.t);
                 });
             }
         })
@@ -1126,7 +1168,7 @@ function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_
                     return nodeStyle(d.selected = d.previouslySelected ^
                         (selection != null
                             && selection[0][0] <= d.x && d.x < selection[1][0]
-                            && selection[0][1] <= d.y && d.y < selection[1][1]));
+                            && selection[0][1] <= d.y && d.y < selection[1][1]), d.t);
                 });
             }
         })
@@ -1138,18 +1180,819 @@ function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_
 }
 
 
-showGraph('#graph-output-5ZAUhFyh',
-  JSON.parse('{"nodes": [{"name": "0", "x": 50.0, "y": 100.0, "z": 0.0, "t": 2, "phase": "", "ground": false, "vdata": []}, {"name": "1", "x": 100.0, "y": 100.0, "z": 0.0, "t": 1, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "2", "x": 50.0, "y": 150.0, "z": 0.0, "t": 2, "phase": "", "ground": false, "vdata": []}, {"name": "3", "x": 150.0, "y": 150.0, "z": 0.0, "t": 2, "phase": "", "ground": false, "vdata": []}, {"name": "4", "x": 150.0, "y": 100.0, "z": 0.0, "t": 1, "phase": "", "ground": false, "vdata": []}, {"name": "5", "x": 550.0, "y": 100.0, "z": 0.0, "t": 1, "phase": "rec[0]", "ground": false, "vdata": []}, {"name": "6", "x": 200.0, "y": 150.0, "z": 0.0, "t": 1, "phase": "3\u03c0/10", "ground": false, "vdata": []}, {"name": "7", "x": 250.0, "y": 150.0, "z": 0.0, "t": 2, "phase": "\u03c0/2", "ground": false, "vdata": []}, {"name": "8", "x": 300.0, "y": 150.0, "z": 0.0, "t": 1, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "9", "x": 350.0, "y": 150.0, "z": 0.0, "t": 1, "phase": "\u03c0/10", "ground": false, "vdata": []}, {"name": "10", "x": 400.0, "y": 150.0, "z": 0.0, "t": 2, "phase": "\u03c0/2", "ground": false, "vdata": []}, {"name": "11", "x": 450.0, "y": 150.0, "z": 0.0, "t": 1, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "12", "x": 500.0, "y": 150.0, "z": 0.0, "t": 1, "phase": "\u03c0/5", "ground": false, "vdata": []}, {"name": "13", "x": 550.0, "y": 150.0, "z": 0.0, "t": 1, "phase": "rec[1]", "ground": false, "vdata": []}, {"name": "14", "x": 600.0, "y": 100.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "15", "x": 600.0, "y": 150.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}], "links": [{"source": "0", "target": "1", "t": 2, "index": 0, "num_parallel": 1}, {"source": "1", "target": "4", "t": 1, "index": 0, "num_parallel": 1}, {"source": "2", "target": "3", "t": 2, "index": 0, "num_parallel": 1}, {"source": "3", "target": "6", "t": 1, "index": 0, "num_parallel": 1}, {"source": "3", "target": "4", "t": 1, "index": 0, "num_parallel": 1}, {"source": "4", "target": "5", "t": 1, "index": 0, "num_parallel": 1}, {"source": "5", "target": "14", "t": 1, "index": 0, "num_parallel": 1}, {"source": "6", "target": "7", "t": 1, "index": 0, "num_parallel": 1}, {"source": "7", "target": "8", "t": 1, "index": 0, "num_parallel": 1}, {"source": "8", "target": "9", "t": 1, "index": 0, "num_parallel": 1}, {"source": "9", "target": "10", "t": 1, "index": 0, "num_parallel": 1}, {"source": "10", "target": "11", "t": 1, "index": 0, "num_parallel": 1}, {"source": "11", "target": "12", "t": 1, "index": 0, "num_parallel": 1}, {"source": "12", "target": "13", "t": 1, "index": 0, "num_parallel": 1}, {"source": "13", "target": "15", "t": 1, "index": 0, "num_parallel": 1}], "pauli_web": []}'), 650, 200, 50,
+showGraph('#graph-output-A5wkpBBS',
+  JSON.parse('{"nodes": [{"name": "0", "x": 50.0, "y": 100.0, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "1", "x": 100.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "2", "x": 50.0, "y": 150.0, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "3", "x": 150.0, "y": 150.0, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "4", "x": 150.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "5", "x": 550.0, "y": 100.0, "z": 0.0, "t": 1, "phase": "rec[0]", "ground": false, "vdata": []}, {"name": "6", "x": 200.0, "y": 150.0, "z": 0.0, "t": 7, "phase": "3\u03c0/10", "ground": false, "vdata": []}, {"name": "7", "x": 250.0, "y": 150.0, "z": 0.0, "t": 8, "phase": "\u03c0/2", "ground": false, "vdata": []}, {"name": "8", "x": 300.0, "y": 150.0, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "9", "x": 350.0, "y": 150.0, "z": 0.0, "t": 7, "phase": "\u03c0/10", "ground": false, "vdata": []}, {"name": "10", "x": 400.0, "y": 150.0, "z": 0.0, "t": 8, "phase": "\u03c0/2", "ground": false, "vdata": []}, {"name": "11", "x": 450.0, "y": 150.0, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "12", "x": 500.0, "y": 150.0, "z": 0.0, "t": 7, "phase": "\u03c0/5", "ground": false, "vdata": []}, {"name": "13", "x": 550.0, "y": 150.0, "z": 0.0, "t": 1, "phase": "rec[1]", "ground": false, "vdata": []}, {"name": "14", "x": 600.0, "y": 100.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "15", "x": 600.0, "y": 150.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}], "links": [{"source": "0", "target": "1", "t": 5, "index": 0, "num_parallel": 1}, {"source": "1", "target": "4", "t": 4, "index": 0, "num_parallel": 1}, {"source": "2", "target": "3", "t": 5, "index": 0, "num_parallel": 1}, {"source": "3", "target": "6", "t": 4, "index": 0, "num_parallel": 1}, {"source": "3", "target": "4", "t": 4, "index": 0, "num_parallel": 1}, {"source": "4", "target": "5", "t": 4, "index": 0, "num_parallel": 1}, {"source": "5", "target": "14", "t": 4, "index": 0, "num_parallel": 1}, {"source": "6", "target": "7", "t": 4, "index": 0, "num_parallel": 1}, {"source": "7", "target": "8", "t": 4, "index": 0, "num_parallel": 1}, {"source": "8", "target": "9", "t": 4, "index": 0, "num_parallel": 1}, {"source": "9", "target": "10", "t": 4, "index": 0, "num_parallel": 1}, {"source": "10", "target": "11", "t": 4, "index": 0, "num_parallel": 1}, {"source": "11", "target": "12", "t": 4, "index": 0, "num_parallel": 1}, {"source": "12", "target": "13", "t": 4, "index": 0, "num_parallel": 1}, {"source": "13", "target": "15", "t": 4, "index": 0, "num_parallel": 1}], "pauli_web": []}'), 650, 200, 50,
   10.0, false, false, '');
-</script> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=18"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <h3 id=repeat-instructions-are-flattened><code>REPEAT</code> instructions are flattened<a class=anchor-link href=#repeat-instructions-are-flattened>¶</a></h3> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=19"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>TSIM does not support <code>REPEAT</code> instructions. Any <code>REPEAT</code> instructions will be flattened.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=20"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [9]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-9> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span> <span class=o>=</span> <span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=s2>"""</span>
+</script> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=18"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>It can be interesting to look at the ZX diagram of more advanced Stim programs. For example, the following program measures a qubit and records the flipped measurement outcome. Based on this outcome, an X gate is applied to a different qubit:</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=19"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [9]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-9> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=s2>"""</span>
+<span class=s2>M !0</span>
+<span class=s2>CNOT rec[-1] 1</span>
+<span class=s2>"""</span><span class=p>)</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>"pyzx"</span><span class=p>);</span>
+</pre></div> <div class=clipboard-copy-txt id=cell-9>tsim.Circuit(""" M !0 CNOT rec[-1] 1 """).diagram("pyzx");</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type=text/html tabindex=0> <div id=graph-output-eJqpQ0V9 style="overflow:auto; background-color: white"></div> <script type=module>
+var d3;
+if (d3 == null) { d3 = await import("https://esm.sh/d3@5"); }
+var _settings_colors = JSON.parse('{"edge": "#000000", "Hedge": "#0088ff", "Xedge": "#999999", "Bedge": "#000000", "HBedge": "#0088ff", "boundary": "#000000", "X": "#ff8888", "Y": "#aabbff", "Z": "#ccffcc", "H": "#ffff66", "W": "#000000", "Zalt": "#ccffcc", "Walt": "#000000", "Zbold": "#ccffcc", "Xbold": "#ff8888", "Xdark": "#ff8888", "Ydark": "#aabbff", "Zdark": "#99dd99"}');
+// PyZX - Python library for quantum circuit rewriting 
+//        and optimisation using the ZX-calculus
+// Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// styling functions
+function nodeColor(t) {
+    if (t == 0) return _settings_colors['boundary'];
+    else if (t == 1) return _settings_colors['Z']; // "#ccffcc";
+    else if (t == 2) return _settings_colors['X']; // "#ff8888";
+    else if (t == 3) return _settings_colors['H']; // "yellow";
+    else if (t == 4) return _settings_colors['W']; // "black";
+    else if (t == 5) return _settings_colors['Walt']; // "black";
+    else if (t == 6) return _settings_colors['Zalt']; // "#ccffcc";
+    else if (t == 7) return _settings_colors['Zbold']; // "#ccffcc" bold Z
+    else if (t == 8) return _settings_colors['Xbold']; // "#ff8888" bold X
+}
+
+function edgeColor(t) {
+    if (t == 1) return _settings_colors['edge']; //"black";
+    else if (t == 2) return _settings_colors['Hedge']; // "#08f";
+    else if (t == 3) return _settings_colors['Xedge']; // "gray";
+    else if (t == 4) return _settings_colors['Bedge']; // "black" bold
+    else if (t == 5) return _settings_colors['HBedge']; // "#0088ff" bold hadamard
+}
+
+function isBoldEdge(t) {
+    return t == 4 || t == 5;
+}
+
+function webColor(t) {
+    if (t == 'X') return _settings_colors['Xdark'];
+    else if (t == 'Y') return _settings_colors['Ydark'];
+    else if (t == 'Z') return _settings_colors['Zdark'];
+    else if (t == 'I') return '#dddddd';
+}
+
+function nodeStyle(selected, t) {
+    var bold = (t == 7 || t == 8);
+    if (selected) return "stroke-width: " + (bold ? "4" : "2") + "px; stroke: #00f";
+    return "stroke-width: " + (bold ? "3" : "1.5") + "px";
+}
+
+var symbolGround = {
+    draw: function(context, size){
+        let s = size/2;
+
+        context.moveTo(0,-s);
+        context.lineTo(0,0);
+
+        context.moveTo(-s,0);
+        context.lineTo(s,0);
+
+        context.moveTo(-2*s/3,s/3);
+        context.lineTo(2*s/3,s/3);
+
+        context.moveTo(-s/3,2*s/3);
+        context.lineTo(s/3,2*s/3);
+    }
+}
+
+function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_labels, scalar_str) {
+    var ntab = {};
+
+    var groundOffset = 2.5 * node_size;
+
+    graph.nodes.forEach(function(d) {
+        ntab[d.name] = d;
+        d.selected = false;
+        d.previouslySelected = false;
+        d.nhd = [];
+    });
+
+    var spiders_and_boundaries = graph.nodes.filter(function(d) {
+        return d.t != 3;
+    });
+
+    graph.links.forEach(function(d) {
+        var s = ntab[d.source];
+        var t = ntab[d.target];
+        d.source = s;
+        d.target = t;
+        s.nhd.push(t);
+        t.nhd.push(s);
+    });
+
+    graph.pauli_web.forEach(function(d) {
+        var s = ntab[d.source];
+        var t = ntab[d.target];
+        d.source = s;
+        d.target = t;
+    });
+
+    var shiftKey;
+
+    // SETUP SVG ITEMS
+
+    var svg = d3.select(tag)
+    //.attr("tabindex", 1)
+        .on("keydown.brush", function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
+        .on("keyup.brush", function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
+    //.each(function() { this.focus(); })
+        .append("svg")
+        .attr("style", "max-width: none; max-height: none")
+        .attr("width", width)
+        .attr("height", height);
+
+    var web = svg.append("g")
+        .attr("class", "web")
+        .selectAll("line")
+        .data(graph.pauli_web)
+        .enter().append("path")
+        .attr("stroke", function(d) { return webColor(d.t); })
+        .attr("fill", "transparent")
+        .attr("style", "stroke-width: 7px");
+
+    var link = svg.append("g")
+        .attr("class", "link")
+        .selectAll("line")
+        .data(graph.links)
+        .enter().append("path")
+        .attr("stroke", function(d) { return edgeColor(d.t); })
+        .attr("fill", "transparent")
+        .attr("style", function(d) { return isBoldEdge(d.t) ? "stroke-width: 3.5px" : "stroke-width: 1.5px"; });
+
+    var brush = svg.append("g")
+        .attr("class", "brush");
+
+    var node = svg.append("g")
+        .attr("class", "node")
+        .selectAll("g")
+        .data(graph.nodes)
+        .enter().append("g")
+        .attr("transform", function(d) {
+            return "translate(" + d.x + "," + d.y +")";
+        });
+
+    // Draw a ground symbol connected to the node.
+    node.filter(function(d) { return d.ground; })
+        .append("path")
+        .attr("stroke", "black")
+        .attr("style", "stroke-width: 1.5px")
+        .attr("fill", "none")
+        .attr("d", "M 0 0 L 0 "+(groundOffset))
+        .attr("class", "selectable");
+    node.filter(function(d) { return d.ground; })
+        .append("path")
+        .attr("stroke", "black")
+        .attr("style", "stroke-width: 1.5px")
+        .attr("fill", "none")
+        .attr("d", d3.symbol().type(symbolGround).size(node_size*1.5))
+        .attr("transform", "translate(0,"+groundOffset+")")
+        .attr("class", "selectable");
+
+    node.filter(function(d) { return d.t != 3 && d.t != 5 && d.t != 6; })
+        .append("circle")
+        .attr("r", function(d) {
+            if (d.t == 0) return 0.5 * node_size;
+            else if (d.t == 4) return 0.25 * node_size;
+            else return node_size;
+        })
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("stroke-width", function(d) { return (d.t == 7 || d.t == 8) ? 3 : 1.5; })
+        .attr("class", "selectable");
+
+    var hbox = node.filter(function(d) { return d.t == 3; });
+
+    hbox.append("rect")
+        .attr("x", -0.75 * node_size).attr("y", -0.75 * node_size)
+        .attr("width", node_size * 1.5).attr("height", node_size * 1.5)
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable");
+
+    // draw a triangle for d.t == 5
+    node.filter(function(d) { return d.t == 5; })
+        .append("path")
+        .attr("d", "M 0 0 L "+node_size+" "+node_size+" L -"+node_size+" "+node_size+" Z")
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable")
+        .attr("transform", "translate(" + (-node_size/2) + ", 0) rotate(-90)");
+
+    // draw a square for Z box: d.t == 6
+    node.filter(function(d) { return d.t == 6; })
+        .append("rect")
+        .attr("x", -0.75 * node_size).attr("y", -0.75 * node_size)
+        .attr("width", node_size * 1.5).attr("height", node_size * 1.5)
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable");
+
+    node.filter(function(d) { return d.phase != '' && d.phase.indexOf('[') === -1; })
+        .append("text")
+        .attr("y", 0.7 * node_size + 14)
+        .text(function (d) { return d.phase })
+        .attr("text-anchor", "middle")
+        .attr("font-size", "12px")
+        .attr("font-family", "monospace")
+        .attr("fill", "#00d")
+        .attr('style', 'pointer-events: none; user-select: none;');
+
+    node.filter(function(d) { return d.phase != '' && d.phase.indexOf('[') !== -1; })
+        .append("text")
+        .attr("y", -0.7 * node_size - 8)
+        .text(function (d) { return d.phase })
+        .attr("text-anchor", "middle")
+        .attr("font-size", "12px")
+        .attr("font-family", "monospace")
+        .attr("fill", "black")
+        .attr('style', 'pointer-events: none; user-select: none;');
+
+    if (show_labels) {
+        node.append("text")
+            .attr("y", -0.7 * node_size - 8)
+            .text(function (d) { return d.name; })
+            .attr("text-anchor", "middle")
+            .attr("font-size", "10px")
+            .attr("font-family", "monospace")
+            .attr("fill", "#999")
+            .attr('style', 'pointer-events: none; user-select: none;');
+    }
+
+    // Display the chosen data fields over the node.
+    node.filter(d => d.vdata.length > 0)
+        .append("text")
+        .attr("y", d => -0.7 * node_size - 14 - 10 * d.vdata.length)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "8px")
+        .attr("font-family", "monospace")
+        .attr("fill", "#c66")
+        .attr('style', 'pointer-events: none; user-select: none;')
+        .selectAll("tspan")
+        .data(d => d.vdata)
+        .enter()
+        .append("tspan")
+        .attr("x", "0")
+        .attr("dy", "1.2em")
+        .text(x => x.join(": "));
+
+    if (scalar_str != "") {
+        svg.append("text")
+            .text(scalar_str)
+            .attr("x", 60).attr("y", 40)
+            .attr("text-anchor", "middle")
+    }
+
+    function update_hboxes() {
+        if (auto_hbox) {
+            var pos = {};
+            hbox.attr("transform", function(d) {
+                // calculate barycenter of non-hbox neighbours, then nudge a bit
+                // to the NE.
+                var x=0,y=0,sz=0;
+                for (var i = 0; i < d.nhd.length; ++i) {
+                    if (d.nhd[i].t != 3) {
+                        sz++;
+                        x += d.nhd[i].x;
+                        y += d.nhd[i].y;
+                    }
+                }
+
+                offset = 0.25 * scale;
+
+                if (sz != 0) {
+                    x = (x/sz) + offset;
+                    y = (y/sz) - offset;
+
+                    while (pos[[x,y]]) {
+                        x += offset;
+                    }
+                    d.x = x;
+                    d.y = y;
+                    pos[[x,y]] = true;
+                }
+
+                return "translate("+d.x+","+d.y+")";
+            });
+        }
+    }
+
+    update_hboxes();
+
+    var link_curve = function(d) {
+        var x1 = d.source.x, x2 = d.target.x, y1 = d.source.y, y2 = d.target.y;
+        if (x1 == x2 && y1 == y2 && d.num_parallel == 1) {
+            var cx1 = x1 - 40;
+            var cy1 = y1 - 40;
+            var cx2 = x1 + 40;
+            var cy2 = y1 - 40;
+            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+        } else if (x1 == x2 && y1 == y2) {
+            var pos = d.index + 1;
+            var cx1 = x1 - 20 - pos * 10;
+            var cy1 = y1 - 20 - pos * 10;
+            var cx2 = x1 + 20 + pos * 10;
+            var cy2 = y1 - 20 - pos * 10;
+            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+        } else if (d.num_parallel == 1) {
+            return `M ${x1} ${y1} L ${x2} ${y2}`;
+        } else {
+            var dx = x2 - x1, dy = y2 - y1;
+            var midx = 0.5 * (x1 + x2), midy = 0.5 * (y1 + y2);
+            var pos = (d.index / (d.num_parallel-1)) - 0.5;
+            var cx = midx - pos * dy;
+            var cy = midy + pos * dx;
+            return `M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`;
+            // return `M ${x1} ${y1} L ${x2} ${y2}`;
+        }
+    };
+    link.attr("d", link_curve);
+
+
+    var web_curve = function(d) {
+        var x1 = d.source.x, x2 = (x1 + d.target.x)/2, y1 = d.source.y, y2 = (y1 + d.target.y)/2;
+        return `M ${x1} ${y1} L ${x2} ${y2}`;
+    }
+    web.attr("d", web_curve);
+
+    // EVENTS FOR DRAGGING AND SELECTION
+
+    node.on("mousedown", function(d) {
+        if (shiftKey) {
+            d3.select(this).selectAll(".selectable").attr("style", nodeStyle(d.selected = !d.selected, d.t));
+            d3.event.stopImmediatePropagation();
+        } else if (!d.selected) {
+            node.selectAll(".selectable").attr("style", function(p) { return nodeStyle(p.selected = d === p, p.t); });
+        }
+    })
+        .call(d3.drag().on("drag", function(d) {
+            var dx = d3.event.dx;
+            var dy = d3.event.dy;
+            // node.filter(function(d) { return d.selected; })
+            //     .attr("cx", function(d) { return d.x += dx; })
+            //     .attr("cy", function(d) { return d.y += dy; });
+            node.filter(function(d) { return d.selected; })
+                .attr("transform", function(d) {
+                    d.x += dx;
+                    d.y += dy;
+                    return "translate(" + d.x + "," + d.y +")";
+                });
+
+            update_hboxes();
+
+            link.filter(function(d) { return d.source.selected || d.target.selected ||
+                    (auto_hbox && d.source.t == 3); })
+                .attr("d", link_curve);
+            web.filter(function(d) { return d.source.selected || d.target.selected; })
+                .attr("d", web_curve);
+        }));
+
+    brush.call(d3.brush().keyModifiers(false)
+        .extent([[0, 0], [width, height]])
+        .on("start", function() {
+            if (d3.event.sourceEvent.type !== "end") {
+                node.selectAll(".selectable").attr("style", function(d) {
+                    return nodeStyle(
+                        d.selected = d.previouslySelected = shiftKey &&
+                        d.selected, d.t);
+                });
+            }
+        })
+        .on("brush", function() {
+            if (d3.event.sourceEvent.type !== "end") {
+                var selection = d3.event.selection;
+                node.selectAll(".selectable").attr("style", function(d) {
+                    return nodeStyle(d.selected = d.previouslySelected ^
+                        (selection != null
+                            && selection[0][0] <= d.x && d.x < selection[1][0]
+                            && selection[0][1] <= d.y && d.y < selection[1][1]), d.t);
+                });
+            }
+        })
+        .on("end", function() {
+            if (d3.event.selection != null) {
+                d3.select(this).call(d3.event.target.move, null);
+            }
+        }));
+}
+
+
+showGraph('#graph-output-eJqpQ0V9',
+  JSON.parse('{"nodes": [{"name": "0", "x": 50.0, "y": 100.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "1", "x": 100.0, "y": 100.0, "z": 0.0, "t": 8, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "2", "x": 150.0, "y": 100.0, "z": 0.0, "t": 1, "phase": "rec[0]", "ground": false, "vdata": []}, {"name": "3", "x": 200.0, "y": 100.0, "z": 0.0, "t": 8, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "4", "x": 250.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "5", "x": 50.0, "y": 150.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "6", "x": 250.0, "y": 150.0, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "7", "x": 300.0, "y": 100.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "8", "x": 300.0, "y": 150.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}], "links": [{"source": "0", "target": "1", "t": 4, "index": 0, "num_parallel": 1}, {"source": "1", "target": "2", "t": 4, "index": 0, "num_parallel": 1}, {"source": "2", "target": "3", "t": 4, "index": 0, "num_parallel": 1}, {"source": "2", "target": "6", "t": 4, "index": 0, "num_parallel": 1}, {"source": "3", "target": "4", "t": 4, "index": 0, "num_parallel": 1}, {"source": "4", "target": "7", "t": 4, "index": 0, "num_parallel": 1}, {"source": "5", "target": "6", "t": 4, "index": 0, "num_parallel": 1}, {"source": "6", "target": "8", "t": 4, "index": 0, "num_parallel": 1}], "pauli_web": []}'), 350, 200, 50,
+  10.0, false, false, '');
+</script> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=20"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <h3 id=repeat-instructions-are-flattened><code>REPEAT</code> instructions are flattened<a class=anchor-link href=#repeat-instructions-are-flattened>¶</a></h3> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=21"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>TSIM does not support <code>REPEAT</code> instructions. Any <code>REPEAT</code> instructions will be flattened.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=22"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [10]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-10> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span> <span class=o>=</span> <span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=s2>"""</span>
 <span class=s2>    REPEAT 10 {</span>
 <span class=s2>        T 0</span>
 <span class=s2>    }</span>
 <span class=s2>"""</span><span class=p>)</span>
-<span class=nb>print</span><span class=p>(</span><span class=n>c</span><span class=p>)</span>
-</pre></div> <div class=clipboard-copy-txt id=cell-9>c = tsim.Circuit(""" REPEAT 10 { T 0 } """) print(c)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedText jp-OutputArea-output" data-mime-type=text/plain tabindex=0> <pre>REPEAT 10 {
-    T 0
+<span class=n>c</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>"pyzx"</span><span class=p>);</span>
+</pre></div> <div class=clipboard-copy-txt id=cell-10>c = tsim.Circuit(""" REPEAT 10 { T 0 } """) c.diagram("pyzx");</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type=text/html tabindex=0> <div id=graph-output-jivq26qt style="overflow:auto; background-color: white"></div> <script type=module>
+var d3;
+if (d3 == null) { d3 = await import("https://esm.sh/d3@5"); }
+var _settings_colors = JSON.parse('{"edge": "#000000", "Hedge": "#0088ff", "Xedge": "#999999", "Bedge": "#000000", "HBedge": "#0088ff", "boundary": "#000000", "X": "#ff8888", "Y": "#aabbff", "Z": "#ccffcc", "H": "#ffff66", "W": "#000000", "Zalt": "#ccffcc", "Walt": "#000000", "Zbold": "#ccffcc", "Xbold": "#ff8888", "Xdark": "#ff8888", "Ydark": "#aabbff", "Zdark": "#99dd99"}');
+// PyZX - Python library for quantum circuit rewriting 
+//        and optimisation using the ZX-calculus
+// Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// styling functions
+function nodeColor(t) {
+    if (t == 0) return _settings_colors['boundary'];
+    else if (t == 1) return _settings_colors['Z']; // "#ccffcc";
+    else if (t == 2) return _settings_colors['X']; // "#ff8888";
+    else if (t == 3) return _settings_colors['H']; // "yellow";
+    else if (t == 4) return _settings_colors['W']; // "black";
+    else if (t == 5) return _settings_colors['Walt']; // "black";
+    else if (t == 6) return _settings_colors['Zalt']; // "#ccffcc";
+    else if (t == 7) return _settings_colors['Zbold']; // "#ccffcc" bold Z
+    else if (t == 8) return _settings_colors['Xbold']; // "#ff8888" bold X
 }
-</pre> </div> </div> </div> </div> </div> </div> </div> <!-- jp-Notebook --> </div> <!-- jupyter-wrapper --> <style>
+
+function edgeColor(t) {
+    if (t == 1) return _settings_colors['edge']; //"black";
+    else if (t == 2) return _settings_colors['Hedge']; // "#08f";
+    else if (t == 3) return _settings_colors['Xedge']; // "gray";
+    else if (t == 4) return _settings_colors['Bedge']; // "black" bold
+    else if (t == 5) return _settings_colors['HBedge']; // "#0088ff" bold hadamard
+}
+
+function isBoldEdge(t) {
+    return t == 4 || t == 5;
+}
+
+function webColor(t) {
+    if (t == 'X') return _settings_colors['Xdark'];
+    else if (t == 'Y') return _settings_colors['Ydark'];
+    else if (t == 'Z') return _settings_colors['Zdark'];
+    else if (t == 'I') return '#dddddd';
+}
+
+function nodeStyle(selected, t) {
+    var bold = (t == 7 || t == 8);
+    if (selected) return "stroke-width: " + (bold ? "4" : "2") + "px; stroke: #00f";
+    return "stroke-width: " + (bold ? "3" : "1.5") + "px";
+}
+
+var symbolGround = {
+    draw: function(context, size){
+        let s = size/2;
+
+        context.moveTo(0,-s);
+        context.lineTo(0,0);
+
+        context.moveTo(-s,0);
+        context.lineTo(s,0);
+
+        context.moveTo(-2*s/3,s/3);
+        context.lineTo(2*s/3,s/3);
+
+        context.moveTo(-s/3,2*s/3);
+        context.lineTo(s/3,2*s/3);
+    }
+}
+
+function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_labels, scalar_str) {
+    var ntab = {};
+
+    var groundOffset = 2.5 * node_size;
+
+    graph.nodes.forEach(function(d) {
+        ntab[d.name] = d;
+        d.selected = false;
+        d.previouslySelected = false;
+        d.nhd = [];
+    });
+
+    var spiders_and_boundaries = graph.nodes.filter(function(d) {
+        return d.t != 3;
+    });
+
+    graph.links.forEach(function(d) {
+        var s = ntab[d.source];
+        var t = ntab[d.target];
+        d.source = s;
+        d.target = t;
+        s.nhd.push(t);
+        t.nhd.push(s);
+    });
+
+    graph.pauli_web.forEach(function(d) {
+        var s = ntab[d.source];
+        var t = ntab[d.target];
+        d.source = s;
+        d.target = t;
+    });
+
+    var shiftKey;
+
+    // SETUP SVG ITEMS
+
+    var svg = d3.select(tag)
+    //.attr("tabindex", 1)
+        .on("keydown.brush", function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
+        .on("keyup.brush", function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
+    //.each(function() { this.focus(); })
+        .append("svg")
+        .attr("style", "max-width: none; max-height: none")
+        .attr("width", width)
+        .attr("height", height);
+
+    var web = svg.append("g")
+        .attr("class", "web")
+        .selectAll("line")
+        .data(graph.pauli_web)
+        .enter().append("path")
+        .attr("stroke", function(d) { return webColor(d.t); })
+        .attr("fill", "transparent")
+        .attr("style", "stroke-width: 7px");
+
+    var link = svg.append("g")
+        .attr("class", "link")
+        .selectAll("line")
+        .data(graph.links)
+        .enter().append("path")
+        .attr("stroke", function(d) { return edgeColor(d.t); })
+        .attr("fill", "transparent")
+        .attr("style", function(d) { return isBoldEdge(d.t) ? "stroke-width: 3.5px" : "stroke-width: 1.5px"; });
+
+    var brush = svg.append("g")
+        .attr("class", "brush");
+
+    var node = svg.append("g")
+        .attr("class", "node")
+        .selectAll("g")
+        .data(graph.nodes)
+        .enter().append("g")
+        .attr("transform", function(d) {
+            return "translate(" + d.x + "," + d.y +")";
+        });
+
+    // Draw a ground symbol connected to the node.
+    node.filter(function(d) { return d.ground; })
+        .append("path")
+        .attr("stroke", "black")
+        .attr("style", "stroke-width: 1.5px")
+        .attr("fill", "none")
+        .attr("d", "M 0 0 L 0 "+(groundOffset))
+        .attr("class", "selectable");
+    node.filter(function(d) { return d.ground; })
+        .append("path")
+        .attr("stroke", "black")
+        .attr("style", "stroke-width: 1.5px")
+        .attr("fill", "none")
+        .attr("d", d3.symbol().type(symbolGround).size(node_size*1.5))
+        .attr("transform", "translate(0,"+groundOffset+")")
+        .attr("class", "selectable");
+
+    node.filter(function(d) { return d.t != 3 && d.t != 5 && d.t != 6; })
+        .append("circle")
+        .attr("r", function(d) {
+            if (d.t == 0) return 0.5 * node_size;
+            else if (d.t == 4) return 0.25 * node_size;
+            else return node_size;
+        })
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("stroke-width", function(d) { return (d.t == 7 || d.t == 8) ? 3 : 1.5; })
+        .attr("class", "selectable");
+
+    var hbox = node.filter(function(d) { return d.t == 3; });
+
+    hbox.append("rect")
+        .attr("x", -0.75 * node_size).attr("y", -0.75 * node_size)
+        .attr("width", node_size * 1.5).attr("height", node_size * 1.5)
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable");
+
+    // draw a triangle for d.t == 5
+    node.filter(function(d) { return d.t == 5; })
+        .append("path")
+        .attr("d", "M 0 0 L "+node_size+" "+node_size+" L -"+node_size+" "+node_size+" Z")
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable")
+        .attr("transform", "translate(" + (-node_size/2) + ", 0) rotate(-90)");
+
+    // draw a square for Z box: d.t == 6
+    node.filter(function(d) { return d.t == 6; })
+        .append("rect")
+        .attr("x", -0.75 * node_size).attr("y", -0.75 * node_size)
+        .attr("width", node_size * 1.5).attr("height", node_size * 1.5)
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable");
+
+    node.filter(function(d) { return d.phase != '' && d.phase.indexOf('[') === -1; })
+        .append("text")
+        .attr("y", 0.7 * node_size + 14)
+        .text(function (d) { return d.phase })
+        .attr("text-anchor", "middle")
+        .attr("font-size", "12px")
+        .attr("font-family", "monospace")
+        .attr("fill", "#00d")
+        .attr('style', 'pointer-events: none; user-select: none;');
+
+    node.filter(function(d) { return d.phase != '' && d.phase.indexOf('[') !== -1; })
+        .append("text")
+        .attr("y", -0.7 * node_size - 8)
+        .text(function (d) { return d.phase })
+        .attr("text-anchor", "middle")
+        .attr("font-size", "12px")
+        .attr("font-family", "monospace")
+        .attr("fill", "black")
+        .attr('style', 'pointer-events: none; user-select: none;');
+
+    if (show_labels) {
+        node.append("text")
+            .attr("y", -0.7 * node_size - 8)
+            .text(function (d) { return d.name; })
+            .attr("text-anchor", "middle")
+            .attr("font-size", "10px")
+            .attr("font-family", "monospace")
+            .attr("fill", "#999")
+            .attr('style', 'pointer-events: none; user-select: none;');
+    }
+
+    // Display the chosen data fields over the node.
+    node.filter(d => d.vdata.length > 0)
+        .append("text")
+        .attr("y", d => -0.7 * node_size - 14 - 10 * d.vdata.length)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "8px")
+        .attr("font-family", "monospace")
+        .attr("fill", "#c66")
+        .attr('style', 'pointer-events: none; user-select: none;')
+        .selectAll("tspan")
+        .data(d => d.vdata)
+        .enter()
+        .append("tspan")
+        .attr("x", "0")
+        .attr("dy", "1.2em")
+        .text(x => x.join(": "));
+
+    if (scalar_str != "") {
+        svg.append("text")
+            .text(scalar_str)
+            .attr("x", 60).attr("y", 40)
+            .attr("text-anchor", "middle")
+    }
+
+    function update_hboxes() {
+        if (auto_hbox) {
+            var pos = {};
+            hbox.attr("transform", function(d) {
+                // calculate barycenter of non-hbox neighbours, then nudge a bit
+                // to the NE.
+                var x=0,y=0,sz=0;
+                for (var i = 0; i < d.nhd.length; ++i) {
+                    if (d.nhd[i].t != 3) {
+                        sz++;
+                        x += d.nhd[i].x;
+                        y += d.nhd[i].y;
+                    }
+                }
+
+                offset = 0.25 * scale;
+
+                if (sz != 0) {
+                    x = (x/sz) + offset;
+                    y = (y/sz) - offset;
+
+                    while (pos[[x,y]]) {
+                        x += offset;
+                    }
+                    d.x = x;
+                    d.y = y;
+                    pos[[x,y]] = true;
+                }
+
+                return "translate("+d.x+","+d.y+")";
+            });
+        }
+    }
+
+    update_hboxes();
+
+    var link_curve = function(d) {
+        var x1 = d.source.x, x2 = d.target.x, y1 = d.source.y, y2 = d.target.y;
+        if (x1 == x2 && y1 == y2 && d.num_parallel == 1) {
+            var cx1 = x1 - 40;
+            var cy1 = y1 - 40;
+            var cx2 = x1 + 40;
+            var cy2 = y1 - 40;
+            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+        } else if (x1 == x2 && y1 == y2) {
+            var pos = d.index + 1;
+            var cx1 = x1 - 20 - pos * 10;
+            var cy1 = y1 - 20 - pos * 10;
+            var cx2 = x1 + 20 + pos * 10;
+            var cy2 = y1 - 20 - pos * 10;
+            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+        } else if (d.num_parallel == 1) {
+            return `M ${x1} ${y1} L ${x2} ${y2}`;
+        } else {
+            var dx = x2 - x1, dy = y2 - y1;
+            var midx = 0.5 * (x1 + x2), midy = 0.5 * (y1 + y2);
+            var pos = (d.index / (d.num_parallel-1)) - 0.5;
+            var cx = midx - pos * dy;
+            var cy = midy + pos * dx;
+            return `M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`;
+            // return `M ${x1} ${y1} L ${x2} ${y2}`;
+        }
+    };
+    link.attr("d", link_curve);
+
+
+    var web_curve = function(d) {
+        var x1 = d.source.x, x2 = (x1 + d.target.x)/2, y1 = d.source.y, y2 = (y1 + d.target.y)/2;
+        return `M ${x1} ${y1} L ${x2} ${y2}`;
+    }
+    web.attr("d", web_curve);
+
+    // EVENTS FOR DRAGGING AND SELECTION
+
+    node.on("mousedown", function(d) {
+        if (shiftKey) {
+            d3.select(this).selectAll(".selectable").attr("style", nodeStyle(d.selected = !d.selected, d.t));
+            d3.event.stopImmediatePropagation();
+        } else if (!d.selected) {
+            node.selectAll(".selectable").attr("style", function(p) { return nodeStyle(p.selected = d === p, p.t); });
+        }
+    })
+        .call(d3.drag().on("drag", function(d) {
+            var dx = d3.event.dx;
+            var dy = d3.event.dy;
+            // node.filter(function(d) { return d.selected; })
+            //     .attr("cx", function(d) { return d.x += dx; })
+            //     .attr("cy", function(d) { return d.y += dy; });
+            node.filter(function(d) { return d.selected; })
+                .attr("transform", function(d) {
+                    d.x += dx;
+                    d.y += dy;
+                    return "translate(" + d.x + "," + d.y +")";
+                });
+
+            update_hboxes();
+
+            link.filter(function(d) { return d.source.selected || d.target.selected ||
+                    (auto_hbox && d.source.t == 3); })
+                .attr("d", link_curve);
+            web.filter(function(d) { return d.source.selected || d.target.selected; })
+                .attr("d", web_curve);
+        }));
+
+    brush.call(d3.brush().keyModifiers(false)
+        .extent([[0, 0], [width, height]])
+        .on("start", function() {
+            if (d3.event.sourceEvent.type !== "end") {
+                node.selectAll(".selectable").attr("style", function(d) {
+                    return nodeStyle(
+                        d.selected = d.previouslySelected = shiftKey &&
+                        d.selected, d.t);
+                });
+            }
+        })
+        .on("brush", function() {
+            if (d3.event.sourceEvent.type !== "end") {
+                var selection = d3.event.selection;
+                node.selectAll(".selectable").attr("style", function(d) {
+                    return nodeStyle(d.selected = d.previouslySelected ^
+                        (selection != null
+                            && selection[0][0] <= d.x && d.x < selection[1][0]
+                            && selection[0][1] <= d.y && d.y < selection[1][1]), d.t);
+                });
+            }
+        })
+        .on("end", function() {
+            if (d3.event.selection != null) {
+                d3.select(this).call(d3.event.target.move, null);
+            }
+        }));
+}
+
+
+showGraph('#graph-output-jivq26qt',
+  JSON.parse('{"nodes": [{"name": "0", "x": 50.0, "y": 100.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "1", "x": 100.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "2", "x": 150.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "3", "x": 200.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "4", "x": 250.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "5", "x": 300.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "6", "x": 350.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "7", "x": 400.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "8", "x": 450.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "9", "x": 500.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "10", "x": 550.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "11", "x": 600.0, "y": 100.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}], "links": [{"source": "0", "target": "1", "t": 4, "index": 0, "num_parallel": 1}, {"source": "1", "target": "2", "t": 4, "index": 0, "num_parallel": 1}, {"source": "2", "target": "3", "t": 4, "index": 0, "num_parallel": 1}, {"source": "3", "target": "4", "t": 4, "index": 0, "num_parallel": 1}, {"source": "4", "target": "5", "t": 4, "index": 0, "num_parallel": 1}, {"source": "5", "target": "6", "t": 4, "index": 0, "num_parallel": 1}, {"source": "6", "target": "7", "t": 4, "index": 0, "num_parallel": 1}, {"source": "7", "target": "8", "t": 4, "index": 0, "num_parallel": 1}, {"source": "8", "target": "9", "t": 4, "index": 0, "num_parallel": 1}, {"source": "9", "target": "10", "t": 4, "index": 0, "num_parallel": 1}, {"source": "10", "target": "11", "t": 4, "index": 0, "num_parallel": 1}], "pauli_web": []}'), 650, 150, 50,
+  10.0, false, false, '');
+</script> </div> </div> </div> </div> </div> </div> </div> <!-- jp-Notebook --> </div> <!-- jupyter-wrapper --> <style>
         ['pre { line-height: 125%; }\ntd.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }\nspan.linenos { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }\ntd.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }\nspan.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }\n.highlight-ipynb .hll { background-color: var(--jp-cell-editor-active-background) }\n.highlight-ipynb { background: var(--jp-cell-editor-background); color: var(--jp-mirror-editor-variable-color) }\n.highlight-ipynb .c { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment */\n.highlight-ipynb .err { color: var(--jp-mirror-editor-error-color) } /* Error */\n.highlight-ipynb .k { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword */\n.highlight-ipynb .o { color: var(--jp-mirror-editor-operator-color); font-weight: bold } /* Operator */\n.highlight-ipynb .p { color: var(--jp-mirror-editor-punctuation-color) } /* Punctuation */\n.highlight-ipynb .ch { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment.Hashbang */\n.highlight-ipynb .cm { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment.Multiline */\n.highlight-ipynb .cp { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment.Preproc */\n.highlight-ipynb .cpf { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment.PreprocFile */\n.highlight-ipynb .c1 { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment.Single */\n.highlight-ipynb .cs { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment.Special */\n.highlight-ipynb .kc { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword.Constant */\n.highlight-ipynb .kd { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword.Declaration */\n.highlight-ipynb .kn { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword.Namespace */\n.highlight-ipynb .kp { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword.Pseudo */\n.highlight-ipynb .kr { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword.Reserved */\n.highlight-ipynb .kt { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword.Type */\n.highlight-ipynb .m { color: var(--jp-mirror-editor-number-color) } /* Literal.Number */\n.highlight-ipynb .s { color: var(--jp-mirror-editor-string-color) } /* Literal.String */\n.highlight-ipynb .ow { color: var(--jp-mirror-editor-operator-color); font-weight: bold } /* Operator.Word */\n.highlight-ipynb .pm { color: var(--jp-mirror-editor-punctuation-color) } /* Punctuation.Marker */\n.highlight-ipynb .w { color: var(--jp-mirror-editor-variable-color) } /* Text.Whitespace */\n.highlight-ipynb .mb { color: var(--jp-mirror-editor-number-color) } /* Literal.Number.Bin */\n.highlight-ipynb .mf { color: var(--jp-mirror-editor-number-color) } /* Literal.Number.Float */\n.highlight-ipynb .mh { color: var(--jp-mirror-editor-number-color) } /* Literal.Number.Hex */\n.highlight-ipynb .mi { color: var(--jp-mirror-editor-number-color) } /* Literal.Number.Integer */\n.highlight-ipynb .mo { color: var(--jp-mirror-editor-number-color) } /* Literal.Number.Oct */\n.highlight-ipynb .sa { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Affix */\n.highlight-ipynb .sb { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Backtick */\n.highlight-ipynb .sc { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Char */\n.highlight-ipynb .dl { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Delimiter */\n.highlight-ipynb .sd { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Doc */\n.highlight-ipynb .s2 { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Double */\n.highlight-ipynb .se { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Escape */\n.highlight-ipynb .sh { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Heredoc */\n.highlight-ipynb .si { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Interpol */\n.highlight-ipynb .sx { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Other */\n.highlight-ipynb .sr { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Regex */\n.highlight-ipynb .s1 { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Single */\n.highlight-ipynb .ss { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Symbol */\n.highlight-ipynb .il { color: var(--jp-mirror-editor-number-color) } /* Literal.Number.Integer.Long */']
         </style> </article> </div> <script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script> </div> <button type=button class="md-top md-icon" data-md-component=top hidden> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg> Back to top </button> </main> <footer class=md-footer> <nav class="md-footer__inner md-grid" aria-label=Footer> <a href=../magic_state_distillation/ class="md-footer__link md-footer__link--prev" aria-label="Previous: Logical magic state distillation"> <div class="md-footer__button md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg> </div> <div class=md-footer__title> <span class=md-footer__direction> Previous </span> <div class=md-ellipsis> Logical magic state distillation </div> </div> </a> <a href=../../reference/tsim/ class="md-footer__link md-footer__link--next" aria-label="Next: Index"> <div class=md-footer__title> <span class=md-footer__direction> Next </span> <div class=md-ellipsis> Index </div> </div> <div class="md-footer__button md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg> </div> </a> </nav> <div class="md-footer-meta md-typeset"> <div class="md-footer-meta__inner md-grid"> <div class=md-copyright> <div class=md-copyright__highlight> Copyright &copy; 2025 QuEra Computing, Inc. </div> Made with <a href=https://squidfunk.github.io/mkdocs-material/ target=_blank rel=noopener> Material for MkDocs </a> </div> <div class=md-social> <a href=https://x.com/QueraComputing target=_blank rel=noopener title=x.com class=md-social__link> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"/></svg> </a> <a href=https://www.linkedin.com/company/quera-computing-inc/ target=_blank rel=noopener title=www.linkedin.com class=md-social__link> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 448 512"><!-- Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg> </a> </div> </div> </div> </footer> </div> <div class=md-dialog data-md-component=dialog> <div class="md-dialog__inner md-typeset"></div> </div> <script id=__config type=application/json>{"annotate": null, "base": "../..", "features": ["announce.dismiss", "content.action.view", "content.action.edit", "content.code.annotate", "content.code.copy", "content.tooltips", "navigation.indexes", "navigation.sections", "navigation.tabs", "navigation.top", "navigation.tracking", "navigation.footer", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script> <script src=../../assets/javascripts/bundle.79ae519e.min.js></script> <script src=../../scripts/katex.js></script> <script src=https://unpkg.com/katex@0/dist/katex.min.js></script> <script src=https://unpkg.com/katex@0/dist/contrib/auto-render.min.js></script> </body> </html>
