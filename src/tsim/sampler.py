@@ -27,7 +27,7 @@ def _sample_component(
     component: CompiledComponent,
     f_params: jax.Array,
     key: PRNGKey,
-) -> tuple[jax.Array, PRNGKey]:
+) -> tuple[jax.Array, PRNGKey, jax.Array]:
     """Sample from component using autoregressive sampling.
 
     Args:
@@ -36,8 +36,8 @@ def _sample_component(
         key: JAX random key.
 
     Returns:
-        Tuple of (samples, next_key) where samples has shape
-        (batch_size, num_outputs_for_component).
+        Tuple of (samples, next_key, max_norm_deviation) where samples has
+        shape (batch_size, num_outputs_for_component).
 
     """
     batch_size = f_params.shape[0]
@@ -52,14 +52,22 @@ def _sample_component(
     prev = jnp.abs(evaluate(component.compiled_scalar_graphs[0], f_selected))
 
     ones = jnp.ones((batch_size, 1), dtype=jnp.bool_)
+    zero = jnp.zeros((1, 1), dtype=jnp.bool_)
+
+    max_norm_deviation = jnp.array(0.0)
 
     # Autoregressive sampling for remaining circuits
     for i, circuit in enumerate(component.compiled_scalar_graphs[1:]):
-        # Build params: [f_selected, m_accumulated[:, :i], trying_bit=1]
+        # Evaluate the real batch with trying_bit=1, plus one extra row for the
+        # first sample's prefix with trying_bit=0 used by the norm check.
         params = jnp.hstack([f_selected, m_accumulated[:, :i], ones])
+        check_row = jnp.hstack([f_selected[:1], m_accumulated[:1, :i], zero])
+        probs = jnp.abs(evaluate(circuit, jnp.vstack([params, check_row])))
+        p1 = probs[:batch_size]
+        p0_single = probs[-1]
 
-        # Evaluate P(bit=1 | previous bits)
-        p1 = jnp.abs(evaluate(circuit, params))
+        norm = (p0_single + p1[0]) / prev[0]
+        max_norm_deviation = jnp.maximum(max_norm_deviation, jnp.abs(norm - 1.0))
 
         key, subkey = jax.random.split(key)
         bits = jax.random.bernoulli(subkey, p=p1 / prev)
@@ -68,7 +76,7 @@ def _sample_component(
         # Update prev using chain rule
         prev = jnp.where(bits, p1, prev - p1)
 
-    return m_accumulated, key
+    return m_accumulated, key, max_norm_deviation
 
 
 @jax.jit
@@ -76,7 +84,7 @@ def _sample_component_jit(
     component: CompiledComponent,
     f_params: jax.Array,
     key: PRNGKey,
-) -> tuple[jax.Array, PRNGKey]:
+) -> tuple[jax.Array, PRNGKey, jax.Array]:
     """JIT-compiled version of _sample_component."""
     return _sample_component(component, f_params, key)
 
@@ -85,7 +93,7 @@ def sample_component(
     component: CompiledComponent,
     f_params: jax.Array,
     key: PRNGKey,
-) -> tuple[jax.Array, PRNGKey]:
+) -> tuple[jax.Array, PRNGKey, jax.Array]:
     """Sample outputs from a single component using autoregressive sampling.
 
     Args:
@@ -94,7 +102,7 @@ def sample_component(
         key: JAX random key.
 
     Returns:
-        Tuple of (samples, next_key) where samples has shape
+        Tuple of (samples, next_key, max_norm_deviation) where samples has shape
         (batch_size, num_outputs_for_component).
 
     """
@@ -124,7 +132,14 @@ def sample_program(
     results: list[jax.Array] = []
 
     for component in program.components:
-        samples, key = sample_component(component, f_params, key)
+        samples, key, max_norm_deviation = sample_component(component, f_params, key)
+        if max_norm_deviation > 1e-5:
+            raise AssertionError(
+                "A marginal probability was not normalized correctly "
+                f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
+                "This is likely the result of an underflow error. Please report this "
+                "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
+            )
         results.append(samples)
 
     combined = jnp.concatenate(results, axis=1)

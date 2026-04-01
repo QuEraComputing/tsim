@@ -108,8 +108,8 @@ class ExactScalarArray(eqx.Module):
 
         Aligns powers to the minimum power before summing.
         """
-        # TODO: check for overflow and potentially refactor sum routine to scan
-        # the array and reduce scalars every couple steps
+        # TODO: potentially refactor sum routine to reduce every couple steps
+        # to prevent overflow
 
         min_power = jnp.min(self.power, keepdims=True, axis=-1)
         pow = (self.power - min_power)[..., None]

@@ -1,5 +1,6 @@
 from test.helpers.gen import gen_stim_circuit
-
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pymatching
 import pytest
@@ -8,7 +9,9 @@ import stim
 from pyzx_param.simulate import DecompositionStrategy
 from tqdm import tqdm
 
+import tsim.sampler as sampler_module
 from tsim.circuit import Circuit
+from tsim.core.types import CompiledComponent, CompiledProgram
 from tsim.external.vec_sim.vec_sampler import VecSampler
 from tsim.sampler import CompiledStateProbs
 
@@ -99,6 +102,47 @@ def test_sampler(seed, strategy):
     tsim_samples = sampler.sample(n_samples, batch_size=batch_size)
 
     assert_samples_match(stim_samples, tsim_samples)
+
+
+def test_sample_program_raises_on_component_norm_deviation(monkeypatch):
+    components = (
+        CompiledComponent(
+            output_indices=(0,),
+            f_selection=jnp.array([], dtype=jnp.int32),
+            compiled_scalar_graphs=(),
+        ),
+        CompiledComponent(
+            output_indices=(1,),
+            f_selection=jnp.array([], dtype=jnp.int32),
+            compiled_scalar_graphs=(),
+        ),
+    )
+    program = CompiledProgram(
+        components=components,
+        output_order=jnp.array([0, 1]),
+        num_outputs=2,
+        num_f_params=0,
+        num_detectors=0,
+    )
+
+    component_results = iter(
+        [
+            (jnp.array([[False]]), jax.random.key(1), jnp.array(5e-7)),
+            (jnp.array([[True]]), jax.random.key(2), jnp.array(2e-5)),
+        ]
+    )
+
+    def fake_sample_component(component, f_params, key):
+        return next(component_results)
+
+    monkeypatch.setattr(sampler_module, "sample_component", fake_sample_component)
+
+    with pytest.raises(AssertionError, match="underflow error"):
+        sampler_module.sample_program(
+            program,
+            jnp.zeros((1, 0), dtype=jnp.bool_),
+            jax.random.key(0),
+        )
 
 
 @pytest.mark.parametrize(
@@ -461,7 +505,7 @@ if __name__ == "__main__":
             display(c.diagram("timeline-svg"))
 
             plot_comparison(
-                tsim_state_vector,
+                stim_state_vector,
                 tsim_state_vector,
                 pyzx_state_vector,
                 plot_difference=False,
