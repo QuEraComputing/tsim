@@ -138,7 +138,7 @@ def sample_program(
                 "A marginal probability was not normalized correctly "
                 f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
                 "This is likely the result of an underflow error. Please report this "
-                "as abug at https://github.com/QuEraComputing/tsim/issues/new."
+                "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
             )
         results.append(samples)
 
