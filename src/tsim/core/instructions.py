@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import IntEnum
 from fractions import Fraction
 from typing import Callable, Literal
 
@@ -16,6 +17,16 @@ from tsim.noise.channels import (
     pauli_channel_1_probs,
     pauli_channel_2_probs,
 )
+
+
+class _EdgeTypeBold(IntEnum):
+    SIMPLE = 4
+    HADAMARD = 5
+
+
+class _VertexTypeBold(IntEnum):
+    Z = 7
+    X = 8
 
 
 @dataclass
@@ -36,6 +47,17 @@ class GraphRepresentation:
     correlated_error_probs: list[float] = field(default_factory=list)
     num_error_bits: int = 0
     num_correlated_error_bits: int = 0
+    track_classical_wires: bool = False
+
+    @property
+    def edge_type(self):
+        """Edge type enum."""
+        return _EdgeTypeBold if self.track_classical_wires else EdgeType
+
+    @property
+    def vertex_type(self):
+        """Vertex type enum."""
+        return _VertexTypeBold if self.track_classical_wires else VertexType
 
     @property
     def observables(self) -> list[int]:
@@ -70,7 +92,7 @@ def add_lane(b: GraphRepresentation, qubit: int) -> int:
     """Initialize a qubit lane if it doesn't exist."""
     v1 = b.graph.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=0)
     v2 = b.graph.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=1)
-    b.graph.add_edge((v1, v2))
+    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
     b.first_vertex[qubit] = v1
     b.last_vertex[qubit] = v2
     return v1
@@ -91,20 +113,20 @@ def x_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply X-axis rotation to qubit. This is equivalent to `r_x` up to a phase."""
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
-    b.graph.set_type(v1, VertexType.X)
+    b.graph.set_type(v1, b.vertex_type.X)
     b.graph.set_phase(v1, phase)
     v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2))
+    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
 
 
 def z_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply Z-axis phase rotation to qubit. This is equivalent to `r_z` up to a phase."""
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
-    b.graph.set_type(v1, VertexType.Z)
+    b.graph.set_type(v1, b.vertex_type.Z)
     b.graph.set_phase(v1, phase)
     v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2))
+    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
 
 
 def t(b: GraphRepresentation, qubit: int) -> None:
@@ -205,9 +227,9 @@ def h(b: GraphRepresentation, qubit: int) -> None:
     b.graph.set_edge_type(
         e,
         (
-            EdgeType.HADAMARD
-            if b.graph.edge_type(e) == EdgeType.SIMPLE
-            else EdgeType.SIMPLE
+            b.edge_type.HADAMARD
+            if b.graph.edge_type(e) == b.edge_type.SIMPLE
+            else b.edge_type.SIMPLE
         ),
     )
 
@@ -283,8 +305,8 @@ def _cx_cz(
     classically_controlled: list[bool] | None = None,
 ) -> None:
     """Implement CNOT or CZ gate depending on is_cx flag."""
-    edge_type = EdgeType.SIMPLE if is_cx else EdgeType.HADAMARD
-    vertex_type = VertexType.X if is_cx else VertexType.Z
+    edge_type = b.edge_type.SIMPLE if is_cx else b.edge_type.HADAMARD
+    vertex_type = b.vertex_type.X if is_cx else b.vertex_type.Z
 
     m_vertex = 0
     if classically_controlled:
@@ -305,10 +327,10 @@ def _cx_cz(
     row = max(lr1, lr2)
 
     v1 = b.last_vertex[control]
-    b.graph.set_type(v1, VertexType.Z)
+    b.graph.set_type(v1, b.vertex_type.Z)
     b.graph.set_row(v1, row)
     v3 = add_dummy(b, control, int(row + 1))
-    b.graph.add_edge((v1, v3))
+    b.graph.add_edge((v1, v3), b.edge_type.SIMPLE)
 
     if control == target:
         row += 1
@@ -317,7 +339,7 @@ def _cx_cz(
     b.graph.set_type(v2, vertex_type)
     b.graph.set_row(v2, row)
     v4 = add_dummy(b, target, int(row + 1))
-    b.graph.add_edge((v2, v4))
+    b.graph.add_edge((v2, v4), b.edge_type.SIMPLE)
 
     if classically_controlled:
         b.graph.add_edge((m_vertex, v2), edge_type)
@@ -508,7 +530,7 @@ def _error(b: GraphRepresentation, qubit: int, error_type: int, phase: str) -> N
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
     v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2))
+    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
 
     b.graph.set_type(v1, error_type)
     b.graph.set_phase(v1, phase)
@@ -519,8 +541,8 @@ def pauli_channel_1(
 ) -> None:
     """Apply single-qubit Pauli channel with given X, Y, Z error probabilities."""
     b.channel_probs.append(pauli_channel_1_probs(px, py, pz))
-    _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
-    _error(b, qubit, VertexType.X, f"e{b.num_error_bits + 1}")
+    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits}")
+    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits + 1}")
     b.num_error_bits += 2
 
 
@@ -550,10 +572,10 @@ def pauli_channel_2(
             pix, piy, piz, pxi, pxx, pxy, pxz, pyi, pyx, pyy, pyz, pzi, pzx, pzy, pzz
         )
     )
-    _error(b, qubit_i, VertexType.Z, f"e{b.num_error_bits}")
-    _error(b, qubit_i, VertexType.X, f"e{b.num_error_bits + 1}")
-    _error(b, qubit_j, VertexType.Z, f"e{b.num_error_bits + 2}")
-    _error(b, qubit_j, VertexType.X, f"e{b.num_error_bits + 3}")
+    _error(b, qubit_i, b.vertex_type.Z, f"e{b.num_error_bits}")
+    _error(b, qubit_i, b.vertex_type.X, f"e{b.num_error_bits + 1}")
+    _error(b, qubit_j, b.vertex_type.Z, f"e{b.num_error_bits + 2}")
+    _error(b, qubit_j, b.vertex_type.X, f"e{b.num_error_bits + 3}")
     b.num_error_bits += 4
 
 
@@ -588,7 +610,7 @@ def depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) ->
 def x_error(b: GraphRepresentation, qubit: int, p: float) -> None:
     """Apply X error with probability p."""
     b.channel_probs.append(error_probs(p))
-    _error(b, qubit, VertexType.X, f"e{b.num_error_bits}")
+    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits}")
     b.num_error_bits += 1
 
 
@@ -596,15 +618,15 @@ def y_error(b: GraphRepresentation, qubit: int, p: float) -> None:
     """Apply Y error with probability p."""
     b.channel_probs.append(error_probs(p))
     # Y = X·Z, so both vertices use the same error bit
-    _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
-    _error(b, qubit, VertexType.X, f"e{b.num_error_bits}")
+    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits}")
+    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits}")
     b.num_error_bits += 1
 
 
 def z_error(b: GraphRepresentation, qubit: int, p: float) -> None:
     """Apply Z error with probability p."""
     b.channel_probs.append(error_probs(p))
-    _error(b, qubit, VertexType.Z, f"e{b.num_error_bits}")
+    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits}")
     b.num_error_bits += 1
 
 
@@ -681,7 +703,7 @@ def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -
         b.graph.set_phase(v1, f"m[{len(b.silent_rec)}]")
         b.silent_rec.append(v1)
     v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2))
+    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
     b.graph.scalar.add_power(-1)
 
 
@@ -689,7 +711,7 @@ def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
     """Perform reset on qubit, optionally tracing out previous state."""
     if qubit not in b.last_vertex:
         v1 = add_lane(b, qubit)
-        b.graph.set_type(v1, VertexType.X)
+        b.graph.set_type(v1, b.vertex_type.X)
         b.graph.scalar.add_power(-1)
     else:
         v = b.last_vertex[qubit]
@@ -699,11 +721,11 @@ def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
             _m(b, qubit, silent=True)
         row = last_row(b, qubit)
         v1 = b.last_vertex[qubit]
-        b.graph.set_type(v1, VertexType.X)
+        b.graph.set_type(v1, b.vertex_type.X)
         v2 = list(b.graph.neighbors(v1))[0]
         b.graph.remove_edge((v1, v2))
         v3 = add_dummy(b, qubit, row + 1)
-        b.graph.add_edge((v1, v3))
+        b.graph.add_edge((v1, v3), b.edge_type.SIMPLE)
         b.graph.scalar.add_power(-1)
 
 
