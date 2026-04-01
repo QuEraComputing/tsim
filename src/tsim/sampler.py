@@ -384,8 +384,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             A numpy array containing the measurement samples.
 
         """
-        result = self._sample_batches(shots, batch_size)
-        return result
+        return self._sample_batches(shots, batch_size)
 
 
 def _maybe_bit_pack(array: np.ndarray, *, bit_packed: bool) -> np.ndarray:
@@ -504,23 +503,22 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             num_detectors = self._num_detectors
 
             # Check cross-batch consistency only for the requested columns
-            requested_columns = np.zeros(reference.shape[0], dtype=bool)
-            requested_columns[:num_detectors] = not skip_detector_reference_sample
-            requested_columns[num_detectors:] = not skip_observable_reference_sample
-            selected_columns = np.flatnonzero(requested_columns)
-            remaining_references = np.asarray(reference_samples[1:]).reshape(
-                -1, reference.shape[0]
-            )
-            if not np.all(
-                np.take(remaining_references, selected_columns, axis=1)
-                == np.take(reference, selected_columns, axis=0)
-            ):
-                warnings.warn(
-                    "Reference samples differ across batches. "
-                    "Consider skipping the reference sample.",
-                    UserWarning,
-                    stacklevel=2,
-                )
+            if len(reference_samples) > 1:
+                requested_columns = np.zeros(reference.shape[0], dtype=bool)
+                requested_columns[:num_detectors] = not skip_detector_reference_sample
+                requested_columns[num_detectors:] = not skip_observable_reference_sample
+                selected_columns = np.flatnonzero(requested_columns)
+                remaining_references = np.asarray(reference_samples[1:])
+                if not np.all(
+                    remaining_references[:, selected_columns]
+                    == reference[selected_columns]
+                ):
+                    warnings.warn(
+                        "Non-deterministic reference sample detected. "
+                        "Consider skipping the reference sample.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
 
             if not skip_detector_reference_sample:
                 samples[:, :num_detectors] ^= reference[:num_detectors]
