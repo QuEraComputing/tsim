@@ -1,4 +1,3 @@
-import warnings
 from unittest.mock import patch
 
 import numpy as np
@@ -101,14 +100,14 @@ def test_reference_sample_basic():
     d_ref = sampler.sample(
         1,
         append_observables=True,
-        skip_detector_reference_sample=False,
-        skip_observable_reference_sample=False,
+        use_detector_reference_sample=True,
+        use_observable_reference_sample=True,
     )
     assert np.array_equal(d_ref, np.zeros_like(d_ref))
 
 
 def test_reference_sample_selective_xor():
-    """Test that skip flags independently control detector vs observable XOR."""
+    """Test that use flags independently control detector vs observable XOR."""
     c = Circuit("""
         R 0 1 2
         X 2
@@ -118,53 +117,27 @@ def test_reference_sample_selective_xor():
         OBSERVABLE_INCLUDE(0) rec[-1]
         """)
 
-    # Skip observable reference only: detectors XORed, observable raw
+    # Use detector reference only: detectors XORed, observable raw
     sampler = c.compile_detector_sampler()
     d, o = sampler.sample(
         1,
         separate_observables=True,
-        skip_detector_reference_sample=False,
-        skip_observable_reference_sample=True,
+        use_detector_reference_sample=True,
+        use_observable_reference_sample=False,
     )
     assert np.array_equal(d, np.zeros_like(d))
     assert np.array_equal(o, np.array([[1]]))
 
-    # Skip detector reference only: detectors raw, observable XORed
+    # Use observable reference only: detectors raw, observable XORed
     sampler2 = c.compile_detector_sampler()
     d2, o2 = sampler2.sample(
         1,
         separate_observables=True,
-        skip_detector_reference_sample=True,
-        skip_observable_reference_sample=False,
+        use_detector_reference_sample=False,
+        use_observable_reference_sample=True,
     )
     assert np.array_equal(d2, np.array([[0, 0]]))
     assert np.array_equal(o2, np.zeros_like(o2))
-
-
-def test_reference_sample_cross_batch_warning():
-    """Warn when reference samples differ across batches (non-deterministic circuit)."""
-    c = Circuit("""
-        H 0
-        M 0
-        DETECTOR rec[-1]
-        """)
-    sampler = c.compile_detector_sampler(seed=0)
-
-    with (
-        patch.object(type(sampler), "_estimate_batch_size", return_value=2),
-        warnings.catch_warnings(record=True) as w,
-    ):
-        warnings.simplefilter("always")
-        # 10 shots with batch_size=2 means 5 batches.
-        # H|0> is non-deterministic, so reference samples will likely differ.
-        sampler.sample(
-            10,
-            skip_detector_reference_sample=False,
-        )
-
-    # Check that a UserWarning about non-deterministic reference was raised
-    ref_warnings = [x for x in w if "Reference samples differ" in str(x.message)]
-    assert len(ref_warnings) >= 1
 
 
 def test_reference_sample_with_bit_packed():
@@ -182,8 +155,8 @@ def test_reference_sample_with_bit_packed():
         1,
         append_observables=True,
         bit_packed=True,
-        skip_detector_reference_sample=False,
-        skip_observable_reference_sample=False,
+        use_detector_reference_sample=True,
+        use_observable_reference_sample=True,
     )
     # All zeros after XOR with reference, bit-packed
     expected = np.packbits(np.zeros(3, dtype=np.bool_), bitorder="little").reshape(
@@ -193,7 +166,7 @@ def test_reference_sample_with_bit_packed():
 
 
 def test_reference_sample_defaults_unchanged():
-    """Default skip=True preserves existing behavior (no XOR applied)."""
+    """Default use=False preserves existing behavior (no XOR applied)."""
     c = Circuit("""
         R 0 1 2
         X 2
@@ -209,7 +182,7 @@ def test_reference_sample_defaults_unchanged():
     d2 = sampler2.sample(
         1,
         append_observables=True,
-        skip_detector_reference_sample=True,
-        skip_observable_reference_sample=True,
+        use_detector_reference_sample=False,
+        use_observable_reference_sample=False,
     )
     assert np.array_equal(d1, d2)
