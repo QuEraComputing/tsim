@@ -83,6 +83,73 @@ def test_auto_batch(shots, expected_batch_size):
     ] * 4
 
 
+@pytest.fixture()
+def make_sampler():
+    """Create a sampler with mocked internals for fast batch-logic tests."""
+
+    def _make(max_batch_size: int = 30):
+        c = Circuit("H 0\nM 0")
+        sampler = c.compile_sampler(seed=0)
+        return sampler, max_batch_size
+
+    return _make
+
+
+@pytest.mark.parametrize(
+    ("shots", "max_batch", "batch_size", "compute_ref", "expected_bs", "expected_n"),
+    [
+        # Has leeway: 25*4=100 > 99 → stays 25
+        (99, 30, None, True, 25, 4),
+        # No leeway: 25*4=100 == 100 → bumped to 26
+        (100, 30, None, True, 26, 4),
+        # Many shots, still uniform
+        (200, 30, None, True, 29, 7),
+        # No reference: batch_size unaffected
+        (100, 30, None, False, 25, 4),
+        # Explicit batch_size, no leeway → bump
+        (100, None, 50, True, 51, 2),
+        # Explicit batch_size, has leeway → stays
+        (100, None, 51, True, 51, 2),
+    ],
+    ids=[
+        "leeway-no-bump",
+        "no-leeway-bump",
+        "many-shots-uniform",
+        "no-reference",
+        "explicit-no-leeway",
+        "explicit-leeway",
+    ],
+)
+def test_batch_size_with_reference(
+    make_sampler, shots, max_batch, batch_size, compute_ref, expected_bs, expected_n
+):
+    """Verify batch sizes are uniform (no JIT retrace) and sized correctly."""
+    sampler, mb = make_sampler(max_batch or 9999)
+
+    with (
+        patch.object(type(sampler), "_estimate_batch_size", return_value=mb),
+        patch.object(
+            sampler._channel_sampler,
+            "sample",
+            wraps=sampler._channel_sampler.sample,
+        ) as spy,
+    ):
+        result = sampler._sample_batches(
+            shots, batch_size=batch_size, compute_reference=compute_ref
+        )
+
+    if compute_ref:
+        samples, ref = result
+        assert samples.shape == (shots, 1)
+        assert ref.shape == (1,)
+    else:
+        assert result.shape == (shots, 1)
+
+    batch_sizes = [call.args[0] for call in spy.call_args_list]
+    assert all(bs == expected_bs for bs in batch_sizes)
+    assert len(batch_sizes) == expected_n
+
+
 def test_reference_sample_basic():
     """Reference sample XORs noiseless outcome with detector results."""
     c = Circuit("""

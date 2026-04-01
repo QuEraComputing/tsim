@@ -245,25 +245,28 @@ class _CompiledSamplerBase:
         Args:
             shots: Number of samples to draw.
             batch_size: Samples per batch. Auto-determined if None.
-            compute_reference: If True, use the first sample slot in the first
-                batch for a noiseless reference sample (f_params=0). Internally
-                samples shots+1 rows to compensate.
+            compute_reference: If True, add one extra sample to the first
+                batch for a noiseless reference (f_params=0).
 
         Returns:
             Samples array, or (samples, reference) tuple when compute_reference=True.
 
         """
-        total = shots + 1 if compute_reference else shots
-
         if batch_size is None:
             max_batch_size = self._estimate_batch_size()
-            num_batches = max(1, ceil(total / max_batch_size))
-            batch_size = ceil(total / num_batches)
+            num_batches = max(1, ceil(shots / max_batch_size))
+            batch_size = ceil(shots / num_batches)
+
+        if compute_reference:
+            num_batches = ceil(shots / batch_size)
+            has_leeway = batch_size * num_batches > shots
+            if not has_leeway:
+                batch_size += 1
 
         batches: list[jax.Array] = []
         reference: np.ndarray | None = None
 
-        for _ in range(ceil(total / batch_size)):
+        for _ in range(ceil(shots / batch_size)):
             f_params_np = self._channel_sampler.sample(batch_size)
 
             if compute_reference and reference is None:
