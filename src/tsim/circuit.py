@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from fractions import Fraction
 from typing import Any, Iterable, Literal, Sequence, Union, cast, overload
 
 import pyzx_param as zx
@@ -12,6 +13,7 @@ from pyzx_param.simulate import DecompositionStrategy
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.noise.dem import get_detector_error_model
+from tsim.utils.clifford import parametric_to_clifford_gates
 from tsim.utils.diagram import render_svg
 from tsim.utils.program_text import shorthand_to_stim, stim_to_shorthand
 
@@ -322,8 +324,69 @@ class Circuit:
 
     @property
     def stim_circuit(self) -> stim.Circuit:
-        """Return the underlying stim circuit."""
-        return self._stim_circ.copy()
+        """Return the underlying stim circuit.
+
+        Parametric rotation instructions whose angles are all half-π multiples
+        are expanded into their equivalent Clifford gates.
+        """
+        circ = stim.Circuit()
+        for instr in self._stim_circ:
+            assert not isinstance(instr, stim.CircuitRepeatBlock)
+
+            if instr.name == "I" and instr.tag:
+                result = parse_parametric_tag(instr.tag)
+                if result is not None:
+                    gate_name, params = result
+                    clifford_gates = parametric_to_clifford_gates(gate_name, params)
+                    if clifford_gates is not None:
+                        targets = [t.value for t in instr.targets_copy()]
+                        for gate in clifford_gates:
+                            circ.append(gate, targets, [])
+                        continue
+
+            circ.append(instr)
+        return circ
+
+    @property
+    def is_clifford(self) -> bool:
+        """Check if the circuit is a Clifford circuit.
+
+        A circuit is a Clifford circuit if it only contains Clifford gates (i.e. half-pi
+        multiples of the rotation angles).
+
+        Returns:
+            True if the circuit is a Clifford circuit, otherwise False.
+
+        """
+
+        def is_half_pi_multiple(phase: Fraction) -> bool:
+            return phase.denominator <= 2
+
+        for instr in self._stim_circ:
+            assert not isinstance(instr, stim.CircuitRepeatBlock)
+
+            if instr.name in {"S", "S_DAG"} and instr.tag == "T":
+                return False
+
+            if instr.name == "I" and instr.tag:
+                result = parse_parametric_tag(instr.tag)
+                if result is None:
+                    return False
+
+                gate_name, params = result
+                if gate_name in {"R_X", "R_Y", "R_Z"}:
+                    if not is_half_pi_multiple(params["theta"]):
+                        return False
+                elif gate_name == "U3":
+                    if not all(
+                        is_half_pi_multiple(params[name])
+                        for name in ("theta", "phi", "lambda")
+                    ):
+                        return False
+                else:
+                    return False
+
+        return True
 
     @property
     def num_measurements(self) -> int:

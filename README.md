@@ -1,3 +1,8 @@
+[![Docs](https://img.shields.io/badge/docs-latest-blue?style=flat&logo=materialformkdocs)](https://queracomputing.github.io/tsim/latest)
+[![Coverage](https://img.shields.io/codecov/c/github/QuEraComputing/tsim?style=flat&logo=codecov)](https://codecov.io/gh/QuEraComputing/tsim)
+[![arXiv](https://img.shields.io/badge/arXiv-2403.06777-b31b1b.svg?style=flat&logo=arxiv)](https://arxiv.org/abs/2403.06777)
+[![Like This? Leave a star](https://img.shields.io/github/stars/QuEraComputing/tsim?style=flat&label=Like%20Tsim%3F%20Leave%20a%20star&color=yellow&logo=github)](https://github.com/QuEraComputing/tsim)
+
 # tsim
 
 A GPU-accelerated circuit sampler via ZX-calculus stabilizer rank decomposition.
