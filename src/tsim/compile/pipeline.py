@@ -7,6 +7,7 @@ from typing import Literal
 import jax.numpy as jnp
 import pyzx_param as zx
 from pyzx_param.graph.base import BaseGraph
+from pyzx_param.simulate import DecompositionStrategy
 
 from tsim.compile.compile import CompiledScalarGraphs, compile_scalar_graphs
 from tsim.compile.stabrank import find_stab
@@ -20,6 +21,7 @@ def compile_program(
     prepared: SamplingGraph,
     *,
     mode: DecompositionMode,
+    strategy: DecompositionStrategy = "cat5",
 ) -> CompiledProgram:
     """Compile a prepared graph into an executable sampling program.
 
@@ -37,6 +39,8 @@ def compile_program(
         mode: Decomposition mode:
             - "sequential": For sampling - creates [0, 1, 2, ..., n] circuits
             - "joint": For probability estimation - creates [0, n] circuits
+        strategy: Stabilizer rank decomposition strategy.
+            Must be one of "cat5", "bss", "cutting".
 
     Returns:
         A CompiledProgram ready for sampling.
@@ -58,6 +62,7 @@ def compile_program(
             component=component,
             f_indices_global=f_indices_global,
             mode=mode,
+            strategy=strategy,
         )
         compiled_components.append(compiled)
         output_order.extend(component.output_indices)
@@ -89,6 +94,7 @@ def _compile_component(
     component: ConnectedComponent,
     f_indices_global: list[int],
     mode: DecompositionMode,
+    strategy: DecompositionStrategy = "cat5",
 ) -> CompiledComponent:
     """Compile a single connected component.
 
@@ -96,6 +102,7 @@ def _compile_component(
         component: The connected component to compile.
         f_indices_global: Global list of all f-parameter indices (numerically sorted).
         mode: Decomposition mode (sequential or joint).
+        strategy: Stabilizer rank decomposition strategy.
 
     Returns:
         A CompiledComponent ready for sampling.
@@ -142,7 +149,7 @@ def _compile_component(
         param_names += [f"m{output_indices[j]}" for j in range(num_m_plugged)]
 
         # Perform stabilizer rank decomposition and compile
-        g_list = find_stab(g_copy)
+        g_list = find_stab(g_copy, strategy=strategy)
 
         if len(g_list) == 1:
             # This is a Clifford graph, we can clear the global phase terms
