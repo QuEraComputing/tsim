@@ -177,8 +177,8 @@
 
 <span class=sd>    Aligns powers to the minimum power before summing.</span>
 <span class=sd>    &quot;&quot;&quot;</span>
-    <span class=c1># TODO: check for overflow and potentially refactor sum routine to scan</span>
-    <span class=c1># the array and reduce scalars every couple steps</span>
+    <span class=c1># TODO: potentially refactor sum routine to reduce every couple steps</span>
+    <span class=c1># to prevent overflow</span>
 
     <span class=n>min_power</span> <span class=o>=</span> <span class=n>jnp</span><span class=o>.</span><span class=n>min</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>power</span><span class=p>,</span> <span class=n>keepdims</span><span class=o>=</span><span class=kc>True</span><span class=p>,</span> <span class=n>axis</span><span class=o>=-</span><span class=mi>1</span><span class=p>)</span>
     <span class=nb>pow</span> <span class=o>=</span> <span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>power</span> <span class=o>-</span> <span class=n>min_power</span><span class=p>)[</span><span class=o>...</span><span class=p>,</span> <span class=kc>None</span><span class=p>]</span>

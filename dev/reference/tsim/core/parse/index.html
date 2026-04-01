@@ -70,8 +70,9 @@
     <span class=k>return</span> <span class=n>gate_name</span><span class=p>,</span> <span class=n>params</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.parse.parse_stim_circuit class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">parse_stim_circuit</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>parse_stim_circuit</span><span class=p>(</span>
     <span class=n>stim_circuit</span><span class=p>:</span> <span class=n>Circuit</span><span class=p>,</span>
+    <span class=n>track_classical_wires</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>GraphRepresentation</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Parse a stim circuit into a GraphRepresentation.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>stim_circuit</code> </td> <td> <code><span title=stim.Circuit>Circuit</span></code> </td> <td> <div class=doc-md-description> <p>The stim circuit to convert.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">GraphRepresentation</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Parse a stim circuit into a GraphRepresentation.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>stim_circuit</code> </td> <td> <code><span title=stim.Circuit>Circuit</span></code> </td> <td> <div class=doc-md-description> <p>The stim circuit to convert.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>track_classical_wires</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Whether to track classical wires.</p> </div> </td> <td> <code>False</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">GraphRepresentation</span>
 
 
   <span class="doc doc-labels">
@@ -210,19 +211,23 @@
 <span class=normal>192</span>
 <span class=normal>193</span>
 <span class=normal>194</span>
-<span class=normal>195</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
+<span class=normal>195</span>
+<span class=normal>196</span>
+<span class=normal>197</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
     <span class=n>stim_circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span>
+    <span class=n>track_classical_wires</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>GraphRepresentation</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Parse a stim circuit into a GraphRepresentation.</span>
 
 <span class=sd>    Args:</span>
 <span class=sd>        stim_circuit: The stim circuit to convert.</span>
+<span class=sd>        track_classical_wires: Whether to track classical wires.</span>
 
 <span class=sd>    Returns:</span>
 <span class=sd>        A GraphRepresentation containing the ZX graph and all auxiliary data.</span>
 
 <span class=sd>    &quot;&quot;&quot;</span>
-    <span class=n>b</span> <span class=o>=</span> <span class=n>GraphRepresentation</span><span class=p>()</span>
+    <span class=n>b</span> <span class=o>=</span> <span class=n>GraphRepresentation</span><span class=p>(</span><span class=n>track_classical_wires</span><span class=o>=</span><span class=n>track_classical_wires</span><span class=p>)</span>
 
     <span class=k>for</span> <span class=n>instruction</span> <span class=ow>in</span> <span class=n>stim_circuit</span><span class=o>.</span><span class=n>flattened</span><span class=p>():</span>
         <span class=k>assert</span> <span class=ow>not</span> <span class=nb>isinstance</span><span class=p>(</span><span class=n>instruction</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>CircuitRepeatBlock</span><span class=p>)</span>
