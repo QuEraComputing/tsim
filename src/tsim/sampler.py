@@ -483,10 +483,14 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             bit_packed: Defaults to false. When set, results are bit-packed.
             use_detector_reference_sample: Defaults to False. When True, a noiseless
                 reference sample is computed and XORed with detector outcomes so that
-                results represent deviations from the noiseless baseline.
+                results represent deviations from the noiseless baseline. This should
+                only be used when detectors are deterministic. Otherwise, it can
+                unpredictably change the results.
             use_observable_reference_sample: Defaults to False. When True, a noiseless
                 reference sample is computed and XORed with observable outcomes so that
-                results represent deviations from the noiseless baseline.
+                results represent deviations from the noiseless baseline. This should
+                only be used when observables are deterministic. Otherwise, it can
+                unpredictably change the results.
 
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.
