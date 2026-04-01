@@ -227,7 +227,7 @@ def test_circuit_mul():
     c1 = Circuit("H 0")
     c1_stim = c1._stim_circ.copy()
     c2 = c1 * 3
-    assert c2._stim_circ == (c1_stim * 3).flattened()
+    assert c2._stim_circ == c1_stim * 3
 
 
 def test_circuit_without_noise():
@@ -240,6 +240,24 @@ def test_circuit_without_annotations():
     c = Circuit("H 0\nOBSERVABLE_INCLUDE(0) rec[-1]\nDETECTOR rec[-1]\nM 0")
     c_clean = c.without_annotations()
     assert c_clean._stim_circ == stim.Circuit("H 0\nM 0")
+
+
+def test_without_annotations_repeat_block():
+    c = Circuit("H 0")
+    block = stim.CircuitRepeatBlock(
+        3, stim.Circuit("CNOT 0 1\nM 0\nDETECTOR rec[-1]\nM 0")
+    )
+    c.append(block)
+    c.append("OBSERVABLE_INCLUDE", [stim.target_rec(-1)], 0)
+
+    c_clean = c.without_annotations()
+    # structure should be preserved
+    assert len(c_clean) == 2
+    inst = c_clean[1]
+    assert isinstance(inst, stim.CircuitRepeatBlock)
+    assert inst.repeat_count == 3
+    # annotations should be stripped inside the repeat block too
+    assert c_clean.flattened() == c.flattened().without_annotations()
 
 
 def test_circuit_eq():
@@ -319,8 +337,7 @@ def test_circuit_imul():
     """Test in-place multiplication."""
     c = Circuit("H 0")
     c *= 3
-    expected = Circuit("H 0\nH 0\nH 0")
-    assert c == expected
+    assert c.flattened() == Circuit("H 0\nH 0\nH 0")
 
 
 def test_circuit_imul_zero():
@@ -334,8 +351,7 @@ def test_circuit_rmul():
     """Test right multiplication (n * circuit)."""
     c = Circuit("H 0")
     result = 3 * c
-    expected = Circuit("H 0\nH 0\nH 0")
-    assert result == expected
+    assert result.flattened() == Circuit("H 0\nH 0\nH 0")
 
 
 def test_circuit_getitem_int():
@@ -477,6 +493,31 @@ def test_tcount_with_t_gates():
     assert c.tcount() == 3
 
 
+def test_is_clifford_with_stim_gates():
+    c = Circuit("H 0\nCNOT 0 1\nM 0 1\nDETECTOR rec[-1]")
+    assert c.is_clifford
+
+
+def test_is_clifford_with_half_pi_parametric_gates():
+    c = Circuit("R_Z(0.5) 0\nR_X(-1.5) 0\nU3(0.5, -1.0, 1.5) 0")
+    assert c.is_clifford
+
+
+def test_is_clifford_rejects_t_gate():
+    c = Circuit("T 0")
+    assert not c.is_clifford
+
+
+def test_is_clifford_rejects_non_clifford_rotation():
+    c = Circuit("H 0\nR_Z(0.25) 0\nCNOT 0 1")
+    assert not c.is_clifford
+
+
+def test_is_clifford_rejects_non_clifford_u3():
+    c = Circuit("U3(0.5, 0.25, 1.0) 0")
+    assert not c.is_clifford
+
+
 def test_get_graph():
     """Test get_graph returns a ZX graph."""
     c = Circuit("H 0\nCNOT 0 1")
@@ -571,6 +612,18 @@ def test_inverse_mixed_circuit():
     assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
 
 
+def test_inverse_with_repeat_block():
+    c = Circuit("H 0\nT 0\nR_Z(0.22) 0\nCNOT 0 1")
+    c_repeat = c * 3
+    c_inv = c_repeat.inverse()
+    # inverse should preserve repeat structure, not flatten
+    assert len(c_inv) == len(c_repeat)
+    assert isinstance(c_inv[0], stim.CircuitRepeatBlock)
+    assert c_inv.flattened() == c_repeat.flattened().inverse()
+    combined = (c_repeat + c_inv).to_matrix()
+    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+
+
 def test_diagram_timeline_svg():
     c = Circuit("H 0\nCNOT 0 1\nM 0 1")
     diagram = c.diagram(type="timeline-svg")
@@ -628,3 +681,111 @@ def test_diagram_pyzx_scale_horizontally(
         g = c.diagram(type=type, scale_horizontally=2)
         mock_draw.assert_called_once()
     assert hasattr(g, "vertices")
+
+
+def test_append():
+    c = Circuit()
+    c.append("T", [0, 1])
+    assert str(c) == "T 0 1"
+
+    c.append("T_DAG", 2)
+    assert "T_DAG 2" in str(c)
+
+    c.append("R_Z", 0, arg=0.25)
+    assert "R_Z(0.25) 0" in str(c)
+
+    c.append("R_X", 1, arg=[0.1])
+    assert "R_X(0.1) 1" in str(c)
+
+    c.append("U3", 0, arg=(0.3, 0.24, 0.49))
+    assert "U3(0.3, 0.24, 0.49) 0" in str(c)
+
+
+def test_append_circuit_instruction():
+    c = Circuit()
+    c.append(stim.CircuitInstruction("H", [0]))
+    assert str(c) == "H 0"
+
+
+def test_append_circuit_repeat_block():
+    c = Circuit()
+    block = stim.CircuitRepeatBlock(3, stim.Circuit("H 0"))
+    c.append(block)
+    assert str(c.flattened()) == "H 0 0 0"
+    assert len(c) == 1  # single repeat block
+
+
+def test_append_circuit():
+    c = Circuit()
+    sub_c = stim.Circuit("H 0\nCNOT 0 1")
+    c.append(sub_c)
+    assert "H 0" in str(c)
+    assert "CX 0 1" in str(c) or "CNOT 0 1" in str(c)
+
+
+def test_append_repetition_code():
+    stim_c = stim.Circuit.generated("repetition_code:memory", distance=2, rounds=4)
+    c = Circuit()
+    for instr in stim_c:
+        c.append(instr)
+
+    assert str(c.flattened()) == str(stim_c.flattened())
+    assert str(c) == str(stim_c)
+
+
+def _circuit_with_repeat_block() -> Circuit:
+    """Helper: build a Circuit that contains a REPEAT block."""
+    c = Circuit("H 0")
+    block = stim.CircuitRepeatBlock(5, stim.Circuit("CNOT 0 1\nTICK"))
+    c.append(block)
+    c.append("M", [0, 1])
+    return c
+
+
+def test_mul_preserves_repeat_block():
+    """c * n should wrap in a repeat block, not flatten."""
+    c = Circuit("H 0\nCNOT 0 1")
+    c2 = c * 4
+    assert c2._stim_circ == c._stim_circ * 4
+    # flattened form should equal the naive expansion
+    assert c2.flattened() == c + c + c + c
+
+
+def test_imul_preserves_repeat_block():
+    c = Circuit("H 0\nCNOT 0 1")
+    flat_4x = c + c + c + c
+    c *= 4
+    assert c.flattened() == flat_4x
+
+
+def test_getitem_repeat_block():
+    """Indexing into a circuit may return a CircuitRepeatBlock."""
+    c = _circuit_with_repeat_block()
+    item = c[1]
+    assert isinstance(item, stim.CircuitRepeatBlock)
+    assert item.repeat_count == 5
+
+
+def test_getitem_slice_with_repeat_block():
+    c = _circuit_with_repeat_block()
+    sliced = c[0:2]
+    assert isinstance(sliced, Circuit)
+    assert len(sliced) == 2
+
+
+def test_pop_repeat_block():
+    c = Circuit()
+    block = stim.CircuitRepeatBlock(3, stim.Circuit("X 0"))
+    c.append(block)
+    popped = c.pop()
+    assert isinstance(popped, stim.CircuitRepeatBlock)
+    assert popped.repeat_count == 3
+    assert len(c) == 0
+
+
+def test_copy_preserves_repeat_block():
+    c = _circuit_with_repeat_block()
+    c2 = c.copy()
+    assert c == c2
+    assert c is not c2
+    assert str(c) == str(c2)

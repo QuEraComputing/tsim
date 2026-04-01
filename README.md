@@ -1,3 +1,8 @@
+[![Docs](https://img.shields.io/badge/docs-latest-blue?style=flat&logo=materialformkdocs)](https://queracomputing.github.io/tsim/latest)
+[![Coverage](https://img.shields.io/codecov/c/github/QuEraComputing/tsim?style=flat&logo=codecov)](https://codecov.io/gh/QuEraComputing/tsim)
+[![arXiv](https://img.shields.io/badge/arXiv-2403.06777-b31b1b.svg?style=flat&logo=arxiv)](https://arxiv.org/abs/2403.06777)
+[![Like This? Leave a star](https://img.shields.io/github/stars/QuEraComputing/tsim?style=flat&label=Like%20Tsim%3F%20Leave%20a%20star&color=yellow&logo=github)](https://github.com/QuEraComputing/tsim)
+
 # tsim
 
 A GPU-accelerated circuit sampler via ZX-calculus stabilizer rank decomposition.
@@ -51,9 +56,9 @@ detector_sampler = c.compile_detector_sampler()
 samples = detector_sampler.sample(shots=100)
 ```
 
-TSIM supports non-deterministic detectors and observables. An important consequence is that
-TSIM will simulate actual detector samples, whereas STIM only reports detection flips (i.e. detection samples XORed with
-a noiseless reference sample). Concretely,
+TSIM supports non-deterministic detectors and observables. By default,
+TSIM will simulate actual detector samples, whereas STIM reports detection flips (i.e. detection samples XORed with
+a noiseless reference sample). For example,
 ```python
 c = tsim.Circuit(
     """
@@ -67,6 +72,17 @@ samples = sampler.sample(shots=100)
 print(samples)
 ```
 will report `True` values, whereas the same circuit would result in `False` values in Stim.
+
+To match STIM's behavior, use the `use_detector_reference_sample` and `use_observable_reference_sample` parameters:
+```python
+samples = sampler.sample(
+    shots=100,
+    use_detector_reference_sample=True,
+    use_observable_reference_sample=True,
+)
+```
+When set to `True`, a noiseless reference sample is computed and XORed with the
+results, so that output values represent deviations from the noiseless baseline.
 
 ## What is TSIM?
 

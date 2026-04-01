@@ -1,13 +1,18 @@
 from test.helpers.gen import gen_stim_circuit
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pymatching
 import pytest
 import pyzx_param as zx
 import stim
+from pyzx_param.simulate import DecompositionStrategy
 from tqdm import tqdm
 
+import tsim.sampler as sampler_module
 from tsim.circuit import Circuit
+from tsim.core.types import CompiledComponent, CompiledProgram
 from tsim.external.vec_sim.vec_sampler import VecSampler
 from tsim.sampler import CompiledStateProbs
 
@@ -58,7 +63,10 @@ def assert_samples_match(samples1: np.ndarray, samples2: np.ndarray):
         "color_code:memory_xyz",
     ],
 )
-def test_quantum_memory_codes_without_noise(code_task: str):
+@pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting"])
+def test_quantum_memory_codes_without_noise(
+    code_task: str, strategy: DecompositionStrategy
+):
 
     circ = stim.Circuit.generated(
         code_task,
@@ -70,13 +78,14 @@ def test_quantum_memory_codes_without_noise(code_task: str):
         after_reset_flip_probability=0.0,
     )
     c = Circuit.from_stim_program(circ)
-    sampler = c.compile_detector_sampler(seed=0)
+    sampler = c.compile_detector_sampler(strategy=strategy, seed=0)
     samples = sampler.sample(10)
     assert not np.any(samples)
 
 
 @pytest.mark.parametrize("seed", [1, 2, 42])
-def test_sampler(seed):
+@pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting"])
+def test_sampler(seed, strategy):
     num_qubits = 3
     stim_circuit = gen_stim_circuit(
         num_qubits, 100, include_measurements=True, seed=seed
@@ -88,12 +97,56 @@ def test_sampler(seed):
 
     # Sample from both simulators
     stim_sampler = VecSampler(stim_circuit)
-    sampler = circuit.compile_sampler(seed=seed)
+    sampler = circuit.compile_sampler(strategy=strategy, seed=seed)
 
     stim_samples, _, _ = stim_sampler.sample(n_samples)
     tsim_samples = sampler.sample(n_samples, batch_size=batch_size)
 
     assert_samples_match(stim_samples, tsim_samples)
+
+
+def test_sample_program_raises_on_component_norm_deviation(monkeypatch):
+    components = (
+        CompiledComponent(
+            output_indices=(0,),
+            f_selection=jnp.array([], dtype=jnp.int32),
+            compiled_scalar_graphs=(),
+        ),
+        CompiledComponent(
+            output_indices=(1,),
+            f_selection=jnp.array([], dtype=jnp.int32),
+            compiled_scalar_graphs=(),
+        ),
+    )
+    program = CompiledProgram(
+        components=components,
+        direct_f_indices=jnp.array([], dtype=jnp.int32),
+        direct_flips=jnp.array([], dtype=jnp.bool_),
+        output_order=jnp.array([0, 1]),
+        output_reindex=None,
+        num_outputs=2,
+        num_f_params=0,
+        num_detectors=0,
+    )
+
+    component_results = iter(
+        [
+            (jnp.array([[False]]), jax.random.key(1), jnp.array(5e-7)),
+            (jnp.array([[True]]), jax.random.key(2), jnp.array(2e-5)),
+        ]
+    )
+
+    def fake_sample_component(component, f_params, key):
+        return next(component_results)
+
+    monkeypatch.setattr(sampler_module, "sample_component", fake_sample_component)
+
+    with pytest.raises(AssertionError, match="underflow error"):
+        sampler_module.sample_program(
+            program,
+            jnp.zeros((1, 0), dtype=jnp.bool_),
+            jax.random.key(0),
+        )
 
 
 @pytest.mark.parametrize(
@@ -284,14 +337,12 @@ def test_mpp_inversion_parity(stim_program: str):
 
 
 def test_channel_simplification():
-    c = Circuit(
-        """
+    c = Circuit("""
         X_ERROR(0.1) 0
         X_ERROR(0.1) 0
         X_ERROR(0.1) 0
         M 0
-        """
-    )
+        """)
     sampler = c.compile_sampler(seed=42)
 
     # Check that channels were simplified into a single equivalent channel
@@ -328,11 +379,14 @@ def simulate_with_vec_sampler(stim_circuit: stim.Circuit) -> np.ndarray:
     return np.abs(state_vector) ** 2
 
 
-def simulate_with_tsim(stim_circuit: stim.Circuit) -> np.ndarray:
+def simulate_with_tsim(
+    stim_circuit: stim.Circuit, strategy: DecompositionStrategy = "cat5"
+) -> np.ndarray:
     """Compute state probabilities using tsim's CompiledStateProbs.
 
     Args:
         stim_circuit: The stim circuit (with tags) to simulate. Should not include measurements.
+        strategy: Stabilizer rank decomposition strategy.
 
     Returns:
         Array of probabilities for each computational basis state.
@@ -343,7 +397,7 @@ def simulate_with_tsim(stim_circuit: stim.Circuit) -> np.ndarray:
         "M " + " ".join([str(i) for i in range(stim_circuit.num_qubits)])
     )
     circuit = Circuit.from_stim_program(stim_circuit_with_m)
-    prob_sampler = CompiledStateProbs(circuit)
+    prob_sampler = CompiledStateProbs(circuit, strategy=strategy)
 
     probabilities = []
     for i in range(2**num_qubits):
@@ -378,14 +432,15 @@ def simulate_with_pyzx_tensor(stim_circuit: stim.Circuit) -> np.ndarray:
 
 @pytest.mark.parametrize("num_qubits", [3, 4])
 @pytest.mark.parametrize("seed", [1, 2])
-def test_compare_to_statevector_simulator_and_pyzx_tensor(num_qubits, seed):
+@pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting"])
+def test_compare_to_statevector_simulator_and_pyzx_tensor(num_qubits, seed, strategy):
     stim_circuit = gen_stim_circuit(
         num_qubits,
         100,
         include_measurements=False,
         seed=seed,
     )
-    tsim_state_vector = simulate_with_tsim(stim_circuit)
+    tsim_state_vector = simulate_with_tsim(stim_circuit, strategy=strategy)
     pyzx_state_vector = simulate_with_pyzx_tensor(stim_circuit)
     stim_state_vector = simulate_with_vec_sampler(stim_circuit)
 
@@ -395,8 +450,9 @@ def test_compare_to_statevector_simulator_and_pyzx_tensor(num_qubits, seed):
 
 @pytest.mark.parametrize("num_qubits", [3, 4])
 @pytest.mark.parametrize("seed", [2, 42])
+@pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting"])
 def test_compare_to_statevector_simulator_and_pyzx_tensor_with_arbitrary_rotations(
-    num_qubits, seed
+    num_qubits, seed, strategy
 ):
     stim_circuit = gen_stim_circuit(
         num_qubits,
@@ -411,7 +467,7 @@ def test_compare_to_statevector_simulator_and_pyzx_tensor_with_arbitrary_rotatio
     c = Circuit.from_stim_program(stim_circuit)
     assert zx.simplify.u3_count(c.get_graph()) > 0
 
-    tsim_state_vector = simulate_with_tsim(stim_circuit)
+    tsim_state_vector = simulate_with_tsim(stim_circuit, strategy=strategy)
     pyzx_state_vector = simulate_with_pyzx_tensor(stim_circuit)
     stim_state_vector = simulate_with_vec_sampler(stim_circuit)
 
@@ -453,7 +509,7 @@ if __name__ == "__main__":
             display(c.diagram("timeline-svg"))
 
             plot_comparison(
-                tsim_state_vector,
+                stim_state_vector,
                 tsim_state_vector,
                 pyzx_state_vector,
                 plot_difference=False,

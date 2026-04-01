@@ -72,7 +72,7 @@ def wrap_svg(
         return svg
 
     return f"""
-    <div style="overflow-x: scroll; ">
+    <div style="overflow-x: scroll; background: white; width: fit-content;">
     <div style="width: {computed_width}px">
     {svg}
     </div>
@@ -210,11 +210,24 @@ def tagged_gates_to_placeholder(
         of the I_ERROR placeholder gates to the actual gate names.
 
     """
-    modified_circ = stim.Circuit()
     replace_dict: dict[float, GateLabel] = {}
+    modified_circ = _replace_tagged_gates(circuit, replace_dict)
+    return modified_circ, replace_dict
+
+
+def _replace_tagged_gates(
+    circuit: stim.Circuit,
+    replace_dict: dict[float, GateLabel],
+) -> stim.Circuit:
+    modified_circ = stim.Circuit()
 
     for instr in circuit:
-        assert not isinstance(instr, stim.CircuitRepeatBlock)
+        if isinstance(instr, stim.CircuitRepeatBlock):
+            modified_body = _replace_tagged_gates(instr.body_copy(), replace_dict)
+            modified_circ.append(
+                stim.CircuitRepeatBlock(instr.repeat_count, modified_body)
+            )
+            continue
 
         # Handle T gates (S[T] and S_DAG[T])
         if instr.tag == "T" and instr.name in ["S", "S_DAG"]:
@@ -255,7 +268,7 @@ def tagged_gates_to_placeholder(
                 continue
 
         modified_circ.append(instr)
-    return modified_circ, replace_dict
+    return modified_circ
 
 
 def render_svg(
