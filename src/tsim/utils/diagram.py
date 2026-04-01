@@ -72,7 +72,7 @@ def wrap_svg(
         return svg
 
     return f"""
-    <div style="overflow-x: scroll; ">
+    <div style="overflow-x: scroll; background: white; width: fit-content;">
     <div style="width: {computed_width}px">
     {svg}
     </div>

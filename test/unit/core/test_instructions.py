@@ -8,9 +8,14 @@ from typing import Callable
 
 import numpy as np
 import pytest
+from pyzx_param.utils import EdgeType, VertexType
 
 from tsim.core import instructions
-from tsim.core.instructions import GraphRepresentation
+from tsim.core.instructions import (
+    GraphRepresentation,
+    _EdgeTypeBold,
+    _VertexTypeBold,
+)
 
 
 def _build_and_get_matrix(gate_func: Callable | tuple[Callable, Callable], *args):
@@ -177,3 +182,35 @@ def test_my():
     id = np.eye(2)
     result = _build_and_get_matrix(instructions.my, 0)
     assert np.allclose(result, id / np.sqrt(2))
+
+
+class TestClassicalWireTracking:
+
+    def test_type_properties_default(self):
+        """Default GraphRepresentation uses standard pyzx types."""
+        b = GraphRepresentation()
+        assert b.edge_type is EdgeType
+        assert b.vertex_type is VertexType
+
+    def test_type_properties_bold(self):
+        """With track_classical_wires=True, bold types are used."""
+        b = GraphRepresentation(track_classical_wires=True)
+        assert b.edge_type is _EdgeTypeBold
+        assert b.vertex_type is _VertexTypeBold
+        assert b.edge_type.SIMPLE != EdgeType.SIMPLE
+        assert b.edge_type.HADAMARD != EdgeType.HADAMARD
+        assert b.vertex_type.Z != VertexType.Z
+        assert b.vertex_type.X != VertexType.X
+
+    def test_bold_types_in_graph(self):
+        """Graph operations use bold edge/vertex types when tracking classical wires."""
+        b = GraphRepresentation(track_classical_wires=True)
+        instructions.z_phase(b, 0, Fraction(1, 4))
+
+        # The lane edge and the gate edge should both use bold SIMPLE
+        for e in b.graph.edges():
+            assert b.graph.edge_type(e) == _EdgeTypeBold.SIMPLE
+
+        # The Z-phase vertex should use bold Z type
+        types = [b.graph.type(v) for v in b.graph.vertices()]
+        assert _VertexTypeBold.Z in types
