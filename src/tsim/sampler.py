@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from math import ceil
 from typing import TYPE_CHECKING, Literal, overload
 
@@ -215,22 +216,75 @@ class _CompiledSamplerBase:
         half_of_available = int(available * 0.5)  # conservative estimate
         return max(1, half_of_available // self._peak_bytes_per_sample())
 
-    def _sample_batches(self, shots: int, batch_size: int | None = None) -> np.ndarray:
-        """Sample in batches and concatenate results."""
+    @overload
+    def _sample_batches(
+        self,
+        shots: int,
+        batch_size: int | None = None,
+        *,
+        compute_reference: Literal[False] = False,
+    ) -> np.ndarray: ...
+
+    @overload
+    def _sample_batches(
+        self,
+        shots: int,
+        batch_size: int | None = None,
+        *,
+        compute_reference: Literal[True],
+    ) -> tuple[np.ndarray, list[np.ndarray]]: ...
+
+    def _sample_batches(
+        self,
+        shots: int,
+        batch_size: int | None = None,
+        *,
+        compute_reference: bool = False,
+    ) -> np.ndarray | tuple[np.ndarray, list[np.ndarray]]:
+        """Sample in batches and concatenate results.
+
+        Args:
+            shots: Number of samples to draw.
+            batch_size: Samples per batch. Auto-determined if None.
+            compute_reference: If True, prepend a zero-f_params row to each batch
+                to compute a noiseless reference sample.
+
+        Returns:
+            Samples array, or (samples, reference_samples) tuple when
+            compute_reference=True. reference_samples is a list with one
+            reference per batch.
+
+        """
         if batch_size is None:
             max_batch_size = self._estimate_batch_size()
             num_batches = max(1, ceil(shots / max_batch_size))
             batch_size = ceil(shots / num_batches)
 
         batches: list[jax.Array] = []
+        reference_samples: list[np.ndarray] = []
+
         for _ in range(ceil(shots / batch_size)):
             f_params_np = self._channel_sampler.sample(batch_size)
+
+            if compute_reference:
+                zero_row = np.zeros((1, f_params_np.shape[1]), dtype=f_params_np.dtype)
+                f_params_np = np.concatenate([zero_row, f_params_np])
+
             f_params = jnp.asarray(f_params_np)
             self._key, subkey = jax.random.split(self._key)
             samples = sample_program(self._program, f_params, subkey)
+
+            if compute_reference:
+                reference_samples.append(np.asarray(samples[0]))
+                samples = samples[1:]
+
             batches.append(samples)
 
-        return np.concatenate(batches)[:shots]
+        result = np.concatenate(batches)[:shots]
+
+        if compute_reference:
+            return result, reference_samples
+        return result
 
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""
@@ -330,7 +384,8 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             A numpy array containing the measurement samples.
 
         """
-        return self._sample_batches(shots, batch_size)
+        result = self._sample_batches(shots, batch_size)
+        return result
 
 
 def _maybe_bit_pack(array: np.ndarray, *, bit_packed: bool) -> np.ndarray:
@@ -377,6 +432,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         append_observables: bool = False,
         separate_observables: Literal[True],
         bit_packed: bool = False,
+        skip_detector_reference_sample: bool = True,
+        skip_observable_reference_sample: bool = True,
     ) -> tuple[np.ndarray, np.ndarray]: ...
 
     @overload
@@ -389,6 +446,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         append_observables: bool = False,
         separate_observables: Literal[False] = False,
         bit_packed: bool = False,
+        skip_detector_reference_sample: bool = True,
+        skip_observable_reference_sample: bool = True,
     ) -> np.ndarray: ...
 
     def sample(
@@ -400,6 +459,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         append_observables: bool = False,
         separate_observables: bool = False,
         bit_packed: bool = False,
+        skip_detector_reference_sample: bool = True,
+        skip_observable_reference_sample: bool = True,
     ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         """Return detector samples from the circuit.
 
@@ -421,12 +482,52 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             append_observables: Defaults to false. When set, observables are included
                 with the detectors and are placed at the end of the results.
             bit_packed: Defaults to false. When set, results are bit-packed.
+            skip_detector_reference_sample: Defaults to True. When False, a noiseless
+                reference sample is computed and XORed with detector outcomes so that
+                results represent deviations from the noiseless baseline.
+            skip_observable_reference_sample: Defaults to True. When False, a noiseless
+                reference sample is computed and XORed with observable outcomes so that
+                results represent deviations from the noiseless baseline.
 
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.
 
         """
-        samples = self._sample_batches(shots, batch_size)
+        compute_reference = (
+            not skip_detector_reference_sample or not skip_observable_reference_sample
+        )
+
+        if compute_reference:
+            result = self._sample_batches(shots, batch_size, compute_reference=True)
+            samples, reference_samples = result
+            reference = reference_samples[0]
+            num_detectors = self._num_detectors
+
+            # Check cross-batch consistency only for the requested columns
+            requested_columns = np.zeros(reference.shape[0], dtype=bool)
+            requested_columns[:num_detectors] = not skip_detector_reference_sample
+            requested_columns[num_detectors:] = not skip_observable_reference_sample
+            selected_columns = np.flatnonzero(requested_columns)
+            remaining_references = np.asarray(reference_samples[1:]).reshape(
+                -1, reference.shape[0]
+            )
+            if not np.all(
+                np.take(remaining_references, selected_columns, axis=1)
+                == np.take(reference, selected_columns, axis=0)
+            ):
+                warnings.warn(
+                    "Reference samples differ across batches. "
+                    "Consider skipping the reference sample.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+            if not skip_detector_reference_sample:
+                samples[:, :num_detectors] ^= reference[:num_detectors]
+            if not skip_observable_reference_sample:
+                samples[:, num_detectors:] ^= reference[num_detectors:]
+        else:
+            samples = self._sample_batches(shots, batch_size)
 
         if append_observables:
             return _maybe_bit_pack(samples, bit_packed=bit_packed)
