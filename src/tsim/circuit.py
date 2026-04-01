@@ -658,9 +658,10 @@ class Circuit:
                 phase = list(phase_vars)[0]
                 if phase.startswith("det") or phase.startswith("obs"):
                     row = g.row(v)
+                    qubit = -2 if phase.startswith("det") else -2.5
                     vb = g.add_vertex(
                         VertexType.BOUNDARY,
-                        qubit=-2,
+                        qubit=qubit,
                         row=row,
                     )
                     g.add_edge((v, vb))
