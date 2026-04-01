@@ -30,7 +30,7 @@ pip install "bloqade-tsim[cuda13]"
 
 
 ## Quick Start
-An introductory tutorial is available [here](https://queracomputing.github.io/tsim/latest/demos/encoding_demo/).
+An introductory tutorial is available [here](https://queracomputing.github.io/tsim/latest/demos/encoding_demo/). Please also refer to the [documentation](https://queracomputing.github.io/tsim/latest/).
 
 For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and currently supports all [Stim gates](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference).
 
@@ -70,7 +70,7 @@ The observable diagram is used to compute marginal probabilities for autoregress
 
 At sampling time, JIT-compiled XLA kernels contract $g_{tki}$ with batched noise configurations $f_i^{s}$ to evaluate marginal probabilities and autoregressively sample detector and observable bits.
 
-# Differences to Stim
+## Differences to Stim
 Tsim supports non-deterministic detectors and observables. An important consequence is that
 Tsim will simulate actual detector samples, whereas Stim only reports detection flips (i.e. detection samples XORed with
 a noiseless reference sample). Concretely,
