@@ -5,7 +5,7 @@
 
 # Tsim
 
-A GPU-accelerated circuit sampler via ZX-calculus stabilizer rank decomposition.
+A GPU-accelerated quantum circuit sampler based on ZX-calculus stabilizer rank decomposition.
 Tsim feels just like [Stim](https://github.com/quantumlib/Stim), but supports non-Clifford gates.
 
 
@@ -32,7 +32,7 @@ pip install "bloqade-tsim[cuda13]"
 ## Quick Start
 An introductory tutorial is available [here](https://queracomputing.github.io/tsim/latest/demos/encoding_demo/). Please also refer to the [documentation](https://queracomputing.github.io/tsim/latest/).
 
-For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and currently supports all [Stim gates](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference).
+For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and currently supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference).
 
 Additionally, Tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, and `U3`.
 ```python
@@ -60,17 +60,15 @@ samples = detector_sampler.sample(shots=100)
 
 
 ## Architecture
-
-
 ![Architecture](docs/architecture.svg)
 A detailed description of Tsim's architecture is given in PUBLICATION.
 Quantum programs are translated into ZX diagrams in which Pauli noise channels appear as parameterized vertices with binary variables $e_i$.
-ZX simplification factors the diagram into a classical part, that represents the Tanner graph, and a quantum part containing the observable circuit. Both parts define a new basis of \textit{error mechanisms} $f_i = \bigoplus_j T_{ij}\,e_j$.
-The observable diagram is used to compute marginal probabilities for autoregressive sampling. Here, each diagram is decomposed into a sum of Clifford terms via stabilizer rank decomposition, following [Sutcliffe and Kissinger (2025)](https://arxiv.org/abs/2403.06777), and compiled into binary JAX tensors $g_{tki}$.
+ZX simplification factors the diagram into a classical part that represents the Tanner graph and a quantum part containing the observable circuit. Both parts define a new basis of *error mechanisms* $f_i = \bigoplus_j T_{ij}\,e_j$.
+The observable diagram is used to compute marginal probabilities for autoregressive sampling. Here, each diagram is decomposed into a sum of Clifford terms via stabilizer rank decomposition, following [Sutcliffe and Kissinger (2024)](https://arxiv.org/abs/2403.06777), and compiled into binary JAX tensors $g_{tki}$.
 
 At sampling time, JIT-compiled XLA kernels contract $g_{tki}$ with batched noise configurations $f_i^{s}$ to evaluate marginal probabilities and autoregressively sample detector and observable bits.
 
-## Differences to Stim
+## Differences from Stim
 Tsim supports non-deterministic detectors and observables. An important consequence is that
 Tsim will simulate actual detector samples, whereas Stim only reports detection flips (i.e. detection samples XORed with
 a noiseless reference sample). Concretely,
@@ -97,14 +95,21 @@ samples = sampler.sample(
 Note that this feature should be used carefully. If detectors or observables are not deterministic, this may lead to incorrect statistics.
 
 
+## Benchmarks
+
+With GPU acceleration, Tsim can achieve sampling throughput for low-magic circuits that approaches the throughput of Stim on Clifford circuits of the same size. The figure below shows a comparison for [distillation circuits](https://arxiv.org/html/2412.15165v1) (35 and 85 qubits), [cultivation circuits](https://arxiv.org/abs/2409.17595), and rotated surface code circuits.
+Tsim can be five orders of magnitude faster than [quizx](https://github.com/zxcalc/quizx).
+
+![Benchmarks](docs/benchmark-figure.svg)
+
 
 ## Supported Instructions
 
-Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference). In addition, Tsim definesthe following non-Clifford instructions:
+Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference). In addition, Tsim defines the following non-Clifford instructions:
 
-### 'T' and 'T_DAG'
+### `T` and `T_DAG`
 
-The T gate applies a π/4 phase rotation around the Z axis, and T_DAG is its inverse:
+The `T` gate applies a π/4 phase rotation around the Z axis, and `T_DAG` is its inverse:
 
 
 
@@ -113,7 +118,7 @@ T 0 1 2  # Apply T to qubits 0, 1, 2
 T_DAG 0  # Apply T_DAG to qubit 0
 ```
 
-### Rotation Gates: 'R_X', 'R_Y', 'R_Z'
+### Rotation Gates: `R_X`, `R_Y`, `R_Z`
 
 Rotation gates around the X, Y, and Z axes by an angle θ = α·π (where α is specified as the parameter):
 
@@ -125,7 +130,7 @@ R_Y(0.25) 1  # Rotate qubit 1 around Y by π/4
 R_Z(0.125) 2  # Rotate qubit 2 around Z by π/8
 ```
 
-### 'U3' Gate
+### `U3` Gate
 
 The general single-qubit unitary with three parameters (θ, φ, λ), each specified as a multiple of π:
 
@@ -135,8 +140,14 @@ The general single-qubit unitary with three parameters (θ, φ, λ), each specif
 U3(0.5, 0.25, 0.125) 0  # Apply U3 with θ=π/2, φ=π/4, λ=π/8
 ```
 
+## Publications Using Tsim
+
+- [Simulating magic state cultivation with few Clifford terms](https://arxiv.org/abs/2509.08658) by Kwok Ho Wan and Zhenghao Zhong.
+
+
+
 ## Citing Tsim
-If you are using Tsim, please consider citing the following reference:
+If you use Tsim, please consider citing the paper describing the core simulation approach:
 ```
 @article{tsim2026,
   title={Tsim: Fast Universal Simulator for Quantum Error Correction},
