@@ -488,15 +488,14 @@ if __name__ == "__main__":
         seed = initial_seed + i
         random.seed(seed)
         stim_circuit = gen_stim_circuit(
-            qubits=7,
-            depth=100,  # reduce depth when using U3 gates
+            qubits=3,
+            depth=10,  # reduce depth when using U3 gates
             include_measurements=False,
             seed=seed,
-            p_r_x=0,
-            p_r_y=0,
-            p_r_z=0,
-            p_u3=0,
-            p_t=0,
+            p_r_x=1,
+            p_r_y=1,
+            p_r_z=1,
+            p_u3=1,
         )
         tsim_state_vector = simulate_with_tsim(stim_circuit)
         pyzx_state_vector = simulate_with_pyzx_tensor(stim_circuit)
