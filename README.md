@@ -100,7 +100,7 @@ Note that this feature should be used carefully. If detectors or observables are
 With GPU acceleration, Tsim can achieve sampling throughput for low-magic circuits that approaches the throughput of Stim on Clifford circuits of the same size. The figure below shows a comparison for [distillation circuits](https://arxiv.org/html/2412.15165v1) (35 and 85 qubits), [cultivation circuits](https://arxiv.org/abs/2409.17595), and rotated surface code circuits.
 Tsim can be five orders of magnitude faster than [quizx](https://github.com/zxcalc/quizx).
 
-![Benchmarks](docs/benchmark-figure.svg)
+![Benchmarks](docs/benchmarks.svg)
 
 
 ## Supported Instructions
