@@ -9,7 +9,6 @@ A GPU-accelerated quantum circuit sampler based on ZX-calculus stabilizer rank d
 Tsim feels just like [Stim](https://github.com/quantumlib/Stim), but supports non-Clifford gates.
 
 
-
 ## Installation
 
 Install with pip:
@@ -57,8 +56,6 @@ samples = detector_sampler.sample(shots=100)
 ```
 
 
-
-
 ## Architecture
 ![Architecture](docs/architecture.svg)
 A detailed description of Tsim's architecture is given in [arXiv:2604.01059](https://arxiv.org/abs/2604.01059).
@@ -91,6 +88,8 @@ samples = sampler.sample(
     use_observable_reference_sample=True,
 )
 ```
+When set to `True`, a noiseless reference sample is computed and XORed with the
+results, so that output values represent deviations from the noiseless baseline.
 Note that this feature should be used carefully. If detectors or observables are not deterministic, this may lead to incorrect statistics.
 
 
@@ -111,7 +110,6 @@ Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/St
 The `T` gate applies a π/4 phase rotation around the Z axis, and `T_DAG` is its inverse:
 
 
-
 ```
 T 0 1 2  # Apply T to qubits 0, 1, 2
 T_DAG 0  # Apply T_DAG to qubit 0
@@ -120,7 +118,6 @@ T_DAG 0  # Apply T_DAG to qubit 0
 ### Rotation Gates: `R_X`, `R_Y`, `R_Z`
 
 Rotation gates around the X, Y, and Z axes by an angle θ = α·π (where α is specified as the parameter):
-
 
 
 ```
@@ -134,7 +131,6 @@ R_Z(0.125) 2  # Rotate qubit 2 around Z by π/8
 The general single-qubit unitary with three parameters (θ, φ, λ), each specified as a multiple of π:
 
 
-
 ```
 U3(0.5, 0.25, 0.125) 0  # Apply U3 with θ=π/2, φ=π/4, λ=π/8
 ```
@@ -142,7 +138,6 @@ U3(0.5, 0.25, 0.125) 0  # Apply U3 with θ=π/2, φ=π/4, λ=π/8
 ## Publications Using Tsim
 
 - [Simulating magic state cultivation with few Clifford terms](https://arxiv.org/abs/2509.08658) by Kwok Ho Wan and Zhenghao Zhong (2025).
-
 
 
 ## Citing Tsim
