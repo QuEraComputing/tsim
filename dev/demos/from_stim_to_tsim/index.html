@@ -732,15 +732,36 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
  [False False]
  [False False]
  [False False]]
-</pre> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=7"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>In TSIM, actual detector and observable bits will always be reported.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=8"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [4]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-4> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span> <span class=o>=</span> <span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=n>circuit_str</span><span class=p>)</span>
+</pre> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=7"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>By default, TSIM reports actual detector and observable bits. To match STIM's behavior, set <code>use_detector_reference_sample=True</code> and <code>use_observable_reference_sample=True</code>. This computes a noiseless reference sample and XORs it with the results.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=8"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [4]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-4> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span> <span class=o>=</span> <span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=n>circuit_str</span><span class=p>)</span>
 <span class=n>tsim_sampler</span> <span class=o>=</span> <span class=n>c</span><span class=o>.</span><span class=n>compile_detector_sampler</span><span class=p>(</span><span class=n>seed</span><span class=o>=</span><span class=mi>0</span><span class=p>)</span>
+
+<span class=c1># Without reference sample (default): actual detector/observable values</span>
 <span class=n>samples</span> <span class=o>=</span> <span class=n>tsim_sampler</span><span class=o>.</span><span class=n>sample</span><span class=p>(</span><span class=n>shots</span><span class=o>=</span><span class=mi>5</span><span class=p>,</span> <span class=n>append_observables</span><span class=o>=</span><span class=kc>True</span><span class=p>)</span>
+<span class=nb>print</span><span class=p>(</span><span class=s2>"Without reference sample:"</span><span class=p>)</span>
 <span class=nb>print</span><span class=p>(</span><span class=n>samples</span><span class=p>)</span>
-</pre></div> <div class=clipboard-copy-txt id=cell-4>c = tsim.Circuit(circuit_str) tsim_sampler = c.compile_detector_sampler(seed=0) samples = tsim_sampler.sample(shots=5, append_observables=True) print(samples)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedText jp-OutputArea-output" data-mime-type=text/plain tabindex=0> <pre>[[ True  True]
+
+<span class=c1># With reference sample: matches STIM behavior</span>
+<span class=n>samples_ref</span> <span class=o>=</span> <span class=n>tsim_sampler</span><span class=o>.</span><span class=n>sample</span><span class=p>(</span>
+    <span class=n>shots</span><span class=o>=</span><span class=mi>5</span><span class=p>,</span>
+    <span class=n>append_observables</span><span class=o>=</span><span class=kc>True</span><span class=p>,</span>
+    <span class=n>use_detector_reference_sample</span><span class=o>=</span><span class=kc>True</span><span class=p>,</span>
+    <span class=n>use_observable_reference_sample</span><span class=o>=</span><span class=kc>True</span><span class=p>,</span>
+<span class=p>)</span>
+<span class=nb>print</span><span class=p>(</span><span class=s2>"</span><span class=se>\n</span><span class=s2>With reference sample:"</span><span class=p>)</span>
+<span class=nb>print</span><span class=p>(</span><span class=n>samples_ref</span><span class=p>)</span>
+</pre></div> <div class=clipboard-copy-txt id=cell-4>c = tsim.Circuit(circuit_str) tsim_sampler = c.compile_detector_sampler(seed=0) # Without reference sample (default): actual detector/observable values samples = tsim_sampler.sample(shots=5, append_observables=True) print("Without reference sample:") print(samples) # With reference sample: matches STIM behavior samples_ref = tsim_sampler.sample( shots=5, append_observables=True, use_detector_reference_sample=True, use_observable_reference_sample=True, ) print("\nWith reference sample:") print(samples_ref)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedText jp-OutputArea-output" data-mime-type=text/plain tabindex=0> <pre>Without reference sample:
+[[ True  True]
  [ True  True]
  [ True  True]
  [ True  True]
  [ True  True]]
+</pre> </div> </div> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedText jp-OutputArea-output" data-mime-type=text/plain tabindex=0> <pre>
+With reference sample:
+[[False False]
+ [False False]
+ [False False]
+ [False False]
+ [False False]]
 </pre> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=9"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <h3 id=batch-size-and-just-in-time-compilation>Batch size and just-in-time compilation<a class=anchor-link href=#batch-size-and-just-in-time-compilation>¶</a></h3> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=10"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>TSIM's samplers also have a <code>batch_size</code> argument, which does not exist in STIM. This parameter controls the number of shots sampled in parallel.</p> <p>When <code>batch_size</code> is not specified, it is automatically chosen based on available device memory (GPU VRAM or system RAM). To achieve maximum performance on a GPU, you can also set <code>batch_size</code> explicitly.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=11"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [5]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-5> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>tsim_sampler</span><span class=o>.</span><span class=n>sample</span><span class=p>(</span><span class=n>shots</span><span class=o>=</span><span class=mi>1_000_000</span><span class=p>,</span> <span class=n>batch_size</span><span class=o>=</span><span class=mi>100_000</span><span class=p>)</span>
 </pre></div> <div class=clipboard-copy-txt id=cell-5>tsim_sampler.sample(shots=1_000_000, batch_size=100_000)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class="jp-OutputArea-child jp-OutputArea-executeResult"> <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[5]:</div> <div class="jp-RenderedText jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type=text/plain tabindex=0> <pre>array([[ True],
        [ True],
@@ -762,7 +783,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <span class=n>c</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>"timeline-svg"</span><span class=p>,</span> <span class=n>height</span><span class=o>=</span><span class=mi>150</span><span class=p>)</span>
 </pre></div> <div class=clipboard-copy-txt id=cell-6>c = tsim.Circuit(""" RX 0 1 TICK T 0 TICK CNOT 0 1 TICK U3(0.1, 0.2, 0.3) 1 TICK M 0 1 """) c.diagram("timeline-svg", height=150)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class="jp-OutputArea-child jp-OutputArea-executeResult"> <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[6]:</div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type=text/html tabindex=0> <div style="overflow-x: scroll; background: white; width: fit-content;"> <div style="width: 278.57142857142856px"> <svg version=1.1 viewbox="0 0 416 224" xmlns=http://www.w3.org/2000/svg> <g id=qubit_lines> <path d="M64,64 L384,64 " id=qubit_line:0 stroke=black></path> <text dominant-baseline=central font-family=monospace font-size=12 text-anchor=end x=64 y=64>q0</text> <path d="M64,128 L384,128 " id=qubit_line:1 stroke=black></path> <text dominant-baseline=central font-family=monospace font-size=12 text-anchor=end x=64 y=128>q1</text> </g> <rect fill=black height=32 stroke=black width=32 x=80 y=48></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=26 text-anchor=middle x=96 y=64>R<tspan baseline-shift=sub font-size=16>X</tspan></text> <rect fill=black height=32 stroke=black width=32 x=80 y=112></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=26 text-anchor=middle x=96 y=128>R<tspan baseline-shift=sub font-size=16>X</tspan></text> <rect fill=white height=32 stroke=black width=32 x=144 y=48></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=160 y=64>T</text><path d="M224,64 L224,128 " stroke=black></path> <circle cx=224 cy=64 fill=black r=12 stroke=none></circle> <circle cx=224 cy=128 fill=white r=12 stroke=black></circle> <path d="M212,128 L236,128 M224,116 L224,140 " stroke=black></path> <rect fill=white height=32 stroke=black width=32 x=272 y=112></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=288 y=128>U<tspan baseline-shift=sub font-size=14>3</tspan></text><rect fill=black height=32 stroke=black width=32 x=336 y=48></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=30 text-anchor=middle x=352 y=64>M</text> <text font-family=monospace font-size=8 text-anchor=middle x=352 y=44>rec[0]</text> <rect fill=black height=32 stroke=black width=32 x=336 y=112></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=30 text-anchor=middle x=352 y=128>M</text> <text font-family=monospace font-size=8 text-anchor=middle x=352 y=108>rec[1]</text> </svg> </div> </div> </div> </div> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=16"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [7]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-7> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>"timeslice-svg"</span><span class=p>,</span> <span class=n>height</span><span class=o>=</span><span class=mi>80</span><span class=p>,</span> <span class=n>rows</span><span class=o>=</span><span class=mi>1</span><span class=p>)</span>
 </pre></div> <div class=clipboard-copy-txt id=cell-7>c.diagram("timeslice-svg", height=80, rows=1)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class="jp-OutputArea-child jp-OutputArea-executeResult"> <div class="jp-OutputPrompt jp-OutputArea-prompt">Out[7]:</div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output jp-OutputArea-executeResult" data-mime-type=text/html tabindex=0> <div style="overflow-x: scroll; background: white; width: fit-content;"> <div style="width: 604.8px"> <svg version=1.1 viewbox="0 0 1209.6 160" xmlns=http://www.w3.org/2000/svg> <g id=qubit_dots> <circle cx=80 cy=80 fill=black id=qubit_dot:0:0 r=2 stroke=none></circle> <circle cx=144 cy=80 fill=black id=qubit_dot:1:0 r=2 stroke=none></circle> <circle cx=326.4 cy=80 fill=black id=qubit_dot:0:1 r=2 stroke=none></circle> <circle cx=390.4 cy=80 fill=black id=qubit_dot:1:1 r=2 stroke=none></circle> <circle cx=572.8 cy=80 fill=black id=qubit_dot:0:2 r=2 stroke=none></circle> <circle cx=636.8 cy=80 fill=black id=qubit_dot:1:2 r=2 stroke=none></circle> <circle cx=819.2 cy=80 fill=black id=qubit_dot:0:3 r=2 stroke=none></circle> <circle cx=883.2 cy=80 fill=black id=qubit_dot:1:3 r=2 stroke=none></circle> <circle cx=1065.6 cy=80 fill=black id=qubit_dot:0:4 r=2 stroke=none></circle> <circle cx=1129.6 cy=80 fill=black id=qubit_dot:1:4 r=2 stroke=none></circle> </g> <rect fill=black height=32 stroke=black width=32 x=64 y=64></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=26 text-anchor=middle x=80 y=80>R<tspan baseline-shift=sub font-size=16>X</tspan></text> <rect fill=black height=32 stroke=black width=32 x=128 y=64></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=26 text-anchor=middle x=144 y=80>R<tspan baseline-shift=sub font-size=16>X</tspan></text> <rect fill=white height=32 stroke=black width=32 x=310.4 y=64></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=326.4 y=80>T</text><path d="M572.8,80 L636.8,80 " fill=none stroke=black stroke-width=5></path> <circle cx=572.8 cy=80 fill=black r=12 stroke=none></circle> <circle cx=636.8 cy=80 fill=white r=12 stroke=black></circle> <path d="M624.8,80 L648.8,80 M636.8,68 L636.8,92 " stroke=black></path> <rect fill=white height=32 stroke=black width=32 x=867.2 y=64></rect> <text dominant-baseline=central font-family=monospace font-size=30 text-anchor=middle x=883.2 y=80>U<tspan baseline-shift=sub font-size=14>3</tspan></text><rect fill=black height=32 stroke=black width=32 x=1049.6 y=64></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=30 text-anchor=middle x=1065.6 y=80>M</text> <rect fill=black height=32 stroke=black width=32 x=1113.6 y=64></rect> <text dominant-baseline=central fill=white font-family=monospace font-size=30 text-anchor=middle x=1129.6 y=80>M</text> <g id=tick_borders> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-218>Tick 0</text> <rect fill=none height=160 id=tick_border:0:0_0:0 stroke=black width=224 x=0 y=0></rect> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-464.4>Tick 1</text> <rect fill=none height=160 id=tick_border:1:0_1:1 stroke=black width=224 x=246.4 y=0></rect> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-710.8>Tick 2</text> <rect fill=none height=160 id=tick_border:2:0_2:2 stroke=black width=224 x=492.8 y=0></rect> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-957.2>Tick 3</text> <rect fill=none height=160 id=tick_border:3:0_3:3 stroke=black width=224 x=739.2 y=0></rect> <text dominant-baseline=hanging font-family=serif font-size=18 text-anchor=middle transform=rotate(90) x=80 y=-1203.6>Tick 4</text> <rect fill=none height=160 id=tick_border:4:0_4:4 stroke=black width=224 x=985.6 y=0></rect> </g> </svg> </div> </div> </div> </div> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=17"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [8]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-8> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>"pyzx"</span><span class=p>);</span>
-</pre></div> <div class=clipboard-copy-txt id=cell-8>c.diagram("pyzx");</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type=text/html tabindex=0> <div id=graph-output-clVu3nIL style="overflow:auto; background-color: white"></div> <script type=module>
+</pre></div> <div class=clipboard-copy-txt id=cell-8>c.diagram("pyzx");</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type=text/html tabindex=0> <div id=graph-output-HnPAW0nO style="overflow:auto; background-color: white"></div> <script type=module>
 var d3;
 if (d3 == null) { d3 = await import("https://esm.sh/d3@5"); }
 var _settings_colors = JSON.parse('{"edge": "#000000", "Hedge": "#0088ff", "Xedge": "#999999", "Bedge": "#000000", "HBedge": "#0088ff", "boundary": "#000000", "X": "#ff8888", "Y": "#aabbff", "Z": "#ccffcc", "H": "#ffff66", "W": "#000000", "Zalt": "#ccffcc", "Walt": "#000000", "Zbold": "#ccffcc", "Xbold": "#ff8888", "Xdark": "#ff8888", "Ydark": "#aabbff", "Zdark": "#99dd99"}');
@@ -1159,18 +1180,819 @@ function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_
 }
 
 
-showGraph('#graph-output-clVu3nIL',
+showGraph('#graph-output-HnPAW0nO',
   JSON.parse('{"nodes": [{"name": "0", "x": 50.0, "y": 100.0, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "1", "x": 100.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "2", "x": 50.0, "y": 150.0, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "3", "x": 150.0, "y": 150.0, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "4", "x": 150.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "5", "x": 550.0, "y": 100.0, "z": 0.0, "t": 1, "phase": "rec[0]", "ground": false, "vdata": []}, {"name": "6", "x": 200.0, "y": 150.0, "z": 0.0, "t": 7, "phase": "3\u03c0/10", "ground": false, "vdata": []}, {"name": "7", "x": 250.0, "y": 150.0, "z": 0.0, "t": 8, "phase": "\u03c0/2", "ground": false, "vdata": []}, {"name": "8", "x": 300.0, "y": 150.0, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "9", "x": 350.0, "y": 150.0, "z": 0.0, "t": 7, "phase": "\u03c0/10", "ground": false, "vdata": []}, {"name": "10", "x": 400.0, "y": 150.0, "z": 0.0, "t": 8, "phase": "\u03c0/2", "ground": false, "vdata": []}, {"name": "11", "x": 450.0, "y": 150.0, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "12", "x": 500.0, "y": 150.0, "z": 0.0, "t": 7, "phase": "\u03c0/5", "ground": false, "vdata": []}, {"name": "13", "x": 550.0, "y": 150.0, "z": 0.0, "t": 1, "phase": "rec[1]", "ground": false, "vdata": []}, {"name": "14", "x": 600.0, "y": 100.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "15", "x": 600.0, "y": 150.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}], "links": [{"source": "0", "target": "1", "t": 5, "index": 0, "num_parallel": 1}, {"source": "1", "target": "4", "t": 4, "index": 0, "num_parallel": 1}, {"source": "2", "target": "3", "t": 5, "index": 0, "num_parallel": 1}, {"source": "3", "target": "6", "t": 4, "index": 0, "num_parallel": 1}, {"source": "3", "target": "4", "t": 4, "index": 0, "num_parallel": 1}, {"source": "4", "target": "5", "t": 4, "index": 0, "num_parallel": 1}, {"source": "5", "target": "14", "t": 4, "index": 0, "num_parallel": 1}, {"source": "6", "target": "7", "t": 4, "index": 0, "num_parallel": 1}, {"source": "7", "target": "8", "t": 4, "index": 0, "num_parallel": 1}, {"source": "8", "target": "9", "t": 4, "index": 0, "num_parallel": 1}, {"source": "9", "target": "10", "t": 4, "index": 0, "num_parallel": 1}, {"source": "10", "target": "11", "t": 4, "index": 0, "num_parallel": 1}, {"source": "11", "target": "12", "t": 4, "index": 0, "num_parallel": 1}, {"source": "12", "target": "13", "t": 4, "index": 0, "num_parallel": 1}, {"source": "13", "target": "15", "t": 4, "index": 0, "num_parallel": 1}], "pauli_web": []}'), 650, 200, 50,
   10.0, false, false, '');
-</script> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=18"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <h3 id=repeat-instructions-are-flattened><code>REPEAT</code> instructions are flattened<a class=anchor-link href=#repeat-instructions-are-flattened>¶</a></h3> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=19"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>TSIM does not support <code>REPEAT</code> instructions. Any <code>REPEAT</code> instructions will be flattened.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=20"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [9]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-9> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span> <span class=o>=</span> <span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=s2>"""</span>
+</script> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=18"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>It can be interesting to look at the ZX diagram of more advanced Stim programs. For example, the following program measures a qubit and records the flipped measurement outcome. Based on this outcome, an X gate is applied to a different qubit:</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=19"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [9]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-9> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=s2>"""</span>
+<span class=s2>M !0</span>
+<span class=s2>CNOT rec[-1] 1</span>
+<span class=s2>"""</span><span class=p>)</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>"pyzx"</span><span class=p>);</span>
+</pre></div> <div class=clipboard-copy-txt id=cell-9>tsim.Circuit(""" M !0 CNOT rec[-1] 1 """).diagram("pyzx");</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type=text/html tabindex=0> <div id=graph-output-eCmcmnsj style="overflow:auto; background-color: white"></div> <script type=module>
+var d3;
+if (d3 == null) { d3 = await import("https://esm.sh/d3@5"); }
+var _settings_colors = JSON.parse('{"edge": "#000000", "Hedge": "#0088ff", "Xedge": "#999999", "Bedge": "#000000", "HBedge": "#0088ff", "boundary": "#000000", "X": "#ff8888", "Y": "#aabbff", "Z": "#ccffcc", "H": "#ffff66", "W": "#000000", "Zalt": "#ccffcc", "Walt": "#000000", "Zbold": "#ccffcc", "Xbold": "#ff8888", "Xdark": "#ff8888", "Ydark": "#aabbff", "Zdark": "#99dd99"}');
+// PyZX - Python library for quantum circuit rewriting 
+//        and optimisation using the ZX-calculus
+// Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// styling functions
+function nodeColor(t) {
+    if (t == 0) return _settings_colors['boundary'];
+    else if (t == 1) return _settings_colors['Z']; // "#ccffcc";
+    else if (t == 2) return _settings_colors['X']; // "#ff8888";
+    else if (t == 3) return _settings_colors['H']; // "yellow";
+    else if (t == 4) return _settings_colors['W']; // "black";
+    else if (t == 5) return _settings_colors['Walt']; // "black";
+    else if (t == 6) return _settings_colors['Zalt']; // "#ccffcc";
+    else if (t == 7) return _settings_colors['Zbold']; // "#ccffcc" bold Z
+    else if (t == 8) return _settings_colors['Xbold']; // "#ff8888" bold X
+}
+
+function edgeColor(t) {
+    if (t == 1) return _settings_colors['edge']; //"black";
+    else if (t == 2) return _settings_colors['Hedge']; // "#08f";
+    else if (t == 3) return _settings_colors['Xedge']; // "gray";
+    else if (t == 4) return _settings_colors['Bedge']; // "black" bold
+    else if (t == 5) return _settings_colors['HBedge']; // "#0088ff" bold hadamard
+}
+
+function isBoldEdge(t) {
+    return t == 4 || t == 5;
+}
+
+function webColor(t) {
+    if (t == 'X') return _settings_colors['Xdark'];
+    else if (t == 'Y') return _settings_colors['Ydark'];
+    else if (t == 'Z') return _settings_colors['Zdark'];
+    else if (t == 'I') return '#dddddd';
+}
+
+function nodeStyle(selected, t) {
+    var bold = (t == 7 || t == 8);
+    if (selected) return "stroke-width: " + (bold ? "4" : "2") + "px; stroke: #00f";
+    return "stroke-width: " + (bold ? "3" : "1.5") + "px";
+}
+
+var symbolGround = {
+    draw: function(context, size){
+        let s = size/2;
+
+        context.moveTo(0,-s);
+        context.lineTo(0,0);
+
+        context.moveTo(-s,0);
+        context.lineTo(s,0);
+
+        context.moveTo(-2*s/3,s/3);
+        context.lineTo(2*s/3,s/3);
+
+        context.moveTo(-s/3,2*s/3);
+        context.lineTo(s/3,2*s/3);
+    }
+}
+
+function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_labels, scalar_str) {
+    var ntab = {};
+
+    var groundOffset = 2.5 * node_size;
+
+    graph.nodes.forEach(function(d) {
+        ntab[d.name] = d;
+        d.selected = false;
+        d.previouslySelected = false;
+        d.nhd = [];
+    });
+
+    var spiders_and_boundaries = graph.nodes.filter(function(d) {
+        return d.t != 3;
+    });
+
+    graph.links.forEach(function(d) {
+        var s = ntab[d.source];
+        var t = ntab[d.target];
+        d.source = s;
+        d.target = t;
+        s.nhd.push(t);
+        t.nhd.push(s);
+    });
+
+    graph.pauli_web.forEach(function(d) {
+        var s = ntab[d.source];
+        var t = ntab[d.target];
+        d.source = s;
+        d.target = t;
+    });
+
+    var shiftKey;
+
+    // SETUP SVG ITEMS
+
+    var svg = d3.select(tag)
+    //.attr("tabindex", 1)
+        .on("keydown.brush", function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
+        .on("keyup.brush", function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
+    //.each(function() { this.focus(); })
+        .append("svg")
+        .attr("style", "max-width: none; max-height: none")
+        .attr("width", width)
+        .attr("height", height);
+
+    var web = svg.append("g")
+        .attr("class", "web")
+        .selectAll("line")
+        .data(graph.pauli_web)
+        .enter().append("path")
+        .attr("stroke", function(d) { return webColor(d.t); })
+        .attr("fill", "transparent")
+        .attr("style", "stroke-width: 7px");
+
+    var link = svg.append("g")
+        .attr("class", "link")
+        .selectAll("line")
+        .data(graph.links)
+        .enter().append("path")
+        .attr("stroke", function(d) { return edgeColor(d.t); })
+        .attr("fill", "transparent")
+        .attr("style", function(d) { return isBoldEdge(d.t) ? "stroke-width: 3.5px" : "stroke-width: 1.5px"; });
+
+    var brush = svg.append("g")
+        .attr("class", "brush");
+
+    var node = svg.append("g")
+        .attr("class", "node")
+        .selectAll("g")
+        .data(graph.nodes)
+        .enter().append("g")
+        .attr("transform", function(d) {
+            return "translate(" + d.x + "," + d.y +")";
+        });
+
+    // Draw a ground symbol connected to the node.
+    node.filter(function(d) { return d.ground; })
+        .append("path")
+        .attr("stroke", "black")
+        .attr("style", "stroke-width: 1.5px")
+        .attr("fill", "none")
+        .attr("d", "M 0 0 L 0 "+(groundOffset))
+        .attr("class", "selectable");
+    node.filter(function(d) { return d.ground; })
+        .append("path")
+        .attr("stroke", "black")
+        .attr("style", "stroke-width: 1.5px")
+        .attr("fill", "none")
+        .attr("d", d3.symbol().type(symbolGround).size(node_size*1.5))
+        .attr("transform", "translate(0,"+groundOffset+")")
+        .attr("class", "selectable");
+
+    node.filter(function(d) { return d.t != 3 && d.t != 5 && d.t != 6; })
+        .append("circle")
+        .attr("r", function(d) {
+            if (d.t == 0) return 0.5 * node_size;
+            else if (d.t == 4) return 0.25 * node_size;
+            else return node_size;
+        })
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("stroke-width", function(d) { return (d.t == 7 || d.t == 8) ? 3 : 1.5; })
+        .attr("class", "selectable");
+
+    var hbox = node.filter(function(d) { return d.t == 3; });
+
+    hbox.append("rect")
+        .attr("x", -0.75 * node_size).attr("y", -0.75 * node_size)
+        .attr("width", node_size * 1.5).attr("height", node_size * 1.5)
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable");
+
+    // draw a triangle for d.t == 5
+    node.filter(function(d) { return d.t == 5; })
+        .append("path")
+        .attr("d", "M 0 0 L "+node_size+" "+node_size+" L -"+node_size+" "+node_size+" Z")
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable")
+        .attr("transform", "translate(" + (-node_size/2) + ", 0) rotate(-90)");
+
+    // draw a square for Z box: d.t == 6
+    node.filter(function(d) { return d.t == 6; })
+        .append("rect")
+        .attr("x", -0.75 * node_size).attr("y", -0.75 * node_size)
+        .attr("width", node_size * 1.5).attr("height", node_size * 1.5)
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable");
+
+    node.filter(function(d) { return d.phase != '' && d.phase.indexOf('[') === -1; })
+        .append("text")
+        .attr("y", 0.7 * node_size + 14)
+        .text(function (d) { return d.phase })
+        .attr("text-anchor", "middle")
+        .attr("font-size", "12px")
+        .attr("font-family", "monospace")
+        .attr("fill", "#00d")
+        .attr('style', 'pointer-events: none; user-select: none;');
+
+    node.filter(function(d) { return d.phase != '' && d.phase.indexOf('[') !== -1; })
+        .append("text")
+        .attr("y", -0.7 * node_size - 8)
+        .text(function (d) { return d.phase })
+        .attr("text-anchor", "middle")
+        .attr("font-size", "12px")
+        .attr("font-family", "monospace")
+        .attr("fill", "black")
+        .attr('style', 'pointer-events: none; user-select: none;');
+
+    if (show_labels) {
+        node.append("text")
+            .attr("y", -0.7 * node_size - 8)
+            .text(function (d) { return d.name; })
+            .attr("text-anchor", "middle")
+            .attr("font-size", "10px")
+            .attr("font-family", "monospace")
+            .attr("fill", "#999")
+            .attr('style', 'pointer-events: none; user-select: none;');
+    }
+
+    // Display the chosen data fields over the node.
+    node.filter(d => d.vdata.length > 0)
+        .append("text")
+        .attr("y", d => -0.7 * node_size - 14 - 10 * d.vdata.length)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "8px")
+        .attr("font-family", "monospace")
+        .attr("fill", "#c66")
+        .attr('style', 'pointer-events: none; user-select: none;')
+        .selectAll("tspan")
+        .data(d => d.vdata)
+        .enter()
+        .append("tspan")
+        .attr("x", "0")
+        .attr("dy", "1.2em")
+        .text(x => x.join(": "));
+
+    if (scalar_str != "") {
+        svg.append("text")
+            .text(scalar_str)
+            .attr("x", 60).attr("y", 40)
+            .attr("text-anchor", "middle")
+    }
+
+    function update_hboxes() {
+        if (auto_hbox) {
+            var pos = {};
+            hbox.attr("transform", function(d) {
+                // calculate barycenter of non-hbox neighbours, then nudge a bit
+                // to the NE.
+                var x=0,y=0,sz=0;
+                for (var i = 0; i < d.nhd.length; ++i) {
+                    if (d.nhd[i].t != 3) {
+                        sz++;
+                        x += d.nhd[i].x;
+                        y += d.nhd[i].y;
+                    }
+                }
+
+                offset = 0.25 * scale;
+
+                if (sz != 0) {
+                    x = (x/sz) + offset;
+                    y = (y/sz) - offset;
+
+                    while (pos[[x,y]]) {
+                        x += offset;
+                    }
+                    d.x = x;
+                    d.y = y;
+                    pos[[x,y]] = true;
+                }
+
+                return "translate("+d.x+","+d.y+")";
+            });
+        }
+    }
+
+    update_hboxes();
+
+    var link_curve = function(d) {
+        var x1 = d.source.x, x2 = d.target.x, y1 = d.source.y, y2 = d.target.y;
+        if (x1 == x2 && y1 == y2 && d.num_parallel == 1) {
+            var cx1 = x1 - 40;
+            var cy1 = y1 - 40;
+            var cx2 = x1 + 40;
+            var cy2 = y1 - 40;
+            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+        } else if (x1 == x2 && y1 == y2) {
+            var pos = d.index + 1;
+            var cx1 = x1 - 20 - pos * 10;
+            var cy1 = y1 - 20 - pos * 10;
+            var cx2 = x1 + 20 + pos * 10;
+            var cy2 = y1 - 20 - pos * 10;
+            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+        } else if (d.num_parallel == 1) {
+            return `M ${x1} ${y1} L ${x2} ${y2}`;
+        } else {
+            var dx = x2 - x1, dy = y2 - y1;
+            var midx = 0.5 * (x1 + x2), midy = 0.5 * (y1 + y2);
+            var pos = (d.index / (d.num_parallel-1)) - 0.5;
+            var cx = midx - pos * dy;
+            var cy = midy + pos * dx;
+            return `M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`;
+            // return `M ${x1} ${y1} L ${x2} ${y2}`;
+        }
+    };
+    link.attr("d", link_curve);
+
+
+    var web_curve = function(d) {
+        var x1 = d.source.x, x2 = (x1 + d.target.x)/2, y1 = d.source.y, y2 = (y1 + d.target.y)/2;
+        return `M ${x1} ${y1} L ${x2} ${y2}`;
+    }
+    web.attr("d", web_curve);
+
+    // EVENTS FOR DRAGGING AND SELECTION
+
+    node.on("mousedown", function(d) {
+        if (shiftKey) {
+            d3.select(this).selectAll(".selectable").attr("style", nodeStyle(d.selected = !d.selected, d.t));
+            d3.event.stopImmediatePropagation();
+        } else if (!d.selected) {
+            node.selectAll(".selectable").attr("style", function(p) { return nodeStyle(p.selected = d === p, p.t); });
+        }
+    })
+        .call(d3.drag().on("drag", function(d) {
+            var dx = d3.event.dx;
+            var dy = d3.event.dy;
+            // node.filter(function(d) { return d.selected; })
+            //     .attr("cx", function(d) { return d.x += dx; })
+            //     .attr("cy", function(d) { return d.y += dy; });
+            node.filter(function(d) { return d.selected; })
+                .attr("transform", function(d) {
+                    d.x += dx;
+                    d.y += dy;
+                    return "translate(" + d.x + "," + d.y +")";
+                });
+
+            update_hboxes();
+
+            link.filter(function(d) { return d.source.selected || d.target.selected ||
+                    (auto_hbox && d.source.t == 3); })
+                .attr("d", link_curve);
+            web.filter(function(d) { return d.source.selected || d.target.selected; })
+                .attr("d", web_curve);
+        }));
+
+    brush.call(d3.brush().keyModifiers(false)
+        .extent([[0, 0], [width, height]])
+        .on("start", function() {
+            if (d3.event.sourceEvent.type !== "end") {
+                node.selectAll(".selectable").attr("style", function(d) {
+                    return nodeStyle(
+                        d.selected = d.previouslySelected = shiftKey &&
+                        d.selected, d.t);
+                });
+            }
+        })
+        .on("brush", function() {
+            if (d3.event.sourceEvent.type !== "end") {
+                var selection = d3.event.selection;
+                node.selectAll(".selectable").attr("style", function(d) {
+                    return nodeStyle(d.selected = d.previouslySelected ^
+                        (selection != null
+                            && selection[0][0] <= d.x && d.x < selection[1][0]
+                            && selection[0][1] <= d.y && d.y < selection[1][1]), d.t);
+                });
+            }
+        })
+        .on("end", function() {
+            if (d3.event.selection != null) {
+                d3.select(this).call(d3.event.target.move, null);
+            }
+        }));
+}
+
+
+showGraph('#graph-output-eCmcmnsj',
+  JSON.parse('{"nodes": [{"name": "0", "x": 50.0, "y": 100.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "1", "x": 100.0, "y": 100.0, "z": 0.0, "t": 8, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "2", "x": 150.0, "y": 100.0, "z": 0.0, "t": 1, "phase": "rec[0]", "ground": false, "vdata": []}, {"name": "3", "x": 200.0, "y": 100.0, "z": 0.0, "t": 8, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "4", "x": 250.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "5", "x": 50.0, "y": 150.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "6", "x": 250.0, "y": 150.0, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "7", "x": 300.0, "y": 100.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "8", "x": 300.0, "y": 150.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}], "links": [{"source": "0", "target": "1", "t": 4, "index": 0, "num_parallel": 1}, {"source": "1", "target": "2", "t": 4, "index": 0, "num_parallel": 1}, {"source": "2", "target": "3", "t": 4, "index": 0, "num_parallel": 1}, {"source": "2", "target": "6", "t": 4, "index": 0, "num_parallel": 1}, {"source": "3", "target": "4", "t": 4, "index": 0, "num_parallel": 1}, {"source": "4", "target": "7", "t": 4, "index": 0, "num_parallel": 1}, {"source": "5", "target": "6", "t": 4, "index": 0, "num_parallel": 1}, {"source": "6", "target": "8", "t": 4, "index": 0, "num_parallel": 1}], "pauli_web": []}'), 350, 200, 50,
+  10.0, false, false, '');
+</script> </div> </div> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=20"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <h3 id=repeat-instructions-are-flattened><code>REPEAT</code> instructions are flattened<a class=anchor-link href=#repeat-instructions-are-flattened>¶</a></h3> </div> </div> </div> </div> <div class="jp-Cell jp-MarkdownCell jp-Notebook-cell" id="cell-id=21"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt"> </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type=text/markdown> <p>TSIM does not support <code>REPEAT</code> instructions. Any <code>REPEAT</code> instructions will be flattened.</p> </div> </div> </div> </div><div class="jp-Cell jp-CodeCell jp-Notebook-cell"> <div class="jp-Cell jp-CodeCell jp-Notebook-cell" id="cell-id=22"> <div class=jp-Cell-inputWrapper tabindex=0> <div class="jp-Collapser jp-InputCollapser jp-Cell-inputCollapser"> </div> <div class="jp-InputArea jp-Cell-inputArea"> <div class="jp-InputPrompt jp-InputArea-prompt">In [10]:</div><div class="jp-CodeMirrorEditor jp-Editor jp-InputArea-editor" data-type=inline> <div class="CodeMirror cm-s-jupyter"> <div class=zeroclipboard-container> <clipboard-copy , aria-label="Copy to Clipboard" for=cell-10> <div> <span class=notice hidden>Copied!</span> <svg aria-hidden=true class=clipboard-copy-icon data-view-component=true height=20 version=1.1 viewbox="0 0 16 16" width=20> <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" fill=currentColor fill-rule=evenodd></path> <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" fill=currentColor fill-rule=evenodd></path> </svg> </div> </clipboard-copy> </div> <div class="highlight-ipynb hl-python"><pre><span></span><span class=n>c</span> <span class=o>=</span> <span class=n>tsim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>(</span><span class=s2>"""</span>
 <span class=s2>    REPEAT 10 {</span>
 <span class=s2>        T 0</span>
 <span class=s2>    }</span>
 <span class=s2>"""</span><span class=p>)</span>
-<span class=nb>print</span><span class=p>(</span><span class=n>c</span><span class=p>)</span>
-</pre></div> <div class=clipboard-copy-txt id=cell-9>c = tsim.Circuit(""" REPEAT 10 { T 0 } """) print(c)</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedText jp-OutputArea-output" data-mime-type=text/plain tabindex=0> <pre>REPEAT 10 {
-    T 0
+<span class=n>c</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=s2>"pyzx"</span><span class=p>);</span>
+</pre></div> <div class=clipboard-copy-txt id=cell-10>c = tsim.Circuit(""" REPEAT 10 { T 0 } """) c.diagram("pyzx");</div> </div> </div> </div> </div> <div class=jp-Cell-outputWrapper> <div class="jp-Collapser jp-OutputCollapser jp-Cell-outputCollapser"> </div> <div class="jp-OutputArea jp-Cell-outputArea"> <div class=jp-OutputArea-child> <div class="jp-OutputPrompt jp-OutputArea-prompt"></div> <div class="jp-RenderedHTMLCommon jp-RenderedHTML jp-OutputArea-output" data-mime-type=text/html tabindex=0> <div id=graph-output-nah8foCN style="overflow:auto; background-color: white"></div> <script type=module>
+var d3;
+if (d3 == null) { d3 = await import("https://esm.sh/d3@5"); }
+var _settings_colors = JSON.parse('{"edge": "#000000", "Hedge": "#0088ff", "Xedge": "#999999", "Bedge": "#000000", "HBedge": "#0088ff", "boundary": "#000000", "X": "#ff8888", "Y": "#aabbff", "Z": "#ccffcc", "H": "#ffff66", "W": "#000000", "Zalt": "#ccffcc", "Walt": "#000000", "Zbold": "#ccffcc", "Xbold": "#ff8888", "Xdark": "#ff8888", "Ydark": "#aabbff", "Zdark": "#99dd99"}');
+// PyZX - Python library for quantum circuit rewriting 
+//        and optimisation using the ZX-calculus
+// Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// styling functions
+function nodeColor(t) {
+    if (t == 0) return _settings_colors['boundary'];
+    else if (t == 1) return _settings_colors['Z']; // "#ccffcc";
+    else if (t == 2) return _settings_colors['X']; // "#ff8888";
+    else if (t == 3) return _settings_colors['H']; // "yellow";
+    else if (t == 4) return _settings_colors['W']; // "black";
+    else if (t == 5) return _settings_colors['Walt']; // "black";
+    else if (t == 6) return _settings_colors['Zalt']; // "#ccffcc";
+    else if (t == 7) return _settings_colors['Zbold']; // "#ccffcc" bold Z
+    else if (t == 8) return _settings_colors['Xbold']; // "#ff8888" bold X
 }
-</pre> </div> </div> </div> </div> </div> </div> </div> <!-- jp-Notebook --> </div> <!-- jupyter-wrapper --> <style>
+
+function edgeColor(t) {
+    if (t == 1) return _settings_colors['edge']; //"black";
+    else if (t == 2) return _settings_colors['Hedge']; // "#08f";
+    else if (t == 3) return _settings_colors['Xedge']; // "gray";
+    else if (t == 4) return _settings_colors['Bedge']; // "black" bold
+    else if (t == 5) return _settings_colors['HBedge']; // "#0088ff" bold hadamard
+}
+
+function isBoldEdge(t) {
+    return t == 4 || t == 5;
+}
+
+function webColor(t) {
+    if (t == 'X') return _settings_colors['Xdark'];
+    else if (t == 'Y') return _settings_colors['Ydark'];
+    else if (t == 'Z') return _settings_colors['Zdark'];
+    else if (t == 'I') return '#dddddd';
+}
+
+function nodeStyle(selected, t) {
+    var bold = (t == 7 || t == 8);
+    if (selected) return "stroke-width: " + (bold ? "4" : "2") + "px; stroke: #00f";
+    return "stroke-width: " + (bold ? "3" : "1.5") + "px";
+}
+
+var symbolGround = {
+    draw: function(context, size){
+        let s = size/2;
+
+        context.moveTo(0,-s);
+        context.lineTo(0,0);
+
+        context.moveTo(-s,0);
+        context.lineTo(s,0);
+
+        context.moveTo(-2*s/3,s/3);
+        context.lineTo(2*s/3,s/3);
+
+        context.moveTo(-s/3,2*s/3);
+        context.lineTo(s/3,2*s/3);
+    }
+}
+
+function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_labels, scalar_str) {
+    var ntab = {};
+
+    var groundOffset = 2.5 * node_size;
+
+    graph.nodes.forEach(function(d) {
+        ntab[d.name] = d;
+        d.selected = false;
+        d.previouslySelected = false;
+        d.nhd = [];
+    });
+
+    var spiders_and_boundaries = graph.nodes.filter(function(d) {
+        return d.t != 3;
+    });
+
+    graph.links.forEach(function(d) {
+        var s = ntab[d.source];
+        var t = ntab[d.target];
+        d.source = s;
+        d.target = t;
+        s.nhd.push(t);
+        t.nhd.push(s);
+    });
+
+    graph.pauli_web.forEach(function(d) {
+        var s = ntab[d.source];
+        var t = ntab[d.target];
+        d.source = s;
+        d.target = t;
+    });
+
+    var shiftKey;
+
+    // SETUP SVG ITEMS
+
+    var svg = d3.select(tag)
+    //.attr("tabindex", 1)
+        .on("keydown.brush", function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
+        .on("keyup.brush", function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
+    //.each(function() { this.focus(); })
+        .append("svg")
+        .attr("style", "max-width: none; max-height: none")
+        .attr("width", width)
+        .attr("height", height);
+
+    var web = svg.append("g")
+        .attr("class", "web")
+        .selectAll("line")
+        .data(graph.pauli_web)
+        .enter().append("path")
+        .attr("stroke", function(d) { return webColor(d.t); })
+        .attr("fill", "transparent")
+        .attr("style", "stroke-width: 7px");
+
+    var link = svg.append("g")
+        .attr("class", "link")
+        .selectAll("line")
+        .data(graph.links)
+        .enter().append("path")
+        .attr("stroke", function(d) { return edgeColor(d.t); })
+        .attr("fill", "transparent")
+        .attr("style", function(d) { return isBoldEdge(d.t) ? "stroke-width: 3.5px" : "stroke-width: 1.5px"; });
+
+    var brush = svg.append("g")
+        .attr("class", "brush");
+
+    var node = svg.append("g")
+        .attr("class", "node")
+        .selectAll("g")
+        .data(graph.nodes)
+        .enter().append("g")
+        .attr("transform", function(d) {
+            return "translate(" + d.x + "," + d.y +")";
+        });
+
+    // Draw a ground symbol connected to the node.
+    node.filter(function(d) { return d.ground; })
+        .append("path")
+        .attr("stroke", "black")
+        .attr("style", "stroke-width: 1.5px")
+        .attr("fill", "none")
+        .attr("d", "M 0 0 L 0 "+(groundOffset))
+        .attr("class", "selectable");
+    node.filter(function(d) { return d.ground; })
+        .append("path")
+        .attr("stroke", "black")
+        .attr("style", "stroke-width: 1.5px")
+        .attr("fill", "none")
+        .attr("d", d3.symbol().type(symbolGround).size(node_size*1.5))
+        .attr("transform", "translate(0,"+groundOffset+")")
+        .attr("class", "selectable");
+
+    node.filter(function(d) { return d.t != 3 && d.t != 5 && d.t != 6; })
+        .append("circle")
+        .attr("r", function(d) {
+            if (d.t == 0) return 0.5 * node_size;
+            else if (d.t == 4) return 0.25 * node_size;
+            else return node_size;
+        })
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("stroke-width", function(d) { return (d.t == 7 || d.t == 8) ? 3 : 1.5; })
+        .attr("class", "selectable");
+
+    var hbox = node.filter(function(d) { return d.t == 3; });
+
+    hbox.append("rect")
+        .attr("x", -0.75 * node_size).attr("y", -0.75 * node_size)
+        .attr("width", node_size * 1.5).attr("height", node_size * 1.5)
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable");
+
+    // draw a triangle for d.t == 5
+    node.filter(function(d) { return d.t == 5; })
+        .append("path")
+        .attr("d", "M 0 0 L "+node_size+" "+node_size+" L -"+node_size+" "+node_size+" Z")
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable")
+        .attr("transform", "translate(" + (-node_size/2) + ", 0) rotate(-90)");
+
+    // draw a square for Z box: d.t == 6
+    node.filter(function(d) { return d.t == 6; })
+        .append("rect")
+        .attr("x", -0.75 * node_size).attr("y", -0.75 * node_size)
+        .attr("width", node_size * 1.5).attr("height", node_size * 1.5)
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable");
+
+    node.filter(function(d) { return d.phase != '' && d.phase.indexOf('[') === -1; })
+        .append("text")
+        .attr("y", 0.7 * node_size + 14)
+        .text(function (d) { return d.phase })
+        .attr("text-anchor", "middle")
+        .attr("font-size", "12px")
+        .attr("font-family", "monospace")
+        .attr("fill", "#00d")
+        .attr('style', 'pointer-events: none; user-select: none;');
+
+    node.filter(function(d) { return d.phase != '' && d.phase.indexOf('[') !== -1; })
+        .append("text")
+        .attr("y", -0.7 * node_size - 8)
+        .text(function (d) { return d.phase })
+        .attr("text-anchor", "middle")
+        .attr("font-size", "12px")
+        .attr("font-family", "monospace")
+        .attr("fill", "black")
+        .attr('style', 'pointer-events: none; user-select: none;');
+
+    if (show_labels) {
+        node.append("text")
+            .attr("y", -0.7 * node_size - 8)
+            .text(function (d) { return d.name; })
+            .attr("text-anchor", "middle")
+            .attr("font-size", "10px")
+            .attr("font-family", "monospace")
+            .attr("fill", "#999")
+            .attr('style', 'pointer-events: none; user-select: none;');
+    }
+
+    // Display the chosen data fields over the node.
+    node.filter(d => d.vdata.length > 0)
+        .append("text")
+        .attr("y", d => -0.7 * node_size - 14 - 10 * d.vdata.length)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "8px")
+        .attr("font-family", "monospace")
+        .attr("fill", "#c66")
+        .attr('style', 'pointer-events: none; user-select: none;')
+        .selectAll("tspan")
+        .data(d => d.vdata)
+        .enter()
+        .append("tspan")
+        .attr("x", "0")
+        .attr("dy", "1.2em")
+        .text(x => x.join(": "));
+
+    if (scalar_str != "") {
+        svg.append("text")
+            .text(scalar_str)
+            .attr("x", 60).attr("y", 40)
+            .attr("text-anchor", "middle")
+    }
+
+    function update_hboxes() {
+        if (auto_hbox) {
+            var pos = {};
+            hbox.attr("transform", function(d) {
+                // calculate barycenter of non-hbox neighbours, then nudge a bit
+                // to the NE.
+                var x=0,y=0,sz=0;
+                for (var i = 0; i < d.nhd.length; ++i) {
+                    if (d.nhd[i].t != 3) {
+                        sz++;
+                        x += d.nhd[i].x;
+                        y += d.nhd[i].y;
+                    }
+                }
+
+                offset = 0.25 * scale;
+
+                if (sz != 0) {
+                    x = (x/sz) + offset;
+                    y = (y/sz) - offset;
+
+                    while (pos[[x,y]]) {
+                        x += offset;
+                    }
+                    d.x = x;
+                    d.y = y;
+                    pos[[x,y]] = true;
+                }
+
+                return "translate("+d.x+","+d.y+")";
+            });
+        }
+    }
+
+    update_hboxes();
+
+    var link_curve = function(d) {
+        var x1 = d.source.x, x2 = d.target.x, y1 = d.source.y, y2 = d.target.y;
+        if (x1 == x2 && y1 == y2 && d.num_parallel == 1) {
+            var cx1 = x1 - 40;
+            var cy1 = y1 - 40;
+            var cx2 = x1 + 40;
+            var cy2 = y1 - 40;
+            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+        } else if (x1 == x2 && y1 == y2) {
+            var pos = d.index + 1;
+            var cx1 = x1 - 20 - pos * 10;
+            var cy1 = y1 - 20 - pos * 10;
+            var cx2 = x1 + 20 + pos * 10;
+            var cy2 = y1 - 20 - pos * 10;
+            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+        } else if (d.num_parallel == 1) {
+            return `M ${x1} ${y1} L ${x2} ${y2}`;
+        } else {
+            var dx = x2 - x1, dy = y2 - y1;
+            var midx = 0.5 * (x1 + x2), midy = 0.5 * (y1 + y2);
+            var pos = (d.index / (d.num_parallel-1)) - 0.5;
+            var cx = midx - pos * dy;
+            var cy = midy + pos * dx;
+            return `M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`;
+            // return `M ${x1} ${y1} L ${x2} ${y2}`;
+        }
+    };
+    link.attr("d", link_curve);
+
+
+    var web_curve = function(d) {
+        var x1 = d.source.x, x2 = (x1 + d.target.x)/2, y1 = d.source.y, y2 = (y1 + d.target.y)/2;
+        return `M ${x1} ${y1} L ${x2} ${y2}`;
+    }
+    web.attr("d", web_curve);
+
+    // EVENTS FOR DRAGGING AND SELECTION
+
+    node.on("mousedown", function(d) {
+        if (shiftKey) {
+            d3.select(this).selectAll(".selectable").attr("style", nodeStyle(d.selected = !d.selected, d.t));
+            d3.event.stopImmediatePropagation();
+        } else if (!d.selected) {
+            node.selectAll(".selectable").attr("style", function(p) { return nodeStyle(p.selected = d === p, p.t); });
+        }
+    })
+        .call(d3.drag().on("drag", function(d) {
+            var dx = d3.event.dx;
+            var dy = d3.event.dy;
+            // node.filter(function(d) { return d.selected; })
+            //     .attr("cx", function(d) { return d.x += dx; })
+            //     .attr("cy", function(d) { return d.y += dy; });
+            node.filter(function(d) { return d.selected; })
+                .attr("transform", function(d) {
+                    d.x += dx;
+                    d.y += dy;
+                    return "translate(" + d.x + "," + d.y +")";
+                });
+
+            update_hboxes();
+
+            link.filter(function(d) { return d.source.selected || d.target.selected ||
+                    (auto_hbox && d.source.t == 3); })
+                .attr("d", link_curve);
+            web.filter(function(d) { return d.source.selected || d.target.selected; })
+                .attr("d", web_curve);
+        }));
+
+    brush.call(d3.brush().keyModifiers(false)
+        .extent([[0, 0], [width, height]])
+        .on("start", function() {
+            if (d3.event.sourceEvent.type !== "end") {
+                node.selectAll(".selectable").attr("style", function(d) {
+                    return nodeStyle(
+                        d.selected = d.previouslySelected = shiftKey &&
+                        d.selected, d.t);
+                });
+            }
+        })
+        .on("brush", function() {
+            if (d3.event.sourceEvent.type !== "end") {
+                var selection = d3.event.selection;
+                node.selectAll(".selectable").attr("style", function(d) {
+                    return nodeStyle(d.selected = d.previouslySelected ^
+                        (selection != null
+                            && selection[0][0] <= d.x && d.x < selection[1][0]
+                            && selection[0][1] <= d.y && d.y < selection[1][1]), d.t);
+                });
+            }
+        })
+        .on("end", function() {
+            if (d3.event.selection != null) {
+                d3.select(this).call(d3.event.target.move, null);
+            }
+        }));
+}
+
+
+showGraph('#graph-output-nah8foCN',
+  JSON.parse('{"nodes": [{"name": "0", "x": 50.0, "y": 100.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "1", "x": 100.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "2", "x": 150.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "3", "x": 200.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "4", "x": 250.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "5", "x": 300.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "6", "x": 350.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "7", "x": 400.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "8", "x": 450.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "9", "x": 500.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "10", "x": 550.0, "y": 100.0, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "11", "x": 600.0, "y": 100.0, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}], "links": [{"source": "0", "target": "1", "t": 4, "index": 0, "num_parallel": 1}, {"source": "1", "target": "2", "t": 4, "index": 0, "num_parallel": 1}, {"source": "2", "target": "3", "t": 4, "index": 0, "num_parallel": 1}, {"source": "3", "target": "4", "t": 4, "index": 0, "num_parallel": 1}, {"source": "4", "target": "5", "t": 4, "index": 0, "num_parallel": 1}, {"source": "5", "target": "6", "t": 4, "index": 0, "num_parallel": 1}, {"source": "6", "target": "7", "t": 4, "index": 0, "num_parallel": 1}, {"source": "7", "target": "8", "t": 4, "index": 0, "num_parallel": 1}, {"source": "8", "target": "9", "t": 4, "index": 0, "num_parallel": 1}, {"source": "9", "target": "10", "t": 4, "index": 0, "num_parallel": 1}, {"source": "10", "target": "11", "t": 4, "index": 0, "num_parallel": 1}], "pauli_web": []}'), 650, 150, 50,
+  10.0, false, false, '');
+</script> </div> </div> </div> </div> </div> </div> </div> <!-- jp-Notebook --> </div> <!-- jupyter-wrapper --> <style>
         ['pre { line-height: 125%; }\ntd.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }\nspan.linenos { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }\ntd.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }\nspan.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }\n.highlight-ipynb .hll { background-color: var(--jp-cell-editor-active-background) }\n.highlight-ipynb { background: var(--jp-cell-editor-background); color: var(--jp-mirror-editor-variable-color) }\n.highlight-ipynb .c { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment */\n.highlight-ipynb .err { color: var(--jp-mirror-editor-error-color) } /* Error */\n.highlight-ipynb .k { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword */\n.highlight-ipynb .o { color: var(--jp-mirror-editor-operator-color); font-weight: bold } /* Operator */\n.highlight-ipynb .p { color: var(--jp-mirror-editor-punctuation-color) } /* Punctuation */\n.highlight-ipynb .ch { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment.Hashbang */\n.highlight-ipynb .cm { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment.Multiline */\n.highlight-ipynb .cp { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment.Preproc */\n.highlight-ipynb .cpf { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment.PreprocFile */\n.highlight-ipynb .c1 { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment.Single */\n.highlight-ipynb .cs { color: var(--jp-mirror-editor-comment-color); font-style: italic } /* Comment.Special */\n.highlight-ipynb .kc { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword.Constant */\n.highlight-ipynb .kd { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword.Declaration */\n.highlight-ipynb .kn { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword.Namespace */\n.highlight-ipynb .kp { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword.Pseudo */\n.highlight-ipynb .kr { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword.Reserved */\n.highlight-ipynb .kt { color: var(--jp-mirror-editor-keyword-color); font-weight: bold } /* Keyword.Type */\n.highlight-ipynb .m { color: var(--jp-mirror-editor-number-color) } /* Literal.Number */\n.highlight-ipynb .s { color: var(--jp-mirror-editor-string-color) } /* Literal.String */\n.highlight-ipynb .ow { color: var(--jp-mirror-editor-operator-color); font-weight: bold } /* Operator.Word */\n.highlight-ipynb .pm { color: var(--jp-mirror-editor-punctuation-color) } /* Punctuation.Marker */\n.highlight-ipynb .w { color: var(--jp-mirror-editor-variable-color) } /* Text.Whitespace */\n.highlight-ipynb .mb { color: var(--jp-mirror-editor-number-color) } /* Literal.Number.Bin */\n.highlight-ipynb .mf { color: var(--jp-mirror-editor-number-color) } /* Literal.Number.Float */\n.highlight-ipynb .mh { color: var(--jp-mirror-editor-number-color) } /* Literal.Number.Hex */\n.highlight-ipynb .mi { color: var(--jp-mirror-editor-number-color) } /* Literal.Number.Integer */\n.highlight-ipynb .mo { color: var(--jp-mirror-editor-number-color) } /* Literal.Number.Oct */\n.highlight-ipynb .sa { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Affix */\n.highlight-ipynb .sb { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Backtick */\n.highlight-ipynb .sc { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Char */\n.highlight-ipynb .dl { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Delimiter */\n.highlight-ipynb .sd { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Doc */\n.highlight-ipynb .s2 { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Double */\n.highlight-ipynb .se { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Escape */\n.highlight-ipynb .sh { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Heredoc */\n.highlight-ipynb .si { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Interpol */\n.highlight-ipynb .sx { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Other */\n.highlight-ipynb .sr { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Regex */\n.highlight-ipynb .s1 { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Single */\n.highlight-ipynb .ss { color: var(--jp-mirror-editor-string-color) } /* Literal.String.Symbol */\n.highlight-ipynb .il { color: var(--jp-mirror-editor-number-color) } /* Literal.Number.Integer.Long */']
         </style> </article> </div> <script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script> </div> <button type=button class="md-top md-icon" data-md-component=top hidden> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg> Back to top </button> </main> <footer class=md-footer> <nav class="md-footer__inner md-grid" aria-label=Footer> <a href=../magic_state_distillation/ class="md-footer__link md-footer__link--prev" aria-label="Previous: Logical magic state distillation"> <div class="md-footer__button md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg> </div> <div class=md-footer__title> <span class=md-footer__direction> Previous </span> <div class=md-ellipsis> Logical magic state distillation </div> </div> </a> <a href=../../reference/tsim/ class="md-footer__link md-footer__link--next" aria-label="Next: Index"> <div class=md-footer__title> <span class=md-footer__direction> Next </span> <div class=md-ellipsis> Index </div> </div> <div class="md-footer__button md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg> </div> </a> </nav> <div class="md-footer-meta md-typeset"> <div class="md-footer-meta__inner md-grid"> <div class=md-copyright> <div class=md-copyright__highlight> Copyright &copy; 2025 QuEra Computing, Inc. </div> Made with <a href=https://squidfunk.github.io/mkdocs-material/ target=_blank rel=noopener> Material for MkDocs </a> </div> <div class=md-social> <a href=https://x.com/QueraComputing target=_blank rel=noopener title=x.com class=md-social__link> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"/></svg> </a> <a href=https://www.linkedin.com/company/quera-computing-inc/ target=_blank rel=noopener title=www.linkedin.com class=md-social__link> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 448 512"><!-- Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg> </a> </div> </div> </div> </footer> </div> <div class=md-dialog data-md-component=dialog> <div class="md-dialog__inner md-typeset"></div> </div> <script id=__config type=application/json>{"annotate": null, "base": "../..", "features": ["announce.dismiss", "content.action.view", "content.action.edit", "content.code.annotate", "content.code.copy", "content.tooltips", "navigation.indexes", "navigation.sections", "navigation.tabs", "navigation.top", "navigation.tracking", "navigation.footer", "search.highlight", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script> <script src=../../assets/javascripts/bundle.79ae519e.min.js></script> <script src=../../scripts/katex.js></script> <script src=https://unpkg.com/katex@0/dist/katex.min.js></script> <script src=https://unpkg.com/katex@0/dist/contrib/auto-render.min.js></script> </body> </html>
