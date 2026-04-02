@@ -1,6 +1,6 @@
 [![Docs](https://img.shields.io/badge/docs-latest-blue?style=flat&logo=materialformkdocs)](https://queracomputing.github.io/tsim/latest)
 [![Coverage](https://img.shields.io/codecov/c/github/QuEraComputing/tsim?style=flat&logo=codecov)](https://codecov.io/gh/QuEraComputing/tsim)
-[![arXiv](https://img.shields.io/badge/arXiv-2403.06777-b31b1b.svg?style=flat&logo=arxiv)](https://arxiv.org/abs/2403.06777)
+[![arXiv](https://img.shields.io/badge/arXiv-2403.06777-b31b1b.svg?style=flat&logo=arxiv)](https://arxiv.org/abs/2604.01059)
 [![Like This? Leave a star](https://img.shields.io/github/stars/QuEraComputing/tsim?style=flat&label=Like%20Tsim%3F%20Leave%20a%20star&color=yellow&logo=github)](https://github.com/QuEraComputing/tsim)
 
 # Tsim
@@ -61,11 +61,10 @@ samples = detector_sampler.sample(shots=100)
 
 ## Architecture
 ![Architecture](docs/architecture.svg)
-A detailed description of Tsim's architecture is given in PUBLICATION.
+A detailed description of Tsim's architecture is given in [arXiv:2604.01059](https://arxiv.org/abs/2604.01059).
 Quantum programs are translated into ZX diagrams in which Pauli noise channels appear as parameterized vertices with binary variables $e_i$.
 ZX simplification factors the diagram into a classical part that represents the Tanner graph and a quantum part containing the observable circuit. Both parts define a new basis of *error mechanisms* $f_i = \bigoplus_j T_{ij}\,e_j$.
 The observable diagram is used to compute marginal probabilities for autoregressive sampling. Here, each diagram is decomposed into a sum of Clifford terms via stabilizer rank decomposition, following [Sutcliffe and Kissinger (2024)](https://arxiv.org/abs/2403.06777), and compiled into binary JAX tensors $g_{tki}$.
-
 At sampling time, JIT-compiled XLA kernels contract $g_{tki}$ with batched noise configurations $f_i^{s}$ to evaluate marginal probabilities and autoregressively sample detector and observable bits.
 
 ## Differences from Stim
@@ -142,7 +141,7 @@ U3(0.5, 0.25, 0.125) 0  # Apply U3 with θ=π/2, φ=π/4, λ=π/8
 
 ## Publications Using Tsim
 
-- [Simulating magic state cultivation with few Clifford terms](https://arxiv.org/abs/2509.08658) by Kwok Ho Wan and Zhenghao Zhong.
+- [Simulating magic state cultivation with few Clifford terms](https://arxiv.org/abs/2509.08658) by Kwok Ho Wan and Zhenghao Zhong (2025).
 
 
 
@@ -152,7 +151,7 @@ If you use Tsim, please consider citing the paper describing the core simulation
 @article{tsim2026,
   title={Tsim: Fast Universal Simulator for Quantum Error Correction},
   author={Haenel, Rafael and Luo, Xiuzhe and Zhao, Chen},
-  journal={arXiv preprint arXiv:2604.XXXX},
+  journal={arXiv preprint arXiv:2604.01059},
   year={2026}
 }
 ```
