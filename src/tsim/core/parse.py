@@ -47,8 +47,10 @@ def parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
         param = param.strip()
         if not param:
             continue
-        # Match param=value*pi (value can be negative/decimal)
-        param_match = re.match(r"^(\w+)=([-+]?[\d.]+)\*pi$", param)
+        # Match param=value*pi (value can be negative/decimal/scientific)
+        param_match = re.match(
+            r"^(\w+)=([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\*pi$", param
+        )
         if not param_match:
             return None
         param_name = param_match.group(1)
