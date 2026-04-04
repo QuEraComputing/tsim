@@ -59,7 +59,6 @@ def test_single_qubit_instruction(gate_func, matrix: np.ndarray):
 
 @pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
 def test_r_z(frac: Fraction):
-    frac = Fraction(1, 5)
     result = _build_and_get_matrix(instructions.r_z, 0, frac)
     expected = ROT_GATE_MATRICES["R_Z"](frac)
     assert np.allclose(result, expected)
@@ -67,9 +66,15 @@ def test_r_z(frac: Fraction):
 
 @pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
 def test_r_x(frac: Fraction):
-    frac = Fraction(1, 5)
     result = _build_and_get_matrix(instructions.r_x, 0, frac)
     expected = ROT_GATE_MATRICES["R_X"](frac)
+    assert np.allclose(result, expected)
+
+
+@pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
+def test_r_y(frac: Fraction):
+    result = _build_and_get_matrix(instructions.r_y, 0, frac)
+    expected = ROT_GATE_MATRICES["R_Y"](frac)
     assert np.allclose(result, expected)
 
 
