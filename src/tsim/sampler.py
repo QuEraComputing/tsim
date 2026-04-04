@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from math import ceil
 from typing import TYPE_CHECKING, Literal, overload
 
@@ -134,12 +135,17 @@ def sample_program(
     for component in program.components:
         samples, key, max_norm_deviation = sample_component(component, f_params, key)
         if max_norm_deviation > 1e-5:
-            raise AssertionError(
+            warnings.warn(
                 "A marginal probability was not normalized correctly "
                 f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
+                "This is likely a floating point precision issue."
+            )
+        if np.isclose(max_norm_deviation, 1):
+            raise ValueError(
+                "A vanishing marginal probability was encountered."
                 "This is likely the result of an underflow error. Please report this "
                 "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
-            )
+            )  # pragma: no cover
         results.append(samples)
 
     combined = jnp.concatenate(results, axis=1)
