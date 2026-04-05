@@ -375,7 +375,7 @@ class Circuit:
                     return False
 
                 gate_name, params = result
-                if gate_name in {"R_X", "R_Y", "R_Z"}:
+                if gate_name in ["R_X", "R_Y", "R_Z"]:
                     if not is_half_pi_multiple(params["theta"]):
                         return False
                 elif gate_name == "U3":
