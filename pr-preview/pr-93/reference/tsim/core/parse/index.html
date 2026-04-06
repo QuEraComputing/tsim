@@ -34,7 +34,9 @@
 <span class=normal>55</span>
 <span class=normal>56</span>
 <span class=normal>57</span>
-<span class=normal>58</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_parametric_tag</span><span class=p>(</span><span class=n>tag</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=n>Fraction</span><span class=p>]]</span> <span class=o>|</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>58</span>
+<span class=normal>59</span>
+<span class=normal>60</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_parametric_tag</span><span class=p>(</span><span class=n>tag</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=n>Fraction</span><span class=p>]]</span> <span class=o>|</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Parse a parametric gate tag like R_Z(theta=0.3*pi).</span>
 
 <span class=sd>    Supports gates: R_Z, R_X, R_Y, U3.</span>
@@ -59,8 +61,10 @@
         <span class=n>param</span> <span class=o>=</span> <span class=n>param</span><span class=o>.</span><span class=n>strip</span><span class=p>()</span>
         <span class=k>if</span> <span class=ow>not</span> <span class=n>param</span><span class=p>:</span>
             <span class=k>continue</span>
-        <span class=c1># Match param=value*pi (value can be negative/decimal)</span>
-        <span class=n>param_match</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>match</span><span class=p>(</span><span class=sa>r</span><span class=s2>&quot;^(\w+)=([-+]?[\d.]+)\*pi$&quot;</span><span class=p>,</span> <span class=n>param</span><span class=p>)</span>
+        <span class=c1># Match param=value*pi (value can be negative/decimal/scientific)</span>
+        <span class=n>param_match</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>match</span><span class=p>(</span>
+            <span class=sa>r</span><span class=s2>&quot;^(\w+)=([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\*pi$&quot;</span><span class=p>,</span> <span class=n>param</span>
+        <span class=p>)</span>
         <span class=k>if</span> <span class=ow>not</span> <span class=n>param_match</span><span class=p>:</span>
             <span class=k>return</span> <span class=kc>None</span>
         <span class=n>param_name</span> <span class=o>=</span> <span class=n>param_match</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>)</span>
@@ -77,9 +81,7 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span> (<code>tsim.core.instructions.GraphRepresentation</code>)' href=../instructions/#tsim.core.instructions.GraphRepresentation>GraphRepresentation</a></code> </td> <td> <div class=doc-md-description> <p>A GraphRepresentation containing the ZX graph and all auxiliary data.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/parse.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 61</span>
-<span class=normal> 62</span>
-<span class=normal> 63</span>
+  </span> (<code>tsim.core.instructions.GraphRepresentation</code>)' href=../instructions/#tsim.core.instructions.GraphRepresentation>GraphRepresentation</a></code> </td> <td> <div class=doc-md-description> <p>A GraphRepresentation containing the ZX graph and all auxiliary data.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/parse.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 63</span>
 <span class=normal> 64</span>
 <span class=normal> 65</span>
 <span class=normal> 66</span>
@@ -213,7 +215,9 @@
 <span class=normal>194</span>
 <span class=normal>195</span>
 <span class=normal>196</span>
-<span class=normal>197</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
+<span class=normal>197</span>
+<span class=normal>198</span>
+<span class=normal>199</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
     <span class=n>stim_circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span>
     <span class=n>track_classical_wires</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>GraphRepresentation</span><span class=p>:</span>
