@@ -162,11 +162,7 @@ class ExactScalarArray(eqx.Module):
             coeffs_shape = self.coeffs.shape[:axis] + self.coeffs.shape[axis + 1 :]
             result_coeffs = jnp.zeros(coeffs_shape, dtype=self.coeffs.dtype)
             result_coeffs = result_coeffs.at[..., 0].set(1)
-
-            power_shape = self.power.shape[:axis] + self.power.shape[axis + 1 :]
-            result_power = jnp.zeros(power_shape, dtype=self.power.dtype)
-
-            return ExactScalarArray(result_coeffs, result_power)
+            return ExactScalarArray(result_coeffs)
 
         scanned_power, scanned_coeffs = lax.associative_scan(
             _scalar_mul_with_power, (self.power, self.coeffs), axis=axis
