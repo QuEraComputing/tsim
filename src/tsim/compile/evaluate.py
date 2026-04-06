@@ -153,7 +153,6 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
         total_summands = ExactScalarArray(
             total_summands.coeffs, total_summands.power + circuit.power2
         )
-        total_summands = total_summands.reduce()
         return total_summands.sum().to_complex()
     else:
         return jnp.sum(
