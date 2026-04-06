@@ -16,7 +16,11 @@ from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import parametric_to_clifford_gates
 from tsim.utils.diagram import render_svg
-from tsim.utils.program_text import shorthand_to_stim, stim_to_shorthand
+from tsim.utils.program_text import (
+    enriched_stim_error,
+    shorthand_to_stim,
+    stim_to_shorthand,
+)
 
 
 class Circuit:
@@ -42,7 +46,11 @@ class Circuit:
                 empty circuit.
 
         """
-        self._stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text))
+        converted = shorthand_to_stim(stim_program_text)
+        try:
+            self._stim_circ = stim.Circuit(converted)
+        except ValueError as exc:
+            raise enriched_stim_error(exc, converted) from None
 
     @classmethod
     def from_stim_program(cls, stim_circuit: stim.Circuit) -> Circuit:
@@ -64,9 +72,11 @@ class Circuit:
 
         Supports the same shorthand syntax as the constructor.
         """
-        self._stim_circ.append_from_stim_program_text(
-            shorthand_to_stim(stim_program_text)
-        )
+        converted = shorthand_to_stim(stim_program_text)
+        try:
+            self._stim_circ.append_from_stim_program_text(converted)
+        except ValueError as exc:
+            raise enriched_stim_error(exc, converted) from None
 
     @overload
     def append(
@@ -141,18 +151,21 @@ class Circuit:
                 name = "S_DAG"
                 tag = "T"
             elif name in ("R_X", "R_Y", "R_Z"):
-                assert arg is not None, f"For {name} gates, an angle must be provided."
+                if arg is None:
+                    raise ValueError(f"For {name} gates, an angle must be provided.")
                 args = list(arg) if isinstance(arg, Iterable) else [arg]
-                assert (
-                    len(args) == 1
-                ), f"For {name} gates, a single angle must be provided."
+                if len(args) != 1:
+                    raise ValueError(
+                        f"For {name} gates, a single angle must be provided."
+                    )
                 tag = f"{name}(theta={args[0]}*pi)"
                 name = "I"
                 arg = None
             elif name == "U3":
-                assert arg is not None and (
-                    isinstance(arg, Iterable) and len(list(arg)) == 3
-                ), f"For U3 gates, three rotation angles must be provided."
+                if arg is None or not isinstance(arg, Iterable) or len(list(arg)) != 3:
+                    raise ValueError(
+                        "For U3 gates, three rotation angles must be provided."
+                    )
                 theta, phi, lam = list(arg)
                 tag = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
                 name = "I"
@@ -175,7 +188,11 @@ class Circuit:
         """
         with open(filename, "r", encoding="utf-8") as f:
             stim_program_text = f.read()
-        stim_circ = stim.Circuit(shorthand_to_stim(stim_program_text))
+        converted = shorthand_to_stim(stim_program_text)
+        try:
+            stim_circ = stim.Circuit(converted)
+        except ValueError as exc:
+            raise enriched_stim_error(exc, converted) from None
         return cls.from_stim_program(stim_circ)
 
     def __repr__(self) -> str:
