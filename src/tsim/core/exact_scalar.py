@@ -12,8 +12,8 @@ import jax
 import jax.numpy as jnp
 from jax import Array, lax
 
-_E4 = jnp.exp(1j * jnp.pi / 4)  # e^(i*pi/4)
-_E4D = jnp.exp(-1j * jnp.pi / 4)  # e^(-i*pi/4)
+_E4 = jnp.exp(1j * jnp.pi / 4)
+_E4D = jnp.exp(-1j * jnp.pi / 4)
 
 
 @jax.jit
@@ -37,6 +37,35 @@ def _scalar_mul(d1: jax.Array, d2: jax.Array) -> jax.Array:
     D = a1 * d2_coeff - b1 * c2 - c1 * b2 + d1_coeff * a2
 
     return jnp.stack([A, B, C, D], axis=-1).astype(d1.dtype)
+
+
+def _scalar_mul_with_power(x: tuple, y: tuple) -> tuple:
+    """Multiply two exact scalars represented as (power, coeffs) tuples.
+
+    Delegates coefficient multiplication to `_scalar_mul` and applies a single
+    reduction step (divides by 2) when all resulting coefficients are even.
+
+    Args:
+        x: Tuple of (power, coeffs) where coeffs has shape (..., 4).
+        y: Tuple of (power, coeffs) where coeffs has shape (..., 4).
+
+    Returns:
+        Tuple of (new_power, new_coeffs).
+
+    """
+    p1, c1 = x
+    p2, c2 = y
+
+    new_coeffs = _scalar_mul(c1, c2)
+    P = p1 + p2
+
+    reducible = jnp.all(new_coeffs % 2 == 0, axis=-1) & jnp.any(
+        new_coeffs != 0, axis=-1
+    )
+    new_coeffs = jnp.where(reducible[..., None], new_coeffs // 2, new_coeffs)
+    P = jnp.where(reducible, P + 1, P)
+
+    return (P, new_coeffs)
 
 
 def _scalar_to_complex(data: jax.Array) -> jax.Array:
@@ -108,7 +137,7 @@ class ExactScalarArray(eqx.Module):
 
         Aligns powers to the minimum power before summing.
         """
-        # TODO: potentially refactor sum routine to reduce every couple steps
+        # TODO: potentially refactor sum routine to reduce on every step (like prod)
         # to prevent overflow
 
         min_power = jnp.min(self.power, keepdims=True, axis=-1)
@@ -143,9 +172,11 @@ class ExactScalarArray(eqx.Module):
 
             return ExactScalarArray(result_coeffs, result_power)
 
-        scanned = lax.associative_scan(_scalar_mul, self.coeffs, axis=axis)
-        result_coeffs = jnp.take(scanned, indices=-1, axis=axis)
-        result_power = jnp.sum(self.power, axis=axis)
+        scanned_power, scanned_coeffs = lax.associative_scan(
+            _scalar_mul_with_power, (self.power, self.coeffs), axis=axis
+        )
+        result_power = jnp.take(scanned_power, indices=-1, axis=axis)
+        result_coeffs = jnp.take(scanned_coeffs, indices=-1, axis=axis)
 
         return ExactScalarArray(result_coeffs, result_power)
 
