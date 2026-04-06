@@ -82,7 +82,7 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
     term_vals_a_exact = jnp.where(a_mask[..., None], term_vals_a_exact, _IDENTITY)
 
     term_vals_a = ExactScalarArray(term_vals_a_exact)
-    summands_a = term_vals_a.prod(axis=-2)
+    summands_a = term_vals_a.prod(axis=-1)
 
     # ====================================================================
     # TYPE B: Half-Pi Terms (e^(i*beta))
@@ -135,7 +135,7 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
     term_vals_d_exact = jnp.where(d_mask[..., None], term_vals_d_exact, _IDENTITY)
 
     term_vals_d = ExactScalarArray(term_vals_d_exact)
-    summands_d = term_vals_d.prod(axis=-2)
+    summands_d = term_vals_d.prod(axis=-1)
 
     # ====================================================================
     # FINAL COMBINATION

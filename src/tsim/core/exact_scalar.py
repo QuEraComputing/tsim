@@ -122,16 +122,27 @@ class ExactScalarArray(eqx.Module):
         new_power = self.power + other.power
         return ExactScalarArray(new_coeffs, new_power)
 
-    def sum(self) -> "ExactScalarArray":
-        """Sum elements along the last scalar axis using normalized pairwise adds."""
+    def sum(self, axis: int = -1) -> "ExactScalarArray":
+        """Sum elements along the specified axis using normalized pairwise adds.
+
+        Args:
+            axis: The axis along which to sum.
+
+        Returns:
+            ExactScalarArray with the sum computed along the axis.
+
+        """
+        if axis < 0:
+            axis += self.power.ndim
+
         scanned_power, scanned_coeffs = lax.associative_scan(
-            _scalar_add_with_power, (self.power, self.coeffs), axis=-1
+            _scalar_add_with_power, (self.power, self.coeffs), axis=axis
         )
-        result_power = jnp.take(scanned_power, indices=-1, axis=-1)
-        result_coeffs = jnp.take(scanned_coeffs, indices=-1, axis=-2)
+        result_power = jnp.take(scanned_power, indices=-1, axis=axis)
+        result_coeffs = jnp.take(scanned_coeffs, indices=-1, axis=axis)
         return ExactScalarArray(result_coeffs, result_power)
 
-    def prod(self, axis: int = -2) -> "ExactScalarArray":
+    def prod(self, axis: int = -1) -> "ExactScalarArray":
         """Compute product along the specified axis using associative scan.
 
         Returns identity (1+0i with power 0) for empty reductions.
@@ -144,7 +155,7 @@ class ExactScalarArray(eqx.Module):
 
         """
         if axis < 0:
-            axis = self.coeffs.ndim + axis
+            axis += self.power.ndim
 
         if self.coeffs.shape[axis] == 0:
             # Product of empty sequence is identity: [1, 0, 0, 0] * 2^0
