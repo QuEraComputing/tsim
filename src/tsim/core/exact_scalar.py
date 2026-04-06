@@ -131,7 +131,7 @@ class ExactScalarArray(eqx.Module):
         result_coeffs = jnp.take(scanned_coeffs, indices=-1, axis=-2)
         return ExactScalarArray(result_coeffs, result_power)
 
-    def prod(self, axis: int = -1) -> "ExactScalarArray":
+    def prod(self, axis: int = -2) -> "ExactScalarArray":
         """Compute product along the specified axis using associative scan.
 
         Returns identity (1+0i with power 0) for empty reductions.
