@@ -5,19 +5,19 @@
     ...     CNOT 0 1
     ...     M 0 1
     ... ''')
-</code></pre> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>stim_program_text</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>Stim program text to parse. If empty, creates an empty circuit.</p> </div> </td> <td> <code>&#39;&#39;</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>41</span>
-<span class=normal>42</span>
-<span class=normal>43</span>
-<span class=normal>44</span>
-<span class=normal>45</span>
-<span class=normal>46</span>
-<span class=normal>47</span>
-<span class=normal>48</span>
-<span class=normal>49</span>
-<span class=normal>50</span>
-<span class=normal>51</span>
-<span class=normal>52</span>
-<span class=normal>53</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>stim_program_text</span><span class=p>:</span> <span class=nb>str</span> <span class=o>=</span> <span class=s2>&quot;&quot;</span><span class=p>):</span>
+</code></pre> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>stim_program_text</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>Stim program text to parse. If empty, creates an empty circuit.</p> </div> </td> <td> <code>&#39;&#39;</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>53</span>
+<span class=normal>54</span>
+<span class=normal>55</span>
+<span class=normal>56</span>
+<span class=normal>57</span>
+<span class=normal>58</span>
+<span class=normal>59</span>
+<span class=normal>60</span>
+<span class=normal>61</span>
+<span class=normal>62</span>
+<span class=normal>63</span>
+<span class=normal>64</span>
+<span class=normal>65</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>stim_program_text</span><span class=p>:</span> <span class=nb>str</span> <span class=o>=</span> <span class=s2>&quot;&quot;</span><span class=p>):</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Initialize circuit from stim program text.</span>
 
 <span class=sd>    Args:</span>
@@ -38,21 +38,21 @@
 </code></pre></div> <div class="doc doc-contents "> <p>Counts the number of qubits used when simulating the circuit.</p> <p>This is always one more than the largest qubit index used by the circuit.</p> </div> </div> <div class="doc doc-object doc-attribute"> <h3 id=tsim.circuit.Circuit.num_ticks class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code> <span class="doc doc-object-name doc-attribute-name">num_ticks</span> <span class="doc doc-labels"> <small class="doc doc-label doc-label-property"><code>property</code></small> </span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=n>num_ticks</span><span class=p>:</span> <span class=nb>int</span>
 </code></pre></div> <div class="doc doc-contents "> <p>Counts the number of TICK instructions executed when running the circuit.</p> <p>TICKs in loops are counted once per iteration.</p> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The number of ticks executed by the circuit.</p> </div> </td> </tr> </tbody> </table> </div> </div> <div class="doc doc-object doc-attribute"> <h3 id=tsim.circuit.Circuit.stim_circuit class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code> <span class="doc doc-object-name doc-attribute-name">stim_circuit</span> <span class="doc doc-labels"> <small class="doc doc-label doc-label-property"><code>property</code></small> </span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=n>stim_circuit</span><span class=p>:</span> <span class=n>Circuit</span>
 </code></pre></div> <div class="doc doc-contents "> <p>Return the underlying stim circuit.</p> <p>Parametric rotation instructions whose angles are all half-π multiples are expanded into their equivalent Clifford gates.</p> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.__add__ class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">__add__</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>__add__</span><span class=p>(</span><span class=n>other</span><span class=p>:</span> <span class=n>Circuit</span> <span class=o>|</span> <span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a new circuit with another circuit appended.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>224</span>
-<span class=normal>225</span>
-<span class=normal>226</span>
-<span class=normal>227</span>
-<span class=normal>228</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__add__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>other</span><span class=p>:</span> <span class=n>Circuit</span> <span class=o>|</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a new circuit with another circuit appended.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>236</span>
+<span class=normal>237</span>
+<span class=normal>238</span>
+<span class=normal>239</span>
+<span class=normal>240</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__add__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>other</span><span class=p>:</span> <span class=n>Circuit</span> <span class=o>|</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return a new circuit with another circuit appended.&quot;&quot;&quot;</span>
     <span class=n>result</span> <span class=o>=</span> <span class=n>Circuit</span><span class=o>.</span><span class=n>from_stim_program</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=o>.</span><span class=n>copy</span><span class=p>())</span>
     <span class=n>result</span> <span class=o>+=</span> <span class=n>other</span>
     <span class=k>return</span> <span class=n>result</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.__eq__ class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">__eq__</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>__eq__</span><span class=p>(</span><span class=n>other</span><span class=p>:</span> <span class=nb>object</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>bool</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Check equality with another circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>210</span>
-<span class=normal>211</span>
-<span class=normal>212</span>
-<span class=normal>213</span>
-<span class=normal>214</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__eq__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>other</span><span class=p>:</span> <span class=nb>object</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>bool</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Check equality with another circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>222</span>
+<span class=normal>223</span>
+<span class=normal>224</span>
+<span class=normal>225</span>
+<span class=normal>226</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__eq__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>other</span><span class=p>:</span> <span class=nb>object</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>bool</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Check equality with another circuit.&quot;&quot;&quot;</span>
     <span class=k>if</span> <span class=nb>isinstance</span><span class=p>(</span><span class=n>other</span><span class=p>,</span> <span class=n>Circuit</span><span class=p>):</span>
         <span class=k>return</span> <span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span> <span class=o>==</span> <span class=n>other</span><span class=o>.</span><span class=n>_stim_circ</span>
@@ -64,19 +64,7 @@
 <span class=p>]</span>
 </code></pre></div><div class="doc-signature highlight"><pre><span></span><code><span class=nf>__getitem__</span><span class=p>(</span><span class=n>index_or_slice</span><span class=p>:</span> <span class=nb>slice</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
 </code></pre></div> </div> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>__getitem__</span><span class=p>(</span><span class=n>index_or_slice</span><span class=p>:</span> <span class=nb>object</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>object</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return copies of instructions from the circuit.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>index_or_slice</code> </td> <td> <code><span title=object>object</span></code> </td> <td> <div class=doc-md-description> <p>An integer index picking out an instruction to return, or a slice picking out a range of instructions to return as a circuit.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=object>object</span></code> </td> <td> <div class=doc-md-description> <p>If the index was an integer, then an instruction from the circuit.</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=object>object</span></code> </td> <td> <div class=doc-md-description> <p>If the index was a slice, then a circuit made up of the instructions in that</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=object>object</span></code> </td> <td> <div class=doc-md-description> <p>slice.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>255</span>
-<span class=normal>256</span>
-<span class=normal>257</span>
-<span class=normal>258</span>
-<span class=normal>259</span>
-<span class=normal>260</span>
-<span class=normal>261</span>
-<span class=normal>262</span>
-<span class=normal>263</span>
-<span class=normal>264</span>
-<span class=normal>265</span>
-<span class=normal>266</span>
-<span class=normal>267</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return copies of instructions from the circuit.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>index_or_slice</code> </td> <td> <code><span title=object>object</span></code> </td> <td> <div class=doc-md-description> <p>An integer index picking out an instruction to return, or a slice picking out a range of instructions to return as a circuit.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=object>object</span></code> </td> <td> <div class=doc-md-description> <p>If the index was an integer, then an instruction from the circuit.</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=object>object</span></code> </td> <td> <div class=doc-md-description> <p>If the index was a slice, then a circuit made up of the instructions in that</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=object>object</span></code> </td> <td> <div class=doc-md-description> <p>slice.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>267</span>
 <span class=normal>268</span>
 <span class=normal>269</span>
 <span class=normal>270</span>
@@ -85,7 +73,19 @@
 <span class=normal>273</span>
 <span class=normal>274</span>
 <span class=normal>275</span>
-<span class=normal>276</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__getitem__</span><span class=p>(</span>
+<span class=normal>276</span>
+<span class=normal>277</span>
+<span class=normal>278</span>
+<span class=normal>279</span>
+<span class=normal>280</span>
+<span class=normal>281</span>
+<span class=normal>282</span>
+<span class=normal>283</span>
+<span class=normal>284</span>
+<span class=normal>285</span>
+<span class=normal>286</span>
+<span class=normal>287</span>
+<span class=normal>288</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__getitem__</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>index_or_slice</span><span class=p>:</span> <span class=nb>object</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>object</span><span class=p>:</span>
@@ -108,13 +108,13 @@
     <span class=k>else</span><span class=p>:</span>
         <span class=k>raise</span> <span class=ne>TypeError</span><span class=p>(</span><span class=sa>f</span><span class=s2>&quot;Invalid index or slice: </span><span class=si>{</span><span class=n>index_or_slice</span><span class=si>}</span><span class=s2>&quot;</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.__iadd__ class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">__iadd__</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>__iadd__</span><span class=p>(</span><span class=n>other</span><span class=p>:</span> <span class=n>Circuit</span> <span class=o>|</span> <span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Append another circuit to this circuit in-place.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>216</span>
-<span class=normal>217</span>
-<span class=normal>218</span>
-<span class=normal>219</span>
-<span class=normal>220</span>
-<span class=normal>221</span>
-<span class=normal>222</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__iadd__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>other</span><span class=p>:</span> <span class=n>Circuit</span> <span class=o>|</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Append another circuit to this circuit in-place.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>228</span>
+<span class=normal>229</span>
+<span class=normal>230</span>
+<span class=normal>231</span>
+<span class=normal>232</span>
+<span class=normal>233</span>
+<span class=normal>234</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__iadd__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>other</span><span class=p>:</span> <span class=n>Circuit</span> <span class=o>|</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Append another circuit to this circuit in-place.&quot;&quot;&quot;</span>
     <span class=k>if</span> <span class=nb>isinstance</span><span class=p>(</span><span class=n>other</span><span class=p>,</span> <span class=n>Circuit</span><span class=p>):</span>
         <span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span> <span class=o>+=</span> <span class=n>other</span><span class=o>.</span><span class=n>_stim_circ</span>
@@ -122,41 +122,41 @@
         <span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span> <span class=o>+=</span> <span class=n>other</span>
     <span class=k>return</span> <span class=bp>self</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.__imul__ class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">__imul__</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>__imul__</span><span class=p>(</span><span class=n>repetitions</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Repeat this circuit in-place.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>230</span>
-<span class=normal>231</span>
-<span class=normal>232</span>
-<span class=normal>233</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__imul__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>repetitions</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Repeat this circuit in-place.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>242</span>
+<span class=normal>243</span>
+<span class=normal>244</span>
+<span class=normal>245</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__imul__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>repetitions</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Repeat this circuit in-place.&quot;&quot;&quot;</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span> <span class=o>*=</span> <span class=n>repetitions</span>
     <span class=k>return</span> <span class=bp>self</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.__len__ class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">__len__</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>__len__</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=nb>int</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return the number of instructions in the circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>206</span>
-<span class=normal>207</span>
-<span class=normal>208</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__len__</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return the number of instructions in the circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>218</span>
+<span class=normal>219</span>
+<span class=normal>220</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__len__</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return the number of instructions in the circuit.&quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=nb>len</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.__mul__ class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">__mul__</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>__mul__</span><span class=p>(</span><span class=n>repetitions</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a new circuit repeated the given number of times.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>235</span>
-<span class=normal>236</span>
-<span class=normal>237</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__mul__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>repetitions</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a new circuit repeated the given number of times.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>247</span>
+<span class=normal>248</span>
+<span class=normal>249</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__mul__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>repetitions</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return a new circuit repeated the given number of times.&quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=n>Circuit</span><span class=o>.</span><span class=n>from_stim_program</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span> <span class=o>*</span> <span class=n>repetitions</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.__repr__ class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">__repr__</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>__repr__</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=nb>str</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a string representation that can recreate the circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>198</span>
-<span class=normal>199</span>
-<span class=normal>200</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__repr__</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a string representation that can recreate the circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>210</span>
+<span class=normal>211</span>
+<span class=normal>212</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__repr__</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return a string representation that can recreate the circuit.&quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;tsim.Circuit(&#39;&#39;&#39;</span><span class=se>\n</span><span class=si>{</span><span class=nb>str</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span><span class=si>}</span><span class=se>\n</span><span class=s2>&#39;&#39;&#39;)&quot;</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.__rmul__ class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">__rmul__</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>__rmul__</span><span class=p>(</span><span class=n>repetitions</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a new circuit repeated the given number of times.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>239</span>
-<span class=normal>240</span>
-<span class=normal>241</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__rmul__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>repetitions</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a new circuit repeated the given number of times.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>251</span>
+<span class=normal>252</span>
+<span class=normal>253</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__rmul__</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>repetitions</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return a new circuit repeated the given number of times.&quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=bp>self</span> <span class=o>*</span> <span class=n>repetitions</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.__str__ class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">__str__</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>__str__</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=nb>str</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return the circuit as program text.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>202</span>
-<span class=normal>203</span>
-<span class=normal>204</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__str__</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return the circuit as program text.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>214</span>
+<span class=normal>215</span>
+<span class=normal>216</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__str__</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return the circuit as program text.&quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=n>stim_to_shorthand</span><span class=p>(</span><span class=nb>str</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=p>))</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.append class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">append</span> </h3> <div class=doc-overloads> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>append</span><span class=p>(</span>
@@ -190,19 +190,7 @@
     <span class=o>*</span><span class=p>,</span>
     <span class=n>tag</span><span class=p>:</span> <span class=nb>str</span> <span class=o>=</span> <span class=s2>&quot;&quot;</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Append an operation into the circuit.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>name</code> </td> <td> <code><span title=typing.Union>Union</span>[<span title=str>str</span>, <span title=stim.CircuitInstruction>CircuitInstruction</span>, <span title=stim.CircuitRepeatBlock>CircuitRepeatBlock</span>, <span title=stim.Circuit>Circuit</span>]</code> </td> <td> <div class=doc-md-description> <p>The name of the operation's gate (e.g. "H" or "M" or "CNOT").</p> <p>This argument can also be set to a <code>stim.CircuitInstruction</code> or <code>stim.CircuitInstructionBlock</code>, which results in the instruction or block being appended to the circuit. The other arguments (targets and arg) can't be specified when doing so.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>targets</code> </td> <td> <code><span title=typing.Union>Union</span>[<span title=int>int</span>, <span title=stim.GateTarget>GateTarget</span>, <span title=stim.PauliString>PauliString</span>, <span title=typing.Iterable>Iterable</span>[<span title=typing.Union>Union</span>[<span title=int>int</span>, <span title=stim.GateTarget>GateTarget</span>, <span title=stim.PauliString>PauliString</span>]]]</code> </td> <td> <div class=doc-md-description> <p>The objects operated on by the gate. This can be either a single target or an iterable of multiple targets.</p> <p>Each target can be: An int: The index of a targeted qubit. A <code>stim.GateTarget</code>: Could be a variety of things. Methods like <code>stim.target_rec</code>, <code>stim.target_sweet</code>, <code>stim.target_x</code>, and <code>stim.CircuitInstruction.__getitem__</code> all return this type. A <code>stim.PauliString</code>: This will automatically be expanded into a product of pauli targets like <code>X1*Y2*Z3</code>.</p> </div> </td> <td> <code>()</code> </td> </tr> <tr class=doc-section-item> <td> <code>arg</code> </td> <td> <code><span title=typing.Union>Union</span>[<span title=float>float</span>, <span title=typing.Iterable>Iterable</span>[<span title=float>float</span>], None]</code> </td> <td> <div class=doc-md-description> <p>The "parens arguments" for the gate, such as the probability for a noise operation. A double or list of doubles parameterizing the gate. Different gates take different parens arguments. For example, X_ERROR takes a probability, OBSERVABLE_INCLUDE takes an observable index, and PAULI_CHANNEL_1 takes three disjoint probabilities.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>tag</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>A customizable string attached to the instruction.</p> </div> </td> <td> <code>&#39;&#39;</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>102</span>
-<span class=normal>103</span>
-<span class=normal>104</span>
-<span class=normal>105</span>
-<span class=normal>106</span>
-<span class=normal>107</span>
-<span class=normal>108</span>
-<span class=normal>109</span>
-<span class=normal>110</span>
-<span class=normal>111</span>
-<span class=normal>112</span>
-<span class=normal>113</span>
-<span class=normal>114</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Append an operation into the circuit.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>name</code> </td> <td> <code><span title=typing.Union>Union</span>[<span title=str>str</span>, <span title=stim.CircuitInstruction>CircuitInstruction</span>, <span title=stim.CircuitRepeatBlock>CircuitRepeatBlock</span>, <span title=stim.Circuit>Circuit</span>]</code> </td> <td> <div class=doc-md-description> <p>The name of the operation's gate (e.g. "H" or "M" or "CNOT").</p> <p>This argument can also be set to a <code>stim.CircuitInstruction</code> or <code>stim.CircuitInstructionBlock</code>, which results in the instruction or block being appended to the circuit. The other arguments (targets and arg) can't be specified when doing so.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>targets</code> </td> <td> <code><span title=typing.Union>Union</span>[<span title=int>int</span>, <span title=stim.GateTarget>GateTarget</span>, <span title=stim.PauliString>PauliString</span>, <span title=typing.Iterable>Iterable</span>[<span title=typing.Union>Union</span>[<span title=int>int</span>, <span title=stim.GateTarget>GateTarget</span>, <span title=stim.PauliString>PauliString</span>]]]</code> </td> <td> <div class=doc-md-description> <p>The objects operated on by the gate. This can be either a single target or an iterable of multiple targets.</p> <p>Each target can be: An int: The index of a targeted qubit. A <code>stim.GateTarget</code>: Could be a variety of things. Methods like <code>stim.target_rec</code>, <code>stim.target_sweet</code>, <code>stim.target_x</code>, and <code>stim.CircuitInstruction.__getitem__</code> all return this type. A <code>stim.PauliString</code>: This will automatically be expanded into a product of pauli targets like <code>X1*Y2*Z3</code>.</p> </div> </td> <td> <code>()</code> </td> </tr> <tr class=doc-section-item> <td> <code>arg</code> </td> <td> <code><span title=typing.Union>Union</span>[<span title=float>float</span>, <span title=typing.Iterable>Iterable</span>[<span title=float>float</span>], None]</code> </td> <td> <div class=doc-md-description> <p>The "parens arguments" for the gate, such as the probability for a noise operation. A double or list of doubles parameterizing the gate. Different gates take different parens arguments. For example, X_ERROR takes a probability, OBSERVABLE_INCLUDE takes an observable index, and PAULI_CHANNEL_1 takes three disjoint probabilities.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>tag</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>A customizable string attached to the instruction.</p> </div> </td> <td> <code>&#39;&#39;</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>114</span>
 <span class=normal>115</span>
 <span class=normal>116</span>
 <span class=normal>117</span>
@@ -264,7 +252,19 @@
 <span class=normal>173</span>
 <span class=normal>174</span>
 <span class=normal>175</span>
-<span class=normal>176</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>append</span><span class=p>(</span>
+<span class=normal>176</span>
+<span class=normal>177</span>
+<span class=normal>178</span>
+<span class=normal>179</span>
+<span class=normal>180</span>
+<span class=normal>181</span>
+<span class=normal>182</span>
+<span class=normal>183</span>
+<span class=normal>184</span>
+<span class=normal>185</span>
+<span class=normal>186</span>
+<span class=normal>187</span>
+<span class=normal>188</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>append</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>name</span><span class=p>:</span> <span class=n>Union</span><span class=p>[</span>
         <span class=nb>str</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>CircuitInstruction</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>CircuitRepeatBlock</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span>
@@ -342,16 +342,16 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.append_from_stim_program_text class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">append_from_stim_program_text</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>append_from_stim_program_text</span><span class=p>(</span>
     <span class=n>stim_program_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Append operations described by a Stim format program into the circuit.</p> <p>Supports the same shorthand syntax as the constructor.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>70</span>
-<span class=normal>71</span>
-<span class=normal>72</span>
-<span class=normal>73</span>
-<span class=normal>74</span>
-<span class=normal>75</span>
-<span class=normal>76</span>
-<span class=normal>77</span>
-<span class=normal>78</span>
-<span class=normal>79</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>append_from_stim_program_text</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>stim_program_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Append operations described by a Stim format program into the circuit.</p> <p>Supports the same shorthand syntax as the constructor.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>82</span>
+<span class=normal>83</span>
+<span class=normal>84</span>
+<span class=normal>85</span>
+<span class=normal>86</span>
+<span class=normal>87</span>
+<span class=normal>88</span>
+<span class=normal>89</span>
+<span class=normal>90</span>
+<span class=normal>91</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>append_from_stim_program_text</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>stim_program_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Append operations described by a Stim format program into the circuit.</span>
 
 <span class=sd>    Supports the same shorthand syntax as the constructor.</span>
@@ -362,19 +362,7 @@
     <span class=k>except</span> <span class=ne>ValueError</span> <span class=k>as</span> <span class=n>exc</span><span class=p>:</span>
         <span class=k>raise</span> <span class=n>enriched_stim_error</span><span class=p>(</span><span class=n>exc</span><span class=p>,</span> <span class=n>converted</span><span class=p>)</span> <span class=kn>from</span><span class=w> </span><span class=kc>None</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.approx_equals class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">approx_equals</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>approx_equals</span><span class=p>(</span><span class=n>other</span><span class=p>:</span> <span class=nb>object</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>atol</span><span class=p>:</span> <span class=nb>float</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>bool</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Check if a circuit is approximately equal to another circuit.</p> <p>Two circuits are approximately equal if they are equal up to slight perturbations of instruction arguments such as probabilities. For example, <code>X_ERROR(0.100) 0</code> is approximately equal to <code>X_ERROR(0.099)</code> within an absolute tolerance of 0.002. All other details of the circuits (such as the ordering of instructions and targets) must be exactly the same.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>other</code> </td> <td> <code><span title=object>object</span></code> </td> <td> <div class=doc-md-description> <p>The circuit, or other object, to compare to this one.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>atol</code> </td> <td> <code><span title=float>float</span></code> </td> <td> <div class=doc-md-description> <p>The absolute error tolerance. The maximum amount each probability may have been perturbed by.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>True if the given object is a circuit approximately equal up to the</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>receiving circuit up to the given tolerance, otherwise False.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>278</span>
-<span class=normal>279</span>
-<span class=normal>280</span>
-<span class=normal>281</span>
-<span class=normal>282</span>
-<span class=normal>283</span>
-<span class=normal>284</span>
-<span class=normal>285</span>
-<span class=normal>286</span>
-<span class=normal>287</span>
-<span class=normal>288</span>
-<span class=normal>289</span>
-<span class=normal>290</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Check if a circuit is approximately equal to another circuit.</p> <p>Two circuits are approximately equal if they are equal up to slight perturbations of instruction arguments such as probabilities. For example, <code>X_ERROR(0.100) 0</code> is approximately equal to <code>X_ERROR(0.099)</code> within an absolute tolerance of 0.002. All other details of the circuits (such as the ordering of instructions and targets) must be exactly the same.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>other</code> </td> <td> <code><span title=object>object</span></code> </td> <td> <div class=doc-md-description> <p>The circuit, or other object, to compare to this one.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>atol</code> </td> <td> <code><span title=float>float</span></code> </td> <td> <div class=doc-md-description> <p>The absolute error tolerance. The maximum amount each probability may have been perturbed by.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>True if the given object is a circuit approximately equal up to the</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>receiving circuit up to the given tolerance, otherwise False.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>290</span>
 <span class=normal>291</span>
 <span class=normal>292</span>
 <span class=normal>293</span>
@@ -391,7 +379,19 @@
 <span class=normal>304</span>
 <span class=normal>305</span>
 <span class=normal>306</span>
-<span class=normal>307</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>approx_equals</span><span class=p>(</span>
+<span class=normal>307</span>
+<span class=normal>308</span>
+<span class=normal>309</span>
+<span class=normal>310</span>
+<span class=normal>311</span>
+<span class=normal>312</span>
+<span class=normal>313</span>
+<span class=normal>314</span>
+<span class=normal>315</span>
+<span class=normal>316</span>
+<span class=normal>317</span>
+<span class=normal>318</span>
+<span class=normal>319</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>approx_equals</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>other</span><span class=p>:</span> <span class=nb>object</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
@@ -422,29 +422,17 @@
     <span class=k>else</span><span class=p>:</span>
         <span class=k>return</span> <span class=kc>False</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.cast_to_stim class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">cast_to_stim</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>cast_to_stim</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return self with type cast to stim.Circuit. This is useful for passing the circuit to functions that expect a stim.Circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>806</span>
-<span class=normal>807</span>
-<span class=normal>808</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>cast_to_stim</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return self with type cast to stim.Circuit. This is useful for passing the circuit to functions that expect a stim.Circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>818</span>
+<span class=normal>819</span>
+<span class=normal>820</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>cast_to_stim</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return self with type cast to stim.Circuit. This is useful for passing the circuit to functions that expect a stim.Circuit.&quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=n>cast</span><span class=p>(</span><span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span> <span class=bp>self</span><span class=p>)</span>  <span class=c1># pragma: no cover</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.compile_detector_sampler class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">compile_detector_sampler</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>compile_detector_sampler</span><span class=p>(</span>
     <span class=o>*</span><span class=p>,</span>
     <span class=n>strategy</span><span class=p>:</span> <span class=n>DecompositionStrategy</span> <span class=o>=</span> <span class=s2>&quot;cat5&quot;</span><span class=p>,</span>
     <span class=n>seed</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
-<span class=p>)</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Compile circuit into a detector sampler.</p> <p>Connected components whose single output is deterministically given by one f-variable are handled via a fast direct path (no compilation or autoregressive sampling). Remaining components go through the full compilation pipeline.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>strategy</code> </td> <td> <code><span title=pyzx_param.simulate.DecompositionStrategy>DecompositionStrategy</span></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. If None, a random seed will be generated.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> </td> <td> <div class=doc-md-description> <p>A CompiledDetectorSampler that can be used to sample detectors and observables.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>780</span>
-<span class=normal>781</span>
-<span class=normal>782</span>
-<span class=normal>783</span>
-<span class=normal>784</span>
-<span class=normal>785</span>
-<span class=normal>786</span>
-<span class=normal>787</span>
-<span class=normal>788</span>
-<span class=normal>789</span>
-<span class=normal>790</span>
-<span class=normal>791</span>
-<span class=normal>792</span>
+<span class=p>)</span> <span class=o>-&gt;</span> <span class=n>CompiledDetectorSampler</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Compile circuit into a detector sampler.</p> <p>Connected components whose single output is deterministically given by one f-variable are handled via a fast direct path (no compilation or autoregressive sampling). Remaining components go through the full compilation pipeline.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>strategy</code> </td> <td> <code><span title=pyzx_param.simulate.DecompositionStrategy>DecompositionStrategy</span></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. If None, a random seed will be generated.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">CompiledDetectorSampler</span> (<code>tsim.sampler.CompiledDetectorSampler</code>)' href=../sampler/#tsim.sampler.CompiledDetectorSampler>CompiledDetectorSampler</a></code> </td> <td> <div class=doc-md-description> <p>A CompiledDetectorSampler that can be used to sample detectors and observables.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>792</span>
 <span class=normal>793</span>
 <span class=normal>794</span>
 <span class=normal>795</span>
@@ -456,12 +444,24 @@
 <span class=normal>801</span>
 <span class=normal>802</span>
 <span class=normal>803</span>
-<span class=normal>804</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_detector_sampler</span><span class=p>(</span>
+<span class=normal>804</span>
+<span class=normal>805</span>
+<span class=normal>806</span>
+<span class=normal>807</span>
+<span class=normal>808</span>
+<span class=normal>809</span>
+<span class=normal>810</span>
+<span class=normal>811</span>
+<span class=normal>812</span>
+<span class=normal>813</span>
+<span class=normal>814</span>
+<span class=normal>815</span>
+<span class=normal>816</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_detector_sampler</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
     <span class=n>strategy</span><span class=p>:</span> <span class=n>DecompositionStrategy</span> <span class=o>=</span> <span class=s2>&quot;cat5&quot;</span><span class=p>,</span>
     <span class=n>seed</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
-<span class=p>):</span>
+<span class=p>)</span> <span class=o>-&gt;</span> <span class=n>CompiledDetectorSampler</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Compile circuit into a detector sampler.</span>
 
 <span class=sd>    Connected components whose single output is deterministically given by</span>
@@ -484,19 +484,7 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.compile_m2d_converter class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">compile_m2d_converter</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>compile_m2d_converter</span><span class=p>(</span>
     <span class=o>*</span><span class=p>,</span> <span class=n>skip_reference_sample</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>CompiledMeasurementsToDetectionEventsConverter</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Create a measurement-to-detection-event converter for the given circuit.</p> <p>The converter can efficiently compute detection events and observable flips from raw measurement data.</p> <p>The converter uses a noiseless reference sample, collected from the circuit using stim's Tableau simulator during initialization of the converter, as a baseline for determining what the expected value of a detector is.</p> <p>Note that the expected behavior of gauge detectors (detectors that are not actually deterministic under noiseless execution) can vary depending on the reference sample. Stim mitigates this by always generating the same reference sample for a given circuit.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>skip_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When set to True, the reference sample used by the converter is initialized to all-zeroes instead of being collected from the circuit. This should only be used if it's known that the all-zeroes sample is actually a possible result from the circuit (under noiseless execution).</p> </div> </td> <td> <code>False</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=stim.CompiledMeasurementsToDetectionEventsConverter>CompiledMeasurementsToDetectionEventsConverter</span></code> </td> <td> <div class=doc-md-description> <p>An initialized stim.CompiledMeasurementsToDetectionEventsConverter.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>309</span>
-<span class=normal>310</span>
-<span class=normal>311</span>
-<span class=normal>312</span>
-<span class=normal>313</span>
-<span class=normal>314</span>
-<span class=normal>315</span>
-<span class=normal>316</span>
-<span class=normal>317</span>
-<span class=normal>318</span>
-<span class=normal>319</span>
-<span class=normal>320</span>
-<span class=normal>321</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Create a measurement-to-detection-event converter for the given circuit.</p> <p>The converter can efficiently compute detection events and observable flips from raw measurement data.</p> <p>The converter uses a noiseless reference sample, collected from the circuit using stim's Tableau simulator during initialization of the converter, as a baseline for determining what the expected value of a detector is.</p> <p>Note that the expected behavior of gauge detectors (detectors that are not actually deterministic under noiseless execution) can vary depending on the reference sample. Stim mitigates this by always generating the same reference sample for a given circuit.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>skip_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When set to True, the reference sample used by the converter is initialized to all-zeroes instead of being collected from the circuit. This should only be used if it's known that the all-zeroes sample is actually a possible result from the circuit (under noiseless execution).</p> </div> </td> <td> <code>False</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=stim.CompiledMeasurementsToDetectionEventsConverter>CompiledMeasurementsToDetectionEventsConverter</span></code> </td> <td> <div class=doc-md-description> <p>An initialized stim.CompiledMeasurementsToDetectionEventsConverter.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>321</span>
 <span class=normal>322</span>
 <span class=normal>323</span>
 <span class=normal>324</span>
@@ -516,7 +504,19 @@
 <span class=normal>338</span>
 <span class=normal>339</span>
 <span class=normal>340</span>
-<span class=normal>341</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_m2d_converter</span><span class=p>(</span>
+<span class=normal>341</span>
+<span class=normal>342</span>
+<span class=normal>343</span>
+<span class=normal>344</span>
+<span class=normal>345</span>
+<span class=normal>346</span>
+<span class=normal>347</span>
+<span class=normal>348</span>
+<span class=normal>349</span>
+<span class=normal>350</span>
+<span class=normal>351</span>
+<span class=normal>352</span>
+<span class=normal>353</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_m2d_converter</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
     <span class=n>skip_reference_sample</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
@@ -553,32 +553,32 @@
     <span class=o>*</span><span class=p>,</span>
     <span class=n>strategy</span><span class=p>:</span> <span class=n>DecompositionStrategy</span> <span class=o>=</span> <span class=s2>&quot;cat5&quot;</span><span class=p>,</span>
     <span class=n>seed</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
-<span class=p>)</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Compile circuit into a measurement sampler.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>strategy</code> </td> <td> <code><span title=pyzx_param.simulate.DecompositionStrategy>DecompositionStrategy</span></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. If None, a random seed will be generated.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> </td> <td> <div class=doc-md-description> <p>A CompiledMeasurementSampler that can be used to sample measurements.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>759</span>
-<span class=normal>760</span>
-<span class=normal>761</span>
-<span class=normal>762</span>
-<span class=normal>763</span>
-<span class=normal>764</span>
-<span class=normal>765</span>
-<span class=normal>766</span>
-<span class=normal>767</span>
-<span class=normal>768</span>
-<span class=normal>769</span>
-<span class=normal>770</span>
-<span class=normal>771</span>
+<span class=p>)</span> <span class=o>-&gt;</span> <span class=n>CompiledMeasurementSampler</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Compile circuit into a measurement sampler.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>strategy</code> </td> <td> <code><span title=pyzx_param.simulate.DecompositionStrategy>DecompositionStrategy</span></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. If None, a random seed will be generated.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">CompiledMeasurementSampler</span> (<code>tsim.sampler.CompiledMeasurementSampler</code>)' href=../sampler/#tsim.sampler.CompiledMeasurementSampler>CompiledMeasurementSampler</a></code> </td> <td> <div class=doc-md-description> <p>A CompiledMeasurementSampler that can be used to sample measurements.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>771</span>
 <span class=normal>772</span>
 <span class=normal>773</span>
 <span class=normal>774</span>
 <span class=normal>775</span>
 <span class=normal>776</span>
 <span class=normal>777</span>
-<span class=normal>778</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_sampler</span><span class=p>(</span>
+<span class=normal>778</span>
+<span class=normal>779</span>
+<span class=normal>780</span>
+<span class=normal>781</span>
+<span class=normal>782</span>
+<span class=normal>783</span>
+<span class=normal>784</span>
+<span class=normal>785</span>
+<span class=normal>786</span>
+<span class=normal>787</span>
+<span class=normal>788</span>
+<span class=normal>789</span>
+<span class=normal>790</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_sampler</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
     <span class=n>strategy</span><span class=p>:</span> <span class=n>DecompositionStrategy</span> <span class=o>=</span> <span class=s2>&quot;cat5&quot;</span><span class=p>,</span>
     <span class=n>seed</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
-<span class=p>):</span>
+<span class=p>)</span> <span class=o>-&gt;</span> <span class=n>CompiledMeasurementSampler</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Compile circuit into a measurement sampler.</span>
 
 <span class=sd>    Args:</span>
@@ -594,9 +594,9 @@
 
     <span class=k>return</span> <span class=n>CompiledMeasurementSampler</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>seed</span><span class=o>=</span><span class=n>seed</span><span class=p>,</span> <span class=n>strategy</span><span class=o>=</span><span class=n>strategy</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.copy class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">copy</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>copy</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Create a copy of this circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>467</span>
-<span class=normal>468</span>
-<span class=normal>469</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>copy</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Create a copy of this circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>479</span>
+<span class=normal>480</span>
+<span class=normal>481</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>copy</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Create a copy of this circuit.&quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=n>Circuit</span><span class=o>.</span><span class=n>from_stim_program</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=o>.</span><span class=n>copy</span><span class=p>())</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.detector_error_model class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">detector_error_model</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>detector_error_model</span><span class=p>(</span>
@@ -608,19 +608,7 @@
     <span class=n>ignore_decomposition_failures</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
     <span class=n>block_decomposition_from_introducing_remnant_edges</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>DetectorErrorModel</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a stim.DetectorErrorModel describing the error processes in the circuit.</p> <p>Unlike the stim.Circuit.detector_error_model() method, this method allows for non-deterministic observables when <code>allow_gauge_detectors</code> is set to true.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>decompose_errors</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set to true, the error analysis attempts to decompose the components of composite error mechanisms (such as depolarization errors) into simpler errors, and suggest this decomposition via <code>stim.target_separator()</code> between the components. For example, in an XZ surface code, single qubit depolarization has a Y error term which can be decomposed into simpler X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to decompose large errors into simple errors that affect at most two detectors.</p> <p>This is not supported by tsim and setting it to true will raise an error. The argument is present for compatibility with stim.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>flatten_loops</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set to true, the output will not contain any <code>repeat</code> blocks. When set to false, the error analysis watches for loops in the circuit reaching a periodic steady state with respect to the detectors being introduced, the error mechanisms that affect them, and the locations of the logical observables. When it identifies such a steady state, it outputs a repeat block. This is massively more efficient than flattening for circuits that contain loops, but creates a more complex output.</p> <p>Irrelevant unless allow_gauge_detectors=False.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>allow_gauge_detectors</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set to false, the error analysis verifies that detectors in the circuit are actually deterministic under noiseless execution of the circuit.</p> <p>Note that, unlike in stim, logical observables are also allowed to be non-deterministic.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>approximate_disjoint_errors</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set to false, composite error mechanisms with disjoint components (such as <code>PAULI_CHANNEL_1(0.1, 0.2, 0.0)</code>) can cause the error analysis to throw exceptions (because detector error models can only contain independent error mechanisms). When set to true, the probabilities of the disjoint cases are instead assumed to be independent probabilities. For example, a <code>`PAULI_CHANNEL_1(0.1, 0.2, 0.0)</code> becomes equivalent to an <code>X_ERROR(0.1)</code> followed by a <code>Z_ERROR(0.2)</code>. This assumption is an approximation, but it is a good approximation for small probabilities.</p> <p>This argument can also be set to a probability between 0 and 1, setting a threshold below which the approximation is acceptable. Any error mechanisms that have a component probability above the threshold will cause an exception to be thrown.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>ignore_decomposition_failures</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When this is set to True, circuit errors that fail to decompose into graphlike detector error model errors no longer cause the conversion process to abort. Instead, the undecomposed error is inserted into the output. Whatever tool the detector error model is then given to is responsible for dealing with the undecomposed errors (e.g. a tool may choose to simply ignore them).</p> <p>Irrelevant unless decompose_errors=True.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>block_decomposition_from_introducing_remnant_edges</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. Requires that both A B and C D be present elsewhere in the detector error model in order to decompose A B C D into A B ^ C D. Normally, only one of A B or C D needs to appear to allow this decomposition.</p> <p>Remnant edges can be a useful feature for ensuring decomposition succeeds, but they can also reduce the effective code distance by giving the decoder single edges that actually represent multiple errors in the circuit (resulting in the decoder making misinformed choices when decoding).</p> <p>Irrelevant unless decompose_errors=True.</p> </div> </td> <td> <code>False</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>496</span>
-<span class=normal>497</span>
-<span class=normal>498</span>
-<span class=normal>499</span>
-<span class=normal>500</span>
-<span class=normal>501</span>
-<span class=normal>502</span>
-<span class=normal>503</span>
-<span class=normal>504</span>
-<span class=normal>505</span>
-<span class=normal>506</span>
-<span class=normal>507</span>
-<span class=normal>508</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a stim.DetectorErrorModel describing the error processes in the circuit.</p> <p>Unlike the stim.Circuit.detector_error_model() method, this method allows for non-deterministic observables when <code>allow_gauge_detectors</code> is set to true.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>decompose_errors</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set to true, the error analysis attempts to decompose the components of composite error mechanisms (such as depolarization errors) into simpler errors, and suggest this decomposition via <code>stim.target_separator()</code> between the components. For example, in an XZ surface code, single qubit depolarization has a Y error term which can be decomposed into simpler X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to decompose large errors into simple errors that affect at most two detectors.</p> <p>This is not supported by tsim and setting it to true will raise an error. The argument is present for compatibility with stim.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>flatten_loops</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set to true, the output will not contain any <code>repeat</code> blocks. When set to false, the error analysis watches for loops in the circuit reaching a periodic steady state with respect to the detectors being introduced, the error mechanisms that affect them, and the locations of the logical observables. When it identifies such a steady state, it outputs a repeat block. This is massively more efficient than flattening for circuits that contain loops, but creates a more complex output.</p> <p>Irrelevant unless allow_gauge_detectors=False.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>allow_gauge_detectors</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set to false, the error analysis verifies that detectors in the circuit are actually deterministic under noiseless execution of the circuit.</p> <p>Note that, unlike in stim, logical observables are also allowed to be non-deterministic.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>approximate_disjoint_errors</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set to false, composite error mechanisms with disjoint components (such as <code>PAULI_CHANNEL_1(0.1, 0.2, 0.0)</code>) can cause the error analysis to throw exceptions (because detector error models can only contain independent error mechanisms). When set to true, the probabilities of the disjoint cases are instead assumed to be independent probabilities. For example, a <code>`PAULI_CHANNEL_1(0.1, 0.2, 0.0)</code> becomes equivalent to an <code>X_ERROR(0.1)</code> followed by a <code>Z_ERROR(0.2)</code>. This assumption is an approximation, but it is a good approximation for small probabilities.</p> <p>This argument can also be set to a probability between 0 and 1, setting a threshold below which the approximation is acceptable. Any error mechanisms that have a component probability above the threshold will cause an exception to be thrown.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>ignore_decomposition_failures</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When this is set to True, circuit errors that fail to decompose into graphlike detector error model errors no longer cause the conversion process to abort. Instead, the undecomposed error is inserted into the output. Whatever tool the detector error model is then given to is responsible for dealing with the undecomposed errors (e.g. a tool may choose to simply ignore them).</p> <p>Irrelevant unless decompose_errors=True.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>block_decomposition_from_introducing_remnant_edges</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. Requires that both A B and C D be present elsewhere in the detector error model in order to decompose A B C D into A B ^ C D. Normally, only one of A B or C D needs to appear to allow this decomposition.</p> <p>Remnant edges can be a useful feature for ensuring decomposition succeeds, but they can also reduce the effective code distance by giving the decoder single edges that actually represent multiple errors in the circuit (resulting in the decoder making misinformed choices when decoding).</p> <p>Irrelevant unless decompose_errors=True.</p> </div> </td> <td> <code>False</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>508</span>
 <span class=normal>509</span>
 <span class=normal>510</span>
 <span class=normal>511</span>
@@ -686,7 +674,19 @@
 <span class=normal>571</span>
 <span class=normal>572</span>
 <span class=normal>573</span>
-<span class=normal>574</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>detector_error_model</span><span class=p>(</span>
+<span class=normal>574</span>
+<span class=normal>575</span>
+<span class=normal>576</span>
+<span class=normal>577</span>
+<span class=normal>578</span>
+<span class=normal>579</span>
+<span class=normal>580</span>
+<span class=normal>581</span>
+<span class=normal>582</span>
+<span class=normal>583</span>
+<span class=normal>584</span>
+<span class=normal>585</span>
+<span class=normal>586</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>detector_error_model</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
     <span class=n>decompose_errors</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
@@ -782,19 +782,7 @@
     <span class=n>width</span><span class=p>:</span> <span class=nb>float</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
     <span class=o>**</span><span class=n>kwargs</span><span class=p>:</span> <span class=n>Any</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Any</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a diagram of the circuit, from a variety of options.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>type</code> </td> <td> <code><span title=typing.Literal>Literal</span>[&#39;pyzx&#39;, &#39;pyzx-dets&#39;, &#39;pyzx-meas&#39;, &#39;timeline-svg&#39;, &#39;timeslice-svg&#39;]</code> </td> <td> <div class=doc-md-description> <p>The type of diagram. Available types are: "pyzx": A pyzx SVG of the ZX diagram of the circuit. "pyzx-dets": A pyzx SVG of the ZX diagram that is used to compute probabilities of detectors and observables. "pyzx-meas": A pyzx SVG of the ZX diagram that is used to compute probabilities of measurements. "timeline-svg": An SVG image of the operations applied by the circuit over time. Includes annotations showing the measurement record index that each measurement writes to, and the measurements used by detectors. "timeslice-svg": An SVG image of the operations applied between two TICK instructions in the circuit, with the operations laid out in 2d.</p> </div> </td> <td> <code>&#39;timeline-svg&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>tick</code> </td> <td> <code><span title=int>int</span> | <span title=range>range</span> | None</code> </td> <td> <div class=doc-md-description> <p>Required for time slice diagrams. Specifies which TICK instruction, or range of TICK instructions, to slice at. Note that the first TICK instruction in the circuit corresponds tick=1. The value tick=0 refers to the very start of the circuit.</p> <p>Passing <code>range(A, B)</code> for a detector slice will show the slices for ticks A through B including A but excluding B.</p> <p>Passing <code>range(A, B)</code> for a time slice will show the operations between tick A and tick B.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>rows</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>In diagrams that have multiple separate pieces, such as timeslice diagrams and detslice diagrams, this controls how many rows of pieces there will be. If not specified, a number of rows that creates a roughly square layout will be chosen.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>filter_coords</code> </td> <td> <code><span title=typing.Iterable>Iterable</span>[<span title=typing.Iterable>Iterable</span>[<span title=float>float</span>] | <span title=stim.DemTarget>DemTarget</span>]</code> </td> <td> <div class=doc-md-description> <p>A list of things to include in the diagram. Different effects depending on the diagram.</p> <p>For detslice diagrams, the filter defaults to showing all detectors and no observables. When specified, each list entry can be a collection of floats (detectors whose coordinates start with the same numbers will be included), a stim.DemTarget (specifying a detector or observable to include), a string like "D5" or "L0" specifying a detector or observable to include.</p> </div> </td> <td> <code>((),)</code> </td> </tr> <tr class=doc-section-item> <td> <code>height</code> </td> <td> <code><span title=float>float</span> | None</code> </td> <td> <div class=doc-md-description> <p>Optional height for the rendered diagram.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>width</code> </td> <td> <code><span title=float>float</span> | None</code> </td> <td> <div class=doc-md-description> <p>Optional width for the rendered diagram.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>**kwargs</code> </td> <td> <code><span title=typing.Any>Any</span></code> </td> <td> <div class=doc-md-description> <p>Additional keyword arguments passed to the underlying diagram renderer.</p> </div> </td> <td> <code>{}</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=typing.Any>Any</span></code> </td> <td> <div class=doc-md-description> <p>An object whose <code>__str__</code> method returns the diagram, so that</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=typing.Any>Any</span></code> </td> <td> <div class=doc-md-description> <p>writing the diagram to a file works correctly. The returned</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=typing.Any>Any</span></code> </td> <td> <div class=doc-md-description> <p>object may also define methods such as <code>_repr_html_</code>, so that</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=typing.Any>Any</span></code> </td> <td> <div class=doc-md-description> <p>ipython notebooks recognize it can be shown using a specialized</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=typing.Any>Any</span></code> </td> <td> <div class=doc-md-description> <p>viewer instead of as raw text.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>576</span>
-<span class=normal>577</span>
-<span class=normal>578</span>
-<span class=normal>579</span>
-<span class=normal>580</span>
-<span class=normal>581</span>
-<span class=normal>582</span>
-<span class=normal>583</span>
-<span class=normal>584</span>
-<span class=normal>585</span>
-<span class=normal>586</span>
-<span class=normal>587</span>
-<span class=normal>588</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a diagram of the circuit, from a variety of options.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>type</code> </td> <td> <code><span title=typing.Literal>Literal</span>[&#39;pyzx&#39;, &#39;pyzx-dets&#39;, &#39;pyzx-meas&#39;, &#39;timeline-svg&#39;, &#39;timeslice-svg&#39;]</code> </td> <td> <div class=doc-md-description> <p>The type of diagram. Available types are: "pyzx": A pyzx SVG of the ZX diagram of the circuit. "pyzx-dets": A pyzx SVG of the ZX diagram that is used to compute probabilities of detectors and observables. "pyzx-meas": A pyzx SVG of the ZX diagram that is used to compute probabilities of measurements. "timeline-svg": An SVG image of the operations applied by the circuit over time. Includes annotations showing the measurement record index that each measurement writes to, and the measurements used by detectors. "timeslice-svg": An SVG image of the operations applied between two TICK instructions in the circuit, with the operations laid out in 2d.</p> </div> </td> <td> <code>&#39;timeline-svg&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>tick</code> </td> <td> <code><span title=int>int</span> | <span title=range>range</span> | None</code> </td> <td> <div class=doc-md-description> <p>Required for time slice diagrams. Specifies which TICK instruction, or range of TICK instructions, to slice at. Note that the first TICK instruction in the circuit corresponds tick=1. The value tick=0 refers to the very start of the circuit.</p> <p>Passing <code>range(A, B)</code> for a detector slice will show the slices for ticks A through B including A but excluding B.</p> <p>Passing <code>range(A, B)</code> for a time slice will show the operations between tick A and tick B.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>rows</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>In diagrams that have multiple separate pieces, such as timeslice diagrams and detslice diagrams, this controls how many rows of pieces there will be. If not specified, a number of rows that creates a roughly square layout will be chosen.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>filter_coords</code> </td> <td> <code><span title=typing.Iterable>Iterable</span>[<span title=typing.Iterable>Iterable</span>[<span title=float>float</span>] | <span title=stim.DemTarget>DemTarget</span>]</code> </td> <td> <div class=doc-md-description> <p>A list of things to include in the diagram. Different effects depending on the diagram.</p> <p>For detslice diagrams, the filter defaults to showing all detectors and no observables. When specified, each list entry can be a collection of floats (detectors whose coordinates start with the same numbers will be included), a stim.DemTarget (specifying a detector or observable to include), a string like "D5" or "L0" specifying a detector or observable to include.</p> </div> </td> <td> <code>((),)</code> </td> </tr> <tr class=doc-section-item> <td> <code>height</code> </td> <td> <code><span title=float>float</span> | None</code> </td> <td> <div class=doc-md-description> <p>Optional height for the rendered diagram.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>width</code> </td> <td> <code><span title=float>float</span> | None</code> </td> <td> <div class=doc-md-description> <p>Optional width for the rendered diagram.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>**kwargs</code> </td> <td> <code><span title=typing.Any>Any</span></code> </td> <td> <div class=doc-md-description> <p>Additional keyword arguments passed to the underlying diagram renderer.</p> </div> </td> <td> <code>{}</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=typing.Any>Any</span></code> </td> <td> <div class=doc-md-description> <p>An object whose <code>__str__</code> method returns the diagram, so that</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=typing.Any>Any</span></code> </td> <td> <div class=doc-md-description> <p>writing the diagram to a file works correctly. The returned</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=typing.Any>Any</span></code> </td> <td> <div class=doc-md-description> <p>object may also define methods such as <code>_repr_html_</code>, so that</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=typing.Any>Any</span></code> </td> <td> <div class=doc-md-description> <p>ipython notebooks recognize it can be shown using a specialized</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=typing.Any>Any</span></code> </td> <td> <div class=doc-md-description> <p>viewer instead of as raw text.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>588</span>
 <span class=normal>589</span>
 <span class=normal>590</span>
 <span class=normal>591</span>
@@ -912,7 +900,19 @@
 <span class=normal>703</span>
 <span class=normal>704</span>
 <span class=normal>705</span>
-<span class=normal>706</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>diagram</span><span class=p>(</span>
+<span class=normal>706</span>
+<span class=normal>707</span>
+<span class=normal>708</span>
+<span class=normal>709</span>
+<span class=normal>710</span>
+<span class=normal>711</span>
+<span class=normal>712</span>
+<span class=normal>713</span>
+<span class=normal>714</span>
+<span class=normal>715</span>
+<span class=normal>716</span>
+<span class=normal>717</span>
+<span class=normal>718</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>diagram</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=nb>type</span><span class=p>:</span> <span class=n>Literal</span><span class=p>[</span>
         <span class=s2>&quot;pyzx&quot;</span><span class=p>,</span>
@@ -1044,31 +1044,31 @@
     <span class=k>else</span><span class=p>:</span>
         <span class=k>return</span> <span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=nb>type</span><span class=o>=</span><span class=nb>type</span><span class=p>,</span> <span class=o>**</span><span class=n>kwargs</span><span class=p>)</span>  <span class=c1># pragma: no cover</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.flattened class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">flattened</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>flattened</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a copy of the circuit with all repeat blocks expanded.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>471</span>
-<span class=normal>472</span>
-<span class=normal>473</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>flattened</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a copy of the circuit with all repeat blocks expanded.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>483</span>
+<span class=normal>484</span>
+<span class=normal>485</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>flattened</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return a copy of the circuit with all repeat blocks expanded.&quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=n>Circuit</span><span class=o>.</span><span class=n>from_stim_program</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=o>.</span><span class=n>flattened</span><span class=p>())</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.from_file class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">from_file</span> <span class="doc doc-labels"> <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small> </span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>from_file</span><span class=p>(</span><span class=n>filename</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Create a Circuit from a file.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>filename</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>The filename to read the circuit from.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">Circuit</span> (<code>tsim.circuit.Circuit</code>)' href=#tsim.circuit.Circuit>Circuit</a></code> </td> <td> <div class=doc-md-description> <p>A new Circuit instance.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>178</span>
-<span class=normal>179</span>
-<span class=normal>180</span>
-<span class=normal>181</span>
-<span class=normal>182</span>
-<span class=normal>183</span>
-<span class=normal>184</span>
-<span class=normal>185</span>
-<span class=normal>186</span>
-<span class=normal>187</span>
-<span class=normal>188</span>
-<span class=normal>189</span>
-<span class=normal>190</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Create a Circuit from a file.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>filename</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>The filename to read the circuit from.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">Circuit</span> (<code>tsim.circuit.Circuit</code>)' href=#tsim.circuit.Circuit>Circuit</a></code> </td> <td> <div class=doc-md-description> <p>A new Circuit instance.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>190</span>
 <span class=normal>191</span>
 <span class=normal>192</span>
 <span class=normal>193</span>
 <span class=normal>194</span>
 <span class=normal>195</span>
-<span class=normal>196</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@classmethod</span>
+<span class=normal>196</span>
+<span class=normal>197</span>
+<span class=normal>198</span>
+<span class=normal>199</span>
+<span class=normal>200</span>
+<span class=normal>201</span>
+<span class=normal>202</span>
+<span class=normal>203</span>
+<span class=normal>204</span>
+<span class=normal>205</span>
+<span class=normal>206</span>
+<span class=normal>207</span>
+<span class=normal>208</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@classmethod</span>
 <span class=k>def</span><span class=w> </span><span class=nf>from_file</span><span class=p>(</span><span class=bp>cls</span><span class=p>,</span> <span class=n>filename</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Create a Circuit from a file.</span>
 
@@ -1088,20 +1088,20 @@
         <span class=k>raise</span> <span class=n>enriched_stim_error</span><span class=p>(</span><span class=n>exc</span><span class=p>,</span> <span class=n>converted</span><span class=p>)</span> <span class=kn>from</span><span class=w> </span><span class=kc>None</span>
     <span class=k>return</span> <span class=bp>cls</span><span class=o>.</span><span class=n>from_stim_program</span><span class=p>(</span><span class=n>stim_circ</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.from_stim_program class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">from_stim_program</span> <span class="doc doc-labels"> <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small> </span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>from_stim_program</span><span class=p>(</span><span class=n>stim_circuit</span><span class=p>:</span> <span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Create a Circuit from a stim.Circuit object.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>stim_circuit</code> </td> <td> <code><span title=stim.Circuit>Circuit</span></code> </td> <td> <div class=doc-md-description> <p>The stim circuit to wrap.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">Circuit</span> (<code>tsim.circuit.Circuit</code>)' href=#tsim.circuit.Circuit>Circuit</a></code> </td> <td> <div class=doc-md-description> <p>A new Circuit instance.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>55</span>
-<span class=normal>56</span>
-<span class=normal>57</span>
-<span class=normal>58</span>
-<span class=normal>59</span>
-<span class=normal>60</span>
-<span class=normal>61</span>
-<span class=normal>62</span>
-<span class=normal>63</span>
-<span class=normal>64</span>
-<span class=normal>65</span>
-<span class=normal>66</span>
-<span class=normal>67</span>
-<span class=normal>68</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@classmethod</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Create a Circuit from a stim.Circuit object.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>stim_circuit</code> </td> <td> <code><span title=stim.Circuit>Circuit</span></code> </td> <td> <div class=doc-md-description> <p>The stim circuit to wrap.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">Circuit</span> (<code>tsim.circuit.Circuit</code>)' href=#tsim.circuit.Circuit>Circuit</a></code> </td> <td> <div class=doc-md-description> <p>A new Circuit instance.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>67</span>
+<span class=normal>68</span>
+<span class=normal>69</span>
+<span class=normal>70</span>
+<span class=normal>71</span>
+<span class=normal>72</span>
+<span class=normal>73</span>
+<span class=normal>74</span>
+<span class=normal>75</span>
+<span class=normal>76</span>
+<span class=normal>77</span>
+<span class=normal>78</span>
+<span class=normal>79</span>
+<span class=normal>80</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@classmethod</span>
 <span class=k>def</span><span class=w> </span><span class=nf>from_stim_program</span><span class=p>(</span><span class=bp>cls</span><span class=p>,</span> <span class=n>stim_circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Create a Circuit from a stim.Circuit object.</span>
 
@@ -1116,29 +1116,17 @@
     <span class=n>c</span><span class=o>.</span><span class=n>_stim_circ</span> <span class=o>=</span> <span class=n>stim_circuit</span><span class=o>.</span><span class=n>copy</span><span class=p>()</span>
     <span class=k>return</span> <span class=n>c</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.get_graph class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">get_graph</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>get_graph</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>BaseGraph</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Construct the ZX graph.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>727</span>
-<span class=normal>728</span>
-<span class=normal>729</span>
-<span class=normal>730</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>get_graph</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>BaseGraph</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Construct the ZX graph.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>739</span>
+<span class=normal>740</span>
+<span class=normal>741</span>
+<span class=normal>742</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>get_graph</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>BaseGraph</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Construct the ZX graph.&quot;&quot;&quot;</span>
     <span class=n>built</span> <span class=o>=</span> <span class=n>parse_stim_circuit</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=p>)</span>
     <span class=k>return</span> <span class=n>built</span><span class=o>.</span><span class=n>graph</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.get_sampling_graph class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">get_sampling_graph</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>get_sampling_graph</span><span class=p>(</span>
     <span class=n>sample_detectors</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>BaseGraph</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Get a ZX graph that can be used to compute probabilities.</p> <p>This graph will be constructed as follows:</p> <ol> <li>Double the ZX-diagram by composing it with its adjoint.</li> <li>Connect all rec[i] vertices to their corresponding adjoint rec[i] vertices.</li> <li>Add outputs: (a) When sampling measurements (i.e. <code>sample_detectors</code> is False), add output nodes for each measurement. Detectors and observables are removed since they are ignored when sampling measurements. (b) When sampling detectors and observables (i.e. <code>sample_detectors</code> is True), add output nodes for each detector and observable. Only one set of detector and observable nodes is kept, i.e., detectors and observables are not composed with their adjoints.</li> </ol> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>sample_detectors</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>If True, sample detectors and observables instead of measurements.</p> </div> </td> <td> <code>False</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=pyzx_param.graph.base.BaseGraph>BaseGraph</span></code> </td> <td> <div class=doc-md-description> <p>A ZX graph for sampling.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>732</span>
-<span class=normal>733</span>
-<span class=normal>734</span>
-<span class=normal>735</span>
-<span class=normal>736</span>
-<span class=normal>737</span>
-<span class=normal>738</span>
-<span class=normal>739</span>
-<span class=normal>740</span>
-<span class=normal>741</span>
-<span class=normal>742</span>
-<span class=normal>743</span>
-<span class=normal>744</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Get a ZX graph that can be used to compute probabilities.</p> <p>This graph will be constructed as follows:</p> <ol> <li>Double the ZX-diagram by composing it with its adjoint.</li> <li>Connect all rec[i] vertices to their corresponding adjoint rec[i] vertices.</li> <li>Add outputs: (a) When sampling measurements (i.e. <code>sample_detectors</code> is False), add output nodes for each measurement. Detectors and observables are removed since they are ignored when sampling measurements. (b) When sampling detectors and observables (i.e. <code>sample_detectors</code> is True), add output nodes for each detector and observable. Only one set of detector and observable nodes is kept, i.e., detectors and observables are not composed with their adjoints.</li> </ol> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>sample_detectors</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>If True, sample detectors and observables instead of measurements.</p> </div> </td> <td> <code>False</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=pyzx_param.graph.base.BaseGraph>BaseGraph</span></code> </td> <td> <div class=doc-md-description> <p>A ZX graph for sampling.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>744</span>
 <span class=normal>745</span>
 <span class=normal>746</span>
 <span class=normal>747</span>
@@ -1151,7 +1139,19 @@
 <span class=normal>754</span>
 <span class=normal>755</span>
 <span class=normal>756</span>
-<span class=normal>757</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>get_sampling_graph</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>sample_detectors</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>BaseGraph</span><span class=p>:</span>
+<span class=normal>757</span>
+<span class=normal>758</span>
+<span class=normal>759</span>
+<span class=normal>760</span>
+<span class=normal>761</span>
+<span class=normal>762</span>
+<span class=normal>763</span>
+<span class=normal>764</span>
+<span class=normal>765</span>
+<span class=normal>766</span>
+<span class=normal>767</span>
+<span class=normal>768</span>
+<span class=normal>769</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>get_sampling_graph</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>sample_detectors</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>BaseGraph</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Get a ZX graph that can be used to compute probabilities.</span>
 
 <span class=sd>    This graph will be constructed as follows:</span>
@@ -1178,19 +1178,7 @@
     <span class=n>built</span> <span class=o>=</span> <span class=n>parse_stim_circuit</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=p>)</span>
     <span class=k>return</span> <span class=n>build_sampling_graph</span><span class=p>(</span><span class=n>built</span><span class=p>,</span> <span class=n>sample_detectors</span><span class=o>=</span><span class=n>sample_detectors</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.inverse class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">inverse</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>inverse</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return the inverse of the circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>810</span>
-<span class=normal>811</span>
-<span class=normal>812</span>
-<span class=normal>813</span>
-<span class=normal>814</span>
-<span class=normal>815</span>
-<span class=normal>816</span>
-<span class=normal>817</span>
-<span class=normal>818</span>
-<span class=normal>819</span>
-<span class=normal>820</span>
-<span class=normal>821</span>
-<span class=normal>822</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return the inverse of the circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>822</span>
 <span class=normal>823</span>
 <span class=normal>824</span>
 <span class=normal>825</span>
@@ -1219,7 +1207,19 @@
 <span class=normal>848</span>
 <span class=normal>849</span>
 <span class=normal>850</span>
-<span class=normal>851</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>inverse</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
+<span class=normal>851</span>
+<span class=normal>852</span>
+<span class=normal>853</span>
+<span class=normal>854</span>
+<span class=normal>855</span>
+<span class=normal>856</span>
+<span class=normal>857</span>
+<span class=normal>858</span>
+<span class=normal>859</span>
+<span class=normal>860</span>
+<span class=normal>861</span>
+<span class=normal>862</span>
+<span class=normal>863</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>inverse</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return the inverse of the circuit.&quot;&quot;&quot;</span>
 
     <span class=k>def</span><span class=w> </span><span class=nf>fix_tags</span><span class=p>(</span><span class=n>circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>:</span>
@@ -1266,23 +1266,23 @@
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Union</span><span class=p>[</span>
     <span class=n>stim</span><span class=o>.</span><span class=n>CircuitInstruction</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>CircuitRepeatBlock</span>
 <span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Pops an operation from the end of the circuit, or at the given index.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>index</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to -1 (end of circuit). The index to pop from.</p> </div> </td> <td> <code>-1</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=typing.Union>Union</span>[<span title=stim.CircuitInstruction>CircuitInstruction</span>, <span title=stim.CircuitRepeatBlock>CircuitRepeatBlock</span>]</code> </td> <td> <div class=doc-md-description> <p>The popped instruction or repeat block.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=IndexError>IndexError</span></code> </td> <td> <div class=doc-md-description> <p>The given index is outside the bounds of the circuit.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>449</span>
-<span class=normal>450</span>
-<span class=normal>451</span>
-<span class=normal>452</span>
-<span class=normal>453</span>
-<span class=normal>454</span>
-<span class=normal>455</span>
-<span class=normal>456</span>
-<span class=normal>457</span>
-<span class=normal>458</span>
-<span class=normal>459</span>
-<span class=normal>460</span>
-<span class=normal>461</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Pops an operation from the end of the circuit, or at the given index.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>index</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to -1 (end of circuit). The index to pop from.</p> </div> </td> <td> <code>-1</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=typing.Union>Union</span>[<span title=stim.CircuitInstruction>CircuitInstruction</span>, <span title=stim.CircuitRepeatBlock>CircuitRepeatBlock</span>]</code> </td> <td> <div class=doc-md-description> <p>The popped instruction or repeat block.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=IndexError>IndexError</span></code> </td> <td> <div class=doc-md-description> <p>The given index is outside the bounds of the circuit.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>461</span>
 <span class=normal>462</span>
 <span class=normal>463</span>
 <span class=normal>464</span>
-<span class=normal>465</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>pop</span><span class=p>(</span>
+<span class=normal>465</span>
+<span class=normal>466</span>
+<span class=normal>467</span>
+<span class=normal>468</span>
+<span class=normal>469</span>
+<span class=normal>470</span>
+<span class=normal>471</span>
+<span class=normal>472</span>
+<span class=normal>473</span>
+<span class=normal>474</span>
+<span class=normal>475</span>
+<span class=normal>476</span>
+<span class=normal>477</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>pop</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>index</span><span class=p>:</span> <span class=nb>int</span> <span class=o>=</span> <span class=o>-</span><span class=mi>1</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Union</span><span class=p>[</span><span class=n>stim</span><span class=o>.</span><span class=n>CircuitInstruction</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>CircuitRepeatBlock</span><span class=p>]:</span>
@@ -1300,54 +1300,54 @@
 <span class=sd>    &quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=o>.</span><span class=n>pop</span><span class=p>(</span><span class=n>index</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.tcount class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">tcount</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>tcount</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=nb>int</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Count the number of T gates in the circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>722</span>
-<span class=normal>723</span>
-<span class=normal>724</span>
-<span class=normal>725</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>tcount</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Count the number of T gates in the circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>734</span>
+<span class=normal>735</span>
+<span class=normal>736</span>
+<span class=normal>737</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>tcount</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Count the number of T gates in the circuit.&quot;&quot;&quot;</span>
     <span class=n>built</span> <span class=o>=</span> <span class=n>parse_stim_circuit</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=p>)</span>
     <span class=k>return</span> <span class=n>zx</span><span class=o>.</span><span class=n>tcount</span><span class=p>(</span><span class=n>built</span><span class=o>.</span><span class=n>graph</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.to_matrix class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">to_matrix</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>to_matrix</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>Any</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Convert circuit to matrix representation.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>715</span>
-<span class=normal>716</span>
-<span class=normal>717</span>
-<span class=normal>718</span>
-<span class=normal>719</span>
-<span class=normal>720</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>to_matrix</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Any</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Convert circuit to matrix representation.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>727</span>
+<span class=normal>728</span>
+<span class=normal>729</span>
+<span class=normal>730</span>
+<span class=normal>731</span>
+<span class=normal>732</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>to_matrix</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Any</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Convert circuit to matrix representation.&quot;&quot;&quot;</span>
     <span class=n>built</span> <span class=o>=</span> <span class=n>parse_stim_circuit</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=p>)</span>
     <span class=n>g</span> <span class=o>=</span> <span class=n>built</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>copy</span><span class=p>()</span>
     <span class=n>g</span><span class=o>.</span><span class=n>normalize</span><span class=p>()</span>
     <span class=k>return</span> <span class=n>g</span><span class=o>.</span><span class=n>to_matrix</span><span class=p>()</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.to_tensor class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">to_tensor</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>to_tensor</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>Any</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Convert circuit to tensor representation.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>708</span>
-<span class=normal>709</span>
-<span class=normal>710</span>
-<span class=normal>711</span>
-<span class=normal>712</span>
-<span class=normal>713</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>to_tensor</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Any</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Convert circuit to tensor representation.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>720</span>
+<span class=normal>721</span>
+<span class=normal>722</span>
+<span class=normal>723</span>
+<span class=normal>724</span>
+<span class=normal>725</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>to_tensor</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Any</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Convert circuit to tensor representation.&quot;&quot;&quot;</span>
     <span class=n>built</span> <span class=o>=</span> <span class=n>parse_stim_circuit</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=p>)</span>
     <span class=n>g</span> <span class=o>=</span> <span class=n>built</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>copy</span><span class=p>()</span>
     <span class=n>g</span><span class=o>.</span><span class=n>normalize</span><span class=p>()</span>
     <span class=k>return</span> <span class=n>g</span><span class=o>.</span><span class=n>to_tensor</span><span class=p>()</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.without_annotations class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">without_annotations</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>without_annotations</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a copy of the circuit with all detector and observable annotations removed.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>479</span>
-<span class=normal>480</span>
-<span class=normal>481</span>
-<span class=normal>482</span>
-<span class=normal>483</span>
-<span class=normal>484</span>
-<span class=normal>485</span>
-<span class=normal>486</span>
-<span class=normal>487</span>
-<span class=normal>488</span>
-<span class=normal>489</span>
-<span class=normal>490</span>
-<span class=normal>491</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a copy of the circuit with all detector and observable annotations removed.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>491</span>
 <span class=normal>492</span>
 <span class=normal>493</span>
-<span class=normal>494</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>without_annotations</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
+<span class=normal>494</span>
+<span class=normal>495</span>
+<span class=normal>496</span>
+<span class=normal>497</span>
+<span class=normal>498</span>
+<span class=normal>499</span>
+<span class=normal>500</span>
+<span class=normal>501</span>
+<span class=normal>502</span>
+<span class=normal>503</span>
+<span class=normal>504</span>
+<span class=normal>505</span>
+<span class=normal>506</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>without_annotations</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return a copy of the circuit with all detector and observable annotations removed.&quot;&quot;&quot;</span>
 
     <span class=k>def</span><span class=w> </span><span class=nf>strip</span><span class=p>(</span><span class=n>circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>:</span>
@@ -1364,9 +1364,9 @@
 
     <span class=k>return</span> <span class=n>Circuit</span><span class=o>.</span><span class=n>from_stim_program</span><span class=p>(</span><span class=n>strip</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=p>))</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.without_noise class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">without_noise</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>without_noise</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a copy of the circuit with all noise removed.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>475</span>
-<span class=normal>476</span>
-<span class=normal>477</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>without_noise</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a copy of the circuit with all noise removed.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>487</span>
+<span class=normal>488</span>
+<span class=normal>489</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>without_noise</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return a copy of the circuit with all noise removed.&quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=n>Circuit</span><span class=o>.</span><span class=n>from_stim_program</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=o>.</span><span class=n>without_noise</span><span class=p>())</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> </div> </div> </div> </div> </div> </div> </article> </div> <script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script> </div> <button type=button class="md-top md-icon" data-md-component=top hidden> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg> Back to top </button> </main> <footer class=md-footer> <nav class="md-footer__inner md-grid" aria-label=Footer> <a href=../ class="md-footer__link md-footer__link--prev" aria-label="Previous: Index"> <div class="md-footer__button md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg> </div> <div class=md-footer__title> <span class=md-footer__direction> Previous </span> <div class=md-ellipsis> Index </div> </div> </a> <a href=../compile/ class="md-footer__link md-footer__link--next" aria-label="Next: Index"> <div class=md-footer__title> <span class=md-footer__direction> Next </span> <div class=md-ellipsis> Index </div> </div> <div class="md-footer__button md-icon"> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg> </div> </a> </nav> <div class="md-footer-meta md-typeset"> <div class="md-footer-meta__inner md-grid"> <div class=md-copyright> <div class=md-copyright__highlight> Copyright &copy; 2025 QuEra Computing, Inc. </div> Made with <a href=https://squidfunk.github.io/mkdocs-material/ target=_blank rel=noopener> Material for MkDocs </a> </div> <div class=md-social> <a href=https://x.com/QueraComputing target=_blank rel=noopener title=x.com class=md-social__link> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 24 24"><path d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"/></svg> </a> <a href=https://www.linkedin.com/company/quera-computing-inc/ target=_blank rel=noopener title=www.linkedin.com class=md-social__link> <svg xmlns=http://www.w3.org/2000/svg viewbox="0 0 448 512"><!-- Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg> </a> </div> </div> </div> </footer> </div> <div class=md-dialog data-md-component=dialog> <div class="md-dialog__inner md-typeset"></div> </div> <script id=__config type=application/json>{"annotate": null, "base": "../../..", "features": ["announce.dismiss", "content.action.view", "content.action.edit", "content.code.annotate", "content.code.copy", "content.tooltips", "navigation.indexes", "navigation.sections", "navigation.tabs", "navigation.top", "navigation.tracking", "navigation.footer", "search.highlight", "search.suggest", "toc.follow"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script> <script src=../../../assets/javascripts/bundle.79ae519e.min.js></script> <script src=../../../scripts/katex.js></script> <script src=https://unpkg.com/katex@0/dist/katex.min.js></script> <script src=https://unpkg.com/katex@0/dist/contrib/auto-render.min.js></script> </body> </html>

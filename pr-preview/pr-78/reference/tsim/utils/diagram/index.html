@@ -15,12 +15,12 @@
     <span class=n>svg_string</span><span class=p>:</span> <span class=nb>str</span><span class=p>,</span>
     <span class=n>placeholder_id_to_labels</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>float</span><span class=p>,</span> <span class=n>GateLabel</span><span class=p>],</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Replace I_ERROR placeholder gates in an SVG diagram with actual gate names.</p> <p>Supported gates are T, T†, R_Z, R_X, R_Y, U_3.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>svg_string</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>The SVG string from stim's diagram() method containing I_ERROR</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>placeholder_id_to_labels</code> </td> <td> <code><span title=dict>dict</span>[<span title=float>float</span>, <a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">GateLabel</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Replace I_ERROR placeholder gates in an SVG diagram with actual gate names.</p> <p>Supported gates are T, T†, R_Z, R_X, R_Y, U_3.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>svg_string</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>The SVG string from stim's diagram() method containing I_ERROR placeholder gates whose p-value are used as identifiers.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>placeholder_id_to_labels</code> </td> <td> <code><span title=dict>dict</span>[<span title=float>float</span>, <a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">GateLabel</span>
 
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span> (<code>tsim.utils.diagram.GateLabel</code>)' href=#tsim.utils.diagram.GateLabel>GateLabel</a>]</code> </td> <td> <div class=doc-md-description> <p>Mapping from identifier (float), i.e. the p values of</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>Modified SVG string with I_ERROR gates replaced by the actual gate names.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/diagram.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 96</span>
+  </span> (<code>tsim.utils.diagram.GateLabel</code>)' href=#tsim.utils.diagram.GateLabel>GateLabel</a>]</code> </td> <td> <div class=doc-md-description> <p>Mapping from identifier (float), i.e. the p values of I_ERROR gates, to GateLabel.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>Modified SVG string with I_ERROR gates replaced by the actual gate names.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/diagram.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 96</span>
 <span class=normal> 97</span>
 <span class=normal> 98</span>
 <span class=normal> 99</span>
@@ -103,9 +103,9 @@
 
 <span class=sd>    Args:</span>
 <span class=sd>        svg_string: The SVG string from stim&#39;s diagram() method containing I_ERROR</span>
-<span class=sd>        placeholder gates whose p-value are used as identifiers.</span>
+<span class=sd>            placeholder gates whose p-value are used as identifiers.</span>
 <span class=sd>        placeholder_id_to_labels: Mapping from identifier (float), i.e. the p values of</span>
-<span class=sd>        I_ERROR gates, to GateLabel.</span>
+<span class=sd>            I_ERROR gates, to GateLabel.</span>
 
 <span class=sd>    Returns:</span>
 <span class=sd>        Modified SVG string with I_ERROR gates replaced by the actual gate names.</span>
