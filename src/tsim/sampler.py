@@ -207,7 +207,7 @@ class _CompiledSamplerBase:
         prog = self._program
         n_direct = len(prog.direct_f_indices)
         self._direct_f_np = np.asarray(prog.direct_f_indices)
-        self._direct_fl_np = np.asarray(prog.direct_flips)
+        self._direct_fl_np = np.asarray(prog.direct_flips, dtype=np.bool_)
         self._direct_reindex_np = (
             np.asarray(prog.output_reindex) if prog.output_reindex is not None else None
         )
