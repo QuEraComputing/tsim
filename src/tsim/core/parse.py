@@ -85,7 +85,7 @@ def parse_stim_circuit(
             # TODO: handle these visualization annotations
             continue
 
-        if name == "I_ERROR":
+        if name in ["I_ERROR", "II_ERROR"]:
             continue
 
         if name == "S" and instruction.tag == "T":
