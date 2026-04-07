@@ -82,7 +82,9 @@ def _iter_pauli_products(
         elif target.is_z_target:
             pauli_type = "Z"
         else:
-            raise ValueError(f"Invalid Pauli target: {target}")
+            raise ValueError(
+                f"Invalid Pauli target in instruction {instruction.name}: {target}"
+            )
 
         invert ^= target.is_inverted_result_target
         current_paulis.append((pauli_type, target.value))
