@@ -85,7 +85,7 @@ def parse_stim_circuit(
             # TODO: handle these visualization annotations
             continue
 
-        if name == "I_ERROR":
+        if name in ["I_ERROR", "II_ERROR"]:
             continue
 
         if name == "S" and instruction.tag == "T":
@@ -146,6 +146,14 @@ def parse_stim_circuit(
                     current_paulis = []
                     invert = False
 
+            continue
+        if name in ("MXX", "MYY", "MZZ"):
+            pauli_type: Literal["X", "Y", "Z"] = name[1]  # type: ignore[assignment]
+            targets = instruction.targets_copy()
+            for i in range(0, len(targets), 2):
+                t0, t1 = targets[i], targets[i + 1]
+                invert = t0.is_inverted_result_target ^ t1.is_inverted_result_target
+                mpp(b, [(pauli_type, t0.value), (pauli_type, t1.value)], invert)
             continue
         if name == "MPAD":
             args = instruction.gate_args_copy()
