@@ -233,18 +233,18 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.instructions.detector class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">detector</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>detector</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>rec</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=o>*</span><span class=n>args</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Add detector annotation that XORs the given measurement record bits.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>914</span>
-<span class=normal>915</span>
-<span class=normal>916</span>
-<span class=normal>917</span>
-<span class=normal>918</span>
-<span class=normal>919</span>
-<span class=normal>920</span>
-<span class=normal>921</span>
-<span class=normal>922</span>
-<span class=normal>923</span>
-<span class=normal>924</span>
-<span class=normal>925</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>detector</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>rec</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=o>*</span><span class=n>args</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Add detector annotation that XORs the given measurement record bits.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>932</span>
+<span class=normal>933</span>
+<span class=normal>934</span>
+<span class=normal>935</span>
+<span class=normal>936</span>
+<span class=normal>937</span>
+<span class=normal>938</span>
+<span class=normal>939</span>
+<span class=normal>940</span>
+<span class=normal>941</span>
+<span class=normal>942</span>
+<span class=normal>943</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>detector</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>rec</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=o>*</span><span class=n>args</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Add detector annotation that XORs the given measurement record bits.&quot;&quot;&quot;</span>
     <span class=n>row</span> <span class=o>=</span> <span class=nb>min</span><span class=p>(</span><span class=nb>set</span><span class=p>([</span><span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>row</span><span class=p>(</span><span class=n>b</span><span class=o>.</span><span class=n>rec</span><span class=p>[</span><span class=n>r</span><span class=p>])</span> <span class=k>for</span> <span class=n>r</span> <span class=ow>in</span> <span class=n>rec</span><span class=p>]))</span> <span class=o>-</span> <span class=mf>0.5</span>
     <span class=n>d_rows</span> <span class=o>=</span> <span class=nb>set</span><span class=p>([</span><span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>row</span><span class=p>(</span><span class=n>d</span><span class=p>)</span> <span class=k>for</span> <span class=n>d</span> <span class=ow>in</span> <span class=n>b</span><span class=o>.</span><span class=n>detectors</span> <span class=o>+</span> <span class=n>b</span><span class=o>.</span><span class=n>observables</span><span class=p>])</span>
@@ -459,20 +459,20 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span> (<code>tsim.core.instructions.GraphRepresentation</code>)' href=#tsim.core.instructions.GraphRepresentation>GraphRepresentation</a></code> </td> <td> <div class=doc-md-description> <p>The graph representation to modify.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>value</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The bit value to record (0 or 1).</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>p</code> </td> <td> <code><span title=float>float</span></code> </td> <td> <div class=doc-md-description> <p>Error probability for the recorded bit.</p> </div> </td> <td> <code>0</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>806</span>
-<span class=normal>807</span>
-<span class=normal>808</span>
-<span class=normal>809</span>
-<span class=normal>810</span>
-<span class=normal>811</span>
-<span class=normal>812</span>
-<span class=normal>813</span>
-<span class=normal>814</span>
-<span class=normal>815</span>
-<span class=normal>816</span>
-<span class=normal>817</span>
-<span class=normal>818</span>
-<span class=normal>819</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>mpad</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>value</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+  </span> (<code>tsim.core.instructions.GraphRepresentation</code>)' href=#tsim.core.instructions.GraphRepresentation>GraphRepresentation</a></code> </td> <td> <div class=doc-md-description> <p>The graph representation to modify.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>value</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The bit value to record (0 or 1).</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>p</code> </td> <td> <code><span title=float>float</span></code> </td> <td> <div class=doc-md-description> <p>Error probability for the recorded bit.</p> </div> </td> <td> <code>0</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>824</span>
+<span class=normal>825</span>
+<span class=normal>826</span>
+<span class=normal>827</span>
+<span class=normal>828</span>
+<span class=normal>829</span>
+<span class=normal>830</span>
+<span class=normal>831</span>
+<span class=normal>832</span>
+<span class=normal>833</span>
+<span class=normal>834</span>
+<span class=normal>835</span>
+<span class=normal>836</span>
+<span class=normal>837</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>mpad</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>value</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Pad measurement record with a fixed bit value.</span>
 
 <span class=sd>    Args:</span>
@@ -539,16 +539,16 @@
     <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span>
     <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Z-basis demolition measurement (optionally noisy).</p> <p>Projects each target qubit into |0&gt; or |1&gt;, reports its value (false=|0&gt;, true=|1&gt;), then resets to |0&gt;.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>822</span>
-<span class=normal>823</span>
-<span class=normal>824</span>
-<span class=normal>825</span>
-<span class=normal>826</span>
-<span class=normal>827</span>
-<span class=normal>828</span>
-<span class=normal>829</span>
-<span class=normal>830</span>
-<span class=normal>831</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>mr</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span> <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Z-basis demolition measurement (optionally noisy).</p> <p>Projects each target qubit into |0&gt; or |1&gt;, reports its value (false=|0&gt;, true=|1&gt;), then resets to |0&gt;.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>840</span>
+<span class=normal>841</span>
+<span class=normal>842</span>
+<span class=normal>843</span>
+<span class=normal>844</span>
+<span class=normal>845</span>
+<span class=normal>846</span>
+<span class=normal>847</span>
+<span class=normal>848</span>
+<span class=normal>849</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>mr</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span> <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Z-basis demolition measurement (optionally noisy).</span>
 
 <span class=sd>    Projects each target qubit into |0&gt; or |1&gt;, reports its value (false=|0&gt;, true=|1&gt;),</span>
@@ -564,18 +564,18 @@
     <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span>
     <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>X-basis demolition measurement (optionally noisy).</p> <p>Projects each target qubit into |+&gt; or |-&gt;, reports its value (false=|+&gt;, true=|-&gt;), then resets to |+&gt;.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>834</span>
-<span class=normal>835</span>
-<span class=normal>836</span>
-<span class=normal>837</span>
-<span class=normal>838</span>
-<span class=normal>839</span>
-<span class=normal>840</span>
-<span class=normal>841</span>
-<span class=normal>842</span>
-<span class=normal>843</span>
-<span class=normal>844</span>
-<span class=normal>845</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>mrx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span> <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>X-basis demolition measurement (optionally noisy).</p> <p>Projects each target qubit into |+&gt; or |-&gt;, reports its value (false=|+&gt;, true=|-&gt;), then resets to |+&gt;.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>852</span>
+<span class=normal>853</span>
+<span class=normal>854</span>
+<span class=normal>855</span>
+<span class=normal>856</span>
+<span class=normal>857</span>
+<span class=normal>858</span>
+<span class=normal>859</span>
+<span class=normal>860</span>
+<span class=normal>861</span>
+<span class=normal>862</span>
+<span class=normal>863</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>mrx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span> <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;X-basis demolition measurement (optionally noisy).</span>
 
 <span class=sd>    Projects each target qubit into |+&gt; or |-&gt;, reports its value (false=|+&gt;, true=|-&gt;),</span>
@@ -593,18 +593,18 @@
     <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span>
     <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Y-basis demolition measurement (optionally noisy).</p> <p>Projects each target qubit into |i&gt; or |-i&gt;, reports its value (false=|i&gt;, true=|-i&gt;), then resets to |i&gt;.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>848</span>
-<span class=normal>849</span>
-<span class=normal>850</span>
-<span class=normal>851</span>
-<span class=normal>852</span>
-<span class=normal>853</span>
-<span class=normal>854</span>
-<span class=normal>855</span>
-<span class=normal>856</span>
-<span class=normal>857</span>
-<span class=normal>858</span>
-<span class=normal>859</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>mry</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span> <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Y-basis demolition measurement (optionally noisy).</p> <p>Projects each target qubit into |i&gt; or |-i&gt;, reports its value (false=|i&gt;, true=|-i&gt;), then resets to |i&gt;.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>866</span>
+<span class=normal>867</span>
+<span class=normal>868</span>
+<span class=normal>869</span>
+<span class=normal>870</span>
+<span class=normal>871</span>
+<span class=normal>872</span>
+<span class=normal>873</span>
+<span class=normal>874</span>
+<span class=normal>875</span>
+<span class=normal>876</span>
+<span class=normal>877</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>mry</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span> <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Y-basis demolition measurement (optionally noisy).</span>
 
 <span class=sd>    Projects each target qubit into |i&gt; or |-i&gt;, reports its value (false=|i&gt;, true=|-i&gt;),</span>
@@ -622,11 +622,11 @@
     <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span>
     <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Measure qubit in X basis.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>862</span>
-<span class=normal>863</span>
-<span class=normal>864</span>
-<span class=normal>865</span>
-<span class=normal>866</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>mx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span> <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Measure qubit in X basis.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>880</span>
+<span class=normal>881</span>
+<span class=normal>882</span>
+<span class=normal>883</span>
+<span class=normal>884</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>mx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span> <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Measure qubit in X basis.&quot;&quot;&quot;</span>
     <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
     <span class=n>m</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>,</span> <span class=n>p</span><span class=o>=</span><span class=n>p</span><span class=p>,</span> <span class=n>invert</span><span class=o>=</span><span class=n>invert</span><span class=p>)</span>
@@ -637,11 +637,11 @@
     <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span>
     <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Measure qubit in Y basis.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>869</span>
-<span class=normal>870</span>
-<span class=normal>871</span>
-<span class=normal>872</span>
-<span class=normal>873</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>my</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span> <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Measure qubit in Y basis.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>887</span>
+<span class=normal>888</span>
+<span class=normal>889</span>
+<span class=normal>890</span>
+<span class=normal>891</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>my</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>p</span><span class=p>:</span> <span class=nb>float</span> <span class=o>=</span> <span class=mi>0</span><span class=p>,</span> <span class=n>invert</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Measure qubit in Y basis.&quot;&quot;&quot;</span>
     <span class=n>h_yz</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
     <span class=n>m</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>,</span> <span class=n>p</span><span class=o>=</span><span class=n>p</span><span class=p>,</span> <span class=n>invert</span><span class=o>=</span><span class=n>invert</span><span class=p>)</span>
@@ -649,21 +649,21 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.instructions.observable_include class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">observable_include</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>observable_include</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>rec</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=n>idx</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Add observable annotation that XORs the given measurement record bits.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>928</span>
-<span class=normal>929</span>
-<span class=normal>930</span>
-<span class=normal>931</span>
-<span class=normal>932</span>
-<span class=normal>933</span>
-<span class=normal>934</span>
-<span class=normal>935</span>
-<span class=normal>936</span>
-<span class=normal>937</span>
-<span class=normal>938</span>
-<span class=normal>939</span>
-<span class=normal>940</span>
-<span class=normal>941</span>
-<span class=normal>942</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>observable_include</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>rec</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=n>idx</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Add observable annotation that XORs the given measurement record bits.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>946</span>
+<span class=normal>947</span>
+<span class=normal>948</span>
+<span class=normal>949</span>
+<span class=normal>950</span>
+<span class=normal>951</span>
+<span class=normal>952</span>
+<span class=normal>953</span>
+<span class=normal>954</span>
+<span class=normal>955</span>
+<span class=normal>956</span>
+<span class=normal>957</span>
+<span class=normal>958</span>
+<span class=normal>959</span>
+<span class=normal>960</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>observable_include</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>rec</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=n>idx</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Add observable annotation that XORs the given measurement record bits.&quot;&quot;&quot;</span>
     <span class=n>idx</span> <span class=o>=</span> <span class=nb>int</span><span class=p>(</span><span class=n>idx</span><span class=p>)</span>
 
@@ -782,13 +782,13 @@
     <span class=n>_error</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit_j</span><span class=p>,</span> <span class=n>b</span><span class=o>.</span><span class=n>vertex_type</span><span class=o>.</span><span class=n>X</span><span class=p>,</span> <span class=sa>f</span><span class=s2>&quot;e</span><span class=si>{</span><span class=n>b</span><span class=o>.</span><span class=n>num_error_bits</span><span class=w> </span><span class=o>+</span><span class=w> </span><span class=mi>3</span><span class=si>}</span><span class=s2>&quot;</span><span class=p>)</span>
     <span class=n>b</span><span class=o>.</span><span class=n>num_error_bits</span> <span class=o>+=</span> <span class=mi>4</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.instructions.r class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">r</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>r</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Z-basis reset.</p> <p>Forces each target qubit into the |0&gt; state by silently measuring it in the Z basis and applying an X gate if it ended up in the |1&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>876</span>
-<span class=normal>877</span>
-<span class=normal>878</span>
-<span class=normal>879</span>
-<span class=normal>880</span>
-<span class=normal>881</span>
-<span class=normal>882</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>r</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Z-basis reset.</p> <p>Forces each target qubit into the |0&gt; state by silently measuring it in the Z basis and applying an X gate if it ended up in the |1&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>894</span>
+<span class=normal>895</span>
+<span class=normal>896</span>
+<span class=normal>897</span>
+<span class=normal>898</span>
+<span class=normal>899</span>
+<span class=normal>900</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>r</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Z-basis reset.</span>
 
 <span class=sd>    Forces each target qubit into the |0&gt; state by silently measuring it in the Z basis</span>
@@ -828,16 +828,16 @@
     <span class=n>z_phase</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>,</span> <span class=n>phase</span><span class=p>)</span>
     <span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>scalar</span><span class=o>.</span><span class=n>add_phase</span><span class=p>(</span><span class=o>-</span><span class=n>phase</span> <span class=o>/</span> <span class=mi>2</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.instructions.rx class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">rx</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>rx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>X-basis reset.</p> <p>Forces each target qubit into the |+&gt; state by silently measuring it in the X basis and applying a Z gate if it ended up in the |-&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>885</span>
-<span class=normal>886</span>
-<span class=normal>887</span>
-<span class=normal>888</span>
-<span class=normal>889</span>
-<span class=normal>890</span>
-<span class=normal>891</span>
-<span class=normal>892</span>
-<span class=normal>893</span>
-<span class=normal>894</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>rx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>X-basis reset.</p> <p>Forces each target qubit into the |+&gt; state by silently measuring it in the X basis and applying a Z gate if it ended up in the |-&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>903</span>
+<span class=normal>904</span>
+<span class=normal>905</span>
+<span class=normal>906</span>
+<span class=normal>907</span>
+<span class=normal>908</span>
+<span class=normal>909</span>
+<span class=normal>910</span>
+<span class=normal>911</span>
+<span class=normal>912</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>rx</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;X-basis reset.</span>
 
 <span class=sd>    Forces each target qubit into the |+&gt; state by silently measuring it in the X basis</span>
@@ -848,16 +848,16 @@
     <span class=n>r</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
     <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.instructions.ry class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">ry</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>ry</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Y-basis reset.</p> <p>Forces each target qubit into the |i&gt; state by silently measuring it in the Y basis and applying an X gate if it ended up in the |-i&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>897</span>
-<span class=normal>898</span>
-<span class=normal>899</span>
-<span class=normal>900</span>
-<span class=normal>901</span>
-<span class=normal>902</span>
-<span class=normal>903</span>
-<span class=normal>904</span>
-<span class=normal>905</span>
-<span class=normal>906</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>ry</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Y-basis reset.</p> <p>Forces each target qubit into the |i&gt; state by silently measuring it in the Y basis and applying an X gate if it ended up in the |-i&gt; state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>915</span>
+<span class=normal>916</span>
+<span class=normal>917</span>
+<span class=normal>918</span>
+<span class=normal>919</span>
+<span class=normal>920</span>
+<span class=normal>921</span>
+<span class=normal>922</span>
+<span class=normal>923</span>
+<span class=normal>924</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>ry</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Y-basis reset.</span>
 
 <span class=sd>    Forces each target qubit into the |i&gt; state by silently measuring it in the Y basis</span>
@@ -913,7 +913,25 @@
 <span class=normal>800</span>
 <span class=normal>801</span>
 <span class=normal>802</span>
-<span class=normal>803</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>spp</span><span class=p>(</span>
+<span class=normal>803</span>
+<span class=normal>804</span>
+<span class=normal>805</span>
+<span class=normal>806</span>
+<span class=normal>807</span>
+<span class=normal>808</span>
+<span class=normal>809</span>
+<span class=normal>810</span>
+<span class=normal>811</span>
+<span class=normal>812</span>
+<span class=normal>813</span>
+<span class=normal>814</span>
+<span class=normal>815</span>
+<span class=normal>816</span>
+<span class=normal>817</span>
+<span class=normal>818</span>
+<span class=normal>819</span>
+<span class=normal>820</span>
+<span class=normal>821</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>spp</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span>
     <span class=n>paulis</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>tuple</span><span class=p>[</span><span class=n>Literal</span><span class=p>[</span><span class=s2>&quot;X&quot;</span><span class=p>,</span> <span class=s2>&quot;Y&quot;</span><span class=p>,</span> <span class=s2>&quot;Z&quot;</span><span class=p>],</span> <span class=nb>int</span><span class=p>]],</span>
     <span class=n>dagger</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
@@ -926,18 +944,36 @@
 <span class=sd>        dagger: If True, phase by -i instead of i.</span>
 
 <span class=sd>    &quot;&quot;&quot;</span>
-    <span class=n>aux</span> <span class=o>=</span> <span class=o>-</span><span class=mi>2</span>
-    <span class=n>r</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>aux</span><span class=p>)</span>
-    <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>aux</span><span class=p>)</span>
-    <span class=n>_apply_pauli_controls</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>aux</span><span class=p>,</span> <span class=n>paulis</span><span class=p>)</span>
-    <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>aux</span><span class=p>)</span>
+    <span class=c1># Rotate each qubit so its Pauli eigenvalue maps to Z</span>
+    <span class=k>for</span> <span class=n>pauli_type</span><span class=p>,</span> <span class=n>qubit</span> <span class=ow>in</span> <span class=n>paulis</span><span class=p>:</span>
+        <span class=k>if</span> <span class=n>pauli_type</span> <span class=o>==</span> <span class=s2>&quot;X&quot;</span><span class=p>:</span>
+            <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
+        <span class=k>elif</span> <span class=n>pauli_type</span> <span class=o>==</span> <span class=s2>&quot;Y&quot;</span><span class=p>:</span>
+            <span class=n>s_dag</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
+            <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
+
+    <span class=c1># Accumulate Z-parity into the last qubit</span>
+    <span class=n>_</span><span class=p>,</span> <span class=n>last_qubit</span> <span class=o>=</span> <span class=n>paulis</span><span class=p>[</span><span class=o>-</span><span class=mi>1</span><span class=p>]</span>
+    <span class=k>for</span> <span class=n>_</span><span class=p>,</span> <span class=n>qubit</span> <span class=ow>in</span> <span class=n>paulis</span><span class=p>[:</span><span class=o>-</span><span class=mi>1</span><span class=p>]:</span>
+        <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>,</span> <span class=n>last_qubit</span><span class=p>)</span>
+
+    <span class=c1># Phase the parity</span>
     <span class=k>if</span> <span class=n>dagger</span><span class=p>:</span>
-        <span class=n>s_dag</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>aux</span><span class=p>)</span>
+        <span class=n>s_dag</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>last_qubit</span><span class=p>)</span>
     <span class=k>else</span><span class=p>:</span>
-        <span class=n>s</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>aux</span><span class=p>)</span>
-    <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>aux</span><span class=p>)</span>
-    <span class=n>_apply_pauli_controls</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>aux</span><span class=p>,</span> <span class=n>paulis</span><span class=p>)</span>
-    <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>aux</span><span class=p>)</span>
+        <span class=n>s</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>last_qubit</span><span class=p>)</span>
+
+    <span class=c1># Uncompute parity accumulation</span>
+    <span class=k>for</span> <span class=n>_</span><span class=p>,</span> <span class=n>qubit</span> <span class=ow>in</span> <span class=nb>reversed</span><span class=p>(</span><span class=n>paulis</span><span class=p>[:</span><span class=o>-</span><span class=mi>1</span><span class=p>]):</span>
+        <span class=n>cnot</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>,</span> <span class=n>last_qubit</span><span class=p>)</span>
+
+    <span class=c1># Undo basis rotations</span>
+    <span class=k>for</span> <span class=n>pauli_type</span><span class=p>,</span> <span class=n>qubit</span> <span class=ow>in</span> <span class=n>paulis</span><span class=p>:</span>
+        <span class=k>if</span> <span class=n>pauli_type</span> <span class=o>==</span> <span class=s2>&quot;X&quot;</span><span class=p>:</span>
+            <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
+        <span class=k>elif</span> <span class=n>pauli_type</span> <span class=o>==</span> <span class=s2>&quot;Y&quot;</span><span class=p>:</span>
+            <span class=n>h</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
+            <span class=n>s</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.instructions.sqrt_x class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">sqrt_x</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>sqrt_x</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
 </code></pre></div> <div class="doc doc-contents "> <p>Apply √X gate (π/2 X rotation).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>256</span>
 <span class=normal>257</span>
@@ -1113,13 +1149,13 @@
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Apply T† gate (-π/4 Z rotation).&quot;&quot;&quot;</span>
     <span class=n>z_phase</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>,</span> <span class=n>Fraction</span><span class=p>(</span><span class=o>-</span><span class=mi>1</span><span class=p>,</span> <span class=mi>4</span><span class=p>))</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.instructions.tick class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">tick</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>tick</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Add a tick to the circuit (align all qubits to same row).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>945</span>
-<span class=normal>946</span>
-<span class=normal>947</span>
-<span class=normal>948</span>
-<span class=normal>949</span>
-<span class=normal>950</span>
-<span class=normal>951</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>tick</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Add a tick to the circuit (align all qubits to same row).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>963</span>
+<span class=normal>964</span>
+<span class=normal>965</span>
+<span class=normal>966</span>
+<span class=normal>967</span>
+<span class=normal>968</span>
+<span class=normal>969</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>tick</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Add a tick to the circuit (align all qubits to same row).&quot;&quot;&quot;</span>
     <span class=k>if</span> <span class=nb>len</span><span class=p>(</span><span class=n>b</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>)</span> <span class=o>==</span> <span class=mi>0</span><span class=p>:</span>
         <span class=k>return</span>
