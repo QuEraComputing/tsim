@@ -333,7 +333,7 @@ class _CompiledSamplerBase:
             result = result ^ self._direct_fl_np
         if self._direct_reindex_np is not None:
             result = result[:, self._direct_reindex_np]
-        return result
+        return result.astype(np.bool_)
 
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""
