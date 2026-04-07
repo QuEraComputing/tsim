@@ -258,3 +258,31 @@ class TestParseMXXMYYMZZ:
         """)
         b = parse_stim_circuit(circuit)
         assert len(b.rec) == 3
+
+
+class TestParseSPP:
+    """Tests for parsing SPP and SPP_DAG instructions."""
+
+    def test_spp_single_pauli(self):
+        """SPP Z0 should parse without adding measurement records."""
+        circuit = stim.Circuit("SPP Z0")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 0
+
+    def test_spp_product(self):
+        """SPP X0*Z1 should parse without adding measurement records."""
+        circuit = stim.Circuit("SPP X0*Z1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 0
+
+    def test_spp_dag_single_pauli(self):
+        """SPP_DAG Z0 should parse without adding measurement records."""
+        circuit = stim.Circuit("SPP_DAG Z0")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 0
+
+    def test_spp_multiple_products(self):
+        """SPP with multiple products should parse correctly."""
+        circuit = stim.Circuit("SPP X0 Y1*Z2")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 0

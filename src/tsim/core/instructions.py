@@ -754,7 +754,17 @@ def mpp(
     aux = -2
     r(b, aux)
     h(b, aux)
+    _apply_pauli_controls(b, aux, paulis)
+    h(b, aux)
+    m(b, aux, invert=invert)
 
+
+def _apply_pauli_controls(
+    b: GraphRepresentation,
+    aux: int,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+) -> None:
+    """Apply controlled-Pauli operations between aux and target qubits."""
     for pauli_type, qubit in paulis:
         if pauli_type == "X":
             cnot(b, aux, qubit)
@@ -765,8 +775,32 @@ def mpp(
         else:
             raise ValueError(f"Invalid Pauli operator: {pauli_type}")
 
+
+def spp(
+    b: GraphRepresentation,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+    dagger: bool = False,
+) -> None:
+    """Phase the -1 eigenspace of a Pauli product by i (or -i if dagger).
+
+    Args:
+        b: The graph representation to modify.
+        paulis: List of (pauli_type, qubit) pairs defining the Pauli product.
+        dagger: If True, phase by -i instead of i.
+
+    """
+    aux = -2
+    r(b, aux)
     h(b, aux)
-    m(b, aux, invert=invert)
+    _apply_pauli_controls(b, aux, paulis)
+    h(b, aux)
+    if dagger:
+        s_dag(b, aux)
+    else:
+        s(b, aux)
+    h(b, aux)
+    _apply_pauli_controls(b, aux, paulis)
+    h(b, aux)
 
 
 def mpad(b: GraphRepresentation, value: int, p: float = 0) -> None:

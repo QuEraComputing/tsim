@@ -18,6 +18,7 @@ from tsim.core.instructions import (
     r_x,
     r_y,
     r_z,
+    spp,
     tick,
     u3,
 )
@@ -154,6 +155,36 @@ def parse_stim_circuit(
                 t0, t1 = targets[i], targets[i + 1]
                 invert = t0.is_inverted_result_target ^ t1.is_inverted_result_target
                 mpp(b, [(pauli_type, t0.value), (pauli_type, t1.value)], invert)
+            continue
+        if name in ("SPP", "SPP_DAG"):
+            is_dag = name == "SPP_DAG"
+            current_paulis = []
+            invert = False
+            targets = instruction.targets_copy()
+
+            for i, target in enumerate(targets):
+                if target.is_combiner:
+                    continue
+
+                if target.is_x_target:
+                    pauli_type = "X"
+                elif target.is_y_target:
+                    pauli_type = "Y"
+                elif target.is_z_target:
+                    pauli_type = "Z"
+                else:
+                    raise ValueError(f"Invalid SPP target: {target}")
+
+                invert ^= target.is_inverted_result_target
+
+                current_paulis.append((pauli_type, target.value))
+
+                next_idx = i + 1
+                if next_idx >= len(targets) or not targets[next_idx].is_combiner:
+                    spp(b, current_paulis, dagger=is_dag ^ invert)
+                    current_paulis = []
+                    invert = False
+
             continue
         if name == "MPAD":
             args = instruction.gate_args_copy()
