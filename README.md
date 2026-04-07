@@ -103,7 +103,7 @@ Tsim can be five orders of magnitude faster than [quizx](https://github.com/zxca
 
 ## Supported Instructions
 
-Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference). In addition, Tsim defines the following non-Clifford instructions:
+Tsim supports most [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference). In addition, Tsim defines the following non-Clifford instructions:
 
 ### `T` and `T_DAG`
 

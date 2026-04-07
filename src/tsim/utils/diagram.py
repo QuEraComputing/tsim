@@ -102,9 +102,9 @@ def placeholders_to_t(
 
     Args:
         svg_string: The SVG string from stim's diagram() method containing I_ERROR
-        placeholder gates whose p-value are used as identifiers.
+            placeholder gates whose p-value are used as identifiers.
         placeholder_id_to_labels: Mapping from identifier (float), i.e. the p values of
-        I_ERROR gates, to GateLabel.
+            I_ERROR gates, to GateLabel.
 
     Returns:
         Modified SVG string with I_ERROR gates replaced by the actual gate names.
