@@ -3,13 +3,25 @@
 from __future__ import annotations
 
 from fractions import Fraction
-from typing import Any, Iterable, Literal, Sequence, Union, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Iterable,
+    Literal,
+    Sequence,
+    Union,
+    cast,
+    overload,
+)
 
 import pyzx_param as zx
 import stim
 from pyzx_param.graph.base import BaseGraph
 from pyzx_param.simulate import DecompositionStrategy
 from pyzx_param.utils import VertexType
+
+if TYPE_CHECKING:
+    from tsim.sampler import CompiledDetectorSampler, CompiledMeasurementSampler
 
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
@@ -761,7 +773,7 @@ class Circuit:
         *,
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
-    ):
+    ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
         Args:
@@ -782,7 +794,7 @@ class Circuit:
         *,
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
-    ):
+    ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
 
         Args:

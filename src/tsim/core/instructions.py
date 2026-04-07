@@ -754,7 +754,17 @@ def mpp(
     aux = -2
     r(b, aux)
     h(b, aux)
+    _apply_pauli_controls(b, aux, paulis)
+    h(b, aux)
+    m(b, aux, invert=invert)
 
+
+def _apply_pauli_controls(
+    b: GraphRepresentation,
+    aux: int,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+) -> None:
+    """Apply controlled-Pauli operations between aux and target qubits."""
     for pauli_type, qubit in paulis:
         if pauli_type == "X":
             cnot(b, aux, qubit)
@@ -765,8 +775,50 @@ def mpp(
         else:
             raise ValueError(f"Invalid Pauli operator: {pauli_type}")
 
-    h(b, aux)
-    m(b, aux, invert=invert)
+
+def spp(
+    b: GraphRepresentation,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+    dagger: bool = False,
+) -> None:
+    """Phase the -1 eigenspace of a Pauli product by i (or -i if dagger).
+
+    Args:
+        b: The graph representation to modify.
+        paulis: List of (pauli_type, qubit) pairs defining the Pauli product.
+        dagger: If True, phase by -i instead of i.
+
+    """
+    # Rotate each qubit so its Pauli eigenvalue maps to Z
+    for pauli_type, qubit in paulis:
+        if pauli_type == "X":
+            h(b, qubit)
+        elif pauli_type == "Y":
+            s_dag(b, qubit)
+            h(b, qubit)
+
+    # Accumulate Z-parity into the last qubit
+    _, last_qubit = paulis[-1]
+    for _, qubit in paulis[:-1]:
+        cnot(b, qubit, last_qubit)
+
+    # Phase the parity
+    if dagger:
+        s_dag(b, last_qubit)
+    else:
+        s(b, last_qubit)
+
+    # Uncompute parity accumulation
+    for _, qubit in reversed(paulis[:-1]):
+        cnot(b, qubit, last_qubit)
+
+    # Undo basis rotations
+    for pauli_type, qubit in paulis:
+        if pauli_type == "X":
+            h(b, qubit)
+        elif pauli_type == "Y":
+            h(b, qubit)
+            s(b, qubit)
 
 
 def mpad(b: GraphRepresentation, value: int, p: float = 0) -> None:
