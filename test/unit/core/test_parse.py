@@ -220,3 +220,41 @@ class TestParseMPAD:
         circuit = stim.Circuit("REPEAT 3 {\n    MPAD 0 1\n}")
         b = parse_stim_circuit(circuit)
         assert len(b.rec) == 6
+
+
+class TestParseMXXMYYMZZ:
+    """Tests for parsing MXX, MYY, MZZ instructions."""
+
+    def test_mxx_single_pair(self):
+        """MXX on one pair should add one measurement record entry."""
+        circuit = stim.Circuit("MXX 0 1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+
+    def test_myy_single_pair(self):
+        """MYY on one pair should add one measurement record entry."""
+        circuit = stim.Circuit("MYY 0 1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+
+    def test_mzz_single_pair(self):
+        """MZZ on one pair should add one measurement record entry."""
+        circuit = stim.Circuit("MZZ 0 1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+
+    def test_mxx_multiple_pairs(self):
+        """MXX with multiple pairs should add one record per pair."""
+        circuit = stim.Circuit("MXX 0 1 2 3 4 5")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 3
+
+    def test_mzz_mixed_with_measurements(self):
+        """MZZ records should interleave correctly with regular measurements."""
+        circuit = stim.Circuit("""
+            M 0
+            MZZ 1 2
+            M 1
+        """)
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 3
