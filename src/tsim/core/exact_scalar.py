@@ -67,8 +67,8 @@ def _scalar_mul_with_power(x: tuple, y: tuple) -> tuple:
     p2, c2 = y
 
     new_coeffs = _scalar_mul(c1, c2)
-    P = p1 + p2
-    return _reduce_power_coeffs_step(P, new_coeffs)
+    p = p1 + p2
+    return _reduce_power_coeffs_step(p, new_coeffs)
 
 
 def _scalar_add_with_power(x: tuple, y: tuple) -> tuple:
@@ -79,9 +79,9 @@ def _scalar_add_with_power(x: tuple, y: tuple) -> tuple:
     c1_scale = jnp.left_shift(jnp.ones_like(p1), jnp.maximum(p1 - p2, 0))[..., None]
     c2_scale = jnp.left_shift(jnp.ones_like(p2), jnp.maximum(p2 - p1, 0))[..., None]
 
-    P = jnp.minimum(p1, p2)
+    p = jnp.minimum(p1, p2)
     new_coeffs = c1 * c1_scale + c2 * c2_scale
-    return _reduce_power_coeffs_step(P, new_coeffs)
+    return _reduce_power_coeffs_step(p, new_coeffs)
 
 
 def _scalar_to_complex(data: jax.Array) -> jax.Array:
