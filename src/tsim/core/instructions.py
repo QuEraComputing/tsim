@@ -789,18 +789,36 @@ def spp(
         dagger: If True, phase by -i instead of i.
 
     """
-    aux = -2
-    r(b, aux)
-    h(b, aux)
-    _apply_pauli_controls(b, aux, paulis)
-    h(b, aux)
+    # Rotate each qubit so its Pauli eigenvalue maps to Z
+    for pauli_type, qubit in paulis:
+        if pauli_type == "X":
+            h(b, qubit)
+        elif pauli_type == "Y":
+            s_dag(b, qubit)
+            h(b, qubit)
+
+    # Accumulate Z-parity into the last qubit
+    _, last_qubit = paulis[-1]
+    for _, qubit in paulis[:-1]:
+        cnot(b, qubit, last_qubit)
+
+    # Phase the parity
     if dagger:
-        s_dag(b, aux)
+        s_dag(b, last_qubit)
     else:
-        s(b, aux)
-    h(b, aux)
-    _apply_pauli_controls(b, aux, paulis)
-    h(b, aux)
+        s(b, last_qubit)
+
+    # Uncompute parity accumulation
+    for _, qubit in reversed(paulis[:-1]):
+        cnot(b, qubit, last_qubit)
+
+    # Undo basis rotations
+    for pauli_type, qubit in paulis:
+        if pauli_type == "X":
+            h(b, qubit)
+        elif pauli_type == "Y":
+            h(b, qubit)
+            s(b, qubit)
 
 
 def mpad(b: GraphRepresentation, value: int, p: float = 0) -> None:
