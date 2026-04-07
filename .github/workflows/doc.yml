@@ -35,7 +35,7 @@ jobs:
           path: .cache
           restore-keys: |
             mkdocs-material-
-      - name: Depoly documentation
+      - name: Deploy documentation
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |

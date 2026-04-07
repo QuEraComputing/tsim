@@ -12,6 +12,7 @@ from tsim.core.instructions import (
     correlated_error,
     detector,
     finalize_correlated_error,
+    mpad,
     mpp,
     observable_include,
     r_x,
@@ -47,8 +48,10 @@ def parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
         param = param.strip()
         if not param:
             continue
-        # Match param=value*pi (value can be negative/decimal)
-        param_match = re.match(r"^(\w+)=([-+]?[\d.]+)\*pi$", param)
+        # Match param=value*pi (value can be negative/decimal/scientific)
+        param_match = re.match(
+            r"^(\w+)=([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\*pi$", param
+        )
         if not param_match:
             return None
         param_name = param_match.group(1)
@@ -82,7 +85,7 @@ def parse_stim_circuit(
             # TODO: handle these visualization annotations
             continue
 
-        if name == "I_ERROR":
+        if name in ["I_ERROR", "II_ERROR"]:
             continue
 
         if name == "S" and instruction.tag == "T":
@@ -143,6 +146,20 @@ def parse_stim_circuit(
                     current_paulis = []
                     invert = False
 
+            continue
+        if name in ("MXX", "MYY", "MZZ"):
+            pauli_type: Literal["X", "Y", "Z"] = name[1]  # type: ignore[assignment]
+            targets = instruction.targets_copy()
+            for i in range(0, len(targets), 2):
+                t0, t1 = targets[i], targets[i + 1]
+                invert = t0.is_inverted_result_target ^ t1.is_inverted_result_target
+                mpp(b, [(pauli_type, t0.value), (pauli_type, t1.value)], invert)
+            continue
+        if name == "MPAD":
+            args = instruction.gate_args_copy()
+            p = args[0] if args else 0
+            for target in instruction.targets_copy():
+                mpad(b, target.value, p=p)
             continue
         if name == "E" or name == "ELSE_CORRELATED_ERROR":
             if name == "E":
