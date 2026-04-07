@@ -769,6 +769,22 @@ def mpp(
     m(b, aux, invert=invert)
 
 
+def mpad(b: GraphRepresentation, value: int, p: float = 0) -> None:
+    """Pad measurement record with a fixed bit value.
+
+    Args:
+        b: The graph representation to modify.
+        value: The bit value to record (0 or 1).
+        p: Error probability for the recorded bit.
+
+    """
+    aux = -2
+    r(b, aux)
+    if value == 1:
+        x(b, aux)
+    m(b, aux, p=p)
+
+
 def mr(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
     """Z-basis demolition measurement (optionally noisy).
 

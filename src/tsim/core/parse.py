@@ -12,6 +12,7 @@ from tsim.core.instructions import (
     correlated_error,
     detector,
     finalize_correlated_error,
+    mpad,
     mpp,
     observable_include,
     r_x,
@@ -145,6 +146,12 @@ def parse_stim_circuit(
                     current_paulis = []
                     invert = False
 
+            continue
+        if name == "MPAD":
+            args = instruction.gate_args_copy()
+            p = args[0] if args else 0
+            for target in instruction.targets_copy():
+                mpad(b, target.value, p=p)
             continue
         if name == "E" or name == "ELSE_CORRELATED_ERROR":
             if name == "E":

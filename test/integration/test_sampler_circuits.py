@@ -576,3 +576,59 @@ def test_many_rx_gates(n: int):
     sampler = CompiledStateProbs(c)
     mat = get_matrix(sampler)
     assert np.allclose(mat, np.eye(2), atol=1e-6)
+
+
+def test_mpad_zero():
+    c = Circuit("""
+        MPAD 0
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(10)
+    assert (samples == 0).all()
+
+
+def test_mpad_one():
+    c = Circuit("""
+        MPAD 1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(10)
+    assert (samples == 1).all()
+
+
+def test_mpad_multiple():
+    c = Circuit("""
+        MPAD 0 1 1 0
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(10)
+    assert (samples[:, 0] == 0).all()
+    assert (samples[:, 1] == 1).all()
+    assert (samples[:, 2] == 1).all()
+    assert (samples[:, 3] == 0).all()
+
+
+def test_mpad_with_measurements():
+    c = Circuit("""
+        R 0
+        X 0
+        M 0
+        MPAD 0
+        M 0
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(10)
+    # M 0 after X -> 1, MPAD 0 -> 0, M 0 after implicit reset -> 1
+    assert (samples[:, 0] == 1).all()
+    assert (samples[:, 1] == 0).all()
+    assert (samples[:, 2] == 1).all()
+
+
+def test_mpad_detector():
+    c = Circuit("""
+        MPAD 1
+        DETECTOR rec[-1]
+    """)
+    sampler = c.compile_detector_sampler()
+    samples = sampler.sample(10)
+    assert (samples == 1).all()
