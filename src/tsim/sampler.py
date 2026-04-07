@@ -206,14 +206,14 @@ class _CompiledSamplerBase:
         # convert from JAX on every sample call.
         prog = self._program
         n_direct = len(prog.direct_f_indices)
-        self._direct_f_np = np.asarray(prog.direct_f_indices)
-        self._direct_fl_np = np.asarray(prog.direct_flips, dtype=np.bool_)
-        self._direct_reindex_np = (
+        self._direct_f_indices = np.asarray(prog.direct_f_indices)
+        self._direct_flips = np.asarray(prog.direct_flips, dtype=np.bool_)
+        self._direct_reindex = (
             np.asarray(prog.output_reindex) if prog.output_reindex is not None else None
         )
-        self._direct_any_flips = bool(np.any(self._direct_fl_np))
+        self._direct_has_flips = bool(np.any(self._direct_flips))
         self._direct_contiguous = n_direct > 0 and np.array_equal(
-            self._direct_f_np, np.arange(n_direct)
+            self._direct_f_indices, np.arange(n_direct)
         )
 
     def _peak_bytes_per_sample(self) -> int:
@@ -324,15 +324,15 @@ class _CompiledSamplerBase:
     def _sample_direct(self, shots: int) -> np.ndarray:
         """Fast path when all components are direct (pure numpy, no JAX)."""
         f_params = self._channel_sampler.sample(shots)
-        n = len(self._direct_f_np)
+        n = len(self._direct_f_indices)
         if self._direct_contiguous:
             result = f_params[:, :n] if n < f_params.shape[1] else f_params
         else:
-            result = f_params[:, self._direct_f_np]
-        if self._direct_any_flips:
-            result = result ^ self._direct_fl_np
-        if self._direct_reindex_np is not None:
-            result = result[:, self._direct_reindex_np]
+            result = f_params[:, self._direct_f_indices]
+        if self._direct_has_flips:
+            result = result ^ self._direct_flips
+        if self._direct_reindex is not None:
+            result = result[:, self._direct_reindex]
         return result.astype(np.bool_)
 
     def __repr__(self) -> str:
