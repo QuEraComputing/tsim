@@ -521,3 +521,17 @@ if __name__ == "__main__":
             assert np.allclose(
                 tsim_state_vector, pyzx_state_vector, atol=tol, rtol=tol
             ), f"Seed: {seed}"
+
+
+def test_no_detectors_with_reference_sample():
+    """Detector sampler on a circuit with no detectors returns empty arrays."""
+    c = Circuit("R 0\nH 0\nM 0")
+    sampler = c.compile_detector_sampler()
+
+    # Without reference sample
+    d = sampler.sample(10)
+    assert d.shape == (10, 0)
+
+    # With reference sample — previously crashed with empty concatenation
+    d_ref = sampler.sample(10, use_detector_reference_sample=True)
+    assert d_ref.shape == (10, 0)

@@ -130,7 +130,11 @@ def sample_program(
         match the original output indices.
 
     """
+    batch_size = f_params.shape[0]
     results: list[jax.Array] = []
+
+    if program.num_outputs == 0:
+        return jnp.zeros((batch_size, 0), dtype=jnp.bool_)
 
     if len(program.direct_f_indices) > 0:
         direct_bits = (
