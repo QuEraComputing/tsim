@@ -83,6 +83,18 @@ def test_auto_batch(shots, expected_batch_size):
     ] * 4
 
 
+@pytest.fixture()
+def make_sampler():
+    """Create a sampler with mocked internals for fast batch-logic tests."""
+
+    def _make(max_batch_size: int = 30):
+        c = Circuit("H 0\nM 0")
+        sampler = c.compile_sampler(seed=0)
+        return sampler, max_batch_size
+
+    return _make
+
+
 @pytest.mark.parametrize(
     ("shots", "max_batch", "batch_size", "compute_ref", "expected_bs", "expected_n"),
     [
@@ -136,6 +148,29 @@ def test_batch_size_with_reference(
     batch_sizes = [call.args[0] for call in spy.call_args_list]
     assert all(bs == expected_bs for bs in batch_sizes)
     assert len(batch_sizes) == expected_n
+
+
+def test_reference_sample_basic():
+    """Reference sample XORs noiseless outcome with detector results."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+
+    # With reference sample: XOR with noiseless outcome
+    # For a noiseless circuit, ref == raw, so XOR gives all zeros
+    d_ref = sampler.sample(
+        1,
+        append_observables=True,
+        use_detector_reference_sample=True,
+        use_observable_reference_sample=True,
+    )
+    assert np.array_equal(d_ref, np.zeros_like(d_ref))
 
 
 def test_reference_sample_selective_xor():
@@ -195,41 +230,6 @@ def test_reference_sample_with_bit_packed():
         1, -1
     )
     assert np.array_equal(d, expected)
-
-
-def test_reference_sample_basic():
-    """Reference sample XORs noiseless outcome with detector results."""
-    c = Circuit("""
-        R 0 1 2
-        X 2
-        M 0 1 2
-        DETECTOR rec[-2]
-        DETECTOR rec[-3]
-        OBSERVABLE_INCLUDE(0) rec[-1]
-        """)
-    sampler = c.compile_detector_sampler()
-
-    # With reference sample: XOR with noiseless outcome
-    # For a noiseless circuit, ref == raw, so XOR gives all zeros
-    d_ref = sampler.sample(
-        1,
-        append_observables=True,
-        use_detector_reference_sample=True,
-        use_observable_reference_sample=True,
-    )
-    assert np.array_equal(d_ref, np.zeros_like(d_ref))
-
-
-@pytest.fixture()
-def make_sampler():
-    """Create a sampler with mocked internals for fast batch-logic tests."""
-
-    def _make(max_batch_size: int = 30):
-        c = Circuit("H 0\nM 0")
-        sampler = c.compile_sampler(seed=0)
-        return sampler, max_batch_size
-
-    return _make
 
 
 def test_reference_sample_defaults_unchanged():
