@@ -72,6 +72,60 @@ def test_rot_instructions(instruction: str):
     assert np.allclose(mat, expected)
 
 
+SPP_SINGLE_QUBIT_EQUIVALENCES = {
+    "SPP Z0": SINGLE_QUBIT_GATE_MATRICES["S"],
+    "SPP_DAG Z0": SINGLE_QUBIT_GATE_MATRICES["S_DAG"],
+    "SPP X0": SINGLE_QUBIT_GATE_MATRICES["SQRT_X"],
+    "SPP_DAG X0": SINGLE_QUBIT_GATE_MATRICES["SQRT_X_DAG"],
+    "SPP !X0": SINGLE_QUBIT_GATE_MATRICES["SQRT_X_DAG"],
+    "SPP_DAG !X0": SINGLE_QUBIT_GATE_MATRICES["SQRT_X"],
+    "SPP Y0": SINGLE_QUBIT_GATE_MATRICES["SQRT_Y"],
+    "SPP_DAG Y0": SINGLE_QUBIT_GATE_MATRICES["SQRT_Y_DAG"],
+}
+
+SPP_TWO_QUBIT_EQUIVALENCES = {
+    "SPP X0*X1": TWO_QUBIT_GATE_MATRICES["SQRT_XX"],
+    "SPP_DAG X0*X1": TWO_QUBIT_GATE_MATRICES["SQRT_XX_DAG"],
+    "SPP !X0*X1": TWO_QUBIT_GATE_MATRICES["SQRT_XX_DAG"],
+    "SPP Y0*Y1": TWO_QUBIT_GATE_MATRICES["SQRT_YY"],
+    "SPP_DAG Y0*Y1": TWO_QUBIT_GATE_MATRICES["SQRT_YY_DAG"],
+    "SPP !Y0*Y1": TWO_QUBIT_GATE_MATRICES["SQRT_YY_DAG"],
+    "SPP Z0*Z1": TWO_QUBIT_GATE_MATRICES["SQRT_ZZ"],
+    "SPP_DAG Z0*Z1": TWO_QUBIT_GATE_MATRICES["SQRT_ZZ_DAG"],
+    "SPP !Z0*Z1": TWO_QUBIT_GATE_MATRICES["SQRT_ZZ_DAG"],
+}
+
+
+@pytest.mark.parametrize("instruction", SPP_SINGLE_QUBIT_EQUIVALENCES.keys())
+def test_spp_single_qubit(instruction: str):
+    unitary = SPP_SINGLE_QUBIT_EQUIVALENCES[instruction]
+    c = Circuit(f"""
+        R 0 1
+        H 0
+        CNOT 0 1
+        {instruction}
+        M 0 1
+        """)
+    sampler = CompiledStateProbs(c)
+    mat = get_matrix(sampler)
+    assert np.allclose(mat, np.abs(unitary) ** 2)
+
+
+@pytest.mark.parametrize("instruction", SPP_TWO_QUBIT_EQUIVALENCES.keys())
+def test_spp_two_qubit(instruction: str):
+    unitary = SPP_TWO_QUBIT_EQUIVALENCES[instruction]
+    c = Circuit(f"""
+        R 0 1 2 3
+        H 0 1
+        CNOT 0 2 1 3
+        {instruction}
+        M 0 1 2 3
+        """)
+    sampler = CompiledStateProbs(c)
+    mat = get_matrix(sampler)
+    assert np.allclose(mat, np.abs(unitary) ** 2)
+
+
 def test_u3_instruction():
     c = Circuit("""
         R 0 1

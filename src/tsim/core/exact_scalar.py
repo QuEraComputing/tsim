@@ -12,8 +12,8 @@ import jax
 import jax.numpy as jnp
 from jax import Array, lax
 
-_E4 = jnp.exp(1j * jnp.pi / 4)  # e^(i*pi/4)
-_E4D = jnp.exp(-1j * jnp.pi / 4)  # e^(-i*pi/4)
+_E4 = jnp.exp(1j * jnp.pi / 4)
+_E4D = jnp.exp(-1j * jnp.pi / 4)
 
 
 @jax.jit
@@ -37,6 +37,51 @@ def _scalar_mul(d1: jax.Array, d2: jax.Array) -> jax.Array:
     D = a1 * d2_coeff - b1 * c2 - c1 * b2 + d1_coeff * a2
 
     return jnp.stack([A, B, C, D], axis=-1).astype(d1.dtype)
+
+
+def _reduce_power_coeffs_step(
+    power: jax.Array, coeffs: jax.Array
+) -> tuple[jax.Array, jax.Array]:
+    """Reduce one common factor of 2 from coefficients into the power."""
+    reducible = jnp.all(coeffs % 2 == 0, axis=-1) & jnp.any(coeffs != 0, axis=-1)
+    coeffs = jnp.where(reducible[..., None], coeffs // 2, coeffs)
+    power = jnp.where(reducible, power + 1, power)
+    return power, coeffs
+
+
+def _scalar_mul_with_power(x: tuple, y: tuple) -> tuple:
+    """Multiply two exact scalars represented as (power, coeffs) tuples.
+
+    Delegates coefficient multiplication to `_scalar_mul` and applies a single
+    reduction step (divides by 2) when all resulting coefficients are even.
+
+    Args:
+        x: Tuple of (power, coeffs) where coeffs has shape (..., 4).
+        y: Tuple of (power, coeffs) where coeffs has shape (..., 4).
+
+    Returns:
+        Tuple of (new_power, new_coeffs).
+
+    """
+    p1, c1 = x
+    p2, c2 = y
+
+    new_coeffs = _scalar_mul(c1, c2)
+    p = p1 + p2
+    return _reduce_power_coeffs_step(p, new_coeffs)
+
+
+def _scalar_add_with_power(x: tuple, y: tuple) -> tuple:
+    """Add two exact scalars represented as (power, coeffs) tuples."""
+    p1, c1 = x
+    p2, c2 = y
+
+    c1_scale = jnp.left_shift(jnp.ones_like(p1), jnp.maximum(p1 - p2, 0))[..., None]
+    c2_scale = jnp.left_shift(jnp.ones_like(p2), jnp.maximum(p2 - p1, 0))[..., None]
+
+    p = jnp.minimum(p1, p2)
+    new_coeffs = c1 * c1_scale + c2 * c2_scale
+    return _reduce_power_coeffs_step(p, new_coeffs)
 
 
 def _scalar_to_complex(data: jax.Array) -> jax.Array:
@@ -77,45 +122,25 @@ class ExactScalarArray(eqx.Module):
         new_power = self.power + other.power
         return ExactScalarArray(new_coeffs, new_power)
 
-    def reduce(self) -> "ExactScalarArray":
-        """Reduce power by dividing coefficients by 2 while they are all even."""
+    def sum(self, axis: int = -1) -> "ExactScalarArray":
+        """Sum elements along the specified axis using normalized pairwise adds.
 
-        def cond_fun(carry):
-            coeffs, _ = carry
-            # Reducible if all 4 components are even AND not all zero (0 is infinitely divisible)
-            # We check 'not zero' to avoid infinite loops on strict 0.
-            reducible = jnp.all(coeffs % 2 == 0, axis=-1) & jnp.any(
-                coeffs != 0, axis=-1
-            )
-            return jnp.any(reducible)
+        Args:
+            axis: The axis along which to sum.
 
-        def body_fun(carry):
-            coeffs, power = carry
-            reducible = jnp.all(coeffs % 2 == 0, axis=-1) & jnp.any(
-                coeffs != 0, axis=-1
-            )
-            coeffs = jnp.where(reducible[..., None], coeffs // 2, coeffs)
-            power = jnp.where(reducible, power + 1, power)
-            return coeffs, power
+        Returns:
+            ExactScalarArray with the sum computed along the axis.
 
-        new_coeffs, new_power = jax.lax.while_loop(
-            cond_fun, body_fun, (self.coeffs, self.power)
-        )
-        return ExactScalarArray(new_coeffs, new_power)
-
-    def sum(self) -> "ExactScalarArray":
-        """Sum elements along the last axis (axis=-2).
-
-        Aligns powers to the minimum power before summing.
         """
-        # TODO: potentially refactor sum routine to reduce every couple steps
-        # to prevent overflow
+        if axis < 0:
+            axis += self.power.ndim
 
-        min_power = jnp.min(self.power, keepdims=True, axis=-1)
-        pow = (self.power - min_power)[..., None]
-        aligned_coeffs = self.coeffs * 2**pow
-        summed_coeffs = jnp.sum(aligned_coeffs, axis=-2)
-        return ExactScalarArray(summed_coeffs, min_power.squeeze(-1))
+        scanned_power, scanned_coeffs = lax.associative_scan(
+            _scalar_add_with_power, (self.power, self.coeffs), axis=axis
+        )
+        result_power = jnp.take(scanned_power, indices=-1, axis=axis)
+        result_coeffs = jnp.take(scanned_coeffs, indices=-1, axis=axis)
+        return ExactScalarArray(result_coeffs, result_power)
 
     def prod(self, axis: int = -1) -> "ExactScalarArray":
         """Compute product along the specified axis using associative scan.
@@ -130,22 +155,20 @@ class ExactScalarArray(eqx.Module):
 
         """
         if axis < 0:
-            axis = self.coeffs.ndim + axis
+            axis += self.power.ndim
 
         if self.coeffs.shape[axis] == 0:
             # Product of empty sequence is identity: [1, 0, 0, 0] * 2^0
             coeffs_shape = self.coeffs.shape[:axis] + self.coeffs.shape[axis + 1 :]
             result_coeffs = jnp.zeros(coeffs_shape, dtype=self.coeffs.dtype)
             result_coeffs = result_coeffs.at[..., 0].set(1)
+            return ExactScalarArray(result_coeffs)
 
-            power_shape = self.power.shape[:axis] + self.power.shape[axis + 1 :]
-            result_power = jnp.zeros(power_shape, dtype=self.power.dtype)
-
-            return ExactScalarArray(result_coeffs, result_power)
-
-        scanned = lax.associative_scan(_scalar_mul, self.coeffs, axis=axis)
-        result_coeffs = jnp.take(scanned, indices=-1, axis=axis)
-        result_power = jnp.sum(self.power, axis=axis)
+        scanned_power, scanned_coeffs = lax.associative_scan(
+            _scalar_mul_with_power, (self.power, self.coeffs), axis=axis
+        )
+        result_power = jnp.take(scanned_power, indices=-1, axis=axis)
+        result_coeffs = jnp.take(scanned_coeffs, indices=-1, axis=axis)
 
         return ExactScalarArray(result_coeffs, result_power)
 

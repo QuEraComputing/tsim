@@ -21,12 +21,11 @@ def _transform_circuit(
     *,
     stride: int,
     offsets: list[int],
-    gate_expansions: dict[str, list[str]] | None = None,
     used_qubits: set[int] | None = None,
     stabilizer_generators: list[list[int]] | None = None,
     observables: list[list[int]] | None = None,
 ) -> stim.Circuit:
-    """Expand and duplicate instructions with broadcast targets for encoding."""
+    """Duplicate instructions with broadcast targets for encoding."""
     stim_circ = tsim.Circuit(program_text)._stim_circ.flattened()
     mod_circ = stim.Circuit()
 
@@ -71,19 +70,12 @@ def _transform_circuit(
             instr.target_groups(), stride=stride, offsets=offsets
         )
 
-        gate_seq = (
-            gate_expansions.get(instr.name, [instr.name])
-            if gate_expansions
-            else [instr.name]
+        mod_circ.append(
+            instr.name,
+            new_ts,
+            instr.gate_args_copy(),
+            tag=instr.tag,
         )
-
-        for g in gate_seq:
-            mod_circ.append(
-                g,
-                new_ts,
-                instr.gate_args_copy(),
-                tag=instr.tag,
-            )
     return mod_circ
 
 
@@ -100,7 +92,6 @@ class TransversalEncoder:
         encoding_program_text: str | None,
         stabilizer_generators: list[list[int]],
         observables: list[list[int]],
-        logical_gate_expansions: dict[str, list[str]] | None = None,
     ):
         """Initialize the transversal encoder with code parameters."""
         self.n = n
@@ -108,7 +99,6 @@ class TransversalEncoder:
         self.circuit = tsim.Circuit()
         self.used_qubits: set[int] = set()
         self.encoding_program_text = encoding_program_text
-        self.logical_gate_expansions = logical_gate_expansions or {}
         self.stabilizer_generators = stabilizer_generators
         self.observables = observables
 
@@ -169,7 +159,6 @@ class TransversalEncoder:
             program_text,
             stride=self.n,
             offsets=list(range(self.n)),
-            gate_expansions=self.logical_gate_expansions,
             stabilizer_generators=self.stabilizer_generators,
             observables=self.observables,
         )
@@ -215,12 +204,6 @@ class SteaneEncoder(TransversalEncoder):
             n=7,
             encoding_qubit=6,
             encoding_program_text=encoding_program,
-            logical_gate_expansions={
-                "SQRT_X": ["SQRT_X", "X"],
-                "SQRT_X_DAG": ["SQRT_X_DAG", "X"],
-                "S": ["S", "Z"],
-                "S_DAG": ["S_DAG", "Z"],
-            },
             stabilizer_generators=[[0, 1, 2, 3], [1, 2, 4, 5], [2, 3, 4, 6]],
             observables=[[0, 1, 5]],
         )

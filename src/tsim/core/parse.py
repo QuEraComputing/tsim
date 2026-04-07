@@ -1,6 +1,7 @@
 """Parser for converting stim circuits to ZX graph representations."""
 
 import re
+from collections.abc import Iterator
 from fractions import Fraction
 from typing import Literal
 
@@ -12,11 +13,13 @@ from tsim.core.instructions import (
     correlated_error,
     detector,
     finalize_correlated_error,
+    mpad,
     mpp,
     observable_include,
     r_x,
     r_y,
     r_z,
+    spp,
     tick,
     u3,
 )
@@ -47,8 +50,10 @@ def parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
         param = param.strip()
         if not param:
             continue
-        # Match param=value*pi (value can be negative/decimal)
-        param_match = re.match(r"^(\w+)=([-+]?[\d.]+)\*pi$", param)
+        # Match param=value*pi (value can be negative/decimal/scientific)
+        param_match = re.match(
+            r"^(\w+)=([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\*pi$", param
+        )
         if not param_match:
             return None
         param_name = param_match.group(1)
@@ -56,6 +61,39 @@ def parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
         params[param_name] = value
 
     return gate_name, params
+
+
+def _iter_pauli_products(
+    instruction: stim.CircuitInstruction,
+) -> Iterator[tuple[list[tuple[Literal["X", "Y", "Z"], int]], bool]]:
+    """Yield (paulis, invert) for each Pauli product in an instruction."""
+    current_paulis: list[tuple[Literal["X", "Y", "Z"], int]] = []
+    invert = False
+    targets = instruction.targets_copy()
+
+    for i, target in enumerate(targets):
+        if target.is_combiner:
+            continue
+
+        if target.is_x_target:
+            pauli_type: Literal["X", "Y", "Z"] = "X"
+        elif target.is_y_target:
+            pauli_type = "Y"
+        elif target.is_z_target:
+            pauli_type = "Z"
+        else:
+            raise ValueError(
+                f"Invalid Pauli target in instruction {instruction.name}: {target}"
+            )
+
+        invert ^= target.is_inverted_result_target
+        current_paulis.append((pauli_type, target.value))
+
+        next_idx = i + 1
+        if next_idx >= len(targets) or not targets[next_idx].is_combiner:
+            yield current_paulis, invert
+            current_paulis = []
+            invert = False
 
 
 def parse_stim_circuit(
@@ -82,7 +120,7 @@ def parse_stim_circuit(
             # TODO: handle these visualization annotations
             continue
 
-        if name == "I_ERROR":
+        if name in ["I_ERROR", "II_ERROR"]:
             continue
 
         if name == "S" and instruction.tag == "T":
@@ -113,36 +151,27 @@ def parse_stim_circuit(
             tick(b)
             continue
         if name == "MPP":
-            current_paulis: list[tuple[Literal["X", "Y", "Z"], int]] = []
-            invert = False
+            for paulis, invert in _iter_pauli_products(instruction):
+                mpp(b, paulis, invert)
+            continue
+        if name in ("MXX", "MYY", "MZZ"):
+            pauli_type: Literal["X", "Y", "Z"] = name[1]  # type: ignore[assignment]
             targets = instruction.targets_copy()
-
-            for i, target in enumerate(targets):
-                # Products are separated by non-combiner boundaries
-                if target.is_combiner:
-                    continue
-
-                if target.is_x_target:
-                    pauli_type = "X"
-                elif target.is_y_target:
-                    pauli_type = "Y"
-                elif target.is_z_target:
-                    pauli_type = "Z"
-                else:
-                    raise ValueError(f"Invalid MPP target: {target}")
-
-                # XOR all inversions - only parity matters (sign is global)
-                invert ^= target.is_inverted_result_target
-
-                current_paulis.append((pauli_type, target.value))
-
-                # Product ends if next target is not a combiner (or end of list)
-                next_idx = i + 1
-                if next_idx >= len(targets) or not targets[next_idx].is_combiner:
-                    mpp(b, current_paulis, invert)
-                    current_paulis = []
-                    invert = False
-
+            for i in range(0, len(targets), 2):
+                t0, t1 = targets[i], targets[i + 1]
+                invert = t0.is_inverted_result_target ^ t1.is_inverted_result_target
+                mpp(b, [(pauli_type, t0.value), (pauli_type, t1.value)], invert)
+            continue
+        if name in ("SPP", "SPP_DAG"):
+            is_dag = name == "SPP_DAG"
+            for paulis, invert in _iter_pauli_products(instruction):
+                spp(b, paulis, dagger=is_dag ^ invert)
+            continue
+        if name == "MPAD":
+            args = instruction.gate_args_copy()
+            p = args[0] if args else 0
+            for target in instruction.targets_copy():
+                mpad(b, target.value, p=p)
             continue
         if name == "E" or name == "ELSE_CORRELATED_ERROR":
             if name == "E":

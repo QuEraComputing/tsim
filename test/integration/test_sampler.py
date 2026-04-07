@@ -1,4 +1,5 @@
 from test.helpers.gen import gen_stim_circuit
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -137,7 +138,7 @@ def test_sample_program_raises_on_component_norm_deviation(monkeypatch):
 
     monkeypatch.setattr(sampler_module, "sample_component", fake_sample_component)
 
-    with pytest.raises(AssertionError, match="underflow error"):
+    with pytest.warns(UserWarning, match="not normalized"):
         sampler_module.sample_program(
             program,
             jnp.zeros((1, 0), dtype=jnp.bool_),

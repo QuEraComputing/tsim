@@ -103,7 +103,7 @@ Tsim can be five orders of magnitude faster than [quizx](https://github.com/zxca
 
 ## Supported Instructions
 
-Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference). In addition, Tsim defines the following non-Clifford instructions:
+Tsim supports most [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference). In addition, Tsim defines the following non-Clifford instructions:
 
 ### `T` and `T_DAG`
 
@@ -138,6 +138,11 @@ U3(0.5, 0.25, 0.125) 0  # Apply U3 with θ=π/2, φ=π/4, λ=π/8
 ## Publications Using Tsim
 
 - [Simulating magic state cultivation with few Clifford terms](https://arxiv.org/abs/2509.08658) by Kwok Ho Wan and Zhenghao Zhong (2025).
+
+
+## Contributing
+
+We welcome contributions! Please see the [contributing guide](docs/contrib.md) for details on setting up your development environment, running tests, and code style guidelines.
 
 
 ## Citing Tsim

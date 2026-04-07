@@ -576,3 +576,149 @@ def test_many_rx_gates(n: int):
     sampler = CompiledStateProbs(c)
     mat = get_matrix(sampler)
     assert np.allclose(mat, np.eye(2), atol=1e-6)
+
+
+def test_mpad_zero():
+    c = Circuit("""
+        MPAD 0
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(10)
+    assert (samples == 0).all()
+
+
+def test_mpad_one():
+    c = Circuit("""
+        MPAD 1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(10)
+    assert (samples == 1).all()
+
+
+def test_mpad_multiple():
+    c = Circuit("""
+        MPAD 0 1 1 0
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(10)
+    assert (samples[:, 0] == 0).all()
+    assert (samples[:, 1] == 1).all()
+    assert (samples[:, 2] == 1).all()
+    assert (samples[:, 3] == 0).all()
+
+
+def test_mpad_with_measurements():
+    c = Circuit("""
+        R 0
+        X 0
+        M 0
+        MPAD 0
+        M 0
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(10)
+    # M 0 after X -> 1, MPAD 0 -> 0, M 0 after implicit reset -> 1
+    assert (samples[:, 0] == 1).all()
+    assert (samples[:, 1] == 0).all()
+    assert (samples[:, 2] == 1).all()
+
+
+def test_mpad_detector():
+    c = Circuit("""
+        MPAD 1
+        DETECTOR rec[-1]
+    """)
+    sampler = c.compile_detector_sampler()
+    samples = sampler.sample(10)
+    assert (samples == 1).all()
+
+
+def test_mxx_bell_plus():
+    """MXX on |00>+|11> (XX eigenstate with eigenvalue +1) should give 0."""
+    c = Circuit("""
+        R 0 1
+        H 0
+        CNOT 0 1
+        MXX 0 1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples == 0).all()
+
+
+def test_mxx_bell_minus():
+    """MXX on |00>-|11> (XX eigenstate with eigenvalue -1) should give 1."""
+    c = Circuit("""
+        R 0 1
+        H 0
+        CNOT 0 1
+        Z 0
+        MXX 0 1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples == 1).all()
+
+
+def test_myy_bell_plus():
+    """MYY on |00>+|11> (YY eigenstate with eigenvalue -1) should give 1."""
+    c = Circuit("""
+        R 0 1
+        H 0
+        CNOT 0 1
+        MYY 0 1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples == 1).all()
+
+
+def test_mzz_same_state():
+    """MZZ on |00> (ZZ eigenstate with eigenvalue +1) should give 0."""
+    c = Circuit("""
+        R 0 1
+        MZZ 0 1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples == 0).all()
+
+
+def test_mzz_different_state():
+    """MZZ on |01> (ZZ eigenstate with eigenvalue -1) should give 1."""
+    c = Circuit("""
+        R 0 1
+        X 1
+        MZZ 0 1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples == 1).all()
+
+
+def test_mxx_inverted():
+    """MXX with inverted target should flip the result."""
+    c = Circuit("""
+        R 0 1
+        H 0
+        CNOT 0 1
+        MXX !0 1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples == 1).all()
+
+
+def test_mzz_multiple_pairs():
+    """MZZ with multiple pairs should measure each independently."""
+    c = Circuit("""
+        R 0 1 2 3
+        X 2
+        MZZ 0 1 2 3
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    # |00> -> ZZ=+1 -> 0, |01> (qubit 2 flipped, qubit 3 not) -> ZZ=-1 -> 1
+    assert (samples[:, 0] == 0).all()
+    assert (samples[:, 1] == 1).all()

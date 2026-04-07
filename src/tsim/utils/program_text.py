@@ -2,6 +2,30 @@
 
 import re
 
+# Matches valid numeric literals including scientific notation (e.g. 0.5, 4e-4, 1.2e3)
+_FLOAT_RE = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+
+_TSIM_GATES = {"R_X", "R_Y", "R_Z", "U3"}
+_GATE_NOT_FOUND_RE = re.compile(r"Gate not found: '(\w+)'")
+_GATE_USAGE_RE = re.compile(r"(?<!\[)\b(R_[A-Z]\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)")
+
+
+def enriched_stim_error(exc: ValueError, converted_text: str) -> ValueError:
+    """Improve stim parse errors for tsim-specific gates.
+
+    When stim raises a 'Gate not found' error for a gate that should have been
+    converted by shorthand_to_stim, this searches the converted text for the
+    unconverted usage and returns a more helpful error message.
+    """
+    m = _GATE_NOT_FOUND_RE.search(str(exc))
+    if not m or m.group(1) not in _TSIM_GATES:
+        return exc
+    # Successfully converted gates live inside brackets (e.g. I[R_Z(...)]) and won't match.
+    usage = _GATE_USAGE_RE.search(converted_text)
+    if not usage:
+        return exc
+    return ValueError(f"Could not parse '{usage.group()}' in program text.")
+
 
 def shorthand_to_stim(text: str) -> str:
     """Convert tsim shorthand syntax to valid stim instructions.
@@ -13,27 +37,25 @@ def shorthand_to_stim(text: str) -> str:
         R_X(0.25) 0     → I[R_X(theta=0.25*pi)] 0
         R_Y(-0.5) 0     → I[R_Y(theta=-0.5*pi)] 0
         U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0
+
     """
     # T_DAG must come before T to avoid partial matches
     # (?<!\[) ensures we don't match T inside [T]
     text = re.sub(r"(?<!\[)\bT_DAG\b(?!\[)", "S_DAG[T]", text)
     text = re.sub(r"(?<!\[)\bT\b(?!\[)", "S[T]", text)
 
-    # R_Z(angle), R_X(angle), R_Y(angle)
     def replace_rotation(m: re.Match) -> str:
         axis = m.group(1)
-        angle = m.group(2)
-        return f"I[R_{axis}(theta={angle}*pi)]"
+        return f"I[R_{axis}(theta={float(m.group(2))}*pi)]"
 
-    text = re.sub(r"\bR_([XYZ])\(([-+]?[\d.]+)\)", replace_rotation, text)
+    text = re.sub(rf"\bR_([XYZ])\(({_FLOAT_RE})\)", replace_rotation, text)
 
-    # U3(theta, phi, lambda)
     def replace_u3(m: re.Match) -> str:
-        theta, phi, lam = m.group(1), m.group(2), m.group(3)
+        theta, phi, lam = float(m.group(1)), float(m.group(2)), float(m.group(3))
         return f"I[U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)]"
 
     text = re.sub(
-        r"\bU3\(([-+]?[\d.]+)\s*,\s*([-+]?[\d.]+)\s*,\s*([-+]?[\d.]+)\)",
+        rf"\bU3\(({_FLOAT_RE})\s*,\s*({_FLOAT_RE})\s*,\s*({_FLOAT_RE})\)",
         replace_u3,
         text,
     )
