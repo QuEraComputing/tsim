@@ -140,6 +140,11 @@ U3(0.5, 0.25, 0.125) 0  # Apply U3 with θ=π/2, φ=π/4, λ=π/8
 - [Simulating magic state cultivation with few Clifford terms](https://arxiv.org/abs/2509.08658) by Kwok Ho Wan and Zhenghao Zhong (2025).
 
 
+## Contributing
+
+We welcome contributions! Please see the [contributing guide](docs/contrib.md) for details on setting up your development environment, running tests, and code style guidelines.
+
+
 ## Citing Tsim
 If you use Tsim, please consider citing the paper describing the core simulation approach:
 ```
