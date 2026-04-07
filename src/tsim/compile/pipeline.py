@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from fractions import Fraction
 from typing import Literal
 
 import jax.numpy as jnp
@@ -11,68 +10,16 @@ from pyzx_param.graph.base import BaseGraph
 
 from tsim.compile.compile import CompiledScalarGraphs, compile_scalar_graphs
 from tsim.compile.stabrank import find_stab
-from tsim.core.graph import ConnectedComponent, connected_components, get_params
+from tsim.core.graph import (
+    ConnectedComponent,
+    classify_direct,
+    connected_components,
+    get_params,
+)
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingGraph
 
 DecompositionMode = Literal["sequential", "joint"]
 from pyzx_param.simulate import DecompositionStrategy
-
-
-def _classify_direct(
-    component: ConnectedComponent,
-) -> tuple[int, bool] | None:
-    """Check if a component is directly determined by a single f-variable.
-
-    A component qualifies when its graph consists of exactly two vertices — one
-    boundary output and one Z-spider — connected by a Hadamard edge, where the
-    Z-spider carries a single ``f`` parameter and a constant phase of either 0
-    (no flip) or π (flip).
-
-    Returns:
-        ``(output_index, f_index, flip)`` if the fast path applies, otherwise
-        ``None``.
-
-    """
-    graph = component.graph
-    outputs = list(graph.outputs())
-    if len(outputs) != 1:
-        return None
-
-    vertices = list(graph.vertices())
-    if len(vertices) != 2:
-        return None
-
-    v_out = outputs[0]
-    neighbors = list(graph.neighbors(v_out))
-    if len(neighbors) != 1:
-        return None
-
-    v_det = neighbors[0]
-    if graph.type(v_det) != zx.utils.VertexType.Z:
-        return None
-    if graph.edge_type(graph.edge(v_out, v_det)) != zx.utils.EdgeType.HADAMARD:
-        return None
-
-    params = graph.get_params(v_det)
-    if len(params) != 1:
-        return None
-    f_param = next(iter(params))
-    if not f_param.startswith("f"):
-        return None
-
-    all_graph_params = get_params(graph)
-    if all_graph_params != {f_param}:
-        return None
-
-    phase = graph.phase(v_det)
-    if phase == 0:
-        flip = False
-    elif phase == Fraction(1, 1):
-        flip = True
-    else:
-        return None
-
-    return int(f_param[1:]), flip
 
 
 def compile_program(
@@ -119,7 +66,7 @@ def compile_program(
     sorted_components = sorted(components, key=lambda c: len(c.output_indices))
 
     for component in sorted_components:
-        result = _classify_direct(component)
+        result = classify_direct(component)
         if result is not None:
             f_idx, flip = result
             direct_f_indices.append(f_idx)
