@@ -223,7 +223,15 @@
 <span class=normal>203</span>
 <span class=normal>204</span>
 <span class=normal>205</span>
-<span class=normal>206</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
+<span class=normal>206</span>
+<span class=normal>207</span>
+<span class=normal>208</span>
+<span class=normal>209</span>
+<span class=normal>210</span>
+<span class=normal>211</span>
+<span class=normal>212</span>
+<span class=normal>213</span>
+<span class=normal>214</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
     <span class=n>stim_circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span>
     <span class=n>track_classical_wires</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>GraphRepresentation</span><span class=p>:</span>
@@ -247,7 +255,7 @@
             <span class=c1># TODO: handle these visualization annotations</span>
             <span class=k>continue</span>
 
-        <span class=k>if</span> <span class=n>name</span> <span class=o>==</span> <span class=s2>&quot;I_ERROR&quot;</span><span class=p>:</span>
+        <span class=k>if</span> <span class=n>name</span> <span class=ow>in</span> <span class=p>[</span><span class=s2>&quot;I_ERROR&quot;</span><span class=p>,</span> <span class=s2>&quot;II_ERROR&quot;</span><span class=p>]:</span>
             <span class=k>continue</span>
 
         <span class=k>if</span> <span class=n>name</span> <span class=o>==</span> <span class=s2>&quot;S&quot;</span> <span class=ow>and</span> <span class=n>instruction</span><span class=o>.</span><span class=n>tag</span> <span class=o>==</span> <span class=s2>&quot;T&quot;</span><span class=p>:</span>
@@ -308,6 +316,14 @@
                     <span class=n>current_paulis</span> <span class=o>=</span> <span class=p>[]</span>
                     <span class=n>invert</span> <span class=o>=</span> <span class=kc>False</span>
 
+            <span class=k>continue</span>
+        <span class=k>if</span> <span class=n>name</span> <span class=ow>in</span> <span class=p>(</span><span class=s2>&quot;MXX&quot;</span><span class=p>,</span> <span class=s2>&quot;MYY&quot;</span><span class=p>,</span> <span class=s2>&quot;MZZ&quot;</span><span class=p>):</span>
+            <span class=n>pauli_type</span><span class=p>:</span> <span class=n>Literal</span><span class=p>[</span><span class=s2>&quot;X&quot;</span><span class=p>,</span> <span class=s2>&quot;Y&quot;</span><span class=p>,</span> <span class=s2>&quot;Z&quot;</span><span class=p>]</span> <span class=o>=</span> <span class=n>name</span><span class=p>[</span><span class=mi>1</span><span class=p>]</span>  <span class=c1># type: ignore[assignment]</span>
+            <span class=n>targets</span> <span class=o>=</span> <span class=n>instruction</span><span class=o>.</span><span class=n>targets_copy</span><span class=p>()</span>
+            <span class=k>for</span> <span class=n>i</span> <span class=ow>in</span> <span class=nb>range</span><span class=p>(</span><span class=mi>0</span><span class=p>,</span> <span class=nb>len</span><span class=p>(</span><span class=n>targets</span><span class=p>),</span> <span class=mi>2</span><span class=p>):</span>
+                <span class=n>t0</span><span class=p>,</span> <span class=n>t1</span> <span class=o>=</span> <span class=n>targets</span><span class=p>[</span><span class=n>i</span><span class=p>],</span> <span class=n>targets</span><span class=p>[</span><span class=n>i</span> <span class=o>+</span> <span class=mi>1</span><span class=p>]</span>
+                <span class=n>invert</span> <span class=o>=</span> <span class=n>t0</span><span class=o>.</span><span class=n>is_inverted_result_target</span> <span class=o>^</span> <span class=n>t1</span><span class=o>.</span><span class=n>is_inverted_result_target</span>
+                <span class=n>mpp</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=p>[(</span><span class=n>pauli_type</span><span class=p>,</span> <span class=n>t0</span><span class=o>.</span><span class=n>value</span><span class=p>),</span> <span class=p>(</span><span class=n>pauli_type</span><span class=p>,</span> <span class=n>t1</span><span class=o>.</span><span class=n>value</span><span class=p>)],</span> <span class=n>invert</span><span class=p>)</span>
             <span class=k>continue</span>
         <span class=k>if</span> <span class=n>name</span> <span class=o>==</span> <span class=s2>&quot;MPAD&quot;</span><span class=p>:</span>
             <span class=n>args</span> <span class=o>=</span> <span class=n>instruction</span><span class=o>.</span><span class=n>gate_args_copy</span><span class=p>()</span>
