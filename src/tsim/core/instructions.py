@@ -213,10 +213,51 @@ def c_xyz(b: GraphRepresentation, qubit: int) -> None:
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
+def c_nxyz(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending -X -> Y -> Z -> -X."""
+    s_dag(b, qubit)
+    sqrt_y_dag(b, qubit)
+    b.graph.scalar.add_phase(Fraction(1, 4))
+
+
+def c_xnyz(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending X -> -Y -> Z -> X."""
+    s(b, qubit)
+    h(b, qubit)
+
+
+def c_xynz(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending X -> Y -> -Z -> X."""
+    s(b, qubit)
+    sqrt_y_dag(b, qubit)
+    b.graph.scalar.add_phase(Fraction(1, 4))
+
+
 def c_zyx(b: GraphRepresentation, qubit: int) -> None:
     """Left handed period 3 axis cycling gate, sending Z -> Y -> X -> Z."""
     h(b, qubit)
     s(b, qubit)
+    b.graph.scalar.add_phase(Fraction(1, 4))
+
+
+def c_nzyx(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending -Z -> Y -> X -> -Z."""
+    s_dag(b, qubit)
+    sqrt_x(b, qubit)
+    b.graph.scalar.add_phase(Fraction(-1, 4))
+
+
+def c_znyx(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending Z -> -Y -> X -> Z."""
+    s(b, qubit)
+    sqrt_x(b, qubit)
+    b.graph.scalar.add_phase(Fraction(-1, 4))
+
+
+def c_zynx(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending Z -> Y -> -X -> Z."""
+    s(b, qubit)
+    sqrt_x_dag(b, qubit)
     b.graph.scalar.add_phase(Fraction(1, 4))
 
 
@@ -241,10 +282,30 @@ def h_xy(b: GraphRepresentation, qubit: int) -> None:
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
+def h_nxy(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Hadamard-like gate that sends -X <-> Y, Z -> -Z."""
+    x(b, qubit)
+    s_dag(b, qubit)
+
+
+def h_nxz(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Hadamard-like gate that sends -X <-> Z."""
+    z(b, qubit)
+    sqrt_y_dag(b, qubit)
+    b.graph.scalar.add_phase(Fraction(1, 4))
+
+
 def h_yz(b: GraphRepresentation, qubit: int) -> None:
     """Apply variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z)."""
     sqrt_x(b, qubit)
     z(b, qubit)
+    b.graph.scalar.add_phase(Fraction(-1, 4))
+
+
+def h_nyz(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Hadamard-like gate that sends -Y <-> Z, X -> -X."""
+    z(b, qubit)
+    sqrt_x(b, qubit)
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
@@ -1022,12 +1083,21 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     "T": (t, 1),
     "T_DAG": (t_dag, 1),
     # ---- Single-qubit gates ---------------------------------------------------
+    "C_NXYZ": (c_nxyz, 1),
+    "C_NZYX": (c_nzyx, 1),
+    "C_XNYZ": (c_xnyz, 1),
+    "C_XYNZ": (c_xynz, 1),
     "C_XYZ": (c_xyz, 1),
+    "C_ZNYX": (c_znyx, 1),
+    "C_ZYNX": (c_zynx, 1),
     "C_ZYX": (c_zyx, 1),
     "H": (h, 1),
+    "H_NXY": (h_nxy, 1),
+    "H_NXZ": (h_nxz, 1),
+    "H_NYZ": (h_nyz, 1),
     "H_XY": (h_xy, 1),
-    "H_YZ": (h_yz, 1),
     "H_XZ": (h, 1),
+    "H_YZ": (h_yz, 1),
     "S": (s, 1),
     "SQRT_X": (sqrt_x, 1),
     "SQRT_X_DAG": (sqrt_x_dag, 1),
