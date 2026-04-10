@@ -697,8 +697,8 @@ def test_mzz_different_state():
     assert (samples == 1).all()
 
 
-def test_mxx_inverted():
-    """MXX with inverted target should flip the result."""
+def test_mxx_inverted_first():
+    """MXX with first target inverted should flip the result."""
     c = Circuit("""
         R 0 1
         H 0
@@ -708,6 +708,43 @@ def test_mxx_inverted():
     sampler = c.compile_sampler()
     samples = sampler.sample(20)
     assert (samples == 1).all()
+
+
+def test_mxx_inverted_second():
+    """MXX with second target inverted should flip the result."""
+    c = Circuit("""
+        R 0 1
+        H 0
+        CNOT 0 1
+        MXX 0 !1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples == 1).all()
+
+
+def test_mxx_inverted_both():
+    """MXX with both targets inverted should cancel out (XOR)."""
+    c = Circuit("""
+        R 0 1
+        H 0
+        CNOT 0 1
+        MXX !0 !1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples == 0).all()
+
+
+def test_mzz_inverted_both():
+    """MZZ with both targets inverted should cancel out (XOR)."""
+    c = Circuit("""
+        R 0 1
+        MZZ !0 !1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples == 0).all()
 
 
 def test_mzz_multiple_pairs():

@@ -891,6 +891,21 @@ def my(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -
     h_yz(b, qubit)
 
 
+def mxx(b: GraphRepresentation, q0: int, q1: int, invert: bool = False) -> None:
+    """Measure two qubits in XX basis."""
+    mpp(b, [("X", q0), ("X", q1)], invert)
+
+
+def myy(b: GraphRepresentation, q0: int, q1: int, invert: bool = False) -> None:
+    """Measure two qubits in YY basis."""
+    mpp(b, [("Y", q0), ("Y", q1)], invert)
+
+
+def mzz(b: GraphRepresentation, q0: int, q1: int, invert: bool = False) -> None:
+    """Measure two qubits in ZZ basis."""
+    mpp(b, [("Z", q0), ("Z", q1)], invert)
+
+
 def r(b: GraphRepresentation, qubit: int) -> None:
     """Z-basis reset.
 
@@ -1038,6 +1053,9 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     "MX": (mx, 1),
     "MY": (my, 1),
     "MZ": (m, 1),
+    "MXX": (mxx, 2),
+    "MYY": (myy, 2),
+    "MZZ": (mzz, 2),
     "R": (r, 1),
     "RX": (rx, 1),
     "RY": (ry, 1),
