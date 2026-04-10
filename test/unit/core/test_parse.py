@@ -119,6 +119,47 @@ class TestCorrelatedErrorGraph:
         assert_allclose(probs[4], 0.2, rtol=1e-5)  # Third error
 
 
+class TestParseHeraldedChannels:
+    """Tests for parsing HERALDED_PAULI_CHANNEL_1 and HERALDED_ERASE."""
+
+    def test_heralded_pauli_channel_1_structure(self):
+        """HERALDED_PAULI_CHANNEL_1 should produce 1 rec entry and 3 error bits."""
+        circuit = stim.Circuit("HERALDED_PAULI_CHANNEL_1(0.01, 0.02, 0.03, 0.04) 0")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+        assert b.num_error_bits == 3
+        assert len(b.channel_probs) == 1
+        assert b.channel_probs[0].shape == (8,)
+        assert_allclose(b.channel_probs[0].sum(), 1.0)
+
+    def test_heralded_erase_structure(self):
+        """HERALDED_ERASE should produce 1 rec entry and 3 error bits."""
+        circuit = stim.Circuit("HERALDED_ERASE(0.04) 0")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+        assert b.num_error_bits == 3
+        assert len(b.channel_probs) == 1
+        assert_allclose(b.channel_probs[0][[1, 3, 5, 7]], 0.01)
+
+    def test_heralded_erase_multiple_targets(self):
+        """HERALDED_ERASE on multiple targets should produce independent channels."""
+        circuit = stim.Circuit("HERALDED_ERASE(0.01) 0 1 2")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 3
+        assert b.num_error_bits == 9
+        assert len(b.channel_probs) == 3
+
+    def test_heralded_interleaved_with_measurements(self):
+        """Herald records should interleave correctly with regular measurements."""
+        circuit = stim.Circuit("""
+            M 0
+            HERALDED_ERASE(0.01) 1
+            M 1
+        """)
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 3
+
+
 class TestParseWithRepeatBlocks:
     """Tests for parsing circuits that contain REPEAT blocks."""
 

@@ -759,3 +759,106 @@ def test_mzz_multiple_pairs():
     # |00> -> ZZ=+1 -> 0, |01> (qubit 2 flipped, qubit 3 not) -> ZZ=-1 -> 1
     assert (samples[:, 0] == 0).all()
     assert (samples[:, 1] == 1).all()
+
+
+# =============================================================================
+# Heralded noise channels
+# =============================================================================
+
+
+def test_heralded_erase_noiseless():
+    """HERALDED_ERASE(0) should never fire: herald=0, qubit unchanged."""
+    c = Circuit("""
+        R 0
+        HERALDED_ERASE(0) 0
+        M 0
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(100)
+    # Column 0 = herald (always 0), column 1 = measurement (always 0)
+    assert (samples == 0).all()
+
+
+def test_heralded_erase_herald_fires():
+    """HERALDED_ERASE with high probability should mostly fire."""
+    c = Circuit("""
+        R 0
+        HERALDED_ERASE(0.99) 0
+        M 0
+    """)
+    sampler = c.compile_sampler(seed=42)
+    samples = sampler.sample(1000)
+    # Herald column should fire ~99% of the time
+    herald = samples[:, 0]
+    assert np.mean(herald) > 0.9
+
+
+def test_heralded_erase_detector():
+    """Herald bit should be usable in a DETECTOR."""
+    c = Circuit("""
+        R 0
+        HERALDED_ERASE(0.5) 0
+        DETECTOR rec[-1]
+        M 0
+    """)
+    sampler = c.compile_detector_sampler(seed=42)
+    detections = sampler.sample(1000)
+    # Detector fires when herald fires (~50%)
+    rate = np.mean(detections[:, 0])
+    assert 0.3 < rate < 0.7
+
+
+def test_heralded_pauli_channel_1_noiseless():
+    """HERALDED_PAULI_CHANNEL_1(0,0,0,0) should be a no-op."""
+    c = Circuit("""
+        R 0
+        HERALDED_PAULI_CHANNEL_1(0, 0, 0, 0) 0
+        M 0
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(100)
+    assert (samples == 0).all()
+
+
+def test_heralded_pauli_channel_1_pure_x():
+    """Pure X heralded channel should flip qubit when it fires."""
+    c = Circuit("""
+        R 0
+        HERALDED_PAULI_CHANNEL_1(0, 1, 0, 0) 0
+        M 0
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(100)
+    # Always fires with X: herald=1, measurement=1
+    assert (samples[:, 0] == 1).all()  # herald
+    assert (samples[:, 1] == 1).all()  # qubit flipped
+
+
+def test_heralded_pauli_channel_1_pure_z():
+    """Pure Z heralded channel should not flip Z-basis measurement."""
+    c = Circuit("""
+        R 0
+        HERALDED_PAULI_CHANNEL_1(0, 0, 0, 1) 0
+        M 0
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(100)
+    # Always fires with Z: herald=1, but Z doesn't flip |0>
+    assert (samples[:, 0] == 1).all()  # herald
+    assert (samples[:, 1] == 0).all()  # qubit unchanged in Z basis
+
+
+def test_heralded_pauli_channel_1_multiple_targets():
+    """Heralded channel on multiple targets should be independent."""
+    c = Circuit("""
+        R 0 1
+        HERALDED_PAULI_CHANNEL_1(0, 0, 0, 0.5) 0 1
+        M 0 1
+    """)
+    sampler = c.compile_sampler(seed=42)
+    samples = sampler.sample(1000)
+    # 2 heralds + 2 measurements = 4 columns
+    assert samples.shape[1] == 4
+    # Each herald fires ~50% independently
+    assert 0.3 < np.mean(samples[:, 0]) < 0.7
+    assert 0.3 < np.mean(samples[:, 1]) < 0.7

@@ -14,6 +14,7 @@ from pyzx_param.utils import EdgeType, VertexType
 from tsim.noise.channels import (
     correlated_error_probs,
     error_probs,
+    heralded_pauli_channel_1_probs,
     pauli_channel_1_probs,
     pauli_channel_2_probs,
 )
@@ -654,6 +655,39 @@ def z_error(b: GraphRepresentation, qubit: int, p: float) -> None:
     b.num_error_bits += 1
 
 
+def heralded_pauli_channel_1(
+    b: GraphRepresentation,
+    qubit: int,
+    pi: float,
+    px: float,
+    py: float,
+    pz: float,
+) -> None:
+    """Apply heralded single-qubit Pauli channel.
+
+    Records a herald bit into the measurement record. When the channel fires
+    (with total probability pi+px+py+pz), the herald is 1 and one of I/X/Y/Z
+    is applied. When it doesn't fire, the herald is 0 and nothing happens.
+    """
+    aux = -2
+    r(b, aux)
+    _error(b, aux, b.vertex_type.X, f"e{b.num_error_bits}")
+    _m(b, aux, silent=False)
+    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits + 1}")
+    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits + 2}")
+    b.channel_probs.append(heralded_pauli_channel_1_probs(pi, px, py, pz))
+    b.num_error_bits += 3
+
+
+def heralded_erase(b: GraphRepresentation, qubit: int, p: float) -> None:
+    """Apply heralded erasure channel.
+
+    Special case of heralded_pauli_channel_1 with equal probabilities p/4
+    for each of I, X, Y, Z when the channel fires.
+    """
+    heralded_pauli_channel_1(b, qubit, p / 4, p / 4, p / 4, p / 4)
+
+
 def finalize_correlated_error(b: GraphRepresentation) -> None:
     """Finalize the current correlated error channel.
 
@@ -1068,6 +1102,8 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     "DEPOLARIZE2": (depolarize2, 2),
     "PAULI_CHANNEL_1": (pauli_channel_1, 1),
     "PAULI_CHANNEL_2": (pauli_channel_2, 2),
+    "HERALDED_ERASE": (heralded_erase, 1),
+    "HERALDED_PAULI_CHANNEL_1": (heralded_pauli_channel_1, 1),
     "X_ERROR": (x_error, 1),
     "Y_ERROR": (y_error, 1),
     "Z_ERROR": (z_error, 1),
