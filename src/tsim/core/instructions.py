@@ -604,6 +604,7 @@ def depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) ->
         p / 15,
         p / 15,
         p / 15,
+        p / 15,
     )
 
 
