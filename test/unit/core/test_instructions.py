@@ -175,7 +175,7 @@ def test_m():
     assert np.allclose(result, id / np.sqrt(2))
 
 
-def tes_mx():
+def test_mx():
     id = np.eye(2)
     result = _build_and_get_matrix(instructions.mx, 0)
     assert np.allclose(result, id / np.sqrt(2))
