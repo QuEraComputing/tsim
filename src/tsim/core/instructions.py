@@ -394,6 +394,30 @@ def swap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     b.graph.set_qubit(v2, qubit1)
 
 
+def cxswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+    """Apply CX then SWAP."""
+    cnot(b, qubit1, qubit2)
+    swap(b, qubit1, qubit2)
+
+
+def czswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+    """Apply CZ then SWAP."""
+    cz(b, qubit1, qubit2)
+    swap(b, qubit1, qubit2)
+
+
+def swapcx(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+    """Apply SWAP then CX."""
+    swap(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
+
+
+def swapcz(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+    """Apply SWAP then CZ."""
+    swap(b, qubit1, qubit2)
+    cz(b, qubit1, qubit2)
+
+
 def iswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     """Swap two qubits and phase the -1 eigenspace of the ZZ observable by i."""
     cnot(b, qubit1, qubit2)
@@ -1015,7 +1039,9 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     # ---- Two-qubit gates ------------------------------------------------------
     "CNOT": (cnot, 2),
     "CX": (cnot, 2),
+    "CXSWAP": (cxswap, 2),
     "CZ": (cz, 2),
+    "CZSWAP": (czswap, 2),
     "CY": (cy, 2),
     "ISWAP": (iswap, 2),
     "ISWAP_DAG": (iswap_dag, 2),
@@ -1026,6 +1052,8 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     "SQRT_ZZ": (sqrt_zz, 2),
     "SQRT_ZZ_DAG": (sqrt_zz_dag, 2),
     "SWAP": (swap, 2),
+    "SWAPCX": (swapcx, 2),
+    "SWAPCZ": (swapcz, 2),
     "XCX": (xcx, 2),
     "XCY": (xcy, 2),
     "XCZ": (xcz, 2),
@@ -1045,7 +1073,7 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     "Z_ERROR": (z_error, 1),
     # ---- Collapsing gates -----------------------------------------------------
     "M": (m, 1),
-    # MPP handled by parser
+    # MPP, SPP, SPP_DAG, MPAD handled by parser
     "MR": (mr, 1),
     "MRX": (mrx, 1),
     "MRY": (mry, 1),
