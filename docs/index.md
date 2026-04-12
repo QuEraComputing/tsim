@@ -7,7 +7,7 @@ A detailed description of Tsim is given in [arXiv:2604.01059](https://arxiv.org/
 
 ## Quick Start
 
-An introductory tutorial is available [here](demos/encoding_demo.ipynb). For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and currently supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference).
+An introductory tutorial is available [here](demos/encoding_demo.ipynb). For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference).
 
 Additionally, Tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, and `U3`.
 
