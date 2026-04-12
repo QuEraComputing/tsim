@@ -120,7 +120,10 @@ def test_sample_program_raises_on_component_norm_deviation(monkeypatch):
     )
     program = CompiledProgram(
         components=components,
+        direct_f_indices=jnp.array([], dtype=jnp.int32),
+        direct_flips=jnp.array([], dtype=jnp.bool_),
         output_order=jnp.array([0, 1]),
+        output_reindex=None,
         num_outputs=2,
         num_f_params=0,
         num_detectors=0,
@@ -518,3 +521,17 @@ if __name__ == "__main__":
             assert np.allclose(
                 tsim_state_vector, pyzx_state_vector, atol=tol, rtol=tol
             ), f"Seed: {seed}"
+
+
+def test_no_detectors_with_reference_sample():
+    """Detector sampler on a circuit with no detectors returns empty arrays."""
+    c = Circuit("R 0\nH 0\nM 0")
+    sampler = c.compile_detector_sampler()
+
+    # Without reference sample
+    d = sampler.sample(10)
+    assert d.shape == (10, 0)
+
+    # With reference sample — previously crashed with empty concatenation
+    d_ref = sampler.sample(10, use_detector_reference_sample=True)
+    assert d_ref.shape == (10, 0)

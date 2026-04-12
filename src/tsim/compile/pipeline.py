@@ -7,14 +7,19 @@ from typing import Literal
 import jax.numpy as jnp
 import pyzx_param as zx
 from pyzx_param.graph.base import BaseGraph
-from pyzx_param.simulate import DecompositionStrategy
 
 from tsim.compile.compile import CompiledScalarGraphs, compile_scalar_graphs
 from tsim.compile.stabrank import find_stab
-from tsim.core.graph import ConnectedComponent, connected_components, get_params
+from tsim.core.graph import (
+    ConnectedComponent,
+    classify_direct,
+    connected_components,
+    get_params,
+)
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingGraph
 
 DecompositionMode = Literal["sequential", "joint"]
+from pyzx_param.simulate import DecompositionStrategy
 
 
 def compile_program(
@@ -52,24 +57,57 @@ def compile_program(
     f_indices_global = _get_f_indices(prepared.graph)
     num_outputs = prepared.num_outputs
 
+    direct_f_indices: list[int] = []
+    direct_flips: list[bool] = []
+    direct_output_order: list[int] = []
     compiled_components: list[CompiledComponent] = []
-    output_order: list[int] = []
+    compiled_output_order: list[int] = []
 
     sorted_components = sorted(components, key=lambda c: len(c.output_indices))
 
     for component in sorted_components:
-        compiled = _compile_component(
-            component=component,
-            f_indices_global=f_indices_global,
-            mode=mode,
-            strategy=strategy,
+        result = classify_direct(component)
+        if result is not None:
+            f_idx, flip = result
+            direct_f_indices.append(f_idx)
+            direct_flips.append(flip)
+            direct_output_order.append(component.output_indices[0])
+        else:
+            compiled = _compile_component(
+                component=component,
+                f_indices_global=f_indices_global,
+                mode=mode,
+                strategy=strategy,
+            )
+            compiled_components.append(compiled)
+            compiled_output_order.extend(component.output_indices)
+
+    # Sort direct entries by output index so that the concatenation layout
+    # in sample_program matches the original output order as closely as
+    # possible.  When transform_error_basis also prioritises outputs, this
+    # often yields an identity permutation and avoids reindexing at sample time.
+    if direct_output_order:
+        order = sorted(
+            range(len(direct_output_order)), key=direct_output_order.__getitem__
         )
-        compiled_components.append(compiled)
-        output_order.extend(component.output_indices)
+        direct_f_indices = [direct_f_indices[i] for i in order]
+        direct_flips = [direct_flips[i] for i in order]
+        direct_output_order = [direct_output_order[i] for i in order]
+
+    # output_order must match the concatenation layout in sample_program:
+    # [direct bits, compiled_0 outputs, compiled_1 outputs, ...]
+    output_order = jnp.array(
+        direct_output_order + compiled_output_order, dtype=jnp.int32
+    )
+    reindex = jnp.argsort(output_order)
+    is_identity = bool(jnp.all(reindex == jnp.arange(len(output_order))))
 
     return CompiledProgram(
         components=tuple(compiled_components),
-        output_order=jnp.array(output_order, dtype=jnp.int32),
+        direct_f_indices=jnp.array(direct_f_indices, dtype=jnp.int32),
+        direct_flips=jnp.array(direct_flips, dtype=jnp.bool_),
+        output_order=output_order,
+        output_reindex=None if is_identity else reindex,
         num_outputs=num_outputs,
         num_f_params=len(f_indices_global),
         num_detectors=prepared.num_detectors,
