@@ -27,6 +27,29 @@ from tsim.circuit import Circuit
 from tsim.sampler import CompiledStateProbs
 
 
+def get_heralded_matrix(
+    sampler: CompiledStateProbs, herald_value: int, batch_size: int = 1
+) -> np.ndarray:
+    """Extract the effective gate matrix from a heralded Bell state circuit.
+
+    The herald measurement is the first bit in the measurement record. This
+    function fixes the herald to ``herald_value`` and iterates over the
+    remaining qubit measurement outcomes to reconstruct |U|².
+    """
+    num_qubits = sampler.circuit.num_qubits
+    probs = []
+    for i in range(2**num_qubits):
+        state = np.zeros(num_qubits, dtype=np.bool_)
+        for j in range(num_qubits):
+            state[j] = (i >> j) & 1
+        state = state[::-1]
+        full_state = np.concatenate([[herald_value], state])
+        probs.append(np.mean(sampler.probability_of(full_state, batch_size=batch_size)))
+    probs = np.array(probs)
+    dim = 2 ** (num_qubits // 2)
+    return (probs * dim).reshape((dim, dim))
+
+
 @pytest.mark.parametrize("instruction", SINGLE_QUBIT_GATE_MATRICES.keys())
 def test_single_qubit_instructions(instruction: str):
     unitary = SINGLE_QUBIT_GATE_MATRICES[instruction]
@@ -138,3 +161,65 @@ def test_u3_instruction():
     mat = get_matrix(sampler)
     expected = np.abs(ROT_GATE_MATRICES["U3"](0.345, 0.245, 0.495)) ** 2
     assert np.allclose(mat, expected)
+
+
+HERALDED_PAULI_CASES = {
+    "I": ("HERALDED_PAULI_CHANNEL_1(1, 0, 0, 0)", SINGLE_QUBIT_GATE_MATRICES["I"]),
+    "X": ("HERALDED_PAULI_CHANNEL_1(0, 1, 0, 0)", SINGLE_QUBIT_GATE_MATRICES["X"]),
+    "Y": ("HERALDED_PAULI_CHANNEL_1(0, 0, 1, 0)", SINGLE_QUBIT_GATE_MATRICES["Y"]),
+    "Z": ("HERALDED_PAULI_CHANNEL_1(0, 0, 0, 1)", SINGLE_QUBIT_GATE_MATRICES["Z"]),
+}
+
+
+@pytest.mark.parametrize("pauli", HERALDED_PAULI_CASES.keys())
+def test_heralded_pauli_channel_1_bell_state(pauli: str):
+    """Verify heralded channel applies the correct Pauli using the Bell state trick.
+
+    With one probability set to 1, the channel is deterministic: herald always
+    fires and the corresponding Pauli is applied. We reconstruct |U|² from the
+    qubit measurement probabilities conditioned on herald=1.
+    """
+    instruction, unitary = HERALDED_PAULI_CASES[pauli]
+    c = Circuit(f"""
+        R 0 1
+        H 0
+        CNOT 0 1
+        {instruction} 0
+        M 0 1
+        """)
+    sampler = CompiledStateProbs(c)
+    mat = get_heralded_matrix(sampler, herald_value=1)
+    assert np.allclose(mat, np.abs(unitary) ** 2)
+
+
+def test_heralded_pauli_channel_1_no_fire():
+    """With all probabilities zero the channel never fires (identity, herald=0)."""
+    c = Circuit("""
+        R 0 1
+        H 0
+        CNOT 0 1
+        HERALDED_PAULI_CHANNEL_1(0, 0, 0, 0) 0
+        M 0 1
+        """)
+    sampler = CompiledStateProbs(c)
+    mat = get_heralded_matrix(sampler, herald_value=0)
+    expected = np.abs(SINGLE_QUBIT_GATE_MATRICES["I"]) ** 2
+    assert np.allclose(mat, expected)
+
+
+def test_heralded_erase_bell_state():
+    """HERALDED_ERASE(1) applies each Pauli with probability 1/4.
+
+    The effective matrix is (|I|² + |X|² + |Y|² + |Z|²) / 4 = [[0.5, 0.5], [0.5, 0.5]].
+    """
+    c = Circuit("""
+        R 0 1
+        H 0
+        CNOT 0 1
+        HERALDED_ERASE(1) 0
+        M 0 1
+        """)
+    sampler = CompiledStateProbs(c, seed=42)
+    mat = get_heralded_matrix(sampler, herald_value=1, batch_size=10000)
+    expected = np.full((2, 2), 0.5)
+    assert np.allclose(mat, expected, atol=0.05)
