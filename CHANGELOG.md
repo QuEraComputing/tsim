@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `CXSWAP`, `CZSWAP`, `SWAPCX`, `SWAPCZ` two-qubit gate instructions
+- `C_NXYZ`, `C_XNYZ`, `C_XYNZ`, `C_NZYX`, `C_ZNYX`, `C_ZYNX` axis-cycling gate variants with negated axes
+- `H_NXY`, `H_NXZ`, `H_NYZ` Hadamard-like gate variants with negated axes
+- `II` two-qubit identity instruction that acts trivially
+
+### Changed
+- `MXX`, `MYY`, `MZZ` instructions are now dispatched through the gate table instead of being special-cased in the parser
+
 ## [0.1.2] - 2026-04-07
 
 ### Fixed

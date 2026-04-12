@@ -21,8 +21,10 @@ def unitaries_equal_up_to_global_phase(
 @pytest.mark.parametrize(
     "stim_gate",
     [
+        "QUBIT_COORDS(0, 0)",
         # Pauli gates
         "I",
+        "I_ERROR",
         "X",
         "Y",
         "Z",
@@ -136,6 +138,8 @@ def test_u3_gate_shorthand():
         "ZCX",
         "ZCY",
         "ZCZ",
+        "II",
+        "II_ERROR",
     ],
 )
 def test_two_qubit_gate(stim_gate: str):

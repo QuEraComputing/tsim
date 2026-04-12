@@ -177,11 +177,17 @@ def u3(
 # =============================================================================
 
 
-def i(b: GraphRepresentation, qubit: int) -> None:
+def i(b: GraphRepresentation, qubit: int, *_args: float) -> None:
     """Apply identity (advances the row)."""
     ensure_lane(b, qubit)
     v = b.last_vertex[qubit]
     b.graph.set_row(v, last_row(b, qubit) + 1)
+
+
+def ii(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+    """Apply two-qubit identity (advances the row on both qubits)."""
+    i(b, qubit1)
+    i(b, qubit2)
 
 
 def x(b: GraphRepresentation, qubit: int) -> None:
@@ -1076,6 +1082,12 @@ def tick(b: GraphRepresentation) -> None:
 GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     # ---- Pauli gates -----------------------------------------------------------
     "I": (i, 1),
+    "I_ERROR": (i, 1),
+    # QUBIT_COORDS is a visualization annotation; dispatched as identity to allocate
+    # the qubit lane. Coordinate args are accepted and ignored by `i`.
+    "QUBIT_COORDS": (i, 1),
+    "II": (ii, 2),
+    "II_ERROR": (ii, 2),
     "X": (x, 1),
     "Y": (y, 1),
     "Z": (z, 1),
