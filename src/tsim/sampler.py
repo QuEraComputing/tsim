@@ -130,6 +130,10 @@ def sample_program(
         match the original output indices.
 
     """
+    if len(program.components) == 0:
+        batch_size = f_params.shape[0]
+        return jnp.empty((batch_size, 0), dtype=jnp.bool_)
+
     results: list[jax.Array] = []
 
     for component in program.components:
@@ -339,7 +343,7 @@ class _CompiledSamplerBase:
         return (
             f"{type(self).__name__}({np.sum(c_graphs)} graphs, "
             f"{error_channel_bits} error channel bits, "
-            f"{np.max(num_outputs)} outputs for largest cc, "
+            f"{np.max(num_outputs) if num_outputs else 0} outputs for largest cc, "
             f"≤ {np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
             f"{np.sum(c_b_terms)} B terms, "
             f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms, "

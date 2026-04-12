@@ -13,8 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `H_NXY`, `H_NXZ`, `H_NYZ` Hadamard-like gate variants with negated axes
 - `II` two-qubit identity instruction that acts trivially
 
+### Fixed
+- Samplers now gracefully handle circuits with no measurements or no detectors, returning empty `(shots, 0)` arrays matching stim's behavior instead of raising an error
+
 ### Changed
 - `MXX`, `MYY`, `MZZ` instructions are now dispatched through the gate table instead of being special-cased in the parser
+- `I_ERROR`, `II_ERROR`, and `QUBIT_COORDS` instructions now allocate qubit lanes instead of being silently skipped
 
 ## [0.1.2] - 2026-04-07
 
