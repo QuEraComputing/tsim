@@ -116,11 +116,9 @@ def parse_stim_circuit(
         assert not isinstance(instruction, stim.CircuitRepeatBlock)
 
         name = instruction.name
-        if name in ["QUBIT_COORDS", "SHIFT_COORDS"]:
-            # TODO: handle these visualization annotations
-            continue
+        if name == "SHIFT_COORDS":
 
-        if name in ["I_ERROR", "II_ERROR"]:
+            # TODO: handle visualization annotations in ZX diagrams
             continue
 
         if name == "S" and instruction.tag == "T":

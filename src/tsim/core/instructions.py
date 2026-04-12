@@ -178,13 +178,16 @@ def u3(
 # =============================================================================
 
 
-def i(b: GraphRepresentation, qubit: int) -> None:
+def i(b: GraphRepresentation, qubit: int, *_args: float) -> None:
     """Apply identity (advances the row)."""
     ensure_lane(b, qubit)
     v = b.last_vertex[qubit]
     b.graph.set_row(v, last_row(b, qubit) + 1)
 
-
+def ii(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+    """Apply two-qubit identity (advances the row on both qubits)."""
+    i(b, qubit1)
+    i(b, qubit2)
 def x(b: GraphRepresentation, qubit: int) -> None:
     """Apply Pauli X gate."""
     x_phase(b, qubit, Fraction(1, 1))
@@ -213,14 +216,22 @@ def c_xyz(b: GraphRepresentation, qubit: int) -> None:
     h(b, qubit)
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
-
+def c_nxyz(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending -X -> Y -> Z -> -X."""
+    s_dag(b, qubit)
+    sqrt_y_dag(b, qubit)
+    b.graph.scalar.add_phase(Fraction(1, 4))
 def c_zyx(b: GraphRepresentation, qubit: int) -> None:
     """Left handed period 3 axis cycling gate, sending Z -> Y -> X -> Z."""
     h(b, qubit)
     s(b, qubit)
     b.graph.scalar.add_phase(Fraction(1, 4))
 
-
+def c_nzyx(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending -Z -> Y -> X -> -Z."""
+    s_dag(b, qubit)
+    sqrt_x(b, qubit)
+    b.graph.scalar.add_phase(Fraction(-1, 4))
 def h(b: GraphRepresentation, qubit: int) -> None:
     """Apply Hadamard gate."""
     ensure_lane(b, qubit)
@@ -241,14 +252,21 @@ def h_xy(b: GraphRepresentation, qubit: int) -> None:
     s(b, qubit)
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
-
+def h_nxy(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Hadamard-like gate that sends -X <-> Y, Z -> -Z."""
+    x(b, qubit)
+    s_dag(b, qubit)
 def h_yz(b: GraphRepresentation, qubit: int) -> None:
     """Apply variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z)."""
     sqrt_x(b, qubit)
     z(b, qubit)
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
-
+def h_nyz(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Hadamard-like gate that sends -Y <-> Z, X -> -X."""
+    z(b, qubit)
+    sqrt_x(b, qubit)
+    b.graph.scalar.add_phase(Fraction(-1, 4))
 def s(b: GraphRepresentation, qubit: int) -> None:
     """Apply S gate (π/2 Z rotation)."""
     z_phase(b, qubit, Fraction(1, 2))
@@ -575,21 +593,21 @@ def pauli_channel_2(
     b: GraphRepresentation,
     qubit_i: int,
     qubit_j: int,
-    pix: float = 0,
-    piy: float = 0,
-    piz: float = 0,
-    pxi: float = 0,
-    pxx: float = 0,
-    pxy: float = 0,
-    pxz: float = 0,
-    pyi: float = 0,
-    pyx: float = 0,
-    pyy: float = 0,
-    pyz: float = 0,
-    pzi: float = 0,
-    pzx: float = 0,
-    pzy: float = 0,
-    pzz: float = 0,
+    pix: float,
+    piy: float,
+    piz: float,
+    pxi: float,
+    pxx: float,
+    pxy: float,
+    pxz: float,
+    pyi: float,
+    pyx: float,
+    pyy: float,
+    pyz: float,
+    pzi: float,
+    pzx: float,
+    pzy: float,
+    pzz: float,
 ) -> None:
     """Apply two-qubit Pauli channel with given error probabilities for all 15 Pauli pairs."""
     b.channel_probs.append(
@@ -615,6 +633,7 @@ def depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) ->
         b,
         qubit_i,
         qubit_j,
+        p / 15,
         p / 15,
         p / 15,
         p / 15,
@@ -1049,6 +1068,12 @@ def tick(b: GraphRepresentation) -> None:
 GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     # ---- Pauli gates -----------------------------------------------------------
     "I": (i, 1),
+    "I_ERROR": (i, 1),
+    # QUBIT_COORDS is a visualization annotation; dispatched as identity to allocate
+    # the qubit lane. Coordinate args are accepted and ignored by `i`.
+    "QUBIT_COORDS": (i, 1),
+    "II": (ii, 2),
+    "II_ERROR": (ii, 2),
     "X": (x, 1),
     "Y": (y, 1),
     "Z": (z, 1),
@@ -1056,12 +1081,21 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     "T": (t, 1),
     "T_DAG": (t_dag, 1),
     # ---- Single-qubit gates ---------------------------------------------------
+    "C_NXYZ": (c_nxyz, 1),
+    "C_NZYX": (c_nzyx, 1),
+    "C_XNYZ": (c_xnyz, 1),
+    "C_XYNZ": (c_xynz, 1),
     "C_XYZ": (c_xyz, 1),
+    "C_ZNYX": (c_znyx, 1),
+    "C_ZYNX": (c_zynx, 1),
     "C_ZYX": (c_zyx, 1),
     "H": (h, 1),
+    "H_NXY": (h_nxy, 1),
+    "H_NXZ": (h_nxz, 1),
+    "H_NYZ": (h_nyz, 1),
     "H_XY": (h_xy, 1),
-    "H_YZ": (h_yz, 1),
     "H_XZ": (h, 1),
+    "H_YZ": (h_yz, 1),
     "S": (s, 1),
     "SQRT_X": (sqrt_x, 1),
     "SQRT_X_DAG": (sqrt_x_dag, 1),
@@ -1126,3 +1160,32 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     "RZ": (r, 1),
     # ---- Annotations handled by parser -----------------------------------------
 }
+
+def c_zynx(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending Z -> Y -> -X -> Z."""
+    s(b, qubit)
+    sqrt_x_dag(b, qubit)
+    b.graph.scalar.add_phase(Fraction(1, 4))
+
+def h_nxz(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Hadamard-like gate that sends -X <-> Z."""
+    z(b, qubit)
+    sqrt_y_dag(b, qubit)
+    b.graph.scalar.add_phase(Fraction(1, 4))
+
+def c_xynz(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending X -> Y -> -Z -> X."""
+    s(b, qubit)
+    sqrt_y_dag(b, qubit)
+    b.graph.scalar.add_phase(Fraction(1, 4))
+
+def c_znyx(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending Z -> -Y -> X -> Z."""
+    s(b, qubit)
+    sqrt_x(b, qubit)
+    b.graph.scalar.add_phase(Fraction(-1, 4))
+
+def c_xnyz(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending X -> -Y -> Z -> X."""
+    s(b, qubit)
+    h(b, qubit)
