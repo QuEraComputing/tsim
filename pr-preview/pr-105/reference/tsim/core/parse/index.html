@@ -201,9 +201,7 @@
 <span class=normal>216</span>
 <span class=normal>217</span>
 <span class=normal>218</span>
-<span class=normal>219</span>
-<span class=normal>220</span>
-<span class=normal>221</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
+<span class=normal>219</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
     <span class=n>stim_circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span>
     <span class=n>track_classical_wires</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>GraphRepresentation</span><span class=p>:</span>
@@ -223,11 +221,9 @@
         <span class=k>assert</span> <span class=ow>not</span> <span class=nb>isinstance</span><span class=p>(</span><span class=n>instruction</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>CircuitRepeatBlock</span><span class=p>)</span>
 
         <span class=n>name</span> <span class=o>=</span> <span class=n>instruction</span><span class=o>.</span><span class=n>name</span>
-        <span class=k>if</span> <span class=n>name</span> <span class=ow>in</span> <span class=p>[</span><span class=s2>&quot;QUBIT_COORDS&quot;</span><span class=p>,</span> <span class=s2>&quot;SHIFT_COORDS&quot;</span><span class=p>]:</span>
-            <span class=c1># TODO: handle these visualization annotations</span>
-            <span class=k>continue</span>
+        <span class=k>if</span> <span class=n>name</span> <span class=o>==</span> <span class=s2>&quot;SHIFT_COORDS&quot;</span><span class=p>:</span>
 
-        <span class=k>if</span> <span class=n>name</span> <span class=ow>in</span> <span class=p>[</span><span class=s2>&quot;I_ERROR&quot;</span><span class=p>,</span> <span class=s2>&quot;II_ERROR&quot;</span><span class=p>]:</span>
+            <span class=c1># TODO: handle visualization annotations in ZX diagrams</span>
             <span class=k>continue</span>
 
         <span class=k>if</span> <span class=n>name</span> <span class=o>==</span> <span class=s2>&quot;S&quot;</span> <span class=ow>and</span> <span class=n>instruction</span><span class=o>.</span><span class=n>tag</span> <span class=o>==</span> <span class=s2>&quot;T&quot;</span><span class=p>:</span>
