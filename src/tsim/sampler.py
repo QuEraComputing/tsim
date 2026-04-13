@@ -204,10 +204,10 @@ class _CompiledSamplerBase:
         for component in self._program.components:
             for circuit in component.compiled_scalar_graphs:
                 G = circuit.num_graphs
-                max_a = circuit.a_const_phases.shape[1]
-                max_b = circuit.b_term_types.shape[1]
-                max_c = circuit.c_const_bits_a.shape[1]
-                max_d = circuit.d_const_alpha.shape[1]
+                max_a = circuit.node_phases.phases.shape[1]
+                max_b = circuit.halfpi_phases.coeffs.shape[1]
+                max_c = circuit.pi_products.psi_const.shape[1]
+                max_d = circuit.phase_pairs.alpha.shape[1]
                 largest = max(max_a * 16, max_b * 4, max_c * 4, max_d * 16)
                 peak = max(peak, G * largest * 3)
         return max(peak, 1)
@@ -316,10 +316,12 @@ class _CompiledSamplerBase:
                 num_outputs.append(len(component.output_indices))
                 c_graphs.append(circuit.num_graphs)
                 c_params.append(circuit.n_params)
-                c_a_terms.append(circuit.a_const_phases.size)
-                c_b_terms.append(circuit.b_term_types.size)
-                c_c_terms.append(circuit.c_const_bits_a.size)
-                c_d_terms.append(circuit.d_const_alpha.size + circuit.d_const_beta.size)
+                c_a_terms.append(circuit.node_phases.phases.size)
+                c_b_terms.append(circuit.halfpi_phases.coeffs.size)
+                c_c_terms.append(circuit.pi_products.psi_const.size)
+                c_d_terms.append(
+                    circuit.phase_pairs.alpha.size + circuit.phase_pairs.beta.size
+                )
 
                 total_memory_bytes += sum(
                     v.nbytes

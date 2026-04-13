@@ -67,29 +67,28 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
 
     """
     # ====================================================================
-    # TYPE A: Node Terms (1 + e^(i*alpha))
+    # Node phases: product of (1 + e^(i*alpha)) terms.
     # Padded values are masked to multiplicative identity.
     # ====================================================================
-    # a_param_bits: (num_graphs, max_a, n_params), param_vals: (batch_size, n_params,)
-    rowsum_a = _matmul_gf2(circuit.a_param_bits, param_vals)
-    phase_idx_a = (4 * rowsum_a + circuit.a_const_phases) % 8
+    # node.params: (num_graphs, max_terms, n_params), param_vals: (batch_size, n_params)
+    node = circuit.node_phases
+    rowsum_a = _matmul_gf2(node.params, param_vals)
+    phase_idx_a = (4 * rowsum_a + node.phases) % 8
 
     term_vals_a_exact = _ONE_PLUS_PHASES[phase_idx_a]
-    a_mask = (
-        jnp.arange(circuit.a_const_phases.shape[1])[None, :]
-        < circuit.a_num_terms[:, None]
-    )
+    a_mask = jnp.arange(node.phases.shape[1])[None, :] < node.counts[:, None]
     term_vals_a_exact = jnp.where(a_mask[..., None], term_vals_a_exact, _IDENTITY)
 
     term_vals_a = ExactScalarArray(term_vals_a_exact)
     summands_a = term_vals_a.prod(axis=-1)
 
     # ====================================================================
-    # TYPE B: Half-Pi Terms (e^(i*beta))
+    # Half-pi phases: sum of e^(i*beta) terms in the exponent.
     # Padded values are 0, so they don't affect the sum.
     # ====================================================================
-    rowsum_b = _matmul_gf2(circuit.b_param_bits, param_vals)
-    phase_idx_b = (rowsum_b * circuit.b_term_types) % 8
+    halfpi = circuit.halfpi_phases
+    rowsum_b = _matmul_gf2(halfpi.params, param_vals)
+    phase_idx_b = (rowsum_b * halfpi.coeffs) % 8
 
     sum_phases_b = jnp.sum(phase_idx_b, axis=-1) % 8
 
@@ -97,14 +96,11 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
     summands_b = ExactScalarArray(summands_b_exact)
 
     # ====================================================================
-    # TYPE C: Pi-Pair Terms, (-1)^(Psi*Phi)
+    # Pi products: (-1)^(Psi*Phi) terms.
     # ====================================================================
-    rowsum_a_c = (
-        circuit.c_const_bits_a + _matmul_gf2(circuit.c_param_bits_a, param_vals)
-    ) % 2
-    rowsum_b_c = (
-        circuit.c_const_bits_b + _matmul_gf2(circuit.c_param_bits_b, param_vals)
-    ) % 2
+    pi = circuit.pi_products
+    rowsum_a_c = (pi.psi_const + _matmul_gf2(pi.psi_params, param_vals)) % 2
+    rowsum_b_c = (pi.phi_const + _matmul_gf2(pi.phi_params, param_vals)) % 2
 
     exponent_c = (rowsum_a_c * rowsum_b_c) % 2
     sum_exponents_c = jnp.sum(exponent_c, axis=-1) % 2
@@ -115,23 +111,21 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
     summands_c = ExactScalarArray(summands_c_exact)
 
     # ====================================================================
-    # TYPE D: Phase Pairs (1 + e^a + e^b - e^g)
+    # Phase pairs: product of (1 + e^a + e^b - e^(a+b)) terms.
     # Padded values are masked to multiplicative identity.
     # ====================================================================
-    rowsum_a_d = _matmul_gf2(circuit.d_param_bits_a, param_vals)
-    rowsum_b_d = _matmul_gf2(circuit.d_param_bits_b, param_vals)
+    pair = circuit.phase_pairs
+    rowsum_a_d = _matmul_gf2(pair.alpha_params, param_vals)
+    rowsum_b_d = _matmul_gf2(pair.beta_params, param_vals)
 
-    alpha = (circuit.d_const_alpha + rowsum_a_d * 4) % 8
-    beta = (circuit.d_const_beta + rowsum_b_d * 4) % 8
+    alpha = (pair.alpha + rowsum_a_d * 4) % 8
+    beta = (pair.beta + rowsum_b_d * 4) % 8
     gamma = (alpha + beta) % 8
 
     term_vals_d_exact = (
         _IDENTITY + _UNIT_PHASES[alpha] + _UNIT_PHASES[beta] - _UNIT_PHASES[gamma]
     )
-    d_mask = (
-        jnp.arange(circuit.d_const_alpha.shape[1])[None, :]
-        < circuit.d_num_terms[:, None]
-    )
+    d_mask = jnp.arange(pair.alpha.shape[1])[None, :] < pair.counts[:, None]
     term_vals_d_exact = jnp.where(d_mask[..., None], term_vals_d_exact, _IDENTITY)
 
     term_vals_d = ExactScalarArray(term_vals_d_exact)
