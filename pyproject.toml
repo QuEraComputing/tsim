@@ -108,7 +108,7 @@ src_paths = ["src/tsim"]
 
 [tool.black]
 line-length = 88
-target-version = ["py312"]
+target-version = ["py310"]
 exclude = '''
 /(
     \.eggs
@@ -125,19 +125,18 @@ exclude = '''
 '''
 
 [tool.ruff]
-target-version = "py312"
-line-length = 120
+target-version = "py310"
 include = ["src/**/*.py", "test/**/*.py"]
 extend-exclude = ["src/tsim/external"]
 
 [tool.ruff.lint]
 select = ["D", "E", "F", "UP", "B", "SIM", "RUF", "S"]
-ignore = ["D203", "D213", "UP035", "RUF002", "RUF003", "S101", "S311"]
+ignore = ["D203", "D213", "UP035", "RUF002", "RUF003", "S101", "S311", "E501"]
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.per-file-ignores]
 "docs/**" = ["D"]
-"test/**" = ["D", "S101"]
+"test/**" = ["D"]
 
 [tool.coverage.run]
 include = ["src/tsim/*"]
