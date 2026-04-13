@@ -51,7 +51,6 @@ class CompiledScalarGraphs(eqx.Module):
     # Static per-graph data
     phase_indices: Array  # shape: (num_graphs,), dtype: uint8 (values 0-7)
     has_approximate_floatfactors: bool = eqx.field(static=True)
-    # TODO: use complex128
     approximate_floatfactors: Array  # shape: (num_graphs,), dtype: complex64
     power2: Array  # shape: (num_graphs,), dtype: int32
     floatfactor: Array  # shape: (num_graphs, 4), dtype: int32

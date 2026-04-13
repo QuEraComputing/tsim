@@ -114,9 +114,6 @@ def test_r_gate():
     [("X", "Y"), ("X", "Z"), ("Y", "X"), ("Y", "Z"), ("Z", "X"), ("Z", "Y")],
 )
 def test_measurements_stay_same(reset_basis: str, measure_basis: str):
-    if reset_basis == measure_basis:
-        return
-
     c = Circuit(f"""
         R{reset_basis} 0
         M{measure_basis} 0

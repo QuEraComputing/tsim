@@ -307,7 +307,6 @@ class _CompiledSamplerBase:
         c_b_terms = []
         c_c_terms = []
         c_d_terms = []
-        num_circuits = 0
         total_memory_bytes = 0
         num_outputs = []
 
@@ -320,7 +319,6 @@ class _CompiledSamplerBase:
                 c_b_terms.append(circuit.b_term_types.size)
                 c_c_terms.append(circuit.c_const_bits_a.size)
                 c_d_terms.append(circuit.d_const_alpha.size + circuit.d_const_beta.size)
-                num_circuits += 1
 
                 total_memory_bytes += sum(
                     v.nbytes

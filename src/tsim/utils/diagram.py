@@ -6,8 +6,13 @@ from fractions import Fraction
 from typing import Any, Iterable
 
 import numpy as np
+import pyzx_param as zx
 import stim
 from lxml import etree  # type: ignore
+from pyzx_param.graph.graph_s import GraphS
+
+from tsim.core.graph import scale_horizontally
+from tsim.core.parse import parse_stim_circuit
 
 
 class Diagram:
@@ -289,3 +294,46 @@ def render_svg(
     svg = placeholders_to_t(svg_with_placeholders, placeholder_id_to_labels)
     wrapped = wrap_svg(svg, width=width, height=height)
     return Diagram(wrapped)
+
+
+def render_pyzx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> GraphS:
+    """Render a stim circuit as a pyzx ZX diagram using d3.js.
+
+    Args:
+        stim_circ: The stim circuit to render.
+        kwargs: Additional keyword arguments passed to the underlying diagram renderer.
+
+    Returns:
+        A pyzx ZX diagram.
+
+    """
+    built = parse_stim_circuit(stim_circ, track_classical_wires=True)
+    g = built.graph
+
+    if len(g.vertices()) == 0:
+        return g
+
+    g = g.clone()
+    max_row = max(g.row(v) for v in built.last_vertex.values())
+    for q in built.last_vertex:
+        g.set_row(built.last_vertex[q], max_row)
+
+    for v in list(g.vertices()):
+        phase_vars = g._phaseVars[v]
+        if len(phase_vars) != 1:
+            continue
+        phase = list(phase_vars)[0]
+        if phase.startswith("det") or phase.startswith("obs"):
+            row = g.row(v)
+            qubit = -2 if phase.startswith("det") else -2.5
+            vb = g.add_vertex(
+                zx.utils.VertexType.BOUNDARY,
+                qubit=qubit,
+                row=row,
+            )
+            g.add_edge((v, vb))
+
+    if kwargs.get("scale_horizontally", False):
+        scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
+    zx.draw(g, **kwargs)
+    return g

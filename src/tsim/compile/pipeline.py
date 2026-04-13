@@ -85,7 +85,7 @@ def _get_f_indices(graph: BaseGraph) -> list[int]:
 
 def _remove_phase_terms(graph: BaseGraph) -> None:
     """Remove phase terms from the graph."""
-    graph.scalar.phasevars_halfpi = dict()
+    graph.scalar.phasevars_halfpi = {}
     graph.scalar.phasevars_pi_pair = []
     # TODO: clear additional phase terms
 

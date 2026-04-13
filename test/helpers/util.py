@@ -50,7 +50,7 @@ def plot_comparison(
     if plot_difference:
         stim_values = stim_state - exact_state
         tsim_values = tsim_state - exact_state
-        exact_values = exact_state - exact_state
+        exact_values = exact_state * 0
         ylabel = "Difference in Probability to exact"
     else:
         stim_values = stim_state

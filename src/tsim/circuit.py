@@ -8,7 +8,6 @@ from typing import (
     Any,
     Iterable,
     Literal,
-    Sequence,
     Union,
     cast,
     overload,
@@ -18,7 +17,6 @@ import pyzx_param as zx
 import stim
 from pyzx_param.graph.base import BaseGraph
 from pyzx_param.simulate import DecompositionStrategy
-from pyzx_param.utils import VertexType
 
 if TYPE_CHECKING:
     from tsim.sampler import CompiledDetectorSampler, CompiledMeasurementSampler
@@ -26,8 +24,8 @@ if TYPE_CHECKING:
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.noise.dem import get_detector_error_model
-from tsim.utils.clifford import parametric_to_clifford_gates
-from tsim.utils.diagram import render_svg
+from tsim.utils.clifford import clifford_expansion
+from tsim.utils.diagram import render_pyzx_d3, render_svg
 from tsim.utils.program_text import (
     enriched_stim_error,
     shorthand_to_stim,
@@ -363,18 +361,13 @@ class Circuit:
         for instr in self._stim_circ:
             assert not isinstance(instr, stim.CircuitRepeatBlock)
 
-            if instr.name == "I" and instr.tag:
-                result = parse_parametric_tag(instr.tag)
-                if result is not None:
-                    gate_name, params = result
-                    clifford_gates = parametric_to_clifford_gates(gate_name, params)
-                    if clifford_gates is not None:
-                        targets = [t.value for t in instr.targets_copy()]
-                        for gate in clifford_gates:
-                            circ.append(gate, targets, [])
-                        continue
-
-            circ.append(instr)
+            expansion = clifford_expansion(instr)
+            if expansion is not None:
+                gates, targets = expansion
+                for gate in gates:
+                    circ.append(gate, targets, [])
+            else:
+                circ.append(instr)
         return circ
 
     @property
@@ -404,7 +397,7 @@ class Circuit:
                     return False
 
                 gate_name, params = result
-                if gate_name in {"R_X", "R_Y", "R_Z"}:
+                if gate_name in ["R_X", "R_Y", "R_Z"]:
                     if not is_half_pi_multiple(params["theta"]):
                         return False
                 elif gate_name == "U3":
@@ -667,38 +660,7 @@ class Circuit:
                 height=height,
             )
         elif type == "pyzx":
-            from tsim.core.graph import scale_horizontally
-
-            built = parse_stim_circuit(self._stim_circ, track_classical_wires=True)
-            g = built.graph
-
-            if len(g.vertices()) == 0:
-                return g
-
-            g = g.clone()
-            max_row = max(g.row(v) for v in built.last_vertex.values())
-            for q in built.last_vertex:
-                g.set_row(built.last_vertex[q], max_row)
-
-            for v in list(g.vertices()):
-                phase_vars = g._phaseVars[v]
-                if len(phase_vars) != 1:
-                    continue
-                phase = list(phase_vars)[0]
-                if phase.startswith("det") or phase.startswith("obs"):
-                    row = g.row(v)
-                    qubit = -2 if phase.startswith("det") else -2.5
-                    vb = g.add_vertex(
-                        VertexType.BOUNDARY,
-                        qubit=qubit,
-                        row=row,
-                    )
-                    g.add_edge((v, vb))
-
-            if kwargs.get("scale_horizontally", False):
-                scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
-            zx.draw(g, **kwargs)
-            return g
+            return render_pyzx_d3(self._stim_circ, kwargs)
         elif type in ["pyzx-dets", "pyzx-meas"]:
             from tsim.core.graph import (
                 scale_horizontally,
