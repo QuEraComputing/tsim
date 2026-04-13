@@ -130,7 +130,9 @@ def _compile_component(
     # Track power2 for balancing scalar magnitudes
     power2_base: int | None = None
 
-    for num_m_plugged, plugged_graph in zip(outputs_to_plug, plugged_graphs):
+    for num_m_plugged, plugged_graph in zip(
+        outputs_to_plug, plugged_graphs, strict=True
+    ):
         g_copy = plugged_graph.copy()
         zx.full_reduce(g_copy, paramSafe=True)
         g_copy.normalize()

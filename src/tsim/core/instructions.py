@@ -800,7 +800,7 @@ def correlated_error(
     p: float,
 ) -> None:
     """Add a correlated error term affecting multiple qubits with given Pauli types."""
-    for qubit, type_ in zip(qubits, types):
+    for qubit, type_ in zip(qubits, types, strict=True):
         if type_ == "X" or type_ == "Y":
             _error(b, qubit, VertexType.X, f"c{b.num_correlated_error_bits}")
         if type_ == "Z" or type_ == "Y":
@@ -848,7 +848,7 @@ def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
         row = last_row(b, qubit)
         v1 = b.last_vertex[qubit]
         b.graph.set_type(v1, b.vertex_type.X)
-        v2 = list(b.graph.neighbors(v1))[0]
+        v2 = next(iter(b.graph.neighbors(v1)))
         b.graph.remove_edge((v1, v2))
         v3 = add_dummy(b, qubit, row + 1)
         b.graph.add_edge((v1, v3), b.edge_type.SIMPLE)

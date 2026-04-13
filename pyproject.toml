@@ -129,13 +129,13 @@ include = ["src/**/*.py", "test/**/*.py"]
 extend-exclude = ["src/tsim/external"]
 
 [tool.ruff.lint]
-select = ["D"]
-ignore = ["D203", "D213"]
+select = ["D", "E", "F", "UP", "B", "SIM", "RUF", "S"]
+ignore = ["D203", "D213", "UP035"]
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.per-file-ignores]
 "docs/**" = ["D"]
-"test/**" = ["D"]
+"test/**" = ["D", "S101"]
 
 [tool.coverage.run]
 include = ["src/tsim/*"]
