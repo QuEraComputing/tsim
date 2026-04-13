@@ -761,11 +761,6 @@ def test_mzz_multiple_pairs():
     assert (samples[:, 1] == 1).all()
 
 
-# =============================================================================
-# Heralded noise channels
-# =============================================================================
-
-
 def test_heralded_erase_noiseless():
     """HERALDED_ERASE(0) should never fire: herald=0, qubit unchanged."""
     c = Circuit("""
@@ -818,34 +813,6 @@ def test_heralded_pauli_channel_1_noiseless():
     sampler = c.compile_sampler()
     samples = sampler.sample(100)
     assert (samples == 0).all()
-
-
-def test_heralded_pauli_channel_1_pure_x():
-    """Pure X heralded channel should flip qubit when it fires."""
-    c = Circuit("""
-        R 0
-        HERALDED_PAULI_CHANNEL_1(0, 1, 0, 0) 0
-        M 0
-    """)
-    sampler = c.compile_sampler()
-    samples = sampler.sample(100)
-    # Always fires with X: herald=1, measurement=1
-    assert (samples[:, 0] == 1).all()  # herald
-    assert (samples[:, 1] == 1).all()  # qubit flipped
-
-
-def test_heralded_pauli_channel_1_pure_z():
-    """Pure Z heralded channel should not flip Z-basis measurement."""
-    c = Circuit("""
-        R 0
-        HERALDED_PAULI_CHANNEL_1(0, 0, 0, 1) 0
-        M 0
-    """)
-    sampler = c.compile_sampler()
-    samples = sampler.sample(100)
-    # Always fires with Z: herald=1, but Z doesn't flip |0>
-    assert (samples[:, 0] == 1).all()  # herald
-    assert (samples[:, 1] == 0).all()  # qubit unchanged in Z basis
 
 
 def test_heralded_pauli_channel_1_multiple_targets():

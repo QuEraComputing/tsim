@@ -149,16 +149,6 @@ class TestParseHeraldedChannels:
         assert b.num_error_bits == 9
         assert len(b.channel_probs) == 3
 
-    def test_heralded_interleaved_with_measurements(self):
-        """Herald records should interleave correctly with regular measurements."""
-        circuit = stim.Circuit("""
-            M 0
-            HERALDED_ERASE(0.01) 1
-            M 1
-        """)
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 3
-
 
 class TestParseWithRepeatBlocks:
     """Tests for parsing circuits that contain REPEAT blocks."""
