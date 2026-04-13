@@ -142,7 +142,7 @@
     <span class=n>annotation_to_vertex</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]]</span> <span class=o>=</span> <span class=n>defaultdict</span><span class=p>(</span><span class=nb>list</span><span class=p>)</span>
     <span class=k>for</span> <span class=n>v</span> <span class=ow>in</span> <span class=n>g</span><span class=o>.</span><span class=n>vertices</span><span class=p>():</span>
         <span class=n>phase_vars</span> <span class=o>=</span> <span class=n>g</span><span class=o>.</span><span class=n>_phaseVars</span><span class=p>[</span><span class=n>v</span><span class=p>]</span>
-        <span class=k>if</span> <span class=ow>not</span> <span class=nb>len</span><span class=p>(</span><span class=n>phase_vars</span><span class=p>)</span> <span class=o>==</span> <span class=mi>1</span><span class=p>:</span>
+        <span class=k>if</span> <span class=nb>len</span><span class=p>(</span><span class=n>phase_vars</span><span class=p>)</span> <span class=o>!=</span> <span class=mi>1</span><span class=p>:</span>
             <span class=k>continue</span>
         <span class=n>phase</span> <span class=o>=</span> <span class=nb>list</span><span class=p>(</span><span class=n>phase_vars</span><span class=p>)[</span><span class=mi>0</span><span class=p>]</span>
         <span class=k>if</span> <span class=s2>&quot;det&quot;</span> <span class=ow>in</span> <span class=n>phase</span> <span class=ow>or</span> <span class=s2>&quot;obs&quot;</span> <span class=ow>in</span> <span class=n>phase</span> <span class=ow>or</span> <span class=s2>&quot;rec&quot;</span> <span class=ow>in</span> <span class=n>phase</span> <span class=ow>or</span> <span class=s2>&quot;m&quot;</span> <span class=ow>in</span> <span class=n>phase</span><span class=p>:</span>
@@ -263,7 +263,7 @@
             <span class=k>continue</span>
 
         <span class=n>component_vertices</span> <span class=o>=</span> <span class=n>_collect_vertices</span><span class=p>(</span><span class=n>g</span><span class=p>,</span> <span class=n>vertex</span><span class=p>,</span> <span class=n>visited</span><span class=p>)</span>
-        <span class=n>subgraph</span><span class=p>,</span> <span class=n>vertex_map</span> <span class=o>=</span> <span class=n>_induced_subgraph</span><span class=p>(</span><span class=n>g</span><span class=p>,</span> <span class=n>component_vertices</span><span class=p>)</span>
+        <span class=n>subgraph</span> <span class=o>=</span> <span class=n>_induced_subgraph</span><span class=p>(</span><span class=n>g</span><span class=p>,</span> <span class=n>component_vertices</span><span class=p>)</span>
 
         <span class=n>component_output_indices</span> <span class=o>=</span> <span class=p>[</span>
             <span class=n>output_indices</span><span class=p>[</span><span class=n>v</span><span class=p>]</span> <span class=k>for</span> <span class=n>v</span> <span class=ow>in</span> <span class=n>component_vertices</span> <span class=k>if</span> <span class=n>v</span> <span class=ow>in</span> <span class=n>output_indices</span>
