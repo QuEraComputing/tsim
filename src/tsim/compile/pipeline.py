@@ -116,10 +116,11 @@ def _compile_component(
     component_f_set = set(_get_f_indices(graph))
     f_selection = [i for i in f_indices_global if i in component_f_set]
 
-    if mode == "sequential":
-        outputs_to_plug = list(range(num_component_outputs + 1))
-    else:  # joint
-        outputs_to_plug = [0, num_component_outputs]
+    outputs_to_plug = (
+        list(range(num_component_outputs + 1))
+        if mode == "sequential"
+        else [0, num_component_outputs]
+    )
 
     # Plug outputs and compile each graph
     compiled_graphs: list[CompiledScalarGraphs] = []
@@ -130,7 +131,9 @@ def _compile_component(
     # Track power2 for balancing scalar magnitudes
     power2_base: int | None = None
 
-    for num_m_plugged, plugged_graph in zip(outputs_to_plug, plugged_graphs):
+    for num_m_plugged, plugged_graph in zip(
+        outputs_to_plug, plugged_graphs, strict=True
+    ):
         g_copy = plugged_graph.copy()
         zx.full_reduce(g_copy, paramSafe=True)
         g_copy.normalize()

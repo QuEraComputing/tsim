@@ -8,7 +8,6 @@ from typing import (
     Any,
     Iterable,
     Literal,
-    Union,
     cast,
     overload,
 )
@@ -92,13 +91,13 @@ class Circuit:
     def append(
         self,
         name: str,
-        targets: Union[
-            int,
-            stim.GateTarget,
-            stim.PauliString,
-            Iterable[Union[int, stim.GateTarget, stim.PauliString]],
-        ] = (),
-        arg: Union[float, Iterable[float], None] = None,
+        targets: (
+            int
+            | stim.GateTarget
+            | stim.PauliString
+            | Iterable[int | stim.GateTarget | stim.PauliString]
+        ) = (),
+        arg: float | Iterable[float] | None = None,
         *,
         tag: str = "",
     ) -> None: ...
@@ -106,21 +105,19 @@ class Circuit:
     @overload
     def append(
         self,
-        name: Union[stim.CircuitInstruction, stim.CircuitRepeatBlock, stim.Circuit],
+        name: stim.CircuitInstruction | stim.CircuitRepeatBlock | stim.Circuit,
     ) -> None: ...
 
     def append(
         self,
-        name: Union[
-            str, stim.CircuitInstruction, stim.CircuitRepeatBlock, stim.Circuit
-        ],
-        targets: Union[
-            int,
-            stim.GateTarget,
-            stim.PauliString,
-            Iterable[Union[int, stim.GateTarget, stim.PauliString]],
-        ] = (),
-        arg: Union[float, Iterable[float], None] = None,
+        name: str | stim.CircuitInstruction | stim.CircuitRepeatBlock | stim.Circuit,
+        targets: (
+            int
+            | stim.GateTarget
+            | stim.PauliString
+            | Iterable[int | stim.GateTarget | stim.PauliString]
+        ) = (),
+        arg: float | Iterable[float] | None = None,
         *,
         tag: str = "",
     ) -> None:
@@ -196,7 +193,7 @@ class Circuit:
             A new Circuit instance.
 
         """
-        with open(filename, "r", encoding="utf-8") as f:
+        with open(filename, encoding="utf-8") as f:
             stim_program_text = f.read()
         converted = shorthand_to_stim(stim_program_text)
         try:
@@ -207,7 +204,7 @@ class Circuit:
 
     def __repr__(self) -> str:
         """Return a string representation that can recreate the circuit."""
-        return f"tsim.Circuit('''\n{str(self)}\n''')"
+        return f"tsim.Circuit('''\n{self!s}\n''')"
 
     def __str__(self) -> str:
         """Return the circuit as program text."""
@@ -254,7 +251,7 @@ class Circuit:
     def __getitem__(
         self,
         index_or_slice: int,
-    ) -> Union[stim.CircuitInstruction, stim.CircuitRepeatBlock]: ...
+    ) -> stim.CircuitInstruction | stim.CircuitRepeatBlock: ...
 
     @overload
     def __getitem__(
@@ -454,7 +451,7 @@ class Circuit:
     def pop(
         self,
         index: int = -1,
-    ) -> Union[stim.CircuitInstruction, stim.CircuitRepeatBlock]:
+    ) -> stim.CircuitInstruction | stim.CircuitRepeatBlock:
         """Pops an operation from the end of the circuit, or at the given index.
 
         Args:
@@ -773,7 +770,11 @@ class Circuit:
         return CompiledDetectorSampler(self, seed=seed, strategy=strategy)
 
     def cast_to_stim(self) -> stim.Circuit:
-        """Return self with type cast to stim.Circuit. This is useful for passing the circuit to functions that expect a stim.Circuit."""
+        """Return self with type cast to `stim.Circuit`.
+
+        This is useful for passing the circuit to functions that expect a
+        `stim.Circuit`.
+        """
         return cast(stim.Circuit, self)  # pragma: no cover
 
     def inverse(self) -> Circuit:

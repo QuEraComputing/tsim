@@ -92,10 +92,7 @@ def _subscript(text: str) -> str:
 
 def _is_err_element(elem: etree._Element) -> bool:
     """Check if an element is an ERR text (contains <tspan>I</tspan>)."""
-    for child in elem:
-        if child.tag.endswith("tspan") and child.text == "I":
-            return True
-    return False
+    return any(child.tag.endswith("tspan") and child.text == "I" for child in elem)
 
 
 def placeholders_to_t(
@@ -322,7 +319,7 @@ def render_pyzx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> GraphS:
         phase_vars = g._phaseVars[v]
         if len(phase_vars) != 1:
             continue
-        phase = list(phase_vars)[0]
+        phase = next(iter(phase_vars))
         if phase.startswith("det") or phase.startswith("obs"):
             row = g.row(v)
             qubit = -2 if phase.startswith("det") else -2.5

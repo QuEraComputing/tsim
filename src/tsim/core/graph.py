@@ -178,7 +178,7 @@ def build_sampling_graph(
         phase_vars = g._phaseVars[v]
         if len(phase_vars) != 1:
             continue
-        phase = list(phase_vars)[0]
+        phase = next(iter(phase_vars))
         if "det" in phase or "obs" in phase or "rec" in phase or "m" in phase:
             label_to_vertex[phase].append(v)
         if "det" in phase or "obs" in phase:
@@ -231,7 +231,7 @@ def build_sampling_graph(
             g.remove_vertex(vertices.pop())
 
         labels = [f"det[{i}]" for i in range(len(built.detectors))] + [
-            f"obs[{i}]" for i in built.observables_dict.keys()
+            f"obs[{i}]" for i in built.observables_dict
         ]
         for label in labels:
             vs = annotation_to_vertex[label]
@@ -274,9 +274,7 @@ def transform_error_basis(
               then f0 = e1 XOR e3.
 
     """
-    parametrized_vertices = [
-        v for v in g.vertices() if v in g._phaseVars and g._phaseVars[v]
-    ]
+    parametrized_vertices = [v for v in g.vertices() if g._phaseVars.get(v)]
 
     if not parametrized_vertices:
         g.scalar = Scalar()
@@ -299,7 +297,7 @@ def transform_error_basis(
     basis, transform = find_basis(error_matrix)
     # Now: error_matrix = transform @ basis
 
-    for v, transform_row in zip(parametrized_vertices, transform):
+    for v, transform_row in zip(parametrized_vertices, transform, strict=True):
         new_vars = {f"f{j}" for j in np.nonzero(transform_row)[0]}
         g._phaseVars[v] = new_vars
 

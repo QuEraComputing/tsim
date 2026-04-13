@@ -148,7 +148,8 @@ def sample_program(
             warnings.warn(
                 "A marginal probability was not normalized correctly "
                 f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
-                "This is likely a floating point precision issue."
+                "This is likely a floating point precision issue.",
+                stacklevel=2,
             )
         results.append(samples)
 

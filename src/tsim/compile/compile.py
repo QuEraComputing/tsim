@@ -259,7 +259,7 @@ def compile_scalar_graphs(
     exact_floatfactor = []
     power2 = []
 
-    for i, g in enumerate(g_list):
+    for g in g_list:
         dn = g.scalar.floatfactor.copy()
 
         p_sqrt2 = g.scalar.power2

@@ -58,9 +58,9 @@ def _to_half_pi_index(phase: Fraction) -> int | None:
     return int(phase * 2) % 4
 
 
-def _equivalent_u3_key(t: int, p: int, l: int) -> tuple[int, int, int]:
+def _equivalent_u3_key(t: int, p: int, lam: int) -> tuple[int, int, int]:
     """U3(θ, φ, λ) ≡ U3(2π-θ, φ+π, λ+π) up to global phase."""
-    return ((4 - t) % 4, (p + 2) % 4, (l + 2) % 4)
+    return ((4 - t) % 4, (p + 2) % 4, (lam + 2) % 4)
 
 
 def parametric_to_clifford_gates(
