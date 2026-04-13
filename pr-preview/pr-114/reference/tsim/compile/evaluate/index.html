@@ -42,7 +42,10 @@
 <span class=normal>53</span>
 <span class=normal>54</span>
 <span class=normal>55</span>
-<span class=normal>56</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@jax</span><span class=o>.</span><span class=n>jit</span>
+<span class=normal>56</span>
+<span class=normal>57</span>
+<span class=normal>58</span>
+<span class=normal>59</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@jax</span><span class=o>.</span><span class=n>jit</span>
 <span class=k>def</span><span class=w> </span><span class=nf>evaluate</span><span class=p>(</span><span class=n>circuit</span><span class=p>:</span> <span class=n>CompiledScalarGraphs</span><span class=p>,</span> <span class=n>param_vals</span><span class=p>:</span> <span class=n>Array</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Array</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Evaluate compiled circuit with batched parameter values.</span>
 
@@ -61,6 +64,9 @@
 
 <span class=sd>    &quot;&quot;&quot;</span>
     <span class=n>prefactor</span> <span class=o>=</span> <span class=n>circuit</span><span class=o>.</span><span class=n>prefactor</span>
+    <span class=k>if</span> <span class=n>prefactor</span><span class=o>.</span><span class=n>phase_indices</span><span class=o>.</span><span class=n>shape</span><span class=p>[</span><span class=mi>0</span><span class=p>]</span> <span class=o>==</span> <span class=mi>0</span><span class=p>:</span>
+        <span class=k>return</span> <span class=n>jnp</span><span class=o>.</span><span class=n>zeros</span><span class=p>(</span><span class=n>param_vals</span><span class=o>.</span><span class=n>shape</span><span class=p>[</span><span class=mi>0</span><span class=p>],</span> <span class=n>dtype</span><span class=o>=</span><span class=n>jnp</span><span class=o>.</span><span class=n>complex64</span><span class=p>)</span>
+
     <span class=n>static_phases</span> <span class=o>=</span> <span class=n>ExactScalarArray</span><span class=p>(</span><span class=n>UNIT_PHASES</span><span class=p>[</span><span class=n>prefactor</span><span class=o>.</span><span class=n>phase_indices</span><span class=p>])</span>
     <span class=n>float_factor</span> <span class=o>=</span> <span class=n>ExactScalarArray</span><span class=p>(</span><span class=n>prefactor</span><span class=o>.</span><span class=n>floatfactor</span><span class=p>)</span>
 
