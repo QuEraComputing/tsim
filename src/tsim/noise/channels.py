@@ -40,11 +40,11 @@ def heralded_pauli_channel_1_probs(
     Bits: [herald, Z_error, X_error].
     """
     probs = np.zeros(8, dtype=np.float64)
-    probs[0] = 1 - pi - px - py - pz  # no fire
-    probs[1] = pi  # herald, I
-    probs[3] = pz  # herald + Z
-    probs[5] = px  # herald + X
-    probs[7] = py  # herald + Y (X+Z)
+    probs[0] = 1 - pi - px - py - pz  # 000, no fire
+    probs[1] = pi  # 100, herald, I
+    probs[3] = pz  # 110, herald + Z
+    probs[5] = px  # 101, herald + X
+    probs[7] = py  # 111, herald + Y (X+Z)
     return probs
 
 

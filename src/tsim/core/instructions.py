@@ -737,13 +737,13 @@ def heralded_pauli_channel_1(
     (with total probability pi+px+py+pz), the herald is 1 and one of I/X/Y/Z
     is applied. When it doesn't fire, the herald is 0 and nothing happens.
     """
+    b.channel_probs.append(heralded_pauli_channel_1_probs(pi, px, py, pz))
     aux = -2
     r(b, aux)
     _error(b, aux, b.vertex_type.X, f"e{b.num_error_bits}")
-    _m(b, aux, silent=False)
+    m(b, aux)
     _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits + 1}")
     _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits + 2}")
-    b.channel_probs.append(heralded_pauli_channel_1_probs(pi, px, py, pz))
     b.num_error_bits += 3
 
 
