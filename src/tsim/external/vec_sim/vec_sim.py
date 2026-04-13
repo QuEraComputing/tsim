@@ -1,5 +1,4 @@
-"""
-Statevector simulatorfor stim circuits.
+"""Statevector simulatorfor stim circuits.
 
 Based on code from:
 Gidney, C., Jones, C., & Shutty, N. (2024). "Magic state cultivation: growing
@@ -99,6 +98,7 @@ class VecSim:
             order: Determines which qubit gets mapped to which axis of the output numpy array.
                 Qubit names with larger order keys, according to this function, are assigned to
                 larger axis indices.
+
         """
         s = self.state[self.state_slicer({})]
         if order is not None:
@@ -144,6 +144,7 @@ class VecSim:
         Args:
             qs: The subset to slice into is identified by specifying values for some qubits.
                 For example, the part of the state vector where qubit 'A' is ON.
+
         """
         mask: List[Union[slice, int]] = [slice(None)] * len(self.state.shape)
         for k in range(len(self.q2i), len(mask)):
