@@ -451,7 +451,7 @@ def test_rec_controlled_raises_error():
         M 0
         """)
     with pytest.raises(
-        ValueError, match="Measurement record editing is not supported."
+        ValueError, match=r"Measurement record editing is not supported\."
     ):
         c.compile_sampler()
 

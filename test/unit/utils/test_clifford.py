@@ -114,7 +114,7 @@ class TestSingleAxisUnitaries:
 class TestU3Conversions:
     @pytest.mark.parametrize(
         "theta_idx,phi_idx,lam_idx",
-        [(t, p, l) for t in range(4) for p in range(4) for l in range(4)],
+        [(t, p, lam) for t in range(4) for p in range(4) for lam in range(4)],
     )
     def test_unitary_matches_all_half_pi(self, theta_idx, phi_idx, lam_idx):
         theta = Fraction(theta_idx, 2)

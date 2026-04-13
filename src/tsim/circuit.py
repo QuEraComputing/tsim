@@ -770,7 +770,11 @@ class Circuit:
         return CompiledDetectorSampler(self, seed=seed, strategy=strategy)
 
     def cast_to_stim(self) -> stim.Circuit:
-        """Return self with type cast to stim.Circuit. This is useful for passing the circuit to functions that expect a stim.Circuit."""
+        """Return self with type cast to `stim.Circuit`.
+
+        This is useful for passing the circuit to functions that expect a
+        `stim.Circuit`.
+        """
         return cast(stim.Circuit, self)  # pragma: no cover
 
     def inverse(self) -> Circuit:
