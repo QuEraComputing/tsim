@@ -587,7 +587,7 @@ class Circuit:
         tick: int | range | None = None,
         filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),),
         rows: int | None = None,
-        height: float | None = None,
+        height: float | Literal["auto"] | None = "auto",
         width: float | None = None,
         **kwargs: Any,
     ) -> Any:
@@ -631,8 +631,11 @@ class Circuit:
                 be included), a stim.DemTarget (specifying a detector or observable
                 to include), a string like "D5" or "L0" specifying a detector or
                 observable to include.
-            height: Optional height for the rendered diagram.
-            width: Optional width for the rendered diagram.
+            height: Optional height for the rendered diagram. If "auto", the height will
+                be automatically determined based on the number of qubits. Only one of
+                height or width should be specified.
+            width: Optional width for the rendered diagram. Only one of height or width
+                should be specified.
             **kwargs: Additional keyword arguments passed to the underlying diagram renderer.
 
         Returns:
@@ -647,6 +650,11 @@ class Circuit:
             "timeline-svg",
             "timeslice-svg",
         ]:
+            if height == "auto":
+                if width is not None or type == "timeslice-svg":
+                    height = None
+                else:
+                    height = min(30 * self.num_qubits + 50, 700)
             return render_svg(
                 self._stim_circ,
                 type,

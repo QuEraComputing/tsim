@@ -74,7 +74,11 @@ def wrap_svg(
         computed_width = _width_from_viewbox(svg, float(height))
 
     if computed_width is None:
-        return svg
+        return f"""
+        <div style="background: white">
+        {svg}
+        </div>
+        """
 
     return f"""
     <div style="overflow-x: scroll; background: white; width: fit-content;">
