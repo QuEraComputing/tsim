@@ -438,11 +438,11 @@
 <span class=sd>    Bits: [herald, Z_error, X_error].</span>
 <span class=sd>    &quot;&quot;&quot;</span>
     <span class=n>probs</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>zeros</span><span class=p>(</span><span class=mi>8</span><span class=p>,</span> <span class=n>dtype</span><span class=o>=</span><span class=n>np</span><span class=o>.</span><span class=n>float64</span><span class=p>)</span>
-    <span class=n>probs</span><span class=p>[</span><span class=mi>0</span><span class=p>]</span> <span class=o>=</span> <span class=mi>1</span> <span class=o>-</span> <span class=n>pi</span> <span class=o>-</span> <span class=n>px</span> <span class=o>-</span> <span class=n>py</span> <span class=o>-</span> <span class=n>pz</span>  <span class=c1># no fire</span>
-    <span class=n>probs</span><span class=p>[</span><span class=mi>1</span><span class=p>]</span> <span class=o>=</span> <span class=n>pi</span>  <span class=c1># herald, I</span>
-    <span class=n>probs</span><span class=p>[</span><span class=mi>3</span><span class=p>]</span> <span class=o>=</span> <span class=n>pz</span>  <span class=c1># herald + Z</span>
-    <span class=n>probs</span><span class=p>[</span><span class=mi>5</span><span class=p>]</span> <span class=o>=</span> <span class=n>px</span>  <span class=c1># herald + X</span>
-    <span class=n>probs</span><span class=p>[</span><span class=mi>7</span><span class=p>]</span> <span class=o>=</span> <span class=n>py</span>  <span class=c1># herald + Y (X+Z)</span>
+    <span class=n>probs</span><span class=p>[</span><span class=mi>0</span><span class=p>]</span> <span class=o>=</span> <span class=mi>1</span> <span class=o>-</span> <span class=n>pi</span> <span class=o>-</span> <span class=n>px</span> <span class=o>-</span> <span class=n>py</span> <span class=o>-</span> <span class=n>pz</span>  <span class=c1># 000, no fire</span>
+    <span class=n>probs</span><span class=p>[</span><span class=mi>1</span><span class=p>]</span> <span class=o>=</span> <span class=n>pi</span>  <span class=c1># 100, herald, I</span>
+    <span class=n>probs</span><span class=p>[</span><span class=mi>3</span><span class=p>]</span> <span class=o>=</span> <span class=n>pz</span>  <span class=c1># 110, herald + Z</span>
+    <span class=n>probs</span><span class=p>[</span><span class=mi>5</span><span class=p>]</span> <span class=o>=</span> <span class=n>px</span>  <span class=c1># 101, herald + X</span>
+    <span class=n>probs</span><span class=p>[</span><span class=mi>7</span><span class=p>]</span> <span class=o>=</span> <span class=n>py</span>  <span class=c1># 111, herald + Y (X+Z)</span>
     <span class=k>return</span> <span class=n>probs</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.noise.channels.merge_identical_channels class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">merge_identical_channels</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>merge_identical_channels</span><span class=p>(</span>
     <span class=n>channels</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>Channel</span><span class=p>],</span>
