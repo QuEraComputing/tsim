@@ -6,85 +6,25 @@ from fractions import Fraction
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
-from jax import Array
 from pyzx_param.graph.base import BaseGraph
 from pyzx_param.graph.scalar import DyadicNumber
 
-
-class NodePhases(eqx.Module):
-    """Product of ``1 + exp(i·(α + ⊕params)·π)`` terms, one factor per stored term.
-
-    Padded slots use ``0`` for both ``phases`` and ``params``; the evaluator masks
-    padded slots to the multiplicative identity using ``counts``.
-
-    Shapes are ``(num_graphs, max_terms)`` except ``params`` which is
-    ``(num_graphs, max_terms, n_params)``.
-    """
-
-    phases: Array  # uint8, values 0-7 (the constant offset α, as ``4·α``)
-    params: Array  # uint8, parameter parity bitmasks
-    counts: Array  # int32, number of real (non-padded) terms per graph
-
-
-class HalfPiPhases(eqx.Module):
-    """Sum of ``exp(i·j·π·⊕params / 2)`` terms with ``j ∈ {1, 3}``.
-
-    Terms sharing a parameter bitstring have been combined to a single stored
-    coefficient ``j' ∈ {1, 2, 3}`` (see ``_compile_halfpi_phases``). Coefficients
-    are stored in eighth-turn units — i.e. as ``2·j'`` — so the evaluator can
-    reuse the ``ω = e^(iπ/4)`` phase table.
-
-    Padded slots use ``0`` (the additive identity for phase sums), so padded
-    entries contribute nothing to the summed exponent.
-
-    Shapes are ``(num_graphs, max_terms)`` except ``params`` which is
-    ``(num_graphs, max_terms, n_params)``.
-    """
-
-    coeffs: Array  # uint8, values in {0, 2, 4, 6}  (= 2·j', with 0 = padding)
-    params: Array  # uint8, parameter parity bitmasks
-
-
-class PiProducts(eqx.Module):
-    """Product of ``(-1)^(ψ · φ)`` terms, with ψ and φ each a parity expression.
-
-    Each side is encoded as a constant bit plus a parameter bitmask. Padded slots
-    use ``0`` everywhere; a padded term contributes ``(-1)^0 = 1`` to the product.
-
-    Shapes are ``(num_graphs, max_terms)`` except ``*_params`` which are
-    ``(num_graphs, max_terms, n_params)``.
-    """
-
-    psi_const: Array  # uint8, values {0, 1}
-    psi_params: Array  # uint8, parameter parity bitmask for ψ
-    phi_const: Array  # uint8, values {0, 1}
-    phi_params: Array  # uint8, parameter parity bitmask for φ
-
-
-class PhasePairs(eqx.Module):
-    """Product of ``1 + e^(iα) + e^(iβ) − e^(i(α+β))`` terms.
-
-    Each of ``α`` and ``β`` combines a constant phase with a parameter parity.
-    Padded slots use ``0`` and are masked to the multiplicative identity using
-    ``counts``.
-
-    Shapes are ``(num_graphs, max_terms)`` except ``*_params`` which are
-    ``(num_graphs, max_terms, n_params)``.
-    """
-
-    alpha: Array  # uint8, values 0-7 (constant offset of α, as ``4·α``)
-    alpha_params: Array  # uint8, parameter parity bitmask for α
-    beta: Array  # uint8, values 0-7 (constant offset of β, as ``4·β``)
-    beta_params: Array  # uint8, parameter parity bitmask for β
-    counts: Array  # int32, number of real (non-padded) terms per graph
+from tsim.compile.terms import (
+    HalfPiPhases,
+    NodePhases,
+    PhasePairs,
+    PiProducts,
+    ScalarPrefactor,
+)
 
 
 class CompiledScalarGraphs(eqx.Module):
     """JAX-compatible compiled representation of a list of scalar ZX graphs.
 
     The scalar for each graph is a product of four term families, multiplied by
-    a global phase and a floatfactor. All arrays are static-shaped so the whole
-    struct can be traced under ``jax.jit``.
+    a per-graph ``ScalarPrefactor`` (global phase, floatfactor, ``2^power2``,
+    optional approximate complex floatfactor). All arrays are static-shaped so
+    the whole struct can be traced under ``jax.jit``.
     """
 
     num_graphs: int
@@ -94,13 +34,7 @@ class CompiledScalarGraphs(eqx.Module):
     halfpi_phases: HalfPiPhases
     pi_products: PiProducts
     phase_pairs: PhasePairs
-
-    # Static per-graph data
-    phase_indices: Array  # shape: (num_graphs,), dtype: uint8 (values 0-7)
-    has_approximate_floatfactors: bool = eqx.field(static=True)
-    approximate_floatfactors: Array  # shape: (num_graphs,), dtype: complex64
-    power2: Array  # shape: (num_graphs,), dtype: int32
-    floatfactor: Array  # shape: (num_graphs, 4), dtype: int32
+    prefactor: ScalarPrefactor
 
 
 def _compile_node_phases(
@@ -334,10 +268,8 @@ def _compile_phase_pairs(
     )
 
 
-def _compile_static_scalar_data(
-    g_list: list[BaseGraph],
-) -> tuple[bool, Array, Array, Array, Array]:
-    """Compile the per-graph static scalar data.
+def _compile_prefactor(g_list: list[BaseGraph]) -> ScalarPrefactor:
+    """Compile the per-graph static scalar prefactor.
 
     For each graph this extracts:
 
@@ -355,8 +287,7 @@ def _compile_static_scalar_data(
         g_list: List of scalar ZX graphs.
 
     Returns:
-        Tuple ``(has_approximate_floatfactors, approximate_floatfactors,
-        phase_indices, power2, floatfactor)`` as JAX arrays.
+        A ``ScalarPrefactor`` holding the per-graph static scalar data.
 
     """
     for g in g_list:
@@ -394,12 +325,12 @@ def _compile_static_scalar_data(
         power2.append(p_sqrt2 // 2)
         exact_floatfactor.append([dn.a, dn.b, dn.c, dn.d])
 
-    return (
-        has_approximate_floatfactors,
-        approximate_floatfactors,
-        phase_indices,
-        jnp.array(power2, dtype=jnp.int32),
-        jnp.array(exact_floatfactor, dtype=jnp.int32),
+    return ScalarPrefactor(
+        phase_indices=phase_indices,
+        floatfactor=jnp.array(exact_floatfactor, dtype=jnp.int32),
+        power2=jnp.array(power2, dtype=jnp.int32),
+        approximate_floatfactors=approximate_floatfactors,
+        has_approximate_floatfactors=has_approximate_floatfactors,
     )
 
 
@@ -430,28 +361,12 @@ def compile_scalar_graphs(
     num_graphs = len(g_list)
     char_to_idx = {char: i for i, char in enumerate(params)}
 
-    node_phases = _compile_node_phases(g_list, char_to_idx, n_params)
-    halfpi_phases = _compile_halfpi_phases(g_list, char_to_idx, n_params)
-    pi_products = _compile_pi_products(g_list, char_to_idx, n_params)
-    phase_pairs = _compile_phase_pairs(g_list, char_to_idx, n_params)
-    (
-        has_approximate_floatfactors,
-        approximate_floatfactors,
-        phase_indices,
-        power2,
-        floatfactor,
-    ) = _compile_static_scalar_data(g_list)
-
     return CompiledScalarGraphs(
         num_graphs=num_graphs,
         n_params=n_params,
-        node_phases=node_phases,
-        halfpi_phases=halfpi_phases,
-        pi_products=pi_products,
-        phase_pairs=phase_pairs,
-        phase_indices=phase_indices,
-        has_approximate_floatfactors=has_approximate_floatfactors,
-        approximate_floatfactors=approximate_floatfactors,
-        power2=power2,
-        floatfactor=floatfactor,
+        node_phases=_compile_node_phases(g_list, char_to_idx, n_params),
+        halfpi_phases=_compile_halfpi_phases(g_list, char_to_idx, n_params),
+        pi_products=_compile_pi_products(g_list, char_to_idx, n_params),
+        phase_pairs=_compile_phase_pairs(g_list, char_to_idx, n_params),
+        prefactor=_compile_prefactor(g_list),
     )
