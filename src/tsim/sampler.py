@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from math import ceil
 from typing import TYPE_CHECKING, Literal, overload
 
@@ -129,16 +130,25 @@ def sample_program(
         match the original output indices.
 
     """
+    if len(program.components) == 0:
+        batch_size = f_params.shape[0]
+        return jnp.empty((batch_size, 0), dtype=jnp.bool_)
+
     results: list[jax.Array] = []
 
     for component in program.components:
         samples, key, max_norm_deviation = sample_component(component, f_params, key)
-        if max_norm_deviation > 1e-5:
-            raise AssertionError(
-                "A marginal probability was not normalized correctly "
-                f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
+        if np.isclose(max_norm_deviation, 1):
+            raise ValueError(
+                "A vanishing marginal probability distributionwas encountered (normalization 0). "
                 "This is likely the result of an underflow error. Please report this "
                 "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
+            )  # pragma: no cover
+        if max_norm_deviation > 1e-5:
+            warnings.warn(
+                "A marginal probability was not normalized correctly "
+                f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
+                "This is likely a floating point precision issue."
             )
         results.append(samples)
 
@@ -333,7 +343,7 @@ class _CompiledSamplerBase:
         return (
             f"{type(self).__name__}({np.sum(c_graphs)} graphs, "
             f"{error_channel_bits} error channel bits, "
-            f"{np.max(num_outputs)} outputs for largest cc, "
+            f"{np.max(num_outputs) if num_outputs else 0} outputs for largest cc, "
             f"≤ {np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
             f"{np.sum(c_b_terms)} B terms, "
             f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms, "

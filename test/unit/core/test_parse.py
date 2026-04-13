@@ -119,6 +119,37 @@ class TestCorrelatedErrorGraph:
         assert_allclose(probs[4], 0.2, rtol=1e-5)  # Third error
 
 
+class TestParseHeraldedChannels:
+    """Tests for parsing HERALDED_PAULI_CHANNEL_1 and HERALDED_ERASE."""
+
+    def test_heralded_pauli_channel_1_structure(self):
+        """HERALDED_PAULI_CHANNEL_1 should produce 1 rec entry and 3 error bits."""
+        circuit = stim.Circuit("HERALDED_PAULI_CHANNEL_1(0.01, 0.02, 0.03, 0.04) 0")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+        assert b.num_error_bits == 3
+        assert len(b.channel_probs) == 1
+        assert b.channel_probs[0].shape == (8,)
+        assert_allclose(b.channel_probs[0].sum(), 1.0)
+
+    def test_heralded_erase_structure(self):
+        """HERALDED_ERASE should produce 1 rec entry and 3 error bits."""
+        circuit = stim.Circuit("HERALDED_ERASE(0.04) 0")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+        assert b.num_error_bits == 3
+        assert len(b.channel_probs) == 1
+        assert_allclose(b.channel_probs[0][[1, 3, 5, 7]], 0.01)
+
+    def test_heralded_erase_multiple_targets(self):
+        """HERALDED_ERASE on multiple targets should produce independent channels."""
+        circuit = stim.Circuit("HERALDED_ERASE(0.01) 0 1 2")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 3
+        assert b.num_error_bits == 9
+        assert len(b.channel_probs) == 3
+
+
 class TestParseWithRepeatBlocks:
     """Tests for parsing circuits that contain REPEAT blocks."""
 
@@ -182,3 +213,107 @@ class TestCorrelatedErrorState:
         # X_ERROR: 1 bit, CORRELATED_ERROR: 1 bit, Z_ERROR: 1 bit
         assert b.num_error_bits == 3
         assert len(b.channel_probs) == 3
+
+
+class TestParseMPAD:
+    """Tests for parsing MPAD (measurement record padding) instructions."""
+
+    def test_mpad_single_zero(self):
+        """MPAD 0 should add one measurement record entry."""
+        circuit = stim.Circuit("MPAD 0")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+
+    def test_mpad_single_one(self):
+        """MPAD 1 should add one measurement record entry."""
+        circuit = stim.Circuit("MPAD 1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+
+    def test_mpad_multiple_targets(self):
+        """MPAD with multiple targets should add one record per target."""
+        circuit = stim.Circuit("MPAD 0 1 0 1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 4
+
+    def test_mpad_mixed_with_measurements(self):
+        """MPAD records should interleave correctly with regular measurements."""
+        circuit = stim.Circuit("""
+            M 0
+            MPAD 1
+            M 1
+        """)
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 3
+
+    def test_mpad_in_repeat_block(self):
+        """MPAD inside a repeat block should be expanded correctly."""
+        circuit = stim.Circuit("REPEAT 3 {\n    MPAD 0 1\n}")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 6
+
+
+class TestParseMXXMYYMZZ:
+    """Tests for parsing MXX, MYY, MZZ instructions."""
+
+    def test_mxx_single_pair(self):
+        """MXX on one pair should add one measurement record entry."""
+        circuit = stim.Circuit("MXX 0 1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+
+    def test_myy_single_pair(self):
+        """MYY on one pair should add one measurement record entry."""
+        circuit = stim.Circuit("MYY 0 1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+
+    def test_mzz_single_pair(self):
+        """MZZ on one pair should add one measurement record entry."""
+        circuit = stim.Circuit("MZZ 0 1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+
+    def test_mxx_multiple_pairs(self):
+        """MXX with multiple pairs should add one record per pair."""
+        circuit = stim.Circuit("MXX 0 1 2 3 4 5")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 3
+
+    def test_mzz_mixed_with_measurements(self):
+        """MZZ records should interleave correctly with regular measurements."""
+        circuit = stim.Circuit("""
+            M 0
+            MZZ 1 2
+            M 1
+        """)
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 3
+
+
+class TestParseSPP:
+    """Tests for parsing SPP and SPP_DAG instructions."""
+
+    def test_spp_single_pauli(self):
+        """SPP Z0 should parse without adding measurement records."""
+        circuit = stim.Circuit("SPP Z0")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 0
+
+    def test_spp_product(self):
+        """SPP X0*Z1 should parse without adding measurement records."""
+        circuit = stim.Circuit("SPP X0*Z1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 0
+
+    def test_spp_dag_single_pauli(self):
+        """SPP_DAG Z0 should parse without adding measurement records."""
+        circuit = stim.Circuit("SPP_DAG Z0")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 0
+
+    def test_spp_multiple_products(self):
+        """SPP with multiple products should parse correctly."""
+        circuit = stim.Circuit("SPP X0 Y1*Z2")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 0

@@ -52,34 +52,33 @@ def test_prod_single_element():
     assert jnp.array_equal(prod_exact.coeffs, jnp.array([[1, 2, 0, -1]]))
 
 
-def test_dyadic_reduce():
-    coeffs = jnp.array([[2, 0, 0, 0]])
-    power = jnp.array([0])
-    dyadic = ExactScalarArray(coeffs, power)
-    reduced = dyadic.reduce()
+def test_sum_matches_complex_sum(random_scalars):
+    """Test tree-reduced sum against direct complex summation."""
+    scalars = random_scalars.reshape(10, 10, 4)
+    powers = jnp.tile(jnp.arange(10, dtype=jnp.int32), (10, 1))
+    dyadic_array = ExactScalarArray(scalars, powers)
 
-    assert jnp.array_equal(reduced.coeffs, jnp.array([[1, 0, 0, 0]]))
-    assert jnp.array_equal(reduced.power, jnp.array([1]))
-    assert jnp.isclose(reduced.to_complex(), dyadic.to_complex())
+    sum_exact = dyadic_array.sum()
+    sum_complex_ref = jnp.sum(dyadic_array.to_complex(), axis=-1)
 
-    coeffs = jnp.array([[2, 0, 4, 0], [4, 16, 0, 8], [1, 0, 0, 0]])
-    power = jnp.array([0, 0, 0])
-    dyadic = ExactScalarArray(coeffs, power)
-    reduced = dyadic.reduce()
+    assert jnp.allclose(sum_exact.to_complex(), sum_complex_ref, atol=1e-5)
 
-    expected_coeffs = jnp.array([[1, 0, 2, 0], [1, 4, 0, 2], [1, 0, 0, 0]])
-    expected_power = jnp.array([1, 2, 0])
 
-    assert jnp.array_equal(reduced.coeffs, expected_coeffs)
-    assert jnp.array_equal(reduced.power, expected_power)
-    assert jnp.allclose(reduced.to_complex(), dyadic.to_complex())
+def test_sum_reduces_while_adding():
+    """Test that pairwise addition reduces coefficients as powers are aligned."""
+    coeffs = jnp.array(
+        [
+            [[1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0], [1, 0, 0, 0]],
+            [[1, 0, 0, 0], [1, 0, 0, 0], [0, 2, 0, 0], [0, 2, 0, 0]],
+        ]
+    )
+    powers = jnp.array([[0, 0, 0, 0], [3, 3, 2, 2]])
 
-    # Zero should stop reducing (handled by condition check)
-    # [0, 0, 0, 0] -> infinitely even, but we stop to avoid infinite loop
-    coeffs = jnp.array([[0, 0, 0, 0]])
-    power = jnp.array([0])
-    dyadic = ExactScalarArray(coeffs, power)
-    reduced = dyadic.reduce()
+    dyadic_array = ExactScalarArray(coeffs, powers)
+    summed = dyadic_array.sum()
 
-    assert jnp.array_equal(reduced.coeffs, coeffs)
-    assert jnp.array_equal(reduced.power, power)
+    assert jnp.array_equal(summed.coeffs, jnp.array([[1, 0, 0, 0], [1, 1, 0, 0]]))
+    assert jnp.array_equal(summed.power, jnp.array([2, 4]))
+    assert jnp.allclose(
+        summed.to_complex(), jnp.sum(dyadic_array.to_complex(), axis=-1)
+    )

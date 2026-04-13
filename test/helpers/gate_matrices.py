@@ -7,9 +7,18 @@ SINGLE_QUBIT_GATE_MATRICES = {
     "Z": np.array([[1, 0], [0, -1]]),
     "T": np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]]),
     "T_DAG": np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]]),
+    "C_NXYZ": np.array([[1, -1j], [-1, -1j]]) / np.sqrt(2),
+    "C_NZYX": np.array([[1, -1], [-1j, -1j]]) / np.sqrt(2),
+    "C_XNYZ": np.array([[1, 1j], [1, -1j]]) / np.sqrt(2),
+    "C_XYNZ": np.array([[1, 1j], [-1, 1j]]) / np.sqrt(2),
     "C_XYZ": np.array([[1 - 1j, -1 - 1j], [1 - 1j, 1 + 1j]]) / 2,
+    "C_ZNYX": np.array([[1, 1], [-1j, 1j]]) / np.sqrt(2),
+    "C_ZYNX": np.array([[1, -1], [1j, 1j]]) / np.sqrt(2),
     "C_ZYX": np.array([[1 + 1j, 1 + 1j], [-1 + 1j, 1 - 1j]]) / 2,
     "H": np.array([[1, 1], [1, -1]]) / np.sqrt(2),
+    "H_NXY": np.array([[0, 1], [-1j, 0]]),
+    "H_NXZ": np.array([[1, -1], [-1, -1]]) / np.sqrt(2),
+    "H_NYZ": np.array([[1, 1j], [-1j, -1]]) / np.sqrt(2),
     "H_XY": np.array([[0, 1 - 1j], [1 + 1j, 0]]) / np.sqrt(2),
     "H_YZ": np.array([[1, -1j], [1j, -1]]) / np.sqrt(2),
     "S": np.array([[1, 0], [0, 1j]]),
@@ -22,6 +31,8 @@ SINGLE_QUBIT_GATE_MATRICES = {
 
 TWO_QUBIT_GATE_MATRICES = {
     "CNOT": np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]]),
+    "CXSWAP": np.array([[1, 0, 0, 0], [0, 0, 0, 1], [0, 1, 0, 0], [0, 0, 1, 0]]),
+    "CZSWAP": np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, -1]]),
     "CY": np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, -1j], [0, 0, 1j, 0]]),
     "CZ": np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, -1]]),
     "ISWAP": np.array([[1, 0, 0, 0], [0, 0, 1j, 0], [0, 1j, 0, 0], [0, 0, 0, 1]]),
@@ -67,6 +78,8 @@ TWO_QUBIT_GATE_MATRICES = {
         [[1, 0, 0, 0], [0, -1j, 0, 0], [0, 0, -1j, 0], [0, 0, 0, 1]]
     ),
     "SWAP": np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]]),
+    "SWAPCX": np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1], [0, 1, 0, 0]]),
+    "SWAPCZ": np.array([[1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, -1]]),
     "XCX": np.array([[1, 1, 1, -1], [1, 1, -1, 1], [1, -1, 1, 1], [-1, 1, 1, 1]]) / 2,
     "XCY": np.array(
         [[1, -1j, 1, 1j], [1j, 1, -1j, 1], [1, 1j, 1, -1j], [-1j, 1, 1j, 1]]

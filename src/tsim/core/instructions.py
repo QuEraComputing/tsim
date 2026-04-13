@@ -14,6 +14,7 @@ from pyzx_param.utils import EdgeType, VertexType
 from tsim.noise.channels import (
     correlated_error_probs,
     error_probs,
+    heralded_pauli_channel_1_probs,
     pauli_channel_1_probs,
     pauli_channel_2_probs,
 )
@@ -177,11 +178,17 @@ def u3(
 # =============================================================================
 
 
-def i(b: GraphRepresentation, qubit: int) -> None:
+def i(b: GraphRepresentation, qubit: int, *_args: float) -> None:
     """Apply identity (advances the row)."""
     ensure_lane(b, qubit)
     v = b.last_vertex[qubit]
     b.graph.set_row(v, last_row(b, qubit) + 1)
+
+
+def ii(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+    """Apply two-qubit identity (advances the row on both qubits)."""
+    i(b, qubit1)
+    i(b, qubit2)
 
 
 def x(b: GraphRepresentation, qubit: int) -> None:
@@ -213,10 +220,51 @@ def c_xyz(b: GraphRepresentation, qubit: int) -> None:
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
+def c_nxyz(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending -X -> Y -> Z -> -X."""
+    s_dag(b, qubit)
+    sqrt_y_dag(b, qubit)
+    b.graph.scalar.add_phase(Fraction(1, 4))
+
+
+def c_xnyz(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending X -> -Y -> Z -> X."""
+    s(b, qubit)
+    h(b, qubit)
+
+
+def c_xynz(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending X -> Y -> -Z -> X."""
+    s(b, qubit)
+    sqrt_y_dag(b, qubit)
+    b.graph.scalar.add_phase(Fraction(1, 4))
+
+
 def c_zyx(b: GraphRepresentation, qubit: int) -> None:
     """Left handed period 3 axis cycling gate, sending Z -> Y -> X -> Z."""
     h(b, qubit)
     s(b, qubit)
+    b.graph.scalar.add_phase(Fraction(1, 4))
+
+
+def c_nzyx(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending -Z -> Y -> X -> -Z."""
+    s_dag(b, qubit)
+    sqrt_x(b, qubit)
+    b.graph.scalar.add_phase(Fraction(-1, 4))
+
+
+def c_znyx(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending Z -> -Y -> X -> Z."""
+    s(b, qubit)
+    sqrt_x(b, qubit)
+    b.graph.scalar.add_phase(Fraction(-1, 4))
+
+
+def c_zynx(b: GraphRepresentation, qubit: int) -> None:
+    """Period 3 axis cycling gate, sending Z -> Y -> -X -> Z."""
+    s(b, qubit)
+    sqrt_x_dag(b, qubit)
     b.graph.scalar.add_phase(Fraction(1, 4))
 
 
@@ -241,10 +289,30 @@ def h_xy(b: GraphRepresentation, qubit: int) -> None:
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
+def h_nxy(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Hadamard-like gate that sends -X <-> Y, Z -> -Z."""
+    x(b, qubit)
+    s_dag(b, qubit)
+
+
+def h_nxz(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Hadamard-like gate that sends -X <-> Z."""
+    z(b, qubit)
+    sqrt_y_dag(b, qubit)
+    b.graph.scalar.add_phase(Fraction(1, 4))
+
+
 def h_yz(b: GraphRepresentation, qubit: int) -> None:
     """Apply variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z)."""
     sqrt_x(b, qubit)
     z(b, qubit)
+    b.graph.scalar.add_phase(Fraction(-1, 4))
+
+
+def h_nyz(b: GraphRepresentation, qubit: int) -> None:
+    """Apply Hadamard-like gate that sends -Y <-> Z, X -> -X."""
+    z(b, qubit)
+    sqrt_x(b, qubit)
     b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
@@ -392,6 +460,30 @@ def swap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
 
     b.graph.set_qubit(v1, qubit2)
     b.graph.set_qubit(v2, qubit1)
+
+
+def cxswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+    """Apply CX then SWAP."""
+    cnot(b, qubit1, qubit2)
+    swap(b, qubit1, qubit2)
+
+
+def czswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+    """Apply CZ then SWAP."""
+    cz(b, qubit1, qubit2)
+    swap(b, qubit1, qubit2)
+
+
+def swapcx(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+    """Apply SWAP then CX."""
+    swap(b, qubit1, qubit2)
+    cnot(b, qubit1, qubit2)
+
+
+def swapcz(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+    """Apply SWAP then CZ."""
+    swap(b, qubit1, qubit2)
+    cz(b, qubit1, qubit2)
 
 
 def iswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
@@ -550,21 +642,21 @@ def pauli_channel_2(
     b: GraphRepresentation,
     qubit_i: int,
     qubit_j: int,
-    pix: float = 0,
-    piy: float = 0,
-    piz: float = 0,
-    pxi: float = 0,
-    pxx: float = 0,
-    pxy: float = 0,
-    pxz: float = 0,
-    pyi: float = 0,
-    pyx: float = 0,
-    pyy: float = 0,
-    pyz: float = 0,
-    pzi: float = 0,
-    pzx: float = 0,
-    pzy: float = 0,
-    pzz: float = 0,
+    pix: float,
+    piy: float,
+    piz: float,
+    pxi: float,
+    pxx: float,
+    pxy: float,
+    pxz: float,
+    pyi: float,
+    pyx: float,
+    pyy: float,
+    pyz: float,
+    pzi: float,
+    pzx: float,
+    pzy: float,
+    pzz: float,
 ) -> None:
     """Apply two-qubit Pauli channel with given error probabilities for all 15 Pauli pairs."""
     b.channel_probs.append(
@@ -604,6 +696,7 @@ def depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) ->
         p / 15,
         p / 15,
         p / 15,
+        p / 15,
     )
 
 
@@ -628,6 +721,39 @@ def z_error(b: GraphRepresentation, qubit: int, p: float) -> None:
     b.channel_probs.append(error_probs(p))
     _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits}")
     b.num_error_bits += 1
+
+
+def heralded_pauli_channel_1(
+    b: GraphRepresentation,
+    qubit: int,
+    pi: float,
+    px: float,
+    py: float,
+    pz: float,
+) -> None:
+    """Apply heralded single-qubit Pauli channel.
+
+    Records a herald bit into the measurement record. When the channel fires
+    (with total probability pi+px+py+pz), the herald is 1 and one of I/X/Y/Z
+    is applied. When it doesn't fire, the herald is 0 and nothing happens.
+    """
+    b.channel_probs.append(heralded_pauli_channel_1_probs(pi, px, py, pz))
+    aux = -2
+    r(b, aux)
+    _error(b, aux, b.vertex_type.X, f"e{b.num_error_bits}")
+    m(b, aux)
+    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits + 1}")
+    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits + 2}")
+    b.num_error_bits += 3
+
+
+def heralded_erase(b: GraphRepresentation, qubit: int, p: float) -> None:
+    """Apply heralded erasure channel.
+
+    Special case of heralded_pauli_channel_1 with equal probabilities p/4
+    for each of I, X, Y, Z when the channel fires.
+    """
+    heralded_pauli_channel_1(b, qubit, p / 4, p / 4, p / 4, p / 4)
 
 
 def finalize_correlated_error(b: GraphRepresentation) -> None:
@@ -754,7 +880,17 @@ def mpp(
     aux = -2
     r(b, aux)
     h(b, aux)
+    _apply_pauli_controls(b, aux, paulis)
+    h(b, aux)
+    m(b, aux, invert=invert)
 
+
+def _apply_pauli_controls(
+    b: GraphRepresentation,
+    aux: int,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+) -> None:
+    """Apply controlled-Pauli operations between aux and target qubits."""
     for pauli_type, qubit in paulis:
         if pauli_type == "X":
             cnot(b, aux, qubit)
@@ -765,8 +901,66 @@ def mpp(
         else:
             raise ValueError(f"Invalid Pauli operator: {pauli_type}")
 
-    h(b, aux)
-    m(b, aux, invert=invert)
+
+def spp(
+    b: GraphRepresentation,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+    dagger: bool = False,
+) -> None:
+    """Phase the -1 eigenspace of a Pauli product by i (or -i if dagger).
+
+    Args:
+        b: The graph representation to modify.
+        paulis: List of (pauli_type, qubit) pairs defining the Pauli product.
+        dagger: If True, phase by -i instead of i.
+
+    """
+    # Rotate each qubit so its Pauli eigenvalue maps to Z
+    for pauli_type, qubit in paulis:
+        if pauli_type == "X":
+            h(b, qubit)
+        elif pauli_type == "Y":
+            s_dag(b, qubit)
+            h(b, qubit)
+
+    # Accumulate Z-parity into the last qubit
+    _, last_qubit = paulis[-1]
+    for _, qubit in paulis[:-1]:
+        cnot(b, qubit, last_qubit)
+
+    # Phase the parity
+    if dagger:
+        s_dag(b, last_qubit)
+    else:
+        s(b, last_qubit)
+
+    # Uncompute parity accumulation
+    for _, qubit in reversed(paulis[:-1]):
+        cnot(b, qubit, last_qubit)
+
+    # Undo basis rotations
+    for pauli_type, qubit in paulis:
+        if pauli_type == "X":
+            h(b, qubit)
+        elif pauli_type == "Y":
+            h(b, qubit)
+            s(b, qubit)
+
+
+def mpad(b: GraphRepresentation, value: int, p: float = 0) -> None:
+    """Pad measurement record with a fixed bit value.
+
+    Args:
+        b: The graph representation to modify.
+        value: The bit value to record (0 or 1).
+        p: Error probability for the recorded bit.
+
+    """
+    aux = -2
+    r(b, aux)
+    if value == 1:
+        x(b, aux)
+    m(b, aux, p=p)
 
 
 def mr(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
@@ -821,6 +1015,21 @@ def my(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -
     h_yz(b, qubit)
     m(b, qubit, p=p, invert=invert)
     h_yz(b, qubit)
+
+
+def mxx(b: GraphRepresentation, q0: int, q1: int, invert: bool = False) -> None:
+    """Measure two qubits in XX basis."""
+    mpp(b, [("X", q0), ("X", q1)], invert)
+
+
+def myy(b: GraphRepresentation, q0: int, q1: int, invert: bool = False) -> None:
+    """Measure two qubits in YY basis."""
+    mpp(b, [("Y", q0), ("Y", q1)], invert)
+
+
+def mzz(b: GraphRepresentation, q0: int, q1: int, invert: bool = False) -> None:
+    """Measure two qubits in ZZ basis."""
+    mpp(b, [("Z", q0), ("Z", q1)], invert)
 
 
 def r(b: GraphRepresentation, qubit: int) -> None:
@@ -908,6 +1117,12 @@ def tick(b: GraphRepresentation) -> None:
 GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     # ---- Pauli gates -----------------------------------------------------------
     "I": (i, 1),
+    "I_ERROR": (i, 1),
+    # QUBIT_COORDS is a visualization annotation; dispatched as identity to allocate
+    # the qubit lane. Coordinate args are accepted and ignored by `i`.
+    "QUBIT_COORDS": (i, 1),
+    "II": (ii, 2),
+    "II_ERROR": (ii, 2),
     "X": (x, 1),
     "Y": (y, 1),
     "Z": (z, 1),
@@ -915,12 +1130,21 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     "T": (t, 1),
     "T_DAG": (t_dag, 1),
     # ---- Single-qubit gates ---------------------------------------------------
+    "C_NXYZ": (c_nxyz, 1),
+    "C_NZYX": (c_nzyx, 1),
+    "C_XNYZ": (c_xnyz, 1),
+    "C_XYNZ": (c_xynz, 1),
     "C_XYZ": (c_xyz, 1),
+    "C_ZNYX": (c_znyx, 1),
+    "C_ZYNX": (c_zynx, 1),
     "C_ZYX": (c_zyx, 1),
     "H": (h, 1),
+    "H_NXY": (h_nxy, 1),
+    "H_NXZ": (h_nxz, 1),
+    "H_NYZ": (h_nyz, 1),
     "H_XY": (h_xy, 1),
-    "H_YZ": (h_yz, 1),
     "H_XZ": (h, 1),
+    "H_YZ": (h_yz, 1),
     "S": (s, 1),
     "SQRT_X": (sqrt_x, 1),
     "SQRT_X_DAG": (sqrt_x_dag, 1),
@@ -932,7 +1156,9 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     # ---- Two-qubit gates ------------------------------------------------------
     "CNOT": (cnot, 2),
     "CX": (cnot, 2),
+    "CXSWAP": (cxswap, 2),
     "CZ": (cz, 2),
+    "CZSWAP": (czswap, 2),
     "CY": (cy, 2),
     "ISWAP": (iswap, 2),
     "ISWAP_DAG": (iswap_dag, 2),
@@ -943,6 +1169,8 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     "SQRT_ZZ": (sqrt_zz, 2),
     "SQRT_ZZ_DAG": (sqrt_zz_dag, 2),
     "SWAP": (swap, 2),
+    "SWAPCX": (swapcx, 2),
+    "SWAPCZ": (swapcz, 2),
     "XCX": (xcx, 2),
     "XCY": (xcy, 2),
     "XCZ": (xcz, 2),
@@ -957,12 +1185,14 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     "DEPOLARIZE2": (depolarize2, 2),
     "PAULI_CHANNEL_1": (pauli_channel_1, 1),
     "PAULI_CHANNEL_2": (pauli_channel_2, 2),
+    "HERALDED_ERASE": (heralded_erase, 1),
+    "HERALDED_PAULI_CHANNEL_1": (heralded_pauli_channel_1, 1),
     "X_ERROR": (x_error, 1),
     "Y_ERROR": (y_error, 1),
     "Z_ERROR": (z_error, 1),
     # ---- Collapsing gates -----------------------------------------------------
     "M": (m, 1),
-    # MPP handled by parser
+    # MPP, SPP, SPP_DAG, MPAD handled by parser
     "MR": (mr, 1),
     "MRX": (mrx, 1),
     "MRY": (mry, 1),
@@ -970,6 +1200,9 @@ GATE_TABLE: dict[str, tuple[Callable[..., None], int]] = {
     "MX": (mx, 1),
     "MY": (my, 1),
     "MZ": (m, 1),
+    "MXX": (mxx, 2),
+    "MYY": (myy, 2),
+    "MZZ": (mzz, 2),
     "R": (r, 1),
     "RX": (rx, 1),
     "RY": (ry, 1),
