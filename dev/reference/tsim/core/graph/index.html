@@ -144,7 +144,7 @@
         <span class=n>phase_vars</span> <span class=o>=</span> <span class=n>g</span><span class=o>.</span><span class=n>_phaseVars</span><span class=p>[</span><span class=n>v</span><span class=p>]</span>
         <span class=k>if</span> <span class=nb>len</span><span class=p>(</span><span class=n>phase_vars</span><span class=p>)</span> <span class=o>!=</span> <span class=mi>1</span><span class=p>:</span>
             <span class=k>continue</span>
-        <span class=n>phase</span> <span class=o>=</span> <span class=nb>list</span><span class=p>(</span><span class=n>phase_vars</span><span class=p>)[</span><span class=mi>0</span><span class=p>]</span>
+        <span class=n>phase</span> <span class=o>=</span> <span class=nb>next</span><span class=p>(</span><span class=nb>iter</span><span class=p>(</span><span class=n>phase_vars</span><span class=p>))</span>
         <span class=k>if</span> <span class=s2>&quot;det&quot;</span> <span class=ow>in</span> <span class=n>phase</span> <span class=ow>or</span> <span class=s2>&quot;obs&quot;</span> <span class=ow>in</span> <span class=n>phase</span> <span class=ow>or</span> <span class=s2>&quot;rec&quot;</span> <span class=ow>in</span> <span class=n>phase</span> <span class=ow>or</span> <span class=s2>&quot;m&quot;</span> <span class=ow>in</span> <span class=n>phase</span><span class=p>:</span>
             <span class=n>label_to_vertex</span><span class=p>[</span><span class=n>phase</span><span class=p>]</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>v</span><span class=p>)</span>
         <span class=k>if</span> <span class=s2>&quot;det&quot;</span> <span class=ow>in</span> <span class=n>phase</span> <span class=ow>or</span> <span class=s2>&quot;obs&quot;</span> <span class=ow>in</span> <span class=n>phase</span><span class=p>:</span>
@@ -197,7 +197,7 @@
             <span class=n>g</span><span class=o>.</span><span class=n>remove_vertex</span><span class=p>(</span><span class=n>vertices</span><span class=o>.</span><span class=n>pop</span><span class=p>())</span>
 
         <span class=n>labels</span> <span class=o>=</span> <span class=p>[</span><span class=sa>f</span><span class=s2>&quot;det[</span><span class=si>{</span><span class=n>i</span><span class=si>}</span><span class=s2>]&quot;</span> <span class=k>for</span> <span class=n>i</span> <span class=ow>in</span> <span class=nb>range</span><span class=p>(</span><span class=nb>len</span><span class=p>(</span><span class=n>built</span><span class=o>.</span><span class=n>detectors</span><span class=p>))]</span> <span class=o>+</span> <span class=p>[</span>
-            <span class=sa>f</span><span class=s2>&quot;obs[</span><span class=si>{</span><span class=n>i</span><span class=si>}</span><span class=s2>]&quot;</span> <span class=k>for</span> <span class=n>i</span> <span class=ow>in</span> <span class=n>built</span><span class=o>.</span><span class=n>observables_dict</span><span class=o>.</span><span class=n>keys</span><span class=p>()</span>
+            <span class=sa>f</span><span class=s2>&quot;obs[</span><span class=si>{</span><span class=n>i</span><span class=si>}</span><span class=s2>]&quot;</span> <span class=k>for</span> <span class=n>i</span> <span class=ow>in</span> <span class=n>built</span><span class=o>.</span><span class=n>observables_dict</span>
         <span class=p>]</span>
         <span class=k>for</span> <span class=n>label</span> <span class=ow>in</span> <span class=n>labels</span><span class=p>:</span>
             <span class=n>vs</span> <span class=o>=</span> <span class=n>annotation_to_vertex</span><span class=p>[</span><span class=n>label</span><span class=p>]</span>
@@ -281,7 +281,9 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.graph.evaluate_graph class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">evaluate_graph</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>evaluate_graph</span><span class=p>(</span>
     <span class=n>g</span><span class=p>:</span> <span class=n>GraphS</span><span class=p>,</span> <span class=n>vals</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=n>Fraction</span><span class=p>]</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Evaluate a ZX graph to a tensor with given parameter values.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/graph.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>372</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Evaluate a ZX graph to a tensor with given parameter values.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/graph.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>370</span>
+<span class=normal>371</span>
+<span class=normal>372</span>
 <span class=normal>373</span>
 <span class=normal>374</span>
 <span class=normal>375</span>
@@ -291,9 +293,7 @@
 <span class=normal>379</span>
 <span class=normal>380</span>
 <span class=normal>381</span>
-<span class=normal>382</span>
-<span class=normal>383</span>
-<span class=normal>384</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>evaluate_graph</span><span class=p>(</span><span class=n>g</span><span class=p>:</span> <span class=n>GraphS</span><span class=p>,</span> <span class=n>vals</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=n>Fraction</span><span class=p>]</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>:</span>
+<span class=normal>382</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>evaluate_graph</span><span class=p>(</span><span class=n>g</span><span class=p>:</span> <span class=n>GraphS</span><span class=p>,</span> <span class=n>vals</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=n>Fraction</span><span class=p>]</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Evaluate a ZX graph to a tensor with given parameter values.&quot;&quot;&quot;</span>
     <span class=k>if</span> <span class=n>vals</span> <span class=ow>is</span> <span class=kc>None</span><span class=p>:</span>
         <span class=n>vals</span> <span class=o>=</span> <span class=n>defaultdict</span><span class=p>(</span><span class=k>lambda</span><span class=p>:</span> <span class=n>Fraction</span><span class=p>(</span><span class=mi>0</span><span class=p>,</span> <span class=mi>1</span><span class=p>))</span>
@@ -307,7 +307,9 @@
     <span class=n>g</span><span class=o>.</span><span class=n>scalar</span> <span class=o>=</span> <span class=n>Scalar</span><span class=p>()</span>
     <span class=k>return</span> <span class=n>g</span><span class=o>.</span><span class=n>to_tensor</span><span class=p>()</span> <span class=o>*</span> <span class=n>scalar_val</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.graph.get_params class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">get_params</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>get_params</span><span class=p>(</span><span class=n>g</span><span class=p>:</span> <span class=n>BaseGraph</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>set</span><span class=p>[</span><span class=nb>str</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Get all parameter variables that appear in the graph and its scalar.</p> <p>Collects variables from: - Vertex phases (g._phaseVars) - Scalar phase variables (phasevars_pi, phasevars_pi_pair, phasevars_halfpi) - Scalar phase pairs (phasepairs with paramsA, paramsB) - Scalar phase nodes (phasenodevars)</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>g</code> </td> <td> <code><span title=pyzx_param.graph.base.BaseGraph>BaseGraph</span></code> </td> <td> <div class=doc-md-description> <p>A ZX graph with parametrized phases</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=set>set</span>[<span title=str>str</span>]</code> </td> <td> <div class=doc-md-description> <p>Set of all variable names (e.g., {'f0', 'f2', 'm1'}) that appear in the graph</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/graph.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>387</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Get all parameter variables that appear in the graph and its scalar.</p> <p>Collects variables from: - Vertex phases (g._phaseVars) - Scalar phase variables (phasevars_pi, phasevars_pi_pair, phasevars_halfpi) - Scalar phase pairs (phasepairs with paramsA, paramsB) - Scalar phase nodes (phasenodevars)</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>g</code> </td> <td> <code><span title=pyzx_param.graph.base.BaseGraph>BaseGraph</span></code> </td> <td> <div class=doc-md-description> <p>A ZX graph with parametrized phases</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=set>set</span>[<span title=str>str</span>]</code> </td> <td> <div class=doc-md-description> <p>Set of all variable names (e.g., {'f0', 'f2', 'm1'}) that appear in the graph</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/graph.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>385</span>
+<span class=normal>386</span>
+<span class=normal>387</span>
 <span class=normal>388</span>
 <span class=normal>389</span>
 <span class=normal>390</span>
@@ -345,9 +347,7 @@
 <span class=normal>422</span>
 <span class=normal>423</span>
 <span class=normal>424</span>
-<span class=normal>425</span>
-<span class=normal>426</span>
-<span class=normal>427</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>get_params</span><span class=p>(</span><span class=n>g</span><span class=p>:</span> <span class=n>BaseGraph</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>set</span><span class=p>[</span><span class=nb>str</span><span class=p>]:</span>
+<span class=normal>425</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>get_params</span><span class=p>(</span><span class=n>g</span><span class=p>:</span> <span class=n>BaseGraph</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>set</span><span class=p>[</span><span class=nb>str</span><span class=p>]:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Get all parameter variables that appear in the graph and its scalar.</span>
 
 <span class=sd>    Collects variables from:</span>
@@ -396,7 +396,9 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span> (<code>tsim.core.types.SamplingGraph</code>)' href=../types/#tsim.core.types.SamplingGraph>SamplingGraph</a></code> </td> <td> <div class=doc-md-description> <p>A SamplingGraph containing the reduced graph and error transformation.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/graph.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>442</span>
+  </span> (<code>tsim.core.types.SamplingGraph</code>)' href=../types/#tsim.core.types.SamplingGraph>SamplingGraph</a></code> </td> <td> <div class=doc-md-description> <p>A SamplingGraph containing the reduced graph and error transformation.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/graph.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>440</span>
+<span class=normal>441</span>
+<span class=normal>442</span>
 <span class=normal>443</span>
 <span class=normal>444</span>
 <span class=normal>445</span>
@@ -434,9 +436,7 @@
 <span class=normal>477</span>
 <span class=normal>478</span>
 <span class=normal>479</span>
-<span class=normal>480</span>
-<span class=normal>481</span>
-<span class=normal>482</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>prepare_graph</span><span class=p>(</span><span class=n>circuit</span><span class=p>:</span> <span class=n>Circuit</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>sample_detectors</span><span class=p>:</span> <span class=nb>bool</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>SamplingGraph</span><span class=p>:</span>
+<span class=normal>480</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>prepare_graph</span><span class=p>(</span><span class=n>circuit</span><span class=p>:</span> <span class=n>Circuit</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>sample_detectors</span><span class=p>:</span> <span class=nb>bool</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>SamplingGraph</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Prepare a circuit for compilation.</span>
 
 <span class=sd>    This function performs the graph preparation phase:</span>
@@ -478,16 +478,16 @@
         <span class=n>num_detectors</span><span class=o>=</span><span class=nb>len</span><span class=p>(</span><span class=n>built</span><span class=o>.</span><span class=n>detectors</span><span class=p>),</span>
     <span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.graph.scale_horizontally class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">scale_horizontally</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>scale_horizontally</span><span class=p>(</span><span class=n>g</span><span class=p>:</span> <span class=n>BaseGraph</span><span class=p>,</span> <span class=n>scale</span><span class=p>:</span> <span class=nb>float</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Scale horizontal positions of graph vertices by a factor of <code>scale</code>.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>g</code> </td> <td> <code><span title=pyzx_param.graph.base.BaseGraph>BaseGraph</span></code> </td> <td> <div class=doc-md-description> <p>A ZX graph</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>scale</code> </td> <td> <code><span title=float>float</span></code> </td> <td> <div class=doc-md-description> <p>The factor to scale the graph by</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/graph.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>430</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Scale horizontal positions of graph vertices by a factor of <code>scale</code>.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>g</code> </td> <td> <code><span title=pyzx_param.graph.base.BaseGraph>BaseGraph</span></code> </td> <td> <div class=doc-md-description> <p>A ZX graph</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>scale</code> </td> <td> <code><span title=float>float</span></code> </td> <td> <div class=doc-md-description> <p>The factor to scale the graph by</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/graph.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>428</span>
+<span class=normal>429</span>
+<span class=normal>430</span>
 <span class=normal>431</span>
 <span class=normal>432</span>
 <span class=normal>433</span>
 <span class=normal>434</span>
 <span class=normal>435</span>
 <span class=normal>436</span>
-<span class=normal>437</span>
-<span class=normal>438</span>
-<span class=normal>439</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>scale_horizontally</span><span class=p>(</span><span class=n>g</span><span class=p>:</span> <span class=n>BaseGraph</span><span class=p>,</span> <span class=n>scale</span><span class=p>:</span> <span class=nb>float</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>437</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>scale_horizontally</span><span class=p>(</span><span class=n>g</span><span class=p>:</span> <span class=n>BaseGraph</span><span class=p>,</span> <span class=n>scale</span><span class=p>:</span> <span class=nb>float</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Scale horizontal positions of graph vertices by a factor of ``scale``.</span>
 
 <span class=sd>    Args:</span>
@@ -498,7 +498,9 @@
     <span class=k>for</span> <span class=n>v</span> <span class=ow>in</span> <span class=n>g</span><span class=o>.</span><span class=n>vertices</span><span class=p>():</span>
         <span class=n>g</span><span class=o>.</span><span class=n>set_row</span><span class=p>(</span><span class=n>v</span><span class=p>,</span> <span class=n>g</span><span class=o>.</span><span class=n>row</span><span class=p>(</span><span class=n>v</span><span class=p>)</span> <span class=o>*</span> <span class=n>scale</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.graph.squash_graph class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">squash_graph</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>squash_graph</span><span class=p>(</span><span class=n>g</span><span class=p>:</span> <span class=n>BaseGraph</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Compact the graph by placing vertices underneath their output connections.</p> <p>Starting from output vertices, each vertex is placed directly underneath (same row, qubit - 1) its already-placed neighbor. Positions are assigned via BFS traversal from outputs, ensuring no (qubit, row) collisions.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/graph.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>309</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Compact the graph by placing vertices underneath their output connections.</p> <p>Starting from output vertices, each vertex is placed directly underneath (same row, qubit - 1) its already-placed neighbor. Positions are assigned via BFS traversal from outputs, ensuring no (qubit, row) collisions.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/graph.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>307</span>
+<span class=normal>308</span>
+<span class=normal>309</span>
 <span class=normal>310</span>
 <span class=normal>311</span>
 <span class=normal>312</span>
@@ -556,9 +558,7 @@
 <span class=normal>364</span>
 <span class=normal>365</span>
 <span class=normal>366</span>
-<span class=normal>367</span>
-<span class=normal>368</span>
-<span class=normal>369</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>squash_graph</span><span class=p>(</span><span class=n>g</span><span class=p>:</span> <span class=n>BaseGraph</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>367</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>squash_graph</span><span class=p>(</span><span class=n>g</span><span class=p>:</span> <span class=n>BaseGraph</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Compact the graph by placing vertices underneath their output connections.</span>
 
 <span class=sd>    Starting from output vertices, each vertex is placed directly underneath</span>
@@ -673,9 +673,7 @@
 <span class=normal>301</span>
 <span class=normal>302</span>
 <span class=normal>303</span>
-<span class=normal>304</span>
-<span class=normal>305</span>
-<span class=normal>306</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>transform_error_basis</span><span class=p>(</span>
+<span class=normal>304</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>transform_error_basis</span><span class=p>(</span>
     <span class=n>g</span><span class=p>:</span> <span class=n>BaseGraph</span><span class=p>,</span> <span class=n>num_e</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>BaseGraph</span><span class=p>,</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>]:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Transform phase variables from the original &#39;e&#39; basis to a reduced &#39;f&#39; basis.</span>
@@ -699,9 +697,7 @@
 <span class=sd>              then f0 = e1 XOR e3.</span>
 
 <span class=sd>    &quot;&quot;&quot;</span>
-    <span class=n>parametrized_vertices</span> <span class=o>=</span> <span class=p>[</span>
-        <span class=n>v</span> <span class=k>for</span> <span class=n>v</span> <span class=ow>in</span> <span class=n>g</span><span class=o>.</span><span class=n>vertices</span><span class=p>()</span> <span class=k>if</span> <span class=n>v</span> <span class=ow>in</span> <span class=n>g</span><span class=o>.</span><span class=n>_phaseVars</span> <span class=ow>and</span> <span class=n>g</span><span class=o>.</span><span class=n>_phaseVars</span><span class=p>[</span><span class=n>v</span><span class=p>]</span>
-    <span class=p>]</span>
+    <span class=n>parametrized_vertices</span> <span class=o>=</span> <span class=p>[</span><span class=n>v</span> <span class=k>for</span> <span class=n>v</span> <span class=ow>in</span> <span class=n>g</span><span class=o>.</span><span class=n>vertices</span><span class=p>()</span> <span class=k>if</span> <span class=n>g</span><span class=o>.</span><span class=n>_phaseVars</span><span class=o>.</span><span class=n>get</span><span class=p>(</span><span class=n>v</span><span class=p>)]</span>
 
     <span class=k>if</span> <span class=ow>not</span> <span class=n>parametrized_vertices</span><span class=p>:</span>
         <span class=n>g</span><span class=o>.</span><span class=n>scalar</span> <span class=o>=</span> <span class=n>Scalar</span><span class=p>()</span>
@@ -724,7 +720,7 @@
     <span class=n>basis</span><span class=p>,</span> <span class=n>transform</span> <span class=o>=</span> <span class=n>find_basis</span><span class=p>(</span><span class=n>error_matrix</span><span class=p>)</span>
     <span class=c1># Now: error_matrix = transform @ basis</span>
 
-    <span class=k>for</span> <span class=n>v</span><span class=p>,</span> <span class=n>transform_row</span> <span class=ow>in</span> <span class=nb>zip</span><span class=p>(</span><span class=n>parametrized_vertices</span><span class=p>,</span> <span class=n>transform</span><span class=p>):</span>
+    <span class=k>for</span> <span class=n>v</span><span class=p>,</span> <span class=n>transform_row</span> <span class=ow>in</span> <span class=nb>zip</span><span class=p>(</span><span class=n>parametrized_vertices</span><span class=p>,</span> <span class=n>transform</span><span class=p>,</span> <span class=n>strict</span><span class=o>=</span><span class=kc>True</span><span class=p>):</span>
         <span class=n>new_vars</span> <span class=o>=</span> <span class=p>{</span><span class=sa>f</span><span class=s2>&quot;f</span><span class=si>{</span><span class=n>j</span><span class=si>}</span><span class=s2>&quot;</span> <span class=k>for</span> <span class=n>j</span> <span class=ow>in</span> <span class=n>np</span><span class=o>.</span><span class=n>nonzero</span><span class=p>(</span><span class=n>transform_row</span><span class=p>)[</span><span class=mi>0</span><span class=p>]}</span>
         <span class=n>g</span><span class=o>.</span><span class=n>_phaseVars</span><span class=p>[</span><span class=n>v</span><span class=p>]</span> <span class=o>=</span> <span class=n>new_vars</span>
 
