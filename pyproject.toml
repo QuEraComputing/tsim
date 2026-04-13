@@ -168,3 +168,4 @@ testpaths = "test/"
 [tool.pyright]
 include = ["src", "test"]
 exclude = ["src/tsim/external"]
+reportUnusedImport = "error"
