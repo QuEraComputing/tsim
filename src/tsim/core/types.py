@@ -89,7 +89,6 @@ class CompiledProgram:
         output_order: Array for reordering component outputs to final order.
             final_samples = combined[:, np.argsort(output_order)]
         num_outputs: Total number of outputs across all components.
-        num_f_params: Total number of f-parameters.
         num_detectors: Number of detector outputs (for detector sampling).
 
     """
@@ -97,5 +96,4 @@ class CompiledProgram:
     components: tuple[CompiledComponent, ...]
     output_order: Array
     num_outputs: int
-    num_f_params: int
     num_detectors: int

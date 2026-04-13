@@ -80,6 +80,7 @@ dev = [
     "tesseract-decoder>=0.1.1.dev20251113222502",
     "tqdm>=4.67.1",
     "ipywidgets>=8.0.0",
+    "vulture>=2.16",
 ]
 doc = [
     "griffe-kirin>=0.1.0",
@@ -160,3 +161,9 @@ extend_exclude = [
     "^docs/",
     "^test/",
 ]
+
+[tool.vulture]
+paths = ["src", "test"]
+exclude = ["src/tsim/external/"]
+min_confidence = 10
+sort_by_size = true
