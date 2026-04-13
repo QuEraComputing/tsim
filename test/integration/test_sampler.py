@@ -122,7 +122,6 @@ def test_sample_program_raises_on_component_norm_deviation(monkeypatch):
         components=components,
         output_order=jnp.array([0, 1]),
         num_outputs=2,
-        num_f_params=0,
         num_detectors=0,
     )
 

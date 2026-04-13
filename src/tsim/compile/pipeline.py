@@ -71,7 +71,6 @@ def compile_program(
         components=tuple(compiled_components),
         output_order=jnp.array(output_order, dtype=jnp.int32),
         num_outputs=num_outputs,
-        num_f_params=len(f_indices_global),
         num_detectors=prepared.num_detectors,
     )
 
