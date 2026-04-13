@@ -81,6 +81,7 @@ dev = [
     "tqdm>=4.67.1",
     "ipywidgets>=8.0.0",
     "vulture>=2.16",
+    "radon>=6.0.1",
 ]
 doc = [
     "griffe-kirin>=0.1.0",

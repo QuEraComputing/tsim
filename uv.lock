@@ -187,6 +187,7 @@ dev = [
     { name = "pymatching" },
     { name = "pyright", extra = ["nodejs"] },
     { name = "pytest" },
+    { name = "radon" },
     { name = "ruff" },
     { name = "rust-just" },
     { name = "sinter" },
@@ -241,6 +242,7 @@ dev = [
     { name = "pymatching", specifier = ">=2.3.1" },
     { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.388" },
     { name = "pytest", specifier = ">=8.3.3" },
+    { name = "radon", specifier = ">=6.0.1" },
     { name = "ruff", specifier = ">=0.7.3" },
     { name = "rust-just", specifier = ">=1.36.0" },
     { name = "sinter", specifier = "~=1.16.dev0" },
@@ -2055,6 +2057,18 @@ wheels = [
 ]
 
 [[package]]
+name = "mando"
+version = "0.7.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/35/24/cd70d5ae6d35962be752feccb7dca80b5e0c2d450e995b16abd6275f3296/mando-0.7.1.tar.gz", hash = "sha256:18baa999b4b613faefb00eac4efadcf14f510b59b924b66e08289aa1de8c3500", size = 37868, upload-time = "2022-02-24T08:12:27.316Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d2/f0/834e479e47e499b6478e807fb57b31cc2db696c4db30557bb6f5aea4a90b/mando-0.7.1-py2.py3-none-any.whl", hash = "sha256:26ef1d70928b6057ee3ca12583d73c63e05c49de8972d620c278a7b206581a8a", size = 28149, upload-time = "2022-02-24T08:12:25.24Z" },
+]
+
+[[package]]
 name = "markdown"
 version = "3.10.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3854,6 +3868,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6c/53/66b2af6ce8a44a438995eb22ffab942a30927587fb5ea1d026c12f546e47/pyzx_param-0.9.3.tar.gz", hash = "sha256:13c729ad5d29f522f95ed45378835dc6270c7fd2ff949c57a15bf290d662f866", size = 358273, upload-time = "2026-04-01T11:56:48.449Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/28/e037d68e941213e26990535a239dcfaeb9d52a0b3d28db07c87ee1dd0bc2/pyzx_param-0.9.3-py3-none-any.whl", hash = "sha256:5c89e0f1f0f6a425f58b3d755eb78306554ae5ae15ea701b0dfd9eff86bcbfb7", size = 394572, upload-time = "2026-04-01T11:56:46.797Z" },
+]
+
+[[package]]
+name = "radon"
+version = "6.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama" },
+    { name = "mando" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b1/6d/98e61600febf6bd929cf04154537c39dc577ce414bafbfc24a286c4fa76d/radon-6.0.1.tar.gz", hash = "sha256:d1ac0053943a893878940fedc8b19ace70386fc9c9bf0a09229a44125ebf45b5", size = 1874992, upload-time = "2023-03-26T06:24:38.868Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/93/f7/d00d9b4a0313a6be3a3e0818e6375e15da6d7076f4ae47d1324e7ca986a1/radon-6.0.1-py2.py3-none-any.whl", hash = "sha256:632cc032364a6f8bb1010a2f6a12d0f14bc7e5ede76585ef29dc0cecf4cd8859", size = 52784, upload-time = "2023-03-26T06:24:33.949Z" },
 ]
 
 [[package]]
