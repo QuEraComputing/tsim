@@ -104,7 +104,6 @@ class VecSim:
         if order is not None:
             qs = list(self.q2i.keys())
             q2s = sorted(qs, key=order)
-            i2s = [qs.index(q) for q in q2s]
             actual_order = sorted(self.q2i.keys(), key=lambda k: self.q2i[k])
             desired_order = sorted(self.q2i.keys(), key=order)
             i2s = [actual_order.index(q) for q in desired_order]

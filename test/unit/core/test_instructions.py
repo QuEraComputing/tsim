@@ -184,24 +184,18 @@ def test_ry_mry():
 
 
 def test_m():
-    id = np.eye(2)
     result = _build_and_get_matrix(instructions.m, 0)
-    assert np.allclose(result, id / np.sqrt(2))
+    assert np.allclose(result, np.eye(2) / np.sqrt(2))
+
 
 def test_mx():
-    id = np.eye(2)
     result = _build_and_get_matrix(instructions.mx, 0)
-    assert np.allclose(result, id / np.sqrt(2))
-    print(result)
-def test_mx():
-    id = np.eye(2)
-    result = _build_and_get_matrix(instructions.mx, 0)
-    assert np.allclose(result, id / np.sqrt(2))
-    print(result)
+    assert np.allclose(result, np.eye(2) / np.sqrt(2))
+
+
 def test_my():
-    id = np.eye(2)
     result = _build_and_get_matrix(instructions.my, 0)
-    assert np.allclose(result, id / np.sqrt(2))
+    assert np.allclose(result, np.eye(2) / np.sqrt(2))
 
 
 class TestClassicalWireTracking:

@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.noise.dem import get_detector_error_model
-from tsim.utils.clifford import parametric_to_clifford_gates
+from tsim.utils.clifford import clifford_expansion, parametric_to_clifford_gates
 from tsim.utils.diagram import render_svg
 from tsim.utils.program_text import (
     enriched_stim_error,
@@ -363,18 +363,13 @@ class Circuit:
         for instr in self._stim_circ:
             assert not isinstance(instr, stim.CircuitRepeatBlock)
 
-            if instr.name == "I" and instr.tag:
-                result = parse_parametric_tag(instr.tag)
-                if result is not None:
-                    gate_name, params = result
-                    clifford_gates = parametric_to_clifford_gates(gate_name, params)
-                    if clifford_gates is not None:
-                        targets = [t.value for t in instr.targets_copy()]
-                        for gate in clifford_gates:
-                            circ.append(gate, targets, [])
-                        continue
-
-            circ.append(instr)
+            expansion = clifford_expansion(instr)
+            if expansion is not None:
+                gates, targets = expansion
+                for gate in gates:
+                    circ.append(gate, targets, [])
+            else:
+                circ.append(instr)
         return circ
 
     @property

@@ -1072,8 +1072,8 @@ def ry(b: GraphRepresentation, qubit: int) -> None:
 
 def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
     """Add detector annotation that XORs the given measurement record bits."""
-    row = min(set([b.graph.row(b.rec[r]) for r in rec])) - 0.5
-    d_rows = set([b.graph.row(d) for d in b.detectors + b.observables])
+    row = min({b.graph.row(b.rec[r]) for r in rec}) - 0.5
+    d_rows = {b.graph.row(d) for d in b.detectors + b.observables}
     while row in d_rows:
         row += 1
     v0 = b.graph.add_vertex(
@@ -1089,8 +1089,8 @@ def observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None
     idx = int(idx)
 
     if idx not in b.observables_dict:
-        row = min(set([b.graph.row(b.rec[r]) for r in rec])) - 0.5
-        d_rows = set([b.graph.row(d) for d in b.detectors + b.observables])
+        row = min({b.graph.row(b.rec[r]) for r in rec}) - 0.5
+        d_rows = {b.graph.row(d) for d in b.detectors + b.observables}
         while row in d_rows:
             row += 1
         v0 = b.graph.add_vertex(VertexType.X, qubit=-1, row=row, phase=f"obs[{idx}]")

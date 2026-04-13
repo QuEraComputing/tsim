@@ -164,7 +164,7 @@ class TestStimCircuitProperty:
         assert "I[" not in stim_str
         assert "H 0" in stim_str
 
-    def test_identity_rotation_becomes_I(self):
+    def test_identity_rotation_becomes_i(self):
         c = Circuit("R_Z(0.0) 0\nH 0")
         stim_str = str(c.stim_circuit)
         assert "I[" not in stim_str
