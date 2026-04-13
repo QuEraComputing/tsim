@@ -327,7 +327,7 @@ def _compile_prefactor(g_list: list[BaseGraph]) -> ScalarPrefactor:
 
     return ScalarPrefactor(
         phase_indices=phase_indices,
-        floatfactor=jnp.array(exact_floatfactor, dtype=jnp.int32),
+        floatfactor=jnp.array(exact_floatfactor, dtype=jnp.int32).reshape(-1, 4),
         power2=jnp.array(power2, dtype=jnp.int32),
         approximate_floatfactors=approximate_floatfactors,
         has_approximate_floatfactors=has_approximate_floatfactors,

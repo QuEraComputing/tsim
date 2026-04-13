@@ -31,6 +31,9 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
 
     """
     prefactor = circuit.prefactor
+    if prefactor.phase_indices.shape[0] == 0:
+        return jnp.zeros(param_vals.shape[0], dtype=jnp.complex64)
+
     static_phases = ExactScalarArray(UNIT_PHASES[prefactor.phase_indices])
     float_factor = ExactScalarArray(prefactor.floatfactor)
 
