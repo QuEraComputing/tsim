@@ -2,9 +2,9 @@
 
 Each compiled ZX scalar is the product of four term families plus a global
 phase and a floatfactor. This module defines the four families as
-``equinox.Module`` records, bundles the shared phase tables and ``GF(2)``
-matmul helper, and gives each family an ``evaluate`` method that turns a batch
-of binary parameter values into an ``ExactScalarArray``.
+``equinox.Module`` records, bundles the shared phase tables, and gives each
+family an ``evaluate`` method that turns a batch of binary parameter values
+into an ``ExactScalarArray``.
 
 Downstream, ``compile.py`` builds instances of these classes from
 ``pyzx_param`` scalars, and ``evaluate.py`` orchestrates the products.
@@ -17,9 +17,9 @@ from jax import Array
 from tsim.core.exact_scalar import ExactScalarArray
 from tsim.utils.linalg import matmul_gf2
 
-# Powers of ω = e^(iπ/4). _UNIT_PHASES[k] is the exact 4-coefficient
+# Powers of ω = e^(iπ/4). UNIT_PHASES[k] is the exact 4-coefficient
 # representation of ω^k.
-_UNIT_PHASES = jnp.array(
+UNIT_PHASES = jnp.array(
     [
         [1, 0, 0, 0],  # omega^0 = 1
         [0, 1, 0, 0],  # omega^1
@@ -34,7 +34,7 @@ _UNIT_PHASES = jnp.array(
 )
 
 # Lookup table for exact scalars (1 + ω^k).
-_ONE_PLUS_PHASES = _UNIT_PHASES.at[:, 0].add(1)
+_ONE_PLUS_PHASES = UNIT_PHASES.at[:, 0].add(1)
 
 _IDENTITY = jnp.array([1, 0, 0, 0], dtype=jnp.int32)
 
@@ -104,7 +104,7 @@ class HalfPiPhases(eqx.Module):
         rowsum = matmul_gf2(self.params, param_vals)
         phase_idx = (rowsum * self.coeffs) % 8
         total_phase = jnp.sum(phase_idx, axis=-1) % 8
-        return ExactScalarArray(_UNIT_PHASES[total_phase])
+        return ExactScalarArray(UNIT_PHASES[total_phase])
 
 
 class PiProducts(eqx.Module):
@@ -179,7 +179,7 @@ class PhasePairs(eqx.Module):
         gamma = (alpha + beta) % 8
 
         term_vals = (
-            _IDENTITY + _UNIT_PHASES[alpha] + _UNIT_PHASES[beta] - _UNIT_PHASES[gamma]
+            _IDENTITY + UNIT_PHASES[alpha] + UNIT_PHASES[beta] - UNIT_PHASES[gamma]
         )
         mask = jnp.arange(self.alpha.shape[1])[None, :] < self.counts[:, None]
         term_vals = jnp.where(mask[..., None], term_vals, _IDENTITY)

@@ -94,7 +94,7 @@ def matmul_gf2(a: Array, b: Array) -> Array:
     """
     G, T, _ = a.shape
     if G * T == 0:
-        return jnp.zeros((b.shape[0], G, T), dtype=b.dtype)
+        return jnp.zeros((b.shape[0], G, T), dtype=jnp.uint8)
     return (b.astype(jnp.float32) @ a.astype(jnp.float32).reshape(G * T, -1).T).reshape(
         -1, G, T
     ).astype(jnp.uint8) % 2
