@@ -1,6 +1,7 @@
 """SVG diagram rendering for quantum circuits."""
 
 import re
+import uuid
 from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any, Iterable
@@ -39,13 +40,21 @@ class GateLabel:
     annotation: str | None = None  # Optional annotation (shown as text below the gate)
 
 
-def _width_from_viewbox(svg: str, height: float) -> float | None:
-    """Compute width from an SVG viewBox while preserving aspect ratio."""
+def _viewbox_size(svg: str) -> tuple[float, float] | None:
+    """Return (width, height) parsed from an SVG viewBox attribute."""
     m = re.search(r'viewBox="[^"]*\s([\d.]+)\s+([\d.]+)"', svg)
     if m is None:
         return None
-
     w, h = map(float, m.groups())
+    return w, h
+
+
+def _width_from_viewbox(svg: str, height: float) -> float | None:
+    """Compute width from an SVG viewBox while preserving aspect ratio."""
+    size = _viewbox_size(svg)
+    if size is None:
+        return None
+    w, h = size
     if h == 0:
         return None
     return float(height) / h * w
@@ -87,6 +96,84 @@ def wrap_svg(
     </div>
     </div>
     """
+
+
+def wrap_svg_zoomable(svg: str, *, height: float = 700) -> str:
+    """Wrap an SVG in a zoomable, scrollable container.
+
+    The container fills the available width and has the given pixel height.
+    Users can pan by scrolling and zoom with pinch-zoom (trackpad) or
+    Ctrl/Cmd + wheel. Zoom is anchored at the cursor position.
+
+    Args:
+        svg: Raw SVG markup.
+        height: Pixel height of the container.
+
+    """
+    size = _viewbox_size(svg)
+    if size is None or size[1] == 0:
+        nat_w, nat_h = 800.0, 200.0
+    else:
+        nat_w, nat_h = size
+
+    # Stim SVGs only have a viewBox, no explicit width/height. Inside an
+    # inline-block container they collapse, so force the SVG to render at its
+    # natural pixel size.
+    sized_svg = re.sub(
+        r"<svg\b",
+        f'<svg width="{nat_w}" height="{nat_h}"',
+        svg,
+        count=1,
+    )
+
+    # Initial scale fits the SVG's full height into the panel.
+    initial_scale = height / nat_h if nat_h > 0 else 1.0
+    init_w = nat_w * initial_scale
+    init_h = nat_h * initial_scale
+
+    uid = uuid.uuid4().hex[:12]
+    return f"""
+<div data-tsim-zoom="{uid}" style="width:100%; height:{height}px; overflow:auto; background:white; border:1px solid #eee; position:relative;">
+  <div style="display:inline-block; width:{init_w}px; height:{init_h}px;">
+    <div style="transform-origin:0 0; display:block; width:{nat_w}px; height:{nat_h}px; transform:scale({initial_scale});">
+      {sized_svg}
+    </div>
+  </div>
+</div>
+<script>
+(function() {{
+  var wrap = document.querySelector('[data-tsim-zoom="{uid}"]');
+  if (!wrap || wrap.dataset.tsimZoomInit) return;
+  wrap.dataset.tsimZoomInit = "1";
+  var size = wrap.firstElementChild;
+  var xform = size.firstElementChild;
+  var natW = {nat_w};
+  var natH = {nat_h};
+  var scale = {initial_scale};
+  function apply() {{
+    xform.style.transform = 'scale(' + scale + ')';
+    size.style.width = (natW * scale) + 'px';
+    size.style.height = (natH * scale) + 'px';
+  }}
+  apply();
+  wrap.addEventListener('wheel', function(e) {{
+    if (e.ctrlKey || e.metaKey) {{
+      e.preventDefault();
+      var rect = wrap.getBoundingClientRect();
+      var mx = e.clientX - rect.left + wrap.scrollLeft;
+      var my = e.clientY - rect.top + wrap.scrollTop;
+      var factor = Math.exp(-e.deltaY * 0.01);
+      var newScale = Math.min(Math.max(0.02, scale * factor), 40);
+      var ratio = newScale / scale;
+      scale = newScale;
+      apply();
+      wrap.scrollLeft = mx * ratio - (e.clientX - rect.left);
+      wrap.scrollTop = my * ratio - (e.clientY - rect.top);
+    }}
+  }}, {{ passive: false }});
+}})();
+</script>
+"""
 
 
 def _subscript(text: str) -> str:
@@ -286,6 +373,7 @@ def render_svg(
     rows: int | None = None,
     width: float | None = None,
     height: float | None = None,
+    zoomable: bool = False,
 ) -> Diagram:
     """Render a stim circuit timeline/timeslice diagram with custom labels."""
     modified_circ, placeholder_id_to_labels = tagged_gates_to_placeholder(c)
@@ -293,7 +381,10 @@ def render_svg(
         modified_circ.diagram(type, tick=tick, filter_coords=filter_coords, rows=rows)
     )
     svg = placeholders_to_t(svg_with_placeholders, placeholder_id_to_labels)
-    wrapped = wrap_svg(svg, width=width, height=height)
+    if zoomable:
+        wrapped = wrap_svg_zoomable(svg, height=height if height is not None else 700)
+    else:
+        wrapped = wrap_svg(svg, width=width, height=height)
     return Diagram(wrapped)
 
 

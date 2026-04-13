@@ -650,10 +650,12 @@ class Circuit:
             "timeline-svg",
             "timeslice-svg",
         ]:
+            zoomable = False
             if height == "auto":
                 if width is not None or type == "timeslice-svg":
                     height = None
                 else:
+                    zoomable = True
                     height = min(30 * self.num_qubits + 50, 700)
             return render_svg(
                 self._stim_circ,
@@ -663,6 +665,7 @@ class Circuit:
                 rows=rows,
                 width=width,
                 height=height,
+                zoomable=zoomable,
             )
         elif type == "pyzx":
             return render_pyzx_d3(self._stim_circ, kwargs)
