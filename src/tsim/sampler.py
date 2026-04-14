@@ -263,6 +263,13 @@ class _CompiledSamplerBase:
             Samples array, or (samples, reference) tuple when compute_reference=True.
 
         """
+        if shots == 0:
+            num_outputs = sum(len(c.output_indices) for c in self._program.components)
+            empty = np.empty((0, num_outputs), dtype=np.bool_)
+            if compute_reference:
+                return empty, np.zeros(num_outputs, dtype=np.bool_)
+            return empty
+
         if batch_size is None:
             max_batch_size = self._estimate_batch_size()
             num_batches = max(1, ceil(shots / max_batch_size))
