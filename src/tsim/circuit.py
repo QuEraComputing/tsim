@@ -590,6 +590,7 @@ class Circuit:
         rows: int | None = None,
         height: float | None = None,
         width: float | None = None,
+        zoomable: bool = True,
         **kwargs: Any,
     ) -> Any:
         """Return a diagram of the circuit, from a variety of options.
@@ -632,8 +633,17 @@ class Circuit:
                 be included), a stim.DemTarget (specifying a detector or observable
                 to include), a string like "D5" or "L0" specifying a detector or
                 observable to include.
-            height: Optional height for the rendered diagram.
-            width: Optional width for the rendered diagram.
+            height: Optional height for the rendered diagram in pixels. Only applied
+                to timeline-svg and timeslice-svg diagram types. For
+                timeline-svg, when both height and width are None, the height is
+                automatically determined based on the number of qubits. When only
+                one dimension is given, the other is computed from the SVG aspect
+                ratio.
+            width: Optional width for the rendered diagram in pixels. Only applied
+                to timeline-svg and timeslice-svg diagram types.
+            zoomable: If True (default), wraps SVG diagrams in an interactive
+                container with pan and Ctrl/Cmd+wheel zoom. Only applies to
+                timeline-svg and timeslice-svg diagram types.
             **kwargs: Additional keyword arguments passed to the underlying diagram renderer.
 
         Returns:
@@ -648,6 +658,8 @@ class Circuit:
             "timeline-svg",
             "timeslice-svg",
         ]:
+            if height is None and width is None and type == "timeline-svg":
+                height = min(30 * self.num_qubits + 50, 700)
             return render_svg(
                 self._stim_circ,
                 type,
@@ -656,6 +668,7 @@ class Circuit:
                 rows=rows,
                 width=width,
                 height=height,
+                zoomable=zoomable,
             )
         elif type == "pyzx":
             return render_pyzx_d3(self._stim_circ, kwargs)
