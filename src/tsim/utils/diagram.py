@@ -19,9 +19,16 @@ from tsim.core.parse import parse_stim_circuit
 class Diagram:
     """Wrapper for SVG diagram with Jupyter notebook display support."""
 
-    def __init__(self, svg: str):
-        """Create a diagram from SVG markup."""
+    def __init__(self, svg: str, html: str):
+        """Create a diagram from raw SVG markup and an HTML-wrapped version.
+
+        Args:
+            svg: Raw SVG markup suitable for saving to ``.svg`` files.
+            html: HTML-wrapped version for interactive Jupyter display.
+
+        """
         self._svg = svg
+        self._html = html
 
     def __str__(self) -> str:
         """Return the raw SVG string."""
@@ -29,7 +36,7 @@ class Diagram:
 
     def _repr_html_(self) -> Any:
         """Return HTML representation for Jupyter notebook display."""
-        return self._svg
+        return self._html
 
 
 @dataclass
@@ -397,12 +404,12 @@ def render_svg(
             height = width / size[0] * size[1]
 
     if zoomable:
-        wrapped = wrap_svg_zoomable(
+        html = wrap_svg_zoomable(
             svg, width=width, height=height if height is not None else 700
         )
     else:
-        wrapped = wrap_svg(svg, width=width, height=height)
-    return Diagram(wrapped)
+        html = wrap_svg(svg, width=width, height=height)
+    return Diagram(svg, html)
 
 
 def render_pyzx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> GraphS:

@@ -49,7 +49,11 @@ def test_tagged_gates_to_placeholder_adds_error_and_mapping():
 
 def test_render_svg_wraps_when_width_given():
     c = stim.Circuit("I[R_Z(theta=0.25*pi)] 0")
-    html = str(render_svg(c, "timeline-svg", width=50, zoomable=False))
+    diagram = render_svg(c, "timeline-svg", width=50, zoomable=False)
+    # str() returns raw SVG suitable for saving to .svg files
+    assert str(diagram).strip().startswith("<svg")
+    # _repr_html_() returns the HTML-wrapped version for Jupyter
+    html = diagram._repr_html_()
     assert "<div" in html
     assert "width: 50" in html
 

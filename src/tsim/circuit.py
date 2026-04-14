@@ -634,10 +634,11 @@ class Circuit:
                 to include), a string like "D5" or "L0" specifying a detector or
                 observable to include.
             height: Optional height for the rendered diagram in pixels. Only applied
-                to timeline-svg and timeslice-svg diagram types. When both
-                height and width are None, the height is automatically determined
-                based on the number of qubits. When only one dimension is given,
-                the other is computed from the SVG aspect ratio.
+                to timeline-svg and timeslice-svg diagram types. For
+                timeline-svg, when both height and width are None, the height is
+                automatically determined based on the number of qubits. When only
+                one dimension is given, the other is computed from the SVG aspect
+                ratio.
             width: Optional width for the rendered diagram in pixels. Only applied
                 to timeline-svg and timeslice-svg diagram types.
             zoomable: If True (default), wraps SVG diagrams in an interactive
