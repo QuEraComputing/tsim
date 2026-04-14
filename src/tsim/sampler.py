@@ -140,7 +140,7 @@ def sample_program(
         samples, key, max_norm_deviation = sample_component(component, f_params, key)
         if np.isclose(max_norm_deviation, 1):
             raise ValueError(
-                "A vanishing marginal probability distributionwas encountered (normalization 0). "
+                "A vanishing marginal probability distribution was encountered (normalization 0). "
                 "This is likely the result of an underflow error. Please report this "
                 "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
             )  # pragma: no cover
