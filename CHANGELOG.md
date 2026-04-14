@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `DEPOLARIZE2` channel was missing the `p_ZZ` probability term, which was always set to 0. This lead to incorrect noise models that were missing ZZ errors. (#103)
 - Samplers now gracefully handle circuits with no measurements or no detectors, returning empty `(shots, 0)` arrays matching stim's behavior instead of raising an error (#106)
+- `MPP, MXX, MYY, MZZ` instructions now support a bit flip probability argument (#118)
 
 ### Added
 - Zoomable timeline and timeslice diagrams. `Circuit.diagram` now accepts a `zoomable` option, enabled by default, to support pan and zoom in notebooks for the `timeline-svg` and `timeslice-svg` diagram types (#116)
