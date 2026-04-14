@@ -103,7 +103,7 @@ def test_get_detector_error_model_no_errors():
 
 def test_get_detector_error_model_with_logical_observables():
     with pytest.raises(
-        ValueError, match="The number of observables changed after conversion."
+        ValueError, match=r"The number of observables changed after conversion\."
     ):
         c = stim.Circuit("""
             R 0
@@ -194,6 +194,6 @@ def test_get_detector_error_model_mpp_measurement_counting():
     # OBSERVABLE_INCLUDE(0) rec[-3] refers to the Z2*Z3 measurement
     # Since the observable is non-deterministic (gauge), it gets eliminated
     with pytest.raises(
-        ValueError, match="The number of observables changed after conversion."
+        ValueError, match=r"The number of observables changed after conversion\."
     ):
         get_detector_error_model(c)

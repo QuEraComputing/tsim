@@ -119,6 +119,59 @@ class TestCorrelatedErrorGraph:
         assert_allclose(probs[4], 0.2, rtol=1e-5)  # Third error
 
 
+class TestParseHeraldedChannels:
+    """Tests for parsing HERALDED_PAULI_CHANNEL_1 and HERALDED_ERASE."""
+
+    def test_heralded_pauli_channel_1_structure(self):
+        """HERALDED_PAULI_CHANNEL_1 should produce 1 rec entry and 3 error bits."""
+        circuit = stim.Circuit("HERALDED_PAULI_CHANNEL_1(0.01, 0.02, 0.03, 0.04) 0")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+        assert b.num_error_bits == 3
+        assert len(b.channel_probs) == 1
+        assert b.channel_probs[0].shape == (8,)
+        assert_allclose(b.channel_probs[0].sum(), 1.0)
+
+    def test_heralded_erase_structure(self):
+        """HERALDED_ERASE should produce 1 rec entry and 3 error bits."""
+        circuit = stim.Circuit("HERALDED_ERASE(0.04) 0")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+        assert b.num_error_bits == 3
+        assert len(b.channel_probs) == 1
+        assert_allclose(b.channel_probs[0][[1, 3, 5, 7]], 0.01)
+
+    def test_heralded_erase_multiple_targets(self):
+        """HERALDED_ERASE on multiple targets should produce independent channels."""
+        circuit = stim.Circuit("HERALDED_ERASE(0.01) 0 1 2")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 3
+        assert b.num_error_bits == 9
+        assert len(b.channel_probs) == 3
+
+
+class TestParseIIError:
+    """Tests for parsing II_ERROR instructions with parenthesized arguments."""
+
+    def test_ii_error_with_probability(self):
+        """II_ERROR(p) should parse without raising a TypeError."""
+        circuit = stim.Circuit("II_ERROR(0.1) 0 1")
+        b = parse_stim_circuit(circuit)
+        assert set(b.last_vertex) == {0, 1}
+
+    def test_ii_error_without_probability(self):
+        """II_ERROR without parens should also parse correctly."""
+        circuit = stim.Circuit("II_ERROR 0 1")
+        b = parse_stim_circuit(circuit)
+        assert set(b.last_vertex) == {0, 1}
+
+    def test_ii_error_multiple_pairs(self):
+        """II_ERROR(p) applied to multiple qubit pairs."""
+        circuit = stim.Circuit("II_ERROR(0.05) 0 1 2 3")
+        b = parse_stim_circuit(circuit)
+        assert set(b.last_vertex) == {0, 1, 2, 3}
+
+
 class TestParseWithRepeatBlocks:
     """Tests for parsing circuits that contain REPEAT blocks."""
 
@@ -258,6 +311,48 @@ class TestParseMXXMYYMZZ:
         """)
         b = parse_stim_circuit(circuit)
         assert len(b.rec) == 3
+
+
+class TestParseMXXMYYMZZWithArgs:
+    """Tests for MXX/MYY/MZZ with parenthesized flip probability."""
+
+    def test_mxx_with_flip_probability(self):
+        """MXX(p) should parse without misinterpreting p as invert."""
+        circuit = stim.Circuit("MXX(0.01) 0 1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+        assert_allclose(b.channel_probs[0], [0.99, 0.01])
+
+    def test_myy_with_flip_probability(self):
+        """MYY(p) should parse without misinterpreting p as invert."""
+        circuit = stim.Circuit("MYY(0.01) 0 1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+        assert_allclose(b.channel_probs[0], [0.99, 0.01])
+
+    def test_mzz_with_flip_probability(self):
+        """MZZ(p) should parse without misinterpreting p as invert."""
+        circuit = stim.Circuit("MZZ(0.01) 0 1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+        assert_allclose(b.channel_probs[0], [0.99, 0.01])
+
+    def test_mxx_flip_prob_multiple_pairs(self):
+        """MXX(p) with multiple pairs should work correctly."""
+        circuit = stim.Circuit("MXX(0.05) 0 1 2 3")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 2
+
+
+class TestParseMPPWithArgs:
+    """Tests for MPP with parenthesized flip probability."""
+
+    def test_mpp_with_flip_probability(self):
+        """MPP(p) should parse and forward flip probability."""
+        circuit = stim.Circuit("MPP(0.01) X0*Z1")
+        b = parse_stim_circuit(circuit)
+        assert len(b.rec) == 1
+        assert_allclose(b.channel_probs[0], [0.99, 0.01])
 
 
 class TestParseSPP:

@@ -39,9 +39,18 @@ def _build_and_get_matrix(gate_func: Callable | tuple[Callable, Callable], *args
         (instructions.z, SINGLE_QUBIT_GATE_MATRICES["Z"]),
         (instructions.t, SINGLE_QUBIT_GATE_MATRICES["T"]),
         (instructions.t_dag, SINGLE_QUBIT_GATE_MATRICES["T_DAG"]),
+        (instructions.c_nxyz, SINGLE_QUBIT_GATE_MATRICES["C_NXYZ"]),
+        (instructions.c_nzyx, SINGLE_QUBIT_GATE_MATRICES["C_NZYX"]),
+        (instructions.c_xnyz, SINGLE_QUBIT_GATE_MATRICES["C_XNYZ"]),
+        (instructions.c_xynz, SINGLE_QUBIT_GATE_MATRICES["C_XYNZ"]),
         (instructions.c_xyz, SINGLE_QUBIT_GATE_MATRICES["C_XYZ"]),
+        (instructions.c_znyx, SINGLE_QUBIT_GATE_MATRICES["C_ZNYX"]),
+        (instructions.c_zynx, SINGLE_QUBIT_GATE_MATRICES["C_ZYNX"]),
         (instructions.c_zyx, SINGLE_QUBIT_GATE_MATRICES["C_ZYX"]),
         (instructions.h, SINGLE_QUBIT_GATE_MATRICES["H"]),
+        (instructions.h_nxy, SINGLE_QUBIT_GATE_MATRICES["H_NXY"]),
+        (instructions.h_nxz, SINGLE_QUBIT_GATE_MATRICES["H_NXZ"]),
+        (instructions.h_nyz, SINGLE_QUBIT_GATE_MATRICES["H_NYZ"]),
         (instructions.h_xy, SINGLE_QUBIT_GATE_MATRICES["H_XY"]),
         (instructions.h_yz, SINGLE_QUBIT_GATE_MATRICES["H_YZ"]),
         (instructions.s, SINGLE_QUBIT_GATE_MATRICES["S"]),
@@ -59,7 +68,6 @@ def test_single_qubit_instruction(gate_func, matrix: np.ndarray):
 
 @pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
 def test_r_z(frac: Fraction):
-    frac = Fraction(1, 5)
     result = _build_and_get_matrix(instructions.r_z, 0, frac)
     expected = ROT_GATE_MATRICES["R_Z"](frac)
     assert np.allclose(result, expected)
@@ -67,9 +75,15 @@ def test_r_z(frac: Fraction):
 
 @pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
 def test_r_x(frac: Fraction):
-    frac = Fraction(1, 5)
     result = _build_and_get_matrix(instructions.r_x, 0, frac)
     expected = ROT_GATE_MATRICES["R_X"](frac)
+    assert np.allclose(result, expected)
+
+
+@pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
+def test_r_y(frac: Fraction):
+    result = _build_and_get_matrix(instructions.r_y, 0, frac)
+    expected = ROT_GATE_MATRICES["R_Y"](frac)
     assert np.allclose(result, expected)
 
 
@@ -88,8 +102,10 @@ def test_u3(frac_theta: Fraction, frac_phi: Fraction, frac_lambda: Fraction):
     "gate_func, matrix",
     [
         (instructions.cnot, TWO_QUBIT_GATE_MATRICES["CNOT"]),
+        (instructions.cxswap, TWO_QUBIT_GATE_MATRICES["CXSWAP"]),
         (instructions.cy, TWO_QUBIT_GATE_MATRICES["CY"]),
         (instructions.cz, TWO_QUBIT_GATE_MATRICES["CZ"]),
+        (instructions.czswap, TWO_QUBIT_GATE_MATRICES["CZSWAP"]),
         (instructions.iswap, TWO_QUBIT_GATE_MATRICES["ISWAP"]),
         (instructions.iswap_dag, TWO_QUBIT_GATE_MATRICES["ISWAP_DAG"]),
         (instructions.sqrt_xx, TWO_QUBIT_GATE_MATRICES["SQRT_XX"]),
@@ -99,6 +115,8 @@ def test_u3(frac_theta: Fraction, frac_phi: Fraction, frac_lambda: Fraction):
         (instructions.sqrt_zz, TWO_QUBIT_GATE_MATRICES["SQRT_ZZ"]),
         (instructions.sqrt_zz_dag, TWO_QUBIT_GATE_MATRICES["SQRT_ZZ_DAG"]),
         (instructions.swap, TWO_QUBIT_GATE_MATRICES["SWAP"]),
+        (instructions.swapcx, TWO_QUBIT_GATE_MATRICES["SWAPCX"]),
+        (instructions.swapcz, TWO_QUBIT_GATE_MATRICES["SWAPCZ"]),
         (instructions.xcx, TWO_QUBIT_GATE_MATRICES["XCX"]),
         (instructions.xcy, TWO_QUBIT_GATE_MATRICES["XCY"]),
         (instructions.xcz, TWO_QUBIT_GATE_MATRICES["XCZ"]),
@@ -166,22 +184,18 @@ def test_ry_mry():
 
 
 def test_m():
-    id = np.eye(2)
     result = _build_and_get_matrix(instructions.m, 0)
-    assert np.allclose(result, id / np.sqrt(2))
+    assert np.allclose(result, np.eye(2) / np.sqrt(2))
 
 
-def tes_mx():
-    id = np.eye(2)
+def test_mx():
     result = _build_and_get_matrix(instructions.mx, 0)
-    assert np.allclose(result, id / np.sqrt(2))
-    print(result)
+    assert np.allclose(result, np.eye(2) / np.sqrt(2))
 
 
 def test_my():
-    id = np.eye(2)
     result = _build_and_get_matrix(instructions.my, 0)
-    assert np.allclose(result, id / np.sqrt(2))
+    assert np.allclose(result, np.eye(2) / np.sqrt(2))
 
 
 class TestClassicalWireTracking:

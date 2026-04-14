@@ -8,6 +8,7 @@ from tsim.noise.channels import (
     correlated_error_probs,
     error_probs,
     expand_channel,
+    heralded_pauli_channel_1_probs,
     merge_identical_channels,
     normalize_channels,
     pauli_channel_1_probs,
@@ -70,6 +71,28 @@ class TestProbabilityConstructors:
         assert probs.shape == (16,)
         assert probs.dtype == np.float64
         assert_allclose(probs[8], 1.0, rtol=1e-10)  # IX = 0100 in 4-bit = 8
+        assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
+
+    def test_heralded_pauli_channel_1(self):
+        """Test heralded Pauli channel probability distribution."""
+        probs = heralded_pauli_channel_1_probs(pi=0.01, px=0.02, py=0.03, pz=0.04)
+        assert probs.shape == (8,)
+        assert probs.dtype == np.float64
+        # Bits: [herald, Z_error, X_error]
+        assert_allclose(probs[0], 0.9)  # 000: no fire
+        assert_allclose(probs[1], 0.01)  # 001: herald + I
+        assert_allclose(probs[3], 0.04)  # 011: herald + Z
+        assert_allclose(probs[5], 0.02)  # 101: herald + X
+        assert_allclose(probs[7], 0.03)  # 111: herald + Y
+        assert_allclose(probs[2], 0.0)  # impossible
+        assert_allclose(probs[4], 0.0)  # impossible
+        assert_allclose(probs[6], 0.0)  # impossible
+        assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
+
+    def test_heralded_pauli_channel_1_pure_z(self):
+        """Heralded channel that always fires with Z."""
+        probs = heralded_pauli_channel_1_probs(pi=0.0, px=0.0, py=0.0, pz=1.0)
+        assert_allclose(probs[3], 1.0)  # herald + Z
         assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
 
 

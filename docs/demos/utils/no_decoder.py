@@ -21,8 +21,6 @@ class CompiledNoDecoder(CompiledDecoder):
 
 
 class NoDecoder(sinter.Decoder):
-    def __init__(self) -> None:
-        pass
 
     def compile_decoder_for_dem(
         self,

@@ -114,9 +114,6 @@ def test_r_gate():
     [("X", "Y"), ("X", "Z"), ("Y", "X"), ("Y", "Z"), ("Z", "X"), ("Z", "Y")],
 )
 def test_measurements_stay_same(reset_basis: str, measure_basis: str):
-    if reset_basis == measure_basis:
-        return
-
     c = Circuit(f"""
         R{reset_basis} 0
         M{measure_basis} 0
@@ -454,7 +451,7 @@ def test_rec_controlled_raises_error():
         M 0
         """)
     with pytest.raises(
-        ValueError, match="Measurement record editing is not supported."
+        ValueError, match=r"Measurement record editing is not supported\."
     ):
         c.compile_sampler()
 
@@ -697,8 +694,8 @@ def test_mzz_different_state():
     assert (samples == 1).all()
 
 
-def test_mxx_inverted():
-    """MXX with inverted target should flip the result."""
+def test_mxx_inverted_first():
+    """MXX with first target inverted should flip the result."""
     c = Circuit("""
         R 0 1
         H 0
@@ -708,6 +705,43 @@ def test_mxx_inverted():
     sampler = c.compile_sampler()
     samples = sampler.sample(20)
     assert (samples == 1).all()
+
+
+def test_mxx_inverted_second():
+    """MXX with second target inverted should flip the result."""
+    c = Circuit("""
+        R 0 1
+        H 0
+        CNOT 0 1
+        MXX 0 !1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples == 1).all()
+
+
+def test_mxx_inverted_both():
+    """MXX with both targets inverted should cancel out (XOR)."""
+    c = Circuit("""
+        R 0 1
+        H 0
+        CNOT 0 1
+        MXX !0 !1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples == 0).all()
+
+
+def test_mzz_inverted_both():
+    """MZZ with both targets inverted should cancel out (XOR)."""
+    c = Circuit("""
+        R 0 1
+        MZZ !0 !1
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(20)
+    assert (samples == 0).all()
 
 
 def test_mzz_multiple_pairs():
@@ -722,3 +756,73 @@ def test_mzz_multiple_pairs():
     # |00> -> ZZ=+1 -> 0, |01> (qubit 2 flipped, qubit 3 not) -> ZZ=-1 -> 1
     assert (samples[:, 0] == 0).all()
     assert (samples[:, 1] == 1).all()
+
+
+def test_heralded_erase_noiseless():
+    """HERALDED_ERASE(0) should never fire: herald=0, qubit unchanged."""
+    c = Circuit("""
+        R 0
+        HERALDED_ERASE(0) 0
+        M 0
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(100)
+    # Column 0 = herald (always 0), column 1 = measurement (always 0)
+    assert (samples == 0).all()
+
+
+def test_heralded_erase_herald_fires():
+    """HERALDED_ERASE with high probability should mostly fire."""
+    c = Circuit("""
+        R 0
+        HERALDED_ERASE(0.99) 0
+        M 0
+    """)
+    sampler = c.compile_sampler(seed=42)
+    samples = sampler.sample(1000)
+    # Herald column should fire ~99% of the time
+    herald = samples[:, 0]
+    assert np.mean(herald) > 0.9
+
+
+def test_heralded_erase_detector():
+    """Herald bit should be usable in a DETECTOR."""
+    c = Circuit("""
+        R 0
+        HERALDED_ERASE(0.5) 0
+        DETECTOR rec[-1]
+        M 0
+    """)
+    sampler = c.compile_detector_sampler(seed=42)
+    detections = sampler.sample(1000)
+    # Detector fires when herald fires (~50%)
+    rate = np.mean(detections[:, 0])
+    assert 0.3 < rate < 0.7
+
+
+def test_heralded_pauli_channel_1_noiseless():
+    """HERALDED_PAULI_CHANNEL_1(0,0,0,0) should be a no-op."""
+    c = Circuit("""
+        R 0
+        HERALDED_PAULI_CHANNEL_1(0, 0, 0, 0) 0
+        M 0
+    """)
+    sampler = c.compile_sampler()
+    samples = sampler.sample(100)
+    assert (samples == 0).all()
+
+
+def test_heralded_pauli_channel_1_multiple_targets():
+    """Heralded channel on multiple targets should be independent."""
+    c = Circuit("""
+        R 0 1
+        HERALDED_PAULI_CHANNEL_1(0, 0, 0, 0.5) 0 1
+        M 0 1
+    """)
+    sampler = c.compile_sampler(seed=42)
+    samples = sampler.sample(1000)
+    # 2 heralds + 2 measurements = 4 columns
+    assert samples.shape[1] == 4
+    # Each herald fires ~50% independently
+    assert 0.3 < np.mean(samples[:, 0]) < 0.7
+    assert 0.3 < np.mean(samples[:, 1]) < 0.7

@@ -48,7 +48,7 @@ def connected_components(g: BaseGraph) -> list[ConnectedComponent]:
             continue
 
         component_vertices = _collect_vertices(g, vertex, visited)
-        subgraph, vertex_map = _induced_subgraph(g, component_vertices)
+        subgraph = _induced_subgraph(g, component_vertices)
 
         component_output_indices = [
             output_indices[v] for v in component_vertices if v in output_indices
@@ -92,7 +92,7 @@ def _collect_vertices(
 def _induced_subgraph(
     g: BaseGraph,
     vertices: Sequence[Any],
-) -> tuple[BaseGraph, dict[Any, Any]]:
+) -> BaseGraph:
     """Build the subgraph that is induced by ``vertices``."""
     subgraph = Graph()
     subgraph.track_phases = g.track_phases
@@ -140,7 +140,7 @@ def _induced_subgraph(
     subgraph.set_inputs(component_inputs)
     subgraph.set_outputs(component_outputs)
 
-    return subgraph, vert_map
+    return subgraph
 
 
 def build_sampling_graph(
@@ -176,9 +176,9 @@ def build_sampling_graph(
     annotation_to_vertex: dict[str, list[int]] = defaultdict(list)
     for v in g.vertices():
         phase_vars = g._phaseVars[v]
-        if not len(phase_vars) == 1:
+        if len(phase_vars) != 1:
             continue
-        phase = list(phase_vars)[0]
+        phase = next(iter(phase_vars))
         if "det" in phase or "obs" in phase or "rec" in phase or "m" in phase:
             label_to_vertex[phase].append(v)
         if "det" in phase or "obs" in phase:
@@ -231,7 +231,7 @@ def build_sampling_graph(
             g.remove_vertex(vertices.pop())
 
         labels = [f"det[{i}]" for i in range(len(built.detectors))] + [
-            f"obs[{i}]" for i in built.observables_dict.keys()
+            f"obs[{i}]" for i in built.observables_dict
         ]
         for label in labels:
             vs = annotation_to_vertex[label]
@@ -274,9 +274,7 @@ def transform_error_basis(
               then f0 = e1 XOR e3.
 
     """
-    parametrized_vertices = [
-        v for v in g.vertices() if v in g._phaseVars and g._phaseVars[v]
-    ]
+    parametrized_vertices = [v for v in g.vertices() if g._phaseVars.get(v)]
 
     if not parametrized_vertices:
         g.scalar = Scalar()
@@ -299,7 +297,7 @@ def transform_error_basis(
     basis, transform = find_basis(error_matrix)
     # Now: error_matrix = transform @ basis
 
-    for v, transform_row in zip(parametrized_vertices, transform):
+    for v, transform_row in zip(parametrized_vertices, transform, strict=True):
         new_vars = {f"f{j}" for j in np.nonzero(transform_row)[0]}
         g._phaseVars[v] = new_vars
 

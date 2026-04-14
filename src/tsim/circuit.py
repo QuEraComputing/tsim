@@ -8,8 +8,6 @@ from typing import (
     Any,
     Iterable,
     Literal,
-    Sequence,
-    Union,
     cast,
     overload,
 )
@@ -18,7 +16,6 @@ import pyzx_param as zx
 import stim
 from pyzx_param.graph.base import BaseGraph
 from pyzx_param.simulate import DecompositionStrategy
-from pyzx_param.utils import VertexType
 
 if TYPE_CHECKING:
     from tsim.sampler import CompiledDetectorSampler, CompiledMeasurementSampler
@@ -26,8 +23,8 @@ if TYPE_CHECKING:
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.noise.dem import get_detector_error_model
-from tsim.utils.clifford import parametric_to_clifford_gates
-from tsim.utils.diagram import render_svg
+from tsim.utils.clifford import clifford_expansion
+from tsim.utils.diagram import render_pyzx_d3, render_svg
 from tsim.utils.program_text import (
     enriched_stim_error,
     shorthand_to_stim,
@@ -94,13 +91,13 @@ class Circuit:
     def append(
         self,
         name: str,
-        targets: Union[
-            int,
-            stim.GateTarget,
-            stim.PauliString,
-            Iterable[Union[int, stim.GateTarget, stim.PauliString]],
-        ] = (),
-        arg: Union[float, Iterable[float], None] = None,
+        targets: (
+            int
+            | stim.GateTarget
+            | stim.PauliString
+            | Iterable[int | stim.GateTarget | stim.PauliString]
+        ) = (),
+        arg: float | Iterable[float] | None = None,
         *,
         tag: str = "",
     ) -> None: ...
@@ -108,21 +105,19 @@ class Circuit:
     @overload
     def append(
         self,
-        name: Union[stim.CircuitInstruction, stim.CircuitRepeatBlock, stim.Circuit],
+        name: stim.CircuitInstruction | stim.CircuitRepeatBlock | stim.Circuit,
     ) -> None: ...
 
     def append(
         self,
-        name: Union[
-            str, stim.CircuitInstruction, stim.CircuitRepeatBlock, stim.Circuit
-        ],
-        targets: Union[
-            int,
-            stim.GateTarget,
-            stim.PauliString,
-            Iterable[Union[int, stim.GateTarget, stim.PauliString]],
-        ] = (),
-        arg: Union[float, Iterable[float], None] = None,
+        name: str | stim.CircuitInstruction | stim.CircuitRepeatBlock | stim.Circuit,
+        targets: (
+            int
+            | stim.GateTarget
+            | stim.PauliString
+            | Iterable[int | stim.GateTarget | stim.PauliString]
+        ) = (),
+        arg: float | Iterable[float] | None = None,
         *,
         tag: str = "",
     ) -> None:
@@ -174,11 +169,12 @@ class Circuit:
                 name = "I"
                 arg = None
             elif name == "U3":
-                if arg is None or not isinstance(arg, Iterable) or len(list(arg)) != 3:
+                args = list(arg) if isinstance(arg, Iterable) else []
+                if arg is None or len(args) != 3:
                     raise ValueError(
                         "For U3 gates, three rotation angles must be provided."
                     )
-                theta, phi, lam = list(arg)
+                theta, phi, lam = args
                 tag = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
                 name = "I"
                 arg = None
@@ -198,7 +194,7 @@ class Circuit:
             A new Circuit instance.
 
         """
-        with open(filename, "r", encoding="utf-8") as f:
+        with open(filename, encoding="utf-8") as f:
             stim_program_text = f.read()
         converted = shorthand_to_stim(stim_program_text)
         try:
@@ -209,7 +205,7 @@ class Circuit:
 
     def __repr__(self) -> str:
         """Return a string representation that can recreate the circuit."""
-        return f"tsim.Circuit('''\n{str(self)}\n''')"
+        return f"tsim.Circuit('''\n{self!s}\n''')"
 
     def __str__(self) -> str:
         """Return the circuit as program text."""
@@ -256,7 +252,7 @@ class Circuit:
     def __getitem__(
         self,
         index_or_slice: int,
-    ) -> Union[stim.CircuitInstruction, stim.CircuitRepeatBlock]: ...
+    ) -> stim.CircuitInstruction | stim.CircuitRepeatBlock: ...
 
     @overload
     def __getitem__(
@@ -363,18 +359,13 @@ class Circuit:
         for instr in self._stim_circ:
             assert not isinstance(instr, stim.CircuitRepeatBlock)
 
-            if instr.name == "I" and instr.tag:
-                result = parse_parametric_tag(instr.tag)
-                if result is not None:
-                    gate_name, params = result
-                    clifford_gates = parametric_to_clifford_gates(gate_name, params)
-                    if clifford_gates is not None:
-                        targets = [t.value for t in instr.targets_copy()]
-                        for gate in clifford_gates:
-                            circ.append(gate, targets, [])
-                        continue
-
-            circ.append(instr)
+            expansion = clifford_expansion(instr)
+            if expansion is not None:
+                gates, targets = expansion
+                for gate in gates:
+                    circ.append(gate, targets, [])
+            else:
+                circ.append(instr)
         return circ
 
     @property
@@ -404,7 +395,7 @@ class Circuit:
                     return False
 
                 gate_name, params = result
-                if gate_name in {"R_X", "R_Y", "R_Z"}:
+                if gate_name in ["R_X", "R_Y", "R_Z"]:
                     if not is_half_pi_multiple(params["theta"]):
                         return False
                 elif gate_name == "U3":
@@ -461,7 +452,7 @@ class Circuit:
     def pop(
         self,
         index: int = -1,
-    ) -> Union[stim.CircuitInstruction, stim.CircuitRepeatBlock]:
+    ) -> stim.CircuitInstruction | stim.CircuitRepeatBlock:
         """Pops an operation from the end of the circuit, or at the given index.
 
         Args:
@@ -599,6 +590,7 @@ class Circuit:
         rows: int | None = None,
         height: float | None = None,
         width: float | None = None,
+        zoomable: bool = True,
         **kwargs: Any,
     ) -> Any:
         """Return a diagram of the circuit, from a variety of options.
@@ -641,8 +633,17 @@ class Circuit:
                 be included), a stim.DemTarget (specifying a detector or observable
                 to include), a string like "D5" or "L0" specifying a detector or
                 observable to include.
-            height: Optional height for the rendered diagram.
-            width: Optional width for the rendered diagram.
+            height: Optional height for the rendered diagram in pixels. Only applied
+                to timeline-svg and timeslice-svg diagram types. For
+                timeline-svg, when both height and width are None, the height is
+                automatically determined based on the number of qubits. When only
+                one dimension is given, the other is computed from the SVG aspect
+                ratio.
+            width: Optional width for the rendered diagram in pixels. Only applied
+                to timeline-svg and timeslice-svg diagram types.
+            zoomable: If True (default), wraps SVG diagrams in an interactive
+                container with pan and Ctrl/Cmd+wheel zoom. Only applies to
+                timeline-svg and timeslice-svg diagram types.
             **kwargs: Additional keyword arguments passed to the underlying diagram renderer.
 
         Returns:
@@ -657,6 +658,8 @@ class Circuit:
             "timeline-svg",
             "timeslice-svg",
         ]:
+            if height is None and width is None and type == "timeline-svg":
+                height = min(30 * self.num_qubits + 50, 700)
             return render_svg(
                 self._stim_circ,
                 type,
@@ -665,40 +668,10 @@ class Circuit:
                 rows=rows,
                 width=width,
                 height=height,
+                zoomable=zoomable,
             )
         elif type == "pyzx":
-            from tsim.core.graph import scale_horizontally
-
-            built = parse_stim_circuit(self._stim_circ, track_classical_wires=True)
-            g = built.graph
-
-            if len(g.vertices()) == 0:
-                return g
-
-            g = g.clone()
-            max_row = max(g.row(v) for v in built.last_vertex.values())
-            for q in built.last_vertex:
-                g.set_row(built.last_vertex[q], max_row)
-
-            for v in list(g.vertices()):
-                phase_vars = g._phaseVars[v]
-                if len(phase_vars) != 1:
-                    continue
-                phase = list(phase_vars)[0]
-                if phase.startswith("det") or phase.startswith("obs"):
-                    row = g.row(v)
-                    qubit = -2 if phase.startswith("det") else -2.5
-                    vb = g.add_vertex(
-                        VertexType.BOUNDARY,
-                        qubit=qubit,
-                        row=row,
-                    )
-                    g.add_edge((v, vb))
-
-            if kwargs.get("scale_horizontally", False):
-                scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
-            zx.draw(g, **kwargs)
-            return g
+            return render_pyzx_d3(self._stim_circ, kwargs)
         elif type in ["pyzx-dets", "pyzx-meas"]:
             from tsim.core.graph import (
                 scale_horizontally,
@@ -779,7 +752,10 @@ class Circuit:
         Args:
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for the sampler. If None, a random seed will be generated.
+            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
+                only produce deterministic samples for fixed batch size. If
+                deterministic samples are needed, the batch size should be set
+                manually.
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
@@ -800,7 +776,10 @@ class Circuit:
         Args:
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for the sampler. If None, a random seed will be generated.
+            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
+                only produce deterministic samples for fixed batch size. If
+                deterministic samples are needed, the batch size should be set
+                manually.
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.
@@ -811,7 +790,11 @@ class Circuit:
         return CompiledDetectorSampler(self, seed=seed, strategy=strategy)
 
     def cast_to_stim(self) -> stim.Circuit:
-        """Return self with type cast to stim.Circuit. This is useful for passing the circuit to functions that expect a stim.Circuit."""
+        """Return self with type cast to `stim.Circuit`.
+
+        This is useful for passing the circuit to functions that expect a
+        `stim.Circuit`.
+        """
         return cast(stim.Circuit, self)  # pragma: no cover
 
     def inverse(self) -> Circuit:

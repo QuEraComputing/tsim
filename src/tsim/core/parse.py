@@ -116,11 +116,9 @@ def parse_stim_circuit(
         assert not isinstance(instruction, stim.CircuitRepeatBlock)
 
         name = instruction.name
-        if name in ["QUBIT_COORDS", "SHIFT_COORDS"]:
-            # TODO: handle these visualization annotations
-            continue
+        if name == "SHIFT_COORDS":
 
-        if name in ["I_ERROR", "II_ERROR"]:
+            # TODO: handle visualization annotations in ZX diagrams
             continue
 
         if name == "S" and instruction.tag == "T":
@@ -151,16 +149,10 @@ def parse_stim_circuit(
             tick(b)
             continue
         if name == "MPP":
+            args = instruction.gate_args_copy()
+            p = args[0] if args else 0
             for paulis, invert in _iter_pauli_products(instruction):
-                mpp(b, paulis, invert)
-            continue
-        if name in ("MXX", "MYY", "MZZ"):
-            pauli_type: Literal["X", "Y", "Z"] = name[1]  # type: ignore[assignment]
-            targets = instruction.targets_copy()
-            for i in range(0, len(targets), 2):
-                t0, t1 = targets[i], targets[i + 1]
-                invert = t0.is_inverted_result_target ^ t1.is_inverted_result_target
-                mpp(b, [(pauli_type, t0.value), (pauli_type, t1.value)], invert)
+                mpp(b, paulis, invert, p=p)
             continue
         if name in ("SPP", "SPP_DAG"):
             is_dag = name == "SPP_DAG"
@@ -214,8 +206,11 @@ def parse_stim_circuit(
         for i_target in range(0, len(targets), num_qubits):
             chunk = targets[i_target : i_target + num_qubits]
             cc_chunk = is_classically_controlled[i_target : i_target + num_qubits]
+            chunk_inverted = False
+            for j in range(num_qubits):
+                chunk_inverted ^= invert[i_target + j]
             assert not (invert[i_target] and is_classically_controlled[i_target])
-            if invert[i_target]:
+            if chunk_inverted:
                 gate_func(b, *chunk, *args, invert=True)
             elif any(cc_chunk):
                 gate_func(b, *chunk, *args, classically_controlled=cc_chunk)

@@ -18,7 +18,7 @@ def test_shorthand_to_stim_t_and_t_dag():
 def test_shorthand_to_stim_rotations():
     text = "R_X(0.25) 0\nR_Y(-0.5) 1\nR_Z(0.3) 2"
     expected = (
-        "I[R_X(theta=0.25*pi)] 0\n" "I[R_Y(theta=-0.5*pi)] 1\n" "I[R_Z(theta=0.3*pi)] 2"
+        "I[R_X(theta=0.25*pi)] 0\nI[R_Y(theta=-0.5*pi)] 1\nI[R_Z(theta=0.3*pi)] 2"
     )
     assert shorthand_to_stim(text) == expected
 
