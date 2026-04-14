@@ -201,7 +201,9 @@
 <span class=normal>216</span>
 <span class=normal>217</span>
 <span class=normal>218</span>
-<span class=normal>219</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
+<span class=normal>219</span>
+<span class=normal>220</span>
+<span class=normal>221</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
     <span class=n>stim_circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span>
     <span class=n>track_classical_wires</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>GraphRepresentation</span><span class=p>:</span>
@@ -254,8 +256,10 @@
             <span class=n>tick</span><span class=p>(</span><span class=n>b</span><span class=p>)</span>
             <span class=k>continue</span>
         <span class=k>if</span> <span class=n>name</span> <span class=o>==</span> <span class=s2>&quot;MPP&quot;</span><span class=p>:</span>
+            <span class=n>args</span> <span class=o>=</span> <span class=n>instruction</span><span class=o>.</span><span class=n>gate_args_copy</span><span class=p>()</span>
+            <span class=n>p</span> <span class=o>=</span> <span class=n>args</span><span class=p>[</span><span class=mi>0</span><span class=p>]</span> <span class=k>if</span> <span class=n>args</span> <span class=k>else</span> <span class=mi>0</span>
             <span class=k>for</span> <span class=n>paulis</span><span class=p>,</span> <span class=n>invert</span> <span class=ow>in</span> <span class=n>_iter_pauli_products</span><span class=p>(</span><span class=n>instruction</span><span class=p>):</span>
-                <span class=n>mpp</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>paulis</span><span class=p>,</span> <span class=n>invert</span><span class=p>)</span>
+                <span class=n>mpp</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>paulis</span><span class=p>,</span> <span class=n>invert</span><span class=p>,</span> <span class=n>p</span><span class=o>=</span><span class=n>p</span><span class=p>)</span>
             <span class=k>continue</span>
         <span class=k>if</span> <span class=n>name</span> <span class=ow>in</span> <span class=p>(</span><span class=s2>&quot;SPP&quot;</span><span class=p>,</span> <span class=s2>&quot;SPP_DAG&quot;</span><span class=p>):</span>
             <span class=n>is_dag</span> <span class=o>=</span> <span class=n>name</span> <span class=o>==</span> <span class=s2>&quot;SPP_DAG&quot;</span>
