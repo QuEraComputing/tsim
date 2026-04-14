@@ -72,7 +72,7 @@ def test_detector_sampler_zero_shots_separate_observables():
 
 
 def test_detector_sampler_zero_shots_with_reference():
-    """Detector sampler with shots=0 and reference sample returns empty + zero reference."""
+    """Detector sampler with shots=0 and reference enabled returns an empty array with the expected columns."""
     c = Circuit("""
         R 0 1 2
         X 2

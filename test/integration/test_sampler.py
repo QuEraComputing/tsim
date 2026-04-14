@@ -248,6 +248,7 @@ def test_rotated_surface_code_single_noise_channel_matches_stim(channel: str):
 
     assert isinstance(stim_dets, np.ndarray)
     stim_total = int(stim_dets.sum())
+    assert stim_total > 0, "Expected nonzero total detector events from stim sample"
     tsim_total = int(tsim_dets.sum())
     rel_diff = abs(stim_total - tsim_total) / stim_total
     assert rel_diff <= 0.005

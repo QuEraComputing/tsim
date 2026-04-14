@@ -264,10 +264,9 @@ class _CompiledSamplerBase:
 
         """
         if shots == 0:
-            num_outputs = sum(len(c.output_indices) for c in self._program.components)
-            empty = np.empty((0, num_outputs), dtype=np.bool_)
+            empty = np.empty((0, self._program.num_outputs), dtype=np.bool_)
             if compute_reference:
-                return empty, np.zeros(num_outputs, dtype=np.bool_)
+                return empty, np.zeros(self._program.num_outputs, dtype=np.bool_)
             return empty
 
         if batch_size is None:
