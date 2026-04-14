@@ -140,7 +140,7 @@ def sample_program(
         samples, key, max_norm_deviation = sample_component(component, f_params, key)
         if np.isclose(max_norm_deviation, 1):
             raise ValueError(
-                "A vanishing marginal probability distributionwas encountered (normalization 0). "
+                "A vanishing marginal probability distribution was encountered (normalization 0). "
                 "This is likely the result of an underflow error. Please report this "
                 "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
             )  # pragma: no cover
@@ -263,6 +263,12 @@ class _CompiledSamplerBase:
             Samples array, or (samples, reference) tuple when compute_reference=True.
 
         """
+        if shots == 0:
+            empty = np.empty((0, self._program.num_outputs), dtype=np.bool_)
+            if compute_reference:
+                return empty, np.zeros(self._program.num_outputs, dtype=np.bool_)
+            return empty
+
         if batch_size is None:
             max_batch_size = self._estimate_batch_size()
             num_batches = max(1, ceil(shots / max_batch_size))

@@ -30,6 +30,67 @@ def test_detector_sampler_args():
     assert np.array_equal(o, np.array([[1]]))
 
 
+def test_measurement_sampler_zero_shots():
+    """Measurement sampler with shots=0 returns an empty (0, num_measurements) array."""
+    c = Circuit("H 0\nM 0")
+    sampler = c.compile_sampler()
+    result = sampler.sample(0)
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (0, 1)
+
+
+def test_detector_sampler_zero_shots():
+    """Detector sampler with shots=0 returns an empty (0, num_detectors) array."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    result = sampler.sample(0)
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (0, 2)
+
+
+def test_detector_sampler_zero_shots_separate_observables():
+    """Detector sampler with shots=0 and separate_observables returns two empty arrays."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    dets, obs = sampler.sample(0, separate_observables=True)
+    assert dets.shape == (0, 2)
+    assert obs.shape == (0, 1)
+
+
+def test_detector_sampler_zero_shots_with_reference():
+    """Detector sampler with shots=0 and reference enabled returns an empty array with the expected columns."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    result = sampler.sample(
+        0,
+        append_observables=True,
+        use_detector_reference_sample=True,
+    )
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (0, 3)
+
+
 def test_measurement_sampler_no_measurements():
     """Measurement sampler on a circuit with no measurements returns (shots, 0)."""
     c = Circuit("H 0")
