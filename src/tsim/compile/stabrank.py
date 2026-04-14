@@ -22,9 +22,7 @@ def _decompose(
         gsum = replace_fn(graph.copy())
         for g in gsum.graphs:
             zx.full_reduce(g, paramSafe=True)
-            if g.scalar.is_zero and len(results) > 0:
-                # this ensures results is never empty
-                # TODO: improve edge case handling of len(results) == 0
+            if g.scalar.is_zero:
                 continue
             results.extend(_decompose([g], count_fn, replace_fn))
     return results

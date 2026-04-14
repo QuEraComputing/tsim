@@ -740,6 +740,15 @@ def test_append_circuit():
     assert "CX 0 1" in str(c) or "CNOT 0 1" in str(c)
 
 
+def test_append_u3_with_generator_arg():
+    """U3 must work when arg is a one-shot generator (not just a list)."""
+    c = Circuit()
+    c.append("U3", 0, (x for x in [0.3, 0.24, 0.49]))
+    # The circuit should contain a single U3 instruction.
+    assert len(c) == 1
+    assert "U3" in str(c)
+
+
 def test_append_repetition_code():
     stim_c = stim.Circuit.generated("repetition_code:memory", distance=2, rounds=4)
     c = Circuit()

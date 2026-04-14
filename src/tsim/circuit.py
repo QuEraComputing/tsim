@@ -169,11 +169,12 @@ class Circuit:
                 name = "I"
                 arg = None
             elif name == "U3":
-                if arg is None or not isinstance(arg, Iterable) or len(list(arg)) != 3:
+                args = list(arg) if isinstance(arg, Iterable) else []
+                if arg is None or len(args) != 3:
                     raise ValueError(
                         "For U3 gates, three rotation angles must be provided."
                     )
-                theta, phi, lam = list(arg)
+                theta, phi, lam = args
                 tag = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
                 name = "I"
                 arg = None
