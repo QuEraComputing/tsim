@@ -66,23 +66,16 @@ def wrap_svg(
     width: float | None = None,
     height: float | None = None,
 ) -> str:
-    """Optionally wrap an SVG string in a scrolling container.
+    """Wrap an SVG string in a container div.
 
     Args:
         svg: Raw SVG markup.
-        width: Explicit width for the container.
-        height: Desired height; used to infer width from viewBox if width is not given.
+        width: Width of the container in pixels.
+        height: Height of the container in pixels (unused, kept for API
+            symmetry with :func:`wrap_svg_zoomable`).
 
     """
-    computed_width = width
-    if (
-        computed_width is None
-        and height is not None
-        and isinstance(height, (float, int))
-    ):
-        computed_width = _width_from_viewbox(svg, float(height))
-
-    if computed_width is None:
+    if width is None:
         return f"""
         <div style="background: white">
         {svg}
@@ -91,22 +84,26 @@ def wrap_svg(
 
     return f"""
     <div style="overflow-x: scroll; background: white; width: fit-content;">
-    <div style="width: {computed_width}px">
+    <div style="width: {width}px">
     {svg}
     </div>
     </div>
     """
 
 
-def wrap_svg_zoomable(svg: str, *, height: float = 700) -> str:
+def wrap_svg_zoomable(
+    svg: str, *, width: float | None = None, height: float = 700
+) -> str:
     """Wrap an SVG in a zoomable, scrollable container.
 
-    The container fills the available width and has the given pixel height.
-    Users can pan by scrolling and zoom with pinch-zoom (trackpad) or
-    Ctrl/Cmd + wheel. Zoom is anchored at the cursor position.
+    The container has the given pixel dimensions.  When *width* is ``None``
+    the container fills the available width.  Users can pan by scrolling
+    and zoom with pinch-zoom (trackpad) or Ctrl/Cmd + wheel.  Zoom is
+    anchored at the cursor position.
 
     Args:
         svg: Raw SVG markup.
+        width: Pixel width of the container, or ``None`` for full width.
         height: Pixel height of the container.
 
     """
@@ -126,15 +123,20 @@ def wrap_svg_zoomable(svg: str, *, height: float = 700) -> str:
         count=1,
     )
 
-    # Initial scale fits the SVG's full height into the panel.
-    initial_scale = height / nat_h if nat_h > 0 else 1.0
+    # Initial scale fits the SVG into the container.
+    scale_h = height / nat_h if nat_h > 0 else 1.0
+    if width is not None and nat_w > 0:
+        initial_scale = min(scale_h, width / nat_w)
+    else:
+        initial_scale = scale_h
     init_w = nat_w * initial_scale
     init_h = nat_h * initial_scale
 
+    width_style = f"width:{width}px" if width is not None else "width:100%"
     uid = uuid.uuid4().hex[:12]
     return f"""
-<div data-tsim-zoom="{uid}" style="width:100%; height:{height}px; overflow:auto; background:white; border:1px solid #eee; position:relative;">
-  <div style="display:inline-block; width:{init_w}px; height:{init_h}px;">
+<div data-tsim-zoom="{uid}" style="{width_style}; height:{height}px; overflow:auto; background:white; border:1px solid #eee; position:relative;">
+  <div style="display:inline-block; overflow:hidden; width:{init_w}px; height:{init_h}px;">
     <div style="transform-origin:0 0; display:block; width:{nat_w}px; height:{nat_h}px; transform:scale({initial_scale});">
       {sized_svg}
     </div>
@@ -150,6 +152,10 @@ def wrap_svg_zoomable(svg: str, *, height: float = 700) -> str:
   var natW = {nat_w};
   var natH = {nat_h};
   var scale = {initial_scale};
+  var cw = wrap.clientWidth;
+  if (cw > 0 && natW > 0) {{
+    scale = cw / natW;
+  }}
   function apply() {{
     xform.style.transform = 'scale(' + scale + ')';
     size.style.width = (natW * scale) + 'px';
@@ -373,7 +379,7 @@ def render_svg(
     rows: int | None = None,
     width: float | None = None,
     height: float | None = None,
-    zoomable: bool = False,
+    zoomable: bool = True,
 ) -> Diagram:
     """Render a stim circuit timeline/timeslice diagram with custom labels."""
     modified_circ, placeholder_id_to_labels = tagged_gates_to_placeholder(c)
@@ -381,8 +387,19 @@ def render_svg(
         modified_circ.diagram(type, tick=tick, filter_coords=filter_coords, rows=rows)
     )
     svg = placeholders_to_t(svg_with_placeholders, placeholder_id_to_labels)
+
+    # Compute the missing dimension from the SVG viewBox aspect ratio.
+    if width is None and height is not None:
+        width = _width_from_viewbox(svg, height)
+    elif height is None and width is not None:
+        size = _viewbox_size(svg)
+        if size is not None and size[0] != 0:
+            height = width / size[0] * size[1]
+
     if zoomable:
-        wrapped = wrap_svg_zoomable(svg, height=height if height is not None else 700)
+        wrapped = wrap_svg_zoomable(
+            svg, width=width, height=height if height is not None else 700
+        )
     else:
         wrapped = wrap_svg(svg, width=width, height=height)
     return Diagram(wrapped)

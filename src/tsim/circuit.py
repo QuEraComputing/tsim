@@ -587,8 +587,9 @@ class Circuit:
         tick: int | range | None = None,
         filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),),
         rows: int | None = None,
-        height: float | Literal["auto"] | None = "auto",
+        height: float | None = None,
         width: float | None = None,
+        zoomable: bool = True,
         **kwargs: Any,
     ) -> Any:
         """Return a diagram of the circuit, from a variety of options.
@@ -631,11 +632,16 @@ class Circuit:
                 be included), a stim.DemTarget (specifying a detector or observable
                 to include), a string like "D5" or "L0" specifying a detector or
                 observable to include.
-            height: Optional height for the rendered diagram. If "auto", the height will
-                be automatically determined based on the number of qubits. Only one of
-                height or width should be specified.
-            width: Optional width for the rendered diagram. Only one of height or width
-                should be specified.
+            height: Optional height for the rendered diagram in pixels. Only applied
+                to timeline-svg and timeslice-svg diagram types. When both
+                height and width are None, the height is automatically determined
+                based on the number of qubits. When only one dimension is given,
+                the other is computed from the SVG aspect ratio.
+            width: Optional width for the rendered diagram in pixels. Only applied
+                to timeline-svg and timeslice-svg diagram types.
+            zoomable: If True (default), wraps SVG diagrams in an interactive
+                container with pan and Ctrl/Cmd+wheel zoom. Only applies to
+                timeline-svg and timeslice-svg diagram types.
             **kwargs: Additional keyword arguments passed to the underlying diagram renderer.
 
         Returns:
@@ -650,13 +656,8 @@ class Circuit:
             "timeline-svg",
             "timeslice-svg",
         ]:
-            zoomable = False
-            if height == "auto":
-                if width is not None or type == "timeslice-svg":
-                    height = None
-                else:
-                    zoomable = True
-                    height = min(30 * self.num_qubits + 50, 700)
+            if height is None and width is None and type == "timeline-svg":
+                height = min(30 * self.num_qubits + 50, 700)
             return render_svg(
                 self._stim_circ,
                 type,

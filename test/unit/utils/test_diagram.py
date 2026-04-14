@@ -19,9 +19,9 @@ def test_width_from_viewbox_scales_width():
     assert _width_from_viewbox(svg, 20.0) == pytest.approx(40.0)
 
 
-def test_wrap_svg_infers_width_from_height():
+def test_wrap_svg_uses_given_width():
     svg = '<svg viewBox="0 0 4 2"></svg>'
-    wrapped = wrap_svg(svg, height=10.0)
+    wrapped = wrap_svg(svg, width=20.0)
     assert "width: 20.0px" in wrapped
     assert svg in wrapped
 
@@ -49,7 +49,7 @@ def test_tagged_gates_to_placeholder_adds_error_and_mapping():
 
 def test_render_svg_wraps_when_width_given():
     c = stim.Circuit("I[R_Z(theta=0.25*pi)] 0")
-    html = str(render_svg(c, "timeline-svg", width=50))
+    html = str(render_svg(c, "timeline-svg", width=50, zoomable=False))
     assert "<div" in html
     assert "width: 50" in html
 
