@@ -419,13 +419,13 @@
     <span class=k>else</span><span class=p>:</span>
         <span class=k>return</span> <span class=kc>False</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.cast_to_stim class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">cast_to_stim</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>cast_to_stim</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return self with type cast to <code>stim.Circuit</code>.</p> <p>This is useful for passing the circuit to functions that expect a <code>stim.Circuit</code>.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>786</span>
-<span class=normal>787</span>
-<span class=normal>788</span>
-<span class=normal>789</span>
-<span class=normal>790</span>
-<span class=normal>791</span>
-<span class=normal>792</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>cast_to_stim</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return self with type cast to <code>stim.Circuit</code>.</p> <p>This is useful for passing the circuit to functions that expect a <code>stim.Circuit</code>.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>792</span>
+<span class=normal>793</span>
+<span class=normal>794</span>
+<span class=normal>795</span>
+<span class=normal>796</span>
+<span class=normal>797</span>
+<span class=normal>798</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>cast_to_stim</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return self with type cast to `stim.Circuit`.</span>
 
 <span class=sd>    This is useful for passing the circuit to functions that expect a</span>
@@ -437,10 +437,7 @@
     <span class=n>strategy</span><span class=p>:</span> <span class=n>DecompositionStrategy</span> <span class=o>=</span> <span class=s2>&quot;cat5&quot;</span><span class=p>,</span>
     <span class=n>seed</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>CompiledDetectorSampler</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Compile circuit into a detector sampler.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>strategy</code> </td> <td> <code><span title=pyzx_param.simulate.DecompositionStrategy>DecompositionStrategy</span></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. If None, a random seed will be generated.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">CompiledDetectorSampler</span> (<code>tsim.sampler.CompiledDetectorSampler</code>)' href=../sampler/#tsim.sampler.CompiledDetectorSampler>CompiledDetectorSampler</a></code> </td> <td> <div class=doc-md-description> <p>A CompiledDetectorSampler that can be used to sample detectors and observables.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>765</span>
-<span class=normal>766</span>
-<span class=normal>767</span>
-<span class=normal>768</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Compile circuit into a detector sampler.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>strategy</code> </td> <td> <code><span title=pyzx_param.simulate.DecompositionStrategy>DecompositionStrategy</span></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size. If deterministic samples are needed, the batch size should be set manually.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">CompiledDetectorSampler</span> (<code>tsim.sampler.CompiledDetectorSampler</code>)' href=../sampler/#tsim.sampler.CompiledDetectorSampler>CompiledDetectorSampler</a></code> </td> <td> <div class=doc-md-description> <p>A CompiledDetectorSampler that can be used to sample detectors and observables.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>768</span>
 <span class=normal>769</span>
 <span class=normal>770</span>
 <span class=normal>771</span>
@@ -456,7 +453,13 @@
 <span class=normal>781</span>
 <span class=normal>782</span>
 <span class=normal>783</span>
-<span class=normal>784</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_detector_sampler</span><span class=p>(</span>
+<span class=normal>784</span>
+<span class=normal>785</span>
+<span class=normal>786</span>
+<span class=normal>787</span>
+<span class=normal>788</span>
+<span class=normal>789</span>
+<span class=normal>790</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_detector_sampler</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
     <span class=n>strategy</span><span class=p>:</span> <span class=n>DecompositionStrategy</span> <span class=o>=</span> <span class=s2>&quot;cat5&quot;</span><span class=p>,</span>
@@ -467,7 +470,10 @@
 <span class=sd>    Args:</span>
 <span class=sd>        strategy: Stabilizer rank decomposition strategy.</span>
 <span class=sd>            Must be one of &quot;cat5&quot;, &quot;bss&quot;, &quot;cutting&quot;.</span>
-<span class=sd>        seed: Random seed for the sampler. If None, a random seed will be generated.</span>
+<span class=sd>        seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will</span>
+<span class=sd>            only produce deterministic samples for fixed batch size. If</span>
+<span class=sd>            deterministic samples are needed, the batch size should be set</span>
+<span class=sd>            manually.</span>
 
 <span class=sd>    Returns:</span>
 <span class=sd>        A CompiledDetectorSampler that can be used to sample detectors and observables.</span>
@@ -549,7 +555,7 @@
     <span class=n>strategy</span><span class=p>:</span> <span class=n>DecompositionStrategy</span> <span class=o>=</span> <span class=s2>&quot;cat5&quot;</span><span class=p>,</span>
     <span class=n>seed</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>CompiledMeasurementSampler</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Compile circuit into a measurement sampler.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>strategy</code> </td> <td> <code><span title=pyzx_param.simulate.DecompositionStrategy>DecompositionStrategy</span></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. If None, a random seed will be generated.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">CompiledMeasurementSampler</span> (<code>tsim.sampler.CompiledMeasurementSampler</code>)' href=../sampler/#tsim.sampler.CompiledMeasurementSampler>CompiledMeasurementSampler</a></code> </td> <td> <div class=doc-md-description> <p>A CompiledMeasurementSampler that can be used to sample measurements.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>744</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Compile circuit into a measurement sampler.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>strategy</code> </td> <td> <code><span title=pyzx_param.simulate.DecompositionStrategy>DecompositionStrategy</span></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size. If deterministic samples are needed, the batch size should be set manually.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">CompiledMeasurementSampler</span> (<code>tsim.sampler.CompiledMeasurementSampler</code>)' href=../sampler/#tsim.sampler.CompiledMeasurementSampler>CompiledMeasurementSampler</a></code> </td> <td> <div class=doc-md-description> <p>A CompiledMeasurementSampler that can be used to sample measurements.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>744</span>
 <span class=normal>745</span>
 <span class=normal>746</span>
 <span class=normal>747</span>
@@ -568,7 +574,10 @@
 <span class=normal>760</span>
 <span class=normal>761</span>
 <span class=normal>762</span>
-<span class=normal>763</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_sampler</span><span class=p>(</span>
+<span class=normal>763</span>
+<span class=normal>764</span>
+<span class=normal>765</span>
+<span class=normal>766</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_sampler</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
     <span class=n>strategy</span><span class=p>:</span> <span class=n>DecompositionStrategy</span> <span class=o>=</span> <span class=s2>&quot;cat5&quot;</span><span class=p>,</span>
@@ -579,7 +588,10 @@
 <span class=sd>    Args:</span>
 <span class=sd>        strategy: Stabilizer rank decomposition strategy.</span>
 <span class=sd>            Must be one of &quot;cat5&quot;, &quot;bss&quot;, &quot;cutting&quot;.</span>
-<span class=sd>        seed: Random seed for the sampler. If None, a random seed will be generated.</span>
+<span class=sd>        seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will</span>
+<span class=sd>            only produce deterministic samples for fixed batch size. If</span>
+<span class=sd>            deterministic samples are needed, the batch size should be set</span>
+<span class=sd>            manually.</span>
 
 <span class=sd>    Returns:</span>
 <span class=sd>        A CompiledMeasurementSampler that can be used to sample measurements.</span>
@@ -1138,13 +1150,7 @@
     <span class=n>built</span> <span class=o>=</span> <span class=n>parse_stim_circuit</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_stim_circ</span><span class=p>)</span>
     <span class=k>return</span> <span class=n>build_sampling_graph</span><span class=p>(</span><span class=n>built</span><span class=p>,</span> <span class=n>sample_detectors</span><span class=o>=</span><span class=n>sample_detectors</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.circuit.Circuit.inverse class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">inverse</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>inverse</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=n>Circuit</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return the inverse of the circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>794</span>
-<span class=normal>795</span>
-<span class=normal>796</span>
-<span class=normal>797</span>
-<span class=normal>798</span>
-<span class=normal>799</span>
-<span class=normal>800</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return the inverse of the circuit.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/circuit.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>800</span>
 <span class=normal>801</span>
 <span class=normal>802</span>
 <span class=normal>803</span>
@@ -1179,7 +1185,13 @@
 <span class=normal>832</span>
 <span class=normal>833</span>
 <span class=normal>834</span>
-<span class=normal>835</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>inverse</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
+<span class=normal>835</span>
+<span class=normal>836</span>
+<span class=normal>837</span>
+<span class=normal>838</span>
+<span class=normal>839</span>
+<span class=normal>840</span>
+<span class=normal>841</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>inverse</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return the inverse of the circuit.&quot;&quot;&quot;</span>
 
     <span class=k>def</span><span class=w> </span><span class=nf>fix_tags</span><span class=p>(</span><span class=n>circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>:</span>
