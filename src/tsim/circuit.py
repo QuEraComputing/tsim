@@ -752,7 +752,10 @@ class Circuit:
         Args:
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for the sampler. If None, a random seed will be generated.
+            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
+                only produce deterministic samples for fixed batch size. If
+                deterministic samples are needed, the batch size should be set
+                manually.
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
@@ -773,7 +776,10 @@ class Circuit:
         Args:
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for the sampler. If None, a random seed will be generated.
+            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
+                only produce deterministic samples for fixed batch size. If
+                deterministic samples are needed, the batch size should be set
+                manually.
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.

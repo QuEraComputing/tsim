@@ -149,8 +149,10 @@ def parse_stim_circuit(
             tick(b)
             continue
         if name == "MPP":
+            args = instruction.gate_args_copy()
+            p = args[0] if args else 0
             for paulis, invert in _iter_pauli_products(instruction):
-                mpp(b, paulis, invert)
+                mpp(b, paulis, invert, p=p)
             continue
         if name in ("SPP", "SPP_DAG"):
             is_dag = name == "SPP_DAG"
