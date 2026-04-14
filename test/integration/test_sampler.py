@@ -122,7 +122,6 @@ def test_sample_program_raises_on_component_norm_deviation(monkeypatch):
         components=components,
         output_order=jnp.array([0, 1]),
         num_outputs=2,
-        num_f_params=0,
         num_detectors=0,
     )
 
@@ -205,6 +204,54 @@ def test_memory_error_correction_and_compare_to_stim(code_task: str):
         / stim_errors_after_correction
         <= 0.3
     )
+
+
+@pytest.mark.parametrize(
+    "channel",
+    [
+        "after_clifford_depolarization",
+        "after_reset_flip_probability",
+        "before_measure_flip_probability",
+        "before_round_data_depolarization",
+    ],
+)
+def test_rotated_surface_code_single_noise_channel_matches_stim(channel: str):
+    """Regression test for single-channel detector sampling noise handling."""
+    noise_kwargs = {
+        "after_clifford_depolarization": 0.0,
+        "after_reset_flip_probability": 0.0,
+        "before_measure_flip_probability": 0.0,
+        "before_round_data_depolarization": 0.0,
+    }
+    noise_kwargs[channel] = 0.01
+
+    circ = stim.Circuit.generated(
+        "surface_code:rotated_memory_x",
+        distance=5,
+        rounds=5,
+        **noise_kwargs,
+    )
+
+    shots = 200_000
+    stim_dets = circ.compile_detector_sampler(seed=42).sample(
+        shots=shots, append_observables=True
+    )
+    tsim_dets = (
+        Circuit.from_stim_program(circ)
+        .compile_detector_sampler(seed=42)
+        .sample(
+            shots=shots,
+            batch_size=shots // 10,
+            append_observables=True,
+        )
+    )
+
+    assert isinstance(stim_dets, np.ndarray)
+    stim_total = int(stim_dets.sum())
+    assert stim_total > 0, "Expected nonzero total detector events from stim sample"
+    tsim_total = int(tsim_dets.sum())
+    rel_diff = abs(stim_total - tsim_total) / stim_total
+    assert rel_diff <= 0.005
 
 
 @pytest.mark.parametrize(

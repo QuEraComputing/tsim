@@ -61,10 +61,10 @@ def test_magic_constants():
     MAGIC_K62 = DyadicNumber(k=0, a=7, b=-5, c=0, d=-5)
     MAGIC_PHI2 = DyadicNumber(k=0, a=10, b=-7, c=0, d=-7)
 
-    assert MAGIC_GLOBAL == MAGIC_GLOBAL2.to_complex()
-    assert MAGIC_B60 == MAGIC_B602.to_complex()
-    assert MAGIC_B66 == MAGIC_B662.to_complex()
-    assert MAGIC_E6 == MAGIC_E62.to_complex()
-    assert MAGIC_O6 == MAGIC_O62.to_complex()
-    assert MAGIC_K6 == MAGIC_K62.to_complex()
-    assert MAGIC_PHI == MAGIC_PHI2.to_complex()
+    assert MAGIC_GLOBAL2.to_complex() == MAGIC_GLOBAL
+    assert MAGIC_B602.to_complex() == MAGIC_B60
+    assert MAGIC_B662.to_complex() == MAGIC_B66
+    assert MAGIC_E62.to_complex() == MAGIC_E6
+    assert MAGIC_O62.to_complex() == MAGIC_O6
+    assert MAGIC_K62.to_complex() == MAGIC_K6
+    assert MAGIC_PHI2.to_complex() == MAGIC_PHI

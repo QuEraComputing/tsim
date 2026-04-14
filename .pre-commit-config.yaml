@@ -32,6 +32,12 @@ repos:
     - id: codespell
 - repo: local
   hooks:
+    - id: deptry-check
+      name: deptry-check
+      entry: uv run deptry .
+      language: system
+      pass_filenames: false
+      always_run: false
     - id: pyright-check
       name: pyright-check
       entry: uv run pyright src test

@@ -32,6 +32,22 @@ def error_probs(p: float) -> np.ndarray:
     return np.array([1 - p, p], dtype=np.float64)
 
 
+def heralded_pauli_channel_1_probs(
+    pi: float, px: float, py: float, pz: float
+) -> np.ndarray:
+    """Heralded single-qubit Pauli channel. Returns shape (8,).
+
+    Bits: [herald, Z_error, X_error].
+    """
+    probs = np.zeros(8, dtype=np.float64)
+    probs[0] = 1 - pi - px - py - pz  # 000, no fire
+    probs[1] = pi  # 100, herald, I
+    probs[3] = pz  # 110, herald + Z
+    probs[5] = px  # 101, herald + X
+    probs[7] = py  # 111, herald + Y (X+Z)
+    return probs
+
+
 def pauli_channel_1_probs(px: float, py: float, pz: float) -> np.ndarray:
     """Single-qubit Pauli channel. Returns shape (4,).
 

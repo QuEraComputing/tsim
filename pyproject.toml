@@ -34,7 +34,6 @@ classifiers = [
 
 dependencies = [
     "equinox>=0.11.0",
-    "ipywidgets>=8.0.0",
     "jax>=0.4.38",
     "lxml>=5.0.0",
     "numpy>=1.25.0",
@@ -61,6 +60,7 @@ build-backend = "hatchling.build"
 dev = [
     "black[jupyter]>=24.10.0",
     "coverage>=7.6.4",
+    "deptry>=0.25.1",
     "galois>=0.4.10",
     "ipykernel>=6.1.0",
     "ipython>=8.29.0",
@@ -79,6 +79,9 @@ dev = [
     "sinter~=1.16.dev",
     "tesseract-decoder>=0.1.1.dev20251113222502",
     "tqdm>=4.67.1",
+    "ipywidgets>=8.0.0",
+    "vulture>=2.16",
+    "radon>=6.0.1",
 ]
 doc = [
     "griffe-kirin>=0.1.0",
@@ -108,6 +111,7 @@ src_paths = ["src/tsim"]
 
 [tool.black]
 line-length = 88
+target-version = ["py310"]
 exclude = '''
 /(
     \.eggs
@@ -124,34 +128,13 @@ exclude = '''
 '''
 
 [tool.ruff]
-target-version = "py312"
-exclude = [
-    ".bzr",
-    ".direnv",
-    ".eggs",
-    ".git",
-    ".hg",
-    ".mypy_cache",
-    ".nox",
-    ".pants.d",
-    ".pytype",
-    ".ruff_cache",
-    ".svn",
-    ".tox",
-    ".venv",
-    "__pypackages__",
-    "_build",
-    "buck-out",
-    "build",
-    "dist",
-    "node_modules",
-    "venv",
-    "src/tsim/external",
-]
+target-version = "py310"
+include = ["src/**/*.py", "test/**/*.py"]
+extend-exclude = ["src/tsim/external"]
 
 [tool.ruff.lint]
-select = ["D"]
-ignore = ["D203", "D213"]
+select = ["D", "E", "F", "UP", "B", "SIM", "RUF", "S"]
+ignore = ["D203", "D213", "UP035", "RUF002", "RUF003", "S101", "S311", "E501"]
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.per-file-ignores]
@@ -168,3 +151,20 @@ testpaths = "test/"
 [tool.pyright]
 include = ["src", "test"]
 exclude = ["src/tsim/external"]
+reportUnusedImport = "error"
+
+[tool.deptry]
+known_first_party = ["tsim"]
+ignore_notebooks = true
+extend_exclude = [
+    "^accel-cutting-magic-state-main/",
+    "^benchmarks/",
+    "^docs/",
+    "^test/",
+]
+
+[tool.vulture]
+paths = ["src", "test"]
+exclude = ["src/tsim/external/"]
+min_confidence = 10
+sort_by_size = true

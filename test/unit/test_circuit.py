@@ -21,15 +21,26 @@ def unitaries_equal_up_to_global_phase(
 @pytest.mark.parametrize(
     "stim_gate",
     [
+        "QUBIT_COORDS(0, 0)",
         # Pauli gates
         "I",
+        "I_ERROR",
         "X",
         "Y",
         "Z",
         # Single-qubit Clifford gates
+        "C_NXYZ",
+        "C_NZYX",
+        "C_XNYZ",
+        "C_XYNZ",
         "C_XYZ",
+        "C_ZNYX",
+        "C_ZYNX",
         "C_ZYX",
         "H",
+        "H_NXY",
+        "H_NXZ",
+        "H_NYZ",
         "H_XY",
         "H_XZ",
         "H_YZ",
@@ -103,8 +114,10 @@ def test_u3_gate_shorthand():
     [
         "CNOT",
         "CX",
+        "CXSWAP",
         "CY",
         "CZ",
+        "CZSWAP",
         "ISWAP",
         "ISWAP_DAG",
         "SQRT_XX",
@@ -114,6 +127,8 @@ def test_u3_gate_shorthand():
         "SQRT_ZZ",
         "SQRT_ZZ_DAG",
         "SWAP",
+        "SWAPCX",
+        "SWAPCZ",
         "XCX",
         "XCY",
         "XCZ",
@@ -123,6 +138,8 @@ def test_u3_gate_shorthand():
         "ZCX",
         "ZCY",
         "ZCZ",
+        "II",
+        "II_ERROR",
     ],
 )
 def test_two_qubit_gate(stim_gate: str):
@@ -721,6 +738,15 @@ def test_append_circuit():
     c.append(sub_c)
     assert "H 0" in str(c)
     assert "CX 0 1" in str(c) or "CNOT 0 1" in str(c)
+
+
+def test_append_u3_with_generator_arg():
+    """U3 must work when arg is a one-shot generator (not just a list)."""
+    c = Circuit()
+    c.append("U3", 0, (x for x in [0.3, 0.24, 0.49]))
+    # The circuit should contain a single U3 instruction.
+    assert len(c) == 1
+    assert "U3" in str(c)
 
 
 def test_append_repetition_code():

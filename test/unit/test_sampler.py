@@ -30,6 +30,116 @@ def test_detector_sampler_args():
     assert np.array_equal(o, np.array([[1]]))
 
 
+def test_measurement_sampler_zero_shots():
+    """Measurement sampler with shots=0 returns an empty (0, num_measurements) array."""
+    c = Circuit("H 0\nM 0")
+    sampler = c.compile_sampler()
+    result = sampler.sample(0)
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (0, 1)
+
+
+def test_detector_sampler_zero_shots():
+    """Detector sampler with shots=0 returns an empty (0, num_detectors) array."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    result = sampler.sample(0)
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (0, 2)
+
+
+def test_detector_sampler_zero_shots_separate_observables():
+    """Detector sampler with shots=0 and separate_observables returns two empty arrays."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    dets, obs = sampler.sample(0, separate_observables=True)
+    assert dets.shape == (0, 2)
+    assert obs.shape == (0, 1)
+
+
+def test_detector_sampler_zero_shots_with_reference():
+    """Detector sampler with shots=0 and reference enabled returns an empty array with the expected columns."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    result = sampler.sample(
+        0,
+        append_observables=True,
+        use_detector_reference_sample=True,
+    )
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (0, 3)
+
+
+def test_measurement_sampler_no_measurements():
+    """Measurement sampler on a circuit with no measurements returns (shots, 0)."""
+    c = Circuit("H 0")
+    sampler = c.compile_sampler()
+    result = sampler.sample(5)
+    assert isinstance(result, np.ndarray)
+    assert result.dtype == np.bool_
+    assert result.shape == (5, 0)
+
+
+def test_detector_sampler_no_detectors():
+    """Detector sampler on a circuit with no detectors returns (shots, 0)."""
+    c = Circuit("H 0\nM 0")
+    sampler = c.compile_detector_sampler()
+    result = sampler.sample(5)
+    assert isinstance(result, np.ndarray)
+    assert result.dtype == np.bool_
+    assert result.shape == (5, 0)
+
+
+def test_detector_sampler_no_detectors_separate_observables():
+    """Detector sampler with separate_observables and no detectors returns two (shots, 0) arrays."""
+    c = Circuit("H 0\nM 0")
+    sampler = c.compile_detector_sampler()
+    dets, obs = sampler.sample(5, separate_observables=True)
+    assert dets.dtype == np.bool_
+    assert dets.shape == (5, 0)
+    assert obs.dtype == np.bool_
+    assert obs.shape == (5, 0)
+
+
+def test_detector_sampler_no_detectors_bit_packed():
+    """Detector sampler with bit_packed and no detectors returns (shots, 0) uint8."""
+    c = Circuit("H 0\nM 0")
+    sampler = c.compile_detector_sampler()
+    result = sampler.sample(5, bit_packed=True)
+    assert result.dtype == np.uint8
+    assert result.shape == (5, 0)
+
+
+def test_sampler_repr_no_measurements():
+    """repr() on a sampler with no measurements should not error."""
+    c = Circuit("H 0")
+    sampler = c.compile_sampler()
+    repr_str = repr(sampler)
+    assert "CompiledMeasurementSampler" in repr_str
+    assert "0 outputs" in repr_str
+
+
 def test_seed():
     c = Circuit("""
         H 0

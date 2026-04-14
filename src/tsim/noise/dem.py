@@ -212,6 +212,6 @@ def get_detector_error_model(
             "Failed to compute detector error model. "
             "The number of observables changed after conversion. "
             "This indicates that stim has interpreted logical observables as gauges "
-            f"and removed them. Error model:\n {str(new_dem)}"
+            f"and removed them. Error model:\n {new_dem!s}"
         )
     return new_dem

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from fractions import Fraction
 
+import stim
+
+from tsim.core.parse import parse_parametric_tag
+
 # Clifford decompositions for U3(θ, φ, λ) = R_Z(φ) · R_Y(θ) · R_Z(λ).
 # Keys: (θ_idx, φ_idx, λ_idx) where each index ∈ {0,1,2,3} is the angle in half-pi units.
 # Values: stim gate names in circuit (time) order.
@@ -54,9 +58,9 @@ def _to_half_pi_index(phase: Fraction) -> int | None:
     return int(phase * 2) % 4
 
 
-def _equivalent_u3_key(t: int, p: int, l: int) -> tuple[int, int, int]:
+def _equivalent_u3_key(t: int, p: int, lam: int) -> tuple[int, int, int]:
     """U3(θ, φ, λ) ≡ U3(2π-θ, φ+π, λ+π) up to global phase."""
-    return ((4 - t) % 4, (p + 2) % 4, (l + 2) % 4)
+    return ((4 - t) % 4, (p + 2) % 4, (lam + 2) % 4)
 
 
 def parametric_to_clifford_gates(
@@ -95,3 +99,30 @@ def parametric_to_clifford_gates(
         return list(gates)
 
     return None
+
+
+def clifford_expansion(
+    instr: stim.CircuitInstruction,
+) -> tuple[list[str], list[int]] | None:
+    """Try to expand a tagged ``I`` instruction into equivalent Clifford gates.
+
+    Returns:
+        ``(gate_names, targets)`` where *gate_names* are stim gate names in
+        circuit order and *targets* are the qubit indices, or ``None`` if the
+        instruction is not an expandable parametric rotation.
+
+    """
+    if instr.name != "I" or not instr.tag:
+        return None
+
+    parsed = parse_parametric_tag(instr.tag)
+    if parsed is None:
+        return None
+
+    gate_name, params = parsed
+    gates = parametric_to_clifford_gates(gate_name, params)
+    if gates is None:
+        return None
+
+    targets = [t.value for t in instr.targets_copy()]
+    return gates, targets
