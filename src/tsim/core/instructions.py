@@ -185,7 +185,7 @@ def i(b: GraphRepresentation, qubit: int, *_args: float) -> None:
     b.graph.set_row(v, last_row(b, qubit) + 1)
 
 
-def ii(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def ii(b: GraphRepresentation, qubit1: int, qubit2: int, *_args: float) -> None:
     """Apply two-qubit identity (advances the row on both qubits)."""
     i(b, qubit1)
     i(b, qubit2)
@@ -868,6 +868,7 @@ def mpp(
     b: GraphRepresentation,
     paulis: list[tuple[Literal["X", "Y", "Z"], int]],
     invert: bool = False,
+    p: float = 0,
 ) -> None:
     """Measure a single Pauli product.
 
@@ -875,6 +876,7 @@ def mpp(
         b: The graph representation to modify.
         paulis: List of (pauli_type, qubit) pairs defining the Pauli product.
         invert: Whether to invert the measurement result.
+        p: Measurement flip error probability.
 
     """
     aux = -2
@@ -882,7 +884,7 @@ def mpp(
     h(b, aux)
     _apply_pauli_controls(b, aux, paulis)
     h(b, aux)
-    m(b, aux, invert=invert)
+    m(b, aux, p=p, invert=invert)
 
 
 def _apply_pauli_controls(
@@ -1017,19 +1019,25 @@ def my(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -
     h_yz(b, qubit)
 
 
-def mxx(b: GraphRepresentation, q0: int, q1: int, invert: bool = False) -> None:
+def mxx(
+    b: GraphRepresentation, q0: int, q1: int, p: float = 0, invert: bool = False
+) -> None:
     """Measure two qubits in XX basis."""
-    mpp(b, [("X", q0), ("X", q1)], invert)
+    mpp(b, [("X", q0), ("X", q1)], invert, p=p)
 
 
-def myy(b: GraphRepresentation, q0: int, q1: int, invert: bool = False) -> None:
+def myy(
+    b: GraphRepresentation, q0: int, q1: int, p: float = 0, invert: bool = False
+) -> None:
     """Measure two qubits in YY basis."""
-    mpp(b, [("Y", q0), ("Y", q1)], invert)
+    mpp(b, [("Y", q0), ("Y", q1)], invert, p=p)
 
 
-def mzz(b: GraphRepresentation, q0: int, q1: int, invert: bool = False) -> None:
+def mzz(
+    b: GraphRepresentation, q0: int, q1: int, p: float = 0, invert: bool = False
+) -> None:
     """Measure two qubits in ZZ basis."""
-    mpp(b, [("Z", q0), ("Z", q1)], invert)
+    mpp(b, [("Z", q0), ("Z", q1)], invert, p=p)
 
 
 def r(b: GraphRepresentation, qubit: int) -> None:
