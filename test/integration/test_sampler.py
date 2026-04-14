@@ -207,6 +207,52 @@ def test_memory_error_correction_and_compare_to_stim(code_task: str):
 
 
 @pytest.mark.parametrize(
+    "channel",
+    [
+        "after_clifford_depolarization",
+        "after_reset_flip_probability",
+        "before_measure_flip_probability",
+        "before_round_data_depolarization",
+    ],
+)
+def test_rotated_surface_code_single_noise_channel_matches_stim(channel: str):
+    """Regression test for single-channel detector sampling noise handling."""
+    noise_kwargs = {
+        "after_clifford_depolarization": 0.0,
+        "after_reset_flip_probability": 0.0,
+        "before_measure_flip_probability": 0.0,
+        "before_round_data_depolarization": 0.0,
+    }
+    noise_kwargs[channel] = 0.01
+
+    circ = stim.Circuit.generated(
+        "surface_code:rotated_memory_x",
+        distance=5,
+        rounds=5,
+        **noise_kwargs,
+    )
+
+    shots = 200_000
+    stim_dets = circ.compile_detector_sampler(seed=42).sample(
+        shots=shots, append_observables=True
+    )
+    tsim_dets = (
+        Circuit.from_stim_program(circ)
+        .compile_detector_sampler(seed=42)
+        .sample(
+            shots=shots,
+            batch_size=shots // 10,
+            append_observables=True,
+        )
+    )
+
+    stim_total = int(stim_dets.sum())
+    tsim_total = int(tsim_dets.sum())
+    rel_diff = abs(stim_total - tsim_total) / stim_total
+    assert rel_diff <= 0.005
+
+
+@pytest.mark.parametrize(
     "stim_program",
     [
         """
