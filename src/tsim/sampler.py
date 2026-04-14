@@ -177,7 +177,9 @@ class _CompiledSamplerBase:
             mode: Compilation mode - "sequential" for autoregressive, "joint" for probabilities.
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed. If None, a random seed is generated.
+            seed: Random seed. If None, a random seed is generated. Note that
+                deterministic results are only guaranteed for a fixed batch size
+                and fixed reference sample settings.
 
         """
         if seed is None:
@@ -379,7 +381,10 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for JAX. If None, a random seed is generated.
+            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
+                will only produce deterministic samples for fixed batch size. If
+                deterministic samples are needed, the batch size should be set
+                manually.
 
         """
         super().__init__(
@@ -398,7 +403,8 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             batch_size: The number of samples to process in each batch. Defaults to
                 None, which automatically chooses a batch size based on available
                 memory. When using a GPU, setting this explicitly can help fully
-                utilize VRAM for maximum performance.
+                utilize VRAM for maximum performance. NOTE: Changing the batch size
+                will affect reproducibility even with a fixed seed.
 
         Returns:
             A numpy array containing the measurement samples.
@@ -430,7 +436,10 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for JAX. If None, a random seed is generated.
+            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
+                will only produce deterministic samples for fixed batch size and
+                fixed reference sample settings. If deterministic samples are
+                needed, the batch size should be set manually.
 
         """
         super().__init__(
@@ -492,7 +501,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             batch_size: The number of samples to process in each batch. Defaults to
                 None, which automatically chooses a batch size based on available
                 memory. When using a GPU, setting this explicitly can help fully
-                utilize VRAM for maximum performance.
+                utilize VRAM for maximum performance. NOTE: Changing the batch size
+                will affect reproducibility even with a fixed seed.
             separate_observables: Defaults to False. When set to True, the return value
                 is a (detection_events, observable_flips) tuple instead of a flat
                 detection_events array.
@@ -575,7 +585,8 @@ class CompiledStateProbs(_CompiledSamplerBase):
             sample_detectors: If True, compute detector/observable probabilities.
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for JAX. If None, a random seed is generated.
+            seed: Random seed. If None, a random seed is generated. Note that
+                deterministic results are only guaranteed for a fixed batch size.
 
         """
         super().__init__(
