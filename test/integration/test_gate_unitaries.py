@@ -171,8 +171,8 @@ def _tpp_unitary(pauli_matrix: np.ndarray, dagger: bool = False) -> np.ndarray:
     TPP(P) phases the -1 eigenspace of P by exp(iπ/4):
         TPP(P) = (1 + e^{iπ/4})/2 · I + (1 - e^{iπ/4})/2 · P
 
-    Up to phase, this is equivalent to:
-        TPP(P) = exp(iπ/8 · P) = cos(π/8) · I + sin(π/8) · P
+    Up to global phase, this is equivalent to:
+        TPP(P) = exp(-iπ/8 · P) = cos(π/8) · I - i sin(π/8) · P
     """
     phase = np.exp(-1j * np.pi / 4) if dagger else np.exp(1j * np.pi / 4)
     identity = np.eye(pauli_matrix.shape[0])

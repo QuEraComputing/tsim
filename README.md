@@ -137,11 +137,11 @@ U3(0.5, 0.25, 0.125) 0  # Apply U3 with θ=π/2, φ=π/4, λ=π/8
 
 ### `TPP` and `TPP_DAG` (Pauli Product Phase)
 
-`TPP` applies exp(i π/8 · P) for a Pauli product P (equivalently, phases the −1 eigenspace of P by exp(i π/4)). `TPP_DAG` applies exp(−i π/8 · P).
+`TPP` applies exp(−i π/8 · P) (up to global phase) for a Pauli product P, phasing the −1 eigenspace of P by exp(i π/4). `TPP_DAG` applies exp(+i π/8 · P), phasing by exp(−i π/4). For a single qubit, `TPP Z0` is the T gate.
 
 ```
-TPP X0*Y1      # Apply exp(i π/8 · X0⊗Y1)
-TPP_DAG Z0     # Apply exp(-i π/8 · Z) = T_DAG on qubit 0
+TPP X0*Y1      # Apply exp(-i π/8 · X0⊗Y1) (up to global phase)
+TPP_DAG Z0     # Apply exp(+i π/8 · Z) = T_DAG (up to global phase)
 ```
 
 ## Publications Using Tsim

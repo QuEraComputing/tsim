@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `TPP` and `TPP_DAG` instructions that implement `exp(1j*pi/8*P)` for a Pauli product P (or `exp(-1j*pi/8*P)` if dagger), i.e., phasing the +1 or -1 eigenspace of P by exp(i π/4).
+- `TPP` and `TPP_DAG` instructions — applies exp(-i pi/8 P) or exp(+i pi/8 P) (up to global phase) for a Pauli product P, i.e., phases the -1 eigenspace of P by exp(i pi/4) or exp(-i pi/4).
 
 
 ## [0.1.3] - 2026-04-13

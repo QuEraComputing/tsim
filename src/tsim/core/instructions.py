@@ -911,11 +911,12 @@ def _pauli_product_phase(
     phase_gate_dag: Callable[[GraphRepresentation, int], None],
     dagger: bool,
 ) -> None:
-    """Apply exp(i theta P) for a Pauli product P.
+    """Apply exp(-i theta P) (up to global phase) for a Pauli product P.
 
-    Shared implementation for SPP (theta=pi/4) and TPP (theta=pi/8) and their
-    daggers. The only difference is which phase gate is applied to the parity
-    qubit.
+    If `dagger` is True, apply exp(+i theta P) instead.
+    Phases the -1 eigenspace of P by exp(2i theta). Shared implementation for
+    SPP (theta=pi/4, phase by i) and TPP (theta=pi/8, phase by exp(i pi/4))
+    and their daggers.
     """
     if len(paulis) == 0:
         return
@@ -957,14 +958,15 @@ def spp(
     paulis: list[tuple[Literal["X", "Y", "Z"], int]],
     dagger: bool = False,
 ) -> None:
-    """Apply exp(i pi/4 P) for a Pauli product P (or exp(-i pi/4 P) if dagger).
+    """Apply exp(-i pi/4 P) (up to global phase) for a Pauli product P.
 
-    Equivalent to phasing the -1 eigenspace of P by i (or -i if dagger).
+    Phases the -1 eigenspace of P by i (or -i if dagger). For a single qubit,
+    ``SPP Z0`` is the S gate and ``SPP_DAG Z0`` is S_DAG.
 
     Args:
         b: The graph representation to modify.
         paulis: List of (pauli_type, qubit) pairs defining the Pauli product P.
-        dagger: If True, apply exp(-i pi/4 P) instead.
+        dagger: If True, apply exp(+i pi/4 P) (phase by -i) instead.
 
     """
     _pauli_product_phase(b, paulis, s, s_dag, dagger)
@@ -975,15 +977,15 @@ def tpp(
     paulis: list[tuple[Literal["X", "Y", "Z"], int]],
     dagger: bool = False,
 ) -> None:
-    """Apply exp(i pi/8 P) for a Pauli product P (or exp(-i pi/8 P) if dagger).
+    """Apply exp(-i pi/8 P) (up to global phase) for a Pauli product P.
 
-    Equivalent to phasing the -1 eigenspace of P by exp(i pi/4) (or exp(-i pi/4)
-    if dagger).
+    Phases the -1 eigenspace of P by exp(i pi/4) (or exp(-i pi/4) if dagger).
+    For a single qubit, ``TPP Z0`` is the T gate and ``TPP_DAG Z0`` is T_DAG.
 
     Args:
         b: The graph representation to modify.
         paulis: List of (pauli_type, qubit) pairs defining the Pauli product P.
-        dagger: If True, apply exp(-i pi/8 P) instead.
+        dagger: If True, apply exp(+i pi/8 P) (phase by exp(-i pi/4)) instead.
 
     """
     _pauli_product_phase(b, paulis, t, t_dag, dagger)
