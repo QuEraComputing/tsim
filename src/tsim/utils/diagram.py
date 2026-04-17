@@ -394,12 +394,12 @@ def _replace_tagged_gates(
             doubled: list[stim.GateTarget] = []
             for target in targets:
                 if target.is_combiner:
-                    continue
-                if doubled:
+                    doubled.append(target)
+                else:
+                    # If this is a Pauli, double it and add a combiner between them.
+                    doubled.append(target)
                     doubled.append(stim.target_combiner())
-                doubled.append(target)
-                doubled.append(stim.target_combiner())
-                doubled.append(target)
+                    doubled.append(target)
             modified_circ.append(instr.name, doubled, [])
             continue
 
