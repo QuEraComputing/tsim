@@ -31,16 +31,20 @@ def shorthand_to_stim(text: str) -> str:
     """Convert tsim shorthand syntax to valid stim instructions.
 
     Converts:
-        T 0 1           → S[T] 0 1
-        T_DAG 0 1       → S_DAG[T] 0 1
-        R_Z(0.3) 0      → I[R_Z(theta=0.3*pi)] 0
-        R_X(0.25) 0     → I[R_X(theta=0.25*pi)] 0
-        R_Y(-0.5) 0     → I[R_Y(theta=-0.5*pi)] 0
+        T 0 1               → S[T] 0 1
+        T_DAG 0 1           → S_DAG[T] 0 1
+        TPP X0*Y1           → SPP[T] X0*Y1
+        TPP_DAG X0*Y1       → SPP_DAG[T] X0*Y1
+        R_Z(0.3) 0          → I[R_Z(theta=0.3*pi)] 0
+        R_X(0.25) 0         → I[R_X(theta=0.25*pi)] 0
+        R_Y(-0.5) 0         → I[R_Y(theta=-0.5*pi)] 0
         U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0
 
     """
-    # T_DAG must come before T to avoid partial matches
+    # TPP_DAG/TPP must come before T_DAG/T to avoid partial matches
     # (?<!\[) ensures we don't match T inside [T]
+    text = re.sub(r"(?<!\[)\bTPP_DAG\b(?!\[)", "SPP_DAG[T]", text)
+    text = re.sub(r"(?<!\[)\bTPP\b(?!\[)", "SPP[T]", text)
     text = re.sub(r"(?<!\[)\bT_DAG\b(?!\[)", "S_DAG[T]", text)
     text = re.sub(r"(?<!\[)\bT\b(?!\[)", "S[T]", text)
 
@@ -69,6 +73,8 @@ def stim_to_shorthand(text: str) -> str:
     Rewrites:
     - I[U3(theta=θ*pi, phi=φ*pi, lambda=λ*pi)] → U3(θ, φ, λ)
     - I[R_X(theta=α*pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α)
+    - SPP[T] → TPP
+    - SPP_DAG[T] → TPP_DAG
     - S[T] → T
     - S_DAG[T] → T_DAG
     """
@@ -95,6 +101,11 @@ def stim_to_shorthand(text: str) -> str:
         replace_rotation,
         text,
     )
+
+    # Replace SPP[T] and SPP_DAG[T] with TPP and TPP_DAG
+    # Must come before S[T]/S_DAG[T] to avoid partial matches
+    text = re.sub(r"(?<!\w)SPP_DAG\[T\](?!\w)", "TPP_DAG", text)
+    text = re.sub(r"(?<!\w)SPP\[T\](?!\w)", "TPP", text)
 
     # Replace S[T] and S_DAG[T] with T and T_DAG
     # Use non-word lookarounds because trailing ] is not a word character.

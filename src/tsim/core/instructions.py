@@ -904,19 +904,22 @@ def _apply_pauli_controls(
             raise ValueError(f"Invalid Pauli operator: {pauli_type}")
 
 
-def spp(
+def _pauli_product_phase(
     b: GraphRepresentation,
     paulis: list[tuple[Literal["X", "Y", "Z"], int]],
-    dagger: bool = False,
+    phase_gate: Callable[[GraphRepresentation, int], None],
+    phase_gate_dag: Callable[[GraphRepresentation, int], None],
+    dagger: bool,
 ) -> None:
-    """Phase the -1 eigenspace of a Pauli product by i (or -i if dagger).
+    """Apply exp(i theta P) for a Pauli product P.
 
-    Args:
-        b: The graph representation to modify.
-        paulis: List of (pauli_type, qubit) pairs defining the Pauli product.
-        dagger: If True, phase by -i instead of i.
-
+    Shared implementation for SPP (theta=pi/4) and TPP (theta=pi/8) and their
+    daggers. The only difference is which phase gate is applied to the parity
+    qubit.
     """
+    if len(paulis) == 0:
+        return
+
     # Rotate each qubit so its Pauli eigenvalue maps to Z
     for pauli_type, qubit in paulis:
         if pauli_type == "X":
@@ -932,9 +935,9 @@ def spp(
 
     # Phase the parity
     if dagger:
-        s_dag(b, last_qubit)
+        phase_gate_dag(b, last_qubit)
     else:
-        s(b, last_qubit)
+        phase_gate(b, last_qubit)
 
     # Uncompute parity accumulation
     for _, qubit in reversed(paulis[:-1]):
@@ -947,6 +950,43 @@ def spp(
         elif pauli_type == "Y":
             h(b, qubit)
             s(b, qubit)
+
+
+def spp(
+    b: GraphRepresentation,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+    dagger: bool = False,
+) -> None:
+    """Apply exp(i pi/4 P) for a Pauli product P (or exp(-i pi/4 P) if dagger).
+
+    Equivalent to phasing the -1 eigenspace of P by i (or -i if dagger).
+
+    Args:
+        b: The graph representation to modify.
+        paulis: List of (pauli_type, qubit) pairs defining the Pauli product P.
+        dagger: If True, apply exp(-i pi/4 P) instead.
+
+    """
+    _pauli_product_phase(b, paulis, s, s_dag, dagger)
+
+
+def tpp(
+    b: GraphRepresentation,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+    dagger: bool = False,
+) -> None:
+    """Apply exp(i pi/8 P) for a Pauli product P (or exp(-i pi/8 P) if dagger).
+
+    Equivalent to phasing the -1 eigenspace of P by exp(i pi/4) (or exp(-i pi/4)
+    if dagger).
+
+    Args:
+        b: The graph representation to modify.
+        paulis: List of (pauli_type, qubit) pairs defining the Pauli product P.
+        dagger: If True, apply exp(-i pi/8 P) instead.
+
+    """
+    _pauli_product_phase(b, paulis, t, t_dag, dagger)
 
 
 def mpad(b: GraphRepresentation, value: int, p: float = 0) -> None:

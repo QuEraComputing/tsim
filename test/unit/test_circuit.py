@@ -87,6 +87,40 @@ def test_t_dag_gate_shorthand():
     assert c1._stim_circ == c2._stim_circ
 
 
+def test_tpp_shorthand():
+    """Test that TPP shorthand is equivalent to SPP[T]."""
+    c1 = Circuit("TPP X0*Z1")
+    c2 = Circuit("SPP[T] X0*Z1")
+    assert c1._stim_circ == c2._stim_circ
+
+
+def test_tpp_dag_shorthand():
+    """Test that TPP_DAG shorthand is equivalent to SPP_DAG[T]."""
+    c1 = Circuit("TPP_DAG Y0")
+    c2 = Circuit("SPP_DAG[T] Y0")
+    assert c1._stim_circ == c2._stim_circ
+
+
+def test_tpp_append():
+    """Test that circuit.append('TPP', ...) works correctly."""
+    import stim
+
+    c = Circuit()
+    c.append("TPP", [stim.target_x(0), stim.target_combiner(), stim.target_z(1)])
+    c2 = Circuit("TPP X0*Z1")
+    assert c._stim_circ == c2._stim_circ
+
+
+def test_tpp_dag_append():
+    """Test that circuit.append('TPP_DAG', ...) works correctly."""
+    import stim
+
+    c = Circuit()
+    c.append("TPP_DAG", [stim.target_y(0)])
+    c2 = Circuit("TPP_DAG Y0")
+    assert c._stim_circ == c2._stim_circ
+
+
 def test_rotation_gate_shorthand():
     """Test that R_Z(angle) shorthand is converted correctly."""
     c1 = Circuit("R_Z(0.25) 0")
@@ -525,6 +559,80 @@ def test_is_clifford_rejects_t_gate():
     assert not c.is_clifford
 
 
+def test_is_clifford_rejects_tpp():
+    c = Circuit("TPP Z0")
+    assert not c.is_clifford
+
+
+def test_is_clifford_rejects_tpp_dag():
+    c = Circuit("TPP_DAG X0*Y1")
+    assert not c.is_clifford
+
+
+def _assert_stim_tsim_samples_match(program: str, n_shots: int = 16) -> None:
+    """Assert stim and tsim produce the same samples for a deterministic circuit.
+
+    Samples the program ``n_shots`` times with stim. All rows must be identical
+    (otherwise the test circuit is not deterministic and the test is invalid).
+    Then samples with tsim's compiled sampler and verifies exact agreement.
+    """
+    stim_samples = stim.Circuit(program).compile_sampler().sample(n_shots)
+    assert np.all(stim_samples == stim_samples[0]), (
+        f"Test circuit is not deterministic under stim:\n{program}\n"
+        f"samples:\n{stim_samples}"
+    )
+
+    tsim_samples = (
+        Circuit(program).compile_sampler(seed=0).sample(n_shots, batch_size=n_shots)
+    )
+    np.testing.assert_array_equal(tsim_samples, stim_samples)
+
+
+@pytest.mark.parametrize(
+    "instruction,inverse",
+    [
+        ("SPP Z0", "SPP_DAG Z0"),
+        ("SPP X0", "SPP_DAG X0"),
+        ("SPP Y0", "SPP_DAG Y0"),
+        ("SPP_DAG Z0", "SPP Z0"),
+        ("SPP_DAG X0", "SPP X0"),
+        ("SPP X0*Z1", "SPP_DAG X0*Z1"),
+        ("SPP_DAG Y0*Y1", "SPP Y0*Y1"),
+        ("SPP !X0", "SPP X0"),  # ! toggles dagger: SPP !X0 == SPP_DAG X0
+        ("SPP !Z0*X1", "SPP Z0*X1"),
+        ("SPP X0*X0", ""),  # cancels to identity, no inverse needed
+        ("SPP X0*Y1*X0", "SPP_DAG Y1"),  # reduces to SPP Y1
+        ("SPP_DAG Z0*Z0", ""),  # cancels to identity
+    ],
+)
+def test_spp_stim_tsim_equivalence(instruction: str, inverse: str):
+    """SPP followed by its inverse should give identity; stim and tsim must agree."""
+    program = f"R 0 1\n{instruction}\n{inverse}\nM 0 1"
+    _assert_stim_tsim_samples_match(program)
+
+
+@pytest.mark.parametrize(
+    "instruction",
+    [
+        "MPP Z0",  # +1 eigenstate: |0⟩ → 0
+        "MPP !Z0",  # flipped → 1
+        "MPP Z1",
+        "MPP Z0*Z1",  # +1 eigenstate: |00⟩ → 0
+        "MPP !Z0*Z1",
+        "MPP Z0 Z1",  # two products, both deterministic
+        "MPP X0*X0",  # identity → 0
+        "MPP !X0*X0",  # identity flipped → 1
+        "MPP Y1*Y1",  # identity → 0
+        "MPP Z0*X0*Z0*X0",  # -I → 1
+        "MPP !Z0*X0*Z0*X0",  # -I flipped → 0
+    ],
+)
+def test_mpp_stim_tsim_equivalence(instruction: str):
+    """MPP measurement on |00⟩ should match between stim and tsim."""
+    program = f"R 0 1\n{instruction}"
+    _assert_stim_tsim_samples_match(program)
+
+
 def test_is_clifford_rejects_non_clifford_rotation():
     c = Circuit("H 0\nR_Z(0.25) 0\nCNOT 0 1")
     assert not c.is_clifford
@@ -620,6 +728,19 @@ def test_inverse_t_dag_gate():
     c = Circuit("T_DAG 0")
     c_inv = c.inverse()
     assert unitaries_equal_up_to_global_phase((c + c_inv).to_matrix(), np.eye(2))
+
+
+def test_inverse_tpp():
+    c = Circuit("TPP Z0")
+    c_inv = c.inverse()
+    assert unitaries_equal_up_to_global_phase((c + c_inv).to_matrix(), np.eye(2))
+
+
+def test_inverse_tpp_dag():
+    c = Circuit("TPP_DAG X0*Y1")
+    c_inv = c.inverse()
+    combined = (c + c_inv).to_matrix()
+    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
 
 
 def test_inverse_mixed_circuit():

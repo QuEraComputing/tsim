@@ -21,6 +21,7 @@ from tsim.core.instructions import (
     r_z,
     spp,
     tick,
+    tpp,
     u3,
 )
 
@@ -63,11 +64,31 @@ def parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
     return gate_name, params
 
 
+_PAULI_PRODUCT: dict[
+    tuple[Literal["X", "Y", "Z"], Literal["X", "Y", "Z"]],
+    tuple[Literal["X", "Y", "Z"], int],
+] = {
+    ("X", "Y"): ("Z", 1),  # XY = iZ
+    ("X", "Z"): ("Y", 3),  # XZ = -iY
+    ("Y", "X"): ("Z", 3),  # YX = -iZ
+    ("Y", "Z"): ("X", 1),  # YZ = iX
+    ("Z", "X"): ("Y", 1),  # ZX = iY
+    ("Z", "Y"): ("X", 3),  # ZY = -iX
+}
+
+
 def _iter_pauli_products(
     instruction: stim.CircuitInstruction,
 ) -> Iterator[tuple[list[tuple[Literal["X", "Y", "Z"], int]], bool]]:
-    """Yield (paulis, invert) for each Pauli product in an instruction."""
-    current_paulis: list[tuple[Literal["X", "Y", "Z"], int]] = []
+    """Yield (paulis, invert) for each Pauli product in an instruction.
+
+    Tracks Pauli algebra when the same qubit appears multiple times:
+    same Pauli cancels (P·P = I), different Paulis combine with a sign
+    (e.g. Z·X = iY).  An accumulated sign of -1 flips the invert flag;
+    ±i raises ValueError (anti-Hermitian product), matching stim.
+    """
+    qubit_pauli: dict[int, Literal["X", "Y", "Z"]] = {}
+    sign = 0  # accumulated power of i (mod 4)
     invert = False
     targets = instruction.targets_copy()
 
@@ -87,12 +108,29 @@ def _iter_pauli_products(
             )
 
         invert ^= target.is_inverted_result_target
-        current_paulis.append((pauli_type, target.value))
+        qubit = target.value
+
+        if qubit not in qubit_pauli:
+            qubit_pauli[qubit] = pauli_type
+        elif qubit_pauli[qubit] == pauli_type:
+            # P·P = I — cancel with no sign change
+            del qubit_pauli[qubit]
+        else:
+            # Different Paulis on same qubit — combine with sign
+            result, delta = _PAULI_PRODUCT[qubit_pauli[qubit], pauli_type]
+            qubit_pauli[qubit] = result
+            sign = (sign + delta) % 4
 
         next_idx = i + 1
         if next_idx >= len(targets) or not targets[next_idx].is_combiner:
-            yield current_paulis, invert
-            current_paulis = []
+            if sign % 2 == 1:
+                raise ValueError(f"{instruction} acted on an anti-Hermitian operator")
+            paulis: list[tuple[Literal["X", "Y", "Z"], int]] = [
+                (p, q) for q, p in sorted(qubit_pauli.items())
+            ]
+            yield paulis, invert ^ (sign == 2)
+            qubit_pauli = {}
+            sign = 0
             invert = False
 
 
@@ -153,6 +191,11 @@ def parse_stim_circuit(
             p = args[0] if args else 0
             for paulis, invert in _iter_pauli_products(instruction):
                 mpp(b, paulis, invert, p=p)
+            continue
+        if name in ("SPP", "SPP_DAG") and instruction.tag == "T":
+            is_dag = name == "SPP_DAG"
+            for paulis, invert in _iter_pauli_products(instruction):
+                tpp(b, paulis, dagger=is_dag ^ invert)
             continue
         if name in ("SPP", "SPP_DAG"):
             is_dag = name == "SPP_DAG"

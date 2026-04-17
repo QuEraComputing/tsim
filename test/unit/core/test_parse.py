@@ -1,3 +1,6 @@
+from unittest.mock import ANY, patch
+
+import pytest
 import stim
 from numpy.testing import assert_allclose
 
@@ -376,8 +379,190 @@ class TestParseSPP:
         b = parse_stim_circuit(circuit)
         assert len(b.rec) == 0
 
+    def test_spp_repeated_pair_cancels(self):
+        """SPP X0*X0 should forward empty Pauli list (no-op)."""
+        with patch("tsim.core.parse.spp") as mock_spp:
+            parse_stim_circuit(stim.Circuit("SPP X0*X0"))
+        mock_spp.assert_called_once_with(ANY, [], dagger=False)
+
+    def test_spp_partial_cancel(self):
+        """SPP X0*Y1*X0 should cancel X0 and forward Y1."""
+        with patch("tsim.core.parse.spp") as mock_spp:
+            parse_stim_circuit(stim.Circuit("SPP X0*Y1*X0"))
+        mock_spp.assert_called_once_with(ANY, [("Y", 1)], dagger=False)
+
+    def test_spp_anticommuting_sign_flips_dagger(self):
+        """SPP Z0*X0*Z0 reduces to -X; sign=-1 should flip the dagger flag."""
+        with patch("tsim.core.parse.spp") as mock_spp:
+            parse_stim_circuit(stim.Circuit("SPP Z0*X0*Z0"))
+        mock_spp.assert_called_once_with(ANY, [("X", 0)], dagger=True)
+
+    def test_spp_dag_anticommuting_sign_flips_dagger(self):
+        """SPP_DAG with sign=-1 toggles dagger back: SPP_DAG·(-1) → SPP."""
+        with patch("tsim.core.parse.spp") as mock_spp:
+            parse_stim_circuit(stim.Circuit("SPP_DAG Z0*X0*Z0"))
+        mock_spp.assert_called_once_with(ANY, [("X", 0)], dagger=False)
+
     def test_spp_multiple_products(self):
         """SPP with multiple products should parse correctly."""
         circuit = stim.Circuit("SPP X0 Y1*Z2")
         b = parse_stim_circuit(circuit)
         assert len(b.rec) == 0
+
+
+class TestParseMPPCancellation:
+    """Tests for MPP with duplicate/anticommuting Pauli targets.
+
+    Mocks ``mpp`` so we can assert the exact Pauli list and invert flag that
+    the parser forwards — this directly exercises the reduction and sign
+    tracking done by ``_iter_pauli_products``.
+    """
+
+    def test_mpp_full_cancel_reduces_to_identity(self):
+        """MPP X0*X0 should reduce to empty Pauli list (measures identity)."""
+        with patch("tsim.core.parse.mpp") as mock_mpp:
+            parse_stim_circuit(stim.Circuit("MPP X0*X0"))
+        mock_mpp.assert_called_once_with(ANY, [], False, p=0)
+
+    def test_mpp_full_cancel_inverted(self):
+        """MPP !X0*X0 should measure identity with invert=True."""
+        with patch("tsim.core.parse.mpp") as mock_mpp:
+            parse_stim_circuit(stim.Circuit("MPP !X0*X0"))
+        mock_mpp.assert_called_once_with(ANY, [], True, p=0)
+
+    def test_mpp_partial_cancel_measures_y_basis(self):
+        """MPP X0*Y1*X0 should cancel X0 pair and measure Y on qubit 1."""
+        with patch("tsim.core.parse.mpp") as mock_mpp:
+            parse_stim_circuit(stim.Circuit("MPP X0*Y1*X0"))
+        mock_mpp.assert_called_once_with(ANY, [("Y", 1)], False, p=0)
+
+    def test_mpp_reorders_to_z_basis(self):
+        """MPP Y0*Y0*Z1 should reduce to just Z on qubit 1."""
+        with patch("tsim.core.parse.mpp") as mock_mpp:
+            parse_stim_circuit(stim.Circuit("MPP Y0*Y0*Z1"))
+        mock_mpp.assert_called_once_with(ANY, [("Z", 1)], False, p=0)
+
+    def test_mpp_anticommuting_sign_flips_invert(self):
+        """MPP Z0*X0*Z0*X0 = -I: sign=-1 flips invert from False to True."""
+        with patch("tsim.core.parse.mpp") as mock_mpp:
+            parse_stim_circuit(stim.Circuit("MPP Z0*X0*Z0*X0"))
+        mock_mpp.assert_called_once_with(ANY, [], True, p=0)
+
+    def test_mpp_anticommuting_sign_with_explicit_invert(self):
+        """MPP !Z0*X0*Z0*X0 = -I with !: two flips cancel → invert=False."""
+        with patch("tsim.core.parse.mpp") as mock_mpp:
+            parse_stim_circuit(stim.Circuit("MPP !Z0*X0*Z0*X0"))
+        mock_mpp.assert_called_once_with(ANY, [], False, p=0)
+
+    def test_mpp_combines_to_single_pauli_with_sign(self):
+        """MPP Z0*X0*Z0 should reduce to -X on qubit 0."""
+        with patch("tsim.core.parse.mpp") as mock_mpp:
+            parse_stim_circuit(stim.Circuit("MPP Z0*X0*Z0"))
+        mock_mpp.assert_called_once_with(ANY, [("X", 0)], True, p=0)
+
+    def test_mpp_multiple_products_independent_state(self):
+        """Each product's accumulated state should reset between products."""
+        with patch("tsim.core.parse.mpp") as mock_mpp:
+            parse_stim_circuit(stim.Circuit("MPP X0*X0 !Z0"))
+        assert mock_mpp.call_count == 2
+        # First product: X0*X0 → identity, invert=False
+        assert mock_mpp.call_args_list[0] == (
+            (ANY, [], False),
+            {"p": 0},
+        )
+        # Second product: !Z0 → Z with invert=True
+        assert mock_mpp.call_args_list[1] == (
+            (ANY, [("Z", 0)], True),
+            {"p": 0},
+        )
+
+    def test_mpp_anti_hermitian_raises(self):
+        """MPP Z0*X0 = iY is anti-Hermitian and should raise."""
+        with pytest.raises(ValueError, match="anti-Hermitian"):
+            parse_stim_circuit(stim.Circuit("MPP Z0*X0"))
+
+    def test_mpp_anti_hermitian_multi_qubit_raises(self):
+        """MPP Z0*X0*X1 is anti-Hermitian and should raise."""
+        with pytest.raises(ValueError, match="anti-Hermitian"):
+            parse_stim_circuit(stim.Circuit("MPP Z0*X0*X1"))
+
+
+class TestParseTPP:
+    """Tests for parsing TPP and TPP_DAG instructions.
+
+    Mocks ``tpp`` to assert the exact Pauli list and dagger flag that the
+    parser forwards — directly exercising the Pauli reduction and sign
+    tracking done by ``_iter_pauli_products``.
+    """
+
+    def test_tpp_single_pauli(self):
+        """TPP Z0 should forward [(Z, 0)] with dagger=False."""
+        with patch("tsim.core.parse.tpp") as mock_tpp:
+            parse_stim_circuit(stim.Circuit("SPP[T] Z0"))
+        mock_tpp.assert_called_once_with(ANY, [("Z", 0)], dagger=False)
+
+    def test_tpp_product(self):
+        """TPP X0*Z1 should forward both Paulis with dagger=False."""
+        with patch("tsim.core.parse.tpp") as mock_tpp:
+            parse_stim_circuit(stim.Circuit("SPP[T] X0*Z1"))
+        mock_tpp.assert_called_once_with(ANY, [("X", 0), ("Z", 1)], dagger=False)
+
+    def test_tpp_dag_single_pauli(self):
+        """TPP_DAG Z0 should forward [(Z, 0)] with dagger=True."""
+        with patch("tsim.core.parse.tpp") as mock_tpp:
+            parse_stim_circuit(stim.Circuit("SPP_DAG[T] Z0"))
+        mock_tpp.assert_called_once_with(ANY, [("Z", 0)], dagger=True)
+
+    def test_tpp_invert_flag_flips_dagger(self):
+        """TPP !Z0 has the ! flag, which XORs into the dagger flag."""
+        with patch("tsim.core.parse.tpp") as mock_tpp:
+            parse_stim_circuit(stim.Circuit("SPP[T] !Z0"))
+        mock_tpp.assert_called_once_with(ANY, [("Z", 0)], dagger=True)
+
+    def test_tpp_repeated_pair_cancels(self):
+        """TPP Z0*Z0 should forward empty Pauli list (no-op)."""
+        with patch("tsim.core.parse.tpp") as mock_tpp:
+            parse_stim_circuit(stim.Circuit("SPP[T] Z0*Z0"))
+        mock_tpp.assert_called_once_with(ANY, [], dagger=False)
+
+    def test_tpp_partial_cancel(self):
+        """TPP X0*Y1*X0 should cancel X0 pair and forward Y1."""
+        with patch("tsim.core.parse.tpp") as mock_tpp:
+            parse_stim_circuit(stim.Circuit("SPP[T] X0*Y1*X0"))
+        mock_tpp.assert_called_once_with(ANY, [("Y", 1)], dagger=False)
+
+    def test_tpp_anticommuting_sign_flips_dagger(self):
+        """TPP Z0*X0*Z0 reduces to -X; sign=-1 should flip dagger to True."""
+        with patch("tsim.core.parse.tpp") as mock_tpp:
+            parse_stim_circuit(stim.Circuit("SPP[T] Z0*X0*Z0"))
+        mock_tpp.assert_called_once_with(ANY, [("X", 0)], dagger=True)
+
+    def test_tpp_dag_anticommuting_sign_flips_dagger(self):
+        """TPP_DAG with sign=-1 toggles dagger back: TPP_DAG·(-1) → TPP."""
+        with patch("tsim.core.parse.tpp") as mock_tpp:
+            parse_stim_circuit(stim.Circuit("SPP_DAG[T] Z0*X0*Z0"))
+        mock_tpp.assert_called_once_with(ANY, [("X", 0)], dagger=False)
+
+    def test_tpp_anticommuting_with_invert(self):
+        """TPP !Z0*X0*Z0: invert=True XOR sign=-1 → dagger flips twice → False."""
+        with patch("tsim.core.parse.tpp") as mock_tpp:
+            parse_stim_circuit(stim.Circuit("SPP[T] !Z0*X0*Z0"))
+        mock_tpp.assert_called_once_with(ANY, [("X", 0)], dagger=False)
+
+    def test_tpp_multiple_products_independent_state(self):
+        """Each product's accumulated state should reset between products."""
+        with patch("tsim.core.parse.tpp") as mock_tpp:
+            parse_stim_circuit(stim.Circuit("SPP[T] Z0*Z0 !X1"))
+        assert mock_tpp.call_count == 2
+        # First product: Z0*Z0 → identity, dagger=False
+        assert mock_tpp.call_args_list[0] == ((ANY, []), {"dagger": False})
+        # Second product: !X1 → X with dagger=True
+        assert mock_tpp.call_args_list[1] == (
+            (ANY, [("X", 1)]),
+            {"dagger": True},
+        )
+
+    def test_tpp_anti_hermitian_raises(self):
+        """TPP Z0*X0 = iY is anti-Hermitian and should raise."""
+        with pytest.raises(ValueError, match="anti-Hermitian"):
+            parse_stim_circuit(stim.Circuit("SPP[T] Z0*X0"))

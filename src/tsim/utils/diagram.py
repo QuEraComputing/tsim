@@ -276,6 +276,56 @@ def placeholders_to_t(
     return etree.tostring(root, encoding="unicode")
 
 
+def _deduplicate_doubled_spp(svg_string: str) -> str:
+    """Replace doubled SPP elements (TPP markers) with TPP labels.
+
+    When SPP[T] is rendered with doubled Pauli targets, stim produces
+    duplicate <rect>+<text> pairs at the same (x, y) position. This
+    function detects those duplicates, removes one copy, and renames
+    "SPP" to "TPP" in the surviving text element.
+    """
+    root = etree.fromstring(svg_string.encode())
+    children = list(root)
+
+    to_remove: list[etree._Element] = []
+    to_rename: list[etree._Element] = []
+
+    i = 0
+    while i < len(children) - 3:
+        r1 = children[i]
+        t1 = children[i + 1]
+        r2 = children[i + 2]
+        t2 = children[i + 3]
+
+        if (
+            r1.tag.endswith("rect")
+            and r1.get("fill") == "black"
+            and t1.tag.endswith("text")
+            and t1.get("fill") == "white"
+            and r2.tag.endswith("rect")
+            and r2.get("fill") == "black"
+            and t2.tag.endswith("text")
+            and t2.get("fill") == "white"
+            and r1.get("x") == r2.get("x")
+            and r1.get("y") == r2.get("y")
+        ):
+            to_remove.append(r2)
+            to_remove.append(t2)
+            to_rename.append(t1)
+            i += 4
+        else:
+            i += 1
+
+    for elem in to_remove:
+        root.remove(elem)
+
+    for text_elem in to_rename:
+        if text_elem.text:
+            text_elem.text = text_elem.text.replace("SPP", "TPP")
+
+    return etree.tostring(root, encoding="unicode")
+
+
 def _parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
     """Parse a parametric gate tag like R_Z(theta=0.3*pi)."""
     match = re.match(r"^(\w+)\((.*)\)$", tag)
@@ -333,6 +383,24 @@ def _replace_tagged_gates(
             modified_circ.append(
                 stim.CircuitRepeatBlock(instr.repeat_count, modified_body)
             )
+            continue
+
+        # Handle TPP gates (SPP[T] and SPP_DAG[T])
+        # Double each Pauli target so the SVG contains duplicate rect+text
+        # pairs at the same position, which _deduplicate_doubled_spp() later
+        # detects and renames SPP → TPP.
+        if instr.tag == "T" and instr.name in ["SPP", "SPP_DAG"]:
+            targets = instr.targets_copy()
+            doubled: list[stim.GateTarget] = []
+            for target in targets:
+                if target.is_combiner:
+                    continue
+                if doubled:
+                    doubled.append(stim.target_combiner())
+                doubled.append(target)
+                doubled.append(stim.target_combiner())
+                doubled.append(target)
+            modified_circ.append(instr.name, doubled, [])
             continue
 
         # Handle T gates (S[T] and S_DAG[T])
@@ -394,6 +462,7 @@ def render_svg(
         modified_circ.diagram(type, tick=tick, filter_coords=filter_coords, rows=rows)
     )
     svg = placeholders_to_t(svg_with_placeholders, placeholder_id_to_labels)
+    svg = _deduplicate_doubled_spp(svg)
 
     # Compute the missing dimension from the SVG viewBox aspect ratio.
     if width is None and height is not None:

@@ -91,6 +91,42 @@ def test_render_svg_labels_all_gates(
     assert '<tspan baseline-shift="sub" font-size="14">3</tspan>' in html
 
 
+@pytest.mark.parametrize("diagram_type", ["timeline-svg", "timeslice-svg"])
+def test_render_svg_tpp_labels(
+    diagram_type: Literal["timeline-svg", "timeslice-svg"],
+):
+    c = Circuit("""
+        TPP X0*Y1*Z2
+        TICK
+        TPP_DAG Z0*X1
+        """)
+    html = str(c.diagram(diagram_type))
+
+    # TPP labels should appear (not SPP)
+    assert "TPP" in html
+    # TPP† for the dagger variant
+    assert "TPP†" in html
+    # Pauli subscripts should be preserved
+    assert '<tspan baseline-shift="sub" font-size="10">X</tspan>' in html
+    assert '<tspan baseline-shift="sub" font-size="10">Y</tspan>' in html
+    assert '<tspan baseline-shift="sub" font-size="10">Z</tspan>' in html
+    # Original SPP labels should NOT appear
+    assert "SPP" not in html
+
+
+def test_render_svg_mixed_spp_and_tpp():
+    c = Circuit("""
+        SPP X0*Z1
+        TICK
+        TPP Y0*Z1
+        """)
+    html = str(c.diagram("timeline-svg"))
+
+    # Both SPP and TPP labels should appear
+    assert "SPP" in html
+    assert "TPP" in html
+
+
 def test_diagram_repeat_block():
     c = Circuit("""
         T 0
