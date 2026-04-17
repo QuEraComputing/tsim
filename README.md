@@ -33,7 +33,7 @@ An introductory tutorial is available [here](https://queracomputing.github.io/ts
 
 For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and currently supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference).
 
-Additionally, Tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, and `U3`.
+Additionally, Tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, `U3`, `TPP`, and `TPP_DAG`.
 ```python
 import tsim
 
@@ -133,6 +133,15 @@ The general single-qubit unitary with three parameters (θ, φ, λ), each specif
 
 ```
 U3(0.5, 0.25, 0.125) 0  # Apply U3 with θ=π/2, φ=π/4, λ=π/8
+```
+
+### `TPP` and `TPP_DAG` (Pauli Product Phase)
+
+`TPP` applies exp(i π/8 · P) for a Pauli product P (equivalently, phases the −1 eigenspace of P by exp(i π/4)). `TPP_DAG` applies exp(−i π/8 · P).
+
+```
+TPP X0*Y1      # Apply exp(i π/8 · X0⊗Y1)
+TPP_DAG Z0     # Apply exp(-i π/8 · Z) = T_DAG on qubit 0
 ```
 
 ## Publications Using Tsim
