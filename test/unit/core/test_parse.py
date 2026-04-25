@@ -1,8 +1,27 @@
+from collections import Counter
+
 import pytest
 import stim
 from numpy.testing import assert_allclose
+from pyzx_param.utils import VertexType
 
 from tsim.core.parse import parse_stim_circuit
+
+
+def _assert_error_vertex_layout(b, expected):
+    """Assert which ZX error vertices are controlled by each error bit."""
+    actual = {}
+    for v in b.graph.vertices():
+        for phase in b.graph._phaseVars.get(v, set()):
+            if isinstance(phase, str) and phase.startswith("e"):
+                actual.setdefault(phase, Counter()).update(
+                    [(b.graph.type(v), b.graph.qubit(v))]
+                )
+
+    expected_counters = {
+        phase: Counter(vertices) for phase, vertices in expected.items()
+    }
+    assert actual == expected_counters
 
 
 class TestParseCorrelatedError:
@@ -301,6 +320,123 @@ class TestProbabilityBearingInstructions:
 
         assert b.num_error_bits == 0
         assert len(b.channel_probs) == 0
+
+
+class TestChannelBitLayoutMatchesGraph:
+    """Tests tying channel probability bits to ZX error vertices."""
+
+    @pytest.mark.parametrize(
+        ("program", "expected_layout"),
+        [
+            ("X_ERROR(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("Y_ERROR(0.07) 5", {"e0": [(VertexType.Z, 5), (VertexType.X, 5)]}),
+            ("Z_ERROR(0.07) 5", {"e0": [(VertexType.Z, 5)]}),
+            ("M(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("MX(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("MY(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("MR(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("MRX(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("MRY(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("MXX(0.07) 5 7", {"e0": [(VertexType.X, -2)]}),
+            ("MPP(0.07) X5*Z7", {"e0": [(VertexType.X, -2)]}),
+            ("MPAD(0.07) 1", {"e0": [(VertexType.X, -2)]}),
+        ],
+    )
+    def test_single_bit_channel_layout_matches_graph(self, program, expected_layout):
+        """Single-bit channel index 1 (0b1) should control the expected vertex."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 1
+        assert_allclose(b.channel_probs[0], [0.93, 0.07])
+        _assert_error_vertex_layout(b, expected_layout)
+
+    @pytest.mark.parametrize(
+        "program",
+        ["PAULI_CHANNEL_1(0.01, 0.02, 0.03) 5", "DEPOLARIZE1(0.12) 5"],
+    )
+    def test_pauli_channel_1_bit_layout_matches_graph(self, program):
+        """Index bit 0 is Z and index bit 1 is X for one-qubit Pauli channels."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 2
+        _assert_error_vertex_layout(
+            b,
+            {
+                "e0": [(VertexType.Z, 5)],
+                "e1": [(VertexType.X, 5)],
+            },
+        )
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "PAULI_CHANNEL_2("
+            "0.001, 0.002, 0.003, 0.004, 0.005, "
+            "0.006, 0.007, 0.008, 0.009, 0.010, "
+            "0.011, 0.012, 0.013, 0.014, 0.015"
+            ") 5 7",
+            "DEPOLARIZE2(0.15) 5 7",
+        ],
+    )
+    def test_pauli_channel_2_bit_layout_matches_graph(self, program):
+        """Bits are Z_i, X_i, Z_j, X_j for two-qubit Pauli channels."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 4
+        _assert_error_vertex_layout(
+            b,
+            {
+                "e0": [(VertexType.Z, 5)],
+                "e1": [(VertexType.X, 5)],
+                "e2": [(VertexType.Z, 7)],
+                "e3": [(VertexType.X, 7)],
+            },
+        )
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "HERALDED_PAULI_CHANNEL_1(0.01, 0.02, 0.03, 0.04) 5",
+            "HERALDED_ERASE(0.2) 5",
+        ],
+    )
+    def test_heralded_channel_bit_layout_matches_graph(self, program):
+        """Bits are herald, Z, X for heralded one-qubit Pauli channels."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert len(b.rec) == 1
+        assert b.num_error_bits == 3
+        _assert_error_vertex_layout(
+            b,
+            {
+                "e0": [(VertexType.X, -2)],
+                "e1": [(VertexType.Z, 5)],
+                "e2": [(VertexType.X, 5)],
+            },
+        )
+
+    def test_correlated_error_bit_layout_matches_graph(self):
+        """Each correlated-error branch controls its matching Pauli vertices."""
+        circuit = stim.Circuit("""
+            CORRELATED_ERROR(0.1) X5 Y6 Z7
+            ELSE_CORRELATED_ERROR(0.2) Z5
+        """)
+        b = parse_stim_circuit(circuit)
+
+        assert b.num_error_bits == 2
+        assert_allclose(b.channel_probs[0], [0.72, 0.1, 0.18, 0.0])
+        _assert_error_vertex_layout(
+            b,
+            {
+                "e0": [
+                    (VertexType.X, 5),
+                    (VertexType.Z, 6),
+                    (VertexType.X, 6),
+                    (VertexType.Z, 7),
+                ],
+                "e1": [(VertexType.Z, 5)],
+            },
+        )
 
 
 class TestParseIIError:
