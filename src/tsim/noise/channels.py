@@ -469,7 +469,7 @@ def absorb_subset_channels(channels: list[Channel], max_bits: int = 4) -> list[C
 def simplify_channels(
     channels: list[Channel], max_bits: int = 4, null_col_id: int | None = None
 ) -> list[Channel]:
-    """Simplify channels by removing null columns, merging identical and absorbing subsets.
+    """Simplify channels by removing null columns, folding, merging identical and absorbing subsets.
 
     Args:
         channels: List of channels to simplify
@@ -503,6 +503,7 @@ class ChannelSampler:
 
     Channels are automatically simplified by:
     1. Removing bits e_i that do not affect any f-variable (i.e. all-zero columns in error_transform)
+    2. Folding duplicate column IDs, i.e. channels whose column signatures contain duplicate IDs.
     2. Merging channels with identical column signatures, i.e. channels whose corresponding
         columns in error_transform are identical.
     3. Absorbing channels whose signatures are subsets of others, i.e. channels whose corresponding
