@@ -971,8 +971,6 @@ def mr(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -
     Projects each target qubit into |0> or |1>, reports its value (false=|0>, true=|1>),
     then resets to |0>.
     """
-    if p > 0:
-        x_error(b, qubit, p)
     m(b, qubit, p=p, invert=invert)
     _r(b, qubit, perform_trace=False)
 
@@ -984,8 +982,6 @@ def mrx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) 
     then resets to |+>.
     """
     h(b, qubit)
-    if p > 0:
-        x_error(b, qubit, p)
     m(b, qubit, p=p, invert=invert)
     _r(b, qubit, perform_trace=False)
     h(b, qubit)
@@ -998,8 +994,6 @@ def mry(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) 
     then resets to |i>.
     """
     h_yz(b, qubit)
-    if p > 0:
-        x_error(b, qubit, p)
     m(b, qubit, p=p, invert=invert)
     _r(b, qubit, perform_trace=False)
     h_yz(b, qubit)

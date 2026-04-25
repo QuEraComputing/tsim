@@ -1,3 +1,4 @@
+import pytest
 import stim
 from numpy.testing import assert_allclose
 
@@ -148,6 +149,158 @@ class TestParseHeraldedChannels:
         assert len(b.rec) == 3
         assert b.num_error_bits == 9
         assert len(b.channel_probs) == 3
+
+
+class TestProbabilityBearingInstructions:
+    """Tests for instructions that create probabilistic error channels."""
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "X_ERROR(0.07) 0",
+            "Y_ERROR(0.07) 0",
+            "Z_ERROR(0.07) 0",
+            "M(0.07) 0",
+            "MX(0.07) 0",
+            "MY(0.07) 0",
+            "MZ(0.07) 0",
+            "MR(0.07) 0",
+            "MRX(0.07) 0",
+            "MRY(0.07) 0",
+            "MRZ(0.07) 0",
+            "MXX(0.07) 0 1",
+            "MYY(0.07) 0 1",
+            "MZZ(0.07) 0 1",
+            "MPP(0.07) X0*Z1",
+            "MPAD(0.07) 0",
+            "CORRELATED_ERROR(0.07) X0",
+        ],
+    )
+    def test_single_bit_probability_channels(self, program):
+        """Single-bit probability-bearing instructions should create one channel."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 1
+        assert len(b.channel_probs) == 1
+        assert_allclose(b.channel_probs[0], [0.93, 0.07])
+
+    @pytest.mark.parametrize("program", ["MR(0.07) 0", "MRX(0.07) 0", "MRY(0.07) 0"])
+    def test_mr_family_does_not_double_count_measurement_noise(self, program):
+        """MR-family measurement noise is a result flip, not an extra Pauli error."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert len(b.rec) == 1
+        assert b.num_error_bits == 1
+        assert len(b.channel_probs) == 1
+        assert_allclose(b.channel_probs[0], [0.93, 0.07])
+
+    @pytest.mark.parametrize(
+        ("program", "expected"),
+        [
+            ("DEPOLARIZE1(0.12) 0", [0.88, 0.04, 0.04, 0.04]),
+            ("PAULI_CHANNEL_1(0.01, 0.02, 0.03) 0", [0.94, 0.03, 0.01, 0.02]),
+            (
+                "HERALDED_ERASE(0.2) 0",
+                [0.8, 0.05, 0.0, 0.05, 0.0, 0.05, 0.0, 0.05],
+            ),
+            (
+                "HERALDED_PAULI_CHANNEL_1(0.01, 0.02, 0.03, 0.04) 0",
+                [0.9, 0.01, 0.0, 0.04, 0.0, 0.02, 0.0, 0.03],
+            ),
+        ],
+    )
+    def test_multi_bit_probability_channels(self, program, expected):
+        """Multi-bit probability channels should use the documented outcome ordering."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert len(b.channel_probs) == 1
+        assert_allclose(b.channel_probs[0], expected)
+
+    def test_depolarize2_probability_channel(self):
+        """DEPOLARIZE2(p) should distribute p uniformly over non-identity outcomes."""
+        b = parse_stim_circuit(stim.Circuit("DEPOLARIZE2(0.15) 0 1"))
+
+        assert b.num_error_bits == 4
+        assert len(b.channel_probs) == 1
+        assert_allclose(b.channel_probs[0], [0.85] + [0.01] * 15)
+
+    def test_pauli_channel_2_probability_channel(self):
+        """PAULI_CHANNEL_2 should preserve the expected packed Pauli outcome order."""
+        args = [
+            0.001,
+            0.002,
+            0.003,
+            0.004,
+            0.005,
+            0.006,
+            0.007,
+            0.008,
+            0.009,
+            0.010,
+            0.011,
+            0.012,
+            0.013,
+            0.014,
+            0.015,
+        ]
+        program = f"PAULI_CHANNEL_2({', '.join(map(str, args))}) 0 1"
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 4
+        assert len(b.channel_probs) == 1
+        assert_allclose(
+            b.channel_probs[0],
+            [
+                0.88,
+                0.012,
+                0.004,
+                0.008,
+                0.003,
+                0.015,
+                0.007,
+                0.011,
+                0.001,
+                0.013,
+                0.005,
+                0.009,
+                0.002,
+                0.014,
+                0.006,
+                0.010,
+            ],
+        )
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "X_ERROR(0.07) 0 1",
+            "M(0.07) 0 1",
+            "MR(0.07) 0 1",
+            "MRX(0.07) 0 1",
+            "MRY(0.07) 0 1",
+            "MXX(0.07) 0 1 2 3",
+            "MPP(0.07) X0 X1",
+            "MPAD(0.07) 0 1",
+        ],
+    )
+    def test_repeated_probability_instructions_create_independent_channels(
+        self, program
+    ):
+        """Repeated targets/products should each get their own probability channel."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 2
+        assert len(b.channel_probs) == 2
+        for probs in b.channel_probs:
+            assert_allclose(probs, [0.93, 0.07])
+
+    @pytest.mark.parametrize("program", ["I_ERROR(0.07) 0", "II_ERROR(0.07) 0 1"])
+    def test_identity_error_instructions_do_not_create_channels(self, program):
+        """Identity error instructions allocate lanes but do not affect noise state."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 0
+        assert len(b.channel_probs) == 0
 
 
 class TestParseIIError:
