@@ -297,6 +297,46 @@ def normalize_channels(channels: list[Channel]) -> list[Channel]:
     return result
 
 
+def fold_duplicate_channel_bits(channels: list[Channel]) -> list[Channel]:
+    """Canonicalize channels by XOR-folding duplicate column IDs.
+
+    If two bits in the same channel have identical column signatures, sampling
+    both bits only affects the reduced error basis through their parity. This
+    replaces those duplicate bits with one bit whose probability is the sum of
+    all old outcomes with the same XOR-folded value.
+
+    Args:
+        channels: List of channels with sorted unique_col_ids
+
+    Returns:
+        List of channels whose unique_col_ids contain no duplicates
+
+    """
+    result: list[Channel] = []
+
+    for channel in channels:
+        old_col_ids = channel.unique_col_ids
+        new_col_ids = tuple(dict.fromkeys(old_col_ids))
+
+        if len(new_col_ids) == len(old_col_ids):
+            result.append(channel)
+            continue
+
+        col_to_new_pos = {col: pos for pos, col in enumerate(new_col_ids)}
+        new_probs = np.zeros(2 ** len(new_col_ids), dtype=np.float64)
+
+        for old_idx in range(len(channel.probs)):
+            new_idx = 0
+            for old_pos, col in enumerate(old_col_ids):
+                if (old_idx >> old_pos) & 1:
+                    new_idx ^= 1 << col_to_new_pos[col]
+            new_probs[new_idx] += channel.probs[old_idx]
+
+        result.append(Channel(probs=new_probs, unique_col_ids=new_col_ids))
+
+    return result
+
+
 def expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel:
     """Expand a channel's distribution to a larger signature set.
 
@@ -306,7 +346,8 @@ def expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel
 
     Duplicate source column IDs are allowed. When multiple source bits map to
     the same target bit, their contribution is XORed, matching GF(2)
-    composition.
+    composition. Duplicate target column IDs are not allowed; channels with
+    duplicate IDs should be canonicalized before subset absorption.
 
     Args:
         channel: Channel to expand (must have sorted unique_col_ids)
@@ -317,9 +358,14 @@ def expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel
 
     """
     source_col_ids = channel.unique_col_ids
-    assert source_col_ids == tuple(sorted(source_col_ids)), "Source must be sorted"
-    assert target_col_ids == tuple(sorted(target_col_ids)), "Target must be sorted"
-    assert set(source_col_ids) < set(target_col_ids), "Source must be strict subset"
+    if source_col_ids != tuple(sorted(source_col_ids)):
+        raise ValueError("Source must be sorted")
+    if target_col_ids != tuple(sorted(target_col_ids)):
+        raise ValueError("Target must be sorted")
+    if len(set(target_col_ids)) != len(target_col_ids):
+        raise ValueError("Target must not contain duplicates")
+    if not set(source_col_ids) < set(target_col_ids):
+        raise ValueError("Source must be strict subset")
 
     # Map source columns to their positions in target
     source_to_target = {s: target_col_ids.index(s) for s in source_col_ids}
@@ -437,6 +483,7 @@ def simplify_channels(
     """
     channels = reduce_null_bits(channels, null_col_id)
     channels = normalize_channels(channels)
+    channels = fold_duplicate_channel_bits(channels)
     channels = merge_identical_channels(channels)
     channels = absorb_subset_channels(channels, max_bits)
     return channels

@@ -9,6 +9,7 @@ from tsim.noise.channels import (
     correlated_error_probs,
     error_probs,
     expand_channel,
+    fold_duplicate_channel_bits,
     heralded_pauli_channel_1_probs,
     merge_identical_channels,
     normalize_channels,
@@ -385,7 +386,7 @@ class TestExpandChannel:
     def test_expand_duplicate_source_col_ids_cancel_mod_2(self):
         """Duplicate source column bits should combine by XOR, not OR."""
         # Bits 0 and 1 both map to target column 0. Outcomes 00 and 11 map to
-        # target bit 0, while 01 and 10 map to target bit 1.
+        # target index 0b00, while 01 and 10 map to target index 0b01.
         probs = np.array([0.1, 0.2, 0.4, 0.3], dtype=np.float64)
         c = Channel(probs=probs, unique_col_ids=(0, 0))
 
@@ -404,6 +405,161 @@ class TestExpandChannel:
         expanded = expand_channel(c, (0, 1))
 
         assert_allclose(expanded.probs, [1.0, 0.0, 0.0, 0.0])
+
+    def test_expand_rejects_duplicate_target_col_ids(self):
+        """Target signature sets must not contain duplicate column IDs."""
+        c = Channel(probs=error_probs(0.3), unique_col_ids=(0,))
+
+        with pytest.raises(ValueError, match="Target must not contain duplicates"):
+            expand_channel(c, (0, 1, 1))
+
+    def test_expand_rejects_unsorted_source_col_ids(self):
+        """Source signature sets must be sorted."""
+        c = Channel(
+            probs=np.array([0.7, 0.1, 0.1, 0.1], dtype=np.float64),
+            unique_col_ids=(1, 0),
+        )
+
+        with pytest.raises(ValueError, match="Source must be sorted"):
+            expand_channel(c, (0, 1, 2))
+
+    def test_expand_rejects_unsorted_target_col_ids(self):
+        """Target signature sets must be sorted."""
+        c = Channel(probs=error_probs(0.3), unique_col_ids=(0,))
+
+        with pytest.raises(ValueError, match="Target must be sorted"):
+            expand_channel(c, (1, 0))
+
+    @pytest.mark.parametrize("target_col_ids", [(0,), (1, 2)])
+    def test_expand_rejects_target_that_is_not_strict_superset(self, target_col_ids):
+        """Target signature sets must strictly contain all source column IDs."""
+        c = Channel(probs=error_probs(0.3), unique_col_ids=(0,))
+
+        with pytest.raises(ValueError, match="Source must be strict subset"):
+            expand_channel(c, target_col_ids)
+
+
+class TestFoldDuplicateChannelBits:
+    """Tests for fold_duplicate_channel_bits."""
+
+    def test_fold_two_duplicate_bits_by_xor(self):
+        """Duplicate bits with one column ID become one parity bit."""
+        c = Channel(
+            probs=np.array([0.1, 0.2, 0.4, 0.3], dtype=np.float64),
+            unique_col_ids=(0, 0),
+        )
+
+        folded = fold_duplicate_channel_bits([c])
+
+        assert len(folded) == 1
+        assert folded[0].unique_col_ids == (0,)
+        assert_allclose(folded[0].probs, [0.4, 0.6])
+
+    def test_simplify_folds_duplicate_bits_before_absorption(self):
+        """Subset absorption should only expand into duplicate-free targets."""
+        channels = [
+            Channel(
+                probs=np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64),
+                unique_col_ids=(0, 0),
+            ),
+            Channel(probs=error_probs(0.3), unique_col_ids=(0,)),
+        ]
+
+        simplified = simplify_channels(channels)
+
+        assert len(simplified) == 1
+        assert simplified[0].unique_col_ids == (0,)
+
+    def test_no_duplicates_pass_through(self):
+        """A channel with no duplicate col_ids should be returned unchanged."""
+        probs = np.array([0.5, 0.2, 0.2, 0.1], dtype=np.float64)
+        c = Channel(probs=probs, unique_col_ids=(0, 1))
+
+        folded = fold_duplicate_channel_bits([c])
+
+        assert len(folded) == 1
+        assert folded[0].unique_col_ids == (0, 1)
+        assert_allclose(folded[0].probs, probs)
+
+    def test_empty_list_returns_empty(self):
+        """An empty input list should return an empty list."""
+        assert fold_duplicate_channel_bits([]) == []
+
+    def test_fold_three_duplicate_bits_by_parity(self):
+        """Three bits sharing one column ID should fold to one parity bit."""
+        # col_ids (0, 0, 0): all three bits map to col 0. The fold collects the
+        # mass of even-parity old indices into new[0] and odd-parity into new[1].
+        probs = np.arange(1, 9, dtype=np.float64)
+        probs /= probs.sum()
+        c = Channel(probs=probs, unique_col_ids=(0, 0, 0))
+
+        folded = fold_duplicate_channel_bits([c])
+
+        assert len(folded) == 1
+        assert folded[0].unique_col_ids == (0,)
+        even_sum = probs[0] + probs[3] + probs[5] + probs[6]  # 000, 011, 101, 110
+        odd_sum = probs[1] + probs[2] + probs[4] + probs[7]  # 001, 010, 100, 111
+        assert_allclose(folded[0].probs, [even_sum, odd_sum])
+
+    def test_fold_partial_duplicates(self):
+        """Only-duplicate bits should fold; unique bits should be preserved."""
+        # col_ids (0, 0, 1): bits 0 and 1 fold onto new pos 0,
+        # bit 2 maps to new pos 1.
+        probs = np.arange(1, 9, dtype=np.float64)
+        probs /= probs.sum()
+        c = Channel(probs=probs, unique_col_ids=(0, 0, 1))
+
+        folded = fold_duplicate_channel_bits([c])
+
+        assert len(folded) == 1
+        assert folded[0].unique_col_ids == (0, 1)
+        expected = np.zeros(4, dtype=np.float64)
+        expected[0b00] = probs[0b000] + probs[0b011]
+        expected[0b01] = probs[0b001] + probs[0b010]
+        expected[0b10] = probs[0b100] + probs[0b111]
+        expected[0b11] = probs[0b101] + probs[0b110]
+        assert_allclose(folded[0].probs, expected)
+
+    def test_fold_preserves_probability_mass(self):
+        """Folded channel should still sum to 1."""
+        probs = np.array([0.1, 0.2, 0.4, 0.3], dtype=np.float64)
+        c = Channel(probs=probs, unique_col_ids=(0, 0))
+
+        folded = fold_duplicate_channel_bits([c])
+
+        assert_allclose(np.sum(folded[0].probs), 1.0)
+
+    def test_fold_multiple_channels_mixed(self):
+        """A list mixing folded and unchanged channels should process each in place."""
+        c1 = Channel(
+            probs=np.array([0.1, 0.2, 0.4, 0.3], dtype=np.float64),
+            unique_col_ids=(0, 0),
+        )
+        c2 = Channel(probs=error_probs(0.25), unique_col_ids=(1,))
+        c3 = Channel(
+            probs=np.array([0.5, 0.1, 0.3, 0.1], dtype=np.float64),
+            unique_col_ids=(2, 3),
+        )
+
+        folded = fold_duplicate_channel_bits([c1, c2, c3])
+
+        assert len(folded) == 3
+        assert folded[0].unique_col_ids == (0,)
+        assert_allclose(folded[0].probs, [0.4, 0.6])
+        assert folded[1].unique_col_ids == (1,)
+        assert_allclose(folded[1].probs, c2.probs)
+        assert folded[2].unique_col_ids == (2, 3)
+        assert_allclose(folded[2].probs, c3.probs)
+
+    def test_fold_preserves_sampling_statistics(self):
+        """Sampling stats should match before and after folding duplicate bits."""
+        mat = np.array([[1, 0], [0, 1]], dtype=np.uint8)
+        probs = np.array([0.2, 0.1, 0.15, 0.05, 0.2, 0.1, 0.1, 0.1], dtype=np.float64)
+        c = Channel(probs=probs, unique_col_ids=(0, 0, 1))
+
+        folded = fold_duplicate_channel_bits([c])
+
+        assert_sampling_matches(mat, [c], folded)
 
 
 class TestNormalizeChannels:
