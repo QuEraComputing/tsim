@@ -643,7 +643,6 @@ class VecSim:
         self,
         inst: stim.CircuitInstruction,
         *,
-        sweep_bits: dict[int, bool],
         out_measurements: list[bool],
         out_detectors: list[bool],
         out_observables: list[bool],
@@ -796,9 +795,6 @@ class VecSim:
                 if t1.is_measurement_record_target:
                     if out_measurements[t1.value]:
                         self.do_x(t2.qubit_value)
-                elif t1.is_sweep_bit_target:
-                    if sweep_bits[t1.value]:
-                        self.do_z(t2.qubit_value)
                 else:
                     self.do_cx(t1.qubit_value, t2.qubit_value)
         elif inst.name == "CZ":
@@ -810,12 +806,6 @@ class VecSim:
                         self.do_z(t2.qubit_value)
                 elif t2.is_measurement_record_target:
                     if out_measurements[t2.value]:
-                        self.do_z(t1.qubit_value)
-                elif t1.is_sweep_bit_target:
-                    if sweep_bits[t1.value]:
-                        self.do_z(t2.qubit_value)
-                elif t2.is_sweep_bit_target:
-                    if sweep_bits[t2.value]:
                         self.do_z(t1.qubit_value)
                 else:
                     self.do_cz(t1.qubit_value, t2.qubit_value)

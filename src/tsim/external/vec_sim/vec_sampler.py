@@ -9,7 +9,7 @@ Code dataset: https://doi.org/10.5281/zenodo.13777072
 Licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
 
 Modifications:
-- Removed sinter dependency, modifyied T replacement logic.
+- Removed sinter dependency, modified T replacement logic.
 """
 
 from typing import Literal, Union, overload
@@ -70,7 +70,6 @@ def sample_circuit_with_vec_sim_return_data(
     measurements = []
     detectors = []
     observables = []
-    sweep_bits = {b: False for b in range(circuit.num_sweep_bits)}
     for q in range(circuit.num_qubits):
         sim.do_qalloc_z(q)
     for inst in circuit:
@@ -102,7 +101,6 @@ def sample_circuit_with_vec_sim_return_data(
         else:
             sim.do_stim_instruction(
                 inst,
-                sweep_bits=sweep_bits,
                 out_measurements=measurements,
                 out_detectors=detectors,
                 out_observables=observables,
