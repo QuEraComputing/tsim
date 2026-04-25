@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 
 from tsim.noise.channels import (
@@ -38,15 +39,15 @@ class TestProbabilityConstructors:
         assert probs.shape == (4,)
         assert probs.dtype == np.float64
         # Order: [I, Z, X, Y] mapped to bits [00, 01, 10, 11]
-        assert_allclose(probs[2], 1.0, rtol=1e-10)  # X = 10
+        assert_allclose(probs[2], 1.0, rtol=1e-10)  # index 2 (0b10): X
 
         # Pure Y error
         probs = pauli_channel_1_probs(px=0.0, py=1.0, pz=0.0)
-        assert_allclose(probs[3], 1.0, rtol=1e-10)  # Y = 11
+        assert_allclose(probs[3], 1.0, rtol=1e-10)  # index 3 (0b11): Y
 
         # Pure Z error
         probs = pauli_channel_1_probs(px=0.0, py=0.0, pz=1.0)
-        assert_allclose(probs[1], 1.0, rtol=1e-10)  # Z = 01
+        assert_allclose(probs[1], 1.0, rtol=1e-10)  # index 1 (0b01): Z
 
     def test_pauli_channel_2(self):
         """Test two-qubit Pauli channel."""
@@ -70,7 +71,7 @@ class TestProbabilityConstructors:
         )
         assert probs.shape == (16,)
         assert probs.dtype == np.float64
-        assert_allclose(probs[8], 1.0, rtol=1e-10)  # IX = 0100 in 4-bit = 8
+        assert_allclose(probs[8], 1.0, rtol=1e-10)  # index 8 (0b1000): IX
         assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
 
     def test_heralded_pauli_channel_1(self):
@@ -78,21 +79,21 @@ class TestProbabilityConstructors:
         probs = heralded_pauli_channel_1_probs(pi=0.01, px=0.02, py=0.03, pz=0.04)
         assert probs.shape == (8,)
         assert probs.dtype == np.float64
-        # Bits: [herald, Z_error, X_error]
-        assert_allclose(probs[0], 0.9)  # 000: no fire
-        assert_allclose(probs[1], 0.01)  # 001: herald + I
-        assert_allclose(probs[3], 0.04)  # 011: herald + Z
-        assert_allclose(probs[5], 0.02)  # 101: herald + X
-        assert_allclose(probs[7], 0.03)  # 111: herald + Y
-        assert_allclose(probs[2], 0.0)  # impossible
-        assert_allclose(probs[4], 0.0)  # impossible
-        assert_allclose(probs[6], 0.0)  # impossible
+        # Little-endian bits: bit0=herald, bit1=Z error, bit2=X error.
+        assert_allclose(probs[0], 0.9)  # index 0 (0b000): no fire
+        assert_allclose(probs[1], 0.01)  # index 1 (0b001): herald + I
+        assert_allclose(probs[3], 0.04)  # index 3 (0b011): herald + Z
+        assert_allclose(probs[5], 0.02)  # index 5 (0b101): herald + X
+        assert_allclose(probs[7], 0.03)  # index 7 (0b111): herald + Y
+        assert_allclose(probs[2], 0.0)  # index 2 (0b010): impossible
+        assert_allclose(probs[4], 0.0)  # index 4 (0b100): impossible
+        assert_allclose(probs[6], 0.0)  # index 6 (0b110): impossible
         assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
 
     def test_heralded_pauli_channel_1_pure_z(self):
         """Heralded channel that always fires with Z."""
         probs = heralded_pauli_channel_1_probs(pi=0.0, px=0.0, py=0.0, pz=1.0)
-        assert_allclose(probs[3], 1.0)  # herald + Z
+        assert_allclose(probs[3], 1.0)  # index 3 (0b011): herald + Z
         assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
 
 
@@ -103,8 +104,8 @@ class TestCorrelatedErrorProbs:
         """Single error with probability p."""
         probs = correlated_error_probs([0.3])
         assert probs.shape == (2,)
-        assert_allclose(probs[0], 0.7)  # No error
-        assert_allclose(probs[1], 0.3)  # Error occurred
+        assert_allclose(probs[0], 0.7)  # index 0 (0b0): no error
+        assert_allclose(probs[1], 0.3)  # index 1 (0b1): error occurred
         assert_allclose(np.sum(probs), 1.0)
 
     def test_two_errors(self):
@@ -127,10 +128,10 @@ class TestCorrelatedErrorProbs:
         # P1 = 0.2, P2 = 0.8*0.25 = 0.2, P3 = 0.8*0.75*0.333... = 0.2
         probs = correlated_error_probs([0.2, 0.25, 1 / 3])
         assert probs.shape == (8,)
-        assert_allclose(probs[0], 0.4, rtol=1e-5)  # No error: 40%
-        assert_allclose(probs[1], 0.2, rtol=1e-5)  # First: 20%
-        assert_allclose(probs[2], 0.2, rtol=1e-5)  # Second: 20%
-        assert_allclose(probs[4], 0.2, rtol=1e-5)  # Third: 20%
+        assert_allclose(probs[0], 0.4, rtol=1e-5)  # index 0 (0b000): no error
+        assert_allclose(probs[1], 0.2, rtol=1e-5)  # index 1 (0b001): first
+        assert_allclose(probs[2], 0.2, rtol=1e-5)  # index 2 (0b010): second
+        assert_allclose(probs[4], 0.2, rtol=1e-5)  # index 4 (0b100): third
         # All multi-bit outcomes are 0
         assert_allclose(probs[3], 0.0)
         assert_allclose(probs[5], 0.0)
@@ -154,10 +155,10 @@ class TestCorrelatedErrorProbs:
         """If first error is certain, subsequent errors have 0 probability."""
         probs = correlated_error_probs([1.0, 0.5, 0.5])
         assert probs.shape == (8,)
-        assert_allclose(probs[0], 0.0)  # No error
-        assert_allclose(probs[1], 1.0)  # First error (certain)
-        assert_allclose(probs[2], 0.0)  # Second error (blocked)
-        assert_allclose(probs[4], 0.0)  # Third error (blocked)
+        assert_allclose(probs[0], 0.0)  # index 0 (0b000): no error
+        assert_allclose(probs[1], 1.0)  # index 1 (0b001): first error
+        assert_allclose(probs[2], 0.0)  # index 2 (0b010): second error
+        assert_allclose(probs[4], 0.0)  # index 4 (0b100): third error
 
 
 def _sample_channels(channels, matrix, n_samples, seed=42):
@@ -310,13 +311,12 @@ class TestExpandChannel:
 
         expanded = expand_channel(c, (0, 1))
 
+        expected = np.zeros(4, dtype=np.float64)
+        expected[0b00] = 0.7
+        expected[0b01] = 0.3
         assert expanded.unique_col_ids == (0, 1)
         assert expanded.num_bits == 2
-        # Bit 1 is always 0, so only outcomes 0b00 and 0b01 have probability
-        assert_allclose(expanded.probs[0], 0.7, rtol=1e-5)  # 0b00
-        assert_allclose(expanded.probs[1], 0.3, rtol=1e-5)  # 0b01
-        assert_allclose(expanded.probs[2], 0.0, rtol=1e-5)  # 0b10
-        assert_allclose(expanded.probs[3], 0.0, rtol=1e-5)  # 0b11
+        assert_allclose(expanded.probs, expected)
 
     def test_expand_1bit_to_2bit_different_position(self):
         """Expand 1-bit channel to 2-bit where source is in second position."""
@@ -324,6 +324,9 @@ class TestExpandChannel:
 
         expanded = expand_channel(c, (3, 5))
 
+        expected = np.zeros(4, dtype=np.float64)
+        expected[0b00] = 0.7
+        expected[0b10] = 0.3
         assert expanded.unique_col_ids == (3, 5)
         assert expanded.num_bits == 2
         assert_allclose(expanded.probs, expected)
@@ -420,7 +423,7 @@ class TestNormalizeChannels:
 
     def test_2bit_reorder(self):
         """A 2-bit channel with reversed col_ids should be reordered."""
-        # probs[0] = P(00), probs[1] = P(01), probs[2] = P(10), probs[3] = P(11)
+        # Little-endian indices: bit0 contributes 1, bit1 contributes 2.
         # With col_ids (1, 0): bit 0 -> col 1, bit 1 -> col 0
         probs = np.array([0.5, 0.2, 0.2, 0.1], dtype=np.float64)
         c = Channel(probs=probs, unique_col_ids=(1, 0))
@@ -431,15 +434,15 @@ class TestNormalizeChannels:
         assert result[0].unique_col_ids == (0, 1)
         # After normalization to (0, 1): bit 0 -> col 0, bit 1 -> col 1
         # new[0] = old[0] (00 -> 00)
-        # new[1] = old[2] (01 in new = col0=1 = old bit1=1 -> old index 10)
-        # new[2] = old[1] (10 in new = col1=1 = old bit0=1 -> old index 01)
+        # new[1] (0b01) = old[2] (0b10): col0=1 means old bit1=1
+        # new[2] (0b10) = old[1] (0b01): col1=1 means old bit0=1
         # new[3] = old[3] (11 -> 11)
         expected = np.array([0.5, 0.2, 0.2, 0.1], dtype=np.float64)
         assert_allclose(result[0].probs, expected)
 
     def test_3bit_reorder(self):
         """A 3-bit channel with unsorted col_ids should be reordered correctly."""
-        # col_ids (2, 0, 1): bit 0 -> col 2, bit 1 -> col 0, bit 2 -> col 1
+        # With col_ids (2, 0, 1): bit 0 -> col 2, bit 1 -> col 0, bit 2 -> col 1.
         probs = np.array([0.4, 0.1, 0.15, 0.05, 0.1, 0.05, 0.1, 0.05], dtype=np.float64)
         c = Channel(probs=probs, unique_col_ids=(2, 0, 1))
 
@@ -682,7 +685,7 @@ class TestReduceNullBits:
 
     def test_2bit_one_null_marginalize(self):
         """A 2-bit channel with one null should reduce to 1-bit."""
-        # probs: [P(00), P(01), P(10), P(11)] = [0.4, 0.3, 0.2, 0.1]
+        # Little-endian probs: [P(00), P(bit0), P(bit1), P(bit0+bit1)].
         probs = np.array([0.4, 0.3, 0.2, 0.1], dtype=np.float64)
         c = Channel(probs=probs, unique_col_ids=(0, self.NULL))
         channels = [c]
@@ -700,7 +703,7 @@ class TestReduceNullBits:
 
     def test_2bit_first_null_marginalize(self):
         """A 2-bit channel with null in first position should marginalize correctly."""
-        # probs: [P(00), P(01), P(10), P(11)] = [0.4, 0.3, 0.2, 0.1]
+        # Little-endian probs: [P(00), P(bit0), P(bit1), P(bit0+bit1)].
         probs = np.array([0.4, 0.3, 0.2, 0.1], dtype=np.float64)
         c = Channel(probs=probs, unique_col_ids=(self.NULL, 5))
         channels = [c]
@@ -732,7 +735,7 @@ class TestReduceNullBits:
 
     def test_3bit_one_null_marginalize(self):
         """A 3-bit channel with one null should reduce to 2-bit."""
-        # 8 outcomes: 000, 001, 010, 011, 100, 101, 110, 111
+        # 8 little-endian outcomes, where bit i contributes index 1 << i.
         probs = np.array([0.2, 0.1, 0.15, 0.05, 0.2, 0.1, 0.1, 0.1], dtype=np.float64)
         c = Channel(probs=probs, unique_col_ids=(0, self.NULL, 2))
         channels = [c]
