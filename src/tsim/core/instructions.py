@@ -740,10 +740,10 @@ def heralded_pauli_channel_1(
     b.channel_probs.append(heralded_pauli_channel_1_probs(pi, px, py, pz))
     aux = -2
     r(b, aux)
-    _error(b, aux, b.vertex_type.X, f"e{b.num_error_bits}")
+    _error(b, aux, b.vertex_type.X, f"e{b.num_error_bits}")  # herald bit flip
     m(b, aux)
-    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits + 1}")
-    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits + 2}")
+    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits + 1}")  # Z error bit
+    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits + 2}")  # X error bit
     b.num_error_bits += 3
 
 
