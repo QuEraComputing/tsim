@@ -1,10 +1,28 @@
+from collections import Counter
 from unittest.mock import ANY, patch
 
 import pytest
 import stim
 from numpy.testing import assert_allclose
+from pyzx_param.utils import VertexType
 
 from tsim.core.parse import parse_stim_circuit
+
+
+def _assert_error_vertex_layout(b, expected):
+    """Assert which ZX error vertices are controlled by each error bit."""
+    actual = {}
+    for v in b.graph.vertices():
+        for phase in b.graph._phaseVars.get(v, set()):
+            if isinstance(phase, str) and phase.startswith("e"):
+                actual.setdefault(phase, Counter()).update(
+                    [(b.graph.type(v), b.graph.qubit(v))]
+                )
+
+    expected_counters = {
+        phase: Counter(vertices) for phase, vertices in expected.items()
+    }
+    assert actual == expected_counters
 
 
 class TestParseCorrelatedError:
@@ -151,6 +169,275 @@ class TestParseHeraldedChannels:
         assert len(b.rec) == 3
         assert b.num_error_bits == 9
         assert len(b.channel_probs) == 3
+
+
+class TestProbabilityBearingInstructions:
+    """Tests for instructions that create probabilistic error channels."""
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "X_ERROR(0.07) 0",
+            "Y_ERROR(0.07) 0",
+            "Z_ERROR(0.07) 0",
+            "M(0.07) 0",
+            "MX(0.07) 0",
+            "MY(0.07) 0",
+            "MZ(0.07) 0",
+            "MR(0.07) 0",
+            "MRX(0.07) 0",
+            "MRY(0.07) 0",
+            "MRZ(0.07) 0",
+            "MXX(0.07) 0 1",
+            "MYY(0.07) 0 1",
+            "MZZ(0.07) 0 1",
+            "MPP(0.07) X0*Z1",
+            "MPAD(0.07) 0",
+            "CORRELATED_ERROR(0.07) X0",
+        ],
+    )
+    def test_single_bit_probability_channels(self, program):
+        """Single-bit probability-bearing instructions should create one channel."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 1
+        assert len(b.channel_probs) == 1
+        assert_allclose(b.channel_probs[0], [0.93, 0.07])
+
+    @pytest.mark.parametrize("program", ["MR(0.07) 0", "MRX(0.07) 0", "MRY(0.07) 0"])
+    def test_mr_family_does_not_double_count_measurement_noise(self, program):
+        """MR-family measurement noise is a result flip, not an extra Pauli error."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert len(b.rec) == 1
+        assert b.num_error_bits == 1
+        assert len(b.channel_probs) == 1
+        assert_allclose(b.channel_probs[0], [0.93, 0.07])
+
+    @pytest.mark.parametrize(
+        ("program", "expected"),
+        [
+            ("DEPOLARIZE1(0.12) 0", [0.88, 0.04, 0.04, 0.04]),
+            ("PAULI_CHANNEL_1(0.01, 0.02, 0.03) 0", [0.94, 0.03, 0.01, 0.02]),
+            (
+                "HERALDED_ERASE(0.2) 0",
+                [0.8, 0.05, 0.0, 0.05, 0.0, 0.05, 0.0, 0.05],
+            ),
+            (
+                "HERALDED_PAULI_CHANNEL_1(0.01, 0.02, 0.03, 0.04) 0",
+                [0.9, 0.01, 0.0, 0.04, 0.0, 0.02, 0.0, 0.03],
+            ),
+        ],
+    )
+    def test_multi_bit_probability_channels(self, program, expected):
+        """Multi-bit probability channels should use the documented outcome ordering."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert len(b.channel_probs) == 1
+        assert_allclose(b.channel_probs[0], expected)
+
+    def test_depolarize2_probability_channel(self):
+        """DEPOLARIZE2(p) should distribute p uniformly over non-identity outcomes."""
+        b = parse_stim_circuit(stim.Circuit("DEPOLARIZE2(0.15) 0 1"))
+
+        assert b.num_error_bits == 4
+        assert len(b.channel_probs) == 1
+        assert_allclose(b.channel_probs[0], [0.85] + [0.01] * 15)
+
+    def test_pauli_channel_2_probability_channel(self):
+        """PAULI_CHANNEL_2 should preserve the expected packed Pauli outcome order."""
+        args = [
+            0.001,
+            0.002,
+            0.003,
+            0.004,
+            0.005,
+            0.006,
+            0.007,
+            0.008,
+            0.009,
+            0.010,
+            0.011,
+            0.012,
+            0.013,
+            0.014,
+            0.015,
+        ]
+        program = f"PAULI_CHANNEL_2({', '.join(map(str, args))}) 0 1"
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 4
+        assert len(b.channel_probs) == 1
+        assert_allclose(
+            b.channel_probs[0],
+            [
+                0.88,
+                0.012,
+                0.004,
+                0.008,
+                0.003,
+                0.015,
+                0.007,
+                0.011,
+                0.001,
+                0.013,
+                0.005,
+                0.009,
+                0.002,
+                0.014,
+                0.006,
+                0.010,
+            ],
+        )
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "X_ERROR(0.07) 0 1",
+            "M(0.07) 0 1",
+            "MR(0.07) 0 1",
+            "MRX(0.07) 0 1",
+            "MRY(0.07) 0 1",
+            "MXX(0.07) 0 1 2 3",
+            "MPP(0.07) X0 X1",
+            "MPAD(0.07) 0 1",
+        ],
+    )
+    def test_repeated_probability_instructions_create_independent_channels(
+        self, program
+    ):
+        """Repeated targets/products should each get their own probability channel."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 2
+        assert len(b.channel_probs) == 2
+        for probs in b.channel_probs:
+            assert_allclose(probs, [0.93, 0.07])
+
+    @pytest.mark.parametrize("program", ["I_ERROR(0.07) 0", "II_ERROR(0.07) 0 1"])
+    def test_identity_error_instructions_do_not_create_channels(self, program):
+        """Identity error instructions allocate lanes but do not affect noise state."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 0
+        assert len(b.channel_probs) == 0
+
+
+class TestChannelBitLayoutMatchesGraph:
+    """Tests tying channel probability bits to ZX error vertices."""
+
+    @pytest.mark.parametrize(
+        ("program", "expected_layout"),
+        [
+            ("X_ERROR(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("Y_ERROR(0.07) 5", {"e0": [(VertexType.Z, 5), (VertexType.X, 5)]}),
+            ("Z_ERROR(0.07) 5", {"e0": [(VertexType.Z, 5)]}),
+            ("M(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("MX(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("MY(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("MR(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("MRX(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("MRY(0.07) 5", {"e0": [(VertexType.X, 5)]}),
+            ("MXX(0.07) 5 7", {"e0": [(VertexType.X, -2)]}),
+            ("MPP(0.07) X5*Z7", {"e0": [(VertexType.X, -2)]}),
+            ("MPAD(0.07) 1", {"e0": [(VertexType.X, -2)]}),
+        ],
+    )
+    def test_single_bit_channel_layout_matches_graph(self, program, expected_layout):
+        """Single-bit channel index 1 (0b1) should control the expected vertex."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 1
+        assert_allclose(b.channel_probs[0], [0.93, 0.07])
+        _assert_error_vertex_layout(b, expected_layout)
+
+    @pytest.mark.parametrize(
+        "program",
+        ["PAULI_CHANNEL_1(0.01, 0.02, 0.03) 5", "DEPOLARIZE1(0.12) 5"],
+    )
+    def test_pauli_channel_1_bit_layout_matches_graph(self, program):
+        """Index bit 0 is Z and index bit 1 is X for one-qubit Pauli channels."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 2
+        _assert_error_vertex_layout(
+            b,
+            {
+                "e0": [(VertexType.Z, 5)],
+                "e1": [(VertexType.X, 5)],
+            },
+        )
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "PAULI_CHANNEL_2("
+            "0.001, 0.002, 0.003, 0.004, 0.005, "
+            "0.006, 0.007, 0.008, 0.009, 0.010, "
+            "0.011, 0.012, 0.013, 0.014, 0.015"
+            ") 5 7",
+            "DEPOLARIZE2(0.15) 5 7",
+        ],
+    )
+    def test_pauli_channel_2_bit_layout_matches_graph(self, program):
+        """Bits are Z_i, X_i, Z_j, X_j for two-qubit Pauli channels."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert b.num_error_bits == 4
+        _assert_error_vertex_layout(
+            b,
+            {
+                "e0": [(VertexType.Z, 5)],
+                "e1": [(VertexType.X, 5)],
+                "e2": [(VertexType.Z, 7)],
+                "e3": [(VertexType.X, 7)],
+            },
+        )
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "HERALDED_PAULI_CHANNEL_1(0.01, 0.02, 0.03, 0.04) 5",
+            "HERALDED_ERASE(0.2) 5",
+        ],
+    )
+    def test_heralded_channel_bit_layout_matches_graph(self, program):
+        """Bits are herald, Z, X for heralded one-qubit Pauli channels."""
+        b = parse_stim_circuit(stim.Circuit(program))
+
+        assert len(b.rec) == 1
+        assert b.num_error_bits == 3
+        _assert_error_vertex_layout(
+            b,
+            {
+                "e0": [(VertexType.X, -2)],
+                "e1": [(VertexType.Z, 5)],
+                "e2": [(VertexType.X, 5)],
+            },
+        )
+
+    def test_correlated_error_bit_layout_matches_graph(self):
+        """Each correlated-error branch controls its matching Pauli vertices."""
+        circuit = stim.Circuit("""
+            CORRELATED_ERROR(0.1) X5 Y6 Z7
+            ELSE_CORRELATED_ERROR(0.2) Z5
+        """)
+        b = parse_stim_circuit(circuit)
+
+        assert b.num_error_bits == 2
+        assert_allclose(b.channel_probs[0], [0.72, 0.1, 0.18, 0.0])
+        _assert_error_vertex_layout(
+            b,
+            {
+                "e0": [
+                    (VertexType.X, 5),
+                    (VertexType.Z, 6),
+                    (VertexType.X, 6),
+                    (VertexType.Z, 7),
+                ],
+                "e1": [(VertexType.Z, 5)],
+            },
+        )
 
 
 class TestParseIIError:
