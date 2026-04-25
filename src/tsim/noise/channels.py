@@ -283,7 +283,7 @@ def expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel
         new_idx = 0
         for src_pos, src_col in enumerate(source_col_ids):
             if (old_idx >> src_pos) & 1:
-                new_idx |= 1 << source_to_target[src_col]
+                new_idx ^= 1 << source_to_target[src_col]
         new_probs[new_idx] += channel.probs[old_idx]
 
     return Channel(probs=new_probs, unique_col_ids=target_col_ids)

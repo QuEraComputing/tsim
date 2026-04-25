@@ -325,12 +325,82 @@ class TestExpandChannel:
         expanded = expand_channel(c, (3, 5))
 
         assert expanded.unique_col_ids == (3, 5)
-        # Signature 5 is at position 1 in target, so bit 1 has the probability
-        # Bit 0 (signature 3) is always 0
-        assert_allclose(expanded.probs[0], 0.7, rtol=1e-5)  # 0b00
-        assert_allclose(expanded.probs[1], 0.0, rtol=1e-5)  # 0b01
-        assert_allclose(expanded.probs[2], 0.3, rtol=1e-5)  # 0b10
-        assert_allclose(expanded.probs[3], 0.0, rtol=1e-5)  # 0b11
+        assert expanded.num_bits == 2
+        assert_allclose(expanded.probs, expected)
+
+    @pytest.mark.parametrize("unique_col_id", [3, 4, 5])
+    def test_expand_1bit_to_3bit(self, unique_col_id):
+        """Expand a 1-bit channel to a 3-bit signature set."""
+        target_col_ids = (3, 4, 5)
+        c = Channel(probs=error_probs(0.3), unique_col_ids=(unique_col_id,))
+
+        expanded = expand_channel(c, target_col_ids)
+
+        expected = np.zeros(8, dtype=np.float64)
+        expected[0b000] = 0.7
+        expected[1 << target_col_ids.index(unique_col_id)] = 0.3
+        assert expanded.unique_col_ids == target_col_ids
+        assert expanded.num_bits == 3
+        assert_allclose(expanded.probs, expected)
+
+    @pytest.mark.parametrize("unique_col_id", [3, 4, 5, 6, 7])
+    def test_expand_1bit_to_5bit(self, unique_col_id):
+        """Expand a 1-bit channel to a 5-bit signature set."""
+        target_col_ids = (3, 4, 5, 6, 7)
+        c = Channel(probs=error_probs(0.3), unique_col_ids=(unique_col_id,))
+
+        expanded = expand_channel(c, target_col_ids)
+
+        expected = np.zeros(32, dtype=np.float64)
+        expected[0b00000] = 0.7
+        expected[1 << target_col_ids.index(unique_col_id)] = 0.3
+        assert expanded.unique_col_ids == target_col_ids
+        assert expanded.num_bits == 5
+        assert_allclose(expanded.probs, expected)
+
+    @pytest.mark.parametrize("source_col_ids", [(0, 1), (0, 3), (1, 3), (2, 3)])
+    def test_expand_2bit_to_4bit_preserves_source_bit_positions(self, source_col_ids):
+        """Expand a 2-bit channel into non-adjacent target signature positions."""
+        probs = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64)
+        target_col_ids = (0, 1, 2, 3)
+        c = Channel(probs=probs, unique_col_ids=source_col_ids)
+
+        expanded = expand_channel(c, target_col_ids)
+
+        expected = np.zeros(16, dtype=np.float64)
+        expected[0b0000] = 0.1
+        expected[1 << target_col_ids.index(source_col_ids[0])] = 0.2
+        expected[1 << target_col_ids.index(source_col_ids[1])] = 0.3
+        expected[
+            (1 << target_col_ids.index(source_col_ids[0]))
+            | (1 << target_col_ids.index(source_col_ids[1]))
+        ] = 0.4
+        assert expanded.unique_col_ids == target_col_ids
+        assert expanded.num_bits == 4
+        assert_allclose(expanded.probs, expected)
+
+    def test_expand_duplicate_source_col_ids_cancel_mod_2(self):
+        """Duplicate source column bits should combine by XOR, not OR."""
+        # Bits 0 and 1 both map to target column 0. Outcomes 00 and 11 map to
+        # target bit 0, while 01 and 10 map to target bit 1.
+        probs = np.array([0.1, 0.2, 0.4, 0.3], dtype=np.float64)
+        c = Channel(probs=probs, unique_col_ids=(0, 0))
+
+        expanded = expand_channel(c, (0, 1))
+
+        assert expanded.unique_col_ids == (0, 1)
+        assert_allclose(expanded.probs, [0.4, 0.6, 0.0, 0.0])
+
+    def test_expand_deterministic_duplicate_bits_cancel_to_identity(self):
+        """A deterministic 11 outcome on duplicate columns should become 00."""
+        c = Channel(
+            probs=np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64),
+            unique_col_ids=(0, 0),
+        )
+
+        expanded = expand_channel(c, (0, 1))
+
+        assert_allclose(expanded.probs, [1.0, 0.0, 0.0, 0.0])
 
 
 class TestNormalizeChannels:
@@ -458,6 +528,23 @@ class TestAbsorbSubsetChannels:
 
         assert len(absorbed) == 1
         assert_sampling_matches(mat, channels, absorbed)
+
+    def test_absorb_duplicate_subset_channel_uses_xor_expansion(self):
+        """A duplicate-signature subset should cancel when absorbed into a superset."""
+        superset = Channel(
+            probs=np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64),
+            unique_col_ids=(0, 1),
+        )
+        duplicate_subset = Channel(
+            probs=np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64),
+            unique_col_ids=(0, 0),
+        )
+
+        absorbed = absorb_subset_channels([superset, duplicate_subset])
+
+        assert len(absorbed) == 1
+        assert absorbed[0].unique_col_ids == (0, 1)
+        assert_allclose(absorbed[0].probs, [1.0, 0.0, 0.0, 0.0])
 
 
 class TestSimplifyChannels:
