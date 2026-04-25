@@ -1034,7 +1034,7 @@
     <span class=n>max_bits</span><span class=p>:</span> <span class=nb>int</span> <span class=o>=</span> <span class=mi>4</span><span class=p>,</span>
     <span class=n>null_col_id</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>list</span><span class=p>[</span><span class=n>Channel</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Simplify channels by removing null columns, merging identical and absorbing subsets.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>channels</code> </td> <td> <code><span title=list>list</span>[<a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">Channel</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Simplify channels by removing null columns, folding, merging identical and absorbing subsets.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>channels</code> </td> <td> <code><span title=list>list</span>[<a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">Channel</span>
 
 
   <span class="doc doc-labels">
@@ -1067,7 +1067,7 @@
 <span class=normal>489</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>simplify_channels</span><span class=p>(</span>
     <span class=n>channels</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>Channel</span><span class=p>],</span> <span class=n>max_bits</span><span class=p>:</span> <span class=nb>int</span> <span class=o>=</span> <span class=mi>4</span><span class=p>,</span> <span class=n>null_col_id</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>list</span><span class=p>[</span><span class=n>Channel</span><span class=p>]:</span>
-<span class=w>    </span><span class=sd>&quot;&quot;&quot;Simplify channels by removing null columns, merging identical and absorbing subsets.</span>
+<span class=w>    </span><span class=sd>&quot;&quot;&quot;Simplify channels by removing null columns, folding, merging identical and absorbing subsets.</span>
 
 <span class=sd>    Args:</span>
 <span class=sd>        channels: List of channels to simplify</span>
