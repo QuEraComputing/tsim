@@ -12,7 +12,6 @@ Modifications:
 - Removed sinter dependency, modifyied T replacement logic.
 """
 
-import random
 from typing import Literal, Union, overload
 
 import numpy as np
@@ -23,11 +22,8 @@ from tsim.external.vec_sim import VecSim
 
 
 class VecSampler:
-    def __init__(
-        self, stim_circuit: stim.Circuit, sweep_bit_randomization: bool = False
-    ):
+    def __init__(self, stim_circuit: stim.Circuit):
         self.circuit = stim_circuit
-        self.sweep_bit_randomization = sweep_bit_randomization
 
     def sample(self, shots: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Sample the circuit and return the measurements, detectors, and observables."""
@@ -35,7 +31,6 @@ class VecSampler:
         for _ in range(shots):
             m, d, o = sample_circuit_with_vec_sim_return_data(
                 self.circuit,
-                self.sweep_bit_randomization,
             )
             measurements.append(m)
             detectors.append(d)
@@ -49,7 +44,6 @@ class VecSampler:
     def state_vector(self) -> np.ndarray:
         return sample_circuit_with_vec_sim_return_data(
             self.circuit,
-            self.sweep_bit_randomization,
             return_state_vector=True,
         )
 
@@ -57,7 +51,6 @@ class VecSampler:
 @overload
 def sample_circuit_with_vec_sim_return_data(
     circuit: stim.Circuit,
-    sweep_bit_randomization: bool,
     return_state_vector: Literal[False] = False,
 ) -> tuple[list[bool], list[bool], list[bool]]: ...
 
@@ -65,24 +58,19 @@ def sample_circuit_with_vec_sim_return_data(
 @overload
 def sample_circuit_with_vec_sim_return_data(
     circuit: stim.Circuit,
-    sweep_bit_randomization: bool,
     return_state_vector: Literal[True],
 ) -> np.ndarray: ...
 
 
 def sample_circuit_with_vec_sim_return_data(
     circuit: stim.Circuit,
-    sweep_bit_randomization: bool,
     return_state_vector: bool = False,
 ) -> Union[tuple[list[bool], list[bool], list[bool]], np.ndarray]:
     sim = VecSim()
     measurements = []
     detectors = []
     observables = []
-    sweep_bits = {
-        b: sweep_bit_randomization and random.random() < 0.5
-        for b in range(circuit.num_sweep_bits)
-    }
+    sweep_bits = {b: False for b in range(circuit.num_sweep_bits)}
     for q in range(circuit.num_qubits):
         sim.do_qalloc_z(q)
     for inst in circuit:
