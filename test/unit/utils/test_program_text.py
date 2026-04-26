@@ -15,6 +15,23 @@ def test_shorthand_to_stim_t_and_t_dag():
     assert shorthand_to_stim(text) == expected
 
 
+def test_shorthand_to_stim_tpp_and_tpp_dag():
+    text = "TPP X0*Y1\nTPP_DAG Z0"
+    expected = "SPP[T] X0*Y1\nSPP_DAG[T] Z0"
+    assert shorthand_to_stim(text) == expected
+
+
+def test_stim_to_shorthand_tpp_and_tpp_dag():
+    text = "SPP[T] X0*Y1\nSPP_DAG[T] Z0"
+    expected = "TPP X0*Y1\nTPP_DAG Z0"
+    assert stim_to_shorthand(text) == expected
+
+
+def test_shorthand_tpp_roundtrip():
+    text = "TPP X0*Z1\nTPP_DAG !Y0*Y1"
+    assert stim_to_shorthand(shorthand_to_stim(text)) == text
+
+
 def test_shorthand_to_stim_rotations():
     text = "R_X(0.25) 0\nR_Y(-0.5) 1\nR_Z(0.3) 2"
     expected = (

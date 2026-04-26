@@ -151,7 +151,13 @@ class Circuit:
 
         """
         if isinstance(name, str):
-            if name == "T":
+            if name == "TPP":
+                name = "SPP"
+                tag = "T"
+            elif name == "TPP_DAG":
+                name = "SPP_DAG"
+                tag = "T"
+            elif name == "T":
                 name = "S"
                 tag = "T"
             elif name == "T_DAG":
@@ -386,7 +392,7 @@ class Circuit:
         for instr in self._stim_circ:
             assert not isinstance(instr, stim.CircuitRepeatBlock)
 
-            if instr.name in {"S", "S_DAG"} and instr.tag == "T":
+            if instr.name in ["S", "S_DAG", "SPP", "SPP_DAG"] and instr.tag == "T":
                 return False
 
             if instr.name == "I" and instr.tag:
