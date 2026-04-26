@@ -31,7 +31,7 @@
         <span class=k>return</span> <span class=n>exc</span>
     <span class=k>return</span> <span class=ne>ValueError</span><span class=p>(</span><span class=sa>f</span><span class=s2>&quot;Could not parse &#39;</span><span class=si>{</span><span class=n>usage</span><span class=o>.</span><span class=n>group</span><span class=p>()</span><span class=si>}</span><span class=s2>&#39; in program text.&quot;</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.program_text.shorthand_to_stim class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">shorthand_to_stim</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>shorthand_to_stim</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Convert tsim shorthand syntax to valid stim instructions.</p> <details class=converts open> <summary>Converts</summary> <p>T 0 1 → S[T] 0 1 T_DAG 0 1 → S_DAG[T] 0 1 R_Z(0.3) 0 → I[R_Z(theta=0.3<em>pi)] 0 R_X(0.25) 0 → I[R_X(theta=0.25</em>pi)] 0 R_Y(-0.5) 0 → I[R_Y(theta=-0.5<em>pi)] 0 U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3</em>pi, phi=0.24<em>pi, lambda=0.49</em>pi)] 0</p> </details> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>30</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Convert tsim shorthand syntax to valid stim instructions.</p> <details class=converts open> <summary>Converts</summary> <p>T 0 1 → S[T] 0 1 T_DAG 0 1 → S_DAG[T] 0 1 TPP X0<em>Y1 → SPP[T] X0</em>Y1 TPP_DAG X0<em>Y1 → SPP_DAG[T] X0</em>Y1 R_Z(0.3) 0 → I[R_Z(theta=0.3<em>pi)] 0 R_X(0.25) 0 → I[R_X(theta=0.25</em>pi)] 0 R_Y(-0.5) 0 → I[R_Y(theta=-0.5<em>pi)] 0 U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3</em>pi, phi=0.24<em>pi, lambda=0.49</em>pi)] 0</p> </details> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>30</span>
 <span class=normal>31</span>
 <span class=normal>32</span>
 <span class=normal>33</span>
@@ -64,20 +64,28 @@
 <span class=normal>60</span>
 <span class=normal>61</span>
 <span class=normal>62</span>
-<span class=normal>63</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>shorthand_to_stim</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+<span class=normal>63</span>
+<span class=normal>64</span>
+<span class=normal>65</span>
+<span class=normal>66</span>
+<span class=normal>67</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>shorthand_to_stim</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Convert tsim shorthand syntax to valid stim instructions.</span>
 
 <span class=sd>    Converts:</span>
-<span class=sd>        T 0 1           → S[T] 0 1</span>
-<span class=sd>        T_DAG 0 1       → S_DAG[T] 0 1</span>
-<span class=sd>        R_Z(0.3) 0      → I[R_Z(theta=0.3*pi)] 0</span>
-<span class=sd>        R_X(0.25) 0     → I[R_X(theta=0.25*pi)] 0</span>
-<span class=sd>        R_Y(-0.5) 0     → I[R_Y(theta=-0.5*pi)] 0</span>
+<span class=sd>        T 0 1               → S[T] 0 1</span>
+<span class=sd>        T_DAG 0 1           → S_DAG[T] 0 1</span>
+<span class=sd>        TPP X0*Y1           → SPP[T] X0*Y1</span>
+<span class=sd>        TPP_DAG X0*Y1       → SPP_DAG[T] X0*Y1</span>
+<span class=sd>        R_Z(0.3) 0          → I[R_Z(theta=0.3*pi)] 0</span>
+<span class=sd>        R_X(0.25) 0         → I[R_X(theta=0.25*pi)] 0</span>
+<span class=sd>        R_Y(-0.5) 0         → I[R_Y(theta=-0.5*pi)] 0</span>
 <span class=sd>        U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0</span>
 
 <span class=sd>    &quot;&quot;&quot;</span>
-    <span class=c1># T_DAG must come before T to avoid partial matches</span>
+    <span class=c1># TPP_DAG/TPP must come before T_DAG/T to avoid partial matches</span>
     <span class=c1># (?&lt;!\[) ensures we don&#39;t match T inside [T]</span>
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span><span class=sa>r</span><span class=s2>&quot;(?&lt;!\[)\bTPP_DAG\b(?!\[)&quot;</span><span class=p>,</span> <span class=s2>&quot;SPP_DAG[T]&quot;</span><span class=p>,</span> <span class=n>text</span><span class=p>)</span>
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span><span class=sa>r</span><span class=s2>&quot;(?&lt;!\[)\bTPP\b(?!\[)&quot;</span><span class=p>,</span> <span class=s2>&quot;SPP[T]&quot;</span><span class=p>,</span> <span class=n>text</span><span class=p>)</span>
     <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span><span class=sa>r</span><span class=s2>&quot;(?&lt;!\[)\bT_DAG\b(?!\[)&quot;</span><span class=p>,</span> <span class=s2>&quot;S_DAG[T]&quot;</span><span class=p>,</span> <span class=n>text</span><span class=p>)</span>
     <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span><span class=sa>r</span><span class=s2>&quot;(?&lt;!\[)\bT\b(?!\[)&quot;</span><span class=p>,</span> <span class=s2>&quot;S[T]&quot;</span><span class=p>,</span> <span class=n>text</span><span class=p>)</span>
 
@@ -99,11 +107,7 @@
 
     <span class=k>return</span> <span class=n>text</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.program_text.stim_to_shorthand class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">stim_to_shorthand</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Convert expanded stim annotations back to tsim shorthand.</p> <p>Rewrites: - I[U3(theta=θ<em>pi, phi=φ</em>pi, lambda=λ<em>pi)] → U3(θ, φ, λ) - I[R_X(theta=α</em>pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α) - S[T] → T - S_DAG[T] → T_DAG</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 66</span>
-<span class=normal> 67</span>
-<span class=normal> 68</span>
-<span class=normal> 69</span>
-<span class=normal> 70</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Convert expanded stim annotations back to tsim shorthand.</p> <p>Rewrites: - I[U3(theta=θ<em>pi, phi=φ</em>pi, lambda=λ<em>pi)] → U3(θ, φ, λ) - I[R_X(theta=α</em>pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α) - SPP[T] → TPP - SPP_DAG[T] → TPP_DAG - S[T] → T - S_DAG[T] → T_DAG</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 70</span>
 <span class=normal> 71</span>
 <span class=normal> 72</span>
 <span class=normal> 73</span>
@@ -137,12 +141,25 @@
 <span class=normal>101</span>
 <span class=normal>102</span>
 <span class=normal>103</span>
-<span class=normal>104</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+<span class=normal>104</span>
+<span class=normal>105</span>
+<span class=normal>106</span>
+<span class=normal>107</span>
+<span class=normal>108</span>
+<span class=normal>109</span>
+<span class=normal>110</span>
+<span class=normal>111</span>
+<span class=normal>112</span>
+<span class=normal>113</span>
+<span class=normal>114</span>
+<span class=normal>115</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Convert expanded stim annotations back to tsim shorthand.</span>
 
 <span class=sd>    Rewrites:</span>
 <span class=sd>    - I[U3(theta=θ*pi, phi=φ*pi, lambda=λ*pi)] → U3(θ, φ, λ)</span>
 <span class=sd>    - I[R_X(theta=α*pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α)</span>
+<span class=sd>    - SPP[T] → TPP</span>
+<span class=sd>    - SPP_DAG[T] → TPP_DAG</span>
 <span class=sd>    - S[T] → T</span>
 <span class=sd>    - S_DAG[T] → T_DAG</span>
 <span class=sd>    &quot;&quot;&quot;</span>
@@ -169,6 +186,11 @@
         <span class=n>replace_rotation</span><span class=p>,</span>
         <span class=n>text</span><span class=p>,</span>
     <span class=p>)</span>
+
+    <span class=c1># Replace SPP[T] and SPP_DAG[T] with TPP and TPP_DAG</span>
+    <span class=c1># Must come before S[T]/S_DAG[T] to avoid partial matches</span>
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span><span class=sa>r</span><span class=s2>&quot;(?&lt;!\w)SPP_DAG\[T\](?!\w)&quot;</span><span class=p>,</span> <span class=s2>&quot;TPP_DAG&quot;</span><span class=p>,</span> <span class=n>text</span><span class=p>)</span>
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span><span class=sa>r</span><span class=s2>&quot;(?&lt;!\w)SPP\[T\](?!\w)&quot;</span><span class=p>,</span> <span class=s2>&quot;TPP&quot;</span><span class=p>,</span> <span class=n>text</span><span class=p>)</span>
 
     <span class=c1># Replace S[T] and S_DAG[T] with T and T_DAG</span>
     <span class=c1># Use non-word lookarounds because trailing ] is not a word character.</span>
