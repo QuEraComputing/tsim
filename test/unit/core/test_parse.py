@@ -1002,3 +1002,20 @@ class TestParseParametricTag:
             match=r"Could not parse instruction 'I\[U3\(theta=0\.5\*pi\)\] 0 1'",
         ):
             parse_parametric_tag(instr)
+
+
+class TestSweepTargets:
+    """Sweep targets are not supported and must raise rather than be silently lowered as qubit targets."""
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "CX sweep[0] 1",
+            "CZ 0 sweep[1]",
+            "CY sweep[2] 0",
+        ],
+    )
+    def test_sweep_target_raises(self, program):
+        circuit = stim.Circuit(program)
+        with pytest.raises(NotImplementedError, match="Sweep bit targets"):
+            parse_stim_circuit(circuit)
