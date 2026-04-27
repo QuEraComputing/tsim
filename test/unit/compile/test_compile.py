@@ -2,6 +2,7 @@ from fractions import Fraction
 
 import jax.numpy as jnp
 import numpy as np
+import pytest
 from pyzx_param.graph.base import BaseGraph
 from pyzx_param.graph.graph_s import GraphS
 
@@ -43,6 +44,44 @@ class TestCompileEmpty:
         result = evaluate(compiled, param_vals)
         assert result.shape == (3,)
         np.testing.assert_array_equal(np.asarray(result), np.zeros(3, dtype=complex))
+
+
+class TestCompilePhasevarsPiRejected:
+    """compile_scalar_graphs must reject graphs carrying ``Scalar.phasevars_pi``.
+
+    ``phasevars_pi`` represents a ``(-1)^XOR(vars)`` factor on the scalar that
+    no compiled term family applies. Silently dropping it would produce wrong
+    amplitudes, so we crash loudly. Today ``pyzx_param.full_reduce`` does not
+    emit this set, but the contract must be enforced for future safety.
+    """
+
+    def test_single_phasevars_pi_raises(self):
+        g = GraphS()
+        g.scalar.add_phase_vars_pi({"f0"})
+        with pytest.raises(NotImplementedError, match="phasevars_pi"):
+            compile_scalar_graphs([g], ["f0"])
+
+    def test_phasevars_pi_on_later_graph_raises(self):
+        """Per-graph check fires even when only a non-first graph carries it."""
+        g_clean = GraphS()
+        g_with = GraphS()
+        g_with.scalar.add_phase_vars_pi({"f0"})
+        with pytest.raises(NotImplementedError, match="graph 1"):
+            compile_scalar_graphs([g_clean, g_with], ["f0"])
+
+    def test_empty_phasevars_pi_is_accepted(self):
+        """The check must only fire on a non-empty set, not on a present-but-empty one."""
+        g = GraphS()
+        assert g.scalar.phasevars_pi == set()
+        compile_scalar_graphs([g], [])
+
+    def test_phasevars_pi_with_multiple_vars_in_message(self):
+        g = GraphS()
+        g.scalar.add_phase_vars_pi({"f0", "f1"})
+        with pytest.raises(NotImplementedError) as exc_info:
+            compile_scalar_graphs([g], ["f0", "f1"])
+        msg = str(exc_info.value)
+        assert "f0" in msg and "f1" in msg
 
 
 class TestCompilePrefactorPhase:
