@@ -802,9 +802,9 @@ def correlated_error(
     """Add a correlated error term affecting multiple qubits with given Pauli types."""
     for qubit, type_ in zip(qubits, types, strict=True):
         if type_ == "X" or type_ == "Y":
-            _error(b, qubit, VertexType.X, f"c{b.num_correlated_error_bits}")
+            _error(b, qubit, b.vertex_type.X, f"c{b.num_correlated_error_bits}")
         if type_ == "Z" or type_ == "Y":
-            _error(b, qubit, VertexType.Z, f"c{b.num_correlated_error_bits}")
+            _error(b, qubit, b.vertex_type.Z, f"c{b.num_correlated_error_bits}")
 
     b.correlated_error_probs.append(p)
     b.num_correlated_error_bits += 1
