@@ -83,6 +83,24 @@ def test_circuit_scientific_notation():
     assert len(c) == 1
 
 
+def test_stim_to_shorthand_rotation_scientific_notation():
+    text = "I[R_Z(theta=1e-07*pi)] 0\nI[R_X(theta=-2.5e+02*pi)] 1"
+    expected = "R_Z(1e-07) 0\nR_X(-2.5e+02) 1"
+    assert stim_to_shorthand(text) == expected
+
+
+def test_stim_to_shorthand_u3_scientific_notation():
+    text = "I[U3(theta=1e-07*pi, phi=2e-07*pi, lambda=3e-07*pi)] 0"
+    expected = "U3(1e-07, 2e-07, 3e-07) 0"
+    assert stim_to_shorthand(text) == expected
+
+
+def test_circuit_str_scientific_notation_roundtrip():
+    for program in ["R_Z(1e-7) 0", "U3(1e-7, 2e-7, 3e-7) 0"]:
+        rendered = str(Circuit(program))
+        assert "I[" not in rendered, rendered
+
+
 @pytest.mark.parametrize(
     "text, snippet",
     [

@@ -85,7 +85,7 @@ def stim_to_shorthand(text: str) -> str:
         return f"U3({theta}, {phi}, {lam})"
 
     text = re.sub(
-        r"\bI\[U3\(theta=([-+]?[\d.]+)\*pi, phi=([-+]?[\d.]+)\*pi, lambda=([-+]?[\d.]+)\*pi\)\]",
+        rf"\bI\[U3\(theta=({_FLOAT_RE})\*pi, phi=({_FLOAT_RE})\*pi, lambda=({_FLOAT_RE})\*pi\)\]",
         replace_u3,
         text,
     )
@@ -97,7 +97,7 @@ def stim_to_shorthand(text: str) -> str:
         return f"R_{axis}({angle})"
 
     text = re.sub(
-        r"\bI\[R_([XYZ])\(theta=([-+]?[\d.]+)\*pi\)\]",
+        rf"\bI\[R_([XYZ])\(theta=({_FLOAT_RE})\*pi\)\]",
         replace_rotation,
         text,
     )
