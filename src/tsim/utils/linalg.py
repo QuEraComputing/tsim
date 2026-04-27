@@ -95,6 +95,8 @@ def matmul_gf2(a: Array, b: Array) -> Array:
     G, T, _ = a.shape
     if G * T == 0:
         return jnp.zeros((b.shape[0], G, T), dtype=jnp.uint8)
-    return (b.astype(jnp.float32) @ a.astype(jnp.float32).reshape(G * T, -1).T).reshape(
-        -1, G, T
-    ).astype(jnp.uint8) % 2
+    # NOTE: ``% 2`` must run on float32 — JAX's float→uint8 cast saturates at
+    # 255 (it does not wrap mod 256), which would corrupt parity for inner
+    # products with more than 255 set bits.
+    sum_f32 = b.astype(jnp.float32) @ a.astype(jnp.float32).reshape(G * T, -1).T
+    return (sum_f32.reshape(-1, G, T) % 2).astype(jnp.uint8)
