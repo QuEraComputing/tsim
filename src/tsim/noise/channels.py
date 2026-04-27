@@ -29,7 +29,8 @@ class Channel:
 
     def __post_init__(self) -> None:
         """Validate channel probabilities."""
-        if np.any(self.probs < 0.0) or np.any(self.probs > 1.0):
+        tol = 1e-12
+        if np.any(self.probs < -tol) or np.any(self.probs > 1.0 + tol):
             raise ValueError(f"Probabilities must lie in [0, 1], but got: {self.probs}")
         if not np.isclose(np.sum(self.probs), 1.0):
             raise ValueError(
