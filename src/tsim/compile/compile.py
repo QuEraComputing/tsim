@@ -354,10 +354,10 @@ def compile_scalar_graphs(
             raise ValueError(
                 f"Only scalar graphs can be compiled but graph {i} has {n_vertices} vertices"
             )
-        if g.scalar.phasevars_pi:
+        if g.scalar.phasevars_pi and not g.scalar.is_zero:
             raise NotImplementedError(
                 f"compile_scalar_graphs does not support Scalar.phasevars_pi "
-                f"(graph {i} has phasevars_pi={sorted(g.scalar.phasevars_pi)!r}). "
+                f"(graph {i} has phasevars_pi={sorted(g.scalar.phasevars_pi)!r})"
             )
 
     g_list = [g for g in g_list if not g.scalar.is_zero]
