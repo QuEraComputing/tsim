@@ -817,8 +817,12 @@ def correlated_error(
 
 def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -> None:
     """Perform measurement on qubit with optional error probability."""
+    error_var = ""
     if p > 0:
-        x_error(b, qubit, p)
+        b.channel_probs.append(error_probs(p))
+        error_var = f"e{b.num_error_bits}"
+        _error(b, qubit, b.vertex_type.X, error_var)
+        b.num_error_bits += 1
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
     b.graph.set_type(v1, VertexType.Z)
@@ -830,11 +834,18 @@ def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -
         b.silent_rec.append(v1)
     v2 = add_dummy(b, qubit)
     b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
+    if p > 0:
+        _error(b, qubit, b.vertex_type.X, error_var)
     b.graph.scalar.add_power(-1)
 
 
-def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
-    """Perform reset on qubit, optionally tracing out previous state."""
+def _r(b: GraphRepresentation, qubit: int) -> None:
+    """Perform reset on qubit.
+
+    If the qubit does not yet have a lane, create one in the reset state.
+    Otherwise, silently measure the existing lane to trace out the previous
+    state before reconnecting the qubit in the reset state.
+    """
     if qubit not in b.last_vertex:
         v1 = add_lane(b, qubit)
         b.graph.set_type(v1, b.vertex_type.X)
@@ -843,8 +854,7 @@ def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
         v = b.last_vertex[qubit]
         neighbors = list(b.graph.neighbors(v))
         assert len(neighbors) == 1
-        if perform_trace:
-            _m(b, qubit, silent=True)
+        _m(b, qubit, silent=True)
         row = last_row(b, qubit)
         v1 = b.last_vertex[qubit]
         b.graph.set_type(v1, b.vertex_type.X)
@@ -1014,7 +1024,7 @@ def mr(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -
     then resets to |0>.
     """
     m(b, qubit, p=p, invert=invert)
-    _r(b, qubit, perform_trace=False)
+    _r(b, qubit)
 
 
 def mrx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
@@ -1025,7 +1035,7 @@ def mrx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) 
     """
     h(b, qubit)
     m(b, qubit, p=p, invert=invert)
-    _r(b, qubit, perform_trace=False)
+    _r(b, qubit)
     h(b, qubit)
 
 
@@ -1037,7 +1047,7 @@ def mry(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) 
     """
     h_yz(b, qubit)
     m(b, qubit, p=p, invert=invert)
-    _r(b, qubit, perform_trace=False)
+    _r(b, qubit)
     h_yz(b, qubit)
 
 
@@ -1082,7 +1092,7 @@ def r(b: GraphRepresentation, qubit: int) -> None:
     Forces each target qubit into the |0> state by silently measuring it in the Z basis
     and applying an X gate if it ended up in the |1> state.
     """
-    _r(b, qubit, perform_trace=True)
+    _r(b, qubit)
 
 
 def rx(b: GraphRepresentation, qubit: int) -> None:

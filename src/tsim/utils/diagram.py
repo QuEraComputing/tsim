@@ -518,6 +518,8 @@ def render_pyzx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> GraphS:
                 row=row,
             )
             g.add_edge((v, vb))
+        if phase.startswith("m["):
+            g.set_phase(v, 0)
 
     if kwargs.get("scale_horizontally", False):
         scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
