@@ -220,6 +220,10 @@ def make_sampler():
         (100, None, 50, True, 51, 2),
         # Explicit batch_size, has leeway → stays
         (100, None, 51, True, 51, 2),
+        # Small explicit batch_size where bump shrinks ceil(shots/batch_size):
+        # num_batches must reflect the pre-bump count or samples are short.
+        (2, None, 1, True, 2, 2),
+        (12, None, 3, True, 4, 4),
     ],
     ids=[
         "leeway-no-bump",
@@ -228,6 +232,8 @@ def make_sampler():
         "no-reference",
         "explicit-no-leeway",
         "explicit-leeway",
+        "explicit-small-no-leeway-bump",
+        "explicit-small-no-leeway-bump-multi",
     ],
 )
 def test_batch_size_with_reference(
