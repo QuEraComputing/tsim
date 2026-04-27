@@ -288,6 +288,115 @@ def test_mr_inverted_record(basis: str):
     assert (samples[:, 3] == 0).all()
 
 
+@pytest.mark.parametrize(
+    ("basis", "prep"),
+    [("X", "RX 0\nZ 0"), ("Y", "RY 0\nZ 0"), ("Z", "R 0\nX 0")],
+)
+def test_mr_inverted_record_on_minus_eigenstate(basis: str, prep: str):
+    """`MR{basis} !0` on the -1 eigenstate must record 0."""
+    mr_gate = "MR" if basis == "Z" else f"MR{basis}"
+    c = Circuit(f"{prep}\n{mr_gate} !0")
+    samples = c.compile_sampler(seed=0).sample(200)
+    assert not np.any(samples), f"{mr_gate} !0 from -1 eigenstate must record 0"
+
+
+@pytest.mark.parametrize("basis", ["X", "Y", "Z"])
+def test_mr_inverted_resets_to_zero_state(basis: str):
+    """`MR{basis} !0` must still reset to the +1 eigenstate of `basis`."""
+    mr_gate = "MR" if basis == "Z" else f"MR{basis}"
+    m_gate = "M" if basis == "Z" else f"M{basis}"
+    # Start in -1 eigenstate so the inverted record is non-trivial; the second
+    # measurement reads the post-state which must be the +1 eigenstate (i.e. 0).
+    if basis == "X":
+        prep = "RX 0\nZ 0"
+    elif basis == "Y":
+        prep = "RY 0\nZ 0"
+    else:
+        prep = "R 0\nX 0"
+    c = Circuit(f"{prep}\n{mr_gate} !0\n{m_gate} 0")
+    samples = c.compile_sampler(seed=0).sample(200)
+    assert (samples[:, 0] == 0).all()
+    assert (samples[:, 1] == 0).all()
+
+
+def _matches_stim_distribution(program: str, shots: int = 8000, atol: float = 0.025):
+    """Return True iff tsim and stim produce sample means within `atol`."""
+    import stim
+
+    s = stim.Circuit(program).compile_sampler().sample(shots).mean(axis=0)
+    t = Circuit(program).compile_sampler(seed=0).sample(shots).mean(axis=0)
+    return np.all(np.abs(s - t) < atol), s, t
+
+
+@pytest.mark.parametrize(
+    ("prep", "noisy_measure", "follow_measure"),
+    [
+        ("R 0", "M(0.5) 0", "M 0"),
+        ("RX 0", "MX(0.5) 0", "MX 0"),
+        ("RY 0", "MY(0.5) 0", "MY 0"),
+    ],
+)
+def test_noisy_measurement_uncomputes_post_state_flip(
+    prep: str, noisy_measure: str, follow_measure: str
+):
+    """The X-error sandwich must uncompute the post-state flip on M(p)/MX(p)/MY(p)."""
+    program = f"{prep}\n{noisy_measure}\n{follow_measure}"
+    samples = Circuit(program).compile_sampler(seed=0).sample(1000)
+    # First record is genuinely random (~50% due to p=0.5 flip).
+    assert 200 < np.count_nonzero(samples[:, 0]) < 800
+    # Second record must be 0 on every shot — post-state of the noisy measure
+    # is the +1 eigenstate of the basis, so the follow-up read is deterministic.
+    assert not np.any(samples[:, 1]), (
+        f"second measurement of `{program}` is correlated with the noise "
+        f"(non-zero on {np.count_nonzero(samples[:, 1])}/{len(samples)} shots)"
+    )
+
+
+@pytest.mark.parametrize(
+    "program",
+    [
+        # M(p) preserves post-state (only the recorded bit flips).
+        "R 0\nM(0.5) 0\nM 0",
+        "R 0\nX 0\nM(0.3) 0\nM 0",
+        # MX(p)/MY(p) similarly preserve post-state.
+        "RX 0\nMX(0.4) 0\nMX 0",
+        "RY 0\nMY(0.25) 0\nMY 0",
+    ],
+)
+def test_noisy_measurement_preserves_post_state(program: str):
+    """`M(p)/MX(p)/MY(p)` flip only the recorded bit, not the post-state."""
+    ok, stim_mean, tsim_mean = _matches_stim_distribution(program)
+    assert ok, f"tsim {tsim_mean} differs from stim {stim_mean} for `{program}`"
+
+
+@pytest.mark.parametrize(
+    "program",
+    [
+        # noisy MR-family without invert
+        "R 0\nMR(0.1) 0",
+        "R 0\nX 0\nMR(0.1) 0",
+        "RX 0\nMRX(0.2) 0",
+        "RY 0\nMRY(0.15) 0",
+        # noisy MR-family with invert (covers both bug fixes simultaneously)
+        "R 0\nX 0\nMR(0.1) !0",
+        "R 0\nMR(0.1) !0",
+        "RX 0\nZ 0\nMRX(0.2) !0",
+        "RY 0\nZ 0\nMRY(0.15) !0",
+        # noisy plain measurement with invert
+        "R 0\nX 0\nM(0.1) !0",
+        "RX 0\nZ 0\nMX(0.2) !0",
+        "RY 0\nZ 0\nMY(0.15) !0",
+        # follow-up measurements check the post-state
+        "R 0\nX 0\nMR(0.1) !0\nM 0",
+        "RX 0\nZ 0\nMRX(0.2) !0\nMX 0",
+    ],
+)
+def test_noisy_measurement_matches_stim(program: str):
+    """Noisy `M(p)/MR(p)/MRX(p)/MRY(p)` (with or without `!`) match Stim."""
+    ok, stim_mean, tsim_mean = _matches_stim_distribution(program)
+    assert ok, f"tsim {tsim_mean} differs from stim {stim_mean} for `{program}`"
+
+
 @pytest.mark.parametrize("basis", ["X", "Y", "Z"])
 def test_mpp_inverted_record(basis: str):
     singlet = """

@@ -139,8 +139,10 @@ def test_rz_mrz():
     result = _build_and_get_matrix((instructions.i, instructions.r), 0)
     assert np.allclose(result, np.outer(zero, plus.conj()))
 
+    # MR is semantically equivalent to M followed by R; the resulting matrix
+    # carries an extra 1/sqrt(2) trace factor relative to plain R after I.
     result = _build_and_get_matrix(instructions.mr, 0)
-    assert np.allclose(result, np.outer(zero, plus.conj()))
+    assert np.allclose(result, np.outer(zero, plus.conj()) / np.sqrt(2))
 
     result = _build_and_get_matrix(instructions.r, 0)
     assert np.allclose(result, np.outer(zero, 1))
@@ -156,7 +158,7 @@ def test_rx_mrx():
     assert np.allclose(result, np.outer(plus, zero.conj()))
 
     result = _build_and_get_matrix(instructions.mrx, 0)
-    assert np.allclose(result, np.outer(plus, zero.conj()))
+    assert np.allclose(result, np.outer(plus, zero.conj()) / np.sqrt(2))
 
     result = _build_and_get_matrix(instructions.rx, 0)
     assert np.allclose(result, np.outer(plus, 1))
@@ -177,10 +179,25 @@ def test_ry_mry():
 
     result = _build_and_get_matrix(instructions.mry, 0)
 
-    assert np.allclose(result, np.outer(plus_i, (h_yz @ plus).conj()))
+    assert np.allclose(result, np.outer(plus_i, (h_yz @ plus).conj()) / np.sqrt(2))
 
     result = _build_and_get_matrix(instructions.ry, 0)
     assert np.allclose(result, np.outer(plus_i, 1))
+
+
+def test_mr_matches_m_then_r():
+    """MR/MRX/MRY should produce the same matrix as M;R / MX;RX / MY;RY."""
+    mr = _build_and_get_matrix(instructions.mr, 0)
+    m_r = _build_and_get_matrix((instructions.m, instructions.r), 0)
+    assert np.allclose(mr, m_r)
+
+    mrx = _build_and_get_matrix(instructions.mrx, 0)
+    mx_rx = _build_and_get_matrix((instructions.mx, instructions.rx), 0)
+    assert np.allclose(mrx, mx_rx)
+
+    mry = _build_and_get_matrix(instructions.mry, 0)
+    my_ry = _build_and_get_matrix((instructions.my, instructions.ry), 0)
+    assert np.allclose(mry, my_ry)
 
 
 def test_m():
