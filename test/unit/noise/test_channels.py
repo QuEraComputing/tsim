@@ -162,6 +162,40 @@ class TestCorrelatedErrorProbs:
         assert_allclose(probs[4], 0.0)  # index 4 (0b100): third error
 
 
+class TestProbabilityValidation:
+    """The probability helpers reject invalid inputs instead of producing
+    malformed distributions that get silently dropped downstream."""
+
+    def test_error_probs_rejects_out_of_range(self):
+        with pytest.raises(ValueError):
+            error_probs(1.5)
+        with pytest.raises(ValueError):
+            error_probs(-0.1)
+
+    def test_pauli_channel_1_rejects_sum_above_one(self):
+        with pytest.raises(ValueError):
+            pauli_channel_1_probs(0.6, 0.6, 0.6)
+
+    def test_pauli_channel_1_rejects_negative(self):
+        with pytest.raises(ValueError):
+            pauli_channel_1_probs(-0.1, 0.1, 0.1)
+
+    def test_pauli_channel_2_rejects_sum_above_one(self):
+        with pytest.raises(ValueError):
+            pauli_channel_2_probs(*([0.1] * 15))
+
+    def test_heralded_pauli_channel_1_rejects_sum_above_one(self):
+        with pytest.raises(ValueError):
+            heralded_pauli_channel_1_probs(pi=0.5, px=0.3, py=0.3, pz=0.0)
+
+    def test_channel_sampler_rejects_invalid_channel(self):
+        # Construct a Channel whose probs[0] exceeds 1, bypassing the helpers.
+        bad_probs = np.array([1.2, -0.1, -0.05, -0.05])
+        transform = np.array([[1, 0], [0, 1]], dtype=np.uint8)
+        with pytest.raises(ValueError):
+            ChannelSampler([bad_probs], transform, seed=42)
+
+
 def _sample_channels(channels, matrix, n_samples, seed=42):
     """Sample from channels using the ChannelSampler infrastructure."""
     sampler = object.__new__(ChannelSampler)
