@@ -303,7 +303,7 @@ def _compile_prefactor(g_list: list[BaseGraph]) -> ScalarPrefactor:
     )
 
     phase_indices = jnp.array(
-        [int(float(g.scalar.phase) * 4) for g in g_list], dtype=jnp.uint8
+        [int(float(g.scalar.phase) * 4) % 8 for g in g_list], dtype=jnp.uint8
     )
 
     exact_floatfactor = []
