@@ -111,33 +111,12 @@ def get_detector_error_model(
 
     for instruction in stim_circuit.flattened():
         assert not isinstance(instruction, stim.CircuitRepeatBlock)
-        if instruction.name in [
-            "M",
-            "MX",
-            "MY",
-            "MZ",
-            "MR",
-            "MRX",
-            "MRY",
-            "MXX",
-            "MYY",
-            "MZZ",
-            "MPP",
-            "MPAD",
-        ]:
-            targets = instruction.targets_copy()
-            if instruction.name == "MPP":
-                # MPP produces one measurement per Pauli product.
-                # Products are separated by spaces; within a product, Paulis are joined by '*' (combiners).
-                # num_measurements = num_non_combiner_targets - num_combiners
-                num_combiners = sum(1 for t in targets if t.is_combiner)
-                num_meas = len(targets) - 2 * num_combiners
-            elif instruction.name in ("MXX", "MYY", "MZZ"):
-                # Pair measurements: targets are listed in pairs and each pair
-                # produces a single measurement record.
-                num_meas = len(targets) // 2
-            else:
-                num_meas = len(targets)
+        if stim.gate_data(instruction.name).produces_measurements:
+            # Ask stim how many records this exact instruction appended,
+            # so we don't have to track the per-gate counting rules ourselves.
+            probe = stim.Circuit()
+            probe.append(instruction)
+            num_meas = probe.num_measurements
             for idx in obs:
                 # update measurement rec indices for the OBSERVABLE_INCLUDE instructions
                 obs[idx] = [t - num_meas for t in obs[idx]]

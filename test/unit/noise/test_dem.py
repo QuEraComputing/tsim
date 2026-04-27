@@ -217,6 +217,58 @@ def test_get_detector_error_model_with_mpad():
     assert get_detector_error_model(c).approx_equals(expected, atol=1e-12)
 
 
+def test_get_detector_error_model_with_mrz():
+    """MRZ appends one record per target; OBSERVABLE_INCLUDE rec indices must shift."""
+    c = stim.Circuit("""
+        R 0 1
+        X_ERROR(0.1) 0
+        M 0
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        MRZ 1
+        DETECTOR rec[-1]
+        """)
+    expected = c.detector_error_model(allow_gauge_detectors=True)
+    assert get_detector_error_model(c).approx_equals(expected, atol=1e-12)
+
+
+def test_get_detector_error_model_with_heralded_erase():
+    """HERALDED_ERASE appends one record per target; rec indices must shift."""
+    c = stim.Circuit("""
+        R 0 1 2
+        X_ERROR(0.1) 0
+        M 0
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        HERALDED_ERASE(0.05) 1 2
+        DETECTOR rec[-1]
+        DETECTOR rec[-2]
+        """)
+    expected = c.detector_error_model(
+        allow_gauge_detectors=True, approximate_disjoint_errors=True
+    )
+    assert get_detector_error_model(c, approximate_disjoint_errors=True).approx_equals(
+        expected, atol=1e-12
+    )
+
+
+def test_get_detector_error_model_with_heralded_pauli_channel_1():
+    """HERALDED_PAULI_CHANNEL_1 appends one record per target; rec indices must shift."""
+    c = stim.Circuit("""
+        R 0 1 2
+        X_ERROR(0.1) 0
+        M 0
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        HERALDED_PAULI_CHANNEL_1(0.01, 0.02, 0.03, 0.04) 1 2
+        DETECTOR rec[-1]
+        DETECTOR rec[-2]
+        """)
+    expected = c.detector_error_model(
+        allow_gauge_detectors=True, approximate_disjoint_errors=True
+    )
+    assert get_detector_error_model(c, approximate_disjoint_errors=True).approx_equals(
+        expected, atol=1e-12
+    )
+
+
 def test_get_detector_error_model_mpp_measurement_counting():
     """Test correct measurement counting for MPP vs regular M measurements.
 
