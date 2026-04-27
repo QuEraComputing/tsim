@@ -30,35 +30,33 @@ def test_detector_sampler_args():
     assert np.array_equal(o, np.array([[1]]))
 
 
-def test_detector_sampler_prepend_and_append_duplicates_observables():
-    """Matches Stim: setting both prepend and append surrounds detectors with observables."""
-    c = Circuit("""
-        R 0 1 2
-        X 2
-        M 0 1 2
-        DETECTOR rec[-2]
-        DETECTOR rec[-3]
-        OBSERVABLE_INCLUDE(0) rec[-1]
-        """)
-    sampler = c.compile_detector_sampler()
-    d = sampler.sample(1, prepend_observables=True, append_observables=True)
-    assert np.array_equal(d, np.array([[1, 0, 0, 1]]))
-
-
 @pytest.mark.parametrize(
-    "kwargs",
+    ("kwargs", "match"),
     [
-        {"separate_observables": True, "append_observables": True},
-        {"separate_observables": True, "prepend_observables": True},
-        {
-            "separate_observables": True,
-            "append_observables": True,
-            "prepend_observables": True,
-        },
+        (
+            {"separate_observables": True, "append_observables": True},
+            "separate_observables",
+        ),
+        (
+            {"separate_observables": True, "prepend_observables": True},
+            "separate_observables",
+        ),
+        (
+            {
+                "separate_observables": True,
+                "append_observables": True,
+                "prepend_observables": True,
+            },
+            "separate_observables",
+        ),
+        (
+            {"prepend_observables": True, "append_observables": True},
+            "prepend_observables",
+        ),
     ],
 )
-def test_detector_sampler_separate_with_prepend_or_append_raises(kwargs):
-    """Matches Stim: separate_observables cannot be combined with prepend/append."""
+def test_detector_sampler_invalid_observable_flag_combos_raise(kwargs, match):
+    """Conflicting observable placement flags must raise rather than silently drop columns."""
     c = Circuit("""
         R 0
         M 0
@@ -66,7 +64,7 @@ def test_detector_sampler_separate_with_prepend_or_append_raises(kwargs):
         OBSERVABLE_INCLUDE(0) rec[-1]
         """)
     sampler = c.compile_detector_sampler()
-    with pytest.raises(ValueError, match="separate_observables"):
+    with pytest.raises(ValueError, match=match):
         sampler.sample(1, **kwargs)
 
 

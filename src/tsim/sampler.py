@@ -526,11 +526,20 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.
 
+        Raises:
+            ValueError: If ``separate_observables`` is combined with
+                ``prepend_observables`` or ``append_observables``, or if both
+                ``prepend_observables`` and ``append_observables`` are set.
+
         """
         if separate_observables and (prepend_observables or append_observables):
             raise ValueError(
                 "Can't specify separate_observables=True with "
                 "append_observables=True or prepend_observables=True"
+            )
+        if prepend_observables and append_observables:
+            raise ValueError(
+                "Can't specify both prepend_observables=True and append_observables=True"
             )
 
         compute_reference = (
@@ -549,25 +558,23 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         else:
             samples = self._sample_batches(shots, batch_size)
 
+        if append_observables:
+            return _maybe_bit_pack(samples, bit_packed=bit_packed)
+
         num_detectors = self._num_detectors
         det_samples = samples[:, :num_detectors]
         obs_samples = samples[:, num_detectors:]
 
+        if prepend_observables:
+            combined = np.concatenate([obs_samples, det_samples], axis=1)
+            return _maybe_bit_pack(combined, bit_packed=bit_packed)
         if separate_observables:
             return (
                 _maybe_bit_pack(det_samples, bit_packed=bit_packed),
                 _maybe_bit_pack(obs_samples, bit_packed=bit_packed),
             )
 
-        parts: list[np.ndarray] = []
-        if prepend_observables:
-            parts.append(obs_samples)
-        parts.append(det_samples)
-        if append_observables:
-            parts.append(obs_samples)
-
-        combined = parts[0] if len(parts) == 1 else np.concatenate(parts, axis=1)
-        return _maybe_bit_pack(combined, bit_packed=bit_packed)
+        return _maybe_bit_pack(det_samples, bit_packed=bit_packed)
         # TODO: don't compute observables if they are discarded here
 
 
