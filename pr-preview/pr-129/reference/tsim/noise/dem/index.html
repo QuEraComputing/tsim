@@ -204,28 +204,7 @@
 <span class=normal>200</span>
 <span class=normal>201</span>
 <span class=normal>202</span>
-<span class=normal>203</span>
-<span class=normal>204</span>
-<span class=normal>205</span>
-<span class=normal>206</span>
-<span class=normal>207</span>
-<span class=normal>208</span>
-<span class=normal>209</span>
-<span class=normal>210</span>
-<span class=normal>211</span>
-<span class=normal>212</span>
-<span class=normal>213</span>
-<span class=normal>214</span>
-<span class=normal>215</span>
-<span class=normal>216</span>
-<span class=normal>217</span>
-<span class=normal>218</span>
-<span class=normal>219</span>
-<span class=normal>220</span>
-<span class=normal>221</span>
-<span class=normal>222</span>
-<span class=normal>223</span>
-<span class=normal>224</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>get_detector_error_model</span><span class=p>(</span>
+<span class=normal>203</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>get_detector_error_model</span><span class=p>(</span>
     <span class=n>stim_circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
     <span class=n>allow_non_deterministic_observables</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>True</span><span class=p>,</span>
@@ -331,33 +310,12 @@
 
     <span class=k>for</span> <span class=n>instruction</span> <span class=ow>in</span> <span class=n>stim_circuit</span><span class=o>.</span><span class=n>flattened</span><span class=p>():</span>
         <span class=k>assert</span> <span class=ow>not</span> <span class=nb>isinstance</span><span class=p>(</span><span class=n>instruction</span><span class=p>,</span> <span class=n>stim</span><span class=o>.</span><span class=n>CircuitRepeatBlock</span><span class=p>)</span>
-        <span class=k>if</span> <span class=n>instruction</span><span class=o>.</span><span class=n>name</span> <span class=ow>in</span> <span class=p>[</span>
-            <span class=s2>&quot;M&quot;</span><span class=p>,</span>
-            <span class=s2>&quot;MX&quot;</span><span class=p>,</span>
-            <span class=s2>&quot;MY&quot;</span><span class=p>,</span>
-            <span class=s2>&quot;MZ&quot;</span><span class=p>,</span>
-            <span class=s2>&quot;MR&quot;</span><span class=p>,</span>
-            <span class=s2>&quot;MRX&quot;</span><span class=p>,</span>
-            <span class=s2>&quot;MRY&quot;</span><span class=p>,</span>
-            <span class=s2>&quot;MXX&quot;</span><span class=p>,</span>
-            <span class=s2>&quot;MYY&quot;</span><span class=p>,</span>
-            <span class=s2>&quot;MZZ&quot;</span><span class=p>,</span>
-            <span class=s2>&quot;MPP&quot;</span><span class=p>,</span>
-            <span class=s2>&quot;MPAD&quot;</span><span class=p>,</span>
-        <span class=p>]:</span>
-            <span class=n>targets</span> <span class=o>=</span> <span class=n>instruction</span><span class=o>.</span><span class=n>targets_copy</span><span class=p>()</span>
-            <span class=k>if</span> <span class=n>instruction</span><span class=o>.</span><span class=n>name</span> <span class=o>==</span> <span class=s2>&quot;MPP&quot;</span><span class=p>:</span>
-                <span class=c1># MPP produces one measurement per Pauli product.</span>
-                <span class=c1># Products are separated by spaces; within a product, Paulis are joined by &#39;*&#39; (combiners).</span>
-                <span class=c1># num_measurements = num_non_combiner_targets - num_combiners</span>
-                <span class=n>num_combiners</span> <span class=o>=</span> <span class=nb>sum</span><span class=p>(</span><span class=mi>1</span> <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>targets</span> <span class=k>if</span> <span class=n>t</span><span class=o>.</span><span class=n>is_combiner</span><span class=p>)</span>
-                <span class=n>num_meas</span> <span class=o>=</span> <span class=nb>len</span><span class=p>(</span><span class=n>targets</span><span class=p>)</span> <span class=o>-</span> <span class=mi>2</span> <span class=o>*</span> <span class=n>num_combiners</span>
-            <span class=k>elif</span> <span class=n>instruction</span><span class=o>.</span><span class=n>name</span> <span class=ow>in</span> <span class=p>(</span><span class=s2>&quot;MXX&quot;</span><span class=p>,</span> <span class=s2>&quot;MYY&quot;</span><span class=p>,</span> <span class=s2>&quot;MZZ&quot;</span><span class=p>):</span>
-                <span class=c1># Pair measurements: targets are listed in pairs and each pair</span>
-                <span class=c1># produces a single measurement record.</span>
-                <span class=n>num_meas</span> <span class=o>=</span> <span class=nb>len</span><span class=p>(</span><span class=n>targets</span><span class=p>)</span> <span class=o>//</span> <span class=mi>2</span>
-            <span class=k>else</span><span class=p>:</span>
-                <span class=n>num_meas</span> <span class=o>=</span> <span class=nb>len</span><span class=p>(</span><span class=n>targets</span><span class=p>)</span>
+        <span class=k>if</span> <span class=n>stim</span><span class=o>.</span><span class=n>gate_data</span><span class=p>(</span><span class=n>instruction</span><span class=o>.</span><span class=n>name</span><span class=p>)</span><span class=o>.</span><span class=n>produces_measurements</span><span class=p>:</span>
+            <span class=c1># Ask stim how many records this exact instruction appended,</span>
+            <span class=c1># so we don&#39;t have to track the per-gate counting rules ourselves.</span>
+            <span class=n>probe</span> <span class=o>=</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>()</span>
+            <span class=n>probe</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>instruction</span><span class=p>)</span>
+            <span class=n>num_meas</span> <span class=o>=</span> <span class=n>probe</span><span class=o>.</span><span class=n>num_measurements</span>
             <span class=k>for</span> <span class=n>idx</span> <span class=ow>in</span> <span class=n>obs</span><span class=p>:</span>
                 <span class=c1># update measurement rec indices for the OBSERVABLE_INCLUDE instructions</span>
                 <span class=n>obs</span><span class=p>[</span><span class=n>idx</span><span class=p>]</span> <span class=o>=</span> <span class=p>[</span><span class=n>t</span> <span class=o>-</span> <span class=n>num_meas</span> <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>obs</span><span class=p>[</span><span class=n>idx</span><span class=p>]]</span>
