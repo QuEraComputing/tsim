@@ -170,7 +170,7 @@
         <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;U3(</span><span class=si>{</span><span class=n>theta</span><span class=si>}</span><span class=s2>, </span><span class=si>{</span><span class=n>phi</span><span class=si>}</span><span class=s2>, </span><span class=si>{</span><span class=n>lam</span><span class=si>}</span><span class=s2>)&quot;</span>
 
     <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
-        <span class=sa>r</span><span class=s2>&quot;\bI\[U3\(theta=([-+]?[\d.]+)\*pi, phi=([-+]?[\d.]+)\*pi, lambda=([-+]?[\d.]+)\*pi\)\]&quot;</span><span class=p>,</span>
+        <span class=sa>rf</span><span class=s2>&quot;\bI\[U3\(theta=(</span><span class=si>{</span><span class=n>_FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi, phi=(</span><span class=si>{</span><span class=n>_FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi, lambda=(</span><span class=si>{</span><span class=n>_FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi\)\]&quot;</span><span class=p>,</span>
         <span class=n>replace_u3</span><span class=p>,</span>
         <span class=n>text</span><span class=p>,</span>
     <span class=p>)</span>
@@ -182,7 +182,7 @@
         <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;R_</span><span class=si>{</span><span class=n>axis</span><span class=si>}</span><span class=s2>(</span><span class=si>{</span><span class=n>angle</span><span class=si>}</span><span class=s2>)&quot;</span>
 
     <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
-        <span class=sa>r</span><span class=s2>&quot;\bI\[R_([XYZ])\(theta=([-+]?[\d.]+)\*pi\)\]&quot;</span><span class=p>,</span>
+        <span class=sa>rf</span><span class=s2>&quot;\bI\[R_([XYZ])\(theta=(</span><span class=si>{</span><span class=n>_FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi\)\]&quot;</span><span class=p>,</span>
         <span class=n>replace_rotation</span><span class=p>,</span>
         <span class=n>text</span><span class=p>,</span>
     <span class=p>)</span>
