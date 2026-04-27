@@ -27,6 +27,17 @@ class Channel:
     probs: np.ndarray
     unique_col_ids: tuple[int, ...]
 
+    def __post_init__(self) -> None:
+        """Validate channel probabilities."""
+        tol = 1e-12
+        if np.any(self.probs < -tol) or np.any(self.probs > 1.0 + tol):
+            raise ValueError(f"Probabilities must lie in [0, 1], but got: {self.probs}")
+        if not np.isclose(np.sum(self.probs), 1.0):
+            raise ValueError(
+                f"Probabilities must sum to 1, but got: {self.probs} "
+                f"(sum {np.sum(self.probs)})"
+            )
+
     @property
     def num_bits(self) -> int:
         """Number of bits in the channel (k where probs has shape 2^k)."""
