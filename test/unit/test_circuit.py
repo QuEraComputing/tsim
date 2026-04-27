@@ -643,6 +643,17 @@ def test_is_clifford_rejects_non_clifford_u3():
     assert not c.is_clifford
 
 
+def test_stim_circuit_repeat_block_preserves_non_clifford():
+    """REPEAT blocks containing non-Clifford gates round-trip through stim_circuit."""
+    c = Circuit("REPEAT 2 {\n    T 0\n}")
+    stim_c = c.stim_circuit
+    # T is encoded internally as S with tag "T"; the block structure is preserved.
+    assert len(stim_c) == 1
+    block = stim_c[0]
+    assert isinstance(block, stim.CircuitRepeatBlock)
+    assert block.repeat_count == 2
+
+
 def test_get_graph():
     """Test get_graph returns a ZX graph."""
     c = Circuit("H 0\nCNOT 0 1")
@@ -936,3 +947,55 @@ def test_copy_preserves_repeat_block():
     assert c == c2
     assert c is not c2
     assert str(c) == str(c2)
+
+
+def test_is_clifford_repeat_block_half_pi_parametric():
+    c = Circuit()
+    c.append("R_Z", [0], 0.5)
+    c = c * 4
+    assert c.is_clifford
+
+
+def test_is_clifford_repeat_block_clifford_body():
+    c = Circuit("REPEAT 3 {\n    H 0\n    CNOT 0 1\n}")
+    assert c.is_clifford
+
+
+def test_is_clifford_repeat_block_rejects_non_clifford_body():
+    c = Circuit("REPEAT 2 {\n    T 0\n}")
+    assert not c.is_clifford
+
+
+def test_is_clifford_repeat_block_rejects_non_clifford_parametric():
+    c = Circuit()
+    c.append("R_Z", [0], 0.25)
+    c = c * 2
+    assert not c.is_clifford
+
+
+def test_stim_circuit_repeat_block_keeps_non_clifford_parametric():
+    """Non-Clifford parametric rotations inside REPEAT are not expanded."""
+    c = Circuit()
+    c.append("R_X", [0], 0.3)
+    c = c * 2
+    expanded = c.stim_circuit
+    block = expanded[0]
+    assert isinstance(block, stim.CircuitRepeatBlock)
+    body = block.body_copy()
+    instr = body[0]
+    assert instr.name == "I"
+    assert instr.tag == "R_X(theta=0.3*pi)"
+
+
+def test_stim_circuit_repeat_block_expands_half_pi_parametric():
+    """Half-π parametric rotations inside REPEAT are expanded to Clifford gates."""
+    c = Circuit()
+    c.append("R_X", [0], 0.5)
+    c = c * 3
+    expanded = c.stim_circuit
+    assert len(expanded) == 1
+    block = expanded[0]
+    assert isinstance(block, stim.CircuitRepeatBlock)
+    assert block.repeat_count == 3
+    body = block.body_copy()
+    assert [instr.name for instr in body] == ["SQRT_X"]

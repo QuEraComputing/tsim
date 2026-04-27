@@ -101,7 +101,70 @@ def parametric_to_clifford_gates(
     return None
 
 
-def clifford_expansion(
+def is_clifford(source: stim.Circuit) -> bool:
+    """Return True iff every instruction in ``source`` is Clifford.
+
+    Recurses into ``REPEAT`` block bodies.
+    """
+
+    def is_half_pi_multiple(phase: Fraction) -> bool:
+        return phase.denominator <= 2
+
+    for instr in source:
+        if isinstance(instr, stim.CircuitRepeatBlock):
+            if not is_clifford(instr.body_copy()):
+                return False
+            continue
+
+        if instr.name in ["S", "S_DAG", "SPP", "SPP_DAG"] and instr.tag == "T":
+            return False
+
+        if instr.name == "I" and instr.tag:
+            result = parse_parametric_tag(instr)
+            if result is None:
+                return False
+
+            gate_name, params = result
+            if gate_name in ["R_X", "R_Y", "R_Z"]:
+                if not is_half_pi_multiple(params["theta"]):
+                    return False
+            elif gate_name == "U3":
+                if not all(
+                    is_half_pi_multiple(params[name])
+                    for name in ("theta", "phi", "lambda")
+                ):
+                    return False
+            else:
+                return False
+
+    return True
+
+
+def expand_clifford_rotations(source: stim.Circuit) -> stim.Circuit:
+    """Return ``source`` with half-π parametric rotations expanded to Clifford gates.
+
+    ``REPEAT`` blocks are preserved structurally and expanded recursively.
+    """
+    out = stim.Circuit()
+    for instr in source:
+        if isinstance(instr, stim.CircuitRepeatBlock):
+            out.append(
+                stim.CircuitRepeatBlock(
+                    instr.repeat_count, expand_clifford_rotations(instr.body_copy())
+                )
+            )
+            continue
+        expansion = _try_clifford_expansion(instr)
+        if expansion is not None:
+            gates, targets = expansion
+            for gate in gates:
+                out.append(gate, targets, [])
+        else:
+            out.append(instr)
+    return out
+
+
+def _try_clifford_expansion(
     instr: stim.CircuitInstruction,
 ) -> tuple[list[str], list[int]] | None:
     """Try to expand a tagged ``I`` instruction into equivalent Clifford gates.
@@ -115,7 +178,7 @@ def clifford_expansion(
     if instr.name != "I" or not instr.tag:
         return None
 
-    parsed = parse_parametric_tag(instr.tag)
+    parsed = parse_parametric_tag(instr)
     if parsed is None:
         return None
 

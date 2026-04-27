@@ -81,7 +81,7 @@ def sample_circuit_with_vec_sim_return_data(
             for q in inst.targets_copy():
                 sim.do_t_dag(q.qubit_value)
         elif inst.name == "I" and inst.tag:
-            result = parse_parametric_tag(inst.tag)
+            result = parse_parametric_tag(inst)
             if result is not None:
                 gate_name, params = result
                 for q in inst.targets_copy():

@@ -1,4 +1,5 @@
 from collections import Counter
+from fractions import Fraction
 from unittest.mock import ANY, patch
 
 import pytest
@@ -6,7 +7,7 @@ import stim
 from numpy.testing import assert_allclose
 from pyzx_param.utils import VertexType
 
-from tsim.core.parse import parse_stim_circuit
+from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 
 
 def _assert_error_vertex_layout(b, expected):
@@ -912,3 +913,92 @@ class TestParseSparseObservables:
     def test_no_observables_remains_empty(self):
         b = parse_stim_circuit(stim.Circuit("M 0"))
         assert b.observables_dict == {}
+
+
+def _instr(
+    tag: str, name: str = "I", targets: tuple[int, ...] = (0,)
+) -> stim.CircuitInstruction:
+    """Build a single stim instruction with the given tag for testing."""
+    return stim.CircuitInstruction(name=name, targets=list(targets), tag=tag)
+
+
+class TestParseParametricTag:
+    """Tag parsing must accept well-formed tags, return ``None`` for non-parametric
+    tags, and raise on tags that look parametric but are malformed. Errors include
+    the full source instruction for context."""
+
+    def test_r_axis_tag_returns_theta(self):
+        for axis in ("R_X", "R_Y", "R_Z"):
+            assert parse_parametric_tag(_instr(f"{axis}(theta=0.5*pi)")) == (
+                axis,
+                {"theta": Fraction(1, 2)},
+            )
+
+    def test_u3_tag_returns_all_three_angles(self):
+        result = parse_parametric_tag(
+            _instr("U3(theta=0.25*pi, phi=0.5*pi, lambda=0.75*pi)")
+        )
+        assert result == (
+            "U3",
+            {
+                "theta": Fraction(1, 4),
+                "phi": Fraction(1, 2),
+                "lambda": Fraction(3, 4),
+            },
+        )
+
+    def test_negative_angle_parsed(self):
+        assert parse_parametric_tag(_instr("R_Z(theta=-0.5*pi)")) == (
+            "R_Z",
+            {"theta": Fraction(-1, 2)},
+        )
+
+    def test_non_parametric_tag_returns_none(self):
+        # Tags without the name(...) shape are not parametric-looking; these are
+        # used for non-parametric annotations like S[T] / SPP[T].
+        assert parse_parametric_tag(_instr("T")) is None
+        assert parse_parametric_tag(_instr("")) is None
+        assert parse_parametric_tag(_instr("R_Z")) is None
+
+    def test_malformed_value_raises(self):
+        with pytest.raises(ValueError, match="Malformed parametric tag"):
+            parse_parametric_tag(_instr("R_Z(theta=abc)"))
+        with pytest.raises(ValueError, match="Malformed parametric tag"):
+            parse_parametric_tag(_instr("R_Z(theta=0.5)"))  # missing *pi
+
+    def test_unknown_gate_name_raises(self):
+        with pytest.raises(ValueError, match="Unknown parametric gate 'FOO'"):
+            parse_parametric_tag(_instr("FOO(theta=0.5*pi)"))
+
+    def test_r_axis_missing_theta_raises(self):
+        with pytest.raises(ValueError, match=r"expected \['theta'\]"):
+            parse_parametric_tag(_instr("R_X()"))
+        with pytest.raises(ValueError, match=r"expected \['theta'\]"):
+            parse_parametric_tag(_instr("R_X(phi=0.5*pi)"))
+
+    def test_r_axis_extra_param_raises(self):
+        with pytest.raises(ValueError, match=r"expected \['theta'\]"):
+            parse_parametric_tag(_instr("R_Z(theta=0.5*pi, phi=0.25*pi)"))
+
+    def test_u3_missing_required_param_raises(self):
+        expected_msg = r"expected \['lambda', 'phi', 'theta'\]"
+        with pytest.raises(ValueError, match=expected_msg):
+            parse_parametric_tag(_instr("U3(theta=0.5*pi)"))
+        with pytest.raises(ValueError, match=expected_msg):
+            parse_parametric_tag(_instr("U3(theta=0.5*pi, phi=0.25*pi)"))
+        with pytest.raises(ValueError, match=expected_msg):
+            parse_parametric_tag(_instr("U3(phi=0.5*pi, lambda=0.25*pi)"))
+
+    def test_u3_extra_param_raises(self):
+        with pytest.raises(ValueError, match=r"expected \['lambda', 'phi', 'theta'\]"):
+            parse_parametric_tag(
+                _instr("U3(theta=0.5*pi, phi=0.25*pi, lambda=0.5*pi, extra=0.1*pi)")
+            )
+
+    def test_error_includes_full_instruction(self):
+        instr = _instr("U3(theta=0.5*pi)", targets=(0, 1))
+        with pytest.raises(
+            ValueError,
+            match=r"Could not parse instruction 'I\[U3\(theta=0\.5\*pi\)\] 0 1'",
+        ):
+            parse_parametric_tag(instr)
