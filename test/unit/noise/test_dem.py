@@ -171,6 +171,52 @@ def test_get_detector_error_model_with_multiple_mpp_instructions():
     assert dem.num_observables == 1
 
 
+@pytest.mark.parametrize("pair_name", ["MXX", "MYY", "MZZ"])
+def test_get_detector_error_model_with_pair_measurement(pair_name):
+    """Pair measurements MXX/MYY/MZZ add 1 record per qubit pair; the rec
+    indices of preceding OBSERVABLE_INCLUDE instructions must shift accordingly.
+    """
+    c = stim.Circuit(f"""
+        R 0 1
+        X_ERROR(0.1) 0
+        M 0
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        {pair_name} 0 1
+        DETECTOR rec[-1]
+        """)
+    expected = c.detector_error_model(allow_gauge_detectors=True)
+    assert get_detector_error_model(c).approx_equals(expected, atol=1e-12)
+
+
+def test_get_detector_error_model_with_pair_measurement_multi():
+    """Multiple pairs in a single MXX instruction add multiple records."""
+    c = stim.Circuit("""
+        R 0 1 2 3
+        X_ERROR(0.1) 0
+        M 0
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        MXX 0 1 2 3
+        DETECTOR rec[-1]
+        DETECTOR rec[-2]
+        """)
+    expected = c.detector_error_model(allow_gauge_detectors=True)
+    assert get_detector_error_model(c).approx_equals(expected, atol=1e-12)
+
+
+def test_get_detector_error_model_with_mpad():
+    """MPAD writes one record per target; OBSERVABLE_INCLUDE rec indices must shift."""
+    c = stim.Circuit("""
+        R 0
+        X_ERROR(0.1) 0
+        M 0
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        MPAD 0
+        DETECTOR rec[-1]
+        """)
+    expected = c.detector_error_model(allow_gauge_detectors=True)
+    assert get_detector_error_model(c).approx_equals(expected, atol=1e-12)
+
+
 def test_get_detector_error_model_mpp_measurement_counting():
     """Test correct measurement counting for MPP vs regular M measurements.
 

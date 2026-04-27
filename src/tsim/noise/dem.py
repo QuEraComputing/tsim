@@ -113,14 +113,17 @@ def get_detector_error_model(
         assert not isinstance(instruction, stim.CircuitRepeatBlock)
         if instruction.name in [
             "M",
-            "MPP",
-            "MR",
-            "MRX",
-            "MRY",
-            "MRX",
             "MX",
             "MY",
             "MZ",
+            "MR",
+            "MRX",
+            "MRY",
+            "MXX",
+            "MYY",
+            "MZZ",
+            "MPP",
+            "MPAD",
         ]:
             targets = instruction.targets_copy()
             if instruction.name == "MPP":
@@ -129,6 +132,10 @@ def get_detector_error_model(
                 # num_measurements = num_non_combiner_targets - num_combiners
                 num_combiners = sum(1 for t in targets if t.is_combiner)
                 num_meas = len(targets) - 2 * num_combiners
+            elif instruction.name in ("MXX", "MYY", "MZZ"):
+                # Pair measurements: targets are listed in pairs and each pair
+                # produces a single measurement record.
+                num_meas = len(targets) // 2
             else:
                 num_meas = len(targets)
             for idx in obs:
