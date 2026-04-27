@@ -531,7 +531,22 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.
 
+        Raises:
+            ValueError: If ``separate_observables`` is combined with
+                ``prepend_observables`` or ``append_observables``, or if both
+                ``prepend_observables`` and ``append_observables`` are set.
+
         """
+        if separate_observables and (prepend_observables or append_observables):
+            raise ValueError(
+                "Can't specify separate_observables=True with "
+                "append_observables=True or prepend_observables=True"
+            )
+        if prepend_observables and append_observables:
+            raise ValueError(
+                "Can't specify both prepend_observables=True and append_observables=True"
+            )
+
         compute_reference = (
             use_detector_reference_sample or use_observable_reference_sample
         )

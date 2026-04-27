@@ -30,6 +30,44 @@ def test_detector_sampler_args():
     assert np.array_equal(o, np.array([[1]]))
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        (
+            {"separate_observables": True, "append_observables": True},
+            "separate_observables",
+        ),
+        (
+            {"separate_observables": True, "prepend_observables": True},
+            "separate_observables",
+        ),
+        (
+            {
+                "separate_observables": True,
+                "append_observables": True,
+                "prepend_observables": True,
+            },
+            "separate_observables",
+        ),
+        (
+            {"prepend_observables": True, "append_observables": True},
+            "prepend_observables",
+        ),
+    ],
+)
+def test_detector_sampler_invalid_observable_flag_combos_raise(kwargs, match):
+    """Conflicting observable placement flags must raise rather than silently drop columns."""
+    c = Circuit("""
+        R 0
+        M 0
+        DETECTOR rec[-1]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    with pytest.raises(ValueError, match=match):
+        sampler.sample(1, **kwargs)
+
+
 def test_measurement_sampler_zero_shots():
     """Measurement sampler with shots=0 returns an empty (0, num_measurements) array."""
     c = Circuit("H 0\nM 0")
