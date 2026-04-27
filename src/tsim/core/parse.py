@@ -189,7 +189,7 @@ def parse_stim_circuit(
         if any(t.is_sweep_bit_target for t in instruction.targets_copy()):
             raise NotImplementedError(
                 f"Sweep bit targets (e.g. sweep[N]) are not supported "
-                f"in instruction {name!r}"
+                f"in instruction {str(instruction)!r}"
             )
 
         if name == "S" and instruction.tag == "T":
