@@ -319,13 +319,19 @@ def test_mr_inverted_resets_to_zero_state(basis: str):
     assert (samples[:, 1] == 0).all()
 
 
-def _matches_stim_distribution(program: str, shots: int = 8000, atol: float = 0.025):
-    """Return True iff tsim and stim produce sample means within `atol`."""
+def _matches_stim_distribution(
+    program: str, shots: int = 8000, atol: float = 0.025
+) -> tuple[bool, np.ndarray, np.ndarray]:
+    """Compare tsim and stim sample means.
+
+    Returns ``(ok, stim_mean, tsim_mean)`` where ``ok`` is True iff every
+    per-column mean matches within ``atol``.
+    """
     import stim
 
     s = stim.Circuit(program).compile_sampler().sample(shots).mean(axis=0)
     t = Circuit(program).compile_sampler(seed=0).sample(shots).mean(axis=0)
-    return np.all(np.abs(s - t) < atol), s, t
+    return bool(np.all(np.abs(s - t) < atol)), s, t
 
 
 @pytest.mark.parametrize(

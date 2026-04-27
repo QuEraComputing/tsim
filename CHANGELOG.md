@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CompiledDetectorSampler.sample` with `use_detector_reference_sample=True` or `use_observable_reference_sample=True` no longer returns fewer rows than `shots` when called with an explicit `batch_size` that exactly divides `shots`.
 - Incorrect visualization of `CORRELATED_ERROR` and `ELSE_CORRELATED_ERROR` instructions in the `pyzx` diagram renderer. Previously, error vertices were rendered as classical spiders instead of bold quantum spiders.
 - Fixed a bug where `M(p)` instructions incorrectly flipped the qubit, not just the measurement record.
-- Fix a bug where `MR !q` instructions produced wrong measurement results.
+- Fixed a bug where `MR !q` instructions produced wrong measurement results.
 
 
 ### Added

@@ -840,7 +840,12 @@ def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -
 
 
 def _r(b: GraphRepresentation, qubit: int) -> None:
-    """Perform reset on qubit, optionally tracing out previous state."""
+    """Perform reset on qubit.
+
+    If the qubit does not yet have a lane, create one in the reset state.
+    Otherwise, silently measure the existing lane to trace out the previous
+    state before reconnecting the qubit in the reset state.
+    """
     if qubit not in b.last_vertex:
         v1 = add_lane(b, qubit)
         b.graph.set_type(v1, b.vertex_type.X)
