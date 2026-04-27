@@ -275,17 +275,18 @@ class _CompiledSamplerBase:
             max_batch_size = self._estimate_batch_size()
             num_batches = max(1, ceil(shots / max_batch_size))
             batch_size = ceil(shots / num_batches)
-
-        if compute_reference:
+        else:
             num_batches = ceil(shots / batch_size)
-            has_leeway = batch_size * num_batches > shots
-            if not has_leeway:
-                batch_size += 1
+
+        if compute_reference and batch_size * num_batches == shots:
+            # Bump batch_size so the first batch's reference sample fits
+            # within existing batches (keeps shapes uniform for JIT).
+            batch_size += 1
 
         batches: list[jax.Array] = []
         reference: np.ndarray | None = None
 
-        for _ in range(ceil(shots / batch_size)):
+        for _ in range(num_batches):
             f_params_np = self._channel_sampler.sample(batch_size)
 
             if compute_reference and reference is None:
