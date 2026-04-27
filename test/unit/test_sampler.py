@@ -131,6 +131,40 @@ def test_detector_sampler_no_detectors_bit_packed():
     assert result.shape == (5, 0)
 
 
+def test_sampler_negative_shots_raises():
+    sampler = Circuit("H 0\nM 0").compile_sampler(seed=0)
+    with pytest.raises(ValueError, match="shots must be non-negative"):
+        sampler.sample(-1)
+
+
+def test_sampler_zero_batch_size_raises():
+    sampler = Circuit("H 0\nM 0").compile_sampler(seed=0)
+    with pytest.raises(ValueError, match="batch_size must be at least 1"):
+        sampler.sample(1, batch_size=0)
+
+
+def test_sampler_negative_batch_size_raises():
+    sampler = Circuit("H 0\nM 0").compile_sampler(seed=0)
+    with pytest.raises(ValueError, match="batch_size must be at least 1"):
+        sampler.sample(1, batch_size=-3)
+
+
+def test_state_probs_rejects_wrong_state_length():
+    from tsim.sampler import CompiledStateProbs
+
+    sampler = CompiledStateProbs(Circuit("M 0"))
+    with pytest.raises(ValueError, match=r"state must have shape \(1,\)"):
+        sampler.probability_of(np.array([False, True]), batch_size=1)
+
+
+def test_state_probs_rejects_invalid_batch_size():
+    from tsim.sampler import CompiledStateProbs
+
+    sampler = CompiledStateProbs(Circuit("M 0"))
+    with pytest.raises(ValueError, match="batch_size must be at least 1"):
+        sampler.probability_of(np.array([False]), batch_size=0)
+
+
 def test_sampler_repr_no_measurements():
     """repr() on a sampler with no measurements should not error."""
     c = Circuit("H 0")

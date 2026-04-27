@@ -265,6 +265,11 @@ class _CompiledSamplerBase:
             Samples array, or (samples, reference) tuple when compute_reference=True.
 
         """
+        if shots < 0:
+            raise ValueError(f"shots must be non-negative, got {shots}")
+        if batch_size is not None and batch_size < 1:
+            raise ValueError(f"batch_size must be at least 1, got {batch_size}")
+
         if shots == 0:
             empty = np.empty((0, self._program.num_outputs), dtype=np.bool_)
             if compute_reference:
@@ -609,6 +614,13 @@ class CompiledStateProbs(_CompiledSamplerBase):
             Array of probabilities P(state | error_sample) for each error sample.
 
         """
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be at least 1, got {batch_size}")
+        expected_outputs = self._program.num_outputs
+        if state.shape != (expected_outputs,):
+            raise ValueError(
+                f"state must have shape ({expected_outputs},), got {state.shape}"
+            )
         f_samples = jnp.asarray(self._channel_sampler.sample(batch_size))
         p_norm = jnp.ones(batch_size)
         p_joint = jnp.ones(batch_size)
