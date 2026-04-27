@@ -226,7 +226,8 @@
 <span class=normal>521</span>
 <span class=normal>522</span>
 <span class=normal>523</span>
-<span class=normal>524</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>render_pyzx_d3</span><span class=p>(</span><span class=n>stim_circ</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span> <span class=n>kwargs</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=n>Any</span><span class=p>])</span> <span class=o>-&gt;</span> <span class=n>GraphS</span><span class=p>:</span>
+<span class=normal>524</span>
+<span class=normal>525</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>render_pyzx_d3</span><span class=p>(</span><span class=n>stim_circ</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span> <span class=n>kwargs</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=n>Any</span><span class=p>])</span> <span class=o>-&gt;</span> <span class=n>GraphS</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Render a stim circuit as a pyzx ZX diagram using d3.js.</span>
 
 <span class=sd>    Args:</span>
@@ -244,9 +245,10 @@
         <span class=k>return</span> <span class=n>g</span>
 
     <span class=n>g</span> <span class=o>=</span> <span class=n>g</span><span class=o>.</span><span class=n>clone</span><span class=p>()</span>
-    <span class=n>max_row</span> <span class=o>=</span> <span class=nb>max</span><span class=p>(</span><span class=n>g</span><span class=o>.</span><span class=n>row</span><span class=p>(</span><span class=n>v</span><span class=p>)</span> <span class=k>for</span> <span class=n>v</span> <span class=ow>in</span> <span class=n>built</span><span class=o>.</span><span class=n>last_vertex</span><span class=o>.</span><span class=n>values</span><span class=p>())</span>
-    <span class=k>for</span> <span class=n>q</span> <span class=ow>in</span> <span class=n>built</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>:</span>
-        <span class=n>g</span><span class=o>.</span><span class=n>set_row</span><span class=p>(</span><span class=n>built</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>[</span><span class=n>q</span><span class=p>],</span> <span class=n>max_row</span><span class=p>)</span>
+    <span class=k>if</span> <span class=n>built</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>:</span>
+        <span class=n>max_row</span> <span class=o>=</span> <span class=nb>max</span><span class=p>(</span><span class=n>g</span><span class=o>.</span><span class=n>row</span><span class=p>(</span><span class=n>v</span><span class=p>)</span> <span class=k>for</span> <span class=n>v</span> <span class=ow>in</span> <span class=n>built</span><span class=o>.</span><span class=n>last_vertex</span><span class=o>.</span><span class=n>values</span><span class=p>())</span>
+        <span class=k>for</span> <span class=n>q</span> <span class=ow>in</span> <span class=n>built</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>:</span>
+            <span class=n>g</span><span class=o>.</span><span class=n>set_row</span><span class=p>(</span><span class=n>built</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>[</span><span class=n>q</span><span class=p>],</span> <span class=n>max_row</span><span class=p>)</span>
 
     <span class=k>for</span> <span class=n>v</span> <span class=ow>in</span> <span class=nb>list</span><span class=p>(</span><span class=n>g</span><span class=o>.</span><span class=n>vertices</span><span class=p>()):</span>
         <span class=n>phase_vars</span> <span class=o>=</span> <span class=n>g</span><span class=o>.</span><span class=n>_phaseVars</span><span class=p>[</span><span class=n>v</span><span class=p>]</span>

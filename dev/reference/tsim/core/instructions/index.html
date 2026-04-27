@@ -313,23 +313,17 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.instructions.detector class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">detector</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>detector</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>rec</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=o>*</span><span class=n>args</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Add detector annotation that XORs the given measurement record bits.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1117</span>
-<span class=normal>1118</span>
-<span class=normal>1119</span>
-<span class=normal>1120</span>
-<span class=normal>1121</span>
-<span class=normal>1122</span>
-<span class=normal>1123</span>
-<span class=normal>1124</span>
-<span class=normal>1125</span>
-<span class=normal>1126</span>
-<span class=normal>1127</span>
-<span class=normal>1128</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>detector</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>rec</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=o>*</span><span class=n>args</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Add detector annotation that XORs the given measurement record bits.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1134</span>
+<span class=normal>1135</span>
+<span class=normal>1136</span>
+<span class=normal>1137</span>
+<span class=normal>1138</span>
+<span class=normal>1139</span>
+<span class=normal>1140</span>
+<span class=normal>1141</span>
+<span class=normal>1142</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>detector</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>rec</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=o>*</span><span class=n>args</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Add detector annotation that XORs the given measurement record bits.&quot;&quot;&quot;</span>
-    <span class=n>row</span> <span class=o>=</span> <span class=nb>min</span><span class=p>({</span><span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>row</span><span class=p>(</span><span class=n>b</span><span class=o>.</span><span class=n>rec</span><span class=p>[</span><span class=n>r</span><span class=p>])</span> <span class=k>for</span> <span class=n>r</span> <span class=ow>in</span> <span class=n>rec</span><span class=p>})</span> <span class=o>-</span> <span class=mf>0.5</span>
-    <span class=n>d_rows</span> <span class=o>=</span> <span class=p>{</span><span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>row</span><span class=p>(</span><span class=n>d</span><span class=p>)</span> <span class=k>for</span> <span class=n>d</span> <span class=ow>in</span> <span class=n>b</span><span class=o>.</span><span class=n>detectors</span> <span class=o>+</span> <span class=n>b</span><span class=o>.</span><span class=n>observables</span><span class=p>}</span>
-    <span class=k>while</span> <span class=n>row</span> <span class=ow>in</span> <span class=n>d_rows</span><span class=p>:</span>
-        <span class=n>row</span> <span class=o>+=</span> <span class=mi>1</span>
+    <span class=n>row</span> <span class=o>=</span> <span class=n>_annotation_row</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>rec</span><span class=p>)</span>
     <span class=n>v0</span> <span class=o>=</span> <span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>add_vertex</span><span class=p>(</span>
         <span class=n>VertexType</span><span class=o>.</span><span class=n>X</span><span class=p>,</span> <span class=n>qubit</span><span class=o>=-</span><span class=mi>1</span><span class=p>,</span> <span class=n>row</span><span class=o>=</span><span class=n>row</span><span class=p>,</span> <span class=n>phase</span><span class=o>=</span><span class=sa>f</span><span class=s2>&quot;det[</span><span class=si>{</span><span class=nb>len</span><span class=p>(</span><span class=n>b</span><span class=o>.</span><span class=n>detectors</span><span class=p>)</span><span class=si>}</span><span class=s2>]&quot;</span>
     <span class=p>)</span>
@@ -880,29 +874,23 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.instructions.observable_include class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">observable_include</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>observable_include</span><span class=p>(</span>
     <span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>rec</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=n>idx</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Add observable annotation that XORs the given measurement record bits.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1131</span>
-<span class=normal>1132</span>
-<span class=normal>1133</span>
-<span class=normal>1134</span>
-<span class=normal>1135</span>
-<span class=normal>1136</span>
-<span class=normal>1137</span>
-<span class=normal>1138</span>
-<span class=normal>1139</span>
-<span class=normal>1140</span>
-<span class=normal>1141</span>
-<span class=normal>1142</span>
-<span class=normal>1143</span>
-<span class=normal>1144</span>
-<span class=normal>1145</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>observable_include</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>rec</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=n>idx</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Add observable annotation that XORs the given measurement record bits.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1145</span>
+<span class=normal>1146</span>
+<span class=normal>1147</span>
+<span class=normal>1148</span>
+<span class=normal>1149</span>
+<span class=normal>1150</span>
+<span class=normal>1151</span>
+<span class=normal>1152</span>
+<span class=normal>1153</span>
+<span class=normal>1154</span>
+<span class=normal>1155</span>
+<span class=normal>1156</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>observable_include</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>,</span> <span class=n>rec</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=n>idx</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Add observable annotation that XORs the given measurement record bits.&quot;&quot;&quot;</span>
     <span class=n>idx</span> <span class=o>=</span> <span class=nb>int</span><span class=p>(</span><span class=n>idx</span><span class=p>)</span>
 
     <span class=k>if</span> <span class=n>idx</span> <span class=ow>not</span> <span class=ow>in</span> <span class=n>b</span><span class=o>.</span><span class=n>observables_dict</span><span class=p>:</span>
-        <span class=n>row</span> <span class=o>=</span> <span class=nb>min</span><span class=p>({</span><span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>row</span><span class=p>(</span><span class=n>b</span><span class=o>.</span><span class=n>rec</span><span class=p>[</span><span class=n>r</span><span class=p>])</span> <span class=k>for</span> <span class=n>r</span> <span class=ow>in</span> <span class=n>rec</span><span class=p>})</span> <span class=o>-</span> <span class=mf>0.5</span>
-        <span class=n>d_rows</span> <span class=o>=</span> <span class=p>{</span><span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>row</span><span class=p>(</span><span class=n>d</span><span class=p>)</span> <span class=k>for</span> <span class=n>d</span> <span class=ow>in</span> <span class=n>b</span><span class=o>.</span><span class=n>detectors</span> <span class=o>+</span> <span class=n>b</span><span class=o>.</span><span class=n>observables</span><span class=p>}</span>
-        <span class=k>while</span> <span class=n>row</span> <span class=ow>in</span> <span class=n>d_rows</span><span class=p>:</span>
-            <span class=n>row</span> <span class=o>+=</span> <span class=mi>1</span>
+        <span class=n>row</span> <span class=o>=</span> <span class=n>_annotation_row</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>rec</span><span class=p>)</span>
         <span class=n>v0</span> <span class=o>=</span> <span class=n>b</span><span class=o>.</span><span class=n>graph</span><span class=o>.</span><span class=n>add_vertex</span><span class=p>(</span><span class=n>VertexType</span><span class=o>.</span><span class=n>X</span><span class=p>,</span> <span class=n>qubit</span><span class=o>=-</span><span class=mi>1</span><span class=p>,</span> <span class=n>row</span><span class=o>=</span><span class=n>row</span><span class=p>,</span> <span class=n>phase</span><span class=o>=</span><span class=sa>f</span><span class=s2>&quot;obs[</span><span class=si>{</span><span class=n>idx</span><span class=si>}</span><span class=s2>]&quot;</span><span class=p>)</span>
         <span class=n>b</span><span class=o>.</span><span class=n>observables_dict</span><span class=p>[</span><span class=n>idx</span><span class=p>]</span> <span class=o>=</span> <span class=n>v0</span>
 
@@ -1348,13 +1336,13 @@
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Apply T† gate (-π/4 Z rotation).&quot;&quot;&quot;</span>
     <span class=n>z_phase</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>qubit</span><span class=p>,</span> <span class=n>Fraction</span><span class=p>(</span><span class=o>-</span><span class=mi>1</span><span class=p>,</span> <span class=mi>4</span><span class=p>))</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.core.instructions.tick class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">tick</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>tick</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Add a tick to the circuit (align all qubits to same row).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1148</span>
-<span class=normal>1149</span>
-<span class=normal>1150</span>
-<span class=normal>1151</span>
-<span class=normal>1152</span>
-<span class=normal>1153</span>
-<span class=normal>1154</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>tick</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Add a tick to the circuit (align all qubits to same row).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/instructions.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1159</span>
+<span class=normal>1160</span>
+<span class=normal>1161</span>
+<span class=normal>1162</span>
+<span class=normal>1163</span>
+<span class=normal>1164</span>
+<span class=normal>1165</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>tick</span><span class=p>(</span><span class=n>b</span><span class=p>:</span> <span class=n>GraphRepresentation</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Add a tick to the circuit (align all qubits to same row).&quot;&quot;&quot;</span>
     <span class=k>if</span> <span class=nb>len</span><span class=p>(</span><span class=n>b</span><span class=o>.</span><span class=n>last_vertex</span><span class=p>)</span> <span class=o>==</span> <span class=mi>0</span><span class=p>:</span>
         <span class=k>return</span>
