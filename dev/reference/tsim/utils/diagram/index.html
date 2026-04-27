@@ -227,7 +227,9 @@
 <span class=normal>522</span>
 <span class=normal>523</span>
 <span class=normal>524</span>
-<span class=normal>525</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>render_pyzx_d3</span><span class=p>(</span><span class=n>stim_circ</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span> <span class=n>kwargs</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=n>Any</span><span class=p>])</span> <span class=o>-&gt;</span> <span class=n>GraphS</span><span class=p>:</span>
+<span class=normal>525</span>
+<span class=normal>526</span>
+<span class=normal>527</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>render_pyzx_d3</span><span class=p>(</span><span class=n>stim_circ</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span> <span class=n>kwargs</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>str</span><span class=p>,</span> <span class=n>Any</span><span class=p>])</span> <span class=o>-&gt;</span> <span class=n>GraphS</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Render a stim circuit as a pyzx ZX diagram using d3.js.</span>
 
 <span class=sd>    Args:</span>
@@ -264,6 +266,8 @@
                 <span class=n>row</span><span class=o>=</span><span class=n>row</span><span class=p>,</span>
             <span class=p>)</span>
             <span class=n>g</span><span class=o>.</span><span class=n>add_edge</span><span class=p>((</span><span class=n>v</span><span class=p>,</span> <span class=n>vb</span><span class=p>))</span>
+        <span class=k>if</span> <span class=n>phase</span><span class=o>.</span><span class=n>startswith</span><span class=p>(</span><span class=s2>&quot;m[&quot;</span><span class=p>):</span>
+            <span class=n>g</span><span class=o>.</span><span class=n>set_phase</span><span class=p>(</span><span class=n>v</span><span class=p>,</span> <span class=mi>0</span><span class=p>)</span>
 
     <span class=k>if</span> <span class=n>kwargs</span><span class=o>.</span><span class=n>get</span><span class=p>(</span><span class=s2>&quot;scale_horizontally&quot;</span><span class=p>,</span> <span class=kc>False</span><span class=p>):</span>
         <span class=n>scale_horizontally</span><span class=p>(</span><span class=n>g</span><span class=p>,</span> <span class=n>kwargs</span><span class=o>.</span><span class=n>pop</span><span class=p>(</span><span class=s2>&quot;scale_horizontally&quot;</span><span class=p>,</span> <span class=mf>1.0</span><span class=p>))</span>
