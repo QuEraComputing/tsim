@@ -363,3 +363,63 @@ def test_reference_sample_defaults_unchanged():
         use_observable_reference_sample=False,
     )
     assert np.array_equal(d1, d2)
+
+
+def test_detector_sampler_empty_annotations():
+    """Empty DETECTOR / OBSERVABLE_INCLUDE produce deterministic-zero columns
+    that sit alongside non-empty ones, matching Stim semantics."""
+    c = Circuit("""
+        X 0
+        M 0 1
+        DETECTOR rec[-2]
+        DETECTOR
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        OBSERVABLE_INCLUDE(1)
+        """)
+    assert c.num_detectors == 2
+    assert c.num_observables == 2
+
+    sampler = c.compile_detector_sampler(seed=0)
+    det, obs = sampler.sample(4, separate_observables=True)
+    assert det.shape == (4, 2)
+    assert obs.shape == (4, 2)
+    # First detector reads the X-induced 1; second detector and both observables
+    # are deterministically zero.
+    assert np.all(det[:, 0])
+    assert not np.any(det[:, 1])
+    assert not np.any(obs)
+
+
+def test_detector_sampler_sparse_observable_index():
+    """OBSERVABLE_INCLUDE(2) only must produce 3 observable columns, with the
+    measured value landing in column 2 and columns 0/1 deterministically zero."""
+    c = Circuit("X 0\nM 0\nOBSERVABLE_INCLUDE(2) rec[-1]")
+    assert c.num_observables == 3
+
+    sampler = c.compile_detector_sampler(seed=0)
+    samples = sampler.sample(4, append_observables=True)
+    assert samples.shape == (4, 3)
+    assert not np.any(samples[:, 0])
+    assert not np.any(samples[:, 1])
+    assert np.all(samples[:, 2])
+
+
+def test_detector_sampler_out_of_order_observable_indices():
+    """Out-of-order OBSERVABLE_INCLUDE must produce columns in sorted index order."""
+    # rec[-2] is qubit-0 (=1 after X), rec[-1] is qubit-1 (=0).
+    # Map: obs[2] = rec[-2] = 1, obs[0] = rec[-1] = 0, obs[1] is unmentioned = 0.
+    c = Circuit("""
+        X 0
+        M 0 1
+        OBSERVABLE_INCLUDE(2) rec[-2]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    assert c.num_observables == 3
+
+    sampler = c.compile_detector_sampler(seed=0)
+    _, obs = sampler.sample(2, separate_observables=True)
+    assert obs.shape == (2, 3)
+    # Sorted-by-index order: [obs0, obs1, obs2] = [0, 0, 1]
+    assert not np.any(obs[:, 0])
+    assert not np.any(obs[:, 1])
+    assert np.all(obs[:, 2])

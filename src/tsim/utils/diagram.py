@@ -499,9 +499,10 @@ def render_pyzx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> GraphS:
         return g
 
     g = g.clone()
-    max_row = max(g.row(v) for v in built.last_vertex.values())
-    for q in built.last_vertex:
-        g.set_row(built.last_vertex[q], max_row)
+    if built.last_vertex:
+        max_row = max(g.row(v) for v in built.last_vertex.values())
+        for q in built.last_vertex:
+            g.set_row(built.last_vertex[q], max_row)
 
     for v in list(g.vertices()):
         phase_vars = g._phaseVars[v]
