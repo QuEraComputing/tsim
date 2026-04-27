@@ -723,7 +723,7 @@ class TestParseEmptyAnnotations:
         assert len(list(b.graph.neighbors(b.detectors[0]))) == 1
         assert list(b.graph.neighbors(b.detectors[1])) == []
 
-    def test_empty_observable_includes_with_args(self):
+    def test_empty_detector_with_args(self):
         """DETECTOR(coords...) with empty rec must also parse."""
         b = parse_stim_circuit(stim.Circuit("DETECTOR(1, 2)"))
         assert len(b.detectors) == 1
