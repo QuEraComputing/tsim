@@ -784,7 +784,7 @@ class Circuit:
                 args = instr.gate_args_copy()
 
                 if name == "I" and tag:
-                    parsed = parse_parametric_tag(tag)
+                    parsed = parse_parametric_tag(instr)
                     if parsed is not None:
                         gate_name, params = parsed
                         if gate_name == "U3":

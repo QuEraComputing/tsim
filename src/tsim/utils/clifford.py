@@ -120,7 +120,7 @@ def is_clifford(source: stim.Circuit) -> bool:
             return False
 
         if instr.name == "I" and instr.tag:
-            result = parse_parametric_tag(instr.tag)
+            result = parse_parametric_tag(instr)
             if result is None:
                 return False
 
@@ -178,7 +178,7 @@ def _try_clifford_expansion(
     if instr.name != "I" or not instr.tag:
         return None
 
-    parsed = parse_parametric_tag(instr.tag)
+    parsed = parse_parametric_tag(instr)
     if parsed is None:
         return None
 
