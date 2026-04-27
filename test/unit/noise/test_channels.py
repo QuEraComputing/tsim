@@ -162,34 +162,35 @@ class TestCorrelatedErrorProbs:
         assert_allclose(probs[4], 0.0)  # index 4 (0b100): third error
 
 
-class TestProbabilityValidation:
-    """The probability helpers reject invalid inputs instead of producing
-    malformed distributions that get silently dropped downstream."""
+class TestChannelValidation:
+    """Channel.__post_init__ rejects malformed probability distributions so
+    they cannot reach the sampler and get silently dropped."""
 
-    def test_error_probs_rejects_out_of_range(self):
+    def test_rejects_negative_entry(self):
         with pytest.raises(ValueError):
-            error_probs(1.5)
-        with pytest.raises(ValueError):
-            error_probs(-0.1)
+            Channel(probs=np.array([1.2, -0.2]), unique_col_ids=(0,))
 
-    def test_pauli_channel_1_rejects_sum_above_one(self):
+    def test_rejects_entry_above_one(self):
         with pytest.raises(ValueError):
-            pauli_channel_1_probs(0.6, 0.6, 0.6)
+            Channel(probs=np.array([-0.5, 1.5]), unique_col_ids=(0,))
 
-    def test_pauli_channel_1_rejects_negative(self):
+    def test_rejects_sum_below_one(self):
         with pytest.raises(ValueError):
-            pauli_channel_1_probs(-0.1, 0.1, 0.1)
+            Channel(probs=np.array([0.5, 0.4]), unique_col_ids=(0,))
 
-    def test_pauli_channel_2_rejects_sum_above_one(self):
+    def test_rejects_sum_above_one(self):
         with pytest.raises(ValueError):
-            pauli_channel_2_probs(*([0.1] * 15))
+            Channel(probs=np.array([0.7, 0.7]), unique_col_ids=(0,))
 
-    def test_heralded_pauli_channel_1_rejects_sum_above_one(self):
+    def test_rejects_helper_with_arguments_summing_above_one(self):
+        # pauli_channel_1_probs(0.6, 0.6, 0.6) returns probs[0] = -0.8.
+        # Wrapping in a Channel surfaces the negative entry as a clear error.
         with pytest.raises(ValueError):
-            heralded_pauli_channel_1_probs(pi=0.5, px=0.3, py=0.3, pz=0.0)
+            Channel(probs=pauli_channel_1_probs(0.6, 0.6, 0.6), unique_col_ids=(0, 1))
 
     def test_channel_sampler_rejects_invalid_channel(self):
-        # Construct a Channel whose probs[0] exceeds 1, bypassing the helpers.
+        # ChannelSampler wraps probs in a Channel, so invalid distributions
+        # get caught at construction time rather than silently dropped.
         bad_probs = np.array([1.2, -0.1, -0.05, -0.05])
         transform = np.array([[1, 0], [0, 1]], dtype=np.uint8)
         with pytest.raises(ValueError):

@@ -27,26 +27,20 @@ class Channel:
     probs: np.ndarray
     unique_col_ids: tuple[int, ...]
 
+    def __post_init__(self) -> None:
+        """Validate channel probabilities."""
+        if np.any(self.probs < 0.0) or np.any(self.probs > 1.0):
+            raise ValueError(f"Probabilities must lie in [0, 1], but got: {self.probs}")
+        if not np.isclose(np.sum(self.probs), 1.0):
+            raise ValueError(
+                f"Probabilities must sum to 1, but got: {self.probs} "
+                f"(sum {np.sum(self.probs)})"
+            )
+
     @property
     def num_bits(self) -> int:
         """Number of bits in the channel (k where probs has shape 2^k)."""
         return int(np.log2(len(self.probs)))
-
-
-_PROB_SUM_TOL = 1e-9
-
-
-def _validate_probabilities(*probs: float) -> None:
-    """Validate that each probability is in ``[0, 1]`` and they sum to at most 1.
-
-    Raises:
-        ValueError: If any probability is outside ``[0, 1]`` or the sum exceeds 1.
-
-    """
-    if any(p < 0.0 or p > 1.0 for p in probs):
-        raise ValueError("probabilities must lie in [0, 1]")
-    if sum(probs) > 1.0 + _PROB_SUM_TOL:
-        raise ValueError("probabilities must sum to at most 1")
 
 
 def error_probs(p: float) -> np.ndarray:
@@ -54,7 +48,6 @@ def error_probs(p: float) -> np.ndarray:
 
     Returns ``[P(bit0=0), P(bit0=1)]``.
     """
-    _validate_probabilities(p)
     return np.array([1 - p, p], dtype=np.float64)
 
 
@@ -75,7 +68,6 @@ def heralded_pauli_channel_1_probs(
     - index 5 (0b101): herald + X
     - index 7 (0b111): herald + Y, represented as X+Z
     """
-    _validate_probabilities(pi, px, py, pz)
     probs = np.zeros(8, dtype=np.float64)
     probs[0] = 1 - pi - px - py - pz
     probs[1] = pi
@@ -98,7 +90,6 @@ def pauli_channel_1_probs(px: float, py: float, pz: float) -> np.ndarray:
     - index 2 (0b10): X
     - index 3 (0b11): Y
     """
-    _validate_probabilities(px, py, pz)
     return np.array([1 - px - py - pz, pz, px, py], dtype=np.float64)
 
 
@@ -132,9 +123,6 @@ def pauli_channel_2_probs(
     follow Stim's naming convention: ``pix`` is I on ``qubit_i`` and X on
     ``qubit_j``, ``pzi`` is Z on ``qubit_i`` and I on ``qubit_j``, etc.
     """
-    _validate_probabilities(
-        pix, piy, piz, pxi, pxx, pxy, pxz, pyi, pyx, pyy, pyz, pzi, pzx, pzy, pzz
-    )
     remainder = (
         1
         - pix
@@ -614,9 +602,6 @@ class ChannelSampler:
             probs = ch.probs.astype(np.float64)
             p_fire = 1.0 - float(probs[0])
             n_outcomes = len(probs)
-
-            if p_fire < -_PROB_SUM_TOL:
-                raise ValueError("channel has invalid probabilities")
 
             if p_fire <= 1e-15 or n_outcomes <= 1:
                 continue
