@@ -697,6 +697,38 @@ class TestParseSPP:
         assert len(b.rec) == 0
 
 
+class TestParseEmptyAnnotations:
+    """Empty DETECTOR / OBSERVABLE_INCLUDE annotations are valid Stim and represent
+    deterministic-zero detector/observable bits. They must parse without crashing
+    and produce a single annotation vertex with no record edges."""
+
+    def test_empty_detector_alone(self):
+        b = parse_stim_circuit(stim.Circuit("DETECTOR"))
+        assert len(b.detectors) == 1
+        v = b.detectors[0]
+        assert b.graph.type(v) == VertexType.X
+        assert list(b.graph.neighbors(v)) == []
+
+    def test_empty_observable_alone(self):
+        b = parse_stim_circuit(stim.Circuit("OBSERVABLE_INCLUDE(0)"))
+        assert set(b.observables_dict) == {0}
+        v = b.observables_dict[0]
+        assert b.graph.type(v) == VertexType.X
+        assert list(b.graph.neighbors(v)) == []
+
+    def test_empty_detector_after_measurement(self):
+        b = parse_stim_circuit(stim.Circuit("M 0\nDETECTOR rec[-1]\nDETECTOR"))
+        assert len(b.detectors) == 2
+        # First detector has the measurement edge, second has no edges.
+        assert len(list(b.graph.neighbors(b.detectors[0]))) == 1
+        assert list(b.graph.neighbors(b.detectors[1])) == []
+
+    def test_empty_observable_includes_with_args(self):
+        """DETECTOR(coords...) with empty rec must also parse."""
+        b = parse_stim_circuit(stim.Circuit("DETECTOR(1, 2)"))
+        assert len(b.detectors) == 1
+
+
 class TestParseMPPCancellation:
     """Tests for MPP with duplicate/anticommuting Pauli targets.
 
@@ -853,3 +885,30 @@ class TestParseTPP:
         """TPP Z0*X0 = iY is anti-Hermitian and should raise."""
         with pytest.raises(ValueError, match="anti-Hermitian"):
             parse_stim_circuit(stim.Circuit("SPP[T] Z0*X0"))
+
+
+class TestParseSparseObservables:
+    """OBSERVABLE_INCLUDE indices are sparse and out-of-order in real circuits.
+    Stim defines num_observables = max_index + 1 and emits one column per id
+    in sorted order, with missing ids as deterministic-zero columns."""
+
+    def test_sparse_observable_index_pads_missing(self):
+        circuit = stim.Circuit("M 0\nOBSERVABLE_INCLUDE(2) rec[-1]")
+        b = parse_stim_circuit(circuit)
+        assert set(b.observables_dict) == {0, 1, 2}
+        # Missing ids 0 and 1 have no record edges (deterministic zero).
+        assert list(b.graph.neighbors(b.observables_dict[0])) == []
+        assert list(b.graph.neighbors(b.observables_dict[1])) == []
+        # Index 2 has the measurement edge.
+        assert len(list(b.graph.neighbors(b.observables_dict[2]))) == 1
+
+    def test_observables_dict_is_sorted_after_out_of_order(self):
+        circuit = stim.Circuit(
+            "M 0\nM 1\nOBSERVABLE_INCLUDE(2) rec[-2]\nOBSERVABLE_INCLUDE(0) rec[-1]"
+        )
+        b = parse_stim_circuit(circuit)
+        assert list(b.observables_dict) == [0, 1, 2]
+
+    def test_no_observables_remains_empty(self):
+        b = parse_stim_circuit(stim.Circuit("M 0"))
+        assert b.observables_dict == {}

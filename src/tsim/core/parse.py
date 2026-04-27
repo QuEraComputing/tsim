@@ -261,4 +261,13 @@ def parse_stim_circuit(
                 gate_func(b, *chunk, *args)
 
     finalize_correlated_error(b)
+
+    # Materialize every observable id from 0..num_observables-1 so missing
+    # indices appear as deterministic-zero outputs and downstream iteration
+    # is in sorted index order, matching Stim semantics.
+    for i in range(stim_circuit.num_observables):
+        if i not in b.observables_dict:
+            observable_include(b, [], i)
+    b.observables_dict = {i: b.observables_dict[i] for i in sorted(b.observables_dict)}
+
     return b

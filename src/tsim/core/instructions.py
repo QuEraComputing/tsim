@@ -1114,12 +1114,26 @@ def ry(b: GraphRepresentation, qubit: int) -> None:
 # =============================================================================
 
 
-def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
-    """Add detector annotation that XORs the given measurement record bits."""
-    row = min({b.graph.row(b.rec[r]) for r in rec}) - 0.5
+def _annotation_row(b: GraphRepresentation, rec: list[int]) -> float:
+    """Pick a fresh row for a detector/observable vertex.
+
+    Empty `rec` is valid Stim and represents a deterministic-zero annotation;
+    fall back to a row above existing annotations rather than `min()` on an
+    empty set.
+    """
     d_rows = {b.graph.row(d) for d in b.detectors + b.observables}
+    if rec:
+        row: float = min(b.graph.row(b.rec[r]) for r in rec) - 0.5
+    else:
+        row = (max(d_rows) + 1) if d_rows else 0
     while row in d_rows:
         row += 1
+    return row
+
+
+def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
+    """Add detector annotation that XORs the given measurement record bits."""
+    row = _annotation_row(b, rec)
     v0 = b.graph.add_vertex(
         VertexType.X, qubit=-1, row=row, phase=f"det[{len(b.detectors)}]"
     )
@@ -1133,10 +1147,7 @@ def observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None
     idx = int(idx)
 
     if idx not in b.observables_dict:
-        row = min({b.graph.row(b.rec[r]) for r in rec}) - 0.5
-        d_rows = {b.graph.row(d) for d in b.detectors + b.observables}
-        while row in d_rows:
-            row += 1
+        row = _annotation_row(b, rec)
         v0 = b.graph.add_vertex(VertexType.X, qubit=-1, row=row, phase=f"obs[{idx}]")
         b.observables_dict[idx] = v0
 

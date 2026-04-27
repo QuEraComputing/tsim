@@ -231,7 +231,7 @@ def build_sampling_graph(
             g.remove_vertex(vertices.pop())
 
         labels = [f"det[{i}]" for i in range(len(built.detectors))] + [
-            f"obs[{i}]" for i in built.observables_dict
+            f"obs[{i}]" for i in sorted(built.observables_dict)
         ]
         for label in labels:
             vs = annotation_to_vertex[label]
