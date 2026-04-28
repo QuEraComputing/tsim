@@ -265,6 +265,11 @@ class _CompiledSamplerBase:
             Samples array, or (samples, reference) tuple when compute_reference=True.
 
         """
+        if shots < 0:
+            raise ValueError(f"shots must be non-negative, got {shots}")
+        if batch_size is not None and batch_size < 1:
+            raise ValueError(f"batch_size must be at least 1, got {batch_size}")
+
         if shots == 0:
             empty = np.empty((0, self._program.num_outputs), dtype=np.bool_)
             if compute_reference:
@@ -275,17 +280,18 @@ class _CompiledSamplerBase:
             max_batch_size = self._estimate_batch_size()
             num_batches = max(1, ceil(shots / max_batch_size))
             batch_size = ceil(shots / num_batches)
-
-        if compute_reference:
+        else:
             num_batches = ceil(shots / batch_size)
-            has_leeway = batch_size * num_batches > shots
-            if not has_leeway:
-                batch_size += 1
+
+        if compute_reference and batch_size * num_batches == shots:
+            # Bump batch_size so the first batch's reference sample fits
+            # within existing batches (keeps shapes uniform for JIT).
+            batch_size += 1
 
         batches: list[jax.Array] = []
         reference: np.ndarray | None = None
 
-        for _ in range(ceil(shots / batch_size)):
+        for _ in range(num_batches):
             f_params_np = self._channel_sampler.sample(batch_size)
 
             if compute_reference and reference is None:
@@ -525,7 +531,17 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.
 
+        Raises:
+            ValueError: If ``separate_observables`` is combined with
+                ``prepend_observables`` or ``append_observables``.
+
         """
+        if separate_observables and (prepend_observables or append_observables):
+            raise ValueError(
+                "Can't specify separate_observables=True with "
+                "append_observables=True or prepend_observables=True"
+            )
+
         compute_reference = (
             use_detector_reference_sample or use_observable_reference_sample
         )
@@ -542,13 +558,15 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         else:
             samples = self._sample_batches(shots, batch_size)
 
-        if append_observables:
-            return _maybe_bit_pack(samples, bit_packed=bit_packed)
-
         num_detectors = self._num_detectors
         det_samples = samples[:, :num_detectors]
         obs_samples = samples[:, num_detectors:]
 
+        if prepend_observables and append_observables:
+            combined = np.concatenate([obs_samples, det_samples, obs_samples], axis=1)
+            return _maybe_bit_pack(combined, bit_packed=bit_packed)
+        if append_observables:
+            return _maybe_bit_pack(samples, bit_packed=bit_packed)
         if prepend_observables:
             combined = np.concatenate([obs_samples, det_samples], axis=1)
             return _maybe_bit_pack(combined, bit_packed=bit_packed)
@@ -608,6 +626,13 @@ class CompiledStateProbs(_CompiledSamplerBase):
             Array of probabilities P(state | error_sample) for each error sample.
 
         """
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be at least 1, got {batch_size}")
+        expected_outputs = self._program.num_outputs
+        if state.shape != (expected_outputs,):
+            raise ValueError(
+                f"state must have shape ({expected_outputs},), got {state.shape}"
+            )
         f_samples = jnp.asarray(self._channel_sampler.sample(batch_size))
         p_norm = jnp.ones(batch_size)
         p_joint = jnp.ones(batch_size)

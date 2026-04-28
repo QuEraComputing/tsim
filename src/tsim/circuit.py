@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from fractions import Fraction
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -23,7 +22,7 @@ if TYPE_CHECKING:
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.noise.dem import get_detector_error_model
-from tsim.utils.clifford import clifford_expansion
+from tsim.utils.clifford import expand_clifford_rotations, is_clifford
 from tsim.utils.diagram import render_pyzx_d3, render_svg
 from tsim.utils.program_text import (
     enriched_stim_error,
@@ -151,7 +150,13 @@ class Circuit:
 
         """
         if isinstance(name, str):
-            if name == "T":
+            if name == "TPP":
+                name = "SPP"
+                tag = "T"
+            elif name == "TPP_DAG":
+                name = "SPP_DAG"
+                tag = "T"
+            elif name == "T":
                 name = "S"
                 tag = "T"
             elif name == "T_DAG":
@@ -353,20 +358,10 @@ class Circuit:
         """Return the underlying stim circuit.
 
         Parametric rotation instructions whose angles are all half-π multiples
-        are expanded into their equivalent Clifford gates.
+        are expanded into their equivalent Clifford gates. ``REPEAT`` blocks are
+        preserved structurally; their bodies are expanded recursively.
         """
-        circ = stim.Circuit()
-        for instr in self._stim_circ:
-            assert not isinstance(instr, stim.CircuitRepeatBlock)
-
-            expansion = clifford_expansion(instr)
-            if expansion is not None:
-                gates, targets = expansion
-                for gate in gates:
-                    circ.append(gate, targets, [])
-            else:
-                circ.append(instr)
-        return circ
+        return expand_clifford_rotations(self._stim_circ)
 
     @property
     def is_clifford(self) -> bool:
@@ -379,35 +374,7 @@ class Circuit:
             True if the circuit is a Clifford circuit, otherwise False.
 
         """
-
-        def is_half_pi_multiple(phase: Fraction) -> bool:
-            return phase.denominator <= 2
-
-        for instr in self._stim_circ:
-            assert not isinstance(instr, stim.CircuitRepeatBlock)
-
-            if instr.name in {"S", "S_DAG"} and instr.tag == "T":
-                return False
-
-            if instr.name == "I" and instr.tag:
-                result = parse_parametric_tag(instr.tag)
-                if result is None:
-                    return False
-
-                gate_name, params = result
-                if gate_name in ["R_X", "R_Y", "R_Z"]:
-                    if not is_half_pi_multiple(params["theta"]):
-                        return False
-                elif gate_name == "U3":
-                    if not all(
-                        is_half_pi_multiple(params[name])
-                        for name in ("theta", "phi", "lambda")
-                    ):
-                        return False
-                else:
-                    return False
-
-        return True
+        return is_clifford(self._stim_circ)
 
     @property
     def num_measurements(self) -> int:
@@ -817,7 +784,7 @@ class Circuit:
                 args = instr.gate_args_copy()
 
                 if name == "I" and tag:
-                    parsed = parse_parametric_tag(tag)
+                    parsed = parse_parametric_tag(instr)
                     if parsed is not None:
                         gate_name, params = parsed
                         if gate_name == "U3":

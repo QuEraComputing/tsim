@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from numpy.testing import assert_allclose
 
 from tsim.noise.channels import (
@@ -8,6 +9,7 @@ from tsim.noise.channels import (
     correlated_error_probs,
     error_probs,
     expand_channel,
+    fold_duplicate_channel_bits,
     heralded_pauli_channel_1_probs,
     merge_identical_channels,
     normalize_channels,
@@ -38,15 +40,15 @@ class TestProbabilityConstructors:
         assert probs.shape == (4,)
         assert probs.dtype == np.float64
         # Order: [I, Z, X, Y] mapped to bits [00, 01, 10, 11]
-        assert_allclose(probs[2], 1.0, rtol=1e-10)  # X = 10
+        assert_allclose(probs[2], 1.0, rtol=1e-10)  # index 2 (0b10): X
 
         # Pure Y error
         probs = pauli_channel_1_probs(px=0.0, py=1.0, pz=0.0)
-        assert_allclose(probs[3], 1.0, rtol=1e-10)  # Y = 11
+        assert_allclose(probs[3], 1.0, rtol=1e-10)  # index 3 (0b11): Y
 
         # Pure Z error
         probs = pauli_channel_1_probs(px=0.0, py=0.0, pz=1.0)
-        assert_allclose(probs[1], 1.0, rtol=1e-10)  # Z = 01
+        assert_allclose(probs[1], 1.0, rtol=1e-10)  # index 1 (0b01): Z
 
     def test_pauli_channel_2(self):
         """Test two-qubit Pauli channel."""
@@ -70,7 +72,7 @@ class TestProbabilityConstructors:
         )
         assert probs.shape == (16,)
         assert probs.dtype == np.float64
-        assert_allclose(probs[8], 1.0, rtol=1e-10)  # IX = 0100 in 4-bit = 8
+        assert_allclose(probs[8], 1.0, rtol=1e-10)  # index 8 (0b1000): IX
         assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
 
     def test_heralded_pauli_channel_1(self):
@@ -78,21 +80,21 @@ class TestProbabilityConstructors:
         probs = heralded_pauli_channel_1_probs(pi=0.01, px=0.02, py=0.03, pz=0.04)
         assert probs.shape == (8,)
         assert probs.dtype == np.float64
-        # Bits: [herald, Z_error, X_error]
-        assert_allclose(probs[0], 0.9)  # 000: no fire
-        assert_allclose(probs[1], 0.01)  # 001: herald + I
-        assert_allclose(probs[3], 0.04)  # 011: herald + Z
-        assert_allclose(probs[5], 0.02)  # 101: herald + X
-        assert_allclose(probs[7], 0.03)  # 111: herald + Y
-        assert_allclose(probs[2], 0.0)  # impossible
-        assert_allclose(probs[4], 0.0)  # impossible
-        assert_allclose(probs[6], 0.0)  # impossible
+        # Little-endian bits: bit0=herald, bit1=Z error, bit2=X error.
+        assert_allclose(probs[0], 0.9)  # index 0 (0b000): no fire
+        assert_allclose(probs[1], 0.01)  # index 1 (0b001): herald + I
+        assert_allclose(probs[3], 0.04)  # index 3 (0b011): herald + Z
+        assert_allclose(probs[5], 0.02)  # index 5 (0b101): herald + X
+        assert_allclose(probs[7], 0.03)  # index 7 (0b111): herald + Y
+        assert_allclose(probs[2], 0.0)  # index 2 (0b010): impossible
+        assert_allclose(probs[4], 0.0)  # index 4 (0b100): impossible
+        assert_allclose(probs[6], 0.0)  # index 6 (0b110): impossible
         assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
 
     def test_heralded_pauli_channel_1_pure_z(self):
         """Heralded channel that always fires with Z."""
         probs = heralded_pauli_channel_1_probs(pi=0.0, px=0.0, py=0.0, pz=1.0)
-        assert_allclose(probs[3], 1.0)  # herald + Z
+        assert_allclose(probs[3], 1.0)  # index 3 (0b011): herald + Z
         assert_allclose(np.sum(probs), 1.0, rtol=1e-10)
 
 
@@ -103,8 +105,8 @@ class TestCorrelatedErrorProbs:
         """Single error with probability p."""
         probs = correlated_error_probs([0.3])
         assert probs.shape == (2,)
-        assert_allclose(probs[0], 0.7)  # No error
-        assert_allclose(probs[1], 0.3)  # Error occurred
+        assert_allclose(probs[0], 0.7)  # index 0 (0b0): no error
+        assert_allclose(probs[1], 0.3)  # index 1 (0b1): error occurred
         assert_allclose(np.sum(probs), 1.0)
 
     def test_two_errors(self):
@@ -127,10 +129,10 @@ class TestCorrelatedErrorProbs:
         # P1 = 0.2, P2 = 0.8*0.25 = 0.2, P3 = 0.8*0.75*0.333... = 0.2
         probs = correlated_error_probs([0.2, 0.25, 1 / 3])
         assert probs.shape == (8,)
-        assert_allclose(probs[0], 0.4, rtol=1e-5)  # No error: 40%
-        assert_allclose(probs[1], 0.2, rtol=1e-5)  # First: 20%
-        assert_allclose(probs[2], 0.2, rtol=1e-5)  # Second: 20%
-        assert_allclose(probs[4], 0.2, rtol=1e-5)  # Third: 20%
+        assert_allclose(probs[0], 0.4, rtol=1e-5)  # index 0 (0b000): no error
+        assert_allclose(probs[1], 0.2, rtol=1e-5)  # index 1 (0b001): first
+        assert_allclose(probs[2], 0.2, rtol=1e-5)  # index 2 (0b010): second
+        assert_allclose(probs[4], 0.2, rtol=1e-5)  # index 4 (0b100): third
         # All multi-bit outcomes are 0
         assert_allclose(probs[3], 0.0)
         assert_allclose(probs[5], 0.0)
@@ -154,10 +156,45 @@ class TestCorrelatedErrorProbs:
         """If first error is certain, subsequent errors have 0 probability."""
         probs = correlated_error_probs([1.0, 0.5, 0.5])
         assert probs.shape == (8,)
-        assert_allclose(probs[0], 0.0)  # No error
-        assert_allclose(probs[1], 1.0)  # First error (certain)
-        assert_allclose(probs[2], 0.0)  # Second error (blocked)
-        assert_allclose(probs[4], 0.0)  # Third error (blocked)
+        assert_allclose(probs[0], 0.0)  # index 0 (0b000): no error
+        assert_allclose(probs[1], 1.0)  # index 1 (0b001): first error
+        assert_allclose(probs[2], 0.0)  # index 2 (0b010): second error
+        assert_allclose(probs[4], 0.0)  # index 4 (0b100): third error
+
+
+class TestChannelValidation:
+    """Channel.__post_init__ rejects malformed probability distributions so
+    they cannot reach the sampler and get silently dropped."""
+
+    def test_rejects_negative_entry(self):
+        with pytest.raises(ValueError):
+            Channel(probs=np.array([1.2, -0.2]), unique_col_ids=(0,))
+
+    def test_rejects_entry_above_one(self):
+        with pytest.raises(ValueError):
+            Channel(probs=np.array([-0.5, 1.5]), unique_col_ids=(0,))
+
+    def test_rejects_sum_below_one(self):
+        with pytest.raises(ValueError):
+            Channel(probs=np.array([0.5, 0.4]), unique_col_ids=(0,))
+
+    def test_rejects_sum_above_one(self):
+        with pytest.raises(ValueError):
+            Channel(probs=np.array([0.7, 0.7]), unique_col_ids=(0,))
+
+    def test_rejects_helper_with_arguments_summing_above_one(self):
+        # pauli_channel_1_probs(0.6, 0.6, 0.6) returns probs[0] = -0.8.
+        # Wrapping in a Channel surfaces the negative entry as a clear error.
+        with pytest.raises(ValueError):
+            Channel(probs=pauli_channel_1_probs(0.6, 0.6, 0.6), unique_col_ids=(0, 1))
+
+    def test_channel_sampler_rejects_invalid_channel(self):
+        # ChannelSampler wraps probs in a Channel, so invalid distributions
+        # get caught at construction time rather than silently dropped.
+        bad_probs = np.array([1.2, -0.1, -0.05, -0.05])
+        transform = np.array([[1, 0], [0, 1]], dtype=np.uint8)
+        with pytest.raises(ValueError):
+            ChannelSampler([bad_probs], transform, seed=42)
 
 
 def _sample_channels(channels, matrix, n_samples, seed=42):
@@ -310,13 +347,12 @@ class TestExpandChannel:
 
         expanded = expand_channel(c, (0, 1))
 
+        expected = np.zeros(4, dtype=np.float64)
+        expected[0b00] = 0.7
+        expected[0b01] = 0.3
         assert expanded.unique_col_ids == (0, 1)
         assert expanded.num_bits == 2
-        # Bit 1 is always 0, so only outcomes 0b00 and 0b01 have probability
-        assert_allclose(expanded.probs[0], 0.7, rtol=1e-5)  # 0b00
-        assert_allclose(expanded.probs[1], 0.3, rtol=1e-5)  # 0b01
-        assert_allclose(expanded.probs[2], 0.0, rtol=1e-5)  # 0b10
-        assert_allclose(expanded.probs[3], 0.0, rtol=1e-5)  # 0b11
+        assert_allclose(expanded.probs, expected)
 
     def test_expand_1bit_to_2bit_different_position(self):
         """Expand 1-bit channel to 2-bit where source is in second position."""
@@ -324,13 +360,241 @@ class TestExpandChannel:
 
         expanded = expand_channel(c, (3, 5))
 
+        expected = np.zeros(4, dtype=np.float64)
+        expected[0b00] = 0.7
+        expected[0b10] = 0.3
         assert expanded.unique_col_ids == (3, 5)
-        # Signature 5 is at position 1 in target, so bit 1 has the probability
-        # Bit 0 (signature 3) is always 0
-        assert_allclose(expanded.probs[0], 0.7, rtol=1e-5)  # 0b00
-        assert_allclose(expanded.probs[1], 0.0, rtol=1e-5)  # 0b01
-        assert_allclose(expanded.probs[2], 0.3, rtol=1e-5)  # 0b10
-        assert_allclose(expanded.probs[3], 0.0, rtol=1e-5)  # 0b11
+        assert expanded.num_bits == 2
+        assert_allclose(expanded.probs, expected)
+
+    @pytest.mark.parametrize("unique_col_id", [3, 4, 5])
+    def test_expand_1bit_to_3bit(self, unique_col_id):
+        """Expand a 1-bit channel to a 3-bit signature set."""
+        target_col_ids = (3, 4, 5)
+        c = Channel(probs=error_probs(0.3), unique_col_ids=(unique_col_id,))
+
+        expanded = expand_channel(c, target_col_ids)
+
+        expected = np.zeros(8, dtype=np.float64)
+        expected[0b000] = 0.7
+        expected[1 << target_col_ids.index(unique_col_id)] = 0.3
+        assert expanded.unique_col_ids == target_col_ids
+        assert expanded.num_bits == 3
+        assert_allclose(expanded.probs, expected)
+
+    @pytest.mark.parametrize("unique_col_id", [3, 4, 5, 6, 7])
+    def test_expand_1bit_to_5bit(self, unique_col_id):
+        """Expand a 1-bit channel to a 5-bit signature set."""
+        target_col_ids = (3, 4, 5, 6, 7)
+        c = Channel(probs=error_probs(0.3), unique_col_ids=(unique_col_id,))
+
+        expanded = expand_channel(c, target_col_ids)
+
+        expected = np.zeros(32, dtype=np.float64)
+        expected[0b00000] = 0.7
+        expected[1 << target_col_ids.index(unique_col_id)] = 0.3
+        assert expanded.unique_col_ids == target_col_ids
+        assert expanded.num_bits == 5
+        assert_allclose(expanded.probs, expected)
+
+    @pytest.mark.parametrize("source_col_ids", [(0, 1), (0, 3), (1, 3), (2, 3)])
+    def test_expand_2bit_to_4bit_preserves_source_bit_positions(self, source_col_ids):
+        """Expand a 2-bit channel into non-adjacent target signature positions."""
+        probs = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64)
+        target_col_ids = (0, 1, 2, 3)
+        c = Channel(probs=probs, unique_col_ids=source_col_ids)
+
+        expanded = expand_channel(c, target_col_ids)
+
+        expected = np.zeros(16, dtype=np.float64)
+        expected[0b0000] = 0.1
+        expected[1 << target_col_ids.index(source_col_ids[0])] = 0.2
+        expected[1 << target_col_ids.index(source_col_ids[1])] = 0.3
+        expected[
+            (1 << target_col_ids.index(source_col_ids[0]))
+            | (1 << target_col_ids.index(source_col_ids[1]))
+        ] = 0.4
+        assert expanded.unique_col_ids == target_col_ids
+        assert expanded.num_bits == 4
+        assert_allclose(expanded.probs, expected)
+
+    def test_expand_duplicate_source_col_ids_cancel_mod_2(self):
+        """Duplicate source column bits should combine by XOR, not OR."""
+        # Bits 0 and 1 both map to target column 0. Outcomes 00 and 11 map to
+        # target index 0b00, while 01 and 10 map to target index 0b01.
+        probs = np.array([0.1, 0.2, 0.4, 0.3], dtype=np.float64)
+        c = Channel(probs=probs, unique_col_ids=(0, 0))
+
+        expanded = expand_channel(c, (0, 1))
+
+        assert expanded.unique_col_ids == (0, 1)
+        assert_allclose(expanded.probs, [0.4, 0.6, 0.0, 0.0])
+
+    def test_expand_deterministic_duplicate_bits_cancel_to_identity(self):
+        """A deterministic 11 outcome on duplicate columns should become 00."""
+        c = Channel(
+            probs=np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64),
+            unique_col_ids=(0, 0),
+        )
+
+        expanded = expand_channel(c, (0, 1))
+
+        assert_allclose(expanded.probs, [1.0, 0.0, 0.0, 0.0])
+
+    def test_expand_rejects_duplicate_target_col_ids(self):
+        """Target signature sets must not contain duplicate column IDs."""
+        c = Channel(probs=error_probs(0.3), unique_col_ids=(0,))
+
+        with pytest.raises(ValueError, match="Target must not contain duplicates"):
+            expand_channel(c, (0, 1, 1))
+
+    def test_expand_rejects_unsorted_source_col_ids(self):
+        """Source signature sets must be sorted."""
+        c = Channel(
+            probs=np.array([0.7, 0.1, 0.1, 0.1], dtype=np.float64),
+            unique_col_ids=(1, 0),
+        )
+
+        with pytest.raises(ValueError, match="Source must be sorted"):
+            expand_channel(c, (0, 1, 2))
+
+    def test_expand_rejects_unsorted_target_col_ids(self):
+        """Target signature sets must be sorted."""
+        c = Channel(probs=error_probs(0.3), unique_col_ids=(0,))
+
+        with pytest.raises(ValueError, match="Target must be sorted"):
+            expand_channel(c, (1, 0))
+
+    @pytest.mark.parametrize("target_col_ids", [(0,), (1, 2)])
+    def test_expand_rejects_target_that_is_not_strict_superset(self, target_col_ids):
+        """Target signature sets must strictly contain all source column IDs."""
+        c = Channel(probs=error_probs(0.3), unique_col_ids=(0,))
+
+        with pytest.raises(ValueError, match="Source must be strict subset"):
+            expand_channel(c, target_col_ids)
+
+
+class TestFoldDuplicateChannelBits:
+    """Tests for fold_duplicate_channel_bits."""
+
+    def test_fold_two_duplicate_bits_by_xor(self):
+        """Duplicate bits with one column ID become one parity bit."""
+        c = Channel(
+            probs=np.array([0.1, 0.2, 0.4, 0.3], dtype=np.float64),
+            unique_col_ids=(0, 0),
+        )
+
+        folded = fold_duplicate_channel_bits([c])
+
+        assert len(folded) == 1
+        assert folded[0].unique_col_ids == (0,)
+        assert_allclose(folded[0].probs, [0.4, 0.6])
+
+    def test_simplify_folds_duplicate_bits_before_absorption(self):
+        """Subset absorption should only expand into duplicate-free targets."""
+        channels = [
+            Channel(
+                probs=np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float64),
+                unique_col_ids=(0, 0),
+            ),
+            Channel(probs=error_probs(0.3), unique_col_ids=(0,)),
+        ]
+
+        simplified = simplify_channels(channels)
+
+        assert len(simplified) == 1
+        assert simplified[0].unique_col_ids == (0,)
+
+    def test_no_duplicates_pass_through(self):
+        """A channel with no duplicate col_ids should be returned unchanged."""
+        probs = np.array([0.5, 0.2, 0.2, 0.1], dtype=np.float64)
+        c = Channel(probs=probs, unique_col_ids=(0, 1))
+
+        folded = fold_duplicate_channel_bits([c])
+
+        assert len(folded) == 1
+        assert folded[0].unique_col_ids == (0, 1)
+        assert_allclose(folded[0].probs, probs)
+
+    def test_empty_list_returns_empty(self):
+        """An empty input list should return an empty list."""
+        assert fold_duplicate_channel_bits([]) == []
+
+    def test_fold_three_duplicate_bits_by_parity(self):
+        """Three bits sharing one column ID should fold to one parity bit."""
+        # col_ids (0, 0, 0): all three bits map to col 0. The fold collects the
+        # mass of even-parity old indices into new[0] and odd-parity into new[1].
+        probs = np.arange(1, 9, dtype=np.float64)
+        probs /= probs.sum()
+        c = Channel(probs=probs, unique_col_ids=(0, 0, 0))
+
+        folded = fold_duplicate_channel_bits([c])
+
+        assert len(folded) == 1
+        assert folded[0].unique_col_ids == (0,)
+        even_sum = probs[0] + probs[3] + probs[5] + probs[6]  # 000, 011, 101, 110
+        odd_sum = probs[1] + probs[2] + probs[4] + probs[7]  # 001, 010, 100, 111
+        assert_allclose(folded[0].probs, [even_sum, odd_sum])
+
+    def test_fold_partial_duplicates(self):
+        """Only-duplicate bits should fold; unique bits should be preserved."""
+        # col_ids (0, 0, 1): bits 0 and 1 fold onto new pos 0,
+        # bit 2 maps to new pos 1.
+        probs = np.arange(1, 9, dtype=np.float64)
+        probs /= probs.sum()
+        c = Channel(probs=probs, unique_col_ids=(0, 0, 1))
+
+        folded = fold_duplicate_channel_bits([c])
+
+        assert len(folded) == 1
+        assert folded[0].unique_col_ids == (0, 1)
+        expected = np.zeros(4, dtype=np.float64)
+        expected[0b00] = probs[0b000] + probs[0b011]
+        expected[0b01] = probs[0b001] + probs[0b010]
+        expected[0b10] = probs[0b100] + probs[0b111]
+        expected[0b11] = probs[0b101] + probs[0b110]
+        assert_allclose(folded[0].probs, expected)
+
+    def test_fold_preserves_probability_mass(self):
+        """Folded channel should still sum to 1."""
+        probs = np.array([0.1, 0.2, 0.4, 0.3], dtype=np.float64)
+        c = Channel(probs=probs, unique_col_ids=(0, 0))
+
+        folded = fold_duplicate_channel_bits([c])
+
+        assert_allclose(np.sum(folded[0].probs), 1.0)
+
+    def test_fold_multiple_channels_mixed(self):
+        """A list mixing folded and unchanged channels should process each in place."""
+        c1 = Channel(
+            probs=np.array([0.1, 0.2, 0.4, 0.3], dtype=np.float64),
+            unique_col_ids=(0, 0),
+        )
+        c2 = Channel(probs=error_probs(0.25), unique_col_ids=(1,))
+        c3 = Channel(
+            probs=np.array([0.5, 0.1, 0.3, 0.1], dtype=np.float64),
+            unique_col_ids=(2, 3),
+        )
+
+        folded = fold_duplicate_channel_bits([c1, c2, c3])
+
+        assert len(folded) == 3
+        assert folded[0].unique_col_ids == (0,)
+        assert_allclose(folded[0].probs, [0.4, 0.6])
+        assert folded[1].unique_col_ids == (1,)
+        assert_allclose(folded[1].probs, c2.probs)
+        assert folded[2].unique_col_ids == (2, 3)
+        assert_allclose(folded[2].probs, c3.probs)
+
+    def test_fold_preserves_sampling_statistics(self):
+        """Sampling stats should match before and after folding duplicate bits."""
+        mat = np.array([[1, 0], [0, 1]], dtype=np.uint8)
+        probs = np.array([0.2, 0.1, 0.15, 0.05, 0.2, 0.1, 0.1, 0.1], dtype=np.float64)
+        c = Channel(probs=probs, unique_col_ids=(0, 0, 1))
+
+        folded = fold_duplicate_channel_bits([c])
+
+        assert_sampling_matches(mat, [c], folded)
 
 
 class TestNormalizeChannels:
@@ -350,7 +614,7 @@ class TestNormalizeChannels:
 
     def test_2bit_reorder(self):
         """A 2-bit channel with reversed col_ids should be reordered."""
-        # probs[0] = P(00), probs[1] = P(01), probs[2] = P(10), probs[3] = P(11)
+        # Little-endian indices: bit0 contributes 1, bit1 contributes 2.
         # With col_ids (1, 0): bit 0 -> col 1, bit 1 -> col 0
         probs = np.array([0.5, 0.2, 0.2, 0.1], dtype=np.float64)
         c = Channel(probs=probs, unique_col_ids=(1, 0))
@@ -361,15 +625,15 @@ class TestNormalizeChannels:
         assert result[0].unique_col_ids == (0, 1)
         # After normalization to (0, 1): bit 0 -> col 0, bit 1 -> col 1
         # new[0] = old[0] (00 -> 00)
-        # new[1] = old[2] (01 in new = col0=1 = old bit1=1 -> old index 10)
-        # new[2] = old[1] (10 in new = col1=1 = old bit0=1 -> old index 01)
+        # new[1] (0b01) = old[2] (0b10): col0=1 means old bit1=1
+        # new[2] (0b10) = old[1] (0b01): col1=1 means old bit0=1
         # new[3] = old[3] (11 -> 11)
         expected = np.array([0.5, 0.2, 0.2, 0.1], dtype=np.float64)
         assert_allclose(result[0].probs, expected)
 
     def test_3bit_reorder(self):
         """A 3-bit channel with unsorted col_ids should be reordered correctly."""
-        # col_ids (2, 0, 1): bit 0 -> col 2, bit 1 -> col 0, bit 2 -> col 1
+        # With col_ids (2, 0, 1): bit 0 -> col 2, bit 1 -> col 0, bit 2 -> col 1.
         probs = np.array([0.4, 0.1, 0.15, 0.05, 0.1, 0.05, 0.1, 0.05], dtype=np.float64)
         c = Channel(probs=probs, unique_col_ids=(2, 0, 1))
 
@@ -458,6 +722,23 @@ class TestAbsorbSubsetChannels:
 
         assert len(absorbed) == 1
         assert_sampling_matches(mat, channels, absorbed)
+
+    def test_absorb_duplicate_subset_channel_uses_xor_expansion(self):
+        """A duplicate-signature subset should cancel when absorbed into a superset."""
+        superset = Channel(
+            probs=np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64),
+            unique_col_ids=(0, 1),
+        )
+        duplicate_subset = Channel(
+            probs=np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64),
+            unique_col_ids=(0, 0),
+        )
+
+        absorbed = absorb_subset_channels([superset, duplicate_subset])
+
+        assert len(absorbed) == 1
+        assert absorbed[0].unique_col_ids == (0, 1)
+        assert_allclose(absorbed[0].probs, [1.0, 0.0, 0.0, 0.0])
 
 
 class TestSimplifyChannels:
@@ -595,7 +876,7 @@ class TestReduceNullBits:
 
     def test_2bit_one_null_marginalize(self):
         """A 2-bit channel with one null should reduce to 1-bit."""
-        # probs: [P(00), P(01), P(10), P(11)] = [0.4, 0.3, 0.2, 0.1]
+        # Little-endian probs: [P(00), P(bit0), P(bit1), P(bit0+bit1)].
         probs = np.array([0.4, 0.3, 0.2, 0.1], dtype=np.float64)
         c = Channel(probs=probs, unique_col_ids=(0, self.NULL))
         channels = [c]
@@ -613,7 +894,7 @@ class TestReduceNullBits:
 
     def test_2bit_first_null_marginalize(self):
         """A 2-bit channel with null in first position should marginalize correctly."""
-        # probs: [P(00), P(01), P(10), P(11)] = [0.4, 0.3, 0.2, 0.1]
+        # Little-endian probs: [P(00), P(bit0), P(bit1), P(bit0+bit1)].
         probs = np.array([0.4, 0.3, 0.2, 0.1], dtype=np.float64)
         c = Channel(probs=probs, unique_col_ids=(self.NULL, 5))
         channels = [c]
@@ -645,7 +926,7 @@ class TestReduceNullBits:
 
     def test_3bit_one_null_marginalize(self):
         """A 3-bit channel with one null should reduce to 2-bit."""
-        # 8 outcomes: 000, 001, 010, 011, 100, 101, 110, 111
+        # 8 little-endian outcomes, where bit i contributes index 1 << i.
         probs = np.array([0.2, 0.1, 0.15, 0.05, 0.2, 0.1, 0.1, 0.1], dtype=np.float64)
         c = Channel(probs=probs, unique_col_ids=(0, self.NULL, 2))
         channels = [c]

@@ -21,23 +21,42 @@ from tsim.core.instructions import (
     r_z,
     spp,
     tick,
+    tpp,
     u3,
 )
 
+_PARAMETRIC_GATE_PARAMS: dict[str, frozenset[str]] = {
+    "R_X": frozenset({"theta"}),
+    "R_Y": frozenset({"theta"}),
+    "R_Z": frozenset({"theta"}),
+    "U3": frozenset({"theta", "phi", "lambda"}),
+}
 
-def parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
-    """Parse a parametric gate tag like R_Z(theta=0.3*pi).
+
+def parse_parametric_tag(
+    instruction: stim.CircuitInstruction,
+) -> tuple[str, dict[str, Fraction]] | None:
+    """Parse the parametric tag on an instruction (e.g. ``I[R_Z(theta=0.3*pi)]``).
 
     Supports gates: R_Z, R_X, R_Y, U3.
 
     Args:
-        tag: The instruction tag to parse, e.g. "R_Z(theta=0.3*pi)" or
-             "U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)".
+        instruction: The stim instruction whose tag will be parsed.
 
     Returns:
-        Tuple of (gate_name, params_dict) or None if not a valid parametric tag.
+        Tuple of (gate_name, params_dict) when the instruction's tag is a
+        well-formed parametric tag, or ``None`` when the tag is not
+        parametric-looking (no ``name(...)`` shape, or empty).
+
+    Raises:
+        ValueError: When the tag looks parametric (matches ``name(...)``) but is
+            malformed: a parameter value does not parse, the gate name is unknown,
+            or the parameter keys do not match the expected set for the gate.
 
     """
+    tag = instruction.tag
+    err_prefix = f"Could not parse instruction {str(instruction)!r}"
+
     match = re.match(r"^(\w+)\((.*)\)$", tag)
     if not match:
         return None
@@ -55,19 +74,48 @@ def parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
             r"^(\w+)=([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\*pi$", param
         )
         if not param_match:
-            return None
+            raise ValueError(f"{err_prefix}. Malformed parametric tag {tag!r}")
         param_name = param_match.group(1)
         value = Fraction(param_match.group(2))
         params[param_name] = value
 
+    expected = _PARAMETRIC_GATE_PARAMS.get(gate_name)
+    if expected is None:
+        raise ValueError(f"{err_prefix}. Unknown parametric gate {gate_name!r}")
+    if params.keys() != expected:
+        raise ValueError(
+            f"{err_prefix}. Parametric tag {tag!r} has parameters "
+            f"{sorted(params)}, expected {sorted(expected)}"
+        )
+
     return gate_name, params
+
+
+_PAULI_PRODUCT: dict[
+    tuple[Literal["X", "Y", "Z"], Literal["X", "Y", "Z"]],
+    tuple[Literal["X", "Y", "Z"], int],
+] = {
+    ("X", "Y"): ("Z", 1),  # XY = iZ
+    ("X", "Z"): ("Y", 3),  # XZ = -iY
+    ("Y", "X"): ("Z", 3),  # YX = -iZ
+    ("Y", "Z"): ("X", 1),  # YZ = iX
+    ("Z", "X"): ("Y", 1),  # ZX = iY
+    ("Z", "Y"): ("X", 3),  # ZY = -iX
+}
 
 
 def _iter_pauli_products(
     instruction: stim.CircuitInstruction,
 ) -> Iterator[tuple[list[tuple[Literal["X", "Y", "Z"], int]], bool]]:
-    """Yield (paulis, invert) for each Pauli product in an instruction."""
-    current_paulis: list[tuple[Literal["X", "Y", "Z"], int]] = []
+    """Yield (paulis, invert) for each Pauli product in an instruction.
+
+    Tracks Pauli algebra when the same qubit appears multiple times:
+    same Pauli cancels (P·P = I), different Paulis combine with a sign
+    (e.g. Z·X = iY).  An accumulated sign of -1 flips the invert flag;
+    ±i raises ValueError (anti-Hermitian product), matching stim.
+    """
+    qubit_pauli: dict[int, Literal["X", "Y", "Z"]] = {}
+    sign = 0  # accumulated power of i (mod 4)
     invert = False
     targets = instruction.targets_copy()
 
@@ -87,12 +135,29 @@ def _iter_pauli_products(
             )
 
         invert ^= target.is_inverted_result_target
-        current_paulis.append((pauli_type, target.value))
+        qubit = target.value
+
+        if qubit not in qubit_pauli:
+            qubit_pauli[qubit] = pauli_type
+        elif qubit_pauli[qubit] == pauli_type:
+            # P·P = I — cancel with no sign change
+            del qubit_pauli[qubit]
+        else:
+            # Different Paulis on same qubit — combine with sign
+            result, delta = _PAULI_PRODUCT[qubit_pauli[qubit], pauli_type]
+            qubit_pauli[qubit] = result
+            sign = (sign + delta) % 4
 
         next_idx = i + 1
         if next_idx >= len(targets) or not targets[next_idx].is_combiner:
-            yield current_paulis, invert
-            current_paulis = []
+            if sign % 2 == 1:
+                raise ValueError(f"{instruction} acted on an anti-Hermitian operator")
+            paulis: list[tuple[Literal["X", "Y", "Z"], int]] = [
+                (p, q) for q, p in sorted(qubit_pauli.items())
+            ]
+            yield paulis, invert ^ (sign == 2)
+            qubit_pauli = {}
+            sign = 0
             invert = False
 
 
@@ -121,6 +186,12 @@ def parse_stim_circuit(
             # TODO: handle visualization annotations in ZX diagrams
             continue
 
+        if any(t.is_sweep_bit_target for t in instruction.targets_copy()):
+            raise NotImplementedError(
+                f"Sweep bit targets (e.g. sweep[N]) are not supported "
+                f"in instruction {str(instruction)!r}"
+            )
+
         if name == "S" and instruction.tag == "T":
             name = "T"
         elif name == "S_DAG" and instruction.tag == "T":
@@ -128,7 +199,7 @@ def parse_stim_circuit(
 
         # Handle parametric gates via tags (e.g., I with tag "R_Z(theta=0.3*pi)")
         if name == "I" and instruction.tag:
-            result = parse_parametric_tag(instruction.tag)
+            result = parse_parametric_tag(instruction)
             if result is not None:
                 gate_name, params = result
                 targets = [t.value for t in instruction.targets_copy()]
@@ -153,6 +224,11 @@ def parse_stim_circuit(
             p = args[0] if args else 0
             for paulis, invert in _iter_pauli_products(instruction):
                 mpp(b, paulis, invert, p=p)
+            continue
+        if name in ("SPP", "SPP_DAG") and instruction.tag == "T":
+            is_dag = name == "SPP_DAG"
+            for paulis, invert in _iter_pauli_products(instruction):
+                tpp(b, paulis, dagger=is_dag ^ invert)
             continue
         if name in ("SPP", "SPP_DAG"):
             is_dag = name == "SPP_DAG"
@@ -186,7 +262,16 @@ def parse_stim_circuit(
             detector(b, targets)
             continue
         if name == "OBSERVABLE_INCLUDE":
-            targets = [t.value for t in instruction.targets_copy()]
+            targets_copy = instruction.targets_copy()
+            for t in targets_copy:
+                if not t.is_measurement_record_target:
+                    raise ValueError(
+                        f"OBSERVABLE_INCLUDE with Pauli targets is not "
+                        f"supported in Tsim (only measurement record targets "
+                        f"like rec[-1] are supported). Got instruction "
+                        f"{str(instruction)!r}"
+                    )
+            targets = [t.value for t in targets_copy]
             args = instruction.gate_args_copy()
             observable_include(b, targets, int(args[0]))
             continue
@@ -218,4 +303,13 @@ def parse_stim_circuit(
                 gate_func(b, *chunk, *args)
 
     finalize_correlated_error(b)
+
+    # Materialize every observable id from 0..num_observables-1 so missing
+    # indices appear as deterministic-zero outputs and downstream iteration
+    # is in sorted index order, matching Stim semantics.
+    for i in range(stim_circuit.num_observables):
+        if i not in b.observables_dict:
+            observable_include(b, [], i)
+    b.observables_dict = {i: b.observables_dict[i] for i in sorted(b.observables_dict)}
+
     return b

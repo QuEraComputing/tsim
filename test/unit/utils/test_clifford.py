@@ -184,3 +184,20 @@ class TestStimCircuitProperty:
         stim_str = str(c.stim_circuit)
         assert "I[" not in stim_str
         assert "Z 0 1 2" in stim_str
+
+
+class TestIsCliffordUserTags:
+    """Identity instructions with non-parametric user tags (e.g. ``I[mytag]``)
+    are still Clifford — only parametric rotation tags can flip the result.
+    """
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "I[mytag] 0",
+            "I[abc123] 0",
+            "H 0\nI[mytag] 0\nCNOT 0 1\nM 0 1",
+        ],
+    )
+    def test_user_tag_is_clifford(self, program):
+        assert Circuit(program).is_clifford

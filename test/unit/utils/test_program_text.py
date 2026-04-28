@@ -15,6 +15,23 @@ def test_shorthand_to_stim_t_and_t_dag():
     assert shorthand_to_stim(text) == expected
 
 
+def test_shorthand_to_stim_tpp_and_tpp_dag():
+    text = "TPP X0*Y1\nTPP_DAG Z0"
+    expected = "SPP[T] X0*Y1\nSPP_DAG[T] Z0"
+    assert shorthand_to_stim(text) == expected
+
+
+def test_stim_to_shorthand_tpp_and_tpp_dag():
+    text = "SPP[T] X0*Y1\nSPP_DAG[T] Z0"
+    expected = "TPP X0*Y1\nTPP_DAG Z0"
+    assert stim_to_shorthand(text) == expected
+
+
+def test_shorthand_tpp_roundtrip():
+    text = "TPP X0*Z1\nTPP_DAG !Y0*Y1"
+    assert stim_to_shorthand(shorthand_to_stim(text)) == text
+
+
 def test_shorthand_to_stim_rotations():
     text = "R_X(0.25) 0\nR_Y(-0.5) 1\nR_Z(0.3) 2"
     expected = (
@@ -64,6 +81,37 @@ def test_shorthand_scientific_notation_u3():
 def test_circuit_scientific_notation():
     c = Circuit("R_Z(4e-4) 0")
     assert len(c) == 1
+
+
+def test_stim_to_shorthand_rotation_scientific_notation():
+    text = "I[R_Z(theta=1e-07*pi)] 0\nI[R_X(theta=-2.5e+02*pi)] 1"
+    expected = "R_Z(1e-07) 0\nR_X(-2.5e+02) 1"
+    assert stim_to_shorthand(text) == expected
+
+
+def test_stim_to_shorthand_u3_scientific_notation():
+    text = "I[U3(theta=1e-07*pi, phi=2e-07*pi, lambda=3e-07*pi)] 0"
+    expected = "U3(1e-07, 2e-07, 3e-07) 0"
+    assert stim_to_shorthand(text) == expected
+
+
+def test_circuit_str_scientific_notation_roundtrip():
+    for program in ["R_Z(1e-7) 0", "U3(1e-7, 2e-7, 3e-7) 0"]:
+        rendered = str(Circuit(program))
+        assert "I[" not in rendered, rendered
+
+
+@pytest.mark.parametrize(
+    "program",
+    [
+        "I[R_X(theta=0.5e-2*pi)] 0",
+        "I[R_Z(theta=4e-4*pi)] 1",
+        "I[U3(theta=0.1*pi, phi=2e-1*pi, lambda=0.3*pi)] 0",
+    ],
+)
+def test_circuit_eq_roundtrip_scientific_notation(program):
+    c1 = Circuit(program)
+    assert Circuit(str(c1)) == c1
 
 
 @pytest.mark.parametrize(

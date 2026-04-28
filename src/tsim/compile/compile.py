@@ -75,7 +75,7 @@ def _compile_node_phases(
 
     for i, terms in enumerate(terms_per_graph):
         for j, (const_phase, param_bit) in enumerate(terms):
-            phases[i, j] = const_phase
+            phases[i, j] = const_phase % 8
             params[i, j] = param_bit
 
     return NodePhases(
@@ -254,8 +254,8 @@ def _compile_phase_pairs(
 
     for i, terms in enumerate(terms_per_graph):
         for j, (ca, cb, pa, pb) in enumerate(terms):
-            alpha[i, j] = ca
-            beta[i, j] = cb
+            alpha[i, j] = ca % 8
+            beta[i, j] = cb % 8
             alpha_params_arr[i, j] = pa
             beta_params_arr[i, j] = pb
 
@@ -303,7 +303,7 @@ def _compile_prefactor(g_list: list[BaseGraph]) -> ScalarPrefactor:
     )
 
     phase_indices = jnp.array(
-        [int(float(g.scalar.phase) * 4) for g in g_list], dtype=jnp.uint8
+        [int(float(g.scalar.phase) * 4) % 8 for g in g_list], dtype=jnp.uint8
     )
 
     exact_floatfactor = []
@@ -353,6 +353,11 @@ def compile_scalar_graphs(
         if n_vertices != 0:
             raise ValueError(
                 f"Only scalar graphs can be compiled but graph {i} has {n_vertices} vertices"
+            )
+        if g.scalar.phasevars_pi and not g.scalar.is_zero:
+            raise NotImplementedError(
+                f"compile_scalar_graphs does not support Scalar.phasevars_pi "
+                f"(graph {i} has phasevars_pi={sorted(g.scalar.phasevars_pi)!r})"
             )
 
     g_list = [g for g in g_list if not g.scalar.is_zero]

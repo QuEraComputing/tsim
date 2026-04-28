@@ -70,7 +70,7 @@ def _collect_vertices(
     start: Any,
     visited: set[Any],
 ) -> list[Any]:
-    """Breadth-first search to collect the connected component of ``start``."""
+    """Depth-first search to collect the connected component of ``start``."""
     queue: deque[Any] = deque([start])
     component: list[Any] = []
 
@@ -231,7 +231,7 @@ def build_sampling_graph(
             g.remove_vertex(vertices.pop())
 
         labels = [f"det[{i}]" for i in range(len(built.detectors))] + [
-            f"obs[{i}]" for i in built.observables_dict
+            f"obs[{i}]" for i in sorted(built.observables_dict)
         ]
         for label in labels:
             vs = annotation_to_vertex[label]
@@ -282,6 +282,10 @@ def transform_error_basis(
         return g, np.zeros((0, num_cols), dtype=np.uint8)
 
     # Parse variable indices and find the dimension
+    for var in (var for v in parametrized_vertices for var in g._phaseVars[v]):
+        assert (
+            var.startswith("e") and var[1:].isdigit()
+        ), f"unexpected phase var {var!r}"
     error_indices = [
         [int(var[1:]) for var in g._phaseVars[v]] for v in parametrized_vertices
     ]
