@@ -122,7 +122,7 @@ def is_clifford(source: stim.Circuit) -> bool:
         if instr.name == "I" and instr.tag:
             result = parse_parametric_tag(instr)
             if result is None:
-                return False
+                continue
 
             gate_name, params = result
             if gate_name in ["R_X", "R_Y", "R_Z"]:
