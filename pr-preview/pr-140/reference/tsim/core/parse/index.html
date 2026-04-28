@@ -263,7 +263,16 @@
 <span class=normal>303</span>
 <span class=normal>304</span>
 <span class=normal>305</span>
-<span class=normal>306</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
+<span class=normal>306</span>
+<span class=normal>307</span>
+<span class=normal>308</span>
+<span class=normal>309</span>
+<span class=normal>310</span>
+<span class=normal>311</span>
+<span class=normal>312</span>
+<span class=normal>313</span>
+<span class=normal>314</span>
+<span class=normal>315</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>parse_stim_circuit</span><span class=p>(</span>
     <span class=n>stim_circuit</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span>
     <span class=n>track_classical_wires</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>GraphRepresentation</span><span class=p>:</span>
@@ -364,7 +373,16 @@
             <span class=n>detector</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>targets</span><span class=p>)</span>
             <span class=k>continue</span>
         <span class=k>if</span> <span class=n>name</span> <span class=o>==</span> <span class=s2>&quot;OBSERVABLE_INCLUDE&quot;</span><span class=p>:</span>
-            <span class=n>targets</span> <span class=o>=</span> <span class=p>[</span><span class=n>t</span><span class=o>.</span><span class=n>value</span> <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>instruction</span><span class=o>.</span><span class=n>targets_copy</span><span class=p>()]</span>
+            <span class=n>targets_copy</span> <span class=o>=</span> <span class=n>instruction</span><span class=o>.</span><span class=n>targets_copy</span><span class=p>()</span>
+            <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>targets_copy</span><span class=p>:</span>
+                <span class=k>if</span> <span class=ow>not</span> <span class=n>t</span><span class=o>.</span><span class=n>is_measurement_record_target</span><span class=p>:</span>
+                    <span class=k>raise</span> <span class=ne>ValueError</span><span class=p>(</span>
+                        <span class=sa>f</span><span class=s2>&quot;OBSERVABLE_INCLUDE with Pauli targets is not &quot;</span>
+                        <span class=sa>f</span><span class=s2>&quot;supported in Tsim (only measurement record targets &quot;</span>
+                        <span class=sa>f</span><span class=s2>&quot;like rec[-1] are supported). Got instruction &quot;</span>
+                        <span class=sa>f</span><span class=s2>&quot;</span><span class=si>{</span><span class=nb>str</span><span class=p>(</span><span class=n>instruction</span><span class=p>)</span><span class=si>!r}</span><span class=s2>&quot;</span>
+                    <span class=p>)</span>
+            <span class=n>targets</span> <span class=o>=</span> <span class=p>[</span><span class=n>t</span><span class=o>.</span><span class=n>value</span> <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>targets_copy</span><span class=p>]</span>
             <span class=n>args</span> <span class=o>=</span> <span class=n>instruction</span><span class=o>.</span><span class=n>gate_args_copy</span><span class=p>()</span>
             <span class=n>observable_include</span><span class=p>(</span><span class=n>b</span><span class=p>,</span> <span class=n>targets</span><span class=p>,</span> <span class=nb>int</span><span class=p>(</span><span class=n>args</span><span class=p>[</span><span class=mi>0</span><span class=p>]))</span>
             <span class=k>continue</span>

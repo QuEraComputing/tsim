@@ -68,7 +68,20 @@
 <span class=normal>64</span>
 <span class=normal>65</span>
 <span class=normal>66</span>
-<span class=normal>67</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>shorthand_to_stim</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+<span class=normal>67</span>
+<span class=normal>68</span>
+<span class=normal>69</span>
+<span class=normal>70</span>
+<span class=normal>71</span>
+<span class=normal>72</span>
+<span class=normal>73</span>
+<span class=normal>74</span>
+<span class=normal>75</span>
+<span class=normal>76</span>
+<span class=normal>77</span>
+<span class=normal>78</span>
+<span class=normal>79</span>
+<span class=normal>80</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>shorthand_to_stim</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Convert tsim shorthand syntax to valid stim instructions.</span>
 
 <span class=sd>    Converts:</span>
@@ -105,22 +118,22 @@
         <span class=n>text</span><span class=p>,</span>
     <span class=p>)</span>
 
+    <span class=c1># Canonicalize literals inside already-expanded parametric tags so that</span>
+    <span class=c1># equivalent inputs like `I[R_X(theta=0.5e-2*pi)]` and</span>
+    <span class=c1># `I[R_X(theta=0.005*pi)]` produce the same stim tag string. This keeps</span>
+    <span class=c1># `tsim.Circuit(str(c)) == c` round-trip stable across notations.</span>
+    <span class=k>def</span><span class=w> </span><span class=nf>_canonicalize_param</span><span class=p>(</span><span class=n>m</span><span class=p>:</span> <span class=n>re</span><span class=o>.</span><span class=n>Match</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+        <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;</span><span class=si>{</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>)</span><span class=si>}</span><span class=s2>=</span><span class=si>{</span><span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>2</span><span class=p>))</span><span class=si>}</span><span class=s2>*pi&quot;</span>
+
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
+        <span class=sa>rf</span><span class=s2>&quot;\b(theta|phi|lambda)=(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi&quot;</span><span class=p>,</span>
+        <span class=n>_canonicalize_param</span><span class=p>,</span>
+        <span class=n>text</span><span class=p>,</span>
+    <span class=p>)</span>
+
     <span class=k>return</span> <span class=n>text</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.program_text.stim_to_shorthand class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">stim_to_shorthand</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Convert expanded stim annotations back to tsim shorthand.</p> <p>Rewrites: - I[U3(theta=θ<em>pi, phi=φ</em>pi, lambda=λ<em>pi)] → U3(θ, φ, λ) - I[R_X(theta=α</em>pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α) - SPP[T] → TPP - SPP_DAG[T] → TPP_DAG - S[T] → T - S_DAG[T] → T_DAG</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 70</span>
-<span class=normal> 71</span>
-<span class=normal> 72</span>
-<span class=normal> 73</span>
-<span class=normal> 74</span>
-<span class=normal> 75</span>
-<span class=normal> 76</span>
-<span class=normal> 77</span>
-<span class=normal> 78</span>
-<span class=normal> 79</span>
-<span class=normal> 80</span>
-<span class=normal> 81</span>
-<span class=normal> 82</span>
-<span class=normal> 83</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Convert expanded stim annotations back to tsim shorthand.</p> <p>Rewrites: - I[U3(theta=θ<em>pi, phi=φ</em>pi, lambda=λ<em>pi)] → U3(θ, φ, λ) - I[R_X(theta=α</em>pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α) - SPP[T] → TPP - SPP_DAG[T] → TPP_DAG - S[T] → T - S_DAG[T] → T_DAG</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 83</span>
 <span class=normal> 84</span>
 <span class=normal> 85</span>
 <span class=normal> 86</span>
@@ -152,7 +165,20 @@
 <span class=normal>112</span>
 <span class=normal>113</span>
 <span class=normal>114</span>
-<span class=normal>115</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+<span class=normal>115</span>
+<span class=normal>116</span>
+<span class=normal>117</span>
+<span class=normal>118</span>
+<span class=normal>119</span>
+<span class=normal>120</span>
+<span class=normal>121</span>
+<span class=normal>122</span>
+<span class=normal>123</span>
+<span class=normal>124</span>
+<span class=normal>125</span>
+<span class=normal>126</span>
+<span class=normal>127</span>
+<span class=normal>128</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Convert expanded stim annotations back to tsim shorthand.</span>
 
 <span class=sd>    Rewrites:</span>
