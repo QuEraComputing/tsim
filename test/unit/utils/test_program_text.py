@@ -102,6 +102,19 @@ def test_circuit_str_scientific_notation_roundtrip():
 
 
 @pytest.mark.parametrize(
+    "program",
+    [
+        "I[R_X(theta=0.5e-2*pi)] 0",
+        "I[R_Z(theta=4e-4*pi)] 1",
+        "I[U3(theta=0.1*pi, phi=2e-1*pi, lambda=0.3*pi)] 0",
+    ],
+)
+def test_circuit_eq_roundtrip_scientific_notation(program):
+    c1 = Circuit(program)
+    assert Circuit(str(c1)) == c1
+
+
+@pytest.mark.parametrize(
     "text, snippet",
     [
         ("R_Z(a) 0", "R_Z(a)"),

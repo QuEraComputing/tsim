@@ -64,6 +64,19 @@ def shorthand_to_stim(text: str) -> str:
         text,
     )
 
+    # Canonicalize literals inside already-expanded parametric tags so that
+    # equivalent inputs like `I[R_X(theta=0.5e-2*pi)]` and
+    # `I[R_X(theta=0.005*pi)]` produce the same stim tag string. This keeps
+    # `tsim.Circuit(str(c)) == c` round-trip stable across notations.
+    def _canonicalize_param(m: re.Match) -> str:
+        return f"{m.group(1)}={float(m.group(2))}*pi"
+
+    text = re.sub(
+        rf"\b(theta|phi|lambda)=({FLOAT_RE})\*pi",
+        _canonicalize_param,
+        text,
+    )
+
     return text
 
 
