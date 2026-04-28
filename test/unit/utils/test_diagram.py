@@ -1,3 +1,4 @@
+from fractions import Fraction
 from typing import Literal
 
 import pytest
@@ -6,6 +7,7 @@ import stim
 from tsim.circuit import Circuit
 from tsim.utils.diagram import (
     GateLabel,
+    _parse_parametric_tag,
     _width_from_viewbox,
     placeholders_to_t,
     render_svg,
@@ -45,6 +47,44 @@ def test_tagged_gates_to_placeholder_adds_error_and_mapping():
     modified, placeholder_map = tagged_gates_to_placeholder(c)
     assert len(placeholder_map) == 1
     assert "I_ERROR" in str(modified)
+
+
+def test_tagged_gates_to_placeholder_passes_unknown_parametric_through_once():
+    c = stim.Circuit("I[XYZ(theta=0.1*pi)] 0 1 2")
+    modified, placeholder_map = tagged_gates_to_placeholder(c)
+    assert placeholder_map == {}
+    assert len(modified) == 1
+    instr = modified[0]
+    assert isinstance(instr, stim.CircuitInstruction)
+    assert instr.name == "I"
+    assert instr.tag == "XYZ(theta=0.1*pi)"
+    assert [t.qubit_value for t in instr.targets_copy()] == [0, 1, 2]
+
+
+def test_parse_parametric_tag_accepts_scientific_notation():
+    assert _parse_parametric_tag("R_Z(theta=2.5e-1*pi)") == (
+        "R_Z",
+        {"theta": Fraction(1, 4)},
+    )
+    assert _parse_parametric_tag("R_X(theta=1.5E+0*pi)") == (
+        "R_X",
+        {"theta": Fraction(3, 2)},
+    )
+    assert _parse_parametric_tag("R_Y(theta=-2.5e-1*pi)") == (
+        "R_Y",
+        {"theta": Fraction(-1, 4)},
+    )
+
+
+def test_tagged_gates_to_placeholder_handles_scientific_notation():
+    c = stim.Circuit("I[R_Z(theta=2.5e-1*pi)] 0")
+    modified, placeholder_map = tagged_gates_to_placeholder(c)
+    assert len(placeholder_map) == 1
+    label = next(iter(placeholder_map.values()))
+    assert "Z" in label.label  # R subscripted with Z
+    assert label.annotation == "0.25π"
+    assert len(modified) == 1
+    assert modified[0].name == "I_ERROR"
 
 
 def test_render_svg_wraps_when_width_given():

@@ -25,6 +25,9 @@ def test_detector_sampler_args():
     d = sampler.sample(1, prepend_observables=True)
     assert np.array_equal(d, np.array([[1, 0, 0]]))
 
+    d = sampler.sample(1, prepend_observables=True, append_observables=True)
+    assert np.array_equal(d, np.array([[1, 0, 0, 1]]))
+
     d, o = sampler.sample(1, separate_observables=True)
     assert np.array_equal(d, np.array([[0, 0]]))
     assert np.array_equal(o, np.array([[1]]))
@@ -48,10 +51,6 @@ def test_detector_sampler_args():
                 "prepend_observables": True,
             },
             "separate_observables",
-        ),
-        (
-            {"prepend_observables": True, "append_observables": True},
-            "prepend_observables",
         ),
     ],
 )

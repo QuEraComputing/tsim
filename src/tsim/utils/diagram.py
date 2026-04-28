@@ -14,6 +14,7 @@ from pyzx_param.graph.graph_s import GraphS
 
 from tsim.core.graph import scale_horizontally
 from tsim.core.parse import parse_stim_circuit
+from tsim.utils.program_text import _FLOAT_RE
 
 
 class Diagram:
@@ -340,7 +341,7 @@ def _parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
         param = param.strip()
         if not param:
             continue
-        param_match = re.match(r"^(\w+)=([-+]?[\d.]+)\*pi$", param)
+        param_match = re.match(rf"^(\w+)=({_FLOAT_RE})\*pi$", param)
         if not param_match:
             return None
         param_name = param_match.group(1)
@@ -419,24 +420,23 @@ def _replace_tagged_gates(
             if result is not None:
                 gate_name, params = result
 
+                if gate_name not in ("R_X", "R_Y", "R_Z", "U3"):
+                    # Unknown parametric gate, pass through unchanged.
+                    modified_circ.append(instr)
+                    continue
+
                 for target in instr.targets_copy():
                     identifier = np.round(np.random.rand(), 6)
 
-                    if gate_name in ["R_X", "R_Y", "R_Z"]:
+                    if gate_name in ("R_X", "R_Y", "R_Z"):
                         axis = gate_name[-1]
                         label = "R" + _subscript(axis)
                         theta = float(params["theta"])
                         annotation = f"{theta:.4g}π"
                         replace_dict[identifier] = GateLabel(label, annotation)
-
-                    elif gate_name == "U3":
+                    else:
                         label = "U" + _subscript("3")
                         replace_dict[identifier] = GateLabel(label, None)
-
-                    else:
-                        # Unknown parametric gate, pass through
-                        modified_circ.append(instr)
-                        continue
 
                     modified_circ.append("I_ERROR", [target], identifier)
                 continue
