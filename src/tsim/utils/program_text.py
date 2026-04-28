@@ -3,7 +3,7 @@
 import re
 
 # Matches valid numeric literals including scientific notation (e.g. 0.5, 4e-4, 1.2e3)
-_FLOAT_RE = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+FLOAT_RE = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
 
 _TSIM_GATES = {"R_X", "R_Y", "R_Z", "U3"}
 _GATE_NOT_FOUND_RE = re.compile(r"Gate not found: '(\w+)'")
@@ -52,14 +52,14 @@ def shorthand_to_stim(text: str) -> str:
         axis = m.group(1)
         return f"I[R_{axis}(theta={float(m.group(2))}*pi)]"
 
-    text = re.sub(rf"\bR_([XYZ])\(({_FLOAT_RE})\)", replace_rotation, text)
+    text = re.sub(rf"\bR_([XYZ])\(({FLOAT_RE})\)", replace_rotation, text)
 
     def replace_u3(m: re.Match) -> str:
         theta, phi, lam = float(m.group(1)), float(m.group(2)), float(m.group(3))
         return f"I[U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)]"
 
     text = re.sub(
-        rf"\bU3\(({_FLOAT_RE})\s*,\s*({_FLOAT_RE})\s*,\s*({_FLOAT_RE})\)",
+        rf"\bU3\(({FLOAT_RE})\s*,\s*({FLOAT_RE})\s*,\s*({FLOAT_RE})\)",
         replace_u3,
         text,
     )
@@ -85,7 +85,7 @@ def stim_to_shorthand(text: str) -> str:
         return f"U3({theta}, {phi}, {lam})"
 
     text = re.sub(
-        rf"\bI\[U3\(theta=({_FLOAT_RE})\*pi, phi=({_FLOAT_RE})\*pi, lambda=({_FLOAT_RE})\*pi\)\]",
+        rf"\bI\[U3\(theta=({FLOAT_RE})\*pi, phi=({FLOAT_RE})\*pi, lambda=({FLOAT_RE})\*pi\)\]",
         replace_u3,
         text,
     )
@@ -97,7 +97,7 @@ def stim_to_shorthand(text: str) -> str:
         return f"R_{axis}({angle})"
 
     text = re.sub(
-        rf"\bI\[R_([XYZ])\(theta=({_FLOAT_RE})\*pi\)\]",
+        rf"\bI\[R_([XYZ])\(theta=({FLOAT_RE})\*pi\)\]",
         replace_rotation,
         text,
     )

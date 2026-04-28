@@ -14,7 +14,7 @@ from pyzx_param.graph.graph_s import GraphS
 
 from tsim.core.graph import scale_horizontally
 from tsim.core.parse import parse_stim_circuit
-from tsim.utils.program_text import _FLOAT_RE
+from tsim.utils.program_text import FLOAT_RE
 
 
 class Diagram:
@@ -341,7 +341,7 @@ def _parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
         param = param.strip()
         if not param:
             continue
-        param_match = re.match(rf"^(\w+)=({_FLOAT_RE})\*pi$", param)
+        param_match = re.match(rf"^(\w+)=({FLOAT_RE})\*pi$", param)
         if not param_match:
             return None
         param_name = param_match.group(1)
