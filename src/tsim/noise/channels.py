@@ -515,9 +515,9 @@ class ChannelSampler:
     Channels are automatically simplified by:
     1. Removing bits e_i that do not affect any f-variable (i.e. all-zero columns in error_transform)
     2. Folding duplicate column IDs, i.e. channels whose column signatures contain duplicate IDs.
-    2. Merging channels with identical column signatures, i.e. channels whose corresponding
+    3. Merging channels with identical column signatures, i.e. channels whose corresponding
         columns in error_transform are identical.
-    3. Absorbing channels whose signatures are subsets of others, i.e. channels whose corresponding
+    4. Absorbing channels whose signatures are subsets of others, i.e. channels whose corresponding
         columns in error_transform are a strict subset of another channel's columns.
 
     Example:

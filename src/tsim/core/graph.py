@@ -70,7 +70,7 @@ def _collect_vertices(
     start: Any,
     visited: set[Any],
 ) -> list[Any]:
-    """Depth-first search to collect the connected component of ``start``."""
+    """Breadth-first search to collect the connected component of ``start``."""
     queue: deque[Any] = deque([start])
     component: list[Any] = []
 
