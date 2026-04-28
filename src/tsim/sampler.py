@@ -533,18 +533,13 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
 
         Raises:
             ValueError: If ``separate_observables`` is combined with
-                ``prepend_observables`` or ``append_observables``, or if both
-                ``prepend_observables`` and ``append_observables`` are set.
+                ``prepend_observables`` or ``append_observables``.
 
         """
         if separate_observables and (prepend_observables or append_observables):
             raise ValueError(
                 "Can't specify separate_observables=True with "
                 "append_observables=True or prepend_observables=True"
-            )
-        if prepend_observables and append_observables:
-            raise ValueError(
-                "Can't specify both prepend_observables=True and append_observables=True"
             )
 
         compute_reference = (
@@ -563,13 +558,15 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         else:
             samples = self._sample_batches(shots, batch_size)
 
-        if append_observables:
-            return _maybe_bit_pack(samples, bit_packed=bit_packed)
-
         num_detectors = self._num_detectors
         det_samples = samples[:, :num_detectors]
         obs_samples = samples[:, num_detectors:]
 
+        if prepend_observables and append_observables:
+            combined = np.concatenate([obs_samples, det_samples, obs_samples], axis=1)
+            return _maybe_bit_pack(combined, bit_packed=bit_packed)
+        if append_observables:
+            return _maybe_bit_pack(samples, bit_packed=bit_packed)
         if prepend_observables:
             combined = np.concatenate([obs_samples, det_samples], axis=1)
             return _maybe_bit_pack(combined, bit_packed=bit_packed)

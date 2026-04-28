@@ -730,6 +730,28 @@ class TestParseEmptyAnnotations:
         assert len(b.detectors) == 1
 
 
+class TestParseObservableIncludePauliTargets:
+    """OBSERVABLE_INCLUDE accepts Pauli targets in stim but Tsim only supports
+    measurement-record targets; reject Pauli targets explicitly rather than
+    silently mis-indexing into the measurement record."""
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "H 1\nOBSERVABLE_INCLUDE(0) X1\nM 0",
+            "M 0 1\nH 0\nOBSERVABLE_INCLUDE(0) X1",
+            "M 0\nOBSERVABLE_INCLUDE(0) Z0",
+            "M 0 1\nOBSERVABLE_INCLUDE(0) rec[-1] Y1",
+        ],
+    )
+    def test_pauli_target_rejected(self, program):
+        with pytest.raises(ValueError, match="OBSERVABLE_INCLUDE with Pauli targets"):
+            parse_stim_circuit(stim.Circuit(program))
+
+    def test_record_targets_still_accepted(self):
+        parse_stim_circuit(stim.Circuit("M 0 1\nOBSERVABLE_INCLUDE(0) rec[-1] rec[-2]"))
+
+
 class TestParseMPPCancellation:
     """Tests for MPP with duplicate/anticommuting Pauli targets.
 

@@ -262,7 +262,16 @@ def parse_stim_circuit(
             detector(b, targets)
             continue
         if name == "OBSERVABLE_INCLUDE":
-            targets = [t.value for t in instruction.targets_copy()]
+            targets_copy = instruction.targets_copy()
+            for t in targets_copy:
+                if not t.is_measurement_record_target:
+                    raise ValueError(
+                        f"OBSERVABLE_INCLUDE with Pauli targets is not "
+                        f"supported in Tsim (only measurement record targets "
+                        f"like rec[-1] are supported). Got instruction "
+                        f"{str(instruction)!r}"
+                    )
+            targets = [t.value for t in targets_copy]
             args = instruction.gate_args_copy()
             observable_include(b, targets, int(args[0]))
             continue
