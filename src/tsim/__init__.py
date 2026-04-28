@@ -14,7 +14,7 @@ The package is organized as follows:
 - `utils/`: Utility functions for visualization and linear algebra.
 """
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 from tsim.circuit import Circuit as Circuit
 from tsim.sampler import (

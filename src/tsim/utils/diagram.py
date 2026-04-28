@@ -14,6 +14,7 @@ from pyzx_param.graph.graph_s import GraphS
 
 from tsim.core.graph import scale_horizontally
 from tsim.core.parse import parse_stim_circuit
+from tsim.utils.program_text import FLOAT_RE
 
 
 class Diagram:
@@ -276,6 +277,56 @@ def placeholders_to_t(
     return etree.tostring(root, encoding="unicode")
 
 
+def _deduplicate_doubled_spp(svg_string: str) -> str:
+    """Replace doubled SPP elements (TPP markers) with TPP labels.
+
+    When SPP[T] is rendered with doubled Pauli targets, stim produces
+    duplicate <rect>+<text> pairs at the same (x, y) position. This
+    function detects those duplicates, removes one copy, and renames
+    "SPP" to "TPP" in the surviving text element.
+    """
+    root = etree.fromstring(svg_string.encode())
+    children = list(root)
+
+    to_remove: list[etree._Element] = []
+    to_rename: list[etree._Element] = []
+
+    i = 0
+    while i < len(children) - 3:
+        r1 = children[i]
+        t1 = children[i + 1]
+        r2 = children[i + 2]
+        t2 = children[i + 3]
+
+        if (
+            r1.tag.endswith("rect")
+            and r1.get("fill") == "black"
+            and t1.tag.endswith("text")
+            and t1.get("fill") == "white"
+            and r2.tag.endswith("rect")
+            and r2.get("fill") == "black"
+            and t2.tag.endswith("text")
+            and t2.get("fill") == "white"
+            and r1.get("x") == r2.get("x")
+            and r1.get("y") == r2.get("y")
+        ):
+            to_remove.append(r2)
+            to_remove.append(t2)
+            to_rename.append(t1)
+            i += 4
+        else:
+            i += 1
+
+    for elem in to_remove:
+        root.remove(elem)
+
+    for text_elem in to_rename:
+        if text_elem.text:
+            text_elem.text = text_elem.text.replace("SPP", "TPP")
+
+    return etree.tostring(root, encoding="unicode")
+
+
 def _parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
     """Parse a parametric gate tag like R_Z(theta=0.3*pi)."""
     match = re.match(r"^(\w+)\((.*)\)$", tag)
@@ -290,7 +341,7 @@ def _parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
         param = param.strip()
         if not param:
             continue
-        param_match = re.match(r"^(\w+)=([-+]?[\d.]+)\*pi$", param)
+        param_match = re.match(rf"^(\w+)=({FLOAT_RE})\*pi$", param)
         if not param_match:
             return None
         param_name = param_match.group(1)
@@ -335,6 +386,24 @@ def _replace_tagged_gates(
             )
             continue
 
+        # Handle TPP gates (SPP[T] and SPP_DAG[T])
+        # Double each Pauli target so the SVG contains duplicate rect+text
+        # pairs at the same position, which _deduplicate_doubled_spp() later
+        # detects and renames SPP → TPP.
+        if instr.tag == "T" and instr.name in ["SPP", "SPP_DAG"]:
+            targets = instr.targets_copy()
+            doubled: list[stim.GateTarget] = []
+            for target in targets:
+                if target.is_combiner:
+                    doubled.append(target)
+                else:
+                    # If this is a Pauli, double it and add a combiner between them.
+                    doubled.append(target)
+                    doubled.append(stim.target_combiner())
+                    doubled.append(target)
+            modified_circ.append(instr.name, doubled, [])
+            continue
+
         # Handle T gates (S[T] and S_DAG[T])
         if instr.tag == "T" and instr.name in ["S", "S_DAG"]:
             for target in instr.targets_copy():
@@ -351,24 +420,23 @@ def _replace_tagged_gates(
             if result is not None:
                 gate_name, params = result
 
+                if gate_name not in ("R_X", "R_Y", "R_Z", "U3"):
+                    # Unknown parametric gate, pass through unchanged.
+                    modified_circ.append(instr)
+                    continue
+
                 for target in instr.targets_copy():
                     identifier = np.round(np.random.rand(), 6)
 
-                    if gate_name in ["R_X", "R_Y", "R_Z"]:
+                    if gate_name in ("R_X", "R_Y", "R_Z"):
                         axis = gate_name[-1]
                         label = "R" + _subscript(axis)
                         theta = float(params["theta"])
                         annotation = f"{theta:.4g}π"
                         replace_dict[identifier] = GateLabel(label, annotation)
-
-                    elif gate_name == "U3":
+                    else:
                         label = "U" + _subscript("3")
                         replace_dict[identifier] = GateLabel(label, None)
-
-                    else:
-                        # Unknown parametric gate, pass through
-                        modified_circ.append(instr)
-                        continue
 
                     modified_circ.append("I_ERROR", [target], identifier)
                 continue
@@ -394,6 +462,7 @@ def render_svg(
         modified_circ.diagram(type, tick=tick, filter_coords=filter_coords, rows=rows)
     )
     svg = placeholders_to_t(svg_with_placeholders, placeholder_id_to_labels)
+    svg = _deduplicate_doubled_spp(svg)
 
     # Compute the missing dimension from the SVG viewBox aspect ratio.
     if width is None and height is not None:
@@ -430,9 +499,10 @@ def render_pyzx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> GraphS:
         return g
 
     g = g.clone()
-    max_row = max(g.row(v) for v in built.last_vertex.values())
-    for q in built.last_vertex:
-        g.set_row(built.last_vertex[q], max_row)
+    if built.last_vertex:
+        max_row = max(g.row(v) for v in built.last_vertex.values())
+        for q in built.last_vertex:
+            g.set_row(built.last_vertex[q], max_row)
 
     for v in list(g.vertices()):
         phase_vars = g._phaseVars[v]
@@ -448,6 +518,8 @@ def render_pyzx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> GraphS:
                 row=row,
             )
             g.add_edge((v, vb))
+        if phase.startswith("m["):
+            g.set_phase(v, 0)
 
     if kwargs.get("scale_horizontally", False):
         scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))

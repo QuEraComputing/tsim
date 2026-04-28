@@ -12,14 +12,31 @@ import numpy as np
 class Channel:
     """A probability distribution over error outcomes.
 
+    Outcome indices: bit position ``i`` corresponds
+    to ``1 << i`` in ``probs``. For example, in a 2-bit channel, index 1
+    (0b01) is bit pattern ``bit0=1, bit1=0`` and index 2 (0b10) is
+    ``bit0=0, bit1=1``.
+
     Attributes:
-        probs: Shape (2^k,) probability array, sums to 1, dtype float64
-        unique_col_ids: Tuple of column IDs, where each ID corresponds to a bit of the channel.
+        probs: Shape ``(2**k,)`` probability array, sums to 1, dtype float64.
+        unique_col_ids: Tuple of column IDs. Entry ``i`` is the transform-column
+            signature affected by channel bit ``i``.
 
     """
 
     probs: np.ndarray
     unique_col_ids: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        """Validate channel probabilities."""
+        tol = 1e-6
+        if np.any(self.probs < -tol) or np.any(self.probs > 1.0 + tol):
+            raise ValueError(f"Probabilities must lie in [0, 1], but got: {self.probs}")
+        if not np.isclose(np.sum(self.probs), 1.0):
+            raise ValueError(
+                f"Probabilities must sum to 1, but got: {self.probs} "
+                f"(sum {np.sum(self.probs)})"
+            )
 
     @property
     def num_bits(self) -> int:
@@ -28,7 +45,10 @@ class Channel:
 
 
 def error_probs(p: float) -> np.ndarray:
-    """Single-bit error channel. Returns shape (2,)."""
+    """Single-bit error channel.
+
+    Returns ``[P(bit0=0), P(bit0=1)]``.
+    """
     return np.array([1 - p, p], dtype=np.float64)
 
 
@@ -37,21 +57,39 @@ def heralded_pauli_channel_1_probs(
 ) -> np.ndarray:
     """Heralded single-qubit Pauli channel. Returns shape (8,).
 
-    Bits: [herald, Z_error, X_error].
+    Bit layout:
+    - bit 0: herald bit, written to the measurement record
+    - bit 1: Z error component
+    - bit 2: X error component
+
+    The non-zero outcomes are:
+    - index 0 (0b000): no herald, no Pauli error
+    - index 1 (0b001): herald + I
+    - index 3 (0b011): herald + Z
+    - index 5 (0b101): herald + X
+    - index 7 (0b111): herald + Y, represented as X+Z
     """
     probs = np.zeros(8, dtype=np.float64)
-    probs[0] = 1 - pi - px - py - pz  # 000, no fire
-    probs[1] = pi  # 100, herald, I
-    probs[3] = pz  # 110, herald + Z
-    probs[5] = px  # 101, herald + X
-    probs[7] = py  # 111, herald + Y (X+Z)
+    probs[0] = 1 - pi - px - py - pz
+    probs[1] = pi
+    probs[3] = pz
+    probs[5] = px
+    probs[7] = py
     return probs
 
 
 def pauli_channel_1_probs(px: float, py: float, pz: float) -> np.ndarray:
     """Single-qubit Pauli channel. Returns shape (4,).
 
-    Order: [I, Z, X, Y] mapped to bits [00, 01, 10, 11].
+    Bit layout:
+    - bit 0: Z error component
+    - bit 1: X error component
+
+    The outcomes are:
+    - index 0 (0b00): I
+    - index 1 (0b01): Z
+    - index 2 (0b10): X
+    - index 3 (0b11): Y
     """
     return np.array([1 - px - py - pz, pz, px, py], dtype=np.float64)
 
@@ -73,7 +111,19 @@ def pauli_channel_2_probs(
     pzy: float,
     pzz: float,
 ) -> np.ndarray:
-    """Two-qubit Pauli channel. Returns shape (16,)."""
+    """Two-qubit Pauli channel. Returns shape (16,).
+
+    Bit layout:
+    - bit 0: Z error component on ``qubit_i``
+    - bit 1: X error component on ``qubit_i``
+    - bit 2: Z error component on ``qubit_j``
+    - bit 3: X error component on ``qubit_j``
+
+    With that layout, index ``z_i + 2*x_i + 4*z_j + 8*x_j`` stores the
+    probability for the corresponding two-qubit Pauli outcome. The arguments
+    follow Stim's naming convention: ``pix`` is I on ``qubit_i`` and X on
+    ``qubit_j``, ``pzi`` is Z on ``qubit_i`` and I on ``qubit_j``, etc.
+    """
     remainder = (
         1
         - pix
@@ -94,22 +144,22 @@ def pauli_channel_2_probs(
     )
     probs = np.array(
         [
-            remainder,  # 00,00
-            pzi,  # 10,00
-            pxi,  # 01,00
-            pyi,  # 11,00
-            piz,  # 00,10
-            pzz,  # 10,10
-            pxz,  # 01,10
-            pyz,  # 11,10
-            pix,  # 00,01
-            pzx,  # 10,01
-            pxx,  # 01,01
-            pyx,  # 11,01
-            piy,  # 00,11
-            pzy,  # 10,11
-            pxy,  # 01,11
-            pyy,  # 11,11
+            remainder,  # index 0 (0b0000): II
+            pzi,  # index 1 (0b0001): ZI
+            pxi,  # index 2 (0b0010): XI
+            pyi,  # index 3 (0b0011): YI
+            piz,  # index 4 (0b0100): IZ
+            pzz,  # index 5 (0b0101): ZZ
+            pxz,  # index 6 (0b0110): XZ
+            pyz,  # index 7 (0b0111): YZ
+            pix,  # index 8 (0b1000): IX
+            pzx,  # index 9 (0b1001): ZX
+            pxx,  # index 10 (0b1010): XX
+            pyx,  # index 11 (0b1011): YX
+            piy,  # index 12 (0b1100): IY
+            pzy,  # index 13 (0b1101): ZY
+            pxy,  # index 14 (0b1110): XY
+            pyy,  # index 15 (0b1111): YY
         ],
         dtype=np.float64,
     )
@@ -124,9 +174,10 @@ def correlated_error_probs(probabilities: list[float]) -> np.ndarray:
     computes the joint probability distribution over 2^k outcomes.
 
     Since errors are mutually exclusive, only outcomes with at most one bit set
-    have non-zero probability:
-    - P(0) = (1-p1)(1-p2)...(1-pk)  (no error)
-    - P(2^i) = (1-p1)...(1-p_i) * p_{i+1}  (error i+1 occurred)
+    have non-zero probability.
+    - ``probs[0]`` is the probability that no branch fires.
+    - ``probs[1 << i]`` is the probability that branch ``i`` fires after all
+      previous branches did not fire.
 
     Args:
         probabilities: List of conditional probabilities [p1, p2, ..., pk]
@@ -213,7 +264,8 @@ def reduce_null_bits(
             # All entries are null, channel has no effect - remove it
             continue
 
-        # Marginalize out the null bits by summing over them
+        # Marginalize out null bits by summing their tensor axes. The Fortran
+        # order reshape makes axis i correspond to little-endian bit i.
         new_col_ids = tuple(channel.unique_col_ids[i] for i in non_null_positions)
         new_num_bits = len(non_null_positions)
         sum_axes = tuple(i for i in range(n) if i not in non_null_positions)
@@ -229,7 +281,9 @@ def normalize_channels(channels: list[Channel]) -> list[Channel]:
     """Normalize channels by sorting unique_col_ids, permuting probs accordingly.
 
     This ensures channels affecting the same set of columns have identical
-    unique_col_ids tuples, enabling merge_identical_channels to group them.
+    ``unique_col_ids`` tuples, enabling ``merge_identical_channels`` to group
+    them. The probability tensor is transposed using the same axis permutation
+    so little-endian outcome bits continue to refer to the matching column IDs.
 
     Args:
         channels: List of channels
@@ -254,11 +308,57 @@ def normalize_channels(channels: list[Channel]) -> list[Channel]:
     return result
 
 
+def fold_duplicate_channel_bits(channels: list[Channel]) -> list[Channel]:
+    """Canonicalize channels by XOR-folding duplicate column IDs.
+
+    If two bits in the same channel have identical column signatures, sampling
+    both bits only affects the reduced error basis through their parity. This
+    replaces those duplicate bits with one bit whose probability is the sum of
+    all old outcomes with the same XOR-folded value.
+
+    Args:
+        channels: List of channels with sorted unique_col_ids
+
+    Returns:
+        List of channels whose unique_col_ids contain no duplicates
+
+    """
+    result: list[Channel] = []
+
+    for channel in channels:
+        old_col_ids = channel.unique_col_ids
+        new_col_ids = tuple(dict.fromkeys(old_col_ids))
+
+        if len(new_col_ids) == len(old_col_ids):
+            result.append(channel)
+            continue
+
+        col_to_new_pos = {col: pos for pos, col in enumerate(new_col_ids)}
+        new_probs = np.zeros(2 ** len(new_col_ids), dtype=np.float64)
+
+        for old_idx in range(len(channel.probs)):
+            new_idx = 0
+            for old_pos, col in enumerate(old_col_ids):
+                if (old_idx >> old_pos) & 1:
+                    new_idx ^= 1 << col_to_new_pos[col]
+            new_probs[new_idx] += channel.probs[old_idx]
+
+        result.append(Channel(probs=new_probs, unique_col_ids=new_col_ids))
+
+    return result
+
+
 def expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel:
     """Expand a channel's distribution to a larger signature set.
 
-    The channel's existing col_ids must be a strict subset of target_col_ids.
-    Both must be sorted. New bit positions are treated as "don't care" (always 0).
+    The channel's existing column IDs must be a strict subset of
+    ``target_col_ids`` when considered as sets, and both tuples must be sorted.
+    New target bit positions are treated as always zero.
+
+    Duplicate source column IDs are allowed. When multiple source bits map to
+    the same target bit, their contribution is XORed, matching GF(2)
+    composition. Duplicate target column IDs are not allowed; channels with
+    duplicate IDs should be canonicalized before subset absorption.
 
     Args:
         channel: Channel to expand (must have sorted unique_col_ids)
@@ -269,9 +369,14 @@ def expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel
 
     """
     source_col_ids = channel.unique_col_ids
-    assert source_col_ids == tuple(sorted(source_col_ids)), "Source must be sorted"
-    assert target_col_ids == tuple(sorted(target_col_ids)), "Target must be sorted"
-    assert set(source_col_ids) < set(target_col_ids), "Source must be strict subset"
+    if source_col_ids != tuple(sorted(source_col_ids)):
+        raise ValueError("Source must be sorted")
+    if target_col_ids != tuple(sorted(target_col_ids)):
+        raise ValueError("Target must be sorted")
+    if len(set(target_col_ids)) != len(target_col_ids):
+        raise ValueError("Target must not contain duplicates")
+    if not set(source_col_ids) < set(target_col_ids):
+        raise ValueError("Source must be strict subset")
 
     # Map source columns to their positions in target
     source_to_target = {s: target_col_ids.index(s) for s in source_col_ids}
@@ -279,11 +384,12 @@ def expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel
     new_probs = np.zeros(2**n_target, dtype=np.float64)
 
     for old_idx in range(len(channel.probs)):
-        # Map old bit pattern to new bit pattern (new bits stay 0)
+        # Map old bit pattern to the expanded pattern.
+        # Use XOR so duplicate source columns cancel mod 2.
         new_idx = 0
         for src_pos, src_col in enumerate(source_col_ids):
             if (old_idx >> src_pos) & 1:
-                new_idx |= 1 << source_to_target[src_col]
+                new_idx ^= 1 << source_to_target[src_col]
         new_probs[new_idx] += channel.probs[old_idx]
 
     return Channel(probs=new_probs, unique_col_ids=target_col_ids)
@@ -374,7 +480,7 @@ def absorb_subset_channels(channels: list[Channel], max_bits: int = 4) -> list[C
 def simplify_channels(
     channels: list[Channel], max_bits: int = 4, null_col_id: int | None = None
 ) -> list[Channel]:
-    """Simplify channels by removing null columns, merging identical and absorbing subsets.
+    """Simplify channels by removing null columns, folding, merging identical and absorbing subsets.
 
     Args:
         channels: List of channels to simplify
@@ -388,6 +494,7 @@ def simplify_channels(
     """
     channels = reduce_null_bits(channels, null_col_id)
     channels = normalize_channels(channels)
+    channels = fold_duplicate_channel_bits(channels)
     channels = merge_identical_channels(channels)
     channels = absorb_subset_channels(channels, max_bits)
     return channels
@@ -401,13 +508,16 @@ class ChannelSampler:
     "e" basis to a reduced "f" basis using geometric-skip sampling optimized for
     low-noise regimes.
 
-    f_i = error_transform_ij * e_j mod 2
+    ``f_i = error_transform_ij * e_j mod 2``. Within each channel,
+    probability-array bit 0 corresponds to the first produced error bit, bit 1
+    to the second, and so on.
 
     Channels are automatically simplified by:
     1. Removing bits e_i that do not affect any f-variable (i.e. all-zero columns in error_transform)
-    2. Merging channels with identical column signatures, i.e. channels whose corresponding
+    2. Folding duplicate column IDs, i.e. channels whose column signatures contain duplicate IDs.
+    3. Merging channels with identical column signatures, i.e. channels whose corresponding
         columns in error_transform are identical.
-    3. Absorbing channels whose signatures are subsets of others, i.e. channels whose corresponding
+    4. Absorbing channels whose signatures are subsets of others, i.e. channels whose corresponding
         columns in error_transform are a strict subset of another channel's columns.
 
     Example:

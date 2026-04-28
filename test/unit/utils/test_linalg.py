@@ -1,8 +1,9 @@
+import jax.numpy as jnp
 import numpy as np
 import pytest
 from galois import GF2
 
-from tsim.utils.linalg import find_basis
+from tsim.utils.linalg import find_basis, matmul_gf2
 
 
 def verify_basis_decomposition(vectors: list[list[int]] | np.ndarray) -> None:
@@ -85,3 +86,37 @@ def test_low_rank_random():
 
     vectors = (mixing @ basis) % 2
     verify_basis_decomposition(vectors)
+
+
+def test_matmul_gf2_matches_numpy_reference():
+    np.random.seed(0)
+    G, T, P, B = 3, 4, 17, 5
+    a_np = np.random.randint(0, 2, size=(G, T, P), dtype=np.uint8)
+    b_np = np.random.randint(0, 2, size=(B, P), dtype=np.uint8)
+
+    expected = (b_np.astype(np.int64) @ a_np.astype(np.int64).reshape(G * T, P).T) % 2
+    expected = expected.reshape(B, G, T).astype(np.uint8)
+
+    result = np.array(matmul_gf2(jnp.asarray(a_np), jnp.asarray(b_np)))
+    assert np.array_equal(result, expected)
+
+
+@pytest.mark.parametrize("p", [256, 300, 1024])
+def test_matmul_gf2_no_uint8_saturation(p):
+    """Regression: ``% 2`` must run on float32 before casting to uint8.
+
+    JAX's float→uint8 cast saturates at 255 instead of wrapping mod 256, so
+    casting before ``% 2`` silently corrupted parity once the inner-product
+    summed more than 255 ones.
+    """
+    a = jnp.ones((1, 1, p), dtype=jnp.uint8)
+    b = jnp.ones((1, p), dtype=jnp.uint8)
+    result = np.array(matmul_gf2(a, b))
+    assert result.flatten()[0] == p % 2
+
+
+def test_matmul_gf2_empty_terms():
+    a = jnp.zeros((0, 0, 4), dtype=jnp.uint8)
+    b = jnp.zeros((2, 4), dtype=jnp.uint8)
+    result = matmul_gf2(a, b)
+    assert result.shape == (2, 0, 0)

@@ -1,3 +1,4 @@
+from fractions import Fraction
 from typing import Literal
 
 import pytest
@@ -6,6 +7,7 @@ import stim
 from tsim.circuit import Circuit
 from tsim.utils.diagram import (
     GateLabel,
+    _parse_parametric_tag,
     _width_from_viewbox,
     placeholders_to_t,
     render_svg,
@@ -45,6 +47,44 @@ def test_tagged_gates_to_placeholder_adds_error_and_mapping():
     modified, placeholder_map = tagged_gates_to_placeholder(c)
     assert len(placeholder_map) == 1
     assert "I_ERROR" in str(modified)
+
+
+def test_tagged_gates_to_placeholder_passes_unknown_parametric_through_once():
+    c = stim.Circuit("I[XYZ(theta=0.1*pi)] 0 1 2")
+    modified, placeholder_map = tagged_gates_to_placeholder(c)
+    assert placeholder_map == {}
+    assert len(modified) == 1
+    instr = modified[0]
+    assert isinstance(instr, stim.CircuitInstruction)
+    assert instr.name == "I"
+    assert instr.tag == "XYZ(theta=0.1*pi)"
+    assert [t.qubit_value for t in instr.targets_copy()] == [0, 1, 2]
+
+
+def test_parse_parametric_tag_accepts_scientific_notation():
+    assert _parse_parametric_tag("R_Z(theta=2.5e-1*pi)") == (
+        "R_Z",
+        {"theta": Fraction(1, 4)},
+    )
+    assert _parse_parametric_tag("R_X(theta=1.5E+0*pi)") == (
+        "R_X",
+        {"theta": Fraction(3, 2)},
+    )
+    assert _parse_parametric_tag("R_Y(theta=-2.5e-1*pi)") == (
+        "R_Y",
+        {"theta": Fraction(-1, 4)},
+    )
+
+
+def test_tagged_gates_to_placeholder_handles_scientific_notation():
+    c = stim.Circuit("I[R_Z(theta=2.5e-1*pi)] 0")
+    modified, placeholder_map = tagged_gates_to_placeholder(c)
+    assert len(placeholder_map) == 1
+    label = next(iter(placeholder_map.values()))
+    assert "Z" in label.label  # R subscripted with Z
+    assert label.annotation == "0.25π"
+    assert len(modified) == 1
+    assert modified[0].name == "I_ERROR"
 
 
 def test_render_svg_wraps_when_width_given():
@@ -89,6 +129,42 @@ def test_render_svg_labels_all_gates(
 
     # U3 label
     assert '<tspan baseline-shift="sub" font-size="14">3</tspan>' in html
+
+
+@pytest.mark.parametrize("diagram_type", ["timeline-svg", "timeslice-svg"])
+def test_render_svg_tpp_labels(
+    diagram_type: Literal["timeline-svg", "timeslice-svg"],
+):
+    c = Circuit("""
+        TPP X0*Y1*Z2
+        TICK
+        TPP_DAG Z0*X1
+        """)
+    html = str(c.diagram(diagram_type))
+
+    # TPP labels should appear (not SPP)
+    assert "TPP" in html
+    # TPP† for the dagger variant
+    assert "TPP†" in html
+    # Pauli subscripts should be preserved
+    assert '<tspan baseline-shift="sub" font-size="10">X</tspan>' in html
+    assert '<tspan baseline-shift="sub" font-size="10">Y</tspan>' in html
+    assert '<tspan baseline-shift="sub" font-size="10">Z</tspan>' in html
+    # Original SPP labels should NOT appear
+    assert "SPP" not in html
+
+
+def test_render_svg_mixed_spp_and_tpp():
+    c = Circuit("""
+        SPP X0*Z1
+        TICK
+        TPP Y0*Z1
+        """)
+    html = str(c.diagram("timeline-svg"))
+
+    # Both SPP and TPP labels should appear
+    assert "SPP" in html
+    assert "TPP" in html
 
 
 def test_diagram_repeat_block():

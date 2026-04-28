@@ -740,10 +740,10 @@ def heralded_pauli_channel_1(
     b.channel_probs.append(heralded_pauli_channel_1_probs(pi, px, py, pz))
     aux = -2
     r(b, aux)
-    _error(b, aux, b.vertex_type.X, f"e{b.num_error_bits}")
+    _error(b, aux, b.vertex_type.X, f"e{b.num_error_bits}")  # herald bit flip
     m(b, aux)
-    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits + 1}")
-    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits + 2}")
+    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits + 1}")  # Z error bit
+    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits + 2}")  # X error bit
     b.num_error_bits += 3
 
 
@@ -802,9 +802,9 @@ def correlated_error(
     """Add a correlated error term affecting multiple qubits with given Pauli types."""
     for qubit, type_ in zip(qubits, types, strict=True):
         if type_ == "X" or type_ == "Y":
-            _error(b, qubit, VertexType.X, f"c{b.num_correlated_error_bits}")
+            _error(b, qubit, b.vertex_type.X, f"c{b.num_correlated_error_bits}")
         if type_ == "Z" or type_ == "Y":
-            _error(b, qubit, VertexType.Z, f"c{b.num_correlated_error_bits}")
+            _error(b, qubit, b.vertex_type.Z, f"c{b.num_correlated_error_bits}")
 
     b.correlated_error_probs.append(p)
     b.num_correlated_error_bits += 1
@@ -817,8 +817,12 @@ def correlated_error(
 
 def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -> None:
     """Perform measurement on qubit with optional error probability."""
+    error_var = ""
     if p > 0:
-        x_error(b, qubit, p)
+        b.channel_probs.append(error_probs(p))
+        error_var = f"e{b.num_error_bits}"
+        _error(b, qubit, b.vertex_type.X, error_var)
+        b.num_error_bits += 1
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
     b.graph.set_type(v1, VertexType.Z)
@@ -830,11 +834,18 @@ def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -
         b.silent_rec.append(v1)
     v2 = add_dummy(b, qubit)
     b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
+    if p > 0:
+        _error(b, qubit, b.vertex_type.X, error_var)
     b.graph.scalar.add_power(-1)
 
 
-def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
-    """Perform reset on qubit, optionally tracing out previous state."""
+def _r(b: GraphRepresentation, qubit: int) -> None:
+    """Perform reset on qubit.
+
+    If the qubit does not yet have a lane, create one in the reset state.
+    Otherwise, silently measure the existing lane to trace out the previous
+    state before reconnecting the qubit in the reset state.
+    """
     if qubit not in b.last_vertex:
         v1 = add_lane(b, qubit)
         b.graph.set_type(v1, b.vertex_type.X)
@@ -843,8 +854,7 @@ def _r(b: GraphRepresentation, qubit: int, perform_trace: bool) -> None:
         v = b.last_vertex[qubit]
         neighbors = list(b.graph.neighbors(v))
         assert len(neighbors) == 1
-        if perform_trace:
-            _m(b, qubit, silent=True)
+        _m(b, qubit, silent=True)
         row = last_row(b, qubit)
         v1 = b.last_vertex[qubit]
         b.graph.set_type(v1, b.vertex_type.X)
@@ -904,19 +914,23 @@ def _apply_pauli_controls(
             raise ValueError(f"Invalid Pauli operator: {pauli_type}")
 
 
-def spp(
+def _pauli_product_phase(
     b: GraphRepresentation,
     paulis: list[tuple[Literal["X", "Y", "Z"], int]],
-    dagger: bool = False,
+    phase_gate: Callable[[GraphRepresentation, int], None],
+    phase_gate_dag: Callable[[GraphRepresentation, int], None],
+    dagger: bool,
 ) -> None:
-    """Phase the -1 eigenspace of a Pauli product by i (or -i if dagger).
+    """Apply exp(-i theta P) (up to global phase) for a Pauli product P.
 
-    Args:
-        b: The graph representation to modify.
-        paulis: List of (pauli_type, qubit) pairs defining the Pauli product.
-        dagger: If True, phase by -i instead of i.
-
+    If `dagger` is True, apply exp(+i theta P) instead.
+    Phases the -1 eigenspace of P by exp(2i theta). Shared implementation for
+    SPP (theta=pi/4, phase by i) and TPP (theta=pi/8, phase by exp(i pi/4))
+    and their daggers.
     """
+    if len(paulis) == 0:
+        return
+
     # Rotate each qubit so its Pauli eigenvalue maps to Z
     for pauli_type, qubit in paulis:
         if pauli_type == "X":
@@ -932,9 +946,9 @@ def spp(
 
     # Phase the parity
     if dagger:
-        s_dag(b, last_qubit)
+        phase_gate_dag(b, last_qubit)
     else:
-        s(b, last_qubit)
+        phase_gate(b, last_qubit)
 
     # Uncompute parity accumulation
     for _, qubit in reversed(paulis[:-1]):
@@ -947,6 +961,44 @@ def spp(
         elif pauli_type == "Y":
             h(b, qubit)
             s(b, qubit)
+
+
+def spp(
+    b: GraphRepresentation,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+    dagger: bool = False,
+) -> None:
+    """Apply exp(-i pi/4 P) (up to global phase) for a Pauli product P.
+
+    Phases the -1 eigenspace of P by i (or -i if dagger). For a single qubit,
+    ``SPP Z0`` is the S gate and ``SPP_DAG Z0`` is S_DAG.
+
+    Args:
+        b: The graph representation to modify.
+        paulis: List of (pauli_type, qubit) pairs defining the Pauli product P.
+        dagger: If True, apply exp(+i pi/4 P) (phase by -i) instead.
+
+    """
+    _pauli_product_phase(b, paulis, s, s_dag, dagger)
+
+
+def tpp(
+    b: GraphRepresentation,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+    dagger: bool = False,
+) -> None:
+    """Apply exp(-i pi/8 P) (up to global phase) for a Pauli product P.
+
+    Phases the -1 eigenspace of P by exp(i pi/4) (or exp(-i pi/4) if dagger).
+    For a single qubit, ``TPP Z0`` is the T gate and ``TPP_DAG Z0`` is T_DAG.
+
+    Args:
+        b: The graph representation to modify.
+        paulis: List of (pauli_type, qubit) pairs defining the Pauli product P.
+        dagger: If True, apply exp(+i pi/8 P) (phase by exp(-i pi/4)) instead.
+
+    """
+    _pauli_product_phase(b, paulis, t, t_dag, dagger)
 
 
 def mpad(b: GraphRepresentation, value: int, p: float = 0) -> None:
@@ -971,10 +1023,8 @@ def mr(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -
     Projects each target qubit into |0> or |1>, reports its value (false=|0>, true=|1>),
     then resets to |0>.
     """
-    if p > 0:
-        x_error(b, qubit, p)
     m(b, qubit, p=p, invert=invert)
-    _r(b, qubit, perform_trace=False)
+    _r(b, qubit)
 
 
 def mrx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
@@ -984,10 +1034,8 @@ def mrx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) 
     then resets to |+>.
     """
     h(b, qubit)
-    if p > 0:
-        x_error(b, qubit, p)
     m(b, qubit, p=p, invert=invert)
-    _r(b, qubit, perform_trace=False)
+    _r(b, qubit)
     h(b, qubit)
 
 
@@ -998,10 +1046,8 @@ def mry(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) 
     then resets to |i>.
     """
     h_yz(b, qubit)
-    if p > 0:
-        x_error(b, qubit, p)
     m(b, qubit, p=p, invert=invert)
-    _r(b, qubit, perform_trace=False)
+    _r(b, qubit)
     h_yz(b, qubit)
 
 
@@ -1046,7 +1092,7 @@ def r(b: GraphRepresentation, qubit: int) -> None:
     Forces each target qubit into the |0> state by silently measuring it in the Z basis
     and applying an X gate if it ended up in the |1> state.
     """
-    _r(b, qubit, perform_trace=True)
+    _r(b, qubit)
 
 
 def rx(b: GraphRepresentation, qubit: int) -> None:
@@ -1078,12 +1124,26 @@ def ry(b: GraphRepresentation, qubit: int) -> None:
 # =============================================================================
 
 
-def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
-    """Add detector annotation that XORs the given measurement record bits."""
-    row = min({b.graph.row(b.rec[r]) for r in rec}) - 0.5
+def _annotation_row(b: GraphRepresentation, rec: list[int]) -> float:
+    """Pick a fresh row for a detector/observable vertex.
+
+    Empty `rec` is valid Stim and represents a deterministic-zero annotation;
+    fall back to a row above existing annotations rather than `min()` on an
+    empty set.
+    """
     d_rows = {b.graph.row(d) for d in b.detectors + b.observables}
+    if rec:
+        row: float = min(b.graph.row(b.rec[r]) for r in rec) - 0.5
+    else:
+        row = (max(d_rows) + 1) if d_rows else 0
     while row in d_rows:
         row += 1
+    return row
+
+
+def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
+    """Add detector annotation that XORs the given measurement record bits."""
+    row = _annotation_row(b, rec)
     v0 = b.graph.add_vertex(
         VertexType.X, qubit=-1, row=row, phase=f"det[{len(b.detectors)}]"
     )
@@ -1097,10 +1157,7 @@ def observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None
     idx = int(idx)
 
     if idx not in b.observables_dict:
-        row = min({b.graph.row(b.rec[r]) for r in rec}) - 0.5
-        d_rows = {b.graph.row(d) for d in b.detectors + b.observables}
-        while row in d_rows:
-            row += 1
+        row = _annotation_row(b, rec)
         v0 = b.graph.add_vertex(VertexType.X, qubit=-1, row=row, phase=f"obs[{idx}]")
         b.observables_dict[idx] = v0
 
