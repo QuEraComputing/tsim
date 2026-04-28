@@ -8,15 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- `CompiledDetectorSampler.sample` now raises `ValueError` when `separate_observables=True` is combined with `prepend_observables=True` or `append_observables=True` (matching Stim), and also when both `prepend_observables=True` and `append_observables=True` are set. Previously these combinations silently dropped observable columns.
 - `MR`, `MRX`, and `MRY` no longer double-count their measurement flip probability as both a pre-measurement Pauli error and a measurement-result flip.
+- Fixed a bug where `M(p)` instructions incorrectly flipped the qubit, not just the measurement record. This would affect circuits where qubits were measured and not immediately reset.
+- Fixed a bug where `MR !q` instructions (with measurement record inversion) produced wrong measurement results.
 - Out-of-order `OBSERVABLE_INCLUDE` indices now produce the correct sampler column order and output shape. Missing indices below the maximum mentioned id appear as deterministic-zero columns, and columns are emitted in sorted logical-index order.
-- Empty `DETECTOR` and `OBSERVABLE_INCLUDE` annotations (without targets) no longer crash the parser; they now produce zero detector/observable bits, matching Stim semantics.
 - `matmul_gf2` no longer silently corrupts parity for inner products with more than 255 set bits. The float32→uint8 cast in JAX saturates at 255, which previously made `% 2` always return 1 once a row-sum reached 256. The modulo is now applied on float32 before the uint8 cast.
+- `CompiledDetectorSampler.sample` now raises `ValueError` when `separate_observables=True` is combined with `prepend_observables=True` or `append_observables=True` (matching Stim). Previously these combinations silently dropped observable columns. The `prepend_observables=True` + `append_observables=True` combination is now supported and returns columns in `[obs, det, obs]` order, matching Stim.
+- `OBSERVABLE_INCLUDE` with Pauli targets (e.g. `OBSERVABLE_INCLUDE(0) X1`) now raises `ValueError` instead of silently producing wrong observable bits or crashing with `IndexError`. tsim only supports measurement-record targets (`rec[-k]`).
+- Empty `DETECTOR` and `OBSERVABLE_INCLUDE` annotations (without targets) no longer crash the parser; they now produce zero detector/observable bits, matching Stim semantics.
 - `CompiledDetectorSampler.sample` with `use_detector_reference_sample=True` or `use_observable_reference_sample=True` no longer returns fewer rows than `shots` when called with an explicit `batch_size` that exactly divides `shots`.
 - Incorrect visualization of `CORRELATED_ERROR` and `ELSE_CORRELATED_ERROR` instructions in the `pyzx` diagram renderer. Previously, error vertices were rendered as classical spiders instead of bold quantum spiders.
-- Fixed a bug where `M(p)` instructions incorrectly flipped the qubit, not just the measurement record.
-- Fixed a bug where `MR !q` instructions produced wrong measurement results.
 
 
 ### Added
