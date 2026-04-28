@@ -53,7 +53,12 @@
 <span class=normal>369</span>
 <span class=normal>370</span>
 <span class=normal>371</span>
-<span class=normal>372</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_scalar_graphs</span><span class=p>(</span>
+<span class=normal>372</span>
+<span class=normal>373</span>
+<span class=normal>374</span>
+<span class=normal>375</span>
+<span class=normal>376</span>
+<span class=normal>377</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_scalar_graphs</span><span class=p>(</span>
     <span class=n>g_list</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>BaseGraph</span><span class=p>],</span> <span class=n>params</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>str</span><span class=p>]</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>CompiledScalarGraphs</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Compile ZX-graph list into JAX-compatible structure for fast evaluation.</span>
@@ -72,6 +77,11 @@
         <span class=k>if</span> <span class=n>n_vertices</span> <span class=o>!=</span> <span class=mi>0</span><span class=p>:</span>
             <span class=k>raise</span> <span class=ne>ValueError</span><span class=p>(</span>
                 <span class=sa>f</span><span class=s2>&quot;Only scalar graphs can be compiled but graph </span><span class=si>{</span><span class=n>i</span><span class=si>}</span><span class=s2> has </span><span class=si>{</span><span class=n>n_vertices</span><span class=si>}</span><span class=s2> vertices&quot;</span>
+            <span class=p>)</span>
+        <span class=k>if</span> <span class=n>g</span><span class=o>.</span><span class=n>scalar</span><span class=o>.</span><span class=n>phasevars_pi</span> <span class=ow>and</span> <span class=ow>not</span> <span class=n>g</span><span class=o>.</span><span class=n>scalar</span><span class=o>.</span><span class=n>is_zero</span><span class=p>:</span>
+            <span class=k>raise</span> <span class=ne>NotImplementedError</span><span class=p>(</span>
+                <span class=sa>f</span><span class=s2>&quot;compile_scalar_graphs does not support Scalar.phasevars_pi &quot;</span>
+                <span class=sa>f</span><span class=s2>&quot;(graph </span><span class=si>{</span><span class=n>i</span><span class=si>}</span><span class=s2> has phasevars_pi=</span><span class=si>{</span><span class=nb>sorted</span><span class=p>(</span><span class=n>g</span><span class=o>.</span><span class=n>scalar</span><span class=o>.</span><span class=n>phasevars_pi</span><span class=p>)</span><span class=si>!r}</span><span class=s2>)&quot;</span>
             <span class=p>)</span>
 
     <span class=n>g_list</span> <span class=o>=</span> <span class=p>[</span><span class=n>g</span> <span class=k>for</span> <span class=n>g</span> <span class=ow>in</span> <span class=n>g_list</span> <span class=k>if</span> <span class=ow>not</span> <span class=n>g</span><span class=o>.</span><span class=n>scalar</span><span class=o>.</span><span class=n>is_zero</span><span class=p>]</span>
