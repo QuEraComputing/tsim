@@ -337,7 +337,8 @@ class _CompiledSamplerBase:
             result = result ^ self._direct_flips
         if self._direct_reindex is not None:
             result = result[:, self._direct_reindex]
-        return result.astype(np.bool_)
+        assert result.dtype == np.uint8
+        return result.view(np.bool_)
 
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""
