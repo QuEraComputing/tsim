@@ -335,7 +335,13 @@ class _CompiledSamplerBase:
 
             batches.append(samples)
 
-        result = np.concatenate(batches)[:shots]
+        # Concatenate on device, then a single d2h. The prior
+        # np.concatenate(batches) triggered per-batch __array__ (one d2h each)
+        # plus a host-side memcpy into a fresh numpy buffer for the concat
+        # output. For big bool tensors (e.g. 500k shots × 528 detector bits)
+        # the host memcpy alone was ~1 s on top of the PCIe transfer.
+        combined = batches[0] if len(batches) == 1 else jnp.concatenate(batches, axis=0)
+        result = np.asarray(combined)[:shots]
 
         if compute_reference:
             assert reference is not None
