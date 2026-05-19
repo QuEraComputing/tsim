@@ -14,8 +14,7 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span> (<code>tsim.core.types.CompiledProgram</code>)' href=../../core/types/#tsim.core.types.CompiledProgram>CompiledProgram</a></code> </td> <td> <div class=doc-md-description> <p>A CompiledProgram ready for sampling.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/compile/pipeline.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 25</span>
-<span class=normal> 26</span>
+  </span> (<code>tsim.core.types.CompiledProgram</code>)' href=../../core/types/#tsim.core.types.CompiledProgram>CompiledProgram</a></code> </td> <td> <div class=doc-md-description> <p>A CompiledProgram ready for sampling.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/compile/pipeline.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 26</span>
 <span class=normal> 27</span>
 <span class=normal> 28</span>
 <span class=normal> 29</span>
@@ -91,18 +90,7 @@
 <span class=normal> 99</span>
 <span class=normal>100</span>
 <span class=normal>101</span>
-<span class=normal>102</span>
-<span class=normal>103</span>
-<span class=normal>104</span>
-<span class=normal>105</span>
-<span class=normal>106</span>
-<span class=normal>107</span>
-<span class=normal>108</span>
-<span class=normal>109</span>
-<span class=normal>110</span>
-<span class=normal>111</span>
-<span class=normal>112</span>
-<span class=normal>113</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_program</span><span class=p>(</span>
+<span class=normal>102</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_program</span><span class=p>(</span>
     <span class=n>prepared</span><span class=p>:</span> <span class=n>SamplingGraph</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
     <span class=n>mode</span><span class=p>:</span> <span class=n>DecompositionMode</span><span class=p>,</span>
@@ -137,21 +125,17 @@
     <span class=n>f_indices_global</span> <span class=o>=</span> <span class=n>_get_f_indices</span><span class=p>(</span><span class=n>prepared</span><span class=o>.</span><span class=n>graph</span><span class=p>)</span>
     <span class=n>num_outputs</span> <span class=o>=</span> <span class=n>prepared</span><span class=o>.</span><span class=n>num_outputs</span>
 
-    <span class=n>direct_f_indices</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]</span> <span class=o>=</span> <span class=p>[]</span>
-    <span class=n>direct_flips</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>bool</span><span class=p>]</span> <span class=o>=</span> <span class=p>[]</span>
-    <span class=n>direct_output_order</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]</span> <span class=o>=</span> <span class=p>[]</span>
+    <span class=n>direct_entries</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>tuple</span><span class=p>[</span><span class=nb>int</span><span class=p>,</span> <span class=nb>int</span><span class=p>,</span> <span class=nb>bool</span><span class=p>]]</span> <span class=o>=</span> <span class=p>[]</span>  <span class=c1># (output_idx, f_idx, flip)</span>
     <span class=n>compiled_components</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>CompiledComponent</span><span class=p>]</span> <span class=o>=</span> <span class=p>[]</span>
     <span class=n>compiled_output_order</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]</span> <span class=o>=</span> <span class=p>[]</span>
 
     <span class=n>sorted_components</span> <span class=o>=</span> <span class=nb>sorted</span><span class=p>(</span><span class=n>components</span><span class=p>,</span> <span class=n>key</span><span class=o>=</span><span class=k>lambda</span> <span class=n>c</span><span class=p>:</span> <span class=nb>len</span><span class=p>(</span><span class=n>c</span><span class=o>.</span><span class=n>output_indices</span><span class=p>))</span>
 
     <span class=k>for</span> <span class=n>component</span> <span class=ow>in</span> <span class=n>sorted_components</span><span class=p>:</span>
-        <span class=n>result</span> <span class=o>=</span> <span class=n>classify_direct</span><span class=p>(</span><span class=n>component</span><span class=p>)</span>
-        <span class=k>if</span> <span class=n>result</span> <span class=ow>is</span> <span class=ow>not</span> <span class=kc>None</span><span class=p>:</span>
-            <span class=n>f_idx</span><span class=p>,</span> <span class=n>flip</span> <span class=o>=</span> <span class=n>result</span>
-            <span class=n>direct_f_indices</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>f_idx</span><span class=p>)</span>
-            <span class=n>direct_flips</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>flip</span><span class=p>)</span>
-            <span class=n>direct_output_order</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>component</span><span class=o>.</span><span class=n>output_indices</span><span class=p>[</span><span class=mi>0</span><span class=p>])</span>
+        <span class=n>direct</span> <span class=o>=</span> <span class=n>classify_direct</span><span class=p>(</span><span class=n>component</span><span class=p>)</span>
+        <span class=k>if</span> <span class=n>direct</span> <span class=ow>is</span> <span class=ow>not</span> <span class=kc>None</span><span class=p>:</span>
+            <span class=n>f_idx</span><span class=p>,</span> <span class=n>flip</span> <span class=o>=</span> <span class=n>direct</span>
+            <span class=n>direct_entries</span><span class=o>.</span><span class=n>append</span><span class=p>((</span><span class=n>component</span><span class=o>.</span><span class=n>output_indices</span><span class=p>[</span><span class=mi>0</span><span class=p>],</span> <span class=n>f_idx</span><span class=p>,</span> <span class=n>flip</span><span class=p>))</span>
         <span class=k>else</span><span class=p>:</span>
             <span class=n>compiled</span> <span class=o>=</span> <span class=n>_compile_component</span><span class=p>(</span>
                 <span class=n>component</span><span class=o>=</span><span class=n>component</span><span class=p>,</span>
@@ -162,32 +146,24 @@
             <span class=n>compiled_components</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>compiled</span><span class=p>)</span>
             <span class=n>compiled_output_order</span><span class=o>.</span><span class=n>extend</span><span class=p>(</span><span class=n>component</span><span class=o>.</span><span class=n>output_indices</span><span class=p>)</span>
 
-    <span class=c1># Sort direct entries by output index so that the concatenation layout</span>
-    <span class=c1># in sample_program matches the original output order as closely as</span>
-    <span class=c1># possible.  When transform_error_basis also prioritises outputs, this</span>
-    <span class=c1># often yields an identity permutation and avoids reindexing at sample time.</span>
-    <span class=k>if</span> <span class=n>direct_output_order</span><span class=p>:</span>
-        <span class=n>order</span> <span class=o>=</span> <span class=nb>sorted</span><span class=p>(</span>
-            <span class=nb>range</span><span class=p>(</span><span class=nb>len</span><span class=p>(</span><span class=n>direct_output_order</span><span class=p>)),</span> <span class=n>key</span><span class=o>=</span><span class=n>direct_output_order</span><span class=o>.</span><span class=fm>__getitem__</span>
-        <span class=p>)</span>
-        <span class=n>direct_f_indices</span> <span class=o>=</span> <span class=p>[</span><span class=n>direct_f_indices</span><span class=p>[</span><span class=n>i</span><span class=p>]</span> <span class=k>for</span> <span class=n>i</span> <span class=ow>in</span> <span class=n>order</span><span class=p>]</span>
-        <span class=n>direct_flips</span> <span class=o>=</span> <span class=p>[</span><span class=n>direct_flips</span><span class=p>[</span><span class=n>i</span><span class=p>]</span> <span class=k>for</span> <span class=n>i</span> <span class=ow>in</span> <span class=n>order</span><span class=p>]</span>
-        <span class=n>direct_output_order</span> <span class=o>=</span> <span class=p>[</span><span class=n>direct_output_order</span><span class=p>[</span><span class=n>i</span><span class=p>]</span> <span class=k>for</span> <span class=n>i</span> <span class=ow>in</span> <span class=n>order</span><span class=p>]</span>
+    <span class=c1># Sort direct entries by output index so that — together with the output</span>
+    <span class=c1># prioritisation in transform_error_basis — the concatenated layout often</span>
+    <span class=c1># matches the original output order, sparing a reindex at sample time.</span>
+    <span class=n>direct_entries</span><span class=o>.</span><span class=n>sort</span><span class=p>()</span>
+    <span class=n>direct_output_order</span> <span class=o>=</span> <span class=p>[</span><span class=n>e</span><span class=p>[</span><span class=mi>0</span><span class=p>]</span> <span class=k>for</span> <span class=n>e</span> <span class=ow>in</span> <span class=n>direct_entries</span><span class=p>]</span>
+    <span class=n>direct_f_indices</span> <span class=o>=</span> <span class=p>[</span><span class=n>e</span><span class=p>[</span><span class=mi>1</span><span class=p>]</span> <span class=k>for</span> <span class=n>e</span> <span class=ow>in</span> <span class=n>direct_entries</span><span class=p>]</span>
+    <span class=n>direct_flips</span> <span class=o>=</span> <span class=p>[</span><span class=n>e</span><span class=p>[</span><span class=mi>2</span><span class=p>]</span> <span class=k>for</span> <span class=n>e</span> <span class=ow>in</span> <span class=n>direct_entries</span><span class=p>]</span>
 
-    <span class=c1># output_order must match the concatenation layout in sample_program:</span>
-    <span class=c1># [direct bits, compiled_0 outputs, compiled_1 outputs, ...]</span>
-    <span class=n>output_order</span> <span class=o>=</span> <span class=n>jnp</span><span class=o>.</span><span class=n>array</span><span class=p>(</span>
-        <span class=n>direct_output_order</span> <span class=o>+</span> <span class=n>compiled_output_order</span><span class=p>,</span> <span class=n>dtype</span><span class=o>=</span><span class=n>jnp</span><span class=o>.</span><span class=n>int32</span>
-    <span class=p>)</span>
-    <span class=n>reindex</span> <span class=o>=</span> <span class=n>jnp</span><span class=o>.</span><span class=n>argsort</span><span class=p>(</span><span class=n>output_order</span><span class=p>)</span>
-    <span class=n>is_identity</span> <span class=o>=</span> <span class=nb>bool</span><span class=p>(</span><span class=n>jnp</span><span class=o>.</span><span class=n>all</span><span class=p>(</span><span class=n>reindex</span> <span class=o>==</span> <span class=n>jnp</span><span class=o>.</span><span class=n>arange</span><span class=p>(</span><span class=nb>len</span><span class=p>(</span><span class=n>output_order</span><span class=p>))))</span>
+    <span class=n>output_order</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>array</span><span class=p>(</span><span class=n>direct_output_order</span> <span class=o>+</span> <span class=n>compiled_output_order</span><span class=p>,</span> <span class=n>dtype</span><span class=o>=</span><span class=n>np</span><span class=o>.</span><span class=n>int32</span><span class=p>)</span>
+    <span class=n>reindex</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>argsort</span><span class=p>(</span><span class=n>output_order</span><span class=p>)</span>
+    <span class=n>is_identity</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>array_equal</span><span class=p>(</span><span class=n>reindex</span><span class=p>,</span> <span class=n>np</span><span class=o>.</span><span class=n>arange</span><span class=p>(</span><span class=nb>len</span><span class=p>(</span><span class=n>output_order</span><span class=p>)))</span>
 
     <span class=k>return</span> <span class=n>CompiledProgram</span><span class=p>(</span>
         <span class=n>components</span><span class=o>=</span><span class=nb>tuple</span><span class=p>(</span><span class=n>compiled_components</span><span class=p>),</span>
         <span class=n>direct_f_indices</span><span class=o>=</span><span class=n>jnp</span><span class=o>.</span><span class=n>array</span><span class=p>(</span><span class=n>direct_f_indices</span><span class=p>,</span> <span class=n>dtype</span><span class=o>=</span><span class=n>jnp</span><span class=o>.</span><span class=n>int32</span><span class=p>),</span>
         <span class=n>direct_flips</span><span class=o>=</span><span class=n>jnp</span><span class=o>.</span><span class=n>array</span><span class=p>(</span><span class=n>direct_flips</span><span class=p>,</span> <span class=n>dtype</span><span class=o>=</span><span class=n>jnp</span><span class=o>.</span><span class=n>bool_</span><span class=p>),</span>
-        <span class=n>output_order</span><span class=o>=</span><span class=n>output_order</span><span class=p>,</span>
-        <span class=n>output_reindex</span><span class=o>=</span><span class=kc>None</span> <span class=k>if</span> <span class=n>is_identity</span> <span class=k>else</span> <span class=n>reindex</span><span class=p>,</span>
+        <span class=n>output_order</span><span class=o>=</span><span class=n>jnp</span><span class=o>.</span><span class=n>asarray</span><span class=p>(</span><span class=n>output_order</span><span class=p>),</span>
+        <span class=n>output_reindex</span><span class=o>=</span><span class=kc>None</span> <span class=k>if</span> <span class=n>is_identity</span> <span class=k>else</span> <span class=n>jnp</span><span class=o>.</span><span class=n>asarray</span><span class=p>(</span><span class=n>reindex</span><span class=p>),</span>
         <span class=n>num_outputs</span><span class=o>=</span><span class=n>num_outputs</span><span class=p>,</span>
         <span class=n>num_detectors</span><span class=o>=</span><span class=n>prepared</span><span class=o>.</span><span class=n>num_detectors</span><span class=p>,</span>
     <span class=p>)</span>
