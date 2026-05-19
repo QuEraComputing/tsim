@@ -94,6 +94,9 @@ plugins:
           - "tutorial.ipynb"
           - "*.py"
           - "draft/*"
+      remove_tag_config:
+          remove_input_tags:
+              - hide_code
 
 extra_css:
 
