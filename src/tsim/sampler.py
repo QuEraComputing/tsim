@@ -209,18 +209,20 @@ class _CompiledSamplerBase:
         self.circuit = circuit
         self._num_detectors = prepared.num_detectors
 
-        # Pre-cache numpy arrays for the direct fast path so we don't
-        # convert from JAX on every sample call.
         prog = self._program
-        n_direct = len(prog.direct_f_indices)
         self._direct_f_indices = np.asarray(prog.direct_f_indices)
         self._direct_flips = np.asarray(prog.direct_flips, dtype=np.bool_)
         self._direct_reindex = (
             np.asarray(prog.output_reindex) if prog.output_reindex is not None else None
         )
-        self._direct_has_flips = bool(np.any(self._direct_flips))
-        self._direct_contiguous = n_direct > 0 and np.array_equal(
-            self._direct_f_indices, np.arange(n_direct)
+        # Zero-copy fast path: f-indices are 0..n-1, no flips, no reindex.
+        # Hit by typical surface-code detector circuits at low noise.
+        n_direct = len(self._direct_f_indices)
+        self._direct_zero_copy = (
+            n_direct > 0
+            and self._direct_reindex is None
+            and not self._direct_flips.any()
+            and np.array_equal(self._direct_f_indices, np.arange(n_direct))
         )
 
     def _peak_bytes_per_sample(self) -> int:
@@ -343,16 +345,11 @@ class _CompiledSamplerBase:
     def _sample_direct(self, shots: int) -> np.ndarray:
         """Fast path when all components are direct (pure numpy, no JAX)."""
         f_params = self._channel_sampler.sample(shots)
-        n = len(self._direct_f_indices)
-        if self._direct_contiguous:
-            result = f_params[:, :n] if n < f_params.shape[1] else f_params
-        else:
-            result = f_params[:, self._direct_f_indices]
-        if self._direct_has_flips:
-            result = result ^ self._direct_flips
+        if self._direct_zero_copy:
+            return f_params[:, : len(self._direct_f_indices)].view(np.bool_)
+        result = f_params[:, self._direct_f_indices] ^ self._direct_flips
         if self._direct_reindex is not None:
             result = result[:, self._direct_reindex]
-        assert result.dtype == np.uint8
         return result.view(np.bool_)
 
     def __repr__(self) -> str:
@@ -682,13 +679,13 @@ class CompiledStateProbs(_CompiledSamplerBase):
         p_joint = jnp.ones(batch_size)
 
         if len(self._program.direct_f_indices) > 0:
-            bits = (
+            direct_bits = (
                 f_samples[:, self._program.direct_f_indices].astype(jnp.bool_)
                 ^ self._program.direct_flips
             )
             n_direct = len(self._program.direct_f_indices)
             targets = state[self._program.output_order[:n_direct]]
-            p_joint = p_joint * (bits == targets).all(axis=1)
+            p_joint = p_joint * (direct_bits == targets).all(axis=1)
 
         for component in self._program.components:
             assert len(component.compiled_scalar_graphs) == 2

@@ -340,20 +340,14 @@ def transform_error_basis(
     output_detectors = []
     for v_out in g.outputs():
         neighbors = list(g.neighbors(v_out))
-        if (
-            len(neighbors) == 1
-            and neighbors[0] in g._phaseVars
-            and g._phaseVars[neighbors[0]]
-        ):
+        if len(neighbors) == 1 and g._phaseVars.get(neighbors[0]):
             output_detectors.append(neighbors[0])
 
     output_det_set = set(output_detectors)
-    rest = [
-        v
-        for v in g.vertices()
-        if v not in output_det_set and v in g._phaseVars and g._phaseVars.get(v)
+    other_param_vertices = [
+        v for v in g.vertices() if v not in output_det_set and g._phaseVars.get(v)
     ]
-    parametrized_vertices = output_detectors + rest
+    parametrized_vertices = output_detectors + other_param_vertices
 
     if not parametrized_vertices:
         g.scalar = Scalar()

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 import jax.numpy as jnp
+import numpy as np
 import pyzx_param as zx
 from pyzx_param.graph.base import BaseGraph
 from pyzx_param.simulate import DecompositionStrategy
@@ -57,21 +58,17 @@ def compile_program(
     f_indices_global = _get_f_indices(prepared.graph)
     num_outputs = prepared.num_outputs
 
-    direct_f_indices: list[int] = []
-    direct_flips: list[bool] = []
-    direct_output_order: list[int] = []
+    direct_entries: list[tuple[int, int, bool]] = []  # (output_idx, f_idx, flip)
     compiled_components: list[CompiledComponent] = []
     compiled_output_order: list[int] = []
 
     sorted_components = sorted(components, key=lambda c: len(c.output_indices))
 
     for component in sorted_components:
-        result = classify_direct(component)
-        if result is not None:
-            f_idx, flip = result
-            direct_f_indices.append(f_idx)
-            direct_flips.append(flip)
-            direct_output_order.append(component.output_indices[0])
+        direct = classify_direct(component)
+        if direct is not None:
+            f_idx, flip = direct
+            direct_entries.append((component.output_indices[0], f_idx, flip))
         else:
             compiled = _compile_component(
                 component=component,
@@ -82,32 +79,24 @@ def compile_program(
             compiled_components.append(compiled)
             compiled_output_order.extend(component.output_indices)
 
-    # Sort direct entries by output index so that the concatenation layout
-    # in sample_program matches the original output order as closely as
-    # possible.  When transform_error_basis also prioritises outputs, this
-    # often yields an identity permutation and avoids reindexing at sample time.
-    if direct_output_order:
-        order = sorted(
-            range(len(direct_output_order)), key=direct_output_order.__getitem__
-        )
-        direct_f_indices = [direct_f_indices[i] for i in order]
-        direct_flips = [direct_flips[i] for i in order]
-        direct_output_order = [direct_output_order[i] for i in order]
+    # Sort direct entries by output index so that — together with the output
+    # prioritisation in transform_error_basis — the concatenated layout often
+    # matches the original output order, sparing a reindex at sample time.
+    direct_entries.sort()
+    direct_output_order = [e[0] for e in direct_entries]
+    direct_f_indices = [e[1] for e in direct_entries]
+    direct_flips = [e[2] for e in direct_entries]
 
-    # output_order must match the concatenation layout in sample_program:
-    # [direct bits, compiled_0 outputs, compiled_1 outputs, ...]
-    output_order = jnp.array(
-        direct_output_order + compiled_output_order, dtype=jnp.int32
-    )
-    reindex = jnp.argsort(output_order)
-    is_identity = bool(jnp.all(reindex == jnp.arange(len(output_order))))
+    output_order = np.array(direct_output_order + compiled_output_order, dtype=np.int32)
+    reindex = np.argsort(output_order)
+    is_identity = np.array_equal(reindex, np.arange(len(output_order)))
 
     return CompiledProgram(
         components=tuple(compiled_components),
         direct_f_indices=jnp.array(direct_f_indices, dtype=jnp.int32),
         direct_flips=jnp.array(direct_flips, dtype=jnp.bool_),
-        output_order=output_order,
-        output_reindex=None if is_identity else reindex,
+        output_order=jnp.asarray(output_order),
+        output_reindex=None if is_identity else jnp.asarray(reindex),
         num_outputs=num_outputs,
         num_detectors=prepared.num_detectors,
     )
