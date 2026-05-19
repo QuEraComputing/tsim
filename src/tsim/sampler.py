@@ -130,10 +130,10 @@ def sample_program(
         match the original output indices.
 
     """
-    batch_size = f_params.shape[0]
     results: list[jax.Array] = []
 
     if program.num_outputs == 0:
+        batch_size = f_params.shape[0]
         return jnp.zeros((batch_size, 0), dtype=jnp.bool_)
 
     if len(program.direct_f_indices) > 0:
@@ -147,7 +147,7 @@ def sample_program(
         samples, key, max_norm_deviation = sample_component(component, f_params, key)
         if np.isclose(max_norm_deviation, 1):
             raise ValueError(
-                "A vanishing marginal probability distributionwas encountered (normalization 0). "
+                "A vanishing marginal probability distribution was encountered (normalization 0). "
                 "This is likely the result of an underflow error. Please report this "
                 "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
             )  # pragma: no cover
@@ -155,7 +155,8 @@ def sample_program(
             warnings.warn(
                 "A marginal probability was not normalized correctly "
                 f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
-                "This is likely a floating point precision issue."
+                "This is likely a floating point precision issue.",
+                stacklevel=2,
             )
         results.append(samples)
 
@@ -185,7 +186,9 @@ class _CompiledSamplerBase:
             mode: Compilation mode - "sequential" for autoregressive, "joint" for probabilities.
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed. If None, a random seed is generated.
+            seed: Random seed. If None, a random seed is generated. Note that
+                deterministic results are only guaranteed for a fixed batch size
+                and fixed reference sample settings.
 
         """
         if seed is None:
@@ -226,10 +229,10 @@ class _CompiledSamplerBase:
         for component in self._program.components:
             for circuit in component.compiled_scalar_graphs:
                 G = circuit.num_graphs
-                max_a = circuit.a_const_phases.shape[1]
-                max_b = circuit.b_term_types.shape[1]
-                max_c = circuit.c_const_bits_a.shape[1]
-                max_d = circuit.d_const_alpha.shape[1]
+                max_a = circuit.node_phases.phases.shape[1]
+                max_b = circuit.halfpi_phases.coeffs.shape[1]
+                max_c = circuit.pi_products.psi_const.shape[1]
+                max_d = circuit.phase_pairs.alpha.shape[1]
                 largest = max(max_a * 16, max_b * 4, max_c * 4, max_d * 16)
                 peak = max(peak, G * largest * 3)
         return max(peak, 1)
@@ -285,6 +288,17 @@ class _CompiledSamplerBase:
             Samples array, or (samples, reference) tuple when compute_reference=True.
 
         """
+        if shots < 0:
+            raise ValueError(f"shots must be non-negative, got {shots}")
+        if batch_size is not None and batch_size < 1:
+            raise ValueError(f"batch_size must be at least 1, got {batch_size}")
+
+        if shots == 0:
+            empty = np.empty((0, self._program.num_outputs), dtype=np.bool_)
+            if compute_reference:
+                return empty, np.zeros(self._program.num_outputs, dtype=np.bool_)
+            return empty
+
         if not self._program.components and not compute_reference:
             return self._sample_direct(shots)
 
@@ -292,17 +306,18 @@ class _CompiledSamplerBase:
             max_batch_size = self._estimate_batch_size()
             num_batches = max(1, ceil(shots / max_batch_size))
             batch_size = ceil(shots / num_batches)
-
-        if compute_reference:
+        else:
             num_batches = ceil(shots / batch_size)
-            has_leeway = batch_size * num_batches > shots
-            if not has_leeway:
-                batch_size += 1
+
+        if compute_reference and batch_size * num_batches == shots:
+            # Bump batch_size so the first batch's reference sample fits
+            # within existing batches (keeps shapes uniform for JIT).
+            batch_size += 1
 
         batches: list[jax.Array] = []
         reference: np.ndarray | None = None
 
-        for _ in range(ceil(shots / batch_size)):
+        for _ in range(num_batches):
             f_params_np = self._channel_sampler.sample(batch_size)
 
             if compute_reference and reference is None:
@@ -350,7 +365,6 @@ class _CompiledSamplerBase:
         c_b_terms = []
         c_c_terms = []
         c_d_terms = []
-        num_circuits = 0
         total_memory_bytes = 0
         num_outputs = []
 
@@ -359,11 +373,12 @@ class _CompiledSamplerBase:
                 num_outputs.append(len(component.output_indices))
                 c_graphs.append(circuit.num_graphs)
                 c_params.append(circuit.n_params)
-                c_a_terms.append(circuit.a_const_phases.size)
-                c_b_terms.append(circuit.b_term_types.size)
-                c_c_terms.append(circuit.c_const_bits_a.size)
-                c_d_terms.append(circuit.d_const_alpha.size + circuit.d_const_beta.size)
-                num_circuits += 1
+                c_a_terms.append(circuit.node_phases.phases.size)
+                c_b_terms.append(circuit.halfpi_phases.coeffs.size)
+                c_c_terms.append(circuit.pi_products.psi_const.size)
+                c_d_terms.append(
+                    circuit.phase_pairs.alpha.size + circuit.phase_pairs.beta.size
+                )
 
                 total_memory_bytes += sum(
                     v.nbytes
@@ -382,13 +397,12 @@ class _CompiledSamplerBase:
         error_channel_bits = sum(
             channel.num_bits for channel in self._channel_sampler.channels
         )
-        max_outputs = int(np.max(num_outputs)) if num_outputs else 0
 
         return (
             f"{type(self).__name__}({n_direct} direct, "
             f"{np.sum(c_graphs)} graphs, "
             f"{error_channel_bits} error channel bits, "
-            f"{max_outputs} outputs for largest cc, "
+            f"{np.max(num_outputs) if num_outputs else 0} outputs for largest cc, "
             f"≤ {np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
             f"{np.sum(c_b_terms)} B terms, "
             f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms, "
@@ -417,7 +431,10 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for JAX. If None, a random seed is generated.
+            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
+                will only produce deterministic samples for fixed batch size. If
+                deterministic samples are needed, the batch size should be set
+                manually.
 
         """
         super().__init__(
@@ -436,7 +453,8 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             batch_size: The number of samples to process in each batch. Defaults to
                 None, which automatically chooses a batch size based on available
                 memory. When using a GPU, setting this explicitly can help fully
-                utilize VRAM for maximum performance.
+                utilize VRAM for maximum performance. NOTE: Changing the batch size
+                will affect reproducibility even with a fixed seed.
 
         Returns:
             A numpy array containing the measurement samples.
@@ -468,7 +486,10 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for JAX. If None, a random seed is generated.
+            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
+                will only produce deterministic samples for fixed batch size and
+                fixed reference sample settings. If deterministic samples are
+                needed, the batch size should be set manually.
 
         """
         super().__init__(
@@ -530,7 +551,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             batch_size: The number of samples to process in each batch. Defaults to
                 None, which automatically chooses a batch size based on available
                 memory. When using a GPU, setting this explicitly can help fully
-                utilize VRAM for maximum performance.
+                utilize VRAM for maximum performance. NOTE: Changing the batch size
+                will affect reproducibility even with a fixed seed.
             separate_observables: Defaults to False. When set to True, the return value
                 is a (detection_events, observable_flips) tuple instead of a flat
                 detection_events array.
@@ -553,7 +575,17 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.
 
+        Raises:
+            ValueError: If ``separate_observables`` is combined with
+                ``prepend_observables`` or ``append_observables``.
+
         """
+        if separate_observables and (prepend_observables or append_observables):
+            raise ValueError(
+                "Can't specify separate_observables=True with "
+                "append_observables=True or prepend_observables=True"
+            )
+
         compute_reference = (
             use_detector_reference_sample or use_observable_reference_sample
         )
@@ -570,13 +602,15 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         else:
             samples = self._sample_batches(shots, batch_size)
 
-        if append_observables:
-            return _maybe_bit_pack(samples, bit_packed=bit_packed)
-
         num_detectors = self._num_detectors
         det_samples = samples[:, :num_detectors]
         obs_samples = samples[:, num_detectors:]
 
+        if prepend_observables and append_observables:
+            combined = np.concatenate([obs_samples, det_samples, obs_samples], axis=1)
+            return _maybe_bit_pack(combined, bit_packed=bit_packed)
+        if append_observables:
+            return _maybe_bit_pack(samples, bit_packed=bit_packed)
         if prepend_observables:
             combined = np.concatenate([obs_samples, det_samples], axis=1)
             return _maybe_bit_pack(combined, bit_packed=bit_packed)
@@ -613,7 +647,8 @@ class CompiledStateProbs(_CompiledSamplerBase):
             sample_detectors: If True, compute detector/observable probabilities.
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for JAX. If None, a random seed is generated.
+            seed: Random seed. If None, a random seed is generated. Note that
+                deterministic results are only guaranteed for a fixed batch size.
 
         """
         super().__init__(
@@ -635,6 +670,13 @@ class CompiledStateProbs(_CompiledSamplerBase):
             Array of probabilities P(state | error_sample) for each error sample.
 
         """
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be at least 1, got {batch_size}")
+        expected_outputs = self._program.num_outputs
+        if state.shape != (expected_outputs,):
+            raise ValueError(
+                f"state must have shape ({expected_outputs},), got {state.shape}"
+            )
         f_samples = jnp.asarray(self._channel_sampler.sample(batch_size))
         p_norm = jnp.ones(batch_size)
         p_joint = jnp.ones(batch_size)

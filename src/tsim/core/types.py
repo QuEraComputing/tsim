@@ -94,7 +94,6 @@ class CompiledProgram:
         output_reindex: Precomputed ``argsort(output_order)`` permutation,
             or ``None`` when the outputs are already in order.
         num_outputs: Total number of outputs across all components.
-        num_f_params: Total number of f-parameters.
         num_detectors: Number of detector outputs (for detector sampling).
 
     """
@@ -105,5 +104,4 @@ class CompiledProgram:
     output_order: Array
     output_reindex: Array | None
     num_outputs: int
-    num_f_params: int
     num_detectors: int

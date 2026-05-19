@@ -24,3 +24,6 @@ doc:
 
 doc-build:
     mkdocs build
+
+vulture:
+    uv run vulture

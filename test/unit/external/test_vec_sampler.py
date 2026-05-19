@@ -15,7 +15,7 @@ def test_vec_sampler_bell_state():
         DETECTOR rec[-1] rec[-2]
         """)
     random.seed(0)
-    sampler = VecSampler(c, False)
+    sampler = VecSampler(c)
     m, d, _ = sampler.sample(10)
 
     assert np.array_equal(m[:, 0], m[:, 1])
@@ -32,7 +32,7 @@ def test_vec_sampler_bell_state_with_measurement_error():
         M 0 1
         DETECTOR rec[-1] rec[-2]
         """)
-    sampler = VecSampler(c, False)
+    sampler = VecSampler(c)
 
     random.seed(0)
     _, d, _ = sampler.sample(10)
@@ -47,7 +47,7 @@ def test_t_gate():
         M 0
         """)
     random.seed(0)
-    sampler = VecSampler(c, False)
+    sampler = VecSampler(c)
     m, _, _ = sampler.sample(100)
     assert np.count_nonzero(m) == 12
 
@@ -60,7 +60,7 @@ def test_s_gate():
         M 0
         """)
     random.seed(0)
-    sampler = VecSampler(c, False)
+    sampler = VecSampler(c)
     m, _, _ = sampler.sample(100)
     assert np.count_nonzero(m) == 42
 
@@ -74,7 +74,7 @@ def test_t_dag_gate():
         M 0
         """)
     random.seed(0)
-    sampler = VecSampler(c, False)
+    sampler = VecSampler(c)
     m, _, _ = sampler.sample(10)
     assert np.count_nonzero(m) == 0
 
@@ -88,6 +88,6 @@ def test_s_dag_gate():
         M 0
         """)
     random.seed(0)
-    sampler = VecSampler(c, False)
+    sampler = VecSampler(c)
     m, _, _ = sampler.sample(10)
     assert np.count_nonzero(m) == 0

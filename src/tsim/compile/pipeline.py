@@ -7,6 +7,7 @@ from typing import Literal
 import jax.numpy as jnp
 import pyzx_param as zx
 from pyzx_param.graph.base import BaseGraph
+from pyzx_param.simulate import DecompositionStrategy
 
 from tsim.compile.compile import CompiledScalarGraphs, compile_scalar_graphs
 from tsim.compile.stabrank import find_stab
@@ -19,7 +20,6 @@ from tsim.core.graph import (
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingGraph
 
 DecompositionMode = Literal["sequential", "joint"]
-from pyzx_param.simulate import DecompositionStrategy
 
 
 def compile_program(
@@ -109,7 +109,6 @@ def compile_program(
         output_order=output_order,
         output_reindex=None if is_identity else reindex,
         num_outputs=num_outputs,
-        num_f_params=len(f_indices_global),
         num_detectors=prepared.num_detectors,
     )
 
@@ -123,7 +122,7 @@ def _get_f_indices(graph: BaseGraph) -> list[int]:
 
 def _remove_phase_terms(graph: BaseGraph) -> None:
     """Remove phase terms from the graph."""
-    graph.scalar.phasevars_halfpi = dict()
+    graph.scalar.phasevars_halfpi = {}
     graph.scalar.phasevars_pi_pair = []
     # TODO: clear additional phase terms
 
@@ -154,10 +153,11 @@ def _compile_component(
     component_f_set = set(_get_f_indices(graph))
     f_selection = [i for i in f_indices_global if i in component_f_set]
 
-    if mode == "sequential":
-        outputs_to_plug = list(range(num_component_outputs + 1))
-    else:  # joint
-        outputs_to_plug = [0, num_component_outputs]
+    outputs_to_plug = (
+        list(range(num_component_outputs + 1))
+        if mode == "sequential"
+        else [0, num_component_outputs]
+    )
 
     # Plug outputs and compile each graph
     compiled_graphs: list[CompiledScalarGraphs] = []
@@ -168,7 +168,9 @@ def _compile_component(
     # Track power2 for balancing scalar magnitudes
     power2_base: int | None = None
 
-    for num_m_plugged, plugged_graph in zip(outputs_to_plug, plugged_graphs):
+    for num_m_plugged, plugged_graph in zip(
+        outputs_to_plug, plugged_graphs, strict=True
+    ):
         g_copy = plugged_graph.copy()
         zx.full_reduce(g_copy, paramSafe=True)
         g_copy.normalize()

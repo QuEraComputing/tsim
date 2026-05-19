@@ -114,7 +114,7 @@ class TestSingleAxisUnitaries:
 class TestU3Conversions:
     @pytest.mark.parametrize(
         "theta_idx,phi_idx,lam_idx",
-        [(t, p, l) for t in range(4) for p in range(4) for l in range(4)],
+        [(t, p, lam) for t in range(4) for p in range(4) for lam in range(4)],
     )
     def test_unitary_matches_all_half_pi(self, theta_idx, phi_idx, lam_idx):
         theta = Fraction(theta_idx, 2)
@@ -164,7 +164,7 @@ class TestStimCircuitProperty:
         assert "I[" not in stim_str
         assert "H 0" in stim_str
 
-    def test_identity_rotation_becomes_I(self):
+    def test_identity_rotation_becomes_i(self):
         c = Circuit("R_Z(0.0) 0\nH 0")
         stim_str = str(c.stim_circuit)
         assert "I[" not in stim_str
@@ -184,3 +184,20 @@ class TestStimCircuitProperty:
         stim_str = str(c.stim_circuit)
         assert "I[" not in stim_str
         assert "Z 0 1 2" in stim_str
+
+
+class TestIsCliffordUserTags:
+    """Identity instructions with non-parametric user tags (e.g. ``I[mytag]``)
+    are still Clifford — only parametric rotation tags can flip the result.
+    """
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            "I[mytag] 0",
+            "I[abc123] 0",
+            "H 0\nI[mytag] 0\nCNOT 0 1\nM 0 1",
+        ],
+    )
+    def test_user_tag_is_clifford(self, program):
+        assert Circuit(program).is_clifford

@@ -1,5 +1,4 @@
-"""
-Statevector simulatorfor stim circuits.
+"""Statevector simulatorfor stim circuits.
 
 Based on code from:
 Gidney, C., Jones, C., & Shutty, N. (2024). "Magic state cultivation: growing
@@ -99,12 +98,12 @@ class VecSim:
             order: Determines which qubit gets mapped to which axis of the output numpy array.
                 Qubit names with larger order keys, according to this function, are assigned to
                 larger axis indices.
+
         """
         s = self.state[self.state_slicer({})]
         if order is not None:
             qs = list(self.q2i.keys())
             q2s = sorted(qs, key=order)
-            i2s = [qs.index(q) for q in q2s]
             actual_order = sorted(self.q2i.keys(), key=lambda k: self.q2i[k])
             desired_order = sorted(self.q2i.keys(), key=order)
             i2s = [actual_order.index(q) for q in desired_order]
@@ -145,6 +144,7 @@ class VecSim:
         Args:
             qs: The subset to slice into is identified by specifying values for some qubits.
                 For example, the part of the state vector where qubit 'A' is ON.
+
         """
         mask: List[Union[slice, int]] = [slice(None)] * len(self.state.shape)
         for k in range(len(self.q2i), len(mask)):
@@ -643,7 +643,6 @@ class VecSim:
         self,
         inst: stim.CircuitInstruction,
         *,
-        sweep_bits: dict[int, bool],
         out_measurements: list[bool],
         out_detectors: list[bool],
         out_observables: list[bool],
@@ -796,9 +795,6 @@ class VecSim:
                 if t1.is_measurement_record_target:
                     if out_measurements[t1.value]:
                         self.do_x(t2.qubit_value)
-                elif t1.is_sweep_bit_target:
-                    if sweep_bits[t1.value]:
-                        self.do_z(t2.qubit_value)
                 else:
                     self.do_cx(t1.qubit_value, t2.qubit_value)
         elif inst.name == "CZ":
@@ -810,12 +806,6 @@ class VecSim:
                         self.do_z(t2.qubit_value)
                 elif t2.is_measurement_record_target:
                     if out_measurements[t2.value]:
-                        self.do_z(t1.qubit_value)
-                elif t1.is_sweep_bit_target:
-                    if sweep_bits[t1.value]:
-                        self.do_z(t2.qubit_value)
-                elif t2.is_sweep_bit_target:
-                    if sweep_bits[t2.value]:
                         self.do_z(t1.qubit_value)
                 else:
                     self.do_cz(t1.qubit_value, t2.qubit_value)

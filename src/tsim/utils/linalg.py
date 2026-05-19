@@ -1,6 +1,8 @@
 """Linear algebra utilities for GF(2) operations."""
 
+import jax.numpy as jnp
 import numpy as np
+from jax import Array
 
 
 def find_basis(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -74,3 +76,27 @@ def find_basis(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         transform[i, : len(row)] = row
 
     return vecs[basis_indices], transform
+
+
+def matmul_gf2(a: Array, b: Array) -> Array:
+    """Compute binary dot products mod 2 as ``a_GTP x b_BP -> b_BGT``.
+
+    Uses float32 matmul (integer matmul does not have BLAS support on CPU)
+    then casts back to uint8.
+
+    Args:
+        a: Parameter bit-masks, shape ``(G, T, P)`` — G graphs, T terms, P parameters.
+        b: Binary parameter values, shape ``(B, P)`` — B batch elements.
+
+    Returns:
+        Binary row-sums mod 2, shape ``(B, G, T)``.
+
+    """
+    G, T, _ = a.shape
+    if G * T == 0:
+        return jnp.zeros((b.shape[0], G, T), dtype=jnp.uint8)
+    # NOTE: ``% 2`` must run on float32 — JAX's float→uint8 cast saturates at
+    # 255 (it does not wrap mod 256), which would corrupt parity for inner
+    # products with more than 255 set bits.
+    sum_f32 = b.astype(jnp.float32) @ a.astype(jnp.float32).reshape(G * T, -1).T
+    return (sum_f32.reshape(-1, G, T) % 2).astype(jnp.uint8)
