@@ -168,6 +168,15 @@ def test_detector_sampler_no_detectors_bit_packed():
     assert result.shape == (5, 0)
 
 
+def test_detector_sampler_no_detectors_with_reference_sample():
+    """Detector sampler with use_detector_reference_sample=True and no detectors returns (shots, 0)."""
+    c = Circuit("H 0\nM 0")
+    sampler = c.compile_detector_sampler()
+    result = sampler.sample(5, use_detector_reference_sample=True)
+    assert result.dtype == np.bool_
+    assert result.shape == (5, 0)
+
+
 def test_sampler_negative_shots_raises():
     sampler = Circuit("H 0\nM 0").compile_sampler(seed=0)
     with pytest.raises(ValueError, match="shots must be non-negative"):

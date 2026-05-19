@@ -130,11 +130,18 @@ def sample_program(
         match the original output indices.
 
     """
-    if len(program.components) == 0:
-        batch_size = f_params.shape[0]
-        return jnp.empty((batch_size, 0), dtype=jnp.bool_)
-
     results: list[jax.Array] = []
+
+    if program.num_outputs == 0:
+        batch_size = f_params.shape[0]
+        return jnp.zeros((batch_size, 0), dtype=jnp.bool_)
+
+    if len(program.direct_f_indices) > 0:
+        direct_bits = (
+            f_params[:, program.direct_f_indices].astype(jnp.bool_)
+            ^ program.direct_flips
+        )
+        results.append(direct_bits)
 
     for component in program.components:
         samples, key, max_norm_deviation = sample_component(component, f_params, key)
@@ -154,7 +161,9 @@ def sample_program(
         results.append(samples)
 
     combined = jnp.concatenate(results, axis=1)
-    return combined[:, jnp.argsort(program.output_order)]
+    if program.output_reindex is not None:
+        combined = combined[:, program.output_reindex]
+    return combined
 
 
 class _CompiledSamplerBase:
@@ -199,6 +208,22 @@ class _CompiledSamplerBase:
 
         self.circuit = circuit
         self._num_detectors = prepared.num_detectors
+
+        prog = self._program
+        self._direct_f_indices = np.asarray(prog.direct_f_indices)
+        self._direct_flips = np.asarray(prog.direct_flips, dtype=np.bool_)
+        self._direct_reindex = (
+            np.asarray(prog.output_reindex) if prog.output_reindex is not None else None
+        )
+        # Zero-copy fast path: f-indices are 0..n-1, no flips, no reindex.
+        # Hit by typical surface-code detector circuits at low noise.
+        n_direct = len(self._direct_f_indices)
+        self._direct_zero_copy = (
+            n_direct > 0
+            and self._direct_reindex is None
+            and not self._direct_flips.any()
+            and np.array_equal(self._direct_f_indices, np.arange(n_direct))
+        )
 
     def _peak_bytes_per_sample(self) -> int:
         """Estimate peak device memory per sample from compiled program structure."""
@@ -276,6 +301,9 @@ class _CompiledSamplerBase:
                 return empty, np.zeros(self._program.num_outputs, dtype=np.bool_)
             return empty
 
+        if not self._program.components and not compute_reference:
+            return self._sample_direct(shots)
+
         if batch_size is None:
             max_batch_size = self._estimate_batch_size()
             num_batches = max(1, ceil(shots / max_batch_size))
@@ -314,8 +342,20 @@ class _CompiledSamplerBase:
             return result, reference
         return result
 
+    def _sample_direct(self, shots: int) -> np.ndarray:
+        """Fast path when all components are direct (pure numpy, no JAX)."""
+        f_params = self._channel_sampler.sample(shots)
+        if self._direct_zero_copy:
+            return f_params[:, : len(self._direct_f_indices)].view(np.bool_)
+        result = f_params[:, self._direct_f_indices] ^ self._direct_flips
+        if self._direct_reindex is not None:
+            result = result[:, self._direct_reindex]
+        return result.view(np.bool_)
+
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""
+        n_direct = len(self._program.direct_f_indices)
+
         c_graphs = []
         c_params = []
         c_a_terms = []
@@ -356,7 +396,8 @@ class _CompiledSamplerBase:
         )
 
         return (
-            f"{type(self).__name__}({np.sum(c_graphs)} graphs, "
+            f"{type(self).__name__}({n_direct} direct, "
+            f"{np.sum(c_graphs)} graphs, "
             f"{error_channel_bits} error channel bits, "
             f"{np.max(num_outputs) if num_outputs else 0} outputs for largest cc, "
             f"≤ {np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
@@ -636,6 +677,15 @@ class CompiledStateProbs(_CompiledSamplerBase):
         f_samples = jnp.asarray(self._channel_sampler.sample(batch_size))
         p_norm = jnp.ones(batch_size)
         p_joint = jnp.ones(batch_size)
+
+        if len(self._program.direct_f_indices) > 0:
+            direct_bits = (
+                f_samples[:, self._program.direct_f_indices].astype(jnp.bool_)
+                ^ self._program.direct_flips
+            )
+            n_direct = len(self._program.direct_f_indices)
+            targets = state[self._program.output_order[:n_direct]]
+            p_joint = p_joint * (direct_bits == targets).all(axis=1)
 
         for component in self._program.components:
             assert len(component.compiled_scalar_graphs) == 2
