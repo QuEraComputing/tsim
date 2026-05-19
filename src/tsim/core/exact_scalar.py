@@ -89,6 +89,35 @@ def _scalar_to_complex(data: jax.Array) -> jax.Array:
     return data[..., 0] + data[..., 1] * _E4 + data[..., 2] * 1j + data[..., 3] * _E4D
 
 
+# Sane default for the lax.scan unroll factor in _reduce_along_scan. Keeps the
+# unrolled body small enough that XLA compile times stay reasonable for the
+# T values that ExactScalarArray.sum / .prod actually see (typically ≤ a few
+# dozen).
+_SCAN_UNROLL = 4
+
+
+def _reduce_along_scan(power, coeffs, op, axis):
+    """lax.scan-based reduction along ``axis`` returning only the final carry.
+
+    Equivalent to ``lax.associative_scan(op, ..., axis=axis)`` followed by
+    ``take(..., -1, axis=axis)``, but keeps a single (power, coeffs) carry
+    through the scan instead of materialising the full prefix tensor —
+    O(1) extra memory along the scan axis instead of O(N).
+    """
+    if axis < 0:
+        axis += power.ndim
+    power_t = jnp.moveaxis(power, axis, 0)
+    coeffs_t = jnp.moveaxis(coeffs, axis, 0)
+    init = (power_t[0], coeffs_t[0])
+    rest = (power_t[1:], coeffs_t[1:])
+
+    def step(carry, x):
+        return op(carry, x), None
+
+    (final_power, final_coeffs), _ = lax.scan(step, init, rest, unroll=_SCAN_UNROLL)
+    return final_power, final_coeffs
+
+
 class ExactScalarArray(eqx.Module):
     """Exact scalar array for ZX-calculus phase arithmetic using dyadic representation.
 
@@ -135,11 +164,9 @@ class ExactScalarArray(eqx.Module):
         if axis < 0:
             axis += self.power.ndim
 
-        scanned_power, scanned_coeffs = lax.associative_scan(
-            _scalar_add_with_power, (self.power, self.coeffs), axis=axis
+        result_power, result_coeffs = _reduce_along_scan(
+            self.power, self.coeffs, _scalar_add_with_power, axis,
         )
-        result_power = jnp.take(scanned_power, indices=-1, axis=axis)
-        result_coeffs = jnp.take(scanned_coeffs, indices=-1, axis=axis)
         return ExactScalarArray(result_coeffs, result_power)
 
     def prod(self, axis: int = -1) -> "ExactScalarArray":
@@ -164,12 +191,9 @@ class ExactScalarArray(eqx.Module):
             result_coeffs = result_coeffs.at[..., 0].set(1)
             return ExactScalarArray(result_coeffs)
 
-        scanned_power, scanned_coeffs = lax.associative_scan(
-            _scalar_mul_with_power, (self.power, self.coeffs), axis=axis
+        result_power, result_coeffs = _reduce_along_scan(
+            self.power, self.coeffs, _scalar_mul_with_power, axis,
         )
-        result_power = jnp.take(scanned_power, indices=-1, axis=axis)
-        result_coeffs = jnp.take(scanned_coeffs, indices=-1, axis=axis)
-
         return ExactScalarArray(result_coeffs, result_power)
 
     def to_complex(self) -> jax.Array:
