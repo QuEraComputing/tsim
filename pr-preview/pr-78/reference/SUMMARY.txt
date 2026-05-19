@@ -5,6 +5,7 @@
         * [evaluate](tsim/compile/evaluate.md)
         * [pipeline](tsim/compile/pipeline.md)
         * [stabrank](tsim/compile/stabrank.md)
+        * [terms](tsim/compile/terms.md)
     * [core](tsim/core/index.md)
         * [exact_scalar](tsim/core/exact_scalar.md)
         * [graph](tsim/core/graph.md)
