@@ -17,6 +17,7 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram
 from tsim.noise.channels import ChannelSampler
+from tsim.utils.cuda_helpers import copy_d2h
 
 if TYPE_CHECKING:
     from jax import Array as PRNGKey
@@ -341,7 +342,8 @@ class _CompiledSamplerBase:
         # output. For big bool tensors (e.g. 500k shots × 528 detector bits)
         # the host memcpy alone was ~1 s on top of the PCIe transfer.
         combined = batches[0] if len(batches) == 1 else jnp.concatenate(batches, axis=0)
-        result = np.asarray(combined)[:shots]
+        jax.block_until_ready(combined)
+        result = copy_d2h(combined)[:shots]
 
         if compute_reference:
             assert reference is not None
