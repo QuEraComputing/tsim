@@ -22,6 +22,20 @@ except Exception:
     _CUDA_BINDINGS_AVAILABLE = False
 
 
+def _src_on_host(src) -> bool:
+    """True iff ``src`` lives on a CPU device — its buffer pointer would be
+    a host address and unsafe to feed to ``cudaMemcpy(..., DeviceToHost)``.
+    """
+    devices = getattr(src, "devices", None)
+    if devices is None:
+        return False
+    try:
+        ds = list(devices())
+    except TypeError:
+        ds = list(devices)
+    return any(getattr(d, "platform", "").lower() == "cpu" for d in ds)
+
+
 class _PinnedBuf:
     """RAII wrapper for a ``cudaHostAlloc``'d region.
 
@@ -94,10 +108,14 @@ def copy_d2h(src, *, dst: np.ndarray | None = None) -> np.ndarray:
     Returns:
         ndarray with the same shape and dtype as ``src``.
     """
-    if not _CUDA_BINDINGS_AVAILABLE:
-        # np.asarray(jax.Array) is a read-only zero-copy view; callers
-        # mutate the return (e.g. XOR detectors with the reference sample)
-        # so allocate fresh and copy.
+    if not _CUDA_BINDINGS_AVAILABLE or _src_on_host(src):
+        # Fallback path. Two cases:
+        #   1. cuda.bindings isn't importable
+        #   2. src lives on a CPU device (JAX on a CPU jaxlib build, or any
+        #      array marked CPU) — its ``unsafe_buffer_pointer`` is a host
+        #      pointer, so ``cudaMemcpy(..., DeviceToHost)`` would fail.
+        # ``np.asarray(jax.Array)`` returns a read-only zero-copy view in
+        # newer JAX, so allocate fresh and copy in to a writable buffer.
         out = np.empty(src.shape, dtype=src.dtype)
         out[:] = src
         return out

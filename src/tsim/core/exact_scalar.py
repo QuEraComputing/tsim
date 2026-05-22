@@ -89,11 +89,13 @@ def _scalar_to_complex(data: jax.Array) -> jax.Array:
     return data[..., 0] + data[..., 1] * _E4 + data[..., 2] * 1j + data[..., 3] * _E4D
 
 
-# Sane default for the lax.scan unroll factor in _reduce_along_scan. Keeps the
-# unrolled body small enough that XLA compile times stay reasonable for the
-# T values that ExactScalarArray.sum / .prod actually see (typically ≤ a few
-# dozen).
-_SCAN_UNROLL = 4
+# lax.scan unroll factor in _reduce_along_scan. Higher unroll reduces
+# kernel-launch overhead at the cost of a larger compiled body; on the
+# msc_3 cutting 100k bench, sweeping unroll ∈ {1, 4, 8, 16, True} gives
+# per-shot wall {6.16, 5.35, 5.07, 4.22, 4.24} µs and compile_s flat
+# at ~6.8 s. 16 ties `True` on speed without committing to whatever
+# `True` means in a future JAX. Bumped from 4.
+_SCAN_UNROLL = 16
 
 
 def _reduce_along_scan(power, coeffs, op, axis):
@@ -115,6 +117,30 @@ def _reduce_along_scan(power, coeffs, op, axis):
         return op(carry, x), None
 
     (final_power, final_coeffs), _ = lax.scan(step, init, rest, unroll=_SCAN_UNROLL)
+
+    # Final fixpoint pass. ``_scalar_add_with_power`` and
+    # ``_scalar_mul_with_power`` each apply one ``_reduce_power_coeffs_step``
+    # per call. The tree-shaped ``lax.associative_scan`` we replaced
+    # naturally hit canonical form (gcd of coeffs is odd) because each
+    # combine sees two operands of equal accumulation depth — one reduce
+    # suffices per node. Sequential ``lax.scan`` accumulation can lag
+    # canonical form by up to ``log2(N)`` reductions for an N-element scan;
+    # iterate with ``lax.while_loop`` so we only pay for the iters that
+    # actually reduce. Most inputs converge in 1-2 steps; on the msc_3
+    # cutting / star_d7 cat5 benches the added cost is in measurement noise.
+    def _fixpoint_cond(state):
+        _, _, did_change = state
+        return did_change
+
+    def _fixpoint_body(state):
+        p, c, _ = state
+        new_p, new_c = _reduce_power_coeffs_step(p, c)
+        return new_p, new_c, jnp.any(new_p != p)
+
+    init_state = (final_power, final_coeffs, jnp.bool_(True))
+    final_power, final_coeffs, _ = lax.while_loop(
+        _fixpoint_cond, _fixpoint_body, init_state,
+    )
     return final_power, final_coeffs
 
 
