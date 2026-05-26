@@ -1,3 +1,10 @@
+accel-cutting-magic-state-main/
+.agents/
+*.md
+bug*
+.claude/
+*.pdf
+scratch/
 *.png
 *.stim
 # *.ipynb
@@ -5,10 +12,21 @@
 *.pyspy
 .vscode
 experiments/
+proto_cutting/
+claude_code_bug_report/
+benchmarks/
+docs/demos/msc_circuits2/
+manuscript/
+Ion.lock
+Ion.toml
+docs/demos/msd_circuits2/
+scratch*
 
-# mkdocs
+# Mintlify generated output
+docs/api-reference/
+docs/tutorials/*.mdx
+docs/images/tutorials/
 site/
-docs/reference/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
