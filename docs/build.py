@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import sys
@@ -51,6 +52,97 @@ def clean(api: bool, notebooks: bool) -> None:
             mdx.unlink()
 
 
+def _escape_mdx_text(text: str) -> str:
+    """Escape characters in Markdown text that MDX parses as JSX/expressions.
+
+    MDX treats ``<``, ``>``, ``{``, and ``}`` as JSX/expression delimiters
+    when they appear outside fenced code blocks. Docstrings often contain
+    these in physics notation (|0>, ->, <->, sum_{...}) which trips the
+    parser. We escape them so Mintlify renders them as plain text.
+
+    Only processes lines that are outside fenced code blocks (``` fences).
+    Inside fences Mintlify renders content verbatim — no escaping needed.
+    """
+    lines = text.split("\n")
+    result: list[str] = []
+    in_fence = False
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            result.append(line)
+            continue
+        if in_fence:
+            result.append(line)
+        else:
+            # Escape characters MDX parses as JSX/expression syntax.
+            escaped = (
+                line.replace("{", r"\{")
+                .replace("}", r"\}")
+                .replace("<", r"\<")
+                .replace(">", r"\>")
+            )
+            result.append(escaped)
+    return "\n".join(result)
+
+
+def _extract_diagram_svgs(
+    body: str, img_dir: Path, url_prefix: str
+) -> tuple[str, list[tuple[Path, bytes]]]:
+    """Replace tsim diagram HTML with Markdown image references.
+
+    tsim's ``Diagram._repr_html_()`` wraps the SVG in a zoom container div
+    plus a ``<script>`` block. MDX cannot parse the ``<script>`` tags and has
+    trouble with SVG elements like ``<text>`` and ``<tspan>`` in inline
+    context.
+
+    This function extracts each embedded SVG, saves it to *img_dir* as a
+    standalone ``.svg`` file, and replaces the whole HTML block with a
+    Markdown image reference ``![Circuit diagram](/url_prefix/NNN.svg)``.
+
+    Returns the modified body string and a list of ``(path, data)`` tuples
+    for files that need to be written to disk.
+    """
+    tsim_pattern = re.compile(
+        r'<div\s+data-tsim-zoom="[^"]*"[^>]*>.*?(<svg\b[^>]*>.*?</svg>)'
+        r"\s*</div>\s*</div>\s*</div>"
+        r"(?:\s*<script\b[^>]*>.*?</script>)?",
+        re.DOTALL | re.IGNORECASE,
+    )
+
+    files_to_write: list[tuple[Path, bytes]] = []
+    counter = [0]
+
+    def replacer(m: re.Match) -> str:
+        counter[0] += 1
+        svg_content = m.group(1)
+        fname = f"diagram_{counter[0]:03d}.svg"
+        files_to_write.append((img_dir / fname, svg_content.encode("utf-8")))
+        return f"\n\n![Circuit diagram]({url_prefix}/{fname})\n\n"
+
+    body = tsim_pattern.sub(replacer, body)
+    return body, files_to_write
+
+
+def _strip_script_and_pyzx(body: str) -> str:
+    """Remove pyzx D3 script blocks and any remaining <script> tags.
+
+    pyzx emits a ``<div id="graph-output-…">`` placeholder followed by a
+    large ``<script type="module">`` block that renders an interactive ZX
+    diagram using D3. Both the script and the empty div are useless in a
+    static docs context, so we drop the script and leave the (now empty)
+    placeholder div in place to avoid breaking paragraph flow.
+
+    Any remaining ``<script>`` tags from other sources are also stripped.
+    """
+    return re.sub(
+        r"<script\b[^>]*>.*?</script>",
+        "",
+        body,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+
 def _format_signature(obj) -> str:
     """Render a function or class signature as a Python source line."""
     name = obj.name
@@ -71,10 +163,10 @@ def _format_signature(obj) -> str:
 
 
 def _render_docstring(obj) -> str:
-    """Return the parsed docstring as plain Markdown, or '' if none."""
+    """Return the parsed docstring as MDX-safe Markdown, or '' if none."""
     if not obj.docstring:
         return ""
-    return obj.docstring.value.strip() + "\n"
+    return _escape_mdx_text(obj.docstring.value.strip()) + "\n"
 
 
 def _render_member(member, level: int) -> list[str]:
@@ -323,14 +415,27 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
     nb = nbformat.read(str(nb_path), as_version=4)
 
     if execute:
-        client = NotebookClient(
-            nb,
-            timeout=600,
-            kernel_name="python3",
-            allow_errors=False,
-            resources={"metadata": {"path": str(nb_path.parent)}},
-        )
-        client.execute()
+        # Add docs/demos to PYTHONPATH so notebooks that import local helpers
+        # (e.g. ``from utils.no_decoder import …``) can find them at execution
+        # time without modifying the notebook sources.
+        demos_dir = str(DOCS_DIR / "demos")
+        old_pythonpath = os.environ.get("PYTHONPATH")
+        existing = old_pythonpath or ""
+        os.environ["PYTHONPATH"] = f"{demos_dir}:{existing}".rstrip(":")
+        try:
+            client = NotebookClient(
+                nb,
+                timeout=600,
+                kernel_name="python3",
+                allow_errors=False,
+                resources={"metadata": {"path": str(nb_path.parent)}},
+            )
+            client.execute()
+        finally:
+            if old_pythonpath is None:
+                os.environ.pop("PYTHONPATH", None)
+            else:
+                os.environ["PYTHONPATH"] = old_pythonpath
 
     # Drop cells tagged "remove-cell" (post-execution).
     tag_remove = TagRemovePreprocessor(remove_cell_tags=("remove-cell",))
@@ -353,10 +458,28 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
         },
     )
 
-    # Save extracted resources (figures).
+    # Save extracted resources (matplotlib figures, etc.)
     for fname, data in resources.get("outputs", {}).items():
         out_file = out_img_dir / Path(fname).name
         out_file.write_bytes(data)
+
+    # Replace tsim diagram HTML wrappers with Markdown image refs: extracts
+    # each SVG, saves it as a standalone file, and inserts ![alt](url).
+    url_prefix = f"/images/tutorials/{nb_path.stem}"
+    body, extra_files = _extract_diagram_svgs(body, out_img_dir, url_prefix)
+    for fpath, data in extra_files:
+        fpath.write_bytes(data)
+
+    # Strip pyzx D3 <script> blocks and any other remaining <script> tags.
+    body = _strip_script_and_pyzx(body)
+
+    # Replace bare "![svg](...)" alt text (nbconvert's default) with something
+    # more descriptive for accessibility.
+    body = re.sub(
+        r"!\[svg\]\(",
+        "![Notebook output figure](",
+        body,
+    )
 
     title_esc = title.replace('"', "'")
     mdx = f'---\ntitle: "{title_esc}"\n---\n\n{body.rstrip()}\n'

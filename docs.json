@@ -14,7 +14,12 @@
         "groups": [
           {
             "group": "Get started",
-            "pages": ["index", "install", "tutorials/overview", "contributing"]
+            "pages": [
+              "index",
+              "install",
+              "tutorials/overview",
+              "contributing"
+            ]
           },
           {
             "group": "Tutorials",
@@ -28,7 +33,57 @@
       },
       {
         "tab": "API reference",
-        "groups": []
+        "groups": [
+          {
+            "group": "Top level",
+            "pages": [
+              "api-reference/index",
+              "api-reference/circuit",
+              "api-reference/sampler"
+            ]
+          },
+          {
+            "group": "compile",
+            "pages": [
+              "api-reference/compile/index",
+              "api-reference/compile/compile",
+              "api-reference/compile/evaluate",
+              "api-reference/compile/pipeline",
+              "api-reference/compile/stabrank",
+              "api-reference/compile/terms"
+            ]
+          },
+          {
+            "group": "core",
+            "pages": [
+              "api-reference/core/index",
+              "api-reference/core/exact_scalar",
+              "api-reference/core/graph",
+              "api-reference/core/instructions",
+              "api-reference/core/parse",
+              "api-reference/core/types"
+            ]
+          },
+          {
+            "group": "noise",
+            "pages": [
+              "api-reference/noise/index",
+              "api-reference/noise/channels",
+              "api-reference/noise/dem"
+            ]
+          },
+          {
+            "group": "utils",
+            "pages": [
+              "api-reference/utils/index",
+              "api-reference/utils/clifford",
+              "api-reference/utils/diagram",
+              "api-reference/utils/encoder",
+              "api-reference/utils/linalg",
+              "api-reference/utils/program_text"
+            ]
+          }
+        ]
       }
     ]
   },
@@ -38,5 +93,5 @@
       "linkedin": "https://www.linkedin.com/company/quera-computing-inc/"
     }
   },
-  "footerCopyright": "Copyright © 2025 QuEra Computing, Inc."
+  "footerCopyright": "Copyright \u00a9 2025 QuEra Computing, Inc."
 }
