@@ -95,6 +95,7 @@ doc = [
     "mkdocs-minify-plugin>=0.8.0",
     "mkdocstrings[python]>=0.27.0",
     "jupytext>=1.17.2",
+    "griffe>=2.0.2",
 ]
 
 [tool.hatch.metadata]
