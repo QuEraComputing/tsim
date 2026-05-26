@@ -59,7 +59,7 @@ def get_detector_error_model(
             disjoint components (such as `PAULI_CHANNEL_1(0.1, 0.2, 0.0)`) can cause the error analysis to throw
             exceptions (because detector error models can only contain independent error mechanisms). When set
             to true, the probabilities of the disjoint cases are instead assumed to be independent
-            probabilities. For example, a ``PAULI_CHANNEL_1(0.1, 0.2, 0.0)` becomes equivalent to an
+            probabilities. For example, a `PAULI_CHANNEL_1(0.1, 0.2, 0.0)` becomes equivalent to an
             `X_ERROR(0.1)` followed by a `Z_ERROR(0.2)`. This assumption is an approximation, but it is a good
             approximation for small probabilities.
 

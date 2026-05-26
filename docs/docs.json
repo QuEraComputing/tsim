@@ -45,7 +45,6 @@
           {
             "group": "compile",
             "pages": [
-              "api-reference/compile/index",
               "api-reference/compile/compile",
               "api-reference/compile/evaluate",
               "api-reference/compile/pipeline",
@@ -56,7 +55,6 @@
           {
             "group": "core",
             "pages": [
-              "api-reference/core/index",
               "api-reference/core/exact_scalar",
               "api-reference/core/graph",
               "api-reference/core/instructions",
@@ -67,7 +65,6 @@
           {
             "group": "noise",
             "pages": [
-              "api-reference/noise/index",
               "api-reference/noise/channels",
               "api-reference/noise/dem"
             ]
@@ -75,7 +72,6 @@
           {
             "group": "utils",
             "pages": [
-              "api-reference/utils/index",
               "api-reference/utils/clifford",
               "api-reference/utils/diagram",
               "api-reference/utils/encoder",
@@ -86,6 +82,12 @@
         ]
       }
     ]
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/QuEraComputing/tsim"
+    }
   },
   "footer": {
     "socials": {

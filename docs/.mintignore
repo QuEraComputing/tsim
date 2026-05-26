@@ -1,0 +1,7 @@
+# Exclude paths inside docs/ from Mintlify content scanning.
+superpowers/
+demos/
+scripts/
+build.py
+*.py
+pyzx_full_reduce_investigation.md

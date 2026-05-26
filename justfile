@@ -21,15 +21,15 @@ coverage: coverage-run coverage-xml coverage-report
 
 doc:
     uv run python docs/build.py
-    mint dev
+    cd docs && mint dev
 
 doc-build:
     uv run python docs/build.py
-    mint validate
+    cd docs && mint validate
 
 doc-quick:
     uv run python docs/build.py --no-execute
-    mint dev
+    cd docs && mint dev
 
 vulture:
     uv run vulture

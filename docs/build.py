@@ -37,7 +37,7 @@ DOCS_DIR = REPO_ROOT / "docs"
 API_DIR = DOCS_DIR / "api-reference"
 TUTORIALS_DIR = DOCS_DIR / "tutorials"
 IMAGES_TUT_DIR = DOCS_DIR / "images" / "tutorials"
-DOCS_JSON = REPO_ROOT / "docs.json"
+DOCS_JSON = DOCS_DIR / "docs.json"
 SRC_DIR = REPO_ROOT / "src"
 
 
@@ -86,26 +86,56 @@ def _escape_mdx_text(text: str) -> str:
     return "\n".join(result)
 
 
+def _stretch_zoom_block(block: str) -> str:
+    """Make a tsim zoom container fill the iframe's full width.
+
+    In Jupyter the container is sized to the circuit, which inside a
+    full-width iframe leaves a tiny bordered panel floating in a large
+    empty frame. Rewrite the outer ``data-tsim-zoom`` container to fill the
+    iframe (``width`` and ``height`` 100%, ``box-sizing:border-box``). The
+    container's child ``size`` div is ``display:inline-block``, so the line
+    box reserves room for a font descender below it (a few px), which pushed
+    content past the frame and produced a spurious vertical scrollbar; set
+    ``font-size:0; line-height:0`` on the container to remove that gap. The
+    rounded border lives on the iframe itself, so drop the container border
+    here. Also drop the script's auto-fit-to-width step so the diagram keeps
+    its height-fit initial scale: small circuits render at natural size
+    (left-aligned) and wide circuits keep full height and scroll
+    horizontally, instead of being squeezed thin to fit the width.
+    """
+    block = re.sub(
+        r'(<div\b[^>]*data-tsim-zoom="[^"]*"[^>]*style=")[^"]*"',
+        r"\1width:100%; height:100%; box-sizing:border-box; "
+        r"font-size:0; line-height:0; overflow:auto; background:white; "
+        r'border:none; position:relative;"',
+        block,
+        count=1,
+    )
+    block = block.replace(
+        "scale = cw / natW;",
+        "/* keep height-fit initial scale */",
+    )
+    return block
+
+
 def _extract_diagram_svgs(
     body: str, img_dir: Path, url_prefix: str
 ) -> tuple[str, list[tuple[Path, bytes]]]:
-    """Replace tsim diagram HTML with Markdown image references.
+    """Replace tsim diagram HTML with iframe embeds.
 
     tsim's ``Diagram._repr_html_()`` wraps the SVG in a zoom container div
-    plus a ``<script>`` block. MDX cannot parse the ``<script>`` tags and has
-    trouble with SVG elements like ``<text>`` and ``<tspan>`` in inline
-    context.
-
-    This function extracts each embedded SVG, saves it to *img_dir* as a
-    standalone ``.svg`` file, and replaces the whole HTML block with a
-    Markdown image reference ``![Circuit diagram](/url_prefix/NNN.svg)``.
+    plus a ``<script>`` block. MDX cannot parse ``<script>`` tags or the
+    inline ``style="..."`` attributes from raw HTML, so we extract the full
+    interactive block into a standalone HTML file and embed it via an
+    ``<iframe>``. This preserves pan/zoom that the Jupyter renderer
+    provides.
 
     Returns the modified body string and a list of ``(path, data)`` tuples
-    for files that need to be written to disk.
+    for files to write to disk.
     """
     tsim_pattern = re.compile(
-        r'<div\s+data-tsim-zoom="[^"]*"[^>]*>.*?(<svg\b[^>]*>.*?</svg>)'
-        r"\s*</div>\s*</div>\s*</div>"
+        r'<div\s+data-tsim-zoom="[^"]*"[^>]*'
+        r"height:(?P<height>\d+(?:\.\d+)?)px[^>]*>.*?</div>\s*</div>\s*</div>"
         r"(?:\s*<script\b[^>]*>.*?</script>)?",
         re.DOTALL | re.IGNORECASE,
     )
@@ -115,32 +145,202 @@ def _extract_diagram_svgs(
 
     def replacer(m: re.Match) -> str:
         counter[0] += 1
-        svg_content = m.group(1)
-        fname = f"diagram_{counter[0]:03d}.svg"
-        files_to_write.append((img_dir / fname, svg_content.encode("utf-8")))
-        return f"\n\n![Circuit diagram]({url_prefix}/{fname})\n\n"
+        block = _stretch_zoom_block(m.group(0))
+        height = int(float(m.group("height")))
+        # body overflow:hidden so only the inner zoom container scrolls
+        # (otherwise the iframe body scrolls too -> nested scrollbars).
+        html = (
+            '<!doctype html><html><head><meta charset="utf-8">'
+            "<style>html,body{margin:0;padding:0;height:100%;"
+            "overflow:hidden;}</style>"
+            f"</head><body>{block}</body></html>"
+        )
+        fname = f"diagram_{counter[0]:03d}.html"
+        files_to_write.append((img_dir / fname, html.encode("utf-8")))
+        src = f"{url_prefix}/{fname}"
+        return (
+            f'\n\n<iframe src="{src}" width="100%" height="{height + 4}" '
+            f'style={{{{border: "1px solid #eee", borderRadius: "0.5rem"}}}} '
+            f'title="Circuit diagram {counter[0]}" loading="lazy" />\n\n'
+        )
 
     body = tsim_pattern.sub(replacer, body)
     return body, files_to_write
 
 
-def _strip_script_and_pyzx(body: str) -> str:
-    """Remove pyzx D3 script blocks and any remaining <script> tags.
+def _normalize_block_math(body: str) -> str:
+    """Put each ``$$`` delimiter on its own line.
 
-    pyzx emits a ``<div id="graph-output-…">`` placeholder followed by a
-    large ``<script type="module">`` block that renders an interactive ZX
-    diagram using D3. Both the script and the empty div are useless in a
-    static docs context, so we drop the script and leave the (now empty)
-    placeholder div in place to avoid breaking paragraph flow.
-
-    Any remaining ``<script>`` tags from other sources are also stripped.
+    Mintlify's MDX parser only recognizes a ``$$...$$`` block as display math
+    when both delimiters sit on their own line. Notebooks frequently write
+    multi-line math with the opening (and sometimes closing) ``$$`` glued to
+    text on the same line, which breaks rendering and bleeds raw LaTeX into
+    the page. Split such delimiters onto their own lines, skipping content
+    inside fenced code blocks.
     """
-    return re.sub(
+    lines = body.split("\n")
+    out: list[str] = []
+    in_fence = False
+    for line in lines:
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        if in_fence or "$$" not in line:
+            out.append(line)
+            continue
+        # Count $$ occurrences; if exactly 2 on one line it's inline display
+        # math, leave it alone. Otherwise (1 occurrence = open or close of a
+        # multi-line block), isolate it.
+        if line.count("$$") == 1:
+            idx = line.index("$$")
+            before = line[:idx].rstrip()
+            after = line[idx + 2 :].lstrip()
+            if before:
+                out.append(before)
+            out.append("$$")
+            if after:
+                out.append(after)
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
+def _extract_pyzx_iframes(
+    body: str, img_dir: Path, url_prefix: str
+) -> tuple[str, list[tuple[Path, bytes]]]:
+    """Replace pyzx D3 diagram blocks with iframe embeds.
+
+    ``c.diagram("pyzx")`` emits a ``<div id="graph-output-…">`` placeholder
+    followed by a ``<script type="module">`` that imports D3 from a CDN and
+    renders an interactive ZX diagram into the div. MDX cannot parse the
+    ``<script>`` tag, but a standalone HTML page can host both, so we save
+    each pair to its own ``.html`` file and embed it via ``<iframe>``.
+    """
+    pattern = re.compile(
+        r'(<div\b[^>]*id="graph-output-[^"]*"[^>]*>\s*</div>)\s*'
+        r'(<script\b[^>]*type="module"[^>]*>.*?</script>)',
+        re.DOTALL | re.IGNORECASE,
+    )
+    files_to_write: list[tuple[Path, bytes]] = []
+    counter = [0]
+
+    # The D3 render call ends with ``…, <width>, <height>, <pad>, <scale>,
+    # <bool>, <bool>, '');`` — pull the SVG height so the iframe matches the
+    # diagram instead of using a fixed height that leaves large white margins.
+    height_re = re.compile(
+        r",\s*[\d.]+,\s*([\d.]+),\s*[\d.]+,\s*[\d.]+,\s*"
+        r"(?:true|false),\s*(?:true|false)",
+        re.IGNORECASE,
+    )
+
+    def replacer(m: re.Match) -> str:
+        counter[0] += 1
+        script = m.group(2)
+        block = m.group(1) + script
+        hm = height_re.search(script)
+        height = int(float(hm.group(1))) + 12 if hm else 400
+        html = (
+            '<!doctype html><html><head><meta charset="utf-8">'
+            "<style>html,body{margin:0;padding:0;height:100%;"
+            "overflow:hidden;}"
+            '[id^="graph-output-"]{width:100%;height:100%;'
+            "overflow:auto;box-sizing:border-box;}</style>"
+            f"</head><body>{block}</body></html>"
+        )
+        fname = f"pyzx_{counter[0]:03d}.html"
+        files_to_write.append((img_dir / fname, html.encode("utf-8")))
+        src = f"{url_prefix}/{fname}"
+        return (
+            f'\n\n<iframe src="{src}" width="100%" height="{height}" '
+            f'style={{{{border: "1px solid #eee", borderRadius: "0.5rem"}}}} '
+            f'title="ZX diagram {counter[0]}" loading="lazy" />\n\n'
+        )
+
+    body = pattern.sub(replacer, body)
+    return body, files_to_write
+
+
+def _strip_script_and_pyzx(body: str) -> str:
+    """Strip any remaining ``<script>`` tags and empty graph placeholder divs.
+
+    Runs after :func:`_extract_pyzx_iframes`, which captures real pyzx
+    output pairs. Anything left over here is either an orphaned script or
+    an empty placeholder (no following script) that would crash MDX on the
+    inline ``style="..."`` attribute.
+    """
+    body = re.sub(
         r"<script\b[^>]*>.*?</script>",
         "",
         body,
         flags=re.DOTALL | re.IGNORECASE,
     )
+    body = re.sub(
+        r'<div\b[^>]*id="graph-output-[^"]*"[^>]*>\s*</div>',
+        "",
+        body,
+        flags=re.IGNORECASE,
+    )
+    return body
+
+
+def _fence_indented_outputs(body: str) -> str:
+    """Convert nbconvert's 4-space indented output blocks to fenced blocks.
+
+    nbconvert's ``MarkdownExporter`` emits cell stream/text outputs as
+    indented (4-space) code blocks. Mintlify's MDX parser does not
+    consistently recognize indented code blocks, which causes the output
+    to render as a normal paragraph — whitespace and newlines collapse,
+    and any literal escape sequences in the printed text show up
+    untouched. Rewrap each contiguous indented output as a fenced
+    ```` ```text title="Output" ```` block so it renders correctly and is
+    visually distinct from input code cells.
+    """
+    lines = body.split("\n")
+    out: list[str] = []
+    in_fence = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            out.append(line)
+            i += 1
+            continue
+        if in_fence or not line.startswith("    "):
+            out.append(line)
+            i += 1
+            continue
+        # Start of an indented block. Collect until a non-indented,
+        # non-blank line. Allow blank lines inside the block.
+        block: list[str] = []
+        while i < len(lines):
+            cur = lines[i]
+            if cur.startswith("    "):
+                block.append(cur[4:])
+                i += 1
+            elif cur.strip() == "":
+                # Look ahead: if the next non-empty line is still
+                # indented, the blank is part of the block.
+                j = i + 1
+                while j < len(lines) and lines[j].strip() == "":
+                    j += 1
+                if j < len(lines) and lines[j].startswith("    "):
+                    block.append("")
+                    i += 1
+                else:
+                    break
+            else:
+                break
+        # Trim trailing blank lines inside the block.
+        while block and block[-1] == "":
+            block.pop()
+        if block:
+            out.append('```text title="Output"')
+            out.extend(block)
+            out.append("```")
+            out.append("")
+    return "\n".join(out)
 
 
 def _format_signature(obj) -> str:
@@ -162,11 +362,98 @@ def _format_signature(obj) -> str:
     return sig
 
 
+def _one_line(text: str) -> str:
+    """Collapse internal whitespace so text fits on a single list item."""
+    return " ".join(text.split())
+
+
+def _render_docstring_sections(sections) -> str:
+    """Render parsed griffe docstring sections to MDX-safe Markdown."""
+    out: list[str] = []
+    for sec in sections:
+        kind = sec.kind.value
+        if kind == "text":
+            out.append(_escape_mdx_text(sec.value.strip()))
+            out.append("")
+        elif kind in ("parameters", "other parameters"):
+            out.append("**Parameters:**")
+            out.append("")
+            for p in sec.value:
+                anno = f" (`{p.annotation}`)" if p.annotation else ""
+                desc = _escape_mdx_text(_one_line(p.description or ""))
+                dash = f" — {desc}" if desc else ""
+                out.append(f"- `{p.name}`{anno}{dash}")
+            out.append("")
+        elif kind == "returns":
+            out.append("**Returns:**")
+            out.append("")
+            for r in sec.value:
+                anno = f"`{r.annotation}` — " if r.annotation else ""
+                desc = _escape_mdx_text(_one_line(r.description or ""))
+                out.append(f"- {anno}{desc}")
+            out.append("")
+        elif kind in ("yields", "receives"):
+            out.append(f"**{kind.capitalize()}:**")
+            out.append("")
+            for r in sec.value:
+                anno = f"`{r.annotation}` — " if r.annotation else ""
+                desc = _escape_mdx_text(_one_line(r.description or ""))
+                out.append(f"- {anno}{desc}")
+            out.append("")
+        elif kind in ("raises", "warns"):
+            label = "Raises" if kind == "raises" else "Warns"
+            out.append(f"**{label}:**")
+            out.append("")
+            for r in sec.value:
+                anno = f"`{r.annotation}` — " if r.annotation else ""
+                desc = _escape_mdx_text(_one_line(r.description or ""))
+                out.append(f"- {anno}{desc}")
+            out.append("")
+        elif kind == "examples":
+            out.append("**Examples:**")
+            out.append("")
+            for example_kind, content in sec.value:
+                # griffe yields (DocstringSectionKind, str) pairs; code parts
+                # are tagged as "examples", prose as "text".
+                if getattr(example_kind, "value", "") == "examples":
+                    out.append("```python")
+                    out.append(content.strip())
+                    out.append("```")
+                else:
+                    out.append(_escape_mdx_text(content.strip()))
+                out.append("")
+        elif kind == "admonition":
+            title = getattr(sec, "title", None) or ""
+            if title:
+                out.append(f"**{_escape_mdx_text(title)}:**")
+                out.append("")
+            val = sec.value
+            text = val.contents if hasattr(val, "contents") else str(val)
+            out.append(_escape_mdx_text(text.strip()))
+            out.append("")
+        else:
+            # Unknown section: render its raw text if it's a string.
+            val = sec.value
+            if isinstance(val, str):
+                out.append(_escape_mdx_text(val.strip()))
+                out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
 def _render_docstring(obj) -> str:
-    """Return the parsed docstring as MDX-safe Markdown, or '' if none."""
+    """Return the parsed docstring as MDX-safe Markdown, or '' if none.
+
+    Parses Google-style sections (Args, Returns, Raises, ...) so they render
+    as formatted lists rather than a flat paragraph. Falls back to escaped
+    raw text if parsing fails.
+    """
     if not obj.docstring:
         return ""
-    return _escape_mdx_text(obj.docstring.value.strip()) + "\n"
+    try:
+        sections = obj.docstring.parse(griffe.Parser.google)
+        return _render_docstring_sections(sections)
+    except Exception:
+        return _escape_mdx_text(obj.docstring.value.strip()) + "\n"
 
 
 def _render_member(member, level: int) -> list[str]:
@@ -212,9 +499,15 @@ def _render_module(module) -> str:
     """Render a single module to an MDX document."""
     title = module.path.split(".")[-1] or module.path
     desc = ""
+    body_doc = ""
     if module.docstring:
-        first_line = module.docstring.value.strip().split("\n", 1)[0]
+        full = module.docstring.value.strip()
+        # The first line becomes the page subtitle (frontmatter description).
+        # Render only the remainder in the body to avoid showing the summary
+        # line twice (once as subtitle, once as the first body paragraph).
+        first_line, _, rest = full.partition("\n")
         desc = first_line.replace('"', "'")
+        body_doc = rest.strip()
 
     lines = [
         "---",
@@ -225,8 +518,8 @@ def _render_module(module) -> str:
     lines.append("---")
     lines.append("")
 
-    if module.docstring:
-        lines.append(_escape_mdx_text(module.docstring.value.strip()))
+    if body_doc:
+        lines.append(_escape_mdx_text(body_doc))
         lines.append("")
 
     classes = []
@@ -374,7 +667,14 @@ def build_api() -> int:
             and (m.kind == griffe.Kind.CLASS or m.kind == griffe.Kind.FUNCTION)
             for n, m in module.members.items()
         )
-        if has_public or module.is_init_module:
+        # Render the top-level ``tsim`` package as the API landing page, and
+        # any module that exposes public classes/functions. Skip sub-package
+        # ``__init__`` modules that only re-export (no direct public members):
+        # they produce a near-empty stub whose title duplicates both the nav
+        # group and the same-named submodule (e.g. ``compile`` group +
+        # ``compile.py`` page + ``compile/__init__`` page).
+        is_root = path == "tsim"
+        if has_public or is_root:
             out = _module_output_path(module)
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(_render_module(module))
@@ -463,15 +763,29 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
         out_file = out_img_dir / Path(fname).name
         out_file.write_bytes(data)
 
-    # Replace tsim diagram HTML wrappers with Markdown image refs: extracts
-    # each SVG, saves it as a standalone file, and inserts ![alt](url).
+    # Replace tsim diagram HTML wrappers with iframe embeds backed by
+    # standalone HTML files (preserves zoom/pan).
     url_prefix = f"/images/tutorials/{nb_path.stem}"
     body, extra_files = _extract_diagram_svgs(body, out_img_dir, url_prefix)
     for fpath, data in extra_files:
         fpath.write_bytes(data)
 
-    # Strip pyzx D3 <script> blocks and any other remaining <script> tags.
+    # Same treatment for pyzx D3 diagrams (div placeholder + module script).
+    body, pyzx_files = _extract_pyzx_iframes(body, out_img_dir, url_prefix)
+    for fpath, data in pyzx_files:
+        fpath.write_bytes(data)
+
+    # Strip any orphaned <script> tags or empty graph placeholders that
+    # didn't pair up above.
     body = _strip_script_and_pyzx(body)
+
+    # Normalize block math so each $$ sits on its own line (Mintlify
+    # requirement).
+    body = _normalize_block_math(body)
+
+    # Wrap nbconvert's 4-space indented cell outputs in fenced code blocks
+    # so Mintlify renders them as code rather than collapsing whitespace.
+    body = _fence_indented_outputs(body)
 
     # Replace bare "![svg](...)" alt text (nbconvert's default) with something
     # more descriptive for accessibility.
