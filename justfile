@@ -20,10 +20,16 @@ coverage-unit:
 coverage: coverage-run coverage-xml coverage-report
 
 doc:
-    mkdocs serve
+    uv run python docs/build.py
+    mint dev
 
 doc-build:
-    mkdocs build
+    uv run python docs/build.py
+    mint validate
+
+doc-quick:
+    uv run python docs/build.py --no-execute
+    mint dev
 
 vulture:
     uv run vulture
