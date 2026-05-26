@@ -26,7 +26,6 @@ scratch*
 docs/api-reference/
 docs/tutorials/*.mdx
 docs/images/tutorials/
-site/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -180,9 +179,6 @@ venv.bak/
 
 # Rope project settings
 .ropeproject
-
-# mkdocs documentation
-/site
 
 # mypy
 .mypy_cache/
