@@ -1,15 +1,18 @@
-# Tsim
+---
+title: "tsim"
+description: "A GPU-accelerated quantum circuit sampler based on ZX-calculus stabilizer rank decomposition."
+---
 
 A GPU-accelerated quantum circuit sampler based on ZX-calculus stabilizer rank decomposition.
-Tsim feels just like [Stim](https://github.com/quantumlib/Stim), but supports non-Clifford gates.
+tsim feels just like [Stim](https://github.com/quantumlib/Stim), but supports non-Clifford gates.
 
-A detailed description of Tsim is given in [arXiv:2604.01059](https://arxiv.org/abs/2604.01059).
+A detailed description of tsim is given in [arXiv:2604.01059](https://arxiv.org/abs/2604.01059).
 
-## Quick Start
+## Quick start
 
-An introductory tutorial is available [here](demos/encoding_demo.ipynb). For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference).
+An introductory tutorial is available [here](/tutorials/encoding_demo). For many existing scripts, replacing `stim` with `tsim` should just work. tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference).
 
-Additionally, Tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, and `U3`.
+Additionally, tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, and `U3`.
 
 ```python
 import tsim
@@ -44,11 +47,11 @@ For GPU acceleration, use
 uv add "bloqade-tsim[cuda13]"
 ```
 
-See [Installation](install.md) for more options.
+See [Installation](/install) for more options.
 
 ## Architecture
 
-![Architecture](architecture.svg)
+![tsim architecture diagram](/architecture.svg)
 
 Quantum programs are translated into ZX diagrams in which Pauli noise channels appear as parameterized vertices with binary variables $e_i$.
 ZX simplification factors the diagram into a classical part that represents the Tanner graph and a quantum part containing the observable circuit. Both parts define a new basis of *error mechanisms* $f_i = \bigoplus_j T_{ij}\,e_j$.
@@ -57,8 +60,8 @@ At sampling time, JIT-compiled XLA kernels contract $g_{tki}$ with batched noise
 
 ## Differences from Stim
 
-Tsim supports non-deterministic detectors and observables. An important consequence is that
-Tsim will simulate actual detector samples, whereas Stim only reports detection flips (i.e. detection samples XORed with
+tsim supports non-deterministic detectors and observables. An important consequence is that
+tsim will simulate actual detector samples, whereas Stim only reports detection flips (i.e. detection samples XORed with
 a noiseless reference sample). Concretely,
 ```python
 c = tsim.Circuit(
@@ -86,14 +89,14 @@ Note that this feature should be used carefully. If detectors or observables are
 
 ## Benchmarks
 
-With GPU acceleration, Tsim can achieve sampling throughput for low-magic circuits that approaches the throughput of Stim on Clifford circuits of the same size. The figure below shows a comparison for [distillation circuits](https://arxiv.org/html/2412.15165v1) (35 and 85 qubits), [cultivation circuits](https://arxiv.org/abs/2409.17595), and rotated surface code circuits.
-Tsim can be five orders of magnitude faster than [quizx](https://github.com/zxcalc/quizx).
+With GPU acceleration, tsim can achieve sampling throughput for low-magic circuits that approaches the throughput of Stim on Clifford circuits of the same size. The figure below shows a comparison for [distillation circuits](https://arxiv.org/html/2412.15165v1) (35 and 85 qubits), [cultivation circuits](https://arxiv.org/abs/2409.17595), and rotated surface code circuits.
+tsim can be five orders of magnitude faster than [quizx](https://github.com/zxcalc/quizx).
 
-![Benchmarks](benchmarks.svg)
+![Sampling throughput benchmark comparing tsim against Stim and quizx](/benchmarks.svg)
 
-## Citing Tsim
+## Citing tsim
 
-If you use Tsim, please consider citing the paper describing the core simulation approach:
+If you use tsim, please consider citing the paper describing the core simulation approach:
 ```
 @article{tsim2026,
   title={Tsim: Fast Universal Simulator for Quantum Error Correction},
