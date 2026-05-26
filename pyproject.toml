@@ -96,6 +96,9 @@ doc = [
     "mkdocstrings[python]>=0.27.0",
     "jupytext>=1.17.2",
     "griffe>=2.0.2",
+    "nbclient>=0.10.4",
+    "nbconvert>=7.17.1",
+    "nbformat>=5.10.4",
 ]
 
 [tool.hatch.metadata]

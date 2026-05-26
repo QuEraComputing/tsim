@@ -15,12 +15,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import griffe
+import nbformat
+from nbclient import NotebookClient
+from nbconvert.exporters import MarkdownExporter
+from nbconvert.preprocessors import (
+    ExtractOutputPreprocessor,
+    TagRemovePreprocessor,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_DIR = REPO_ROOT / "docs"
@@ -286,10 +295,83 @@ def build_api() -> int:
     return len(rendered)
 
 
+def _humanize(name: str) -> str:
+    """Convert a snake_case or kebab-case filename stem to a title string."""
+    return name.replace("_", " ").replace("-", " ").capitalize()
+
+
+def _extract_title(nb: Any, fallback_name: str) -> tuple[str, Any]:
+    """Pull title from first markdown cell if it starts with '# '.
+
+    Strip that line from the cell to avoid a duplicate H1 in the
+    rendered MDX. Returns (title, possibly-mutated-notebook).
+    """
+    for cell in nb.cells:
+        if cell.cell_type == "markdown":
+            source = cell.source.lstrip()
+            m = re.match(r"^#\s+([^\n]+)", source)
+            if m:
+                title = m.group(1).strip()
+                cell.source = source[m.end() :].lstrip("\n")
+                return title, nb
+            break  # first md cell doesn't have an H1; stop scanning
+    return _humanize(fallback_name), nb
+
+
+def _convert_notebook(nb_path: Path, execute: bool) -> None:
+    """Convert a single .ipynb to .mdx, saving extracted figures alongside."""
+    nb = nbformat.read(str(nb_path), as_version=4)
+
+    if execute:
+        client = NotebookClient(
+            nb,
+            timeout=600,
+            kernel_name="python3",
+            allow_errors=False,
+            resources={"metadata": {"path": str(nb_path.parent)}},
+        )
+        client.execute()
+
+    # Drop cells tagged "remove-cell" (post-execution).
+    tag_remove = TagRemovePreprocessor(remove_cell_tags=("remove-cell",))
+    nb, _ = tag_remove.preprocess(nb, {})
+
+    title, nb = _extract_title(nb, nb_path.stem)
+
+    out_img_dir = IMAGES_TUT_DIR / nb_path.stem
+    out_img_dir.mkdir(parents=True, exist_ok=True)
+    extract = ExtractOutputPreprocessor()
+    extract.output_filename_template = "cell_{cell_index}_{index}{extension}"
+
+    exporter = MarkdownExporter()
+    exporter.register_preprocessor(extract, enabled=True)
+    body, resources = exporter.from_notebook_node(
+        nb,
+        resources={
+            "output_files_dir": f"/images/tutorials/{nb_path.stem}",
+            "unique_key": nb_path.stem,
+        },
+    )
+
+    # Save extracted resources (figures).
+    for fname, data in resources.get("outputs", {}).items():
+        out_file = out_img_dir / Path(fname).name
+        out_file.write_bytes(data)
+
+    title_esc = title.replace('"', "'")
+    mdx = f'---\ntitle: "{title_esc}"\n---\n\n{body.rstrip()}\n'
+    out_mdx = nb_path.with_suffix(".mdx")
+    out_mdx.write_text(mdx)
+
+
 def build_notebooks(execute: bool) -> int:
     """Build tutorial MDX files from Jupyter notebooks."""
-    print(f"[build_notebooks] stub — not implemented yet (execute={execute})")
-    return 0
+    if not TUTORIALS_DIR.exists():
+        return 0
+    notebooks = sorted(TUTORIALS_DIR.glob("*.ipynb"))
+    for nb_path in notebooks:
+        _convert_notebook(nb_path, execute=execute)
+    return len(notebooks)
 
 
 def main() -> int:
