@@ -166,23 +166,39 @@ def build_api() -> int:
     )
     API_DIR.mkdir(parents=True, exist_ok=True)
     count = 0
-    visited: set[int] = set()
+    visited_ids: set[int] = set()
+    visited_paths: set[str] = set()
 
     def walk(module):
         nonlocal count
-        # Guard against circular re-exports (griffe creates new objects per
-        # import so track by object id, not by path string)
+        # Guard against circular re-exports. Griffe creates new objects for
+        # each level of the phantom re-export (e.g. ``import tsim`` inside
+        # encoder.py produces ``tsim.utils.encoder.tsim``, then
+        # ``tsim.utils.encoder.tsim.utils.encoder.tsim``, etc.), so object-id
+        # tracking alone is insufficient — the ids are always fresh. Track
+        # both ids and paths as a belt-and-suspenders guard, but also detect
+        # phantom cycles by checking whether any prefix sub-path of the
+        # current path was already visited: a phantom path like
+        # ``tsim.utils.encoder.tsim`` re-introduces ``tsim`` (a visited root)
+        # as a non-root component, so its dot-segments will contain a visited
+        # path as a suffix component.
         obj_id = id(module)
-        if obj_id in visited:
+        if obj_id in visited_ids:
             return
-        visited.add(obj_id)
+        visited_ids.add(obj_id)
         path = module.path
+        if path in visited_paths:
+            return
+        # Detect phantom re-export cycles: if any proper suffix of the path
+        # (as dot-segments) matches an already-visited path, this is a
+        # circular re-export, not a real new module.
+        segments = path.split(".")
+        for i in range(1, len(segments)):
+            if ".".join(segments[i:]) in visited_paths:
+                return
+        visited_paths.add(path)
         # Only process modules that belong directly to the tsim source tree.
         # Re-exported packages like ``tsim.utils.encoder.tsim`` are noise.
-        # A canonical tsim module path has no segment appearing more than once.
-        segments = path.split(".")
-        if len(segments) != len(set(segments)):
-            return
         if not path.startswith("tsim"):
             return
         if "external" in path:
