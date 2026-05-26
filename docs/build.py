@@ -71,6 +71,8 @@ def _render_member(member, level: int) -> list[str]:
     """Render a function/class member as MDX lines."""
     if member.name.startswith("_") and not member.name.startswith("__"):
         return []
+    # NOTE: use .kind (not .is_class / .is_function) — Alias.kind safely
+    # returns Kind.ALIAS on unresolvable imports; the is_* properties raise.
     if member.kind == griffe.Kind.FUNCTION:
         return [
             f"{'#' * level} `{member.name}`",
@@ -143,15 +145,20 @@ def _render_module(module) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _module_output_path(dotted: str) -> Path:
-    """Map ``tsim.core.parse`` to ``docs/api-reference/core/parse.mdx``.
+def _module_output_path(module) -> Path:
+    """Map module to its output MDX path.
 
-    Package modules (``tsim`` itself, ``tsim.core``) become ``index.mdx`` in
-    the corresponding directory.
+    - Package ``__init__`` modules → ``<subdir>/index.mdx`` (the landing
+      page for that subpackage).
+    - Regular submodules → ``<a>/<b>.mdx``.
+    - The top-level ``tsim`` package → ``api-reference/index.mdx``.
     """
+    dotted = module.path
     parts = dotted.split(".")[1:]
     if not parts:
         return API_DIR / "index.mdx"
+    if module.is_init_module:
+        return API_DIR / Path(*parts) / "index.mdx"
     return API_DIR / Path(*parts).with_suffix(".mdx")
 
 
@@ -209,7 +216,7 @@ def build_api() -> int:
             for n, m in module.members.items()
         )
         if has_public or module.is_init_module:
-            out = _module_output_path(path)
+            out = _module_output_path(module)
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(_render_module(module))
             count += 1
