@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 import time
@@ -162,6 +163,63 @@ def _module_output_path(module) -> Path:
     return API_DIR / Path(*parts).with_suffix(".mdx")
 
 
+def _build_api_groups(rendered_paths: list[Path]) -> list[dict]:
+    """Map rendered MDX paths to Mintlify navigation groups.
+
+    Each top-level subdirectory of api-reference/ becomes one group;
+    files directly under api-reference/ go into a "Top level" group.
+    Inside each group, the subpackage ``index`` page is listed first
+    (it's the landing page) and the remaining modules follow alphabetically.
+    """
+    top_level: list[str] = []
+    by_dir: dict[str, list[str]] = {}
+
+    for p in rendered_paths:
+        rel = p.relative_to(DOCS_DIR).with_suffix("").as_posix()
+        # rel looks like "api-reference/core/parse" or "api-reference/circuit"
+        parts = rel.split("/")
+        if len(parts) == 2:
+            top_level.append(rel)
+        else:
+            subpkg = parts[1]
+            by_dir.setdefault(subpkg, []).append(rel)
+
+    def _index_first(pages: list[str]) -> list[str]:
+        """Return pages with any ``.../index`` entry sorted to the front."""
+        indexes = sorted(
+            p for p in pages if p.endswith("/index") or p == "api-reference/index"
+        )
+        others = sorted(p for p in pages if p not in indexes)
+        return indexes + others
+
+    groups: list[dict] = []
+    if top_level:
+        groups.append({"group": "Top level", "pages": _index_first(top_level)})
+    for subpkg in sorted(by_dir):
+        groups.append({"group": subpkg, "pages": _index_first(by_dir[subpkg])})
+    return groups
+
+
+def _patch_docs_json(api_groups: list[dict]) -> None:
+    """Overwrite the "API reference" tab's groups inside docs.json.
+
+    Gracefully no-ops if docs.json doesn't exist yet (Task 5 creates it).
+    """
+    if not DOCS_JSON.exists():
+        print(f"[warn] {DOCS_JSON} not found; skipping nav patch")
+        return
+    cfg = json.loads(DOCS_JSON.read_text())
+    tabs = cfg.get("navigation", {}).get("tabs", [])
+    for tab in tabs:
+        if tab.get("tab") == "API reference":
+            tab["groups"] = api_groups
+            break
+    else:
+        print("[warn] no 'API reference' tab in docs.json; skipping nav patch")
+        return
+    DOCS_JSON.write_text(json.dumps(cfg, indent=2) + "\n")
+
+
 def build_api() -> int:
     """Walk src/tsim/ with griffe and render one MDX per module."""
     pkg = griffe.load(
@@ -172,12 +230,12 @@ def build_api() -> int:
         ),
     )
     API_DIR.mkdir(parents=True, exist_ok=True)
-    count = 0
+    rendered: list[Path] = []
     visited_ids: set[int] = set()
     visited_paths: set[str] = set()
 
     def walk(module):
-        nonlocal count
+        # rendered is closed over
         # Guard against circular re-exports. Griffe creates new objects for
         # each level of the phantom re-export (e.g. ``import tsim`` inside
         # encoder.py produces ``tsim.utils.encoder.tsim``, then
@@ -219,12 +277,13 @@ def build_api() -> int:
             out = _module_output_path(module)
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(_render_module(module))
-            count += 1
+            rendered.append(out)
         for child in module.modules.values():
             walk(child)
 
     walk(pkg)
-    return count
+    _patch_docs_json(_build_api_groups(rendered))
+    return len(rendered)
 
 
 def build_notebooks(execute: bool) -> int:
