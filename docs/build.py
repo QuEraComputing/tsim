@@ -226,7 +226,7 @@ def _render_module(module) -> str:
     lines.append("")
 
     if module.docstring:
-        lines.append(module.docstring.value.strip())
+        lines.append(_escape_mdx_text(module.docstring.value.strip()))
         lines.append("")
 
     classes = []
