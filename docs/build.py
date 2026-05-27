@@ -86,6 +86,28 @@ def _escape_mdx_text(text: str) -> str:
     return "\n".join(result)
 
 
+def _srcdoc_attr(html: str) -> str:
+    """Escape a full HTML document for use as an MDX ``<iframe srcDoc>`` value.
+
+    We embed diagrams inline via ``srcDoc`` rather than linking a standalone
+    ``.html`` file, because Mintlify's hosted CDN only serves a fixed set of
+    static file types (images, ``.js``, ``.css``, ``.json``, …) and **not**
+    ``.html`` — so linked diagram files 404 on the deployed site.
+
+    The value is consumed as a JSX double-quoted attribute string. JSX decodes
+    HTML character references at compile time, so escaping ``&``, ``<``, ``>``,
+    and ``"`` round-trips: JSX turns them back into the literal characters and
+    hands the browser the exact original HTML for the ``srcdoc`` document
+    (scripts included). Order matters — escape ``&`` first.
+    """
+    return (
+        html.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
 def _stretch_zoom_block(block: str) -> str:
     """Make a tsim zoom container fill the iframe's full width.
 
@@ -118,20 +140,21 @@ def _stretch_zoom_block(block: str) -> str:
     return block
 
 
-def _extract_diagram_svgs(
-    body: str, img_dir: Path, url_prefix: str
-) -> tuple[str, list[tuple[Path, bytes]]]:
-    """Replace tsim diagram HTML with iframe embeds.
+def _extract_diagram_svgs(body: str, placeholders: dict[str, str]) -> str:
+    """Replace tsim diagram HTML with placeholder tokens, recording iframes.
 
     tsim's ``Diagram._repr_html_()`` wraps the SVG in a zoom container div
-    plus a ``<script>`` block. MDX cannot parse ``<script>`` tags or the
-    inline ``style="..."`` attributes from raw HTML, so we extract the full
-    interactive block into a standalone HTML file and embed it via an
-    ``<iframe>``. This preserves pan/zoom that the Jupyter renderer
+    plus a ``<script>`` block. MDX can't parse ``<script>`` tags or inline
+    ``style="..."`` from raw HTML, and Mintlify's CDN doesn't serve ``.html``
+    files, so we inline the full interactive document into an
+    ``<iframe srcDoc>``. This preserves the pan/zoom the Jupyter renderer
     provides.
 
-    Returns the modified body string and a list of ``(path, data)`` tuples
-    for files to write to disk.
+    The inlined HTML is multi-line and indented, which the later line-based
+    transforms (math normalization, output fencing) would corrupt. So we emit
+    a single-line placeholder token here and record the real iframe in
+    *placeholders*; the caller substitutes them back in **after** those
+    transforms run.
     """
     tsim_pattern = re.compile(
         r'<div\s+data-tsim-zoom="[^"]*"[^>]*'
@@ -140,7 +163,6 @@ def _extract_diagram_svgs(
         re.DOTALL | re.IGNORECASE,
     )
 
-    files_to_write: list[tuple[Path, bytes]] = []
     counter = [0]
 
     def replacer(m: re.Match) -> str:
@@ -148,7 +170,7 @@ def _extract_diagram_svgs(
         block = _stretch_zoom_block(m.group(0))
         # Replace the random uuid (used in both the container attribute and
         # the script's querySelector) with a deterministic per-notebook id so
-        # the generated file is byte-stable across builds (avoids git churn).
+        # the output is byte-stable across builds (avoids git churn).
         uid_m = re.search(r'data-tsim-zoom="([^"]+)"', block)
         if uid_m:
             block = block.replace(uid_m.group(1), f"tsim-zoom-{counter[0]:03d}")
@@ -161,17 +183,17 @@ def _extract_diagram_svgs(
             "overflow:hidden;}</style>"
             f"</head><body>{block}</body></html>"
         )
-        fname = f"diagram_{counter[0]:03d}.html"
-        files_to_write.append((img_dir / fname, html.encode("utf-8")))
-        src = f"{url_prefix}/{fname}"
-        return (
-            f'\n\n<iframe src="{src}" width="100%" height="{height + 4}" '
+        iframe = (
+            f'<iframe srcDoc="{_srcdoc_attr(html)}" width="100%" '
+            f'height="{height + 4}" '
             f'style={{{{border: "1px solid #eee", borderRadius: "0.5rem"}}}} '
-            f'title="Circuit diagram {counter[0]}" loading="lazy" />\n\n'
+            f'title="Circuit diagram {counter[0]}" loading="lazy" />'
         )
+        token = f"MINTLIFYIFRAMETSIM{counter[0]:03d}"
+        placeholders[token] = iframe
+        return f"\n\n{token}\n\n"
 
-    body = tsim_pattern.sub(replacer, body)
-    return body, files_to_write
+    return tsim_pattern.sub(replacer, body)
 
 
 def _normalize_block_math(body: str) -> str:
@@ -212,23 +234,22 @@ def _normalize_block_math(body: str) -> str:
     return "\n".join(out)
 
 
-def _extract_pyzx_iframes(
-    body: str, img_dir: Path, url_prefix: str
-) -> tuple[str, list[tuple[Path, bytes]]]:
-    """Replace pyzx D3 diagram blocks with iframe embeds.
+def _extract_pyzx_iframes(body: str, placeholders: dict[str, str]) -> str:
+    """Replace pyzx D3 diagram blocks with placeholder tokens.
 
     ``c.diagram("pyzx")`` emits a ``<div id="graph-output-…">`` placeholder
     followed by a ``<script type="module">`` that imports D3 from a CDN and
-    renders an interactive ZX diagram into the div. MDX cannot parse the
-    ``<script>`` tag, but a standalone HTML page can host both, so we save
-    each pair to its own ``.html`` file and embed it via ``<iframe>``.
+    renders an interactive ZX diagram into the div. Mintlify's CDN doesn't
+    serve ``.html`` files, so we inline the div+script into an
+    ``<iframe srcDoc>``. As with the tsim diagrams, we emit a single-line
+    placeholder and record the iframe in *placeholders* for the caller to
+    substitute back after the line-based transforms run.
     """
     pattern = re.compile(
         r'(<div\b[^>]*id="graph-output-[^"]*"[^>]*>\s*</div>)\s*'
         r'(<script\b[^>]*type="module"[^>]*>.*?</script>)',
         re.DOTALL | re.IGNORECASE,
     )
-    files_to_write: list[tuple[Path, bytes]] = []
     counter = [0]
 
     # The D3 render call ends with ``…, <width>, <height>, <pad>, <scale>,
@@ -246,7 +267,7 @@ def _extract_pyzx_iframes(
         block = m.group(1) + script
         # Replace pyzx's random ``graph-output-XXXX`` id (used in the div and
         # the ``showGraph('#…')`` call) with a deterministic per-notebook id
-        # so the generated file is byte-stable across builds. The CSS uses an
+        # so the output is byte-stable across builds. The CSS uses an
         # ``[id^="graph-output-"]`` prefix selector, so it still matches.
         gid_m = re.search(r'id="(graph-output-[^"]+)"', block)
         if gid_m:
@@ -261,17 +282,17 @@ def _extract_pyzx_iframes(
             "overflow:auto;box-sizing:border-box;}</style>"
             f"</head><body>{block}</body></html>"
         )
-        fname = f"pyzx_{counter[0]:03d}.html"
-        files_to_write.append((img_dir / fname, html.encode("utf-8")))
-        src = f"{url_prefix}/{fname}"
-        return (
-            f'\n\n<iframe src="{src}" width="100%" height="{height}" '
+        iframe = (
+            f'<iframe srcDoc="{_srcdoc_attr(html)}" width="100%" '
+            f'height="{height}" '
             f'style={{{{border: "1px solid #eee", borderRadius: "0.5rem"}}}} '
-            f'title="ZX diagram {counter[0]}" loading="lazy" />\n\n'
+            f'title="ZX diagram {counter[0]}" loading="lazy" />'
         )
+        token = f"MINTLIFYIFRAMEPYZX{counter[0]:03d}"
+        placeholders[token] = iframe
+        return f"\n\n{token}\n\n"
 
-    body = pattern.sub(replacer, body)
-    return body, files_to_write
+    return pattern.sub(replacer, body)
 
 
 def _strip_script_and_pyzx(body: str) -> str:
@@ -808,17 +829,14 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
         out_file = out_img_dir / Path(fname).name
         out_file.write_bytes(data)
 
-    # Replace tsim diagram HTML wrappers with iframe embeds backed by
-    # standalone HTML files (preserves zoom/pan).
-    url_prefix = f"/images/tutorials/{nb_path.stem}"
-    body, extra_files = _extract_diagram_svgs(body, out_img_dir, url_prefix)
-    for fpath, data in extra_files:
-        fpath.write_bytes(data)
-
-    # Same treatment for pyzx D3 diagrams (div placeholder + module script).
-    body, pyzx_files = _extract_pyzx_iframes(body, out_img_dir, url_prefix)
-    for fpath, data in pyzx_files:
-        fpath.write_bytes(data)
+    # Replace tsim and pyzx diagram HTML with single-line placeholder tokens,
+    # recording the real ``<iframe srcDoc>`` embeds. Tokens (not the multi-line
+    # inlined HTML) flow through the line-based transforms below; the iframes
+    # are substituted back in at the very end so those transforms can't corrupt
+    # the inlined SVG/script content.
+    iframes: dict[str, str] = {}
+    body = _extract_diagram_svgs(body, iframes)
+    body = _extract_pyzx_iframes(body, iframes)
 
     # Strip any orphaned <script> tags or empty graph placeholders that
     # didn't pair up above.
@@ -839,6 +857,11 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
         "![Notebook output figure](",
         body,
     )
+
+    # Substitute the diagram iframes back in now that all line-based
+    # transforms are done.
+    for token, iframe in iframes.items():
+        body = body.replace(token, iframe)
 
     title_esc = title.replace('"', "'")
     mdx = f'---\ntitle: "{title_esc}"\n---\n\n{body.rstrip()}\n'
