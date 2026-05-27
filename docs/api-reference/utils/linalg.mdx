@@ -1,0 +1,47 @@
+---
+title: "linalg"
+description: "Linear algebra utilities for GF(2) operations."
+---
+
+## `find_basis`
+
+```python
+find_basis(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]
+```
+
+Decompose a set of binary vectors into a basis subset and a transformation matrix over GF(2).
+
+Given a set of vectors V, this function finds a maximal linearly independent subset B
+(the basis) and computes a transformation matrix T such that the original vectors can be
+reconstructed from the basis via matrix multiplication over GF(2):
+
+V = T @ B (mod 2)
+
+**Parameters:**
+
+- `vectors` (`np.ndarray`) — Input binary vectors of shape `(N, D)`. Can be a list of lists or a numpy array. Elements should be 0 or 1 (or convertible to them).
+
+**Returns:**
+
+- `tuple[np.ndarray, np.ndarray]` — A tuple `(basis, transform)` where: basis: The subset of independent vectors, shape `(K, D)`, where `K` is the rank. transform: The transformation matrix, shape `(N, K)`.
+
+
+## `matmul_gf2`
+
+```python
+matmul_gf2(a: Array, b: Array) -> Array
+```
+
+Compute binary dot products mod 2 as ``a_GTP x b_BP -\> b_BGT``.
+
+Uses float32 matmul (integer matmul does not have BLAS support on CPU)
+then casts back to uint8.
+
+**Parameters:**
+
+- `a` (`Array`) — Parameter bit-masks, shape ``(G, T, P)`` — G graphs, T terms, P parameters.
+- `b` (`Array`) — Binary parameter values, shape ``(B, P)`` — B batch elements.
+
+**Returns:**
+
+- `Array` — Binary row-sums mod 2, shape ``(B, G, T)``.

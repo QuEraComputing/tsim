@@ -1,0 +1,69 @@
+---
+title: "clifford"
+description: "Mapping tables for converting parametric rotations with half-pi angles to Clifford gates."
+---
+
+## `expand_clifford_rotations`
+
+```python
+expand_clifford_rotations(source: stim.Circuit) -> stim.Circuit
+```
+
+Return ``source`` with half-π parametric rotations expanded to Clifford gates.
+
+``REPEAT`` blocks are preserved structurally and expanded recursively.
+
+
+## `is_clifford`
+
+```python
+is_clifford(source: stim.Circuit) -> bool
+```
+
+Return True iff every instruction in ``source`` is Clifford.
+
+Recurses into ``REPEAT`` block bodies.
+
+
+## `parametric_to_clifford_gates`
+
+```python
+parametric_to_clifford_gates(gate_name: str, params: dict[str, Fraction]) -> list[str] | None
+```
+
+Convert a parametric gate with half-π angles to stim Clifford gate names.
+
+**Parameters:**
+
+- `gate_name` (`str`) — One of ``"R_X"``, ``"R_Y"``, ``"R_Z"``, ``"U3"``.
+- `params` (`dict[str, Fraction]`) — Dict as returned by :func:`~tsim.core.parse.parse_parametric_tag`.
+
+**Returns:**
+
+- `list[str] | None` — Stim gate names in circuit order,
+- `list[str] | None` — or ``None`` when the angles are not half-π multiples.
+
+
+## `parse_parametric_tag`
+
+```python
+parse_parametric_tag(instruction: stim.CircuitInstruction) -> tuple[str, dict[str, Fraction]] | None
+```
+
+Parse the parametric tag on an instruction (e.g. ``I[R_Z(theta=0.3*pi)]``).
+
+Supports gates: R_Z, R_X, R_Y, U3.
+
+**Parameters:**
+
+- `instruction` (`stim.CircuitInstruction`) — The stim instruction whose tag will be parsed.
+
+**Returns:**
+
+- `tuple[str, dict[str, Fraction]] | None` — Tuple of (gate_name, params_dict) when the instruction's tag is a
+- `tuple[str, dict[str, Fraction]] | None` — well-formed parametric tag, or ``None`` when the tag is not
+- `tuple[str, dict[str, Fraction]] | None` — parametric-looking (no ``name(...)`` shape, or empty).
+
+**Raises:**
+
+- `ValueError` — When the tag looks parametric (matches ``name(...)``) but is malformed: a parameter value does not parse, the gate name is unknown, or the parameter keys do not match the expected set for the gate.

@@ -1,0 +1,343 @@
+---
+title: "channels"
+description: "Pauli noise channels and error sampling infrastructure."
+---
+
+## class `Channel`
+
+```python
+Channel(probs: np.ndarray, unique_col_ids: tuple[int, ...])
+```
+
+A probability distribution over error outcomes.
+
+Outcome indices: bit position ``i`` corresponds
+to ``1 \<\< i`` in ``probs``. For example, in a 2-bit channel, index 1
+(0b01) is bit pattern ``bit0=1, bit1=0`` and index 2 (0b10) is
+``bit0=0, bit1=1``.
+
+
+## class `ChannelSampler`
+
+```python
+ChannelSampler(channel_probs: list[np.ndarray], error_transform: np.ndarray, seed: int | None = None)
+```
+
+Samples from multiple error channels and transforms to a reduced basis.
+
+This class combines multiple error channels (each producing error bits e0, e1, ...)
+and applies a linear transformation over GF(2) to convert samples from the original
+"e" basis to a reduced "f" basis using geometric-skip sampling optimized for
+low-noise regimes.
+
+``f_i = error_transform_ij * e_j mod 2``. Within each channel,
+probability-array bit 0 corresponds to the first produced error bit, bit 1
+to the second, and so on.
+
+Channels are automatically simplified by:
+1. Removing bits e_i that do not affect any f-variable (i.e. all-zero columns in error_transform)
+2. Folding duplicate column IDs, i.e. channels whose column signatures contain duplicate IDs.
+2. Merging channels with identical column signatures, i.e. channels whose corresponding
+    columns in error_transform are identical.
+3. Absorbing channels whose signatures are subsets of others, i.e. channels whose corresponding
+    columns in error_transform are a strict subset of another channel's columns.
+
+**Example:**
+
+\>\>\> probs = [error_probs(0.1), error_probs(0.2)]  # two 1-bit channels
+\>\>\> transform = np.array([[1, 1]])  # f0 = e0 XOR e1
+\>\>\> sampler = ChannelSampler(probs, transform)
+\>\>\> samples = sampler.sample(1000)  # shape (1000, 1)
+
+
+### `sample`
+
+```python
+sample(num_samples: int = 1) -> np.ndarray
+```
+
+Sample from all error channels and transform to new error basis.
+
+Uses geometric-skip sampling, optimized for low-noise regimes where
+P(non-identity) \<\< 1 per channel.
+
+**Parameters:**
+
+- `num_samples` (`int`) — Number of samples to draw.
+
+**Returns:**
+
+- `np.ndarray` — NumPy array of shape (num_samples, num_f) with uint8 values indicating
+- `np.ndarray` — which f-variables are set for each sample.
+
+
+## `absorb_subset_channels`
+
+```python
+absorb_subset_channels(channels: list[Channel], max_bits: int = 4) -> list[Channel]
+```
+
+Absorb channels whose signatures are subsets of others.
+
+If channel A's signatures are a strict subset of channel B's signatures,
+and |B| \<= max_bits, then A is absorbed into B.
+
+**Parameters:**
+
+- `channels` (`list[Channel]`) — List of channels
+- `max_bits` (`int`) — Maximum number of bits allowed per channel
+
+**Returns:**
+
+- `list[Channel]` — List with no channel being a strict subset of another
+
+
+## `correlated_error_probs`
+
+```python
+correlated_error_probs(probabilities: list[float]) -> np.ndarray
+```
+
+Build probability distribution for correlated error chain.
+
+Given conditional probabilities [p1, p2, ..., pk] from a chain of
+CORRELATED_ERROR(p1) ELSE_CORRELATED_ERROR(p2) ... ELSE_CORRELATED_ERROR(pk),
+computes the joint probability distribution over 2^k outcomes.
+
+Since errors are mutually exclusive, only outcomes with at most one bit set
+have non-zero probability.
+- ``probs[0]`` is the probability that no branch fires.
+- ``probs[1 \<\< i]`` is the probability that branch ``i`` fires after all
+  previous branches did not fire.
+
+**Parameters:**
+
+- `probabilities` (`list[float]`) — List of conditional probabilities [p1, p2, ..., pk]
+
+**Returns:**
+
+- `np.ndarray` — Array of shape (2^k,) with probabilities for each outcome.
+
+
+## `error_probs`
+
+```python
+error_probs(p: float) -> np.ndarray
+```
+
+Single-bit error channel.
+
+Returns ``[P(bit0=0), P(bit0=1)]``.
+
+
+## `expand_channel`
+
+```python
+expand_channel(channel: Channel, target_col_ids: tuple[int, ...]) -> Channel
+```
+
+Expand a channel's distribution to a larger signature set.
+
+The channel's existing column IDs must be a strict subset of
+``target_col_ids`` when considered as sets, and both tuples must be sorted.
+New target bit positions are treated as always zero.
+
+Duplicate source column IDs are allowed. When multiple source bits map to
+the same target bit, their contribution is XORed, matching GF(2)
+composition. Duplicate target column IDs are not allowed; channels with
+duplicate IDs should be canonicalized before subset absorption.
+
+**Parameters:**
+
+- `channel` (`Channel`) — Channel to expand (must have sorted unique_col_ids)
+- `target_col_ids` (`tuple[int, ...]`) — Target signature set (must be sorted superset)
+
+**Returns:**
+
+- `Channel` — New channel with expanded distribution
+
+
+## `fold_duplicate_channel_bits`
+
+```python
+fold_duplicate_channel_bits(channels: list[Channel]) -> list[Channel]
+```
+
+Canonicalize channels by XOR-folding duplicate column IDs.
+
+If two bits in the same channel have identical column signatures, sampling
+both bits only affects the reduced error basis through their parity. This
+replaces those duplicate bits with one bit whose probability is the sum of
+all old outcomes with the same XOR-folded value.
+
+**Parameters:**
+
+- `channels` (`list[Channel]`) — List of channels with sorted unique_col_ids
+
+**Returns:**
+
+- `list[Channel]` — List of channels whose unique_col_ids contain no duplicates
+
+
+## `heralded_pauli_channel_1_probs`
+
+```python
+heralded_pauli_channel_1_probs(pi: float, px: float, py: float, pz: float) -> np.ndarray
+```
+
+Heralded single-qubit Pauli channel. Returns shape (8,).
+
+Bit layout:
+- bit 0: herald bit, written to the measurement record
+- bit 1: Z error component
+- bit 2: X error component
+
+The non-zero outcomes are:
+- index 0 (0b000): no herald, no Pauli error
+- index 1 (0b001): herald + I
+- index 3 (0b011): herald + Z
+- index 5 (0b101): herald + X
+- index 7 (0b111): herald + Y, represented as X+Z
+
+
+## `merge_identical_channels`
+
+```python
+merge_identical_channels(channels: list[Channel]) -> list[Channel]
+```
+
+Merge all channels with identical signature sets.
+
+Groups channels by their unique_col_ids and convolves all channels
+in each group into a single channel.
+
+**Parameters:**
+
+- `channels` (`list[Channel]`) — List of channels
+
+**Returns:**
+
+- `list[Channel]` — List with at most one channel per unique signature set
+
+
+## `normalize_channels`
+
+```python
+normalize_channels(channels: list[Channel]) -> list[Channel]
+```
+
+Normalize channels by sorting unique_col_ids, permuting probs accordingly.
+
+This ensures channels affecting the same set of columns have identical
+``unique_col_ids`` tuples, enabling ``merge_identical_channels`` to group
+them. The probability tensor is transposed using the same axis permutation
+so little-endian outcome bits continue to refer to the matching column IDs.
+
+**Parameters:**
+
+- `channels` (`list[Channel]`) — List of channels
+
+**Returns:**
+
+- `list[Channel]` — List of channels with sorted unique_col_ids
+
+
+## `pauli_channel_1_probs`
+
+```python
+pauli_channel_1_probs(px: float, py: float, pz: float) -> np.ndarray
+```
+
+Single-qubit Pauli channel. Returns shape (4,).
+
+Bit layout:
+- bit 0: Z error component
+- bit 1: X error component
+
+The outcomes are:
+- index 0 (0b00): I
+- index 1 (0b01): Z
+- index 2 (0b10): X
+- index 3 (0b11): Y
+
+
+## `pauli_channel_2_probs`
+
+```python
+pauli_channel_2_probs(pix: float, piy: float, piz: float, pxi: float, pxx: float, pxy: float, pxz: float, pyi: float, pyx: float, pyy: float, pyz: float, pzi: float, pzx: float, pzy: float, pzz: float) -> np.ndarray
+```
+
+Two-qubit Pauli channel. Returns shape (16,).
+
+Bit layout:
+- bit 0: Z error component on ``qubit_i``
+- bit 1: X error component on ``qubit_i``
+- bit 2: Z error component on ``qubit_j``
+- bit 3: X error component on ``qubit_j``
+
+With that layout, index ``z_i + 2*x_i + 4*z_j + 8*x_j`` stores the
+probability for the corresponding two-qubit Pauli outcome. The arguments
+follow Stim's naming convention: ``pix`` is I on ``qubit_i`` and X on
+``qubit_j``, ``pzi`` is Z on ``qubit_i`` and I on ``qubit_j``, etc.
+
+
+## `reduce_null_bits`
+
+```python
+reduce_null_bits(channels: list[Channel], null_col_id: int | None = None) -> list[Channel]
+```
+
+Remove bits corresponding to the null column (all-zero column).
+
+If a channel has bits mapped to null_col_id (representing an all-zero
+column in the transform matrix), those bits don't affect any f-variable
+and can be marginalized out by summing over them.
+
+**Parameters:**
+
+- `channels` (`list[Channel]`) — List of channels
+- `null_col_id` (`int | None`) — Column ID representing the all-zero column, or None if there is no all-zero column.
+
+**Returns:**
+
+- `list[Channel]` — List of channels with null bits marginalized out. Channels with all
+- `list[Channel]` — null entries are removed entirely (they have no effect on outputs).
+
+
+## `simplify_channels`
+
+```python
+simplify_channels(channels: list[Channel], max_bits: int = 4, null_col_id: int | None = None) -> list[Channel]
+```
+
+Simplify channels by removing null columns, folding, merging identical and absorbing subsets.
+
+**Parameters:**
+
+- `channels` (`list[Channel]`) — List of channels to simplify
+- `max_bits` (`int`) — Maximum number of bits allowed per channel
+- `null_col_id` (`int | None`) — Column ID representing the all-zero column, or None if there is no all-zero column.
+
+**Returns:**
+
+- `list[Channel]` — Simplified list of channels
+
+
+## `xor_convolve`
+
+```python
+xor_convolve(probs_a: np.ndarray, probs_b: np.ndarray) -> np.ndarray
+```
+
+XOR convolution of two probability distributions.
+
+Computes P(A XOR B = o) = sum_\{a ^ b = o\} P(A=a) * P(B=b)
+
+**Parameters:**
+
+- `probs_a` (`np.ndarray`) — Shape (2^k,) probabilities for channel A
+- `probs_b` (`np.ndarray`) — Shape (2^k,) probabilities for channel B (same size as A)
+
+**Returns:**
+
+- `np.ndarray` — Shape (2^k,) probabilities for the combined channel

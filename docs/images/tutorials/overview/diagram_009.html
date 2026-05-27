@@ -1,0 +1,52 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;height:100%;overflow:hidden;}</style></head><body><div data-tsim-zoom="tsim-zoom-009" style="width:100%; height:100%; box-sizing:border-box; font-size:0; line-height:0; overflow:auto; background:white; border:none; position:relative;">
+  <div style="display:inline-block; overflow:hidden; width:120.0px; height:120.0px;">
+    <div style="transform-origin:0 0; display:block; width:160.0px; height:160.0px; transform:scale(0.75);">
+      <svg width="160.0" height="160.0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" version="1.1">
+<g id="qubit_lines">
+<path id="qubit_line:0" d="M64,64 L128,64 " stroke="black"/>
+<text dominant-baseline="central" text-anchor="end" font-family="monospace" font-size="12" x="64" y="64">q0</text>
+</g>
+<rect x="80" y="48" width="32" height="32" stroke="black" fill="black"/>
+<text dominant-baseline="central" text-anchor="middle" font-family="monospace" font-size="30" x="96" y="64" fill="white">M</text>
+<text text-anchor="middle" font-family="monospace" font-size="8" x="96" y="44">rec[0]</text>
+</svg>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  var wrap = document.querySelector('[data-tsim-zoom="tsim-zoom-009"]');
+  if (!wrap || wrap.dataset.tsimZoomInit) return;
+  wrap.dataset.tsimZoomInit = "1";
+  var size = wrap.firstElementChild;
+  var xform = size.firstElementChild;
+  var natW = 160.0;
+  var natH = 160.0;
+  var scale = 0.75;
+  var cw = wrap.clientWidth;
+  if (cw > 0 && natW > 0) {
+    /* keep height-fit initial scale */
+  }
+  function apply() {
+    xform.style.transform = 'scale(' + scale + ')';
+    size.style.width = (natW * scale) + 'px';
+    size.style.height = (natH * scale) + 'px';
+  }
+  apply();
+  wrap.addEventListener('wheel', function(e) {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      var rect = wrap.getBoundingClientRect();
+      var mx = e.clientX - rect.left + wrap.scrollLeft;
+      var my = e.clientY - rect.top + wrap.scrollTop;
+      var factor = Math.exp(-e.deltaY * 0.01);
+      var newScale = Math.min(Math.max(0.02, scale * factor), 40);
+      var ratio = newScale / scale;
+      scale = newScale;
+      apply();
+      wrap.scrollLeft = mx * ratio - (e.clientX - rect.left);
+      wrap.scrollTop = my * ratio - (e.clientY - rect.top);
+    }
+  }, { passive: false });
+})();
+</script></body></html>

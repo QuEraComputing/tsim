@@ -1,0 +1,156 @@
+---
+title: "diagram"
+description: "SVG diagram rendering for quantum circuits."
+---
+
+## class `Diagram`
+
+```python
+Diagram(svg: str, html: str)
+```
+
+Wrapper for SVG diagram with Jupyter notebook display support.
+
+
+## class `GateLabel`
+
+```python
+GateLabel(label: str, annotation: str | None = None)
+```
+
+Label for a gate in the SVG diagram.
+
+
+## `parse_stim_circuit`
+
+```python
+parse_stim_circuit(stim_circuit: stim.Circuit, track_classical_wires: bool = False) -> GraphRepresentation
+```
+
+Parse a stim circuit into a GraphRepresentation.
+
+**Parameters:**
+
+- `stim_circuit` (`stim.Circuit`) — The stim circuit to convert.
+- `track_classical_wires` (`bool`) — Whether to track classical wires.
+
+**Returns:**
+
+- `GraphRepresentation` — A GraphRepresentation containing the ZX graph and all auxiliary data.
+
+
+## `placeholders_to_t`
+
+```python
+placeholders_to_t(svg_string: str, placeholder_id_to_labels: dict[float, GateLabel]) -> str
+```
+
+Replace I_ERROR placeholder gates in an SVG diagram with actual gate names.
+
+Supported gates are T, T†, R_Z, R_X, R_Y, U_3.
+
+**Parameters:**
+
+- `svg_string` (`str`) — The SVG string from stim's diagram() method containing I_ERROR placeholder gates whose p-value are used as identifiers.
+- `placeholder_id_to_labels` (`dict[float, GateLabel]`) — Mapping from identifier (float), i.e. the p values of I_ERROR gates, to GateLabel.
+
+**Returns:**
+
+- `str` — Modified SVG string with I_ERROR gates replaced by the actual gate names.
+
+
+## `render_pyzx_d3`
+
+```python
+render_pyzx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> GraphS
+```
+
+Render a stim circuit as a pyzx ZX diagram using d3.js.
+
+**Parameters:**
+
+- `stim_circ` (`stim.Circuit`) — The stim circuit to render.
+- `kwargs` (`dict[str, Any]`) — Additional keyword arguments passed to the underlying diagram renderer.
+
+**Returns:**
+
+- `GraphS` — A pyzx ZX diagram.
+
+
+## `render_svg`
+
+```python
+render_svg(c: stim.Circuit, type: str, tick: int | range | None = None, filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),), rows: int | None = None, width: float | None = None, height: float | None = None, zoomable: bool = True) -> Diagram
+```
+
+Render a stim circuit timeline/timeslice diagram with custom labels.
+
+
+## `scale_horizontally`
+
+```python
+scale_horizontally(g: BaseGraph, scale: float) -> None
+```
+
+Scale horizontal positions of graph vertices by a factor of ``scale``.
+
+**Parameters:**
+
+- `g` (`BaseGraph`) — A ZX graph
+- `scale` (`float`) — The factor to scale the graph by
+
+
+## `tagged_gates_to_placeholder`
+
+```python
+tagged_gates_to_placeholder(circuit: stim.Circuit) -> tuple[stim.Circuit, dict[float, GateLabel]]
+```
+
+Replace tagged gates with I_ERROR placeholder gates for rendering.
+
+Converts S[T], S_DAG[T], I[R_X(...)], I[R_Y(...)], I[R_Z(...)], I[U3(...)]
+to I_ERROR placeholder gates whose p-values are used as identifiers.
+
+**Parameters:**
+
+- `circuit` (`stim.Circuit`) — The stim circuit to replace tagged gates with I_ERROR placeholder gates.
+
+**Returns:**
+
+- `stim.Circuit` — A tuple containing the modified circuit and a dictionary mapping the p-values
+- `dict[float, GateLabel]` — of the I_ERROR placeholder gates to the actual gate names.
+
+
+## `wrap_svg`
+
+```python
+wrap_svg(svg: str, width: float | None = None, height: float | None = None) -> str
+```
+
+Wrap an SVG string in a container div.
+
+**Parameters:**
+
+- `svg` (`str`) — Raw SVG markup.
+- `width` (`float | None`) — Width of the container in pixels.
+- `height` (`float | None`) — Height of the container in pixels (unused, kept for API symmetry with :func:`wrap_svg_zoomable`).
+
+
+## `wrap_svg_zoomable`
+
+```python
+wrap_svg_zoomable(svg: str, width: float | None = None, height: float = 700) -> str
+```
+
+Wrap an SVG in a zoomable, scrollable container.
+
+The container has the given pixel dimensions.  When *width* is ``None``
+the container fills the available width.  Users can pan by scrolling
+and zoom with pinch-zoom (trackpad) or Ctrl/Cmd + wheel.  Zoom is
+anchored at the cursor position.
+
+**Parameters:**
+
+- `svg` (`str`) — Raw SVG markup.
+- `width` (`float | None`) — Pixel width of the container, or ``None`` for full width.
+- `height` (`float`) — Pixel height of the container.

@@ -1,0 +1,66 @@
+---
+title: "exact_scalar"
+description: "Exact scalar arithmetic for ZX-calculus phase computations."
+---
+
+Implements exact arithmetic for complex numbers of the form:
+    (a + b*e^(i*pi/4) + c*i + d*e^(-i*pi/4)) * 2^power
+
+This representation enables exact computation of phases in ZX-calculus graphs
+without floating-point errors.
+
+## class `ExactScalarArray`
+
+```python
+ExactScalarArray(coeffs: Array, power: Array | None = None)
+```
+
+Exact scalar array for ZX-calculus phase arithmetic using dyadic representation.
+
+Represents values of the form (c_0 + c_1·ω + c_2·ω² + c_3·ω³) × 2^power
+where ω = e^(iπ/4). This enables exact computation without floating-point errors.
+
+
+### `prod`
+
+```python
+prod(axis: int = -1) -> ExactScalarArray
+```
+
+Compute product along the specified axis using associative scan.
+
+Returns identity (1+0i with power 0) for empty reductions.
+
+**Parameters:**
+
+- `axis` (`int`) — The axis along which to compute the product.
+
+**Returns:**
+
+- `ExactScalarArray` — ExactScalarArray with the product computed along the axis.
+
+
+### `sum`
+
+```python
+sum(axis: int = -1) -> ExactScalarArray
+```
+
+Sum elements along the specified axis using normalized pairwise adds.
+
+**Parameters:**
+
+- `axis` (`int`) — The axis along which to sum.
+
+**Returns:**
+
+- `ExactScalarArray` — ExactScalarArray with the sum computed along the axis.
+
+
+### `to_complex`
+
+```python
+to_complex() -> jax.Array
+```
+
+Convert to complex number.

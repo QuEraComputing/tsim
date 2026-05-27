@@ -1,0 +1,264 @@
+---
+title: "From Stim to Tsim"
+---
+
+```python
+import tsim
+import stim
+```
+
+If you have been using Stim, using Tsim should feel very similar. In many cases, replacing `stim` with `tsim` should just work.
+
+If you're not yet familiar with Stim, there are lots of resources out there: For example, [Stim's getting_started notebook](https://github.com/quantumlib/Stim/blob/main/doc/getting_started.ipynb), [Craig Gidney's Stim tutorial on YouTube](https://www.youtube.com/watch?v=sprDaLxPVNI), [Google's course on QEC](https://www.coursera.org/learn/quantum-error-correction#modules), or [this Stim 101 tutorial](https://www.youtube.com/watch?v=LiT6NDQcOm0).
+
+### Non-Clifford instructions
+
+Tsim extends the Stim text format with the non-Clifford instructions `T`, `T_DAG`, `R_X`, `R_Y`, and `R_Z`, `U3`. Rotation angles are specified in units of π.
+
+
+```python
+c = tsim.Circuit("""
+    T 0
+    T_DAG 0
+    R_X(0.1) 0
+    R_Y(0.2) 0
+    R_Z(0.3) 0
+    U3(0.1, 0.2, 0.3) 0
+""")
+c.diagram(height=150)
+```
+
+
+
+
+
+
+
+<iframe src="/images/tutorials/from_stim_to_tsim/diagram_001.html" width="100%" height="154" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="Circuit diagram 1" loading="lazy" />
+
+
+
+
+
+
+### Detector Reference Samples
+
+There are a few differences between the two packages. For example, Stim's detector sampler will output results relative to a noiseless reference sample. For example, in the following circuit, detector and observable bits will always be `False`:
+
+
+```python
+circuit_str = """
+    X 0
+    M 0
+    DETECTOR rec[-1]
+    OBSERVABLE_INCLUDE(0) rec[-1]
+    """
+c = stim.Circuit(circuit_str)
+stim_sampler = c.compile_detector_sampler(seed=None)
+samples = stim_sampler.sample(shots=5, append_observables=True)
+print(samples)
+```
+
+```text title="Output"
+[[False False]
+ [False False]
+ [False False]
+ [False False]
+ [False False]]
+```
+
+
+
+By default, Tsim reports actual detector and observable bits. To match Stim's behavior, set `use_detector_reference_sample=True` and `use_observable_reference_sample=True`. This computes a noiseless reference sample and XORs it with the results.
+
+
+```python
+c = tsim.Circuit(circuit_str)
+tsim_sampler = c.compile_detector_sampler(seed=0)
+
+# Without reference sample (default): actual detector/observable values
+samples = tsim_sampler.sample(shots=5, append_observables=True)
+print("Without reference sample:")
+print(samples)
+
+# With reference sample: matches Stim behavior
+samples_ref = tsim_sampler.sample(
+    shots=5,
+    append_observables=True,
+    use_detector_reference_sample=True,
+    use_observable_reference_sample=True,
+)
+print("\nWith reference sample:")
+print(samples_ref)
+```
+
+```text title="Output"
+Without reference sample:
+[[ True  True]
+ [ True  True]
+ [ True  True]
+ [ True  True]
+ [ True  True]]
+
+
+
+With reference sample:
+[[False False]
+ [False False]
+ [False False]
+ [False False]
+ [False False]]
+```
+
+
+
+### Batch size and just-in-time compilation
+
+Tsim's samplers also have a `batch_size` argument, which does not exist in Stim. This parameter controls the number of shots sampled in parallel.
+
+When `batch_size` is not specified, it is automatically chosen based on available device memory (GPU VRAM or system RAM). To achieve maximum performance on a GPU, you can also set `batch_size` explicitly.
+
+
+```python
+tsim_sampler.sample(shots=1_000_000, batch_size=100_000)
+```
+
+
+
+
+```text title="Output"
+array([[ True],
+       [ True],
+       [ True],
+       ...,
+       [ True],
+       [ True],
+       [ True]], shape=(1000000, 1))
+```
+
+
+
+
+Tsim uses `jax` just-in-time compilation, which is triggered upon first execution of the `sample` function. This means that subsequent calls to `sample` with the same parameters will be faster. Note that recompilation is triggered whenever the `batch_size` is changed.
+
+### Decomposition strategies
+
+Tsim supports three stabilizer rank decomposition strategies: `"cat5"` (default), `"bss"`, and `"cutting"`. The strategy can be passed to `compile_sampler` or `compile_detector_sampler`:
+
+
+```python
+c.compile_detector_sampler(strategy="cutting")
+```
+
+
+
+
+```text title="Output"
+CompiledDetectorSampler(0 direct, 4 graphs, 0 error channel bits, 1 outputs for largest cc, ≤ 1 parameters, 2 A terms, 0 B terms, 0 C terms, 0 D terms, 152 B)
+```
+
+
+
+
+Different strategies can yield different performance depending on the circuit structure. If sampling is slow, it can be worth trying an alternative strategy.
+
+### Visualization methods
+
+Tsim supports a subset of Stim's visualization methods. Since Tsim is based on ZX diagrams, it also provides visualization via `pyzx`.
+
+
+```python
+c = tsim.Circuit("""
+    RX 0 1
+    TICK
+    T 0
+    TICK
+    CNOT 0 1
+    TICK
+    U3(0.1, 0.2, 0.3) 1
+    TICK
+    M 0 1
+""")
+c.diagram("timeline-svg", height=150)
+```
+
+
+
+
+
+
+
+<iframe src="/images/tutorials/from_stim_to_tsim/diagram_002.html" width="100%" height="154" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="Circuit diagram 2" loading="lazy" />
+
+
+
+
+
+
+
+```python
+c.diagram("timeslice-svg", height=80, rows=1)
+```
+
+
+
+
+
+
+
+<iframe src="/images/tutorials/from_stim_to_tsim/diagram_003.html" width="100%" height="84" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="Circuit diagram 3" loading="lazy" />
+
+
+
+
+
+
+
+```python
+c.diagram("pyzx");
+```
+
+
+
+
+<iframe src="/images/tutorials/from_stim_to_tsim/pyzx_001.html" width="100%" height="212" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="ZX diagram 1" loading="lazy" />
+
+
+
+
+It can be interesting to look at the ZX diagram of more advanced Stim programs. For example, the following program measures a qubit and records the flipped measurement outcome. Based on this outcome, an X gate is applied to a different qubit:
+
+
+```python
+tsim.Circuit("""
+M !0
+CNOT rec[-1] 1
+""").diagram("pyzx");
+```
+
+
+
+
+<iframe src="/images/tutorials/from_stim_to_tsim/pyzx_002.html" width="100%" height="212" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="ZX diagram 2" loading="lazy" />
+
+
+
+
+### `REPEAT` instructions are flattened
+
+Tsim does not support `REPEAT` instructions. Any `REPEAT` instructions will be flattened.
+
+
+```python
+c = tsim.Circuit("""
+    REPEAT 10 {
+        T 0
+    }
+""")
+c.diagram("pyzx");
+```
+
+
+
+
+<iframe src="/images/tutorials/from_stim_to_tsim/pyzx_003.html" width="100%" height="162" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="ZX diagram 3" loading="lazy" />

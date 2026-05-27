@@ -1,0 +1,57 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;height:100%;overflow:hidden;}</style></head><body><div data-tsim-zoom="tsim-zoom-019" style="width:100%; height:100%; box-sizing:border-box; font-size:0; line-height:0; overflow:auto; background:white; border:none; position:relative;">
+  <div style="display:inline-block; overflow:hidden; width:850.0px; height:170.0px;">
+    <div style="transform-origin:0 0; display:block; width:1120.0px; height:224.0px; transform:scale(0.7589285714285714);">
+      <svg width="1120.0" height="224.0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 224" version="1.1">
+<g id="qubit_lines">
+<path id="qubit_line:0" d="M64,64 L1088,64 " stroke="black"/>
+<text dominant-baseline="central" text-anchor="end" font-family="monospace" font-size="12" x="64" y="64">q0</text>
+<path id="qubit_line:1" d="M64,128 L1088,128 " stroke="black"/>
+<text dominant-baseline="central" text-anchor="end" font-family="monospace" font-size="12" x="64" y="128">q1</text>
+</g>
+<path d="M96,64 L96,128 " stroke="black"/>
+<rect x="80" y="48" width="992" height="32" stroke="black" fill="pink"/>
+<text dominant-baseline="central" text-anchor="middle" font-family="monospace" font-size="16" x="576" y="64">PAULI_CHANNEL_2<tspan baseline-shift="sub" font-size="10">0</tspan></text>
+<rect x="80" y="112" width="992" height="32" stroke="black" fill="pink"/>
+<text dominant-baseline="central" text-anchor="middle" font-family="monospace" font-size="16" x="576" y="128">PAULI_CHANNEL_2<tspan baseline-shift="sub" font-size="10">1</tspan></text>
+<text dominant-baseline="hanging" text-anchor="middle" font-family="monospace" font-size="10" stroke="red" x="576" y="148">0.01,0.01,0.03,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01,0.01</text>
+</svg>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  var wrap = document.querySelector('[data-tsim-zoom="tsim-zoom-019"]');
+  if (!wrap || wrap.dataset.tsimZoomInit) return;
+  wrap.dataset.tsimZoomInit = "1";
+  var size = wrap.firstElementChild;
+  var xform = size.firstElementChild;
+  var natW = 1120.0;
+  var natH = 224.0;
+  var scale = 0.7589285714285714;
+  var cw = wrap.clientWidth;
+  if (cw > 0 && natW > 0) {
+    /* keep height-fit initial scale */
+  }
+  function apply() {
+    xform.style.transform = 'scale(' + scale + ')';
+    size.style.width = (natW * scale) + 'px';
+    size.style.height = (natH * scale) + 'px';
+  }
+  apply();
+  wrap.addEventListener('wheel', function(e) {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      var rect = wrap.getBoundingClientRect();
+      var mx = e.clientX - rect.left + wrap.scrollLeft;
+      var my = e.clientY - rect.top + wrap.scrollTop;
+      var factor = Math.exp(-e.deltaY * 0.01);
+      var newScale = Math.min(Math.max(0.02, scale * factor), 40);
+      var ratio = newScale / scale;
+      scale = newScale;
+      apply();
+      wrap.scrollLeft = mx * ratio - (e.clientX - rect.left);
+      wrap.scrollTop = my * ratio - (e.clientY - rect.top);
+    }
+  }, { passive: false });
+})();
+</script></body></html>

@@ -1,0 +1,401 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;height:100%;overflow:hidden;}[id^="graph-output-"]{width:100%;height:100%;overflow:auto;box-sizing:border-box;}</style></head><body><div style="overflow:auto; background-color: white" id="graph-output-002"></div><script type="module">
+var d3;
+if (d3 == null) { d3 = await import("https://esm.sh/d3@5"); }
+var _settings_colors = JSON.parse('{"edge": "#000000", "Hedge": "#0088ff", "Xedge": "#999999", "Bedge": "#000000", "HBedge": "#0088ff", "boundary": "#000000", "X": "#ff8888", "Y": "#aabbff", "Z": "#ccffcc", "H": "#ffff66", "W": "#000000", "Zalt": "#ccffcc", "Walt": "#000000", "Zbold": "#ccffcc", "Xbold": "#ff8888", "Xdark": "#ff8888", "Ydark": "#aabbff", "Zdark": "#99dd99"}');
+// PyZX - Python library for quantum circuit rewriting 
+//        and optimisation using the ZX-calculus
+// Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// styling functions
+function nodeColor(t) {
+    if (t == 0) return _settings_colors['boundary'];
+    else if (t == 1) return _settings_colors['Z']; // "#ccffcc";
+    else if (t == 2) return _settings_colors['X']; // "#ff8888";
+    else if (t == 3) return _settings_colors['H']; // "yellow";
+    else if (t == 4) return _settings_colors['W']; // "black";
+    else if (t == 5) return _settings_colors['Walt']; // "black";
+    else if (t == 6) return _settings_colors['Zalt']; // "#ccffcc";
+    else if (t == 7) return _settings_colors['Zbold']; // "#ccffcc" bold Z
+    else if (t == 8) return _settings_colors['Xbold']; // "#ff8888" bold X
+}
+
+function edgeColor(t) {
+    if (t == 1) return _settings_colors['edge']; //"black";
+    else if (t == 2) return _settings_colors['Hedge']; // "#08f";
+    else if (t == 3) return _settings_colors['Xedge']; // "gray";
+    else if (t == 4) return _settings_colors['Bedge']; // "black" bold
+    else if (t == 5) return _settings_colors['HBedge']; // "#0088ff" bold hadamard
+}
+
+function isBoldEdge(t) {
+    return t == 4 || t == 5;
+}
+
+function webColor(t) {
+    if (t == 'X') return _settings_colors['Xdark'];
+    else if (t == 'Y') return _settings_colors['Ydark'];
+    else if (t == 'Z') return _settings_colors['Zdark'];
+    else if (t == 'I') return '#dddddd';
+}
+
+function nodeStyle(selected, t) {
+    var bold = (t == 7 || t == 8);
+    if (selected) return "stroke-width: " + (bold ? "4" : "2") + "px; stroke: #00f";
+    return "stroke-width: " + (bold ? "3" : "1.5") + "px";
+}
+
+var symbolGround = {
+    draw: function(context, size){
+        let s = size/2;
+
+        context.moveTo(0,-s);
+        context.lineTo(0,0);
+
+        context.moveTo(-s,0);
+        context.lineTo(s,0);
+
+        context.moveTo(-2*s/3,s/3);
+        context.lineTo(2*s/3,s/3);
+
+        context.moveTo(-s/3,2*s/3);
+        context.lineTo(s/3,2*s/3);
+    }
+}
+
+function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_labels, scalar_str) {
+    var ntab = {};
+
+    var groundOffset = 2.5 * node_size;
+
+    graph.nodes.forEach(function(d) {
+        ntab[d.name] = d;
+        d.selected = false;
+        d.previouslySelected = false;
+        d.nhd = [];
+    });
+
+    var spiders_and_boundaries = graph.nodes.filter(function(d) {
+        return d.t != 3;
+    });
+
+    graph.links.forEach(function(d) {
+        var s = ntab[d.source];
+        var t = ntab[d.target];
+        d.source = s;
+        d.target = t;
+        s.nhd.push(t);
+        t.nhd.push(s);
+    });
+
+    graph.pauli_web.forEach(function(d) {
+        var s = ntab[d.source];
+        var t = ntab[d.target];
+        d.source = s;
+        d.target = t;
+    });
+
+    var shiftKey;
+
+    // SETUP SVG ITEMS
+
+    var svg = d3.select(tag)
+    //.attr("tabindex", 1)
+        .on("keydown.brush", function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
+        .on("keyup.brush", function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
+    //.each(function() { this.focus(); })
+        .append("svg")
+        .attr("style", "max-width: none; max-height: none")
+        .attr("width", width)
+        .attr("height", height);
+
+    var web = svg.append("g")
+        .attr("class", "web")
+        .selectAll("line")
+        .data(graph.pauli_web)
+        .enter().append("path")
+        .attr("stroke", function(d) { return webColor(d.t); })
+        .attr("fill", "transparent")
+        .attr("style", "stroke-width: 7px");
+
+    var link = svg.append("g")
+        .attr("class", "link")
+        .selectAll("line")
+        .data(graph.links)
+        .enter().append("path")
+        .attr("stroke", function(d) { return edgeColor(d.t); })
+        .attr("fill", "transparent")
+        .attr("style", function(d) { return isBoldEdge(d.t) ? "stroke-width: 3.5px" : "stroke-width: 1.5px"; });
+
+    var brush = svg.append("g")
+        .attr("class", "brush");
+
+    var node = svg.append("g")
+        .attr("class", "node")
+        .selectAll("g")
+        .data(graph.nodes)
+        .enter().append("g")
+        .attr("transform", function(d) {
+            return "translate(" + d.x + "," + d.y +")";
+        });
+
+    // Draw a ground symbol connected to the node.
+    node.filter(function(d) { return d.ground; })
+        .append("path")
+        .attr("stroke", "black")
+        .attr("style", "stroke-width: 1.5px")
+        .attr("fill", "none")
+        .attr("d", "M 0 0 L 0 "+(groundOffset))
+        .attr("class", "selectable");
+    node.filter(function(d) { return d.ground; })
+        .append("path")
+        .attr("stroke", "black")
+        .attr("style", "stroke-width: 1.5px")
+        .attr("fill", "none")
+        .attr("d", d3.symbol().type(symbolGround).size(node_size*1.5))
+        .attr("transform", "translate(0,"+groundOffset+")")
+        .attr("class", "selectable");
+
+    node.filter(function(d) { return d.t != 3 && d.t != 5 && d.t != 6; })
+        .append("circle")
+        .attr("r", function(d) {
+            if (d.t == 0) return 0.5 * node_size;
+            else if (d.t == 4) return 0.25 * node_size;
+            else return node_size;
+        })
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("stroke-width", function(d) { return (d.t == 7 || d.t == 8) ? 3 : 1.5; })
+        .attr("class", "selectable");
+
+    var hbox = node.filter(function(d) { return d.t == 3; });
+
+    hbox.append("rect")
+        .attr("x", -0.75 * node_size).attr("y", -0.75 * node_size)
+        .attr("width", node_size * 1.5).attr("height", node_size * 1.5)
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable");
+
+    // draw a triangle for d.t == 5
+    node.filter(function(d) { return d.t == 5; })
+        .append("path")
+        .attr("d", "M 0 0 L "+node_size+" "+node_size+" L -"+node_size+" "+node_size+" Z")
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable")
+        .attr("transform", "translate(" + (-node_size/2) + ", 0) rotate(-90)");
+
+    // draw a square for Z box: d.t == 6
+    node.filter(function(d) { return d.t == 6; })
+        .append("rect")
+        .attr("x", -0.75 * node_size).attr("y", -0.75 * node_size)
+        .attr("width", node_size * 1.5).attr("height", node_size * 1.5)
+        .attr("fill", function(d) { return nodeColor(d.t); })
+        .attr("stroke", "black")
+        .attr("class", "selectable");
+
+    node.filter(function(d) { return d.phase != '' && d.phase.indexOf('[') === -1; })
+        .append("text")
+        .attr("y", 0.7 * node_size + 14)
+        .text(function (d) { return d.phase })
+        .attr("text-anchor", "middle")
+        .attr("font-size", "12px")
+        .attr("font-family", "monospace")
+        .attr("fill", "#00d")
+        .attr('style', 'pointer-events: none; user-select: none;');
+
+    node.filter(function(d) { return d.phase != '' && d.phase.indexOf('[') !== -1; })
+        .append("text")
+        .attr("y", -0.7 * node_size - 8)
+        .text(function (d) { return d.phase })
+        .attr("text-anchor", "middle")
+        .attr("font-size", "12px")
+        .attr("font-family", "monospace")
+        .attr("fill", "black")
+        .attr('style', 'pointer-events: none; user-select: none;');
+
+    if (show_labels) {
+        node.append("text")
+            .attr("y", -0.7 * node_size - 8)
+            .text(function (d) { return d.name; })
+            .attr("text-anchor", "middle")
+            .attr("font-size", "10px")
+            .attr("font-family", "monospace")
+            .attr("fill", "#999")
+            .attr('style', 'pointer-events: none; user-select: none;');
+    }
+
+    // Display the chosen data fields over the node.
+    node.filter(d => d.vdata.length > 0)
+        .append("text")
+        .attr("y", d => -0.7 * node_size - 14 - 10 * d.vdata.length)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "8px")
+        .attr("font-family", "monospace")
+        .attr("fill", "#c66")
+        .attr('style', 'pointer-events: none; user-select: none;')
+        .selectAll("tspan")
+        .data(d => d.vdata)
+        .enter()
+        .append("tspan")
+        .attr("x", "0")
+        .attr("dy", "1.2em")
+        .text(x => x.join(": "));
+
+    if (scalar_str != "") {
+        svg.append("text")
+            .text(scalar_str)
+            .attr("x", 60).attr("y", 40)
+            .attr("text-anchor", "middle")
+    }
+
+    function update_hboxes() {
+        if (auto_hbox) {
+            var pos = {};
+            hbox.attr("transform", function(d) {
+                // calculate barycenter of non-hbox neighbours, then nudge a bit
+                // to the NE.
+                var x=0,y=0,sz=0;
+                for (var i = 0; i < d.nhd.length; ++i) {
+                    if (d.nhd[i].t != 3) {
+                        sz++;
+                        x += d.nhd[i].x;
+                        y += d.nhd[i].y;
+                    }
+                }
+
+                offset = 0.25 * scale;
+
+                if (sz != 0) {
+                    x = (x/sz) + offset;
+                    y = (y/sz) - offset;
+
+                    while (pos[[x,y]]) {
+                        x += offset;
+                    }
+                    d.x = x;
+                    d.y = y;
+                    pos[[x,y]] = true;
+                }
+
+                return "translate("+d.x+","+d.y+")";
+            });
+        }
+    }
+
+    update_hboxes();
+
+    var link_curve = function(d) {
+        var x1 = d.source.x, x2 = d.target.x, y1 = d.source.y, y2 = d.target.y;
+        if (x1 == x2 && y1 == y2 && d.num_parallel == 1) {
+            var cx1 = x1 - 40;
+            var cy1 = y1 - 40;
+            var cx2 = x1 + 40;
+            var cy2 = y1 - 40;
+            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+        } else if (x1 == x2 && y1 == y2) {
+            var pos = d.index + 1;
+            var cx1 = x1 - 20 - pos * 10;
+            var cy1 = y1 - 20 - pos * 10;
+            var cx2 = x1 + 20 + pos * 10;
+            var cy2 = y1 - 20 - pos * 10;
+            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
+        } else if (d.num_parallel == 1) {
+            return `M ${x1} ${y1} L ${x2} ${y2}`;
+        } else {
+            var dx = x2 - x1, dy = y2 - y1;
+            var midx = 0.5 * (x1 + x2), midy = 0.5 * (y1 + y2);
+            var pos = (d.index / (d.num_parallel-1)) - 0.5;
+            var cx = midx - pos * dy;
+            var cy = midy + pos * dx;
+            return `M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`;
+            // return `M ${x1} ${y1} L ${x2} ${y2}`;
+        }
+    };
+    link.attr("d", link_curve);
+
+
+    var web_curve = function(d) {
+        var x1 = d.source.x, x2 = (x1 + d.target.x)/2, y1 = d.source.y, y2 = (y1 + d.target.y)/2;
+        return `M ${x1} ${y1} L ${x2} ${y2}`;
+    }
+    web.attr("d", web_curve);
+
+    // EVENTS FOR DRAGGING AND SELECTION
+
+    node.on("mousedown", function(d) {
+        if (shiftKey) {
+            d3.select(this).selectAll(".selectable").attr("style", nodeStyle(d.selected = !d.selected, d.t));
+            d3.event.stopImmediatePropagation();
+        } else if (!d.selected) {
+            node.selectAll(".selectable").attr("style", function(p) { return nodeStyle(p.selected = d === p, p.t); });
+        }
+    })
+        .call(d3.drag().on("drag", function(d) {
+            var dx = d3.event.dx;
+            var dy = d3.event.dy;
+            // node.filter(function(d) { return d.selected; })
+            //     .attr("cx", function(d) { return d.x += dx; })
+            //     .attr("cy", function(d) { return d.y += dy; });
+            node.filter(function(d) { return d.selected; })
+                .attr("transform", function(d) {
+                    d.x += dx;
+                    d.y += dy;
+                    return "translate(" + d.x + "," + d.y +")";
+                });
+
+            update_hboxes();
+
+            link.filter(function(d) { return d.source.selected || d.target.selected ||
+                    (auto_hbox && d.source.t == 3); })
+                .attr("d", link_curve);
+            web.filter(function(d) { return d.source.selected || d.target.selected; })
+                .attr("d", web_curve);
+        }));
+
+    brush.call(d3.brush().keyModifiers(false)
+        .extent([[0, 0], [width, height]])
+        .on("start", function() {
+            if (d3.event.sourceEvent.type !== "end") {
+                node.selectAll(".selectable").attr("style", function(d) {
+                    return nodeStyle(
+                        d.selected = d.previouslySelected = shiftKey &&
+                        d.selected, d.t);
+                });
+            }
+        })
+        .on("brush", function() {
+            if (d3.event.sourceEvent.type !== "end") {
+                var selection = d3.event.selection;
+                node.selectAll(".selectable").attr("style", function(d) {
+                    return nodeStyle(d.selected = d.previouslySelected ^
+                        (selection != null
+                            && selection[0][0] <= d.x && d.x < selection[1][0]
+                            && selection[0][1] <= d.y && d.y < selection[1][1]), d.t);
+                });
+            }
+        })
+        .on("end", function() {
+            if (d3.event.selection != null) {
+                d3.select(this).call(d3.event.target.move, null);
+            }
+        }));
+}
+
+
+showGraph('#graph-output-002',
+  JSON.parse('{"nodes": [{"name": "0", "x": 34.04255319148936, "y": 357.4468085106383, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "1", "x": 68.08510638297872, "y": 357.4468085106383, "z": 0.0, "t": 7, "phase": "\u03c0/4", "ground": false, "vdata": []}, {"name": "2", "x": 204.25531914893617, "y": 357.4468085106383, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "3", "x": 34.04255319148936, "y": 153.1914893617021, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "4", "x": 102.12765957446808, "y": 153.1914893617021, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "5", "x": 34.04255319148936, "y": 187.2340425531915, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "6", "x": 102.12765957446808, "y": 187.2340425531915, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "7", "x": 34.04255319148936, "y": 221.27659574468083, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "8", "x": 102.12765957446808, "y": 221.27659574468083, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "9", "x": 34.04255319148936, "y": 255.31914893617022, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "10", "x": 102.12765957446808, "y": 255.31914893617022, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "11", "x": 34.04255319148936, "y": 289.36170212765956, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "12", "x": 102.12765957446808, "y": 289.36170212765956, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "13", "x": 34.04255319148936, "y": 323.40425531914894, "z": 0.0, "t": 8, "phase": "", "ground": false, "vdata": []}, {"name": "14", "x": 102.12765957446808, "y": 323.40425531914894, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "15", "x": 136.17021276595744, "y": 153.1914893617021, "z": 0.0, "t": 7, "phase": "e0", "ground": false, "vdata": []}, {"name": "16", "x": 136.17021276595744, "y": 187.2340425531915, "z": 0.0, "t": 7, "phase": "e2", "ground": false, "vdata": []}, {"name": "17", "x": 204.25531914893617, "y": 221.27659574468083, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "18", "x": 204.25531914893617, "y": 255.31914893617022, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "19", "x": 204.25531914893617, "y": 289.36170212765956, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "20", "x": 204.25531914893617, "y": 323.40425531914894, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "21", "x": 170.2127659574468, "y": 153.1914893617021, "z": 0.0, "t": 8, "phase": "e1", "ground": false, "vdata": []}, {"name": "22", "x": 408.51063829787233, "y": 153.1914893617021, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "23", "x": 170.2127659574468, "y": 187.2340425531915, "z": 0.0, "t": 8, "phase": "e3", "ground": false, "vdata": []}, {"name": "24", "x": 204.25531914893617, "y": 187.2340425531915, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "25", "x": 238.29787234042553, "y": 187.2340425531915, "z": 0.0, "t": 7, "phase": "e4", "ground": false, "vdata": []}, {"name": "26", "x": 238.29787234042553, "y": 221.27659574468083, "z": 0.0, "t": 7, "phase": "e6", "ground": false, "vdata": []}, {"name": "27", "x": 408.51063829787233, "y": 255.31914893617022, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "28", "x": 408.51063829787233, "y": 289.36170212765956, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "29", "x": 408.51063829787233, "y": 323.40425531914894, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "30", "x": 306.3829787234042, "y": 357.4468085106383, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "31", "x": 272.3404255319149, "y": 187.2340425531915, "z": 0.0, "t": 8, "phase": "e5", "ground": false, "vdata": []}, {"name": "32", "x": 544.6808510638298, "y": 187.2340425531915, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "33", "x": 272.3404255319149, "y": 221.27659574468083, "z": 0.0, "t": 8, "phase": "e7", "ground": false, "vdata": []}, {"name": "34", "x": 408.51063829787233, "y": 221.27659574468083, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "35", "x": 340.4255319148936, "y": 357.4468085106383, "z": 0.0, "t": 7, "phase": "e8", "ground": false, "vdata": []}, {"name": "36", "x": 374.468085106383, "y": 357.4468085106383, "z": 0.0, "t": 8, "phase": "e9", "ground": false, "vdata": []}, {"name": "37", "x": 408.51063829787233, "y": 357.4468085106383, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "38", "x": 544.6808510638298, "y": 153.1914893617021, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "39", "x": 442.55319148936167, "y": 255.31914893617022, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "40", "x": 442.55319148936167, "y": 221.27659574468083, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "41", "x": 442.55319148936167, "y": 323.40425531914894, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "42", "x": 442.55319148936167, "y": 289.36170212765956, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "43", "x": 442.55319148936167, "y": 357.4468085106383, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "44", "x": 476.59574468085106, "y": 221.27659574468083, "z": 0.0, "t": 7, "phase": "e10", "ground": false, "vdata": []}, {"name": "45", "x": 544.6808510638298, "y": 255.31914893617022, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "46", "x": 476.59574468085106, "y": 289.36170212765956, "z": 0.0, "t": 7, "phase": "e12", "ground": false, "vdata": []}, {"name": "47", "x": 544.6808510638298, "y": 323.40425531914894, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "48", "x": 476.59574468085106, "y": 357.4468085106383, "z": 0.0, "t": 7, "phase": "e14", "ground": false, "vdata": []}, {"name": "49", "x": 510.63829787234044, "y": 221.27659574468083, "z": 0.0, "t": 8, "phase": "e11", "ground": false, "vdata": []}, {"name": "50", "x": 544.6808510638298, "y": 221.27659574468083, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "51", "x": 510.63829787234044, "y": 289.36170212765956, "z": 0.0, "t": 8, "phase": "e13", "ground": false, "vdata": []}, {"name": "52", "x": 544.6808510638298, "y": 289.36170212765956, "z": 0.0, "t": 7, "phase": "", "ground": false, "vdata": []}, {"name": "53", "x": 510.63829787234044, "y": 357.4468085106383, "z": 0.0, "t": 8, "phase": "e15", "ground": false, "vdata": []}, {"name": "54", "x": 578.7234042553191, "y": 357.4468085106383, "z": 0.0, "t": 7, "phase": "e28", "ground": false, "vdata": []}, {"name": "55", "x": 578.7234042553191, "y": 153.1914893617021, "z": 0.0, "t": 7, "phase": "e16", "ground": false, "vdata": []}, {"name": "56", "x": 578.7234042553191, "y": 187.2340425531915, "z": 0.0, "t": 7, "phase": "e18", "ground": false, "vdata": []}, {"name": "57", "x": 578.7234042553191, "y": 221.27659574468083, "z": 0.0, "t": 7, "phase": "e20", "ground": false, "vdata": []}, {"name": "58", "x": 578.7234042553191, "y": 255.31914893617022, "z": 0.0, "t": 7, "phase": "e22", "ground": false, "vdata": []}, {"name": "59", "x": 578.7234042553191, "y": 289.36170212765956, "z": 0.0, "t": 7, "phase": "e24", "ground": false, "vdata": []}, {"name": "60", "x": 578.7234042553191, "y": 323.40425531914894, "z": 0.0, "t": 7, "phase": "e26", "ground": false, "vdata": []}, {"name": "61", "x": 612.7659574468084, "y": 153.1914893617021, "z": 0.0, "t": 8, "phase": "e17", "ground": false, "vdata": []}, {"name": "62", "x": 680.8510638297872, "y": 153.1914893617021, "z": 0.0, "t": 1, "phase": "rec[0]", "ground": false, "vdata": []}, {"name": "63", "x": 612.7659574468084, "y": 187.2340425531915, "z": 0.0, "t": 8, "phase": "e19", "ground": false, "vdata": []}, {"name": "64", "x": 646.8085106382979, "y": 187.2340425531915, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "65", "x": 612.7659574468084, "y": 221.27659574468083, "z": 0.0, "t": 8, "phase": "e21", "ground": false, "vdata": []}, {"name": "66", "x": 646.8085106382979, "y": 221.27659574468083, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "67", "x": 612.7659574468084, "y": 255.31914893617022, "z": 0.0, "t": 8, "phase": "e23", "ground": false, "vdata": []}, {"name": "68", "x": 646.8085106382979, "y": 255.31914893617022, "z": 0.0, "t": 8, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "69", "x": 612.7659574468084, "y": 289.36170212765956, "z": 0.0, "t": 8, "phase": "e25", "ground": false, "vdata": []}, {"name": "70", "x": 646.8085106382979, "y": 289.36170212765956, "z": 0.0, "t": 7, "phase": "\u03c0", "ground": false, "vdata": []}, {"name": "71", "x": 612.7659574468084, "y": 323.40425531914894, "z": 0.0, "t": 8, "phase": "e27", "ground": false, "vdata": []}, {"name": "72", "x": 680.8510638297872, "y": 323.40425531914894, "z": 0.0, "t": 1, "phase": "rec[5]", "ground": false, "vdata": []}, {"name": "73", "x": 612.7659574468084, "y": 357.4468085106383, "z": 0.0, "t": 8, "phase": "e29", "ground": false, "vdata": []}, {"name": "74", "x": 680.8510638297872, "y": 357.4468085106383, "z": 0.0, "t": 1, "phase": "rec[6]", "ground": false, "vdata": []}, {"name": "75", "x": 680.8510638297872, "y": 187.2340425531915, "z": 0.0, "t": 1, "phase": "rec[1]", "ground": false, "vdata": []}, {"name": "76", "x": 680.8510638297872, "y": 221.27659574468083, "z": 0.0, "t": 1, "phase": "rec[2]", "ground": false, "vdata": []}, {"name": "77", "x": 680.8510638297872, "y": 289.36170212765956, "z": 0.0, "t": 1, "phase": "rec[4]", "ground": false, "vdata": []}, {"name": "78", "x": 680.8510638297872, "y": 255.31914893617022, "z": 0.0, "t": 1, "phase": "rec[3]", "ground": false, "vdata": []}, {"name": "79", "x": 714.8936170212766, "y": 153.1914893617021, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "80", "x": 714.8936170212766, "y": 187.2340425531915, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "81", "x": 714.8936170212766, "y": 221.27659574468083, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "82", "x": 714.8936170212766, "y": 255.31914893617022, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "83", "x": 714.8936170212766, "y": 289.36170212765956, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "84", "x": 714.8936170212766, "y": 323.40425531914894, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "85", "x": 714.8936170212766, "y": 357.4468085106383, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "86", "x": 663.8297872340426, "y": 119.14893617021276, "z": 0.0, "t": 2, "phase": "det[0]", "ground": false, "vdata": []}, {"name": "87", "x": 697.8723404255319, "y": 119.14893617021276, "z": 0.0, "t": 2, "phase": "det[1]", "ground": false, "vdata": []}, {"name": "88", "x": 731.9148936170212, "y": 119.14893617021276, "z": 0.0, "t": 2, "phase": "det[2]", "ground": false, "vdata": []}, {"name": "89", "x": 765.9574468085107, "y": 119.14893617021276, "z": 0.0, "t": 2, "phase": "obs[0]", "ground": false, "vdata": []}, {"name": "90", "x": 663.8297872340426, "y": 85.1063829787234, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "91", "x": 697.8723404255319, "y": 85.1063829787234, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "92", "x": 731.9148936170212, "y": 85.1063829787234, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}, {"name": "93", "x": 765.9574468085107, "y": 68.08510638297872, "z": 0.0, "t": 0, "phase": "", "ground": false, "vdata": []}], "links": [{"source": "0", "target": "1", "t": 5, "index": 0, "num_parallel": 1}, {"source": "1", "target": "2", "t": 5, "index": 0, "num_parallel": 1}, {"source": "2", "target": "30", "t": 4, "index": 0, "num_parallel": 1}, {"source": "2", "target": "20", "t": 5, "index": 0, "num_parallel": 1}, {"source": "3", "target": "4", "t": 5, "index": 0, "num_parallel": 1}, {"source": "4", "target": "15", "t": 4, "index": 0, "num_parallel": 1}, {"source": "5", "target": "6", "t": 5, "index": 0, "num_parallel": 1}, {"source": "6", "target": "16", "t": 4, "index": 0, "num_parallel": 1}, {"source": "7", "target": "8", "t": 5, "index": 0, "num_parallel": 1}, {"source": "8", "target": "17", "t": 4, "index": 0, "num_parallel": 1}, {"source": "9", "target": "10", "t": 5, "index": 0, "num_parallel": 1}, {"source": "10", "target": "18", "t": 4, "index": 0, "num_parallel": 1}, {"source": "11", "target": "12", "t": 5, "index": 0, "num_parallel": 1}, {"source": "12", "target": "19", "t": 4, "index": 0, "num_parallel": 1}, {"source": "13", "target": "14", "t": 5, "index": 0, "num_parallel": 1}, {"source": "14", "target": "20", "t": 4, "index": 0, "num_parallel": 1}, {"source": "15", "target": "21", "t": 4, "index": 0, "num_parallel": 1}, {"source": "16", "target": "23", "t": 4, "index": 0, "num_parallel": 1}, {"source": "17", "target": "26", "t": 4, "index": 0, "num_parallel": 1}, {"source": "17", "target": "24", "t": 5, "index": 0, "num_parallel": 1}, {"source": "18", "target": "27", "t": 4, "index": 0, "num_parallel": 1}, {"source": "18", "target": "19", "t": 5, "index": 0, "num_parallel": 1}, {"source": "19", "target": "28", "t": 4, "index": 0, "num_parallel": 1}, {"source": "20", "target": "29", "t": 4, "index": 0, "num_parallel": 1}, {"source": "21", "target": "22", "t": 4, "index": 0, "num_parallel": 1}, {"source": "22", "target": "38", "t": 4, "index": 0, "num_parallel": 1}, {"source": "22", "target": "27", "t": 5, "index": 0, "num_parallel": 1}, {"source": "23", "target": "24", "t": 4, "index": 0, "num_parallel": 1}, {"source": "24", "target": "25", "t": 4, "index": 0, "num_parallel": 1}, {"source": "25", "target": "31", "t": 4, "index": 0, "num_parallel": 1}, {"source": "26", "target": "33", "t": 4, "index": 0, "num_parallel": 1}, {"source": "27", "target": "39", "t": 4, "index": 0, "num_parallel": 1}, {"source": "28", "target": "42", "t": 4, "index": 0, "num_parallel": 1}, {"source": "28", "target": "37", "t": 5, "index": 0, "num_parallel": 1}, {"source": "29", "target": "41", "t": 4, "index": 0, "num_parallel": 1}, {"source": "29", "target": "34", "t": 5, "index": 0, "num_parallel": 1}, {"source": "30", "target": "35", "t": 5, "index": 0, "num_parallel": 1}, {"source": "31", "target": "32", "t": 4, "index": 0, "num_parallel": 1}, {"source": "32", "target": "56", "t": 4, "index": 0, "num_parallel": 1}, {"source": "32", "target": "38", "t": 5, "index": 0, "num_parallel": 1}, {"source": "33", "target": "34", "t": 4, "index": 0, "num_parallel": 1}, {"source": "34", "target": "40", "t": 4, "index": 0, "num_parallel": 1}, {"source": "35", "target": "36", "t": 4, "index": 0, "num_parallel": 1}, {"source": "36", "target": "37", "t": 4, "index": 0, "num_parallel": 1}, {"source": "37", "target": "43", "t": 4, "index": 0, "num_parallel": 1}, {"source": "38", "target": "55", "t": 4, "index": 0, "num_parallel": 1}, {"source": "39", "target": "45", "t": 5, "index": 0, "num_parallel": 1}, {"source": "40", "target": "44", "t": 5, "index": 0, "num_parallel": 1}, {"source": "41", "target": "47", "t": 5, "index": 0, "num_parallel": 1}, {"source": "42", "target": "46", "t": 5, "index": 0, "num_parallel": 1}, {"source": "43", "target": "48", "t": 5, "index": 0, "num_parallel": 1}, {"source": "44", "target": "49", "t": 4, "index": 0, "num_parallel": 1}, {"source": "45", "target": "58", "t": 4, "index": 0, "num_parallel": 1}, {"source": "45", "target": "50", "t": 5, "index": 0, "num_parallel": 1}, {"source": "46", "target": "51", "t": 4, "index": 0, "num_parallel": 1}, {"source": "47", "target": "60", "t": 4, "index": 0, "num_parallel": 1}, {"source": "47", "target": "52", "t": 5, "index": 0, "num_parallel": 1}, {"source": "48", "target": "53", "t": 4, "index": 0, "num_parallel": 1}, {"source": "49", "target": "50", "t": 4, "index": 0, "num_parallel": 1}, {"source": "50", "target": "57", "t": 4, "index": 0, "num_parallel": 1}, {"source": "51", "target": "52", "t": 4, "index": 0, "num_parallel": 1}, {"source": "52", "target": "59", "t": 4, "index": 0, "num_parallel": 1}, {"source": "53", "target": "54", "t": 4, "index": 0, "num_parallel": 1}, {"source": "54", "target": "73", "t": 4, "index": 0, "num_parallel": 1}, {"source": "55", "target": "61", "t": 4, "index": 0, "num_parallel": 1}, {"source": "56", "target": "63", "t": 4, "index": 0, "num_parallel": 1}, {"source": "57", "target": "65", "t": 4, "index": 0, "num_parallel": 1}, {"source": "58", "target": "67", "t": 4, "index": 0, "num_parallel": 1}, {"source": "59", "target": "69", "t": 4, "index": 0, "num_parallel": 1}, {"source": "60", "target": "71", "t": 4, "index": 0, "num_parallel": 1}, {"source": "61", "target": "62", "t": 4, "index": 0, "num_parallel": 1}, {"source": "62", "target": "79", "t": 4, "index": 0, "num_parallel": 1}, {"source": "62", "target": "86", "t": 1, "index": 0, "num_parallel": 1}, {"source": "62", "target": "89", "t": 1, "index": 0, "num_parallel": 1}, {"source": "63", "target": "64", "t": 4, "index": 0, "num_parallel": 1}, {"source": "64", "target": "75", "t": 5, "index": 0, "num_parallel": 1}, {"source": "65", "target": "66", "t": 4, "index": 0, "num_parallel": 1}, {"source": "66", "target": "76", "t": 5, "index": 0, "num_parallel": 1}, {"source": "67", "target": "68", "t": 4, "index": 0, "num_parallel": 1}, {"source": "68", "target": "78", "t": 4, "index": 0, "num_parallel": 1}, {"source": "69", "target": "70", "t": 4, "index": 0, "num_parallel": 1}, {"source": "70", "target": "77", "t": 5, "index": 0, "num_parallel": 1}, {"source": "71", "target": "72", "t": 4, "index": 0, "num_parallel": 1}, {"source": "72", "target": "84", "t": 4, "index": 0, "num_parallel": 1}, {"source": "72", "target": "87", "t": 1, "index": 0, "num_parallel": 1}, {"source": "72", "target": "89", "t": 1, "index": 0, "num_parallel": 1}, {"source": "73", "target": "74", "t": 4, "index": 0, "num_parallel": 1}, {"source": "74", "target": "85", "t": 4, "index": 0, "num_parallel": 1}, {"source": "74", "target": "88", "t": 1, "index": 0, "num_parallel": 1}, {"source": "75", "target": "80", "t": 4, "index": 0, "num_parallel": 1}, {"source": "75", "target": "86", "t": 1, "index": 0, "num_parallel": 1}, {"source": "75", "target": "87", "t": 1, "index": 0, "num_parallel": 1}, {"source": "75", "target": "89", "t": 1, "index": 0, "num_parallel": 1}, {"source": "76", "target": "81", "t": 4, "index": 0, "num_parallel": 1}, {"source": "76", "target": "86", "t": 1, "index": 0, "num_parallel": 1}, {"source": "76", "target": "87", "t": 1, "index": 0, "num_parallel": 1}, {"source": "76", "target": "88", "t": 1, "index": 0, "num_parallel": 1}, {"source": "77", "target": "83", "t": 4, "index": 0, "num_parallel": 1}, {"source": "77", "target": "87", "t": 1, "index": 0, "num_parallel": 1}, {"source": "77", "target": "88", "t": 1, "index": 0, "num_parallel": 1}, {"source": "78", "target": "82", "t": 4, "index": 0, "num_parallel": 1}, {"source": "78", "target": "86", "t": 1, "index": 0, "num_parallel": 1}, {"source": "78", "target": "88", "t": 1, "index": 0, "num_parallel": 1}, {"source": "86", "target": "90", "t": 1, "index": 0, "num_parallel": 1}, {"source": "87", "target": "91", "t": 1, "index": 0, "num_parallel": 1}, {"source": "88", "target": "92", "t": 1, "index": 0, "num_parallel": 1}, {"source": "89", "target": "93", "t": 1, "index": 0, "num_parallel": 1}], "pauli_web": []}'), 800.0, 391.48936170212767, 34.04255319148936,
+  6.808510638297872, false, false, '');
+</script></body></html>

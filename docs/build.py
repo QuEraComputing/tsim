@@ -735,6 +735,34 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
         old_pythonpath = os.environ.get("PYTHONPATH")
         existing = old_pythonpath or ""
         os.environ["PYTHONPATH"] = f"{demos_dir}:{existing}".rstrip(":")
+        # Pin matplotlib's embedded SVG date for reproducible output. Must be
+        # set before the kernel (a subprocess) starts so it's inherited.
+        old_sde = os.environ.get("SOURCE_DATE_EPOCH")
+        os.environ["SOURCE_DATE_EPOCH"] = "1704067200"  # 2024-01-01 UTC
+        # Inject a hidden preamble that seeds RNG and fixes matplotlib's SVG
+        # element-id hashing, so executed outputs (sampled values, figures)
+        # are byte-stable across builds and safe to commit. tsim samplers use
+        # ``np.random.default_rng()`` when seed is None (not the legacy global
+        # RNG), so we default that to a fixed seed. (NOTE: sinter spawns
+        # worker subprocesses that this does not reach, so Monte-Carlo plots
+        # produced via sinter may still vary slightly between builds.)
+        preamble = nbformat.v4.new_code_cell(
+            "import numpy as _np\n"
+            "try:\n"
+            "    import matplotlib as _mpl\n"
+            "    _mpl.rcParams['svg.hashsalt'] = 'tsim-docs'\n"
+            "except Exception:\n"
+            "    pass\n"
+            "_orig_default_rng = _np.random.default_rng\n"
+            "def _seeded_default_rng(*a, **k):\n"
+            "    if not a and 'seed' not in k:\n"
+            "        return _orig_default_rng(0)\n"
+            "    return _orig_default_rng(*a, **k)\n"
+            "_np.random.default_rng = _seeded_default_rng\n"
+            "_np.random.seed(0)\n"
+        )
+        preamble.metadata["tags"] = ["remove-cell"]
+        nb.cells.insert(0, preamble)
         try:
             client = NotebookClient(
                 nb,
@@ -749,6 +777,10 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
                 os.environ.pop("PYTHONPATH", None)
             else:
                 os.environ["PYTHONPATH"] = old_pythonpath
+            if old_sde is None:
+                os.environ.pop("SOURCE_DATE_EPOCH", None)
+            else:
+                os.environ["SOURCE_DATE_EPOCH"] = old_sde
 
     # Drop cells tagged "remove-cell" (post-execution).
     tag_remove = TagRemovePreprocessor(remove_cell_tags=("remove-cell",))

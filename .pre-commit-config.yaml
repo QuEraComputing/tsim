@@ -1,13 +1,18 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
+# Generated Mintlify output is committed (CI rebuilds it deterministically and
+# does not run pre-commit), so exclude it from text-munging hooks to avoid
+# local-vs-CI drift and commit churn.
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v6.0.0
   hooks:
     - id: check-yaml
       args: ['--unsafe']
     - id: end-of-file-fixer
+      exclude: '^docs/(api-reference/.*|images/tutorials/.*|tutorials/.*\.mdx)$'
     - id: trailing-whitespace
+      exclude: '^docs/(api-reference/.*|images/tutorials/.*|tutorials/.*\.mdx)$'
 - repo: https://github.com/pycqa/isort
   rev: 8.0.1
   hooks:
@@ -30,6 +35,7 @@ repos:
   rev: v2.4.2
   hooks:
     - id: codespell
+      exclude: '^docs/(api-reference/.*|images/tutorials/.*|tutorials/.*\.mdx)$'
 - repo: local
   hooks:
     - id: deptry-check

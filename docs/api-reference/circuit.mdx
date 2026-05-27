@@ -1,0 +1,623 @@
+---
+title: "circuit"
+description: "Quantum circuit wrapper around stim.Circuit with non-Clifford gate support."
+---
+
+## class `Circuit`
+
+```python
+Circuit(stim_program_text: str = '')
+```
+
+Quantum circuit as a thin wrapper around stim.Circuit.
+
+Circuits are constructed like stim circuits:
+
+        \>\>\> circuit = Circuit('''
+        ...     H 0
+        ...     T 0
+        ...     CNOT 0 1
+        ...     M 0 1
+        ... ''')
+
+
+### `append`
+
+```python
+append(name: str | stim.CircuitInstruction | stim.CircuitRepeatBlock | stim.Circuit, targets: int | stim.GateTarget | stim.PauliString | Iterable[int | stim.GateTarget | stim.PauliString] = (), arg: float | Iterable[float] | None = None, tag: str = '') -> None
+```
+
+Append an operation into the circuit.
+
+**Parameters:**
+
+- `name` (`str | stim.CircuitInstruction | stim.CircuitRepeatBlock | stim.Circuit`) — The name of the operation's gate (e.g. "H" or "M" or "CNOT"). This argument can also be set to a `stim.CircuitInstruction` or `stim.CircuitInstructionBlock`, which results in the instruction or block being appended to the circuit. The other arguments (targets and arg) can't be specified when doing so.
+- `targets` (`int | stim.GateTarget | stim.PauliString | Iterable[int | stim.GateTarget | stim.PauliString]`) — The objects operated on by the gate. This can be either a single target or an iterable of multiple targets. Each target can be: An int: The index of a targeted qubit. A `stim.GateTarget`: Could be a variety of things. Methods like `stim.target_rec`, `stim.target_sweet`, `stim.target_x`, and `stim.CircuitInstruction.__getitem__` all return this type. A `stim.PauliString`: This will automatically be expanded into a product of pauli targets like `X1*Y2*Z3`.
+- `arg` (`float | Iterable[float] | None`) — The "parens arguments" for the gate, such as the probability for a noise operation. A double or list of doubles parameterizing the gate. Different gates take different parens arguments. For example, X_ERROR takes a probability, OBSERVABLE_INCLUDE takes an observable index, and PAULI_CHANNEL_1 takes three disjoint probabilities.
+- `tag` (`str`) — A customizable string attached to the instruction.
+
+
+### `append_from_stim_program_text`
+
+```python
+append_from_stim_program_text(stim_program_text: str) -> None
+```
+
+Append operations described by a Stim format program into the circuit.
+
+Supports the same shorthand syntax as the constructor.
+
+
+### `approx_equals`
+
+```python
+approx_equals(other: object, atol: float) -> bool
+```
+
+Check if a circuit is approximately equal to another circuit.
+
+Two circuits are approximately equal if they are equal up to slight
+perturbations of instruction arguments such as probabilities. For example,
+`X_ERROR(0.100) 0` is approximately equal to `X_ERROR(0.099)` within an absolute
+tolerance of 0.002. All other details of the circuits (such as the ordering of
+instructions and targets) must be exactly the same.
+
+**Parameters:**
+
+- `other` (`object`) — The circuit, or other object, to compare to this one.
+- `atol` (`float`) — The absolute error tolerance. The maximum amount each probability may have been perturbed by.
+
+**Returns:**
+
+- `bool` — True if the given object is a circuit approximately equal up to the
+- `bool` — receiving circuit up to the given tolerance, otherwise False.
+
+
+### `cast_to_stim`
+
+```python
+cast_to_stim() -> stim.Circuit
+```
+
+Return self with type cast to `stim.Circuit`.
+
+This is useful for passing the circuit to functions that expect a
+`stim.Circuit`.
+
+
+### `compile_detector_sampler`
+
+```python
+compile_detector_sampler(strategy: DecompositionStrategy = 'cat5', seed: int | None = None) -> CompiledDetectorSampler
+```
+
+Compile circuit into a detector sampler.
+
+Connected components whose single output is deterministically given by
+one f-variable are handled via a fast direct path (no compilation or
+autoregressive sampling).  Remaining components go through the full
+compilation pipeline.
+
+**Parameters:**
+
+- `strategy` (`DecompositionStrategy`) — Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".
+- `seed` (`int | None`) — Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size. If deterministic samples are needed, the batch size should be set manually.
+
+**Returns:**
+
+- `CompiledDetectorSampler` — A CompiledDetectorSampler that can be used to sample detectors and observables.
+
+
+### `compile_m2d_converter`
+
+```python
+compile_m2d_converter(skip_reference_sample: bool = False) -> stim.CompiledMeasurementsToDetectionEventsConverter
+```
+
+Create a measurement-to-detection-event converter for the given circuit.
+
+The converter can efficiently compute detection events and observable flips
+from raw measurement data.
+
+The converter uses a noiseless reference sample, collected from the circuit
+using stim's Tableau simulator during initialization of the converter, as a
+baseline for determining what the expected value of a detector is.
+
+Note that the expected behavior of gauge detectors (detectors that are not
+actually deterministic under noiseless execution) can vary depending on the
+reference sample. Stim mitigates this by always generating the same reference
+sample for a given circuit.
+
+**Parameters:**
+
+- `skip_reference_sample` (`bool`) — Defaults to False. When set to True, the reference sample used by the converter is initialized to all-zeroes instead of being collected from the circuit. This should only be used if it's known that the all-zeroes sample is actually a possible result from the circuit (under noiseless execution).
+
+**Returns:**
+
+- `stim.CompiledMeasurementsToDetectionEventsConverter` — An initialized stim.CompiledMeasurementsToDetectionEventsConverter.
+
+
+### `compile_sampler`
+
+```python
+compile_sampler(strategy: DecompositionStrategy = 'cat5', seed: int | None = None) -> CompiledMeasurementSampler
+```
+
+Compile circuit into a measurement sampler.
+
+**Parameters:**
+
+- `strategy` (`DecompositionStrategy`) — Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".
+- `seed` (`int | None`) — Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size. If deterministic samples are needed, the batch size should be set manually.
+
+**Returns:**
+
+- `CompiledMeasurementSampler` — A CompiledMeasurementSampler that can be used to sample measurements.
+
+
+### `copy`
+
+```python
+copy() -> Circuit
+```
+
+Create a copy of this circuit.
+
+
+### `detector_error_model`
+
+```python
+detector_error_model(decompose_errors: bool = False, flatten_loops: bool = False, allow_gauge_detectors: bool = False, approximate_disjoint_errors: bool = False, ignore_decomposition_failures: bool = False, block_decomposition_from_introducing_remnant_edges: bool = False) -> stim.DetectorErrorModel
+```
+
+Return a stim.DetectorErrorModel describing the error processes in the circuit.
+
+Unlike the stim.Circuit.detector_error_model() method, this method allows for non-deterministic observables
+when `allow_gauge_detectors` is set to true.
+
+**Parameters:**
+
+- `decompose_errors` (`bool`) — Defaults to false. When set to true, the error analysis attempts to decompose the components of composite error mechanisms (such as depolarization errors) into simpler errors, and suggest this decomposition via `stim.target_separator()` between the components. For example, in an XZ surface code, single qubit depolarization has a Y error term which can be decomposed into simpler X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to decompose large errors into simple errors that affect at most two detectors. This is not supported by tsim and setting it to true will raise an error. The argument is present for compatibility with stim.
+- `flatten_loops` (`bool`) — Defaults to false. When set to true, the output will not contain any `repeat` blocks. When set to false, the error analysis watches for loops in the circuit reaching a periodic steady state with respect to the detectors being introduced, the error mechanisms that affect them, and the locations of the logical observables. When it identifies such a steady state, it outputs a repeat block. This is massively more efficient than flattening for circuits that contain loops, but creates a more complex output. Irrelevant unless allow_gauge_detectors=False.
+- `allow_gauge_detectors` (`bool`) — Defaults to false. When set to false, the error analysis verifies that detectors in the circuit are actually deterministic under noiseless execution of the circuit. Note that, unlike in stim, logical observables are also allowed to be non-deterministic.
+- `approximate_disjoint_errors` (`bool`) — Defaults to false. When set to false, composite error mechanisms with disjoint components (such as `PAULI_CHANNEL_1(0.1, 0.2, 0.0)`) can cause the error analysis to throw exceptions (because detector error models can only contain independent error mechanisms). When set to true, the probabilities of the disjoint cases are instead assumed to be independent probabilities. For example, a `PAULI_CHANNEL_1(0.1, 0.2, 0.0)` becomes equivalent to an `X_ERROR(0.1)` followed by a `Z_ERROR(0.2)`. This assumption is an approximation, but it is a good approximation for small probabilities. This argument can also be set to a probability between 0 and 1, setting a threshold below which the approximation is acceptable. Any error mechanisms that have a component probability above the threshold will cause an exception to be thrown.
+- `ignore_decomposition_failures` (`bool`) — Defaults to False. When this is set to True, circuit errors that fail to decompose into graphlike detector error model errors no longer cause the conversion process to abort. Instead, the undecomposed error is inserted into the output. Whatever tool the detector error model is then given to is responsible for dealing with the undecomposed errors (e.g. a tool may choose to simply ignore them). Irrelevant unless decompose_errors=True.
+- `block_decomposition_from_introducing_remnant_edges` (`bool`) — Defaults to False. Requires that both A B and C D be present elsewhere in the detector error model in order to decompose A B C D into A B ^ C D. Normally, only one of A B or C D needs to appear to allow this decomposition. Remnant edges can be a useful feature for ensuring decomposition succeeds, but they can also reduce the effective code distance by giving the decoder single edges that actually represent multiple errors in the circuit (resulting in the decoder making misinformed choices when decoding). Irrelevant unless decompose_errors=True.
+
+
+### `diagram`
+
+```python
+diagram(type: Literal['pyzx', 'pyzx-dets', 'pyzx-meas', 'timeline-svg', 'timeslice-svg'] = 'timeline-svg', tick: int | range | None = None, filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),), rows: int | None = None, height: float | None = None, width: float | None = None, zoomable: bool = True, kwargs: Any = {}) -> Any
+```
+
+Return a diagram of the circuit, from a variety of options.
+
+**Parameters:**
+
+- `type` (`Literal['pyzx', 'pyzx-dets', 'pyzx-meas', 'timeline-svg', 'timeslice-svg']`) — The type of diagram. Available types are: "pyzx": A pyzx SVG of the ZX diagram of the circuit. "pyzx-dets": A pyzx SVG of the ZX diagram that is used to compute probabilities of detectors and observables. "pyzx-meas": A pyzx SVG of the ZX diagram that is used to compute probabilities of measurements. "timeline-svg": An SVG image of the operations applied by the circuit over time. Includes annotations showing the measurement record index that each measurement writes to, and the measurements used by detectors. "timeslice-svg": An SVG image of the operations applied between two TICK instructions in the circuit, with the operations laid out in 2d.
+- `tick` (`int | range | None`) — Required for time slice diagrams. Specifies which TICK instruction, or range of TICK instructions, to slice at. Note that the first TICK instruction in the circuit corresponds tick=1. The value tick=0 refers to the very start of the circuit. Passing `range(A, B)` for a detector slice will show the slices for ticks A through B including A but excluding B. Passing `range(A, B)` for a time slice will show the operations between tick A and tick B.
+- `rows` (`int | None`) — In diagrams that have multiple separate pieces, such as timeslice diagrams and detslice diagrams, this controls how many rows of pieces there will be. If not specified, a number of rows that creates a roughly square layout will be chosen.
+- `filter_coords` (`Iterable[Iterable[float] | stim.DemTarget]`) — A list of things to include in the diagram. Different effects depending on the diagram. For detslice diagrams, the filter defaults to showing all detectors and no observables. When specified, each list entry can be a collection of floats (detectors whose coordinates start with the same numbers will be included), a stim.DemTarget (specifying a detector or observable to include), a string like "D5" or "L0" specifying a detector or observable to include.
+- `height` (`float | None`) — Optional height for the rendered diagram in pixels. Only applied to timeline-svg and timeslice-svg diagram types. For timeline-svg, when both height and width are None, the height is automatically determined based on the number of qubits. When only one dimension is given, the other is computed from the SVG aspect ratio.
+- `width` (`float | None`) — Optional width for the rendered diagram in pixels. Only applied to timeline-svg and timeslice-svg diagram types.
+- `zoomable` (`bool`) — If True (default), wraps SVG diagrams in an interactive container with pan and Ctrl/Cmd+wheel zoom. Only applies to timeline-svg and timeslice-svg diagram types.
+- `**kwargs` (`Any`) — Additional keyword arguments passed to the underlying diagram renderer.
+
+**Returns:**
+
+- `Any` — An object whose `__str__` method returns the diagram, so that
+- `Any` — writing the diagram to a file works correctly. The returned
+- `Any` — object may also define methods such as `_repr_html_`, so that
+- `Any` — ipython notebooks recognize it can be shown using a specialized
+- `Any` — viewer instead of as raw text.
+
+
+### `flattened`
+
+```python
+flattened() -> Circuit
+```
+
+Return a copy of the circuit with all repeat blocks expanded.
+
+
+### `from_file`
+
+```python
+from_file(cls, filename: str) -> Circuit
+```
+
+Create a Circuit from a file.
+
+**Parameters:**
+
+- `filename` (`str`) — The filename to read the circuit from.
+
+**Returns:**
+
+- `Circuit` — A new Circuit instance.
+
+
+### `from_stim_program`
+
+```python
+from_stim_program(cls, stim_circuit: stim.Circuit) -> Circuit
+```
+
+Create a Circuit from a stim.Circuit object.
+
+**Parameters:**
+
+- `stim_circuit` (`stim.Circuit`) — The stim circuit to wrap.
+
+**Returns:**
+
+- `Circuit` — A new Circuit instance.
+
+
+### `get_graph`
+
+```python
+get_graph() -> BaseGraph
+```
+
+Construct the ZX graph.
+
+
+### `get_sampling_graph`
+
+```python
+get_sampling_graph(sample_detectors: bool = False) -> BaseGraph
+```
+
+Get a ZX graph that can be used to compute probabilities.
+
+This graph will be constructed as follows:
+
+1. Double the ZX-diagram by composing it with its adjoint.
+2. Connect all rec[i] vertices to their corresponding adjoint rec[i] vertices.
+3. Add outputs:
+(a) When sampling measurements (i.e. `sample_detectors` is False),
+    add output nodes for each measurement. Detectors and observables are
+    removed since they are ignored when sampling measurements.
+(b) When sampling detectors and observables (i.e. `sample_detectors` is True),
+    add output nodes for each detector and observable. Only one set of detector
+    and observable nodes is kept, i.e., detectors and observables are not
+    composed with their adjoints.
+
+**Parameters:**
+
+- `sample_detectors` (`bool`) — If True, sample detectors and observables instead of measurements.
+
+**Returns:**
+
+- `BaseGraph` — A ZX graph for sampling.
+
+
+### `inverse`
+
+```python
+inverse() -> Circuit
+```
+
+Return the inverse of the circuit.
+
+
+### `pop`
+
+```python
+pop(index: int = -1) -> stim.CircuitInstruction | stim.CircuitRepeatBlock
+```
+
+Pops an operation from the end of the circuit, or at the given index.
+
+**Parameters:**
+
+- `index` (`int`) — Defaults to -1 (end of circuit). The index to pop from.
+
+**Returns:**
+
+- `stim.CircuitInstruction | stim.CircuitRepeatBlock` — The popped instruction or repeat block.
+
+**Raises:**
+
+- `IndexError` — The given index is outside the bounds of the circuit.
+
+
+### `tcount`
+
+```python
+tcount() -> int
+```
+
+Count the number of T gates in the circuit.
+
+
+### `to_matrix`
+
+```python
+to_matrix() -> Any
+```
+
+Convert circuit to matrix representation.
+
+
+### `to_tensor`
+
+```python
+to_tensor() -> Any
+```
+
+Convert circuit to tensor representation.
+
+
+### `without_annotations`
+
+```python
+without_annotations() -> Circuit
+```
+
+Return a copy of the circuit with all detector and observable annotations removed.
+
+
+### `without_noise`
+
+```python
+without_noise() -> Circuit
+```
+
+Return a copy of the circuit with all noise removed.
+
+
+## class `CompiledDetectorSampler`
+
+```python
+CompiledDetectorSampler(circuit: Circuit, strategy: DecompositionStrategy = 'cat5', seed: int | None = None)
+```
+
+Samples detector and observable outcomes from a quantum circuit.
+
+
+### `sample`
+
+```python
+sample(shots: int, batch_size: int | None = None, prepend_observables: bool = False, append_observables: bool = False, separate_observables: bool = False, bit_packed: bool = False, use_detector_reference_sample: bool = False, use_observable_reference_sample: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray]
+```
+
+Return detector samples from the circuit.
+
+The circuit must define the detectors using DETECTOR instructions. Observables
+defined by OBSERVABLE_INCLUDE instructions can also be included in the results
+as honorary detectors.
+
+**Parameters:**
+
+- `shots` (`int`) — The number of times to sample every detector in the circuit.
+- `batch_size` (`int | None`) — The number of samples to process in each batch. Defaults to None, which automatically chooses a batch size based on available memory. When using a GPU, setting this explicitly can help fully utilize VRAM for maximum performance. NOTE: Changing the batch size will affect reproducibility even with a fixed seed.
+- `separate_observables` (`bool`) — Defaults to False. When set to True, the return value is a (detection_events, observable_flips) tuple instead of a flat detection_events array.
+- `prepend_observables` (`bool`) — Defaults to false. When set, observables are included with the detectors and are placed at the start of the results.
+- `append_observables` (`bool`) — Defaults to false. When set, observables are included with the detectors and are placed at the end of the results.
+- `bit_packed` (`bool`) — Defaults to false. When set, results are bit-packed.
+- `use_detector_reference_sample` (`bool`) — Defaults to False. When True, a noiseless reference sample is computed and XORed with detector outcomes so that results represent deviations from the noiseless baseline. This should only be used when detectors are deterministic. Otherwise, it can unpredictably change the results.
+- `use_observable_reference_sample` (`bool`) — Defaults to False. When True, a noiseless reference sample is computed and XORed with observable outcomes so that results represent deviations from the noiseless baseline. This should only be used when observables are deterministic. Otherwise, it can unpredictably change the results.
+
+**Returns:**
+
+- `np.ndarray | tuple[np.ndarray, np.ndarray]` — A numpy array or tuple of numpy arrays containing the samples.
+
+**Raises:**
+
+- `ValueError` — If ``separate_observables`` is combined with ``prepend_observables`` or ``append_observables``.
+
+
+## class `CompiledMeasurementSampler`
+
+```python
+CompiledMeasurementSampler(circuit: Circuit, strategy: DecompositionStrategy = 'cat5', seed: int | None = None)
+```
+
+Samples measurement outcomes from a quantum circuit.
+
+Uses sequential decomposition [0, 1, 2, ..., n] where:
+- compiled_scalar_graphs[0]: normalization (0 outputs plugged)
+- compiled_scalar_graphs[i]: cumulative probability up to bit i
+
+
+### `sample`
+
+```python
+sample(shots: int, batch_size: int | None = None) -> np.ndarray
+```
+
+Sample measurement outcomes from the circuit.
+
+**Parameters:**
+
+- `shots` (`int`) — The number of times to sample every measurement in the circuit.
+- `batch_size` (`int | None`) — The number of samples to process in each batch. Defaults to None, which automatically chooses a batch size based on available memory. When using a GPU, setting this explicitly can help fully utilize VRAM for maximum performance. NOTE: Changing the batch size will affect reproducibility even with a fixed seed.
+
+**Returns:**
+
+- `np.ndarray` — A numpy array containing the measurement samples.
+
+
+## `build_sampling_graph`
+
+```python
+build_sampling_graph(built: GraphRepresentation, sample_detectors: bool = False) -> BaseGraph
+```
+
+Build a ZX graph for sampling from a GraphRepresentation.
+
+This is the internal implementation of get_sampling_graph.
+
+
+## `enriched_stim_error`
+
+```python
+enriched_stim_error(exc: ValueError, converted_text: str) -> ValueError
+```
+
+Improve stim parse errors for tsim-specific gates.
+
+When stim raises a 'Gate not found' error for a gate that should have been
+converted by shorthand_to_stim, this searches the converted text for the
+unconverted usage and returns a more helpful error message.
+
+
+## `expand_clifford_rotations`
+
+```python
+expand_clifford_rotations(source: stim.Circuit) -> stim.Circuit
+```
+
+Return ``source`` with half-π parametric rotations expanded to Clifford gates.
+
+``REPEAT`` blocks are preserved structurally and expanded recursively.
+
+
+## `get_detector_error_model`
+
+```python
+get_detector_error_model(stim_circuit: stim.Circuit, allow_non_deterministic_observables: bool = True, decompose_errors: bool = False, flatten_loops: bool = False, allow_gauge_detectors: bool = False, approximate_disjoint_errors: bool = False, ignore_decomposition_failures: bool = False, block_decomposition_from_introducing_remnant_edges: bool = False) -> stim.DetectorErrorModel
+```
+
+Return a stim.DetectorErrorModel describing the error processes in the circuit.
+
+Unlike the stim.Circuit.detector_error_model() method, this method allows for non-deterministic observables
+when `allow_gauge_detectors` is set to true. This is achieved by converting logical
+observables into detectors, calling the stim.Circuit.detector_error_model(allow_gauge_detectors=True), and then
+reconverting the detectors back into observables in the detector error model.
+
+WARNING: If the circuit has distance one, i.e. if there are errors that only flip logical observables,
+this method will return an incorrect detector error model.
+
+**Parameters:**
+
+- `stim_circuit` (`stim.Circuit`) — The stim circuit to compute the detector error model for.
+- `allow_non_deterministic_observables` (`bool`) — Defaults to true. When set to true, the detector error model allows for non-deterministic observables. This is achieved by converting logical observables into detectors, calling the stim.Circuit.detector_error_model(allow_gauge_detectors=True), and then reconverting the detectors back into observables in the detector error model.
+- `decompose_errors` (`bool`) — Defaults to false. When set to true, the error analysis attempts to decompose the components of composite error mechanisms (such as depolarization errors) into simpler errors, and suggest this decomposition via `stim.target_separator()` between the components. For example, in an XZ surface code, single qubit depolarization has a Y error term which can be decomposed into simpler X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to decompose large errors into simple errors that affect at most two detectors. When allow_non_deterministic_observables is set to true, decomposition is not supported.
+- `flatten_loops` (`bool`) — Defaults to false. When set to true, the output will not contain any `repeat` blocks. When set to false, the error analysis watches for loops in the circuit reaching a periodic steady state with respect to the detectors being introduced, the error mechanisms that affect them, and the locations of the logical observables. When it identifies such a steady state, it outputs a repeat block. This is massively more efficient than flattening for circuits that contain loops, but creates a more complex output. Irrelevant unless allow_non_deterministic_observables=False.
+- `allow_gauge_detectors` (`bool`) — Defaults to false. When set to false, the error analysis verifies that detectors in the circuit are actually deterministic under noiseless execution of the circuit. When set to true, these detectors are instead considered to be part of degrees freedom that can be removed from the error model. For example, if detectors D1 and D3 both anti-commute with a reset, then the error model has a gauge `error(0.5) D1 D3`. When gauges are identified, one of the involved detectors is removed from the system using Gaussian elimination. Note that logical observables are still verified to be deterministic, even if this option is set.
+- `approximate_disjoint_errors` (`bool`) — Defaults to false. When set to false, composite error mechanisms with disjoint components (such as `PAULI_CHANNEL_1(0.1, 0.2, 0.0)`) can cause the error analysis to throw exceptions (because detector error models can only contain independent error mechanisms). When set to true, the probabilities of the disjoint cases are instead assumed to be independent probabilities. For example, a `PAULI_CHANNEL_1(0.1, 0.2, 0.0)` becomes equivalent to an `X_ERROR(0.1)` followed by a `Z_ERROR(0.2)`. This assumption is an approximation, but it is a good approximation for small probabilities. This argument can also be set to a probability between 0 and 1, setting a threshold below which the approximation is acceptable. Any error mechanisms that have a component probability above the threshold will cause an exception to be thrown.
+- `ignore_decomposition_failures` (`bool`) — Defaults to False. When this is set to True, circuit errors that fail to decompose into graphlike detector error model errors no longer cause the conversion process to abort. Instead, the undecomposed error is inserted into the output. Whatever tool the detector error model is then given to is responsible for dealing with the undecomposed errors (e.g. a tool may choose to simply ignore them). Irrelevant unless decompose_errors=True.
+- `block_decomposition_from_introducing_remnant_edges` (`bool`) — Defaults to False. Requires that both A B and C D be present elsewhere in the detector error model in order to decompose A B C D into A B ^ C D. Normally, only one of A B or C D needs to appear to allow this decomposition. Remnant edges can be a useful feature for ensuring decomposition succeeds, but they can also reduce the effective code distance by giving the decoder single edges that actually represent multiple errors in the circuit (resulting in the decoder making misinformed choices when decoding). Irrelevant unless decompose_errors=True.
+
+
+## `is_clifford`
+
+```python
+is_clifford(source: stim.Circuit) -> bool
+```
+
+Return True iff every instruction in ``source`` is Clifford.
+
+Recurses into ``REPEAT`` block bodies.
+
+
+## `parse_parametric_tag`
+
+```python
+parse_parametric_tag(instruction: stim.CircuitInstruction) -> tuple[str, dict[str, Fraction]] | None
+```
+
+Parse the parametric tag on an instruction (e.g. ``I[R_Z(theta=0.3*pi)]``).
+
+Supports gates: R_Z, R_X, R_Y, U3.
+
+**Parameters:**
+
+- `instruction` (`stim.CircuitInstruction`) — The stim instruction whose tag will be parsed.
+
+**Returns:**
+
+- `tuple[str, dict[str, Fraction]] | None` — Tuple of (gate_name, params_dict) when the instruction's tag is a
+- `tuple[str, dict[str, Fraction]] | None` — well-formed parametric tag, or ``None`` when the tag is not
+- `tuple[str, dict[str, Fraction]] | None` — parametric-looking (no ``name(...)`` shape, or empty).
+
+**Raises:**
+
+- `ValueError` — When the tag looks parametric (matches ``name(...)``) but is malformed: a parameter value does not parse, the gate name is unknown, or the parameter keys do not match the expected set for the gate.
+
+
+## `parse_stim_circuit`
+
+```python
+parse_stim_circuit(stim_circuit: stim.Circuit, track_classical_wires: bool = False) -> GraphRepresentation
+```
+
+Parse a stim circuit into a GraphRepresentation.
+
+**Parameters:**
+
+- `stim_circuit` (`stim.Circuit`) — The stim circuit to convert.
+- `track_classical_wires` (`bool`) — Whether to track classical wires.
+
+**Returns:**
+
+- `GraphRepresentation` — A GraphRepresentation containing the ZX graph and all auxiliary data.
+
+
+## `render_pyzx_d3`
+
+```python
+render_pyzx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> GraphS
+```
+
+Render a stim circuit as a pyzx ZX diagram using d3.js.
+
+**Parameters:**
+
+- `stim_circ` (`stim.Circuit`) — The stim circuit to render.
+- `kwargs` (`dict[str, Any]`) — Additional keyword arguments passed to the underlying diagram renderer.
+
+**Returns:**
+
+- `GraphS` — A pyzx ZX diagram.
+
+
+## `render_svg`
+
+```python
+render_svg(c: stim.Circuit, type: str, tick: int | range | None = None, filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),), rows: int | None = None, width: float | None = None, height: float | None = None, zoomable: bool = True) -> Diagram
+```
+
+Render a stim circuit timeline/timeslice diagram with custom labels.
+
+
+## `shorthand_to_stim`
+
+```python
+shorthand_to_stim(text: str) -> str
+```
+
+Convert tsim shorthand syntax to valid stim instructions.
+
+**Converts:**
+
+T 0 1               → S[T] 0 1
+T_DAG 0 1           → S_DAG[T] 0 1
+TPP X0*Y1           → SPP[T] X0*Y1
+TPP_DAG X0*Y1       → SPP_DAG[T] X0*Y1
+R_Z(0.3) 0          → I[R_Z(theta=0.3*pi)] 0
+R_X(0.25) 0         → I[R_X(theta=0.25*pi)] 0
+R_Y(-0.5) 0         → I[R_Y(theta=-0.5*pi)] 0
+U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0
+
+
+## `stim_to_shorthand`
+
+```python
+stim_to_shorthand(text: str) -> str
+```
+
+Convert expanded stim annotations back to tsim shorthand.
+
+Rewrites:
+- I[U3(theta=θ*pi, phi=φ*pi, lambda=λ*pi)] → U3(θ, φ, λ)
+- I[R_X(theta=α*pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α)
+- SPP[T] → TPP
+- SPP_DAG[T] → TPP_DAG
+- S[T] → T
+- S_DAG[T] → T_DAG

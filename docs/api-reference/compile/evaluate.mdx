@@ -1,0 +1,97 @@
+---
+title: "evaluate"
+description: "Evaluation of compiled scalar graphs using exact arithmetic."
+---
+
+## class `CompiledScalarGraphs`
+
+```python
+CompiledScalarGraphs()
+```
+
+JAX-compatible compiled representation of a list of scalar ZX graphs.
+
+The scalar for each graph is a product of four term families, multiplied by
+a per-graph ``ScalarPrefactor`` (global phase, floatfactor, ``2^power2``,
+optional approximate complex floatfactor). All arrays are static-shaped so
+the whole struct can be traced under ``jax.jit``.
+
+
+## class `ExactScalarArray`
+
+```python
+ExactScalarArray(coeffs: Array, power: Array | None = None)
+```
+
+Exact scalar array for ZX-calculus phase arithmetic using dyadic representation.
+
+Represents values of the form (c_0 + c_1·ω + c_2·ω² + c_3·ω³) × 2^power
+where ω = e^(iπ/4). This enables exact computation without floating-point errors.
+
+
+### `prod`
+
+```python
+prod(axis: int = -1) -> ExactScalarArray
+```
+
+Compute product along the specified axis using associative scan.
+
+Returns identity (1+0i with power 0) for empty reductions.
+
+**Parameters:**
+
+- `axis` (`int`) — The axis along which to compute the product.
+
+**Returns:**
+
+- `ExactScalarArray` — ExactScalarArray with the product computed along the axis.
+
+
+### `sum`
+
+```python
+sum(axis: int = -1) -> ExactScalarArray
+```
+
+Sum elements along the specified axis using normalized pairwise adds.
+
+**Parameters:**
+
+- `axis` (`int`) — The axis along which to sum.
+
+**Returns:**
+
+- `ExactScalarArray` — ExactScalarArray with the sum computed along the axis.
+
+
+### `to_complex`
+
+```python
+to_complex() -> jax.Array
+```
+
+Convert to complex number.
+
+
+## `evaluate`
+
+```python
+evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array
+```
+
+Evaluate compiled circuit with batched parameter values.
+
+Each term family (``NodePhases``, ``HalfPiPhases``, ``PiProducts``,
+``PhasePairs``) computes its own contribution via ``.evaluate(param_vals)``.
+This function multiplies those together with the per-graph
+``ScalarPrefactor`` and folds in ``power2`` / any approximate floatfactor.
+
+**Parameters:**
+
+- `circuit` (`CompiledScalarGraphs`) — Compiled circuit representation.
+- `param_vals` (`Array`) — Binary parameter values (error bits + measurement/detector outcomes), shape ``(batch_size, n_params)``.
+
+**Returns:**
+
+- `Array` — Complex array of shape ``(batch_size,)`` — the per-sample amplitude.

@@ -1,0 +1,210 @@
+---
+title: "parse"
+description: "Parser for converting stim circuits to ZX graph representations."
+---
+
+## class `GraphRepresentation`
+
+```python
+GraphRepresentation(graph: GraphS = GraphS(), rec: list[int] = list(), silent_rec: list[int] = list(), detectors: list[int] = list(), observables_dict: dict[int, int] = dict(), first_vertex: dict[int, int] = dict(), last_vertex: dict[int, int] = dict(), channel_probs: list[np.ndarray] = list(), correlated_error_probs: list[float] = list(), num_error_bits: int = 0, num_correlated_error_bits: int = 0, track_classical_wires: bool = False)
+```
+
+ZX graph built from a stim circuit.
+
+Contains the graph and all auxiliary data needed for sampling.
+
+
+## `correlated_error`
+
+```python
+correlated_error(b: GraphRepresentation, qubits: list[int], types: list[Literal['X', 'Y', 'Z']], p: float) -> None
+```
+
+Add a correlated error term affecting multiple qubits with given Pauli types.
+
+
+## `detector`
+
+```python
+detector(b: GraphRepresentation, rec: list[int], args = ()) -> None
+```
+
+Add detector annotation that XORs the given measurement record bits.
+
+
+## `finalize_correlated_error`
+
+```python
+finalize_correlated_error(b: GraphRepresentation) -> None
+```
+
+Finalize the current correlated error channel.
+
+1. Rename all "c\{i\}" phases to "e\{num_error_bits + i\}" in the graph
+2. Compute and append the 2^k probability array to channel_probs
+3. Increment num_error_bits by k
+4. Reset num_correlated_error_bits to 0 and correlated_error_probs to []
+
+
+## `mpad`
+
+```python
+mpad(b: GraphRepresentation, value: int, p: float = 0) -> None
+```
+
+Pad measurement record with a fixed bit value.
+
+**Parameters:**
+
+- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `value` (`int`) — The bit value to record (0 or 1).
+- `p` (`float`) — Error probability for the recorded bit.
+
+
+## `mpp`
+
+```python
+mpp(b: GraphRepresentation, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], invert: bool = False, p: float = 0) -> None
+```
+
+Measure a single Pauli product.
+
+**Parameters:**
+
+- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `paulis` (`list[tuple[Literal['X', 'Y', 'Z'], int]]`) — List of (pauli_type, qubit) pairs defining the Pauli product.
+- `invert` (`bool`) — Whether to invert the measurement result.
+- `p` (`float`) — Measurement flip error probability.
+
+
+## `observable_include`
+
+```python
+observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None
+```
+
+Add observable annotation that XORs the given measurement record bits.
+
+
+## `parse_parametric_tag`
+
+```python
+parse_parametric_tag(instruction: stim.CircuitInstruction) -> tuple[str, dict[str, Fraction]] | None
+```
+
+Parse the parametric tag on an instruction (e.g. ``I[R_Z(theta=0.3*pi)]``).
+
+Supports gates: R_Z, R_X, R_Y, U3.
+
+**Parameters:**
+
+- `instruction` (`stim.CircuitInstruction`) — The stim instruction whose tag will be parsed.
+
+**Returns:**
+
+- `tuple[str, dict[str, Fraction]] | None` — Tuple of (gate_name, params_dict) when the instruction's tag is a
+- `tuple[str, dict[str, Fraction]] | None` — well-formed parametric tag, or ``None`` when the tag is not
+- `tuple[str, dict[str, Fraction]] | None` — parametric-looking (no ``name(...)`` shape, or empty).
+
+**Raises:**
+
+- `ValueError` — When the tag looks parametric (matches ``name(...)``) but is malformed: a parameter value does not parse, the gate name is unknown, or the parameter keys do not match the expected set for the gate.
+
+
+## `parse_stim_circuit`
+
+```python
+parse_stim_circuit(stim_circuit: stim.Circuit, track_classical_wires: bool = False) -> GraphRepresentation
+```
+
+Parse a stim circuit into a GraphRepresentation.
+
+**Parameters:**
+
+- `stim_circuit` (`stim.Circuit`) — The stim circuit to convert.
+- `track_classical_wires` (`bool`) — Whether to track classical wires.
+
+**Returns:**
+
+- `GraphRepresentation` — A GraphRepresentation containing the ZX graph and all auxiliary data.
+
+
+## `r_x`
+
+```python
+r_x(b: GraphRepresentation, qubit: int, phase: Fraction) -> None
+```
+
+Apply R_X rotation gate with given phase (in units of π).
+
+
+## `r_y`
+
+```python
+r_y(b: GraphRepresentation, qubit: int, phase: Fraction) -> None
+```
+
+Apply R_Y rotation gate with given phase (in units of π).
+
+
+## `r_z`
+
+```python
+r_z(b: GraphRepresentation, qubit: int, phase: Fraction) -> None
+```
+
+Apply R_Z rotation gate with given phase (in units of π).
+
+
+## `spp`
+
+```python
+spp(b: GraphRepresentation, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], dagger: bool = False) -> None
+```
+
+Apply exp(-i pi/4 P) (up to global phase) for a Pauli product P.
+
+Phases the -1 eigenspace of P by i (or -i if dagger). For a single qubit,
+``SPP Z0`` is the S gate and ``SPP_DAG Z0`` is S_DAG.
+
+**Parameters:**
+
+- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `paulis` (`list[tuple[Literal['X', 'Y', 'Z'], int]]`) — List of (pauli_type, qubit) pairs defining the Pauli product P.
+- `dagger` (`bool`) — If True, apply exp(+i pi/4 P) (phase by -i) instead.
+
+
+## `tick`
+
+```python
+tick(b: GraphRepresentation) -> None
+```
+
+Add a tick to the circuit (align all qubits to same row).
+
+
+## `tpp`
+
+```python
+tpp(b: GraphRepresentation, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], dagger: bool = False) -> None
+```
+
+Apply exp(-i pi/8 P) (up to global phase) for a Pauli product P.
+
+Phases the -1 eigenspace of P by exp(i pi/4) (or exp(-i pi/4) if dagger).
+For a single qubit, ``TPP Z0`` is the T gate and ``TPP_DAG Z0`` is T_DAG.
+
+**Parameters:**
+
+- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `paulis` (`list[tuple[Literal['X', 'Y', 'Z'], int]]`) — List of (pauli_type, qubit) pairs defining the Pauli product P.
+- `dagger` (`bool`) — If True, apply exp(+i pi/8 P) (phase by exp(-i pi/4)) instead.
+
+
+## `u3`
+
+```python
+u3(b: GraphRepresentation, qubit: int, theta: Fraction, phi: Fraction, lambda_: Fraction) -> None
+```
+
+Apply U3 gate: U3(θ,φ,λ) = R_Z(φ)·R_Y(θ)·R_Z(λ).

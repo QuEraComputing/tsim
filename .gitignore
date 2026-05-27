@@ -22,10 +22,10 @@ Ion.toml
 docs/demos/msd_circuits2/
 scratch*
 
-# Mintlify generated output
-docs/api-reference/
-docs/tutorials/*.mdx
-docs/images/tutorials/
+# NOTE: Mintlify-generated output (docs/api-reference/, docs/tutorials/*.mdx,
+# docs/images/tutorials/) is intentionally committed. Mintlify's hosted
+# builder does not run Python, so the CI workflow (.github/workflows/docs.yml)
+# rebuilds these deterministically and commits them to the deploy branch.
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -1,0 +1,75 @@
+name: Build docs
+
+# Rebuilds the generated documentation (API reference via griffe + tutorial
+# MDX from executed notebooks) and commits it back to the branch. Mintlify's
+# hosted builder renders the committed MDX, so the generated output must live
+# in the repo. The build is deterministic, so commits only appear when content
+# actually changes. Runs on pushes to main (live site) and on PRs (so Mintlify
+# preview deployments render the full site).
+#
+# Commits are pushed with the default GITHUB_TOKEN, which by design does not
+# trigger another workflow run, so there is no build loop.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and commit generated docs
+    runs-on: ubuntu-latest
+    # Skip on forked PRs: we cannot push generated content back to a fork's
+    # branch, so the Mintlify preview there would be partial anyway.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.6.14"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies (doc + dev for notebook execution)
+        env:
+          UV_EXTRA_INDEX_URL: ${{ secrets.UV_INDEX_URL }}
+        run: uv sync --group doc --group dev
+
+      - name: Register Jupyter kernel
+        run: uv run python -m ipykernel install --user --name python3
+
+      - name: Build documentation
+        run: uv run python docs/build.py
+
+      - name: Validate build (non-blocking)
+        continue-on-error: true
+        run: |
+          npm install -g mint
+          cd docs
+          mint validate
+          mint broken-links
+
+      - name: Commit generated docs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/api-reference docs/tutorials docs/images/tutorials docs/docs.json
+          if git diff --cached --quiet; then
+            echo "No documentation changes to commit."
+          else
+            git commit -m "docs: rebuild generated content [skip ci]"
+            git push origin HEAD:${{ github.head_ref || github.ref_name }}
+          fi

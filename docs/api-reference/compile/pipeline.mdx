@@ -1,0 +1,192 @@
+---
+title: "pipeline"
+description: "Compilation pipeline from prepared graphs to executable programs."
+---
+
+## class `CompiledComponent`
+
+```python
+CompiledComponent()
+```
+
+A single compiled connected component of a circuit.
+
+Each component is independent and can be sampled separately. The results
+are then combined according to output_indices.
+
+
+## class `CompiledProgram`
+
+```python
+CompiledProgram(components: tuple[CompiledComponent, ...], direct_f_indices: Array, direct_flips: Array, output_order: Array, output_reindex: Array | None, num_outputs: int, num_detectors: int)
+```
+
+A fully compiled circuit program ready for sampling.
+
+This is the result of compiling a SamplingGraph and contains everything
+needed to sample from the circuit.
+
+
+## class `CompiledScalarGraphs`
+
+```python
+CompiledScalarGraphs()
+```
+
+JAX-compatible compiled representation of a list of scalar ZX graphs.
+
+The scalar for each graph is a product of four term families, multiplied by
+a per-graph ``ScalarPrefactor`` (global phase, floatfactor, ``2^power2``,
+optional approximate complex floatfactor). All arrays are static-shaped so
+the whole struct can be traced under ``jax.jit``.
+
+
+## class `ConnectedComponent`
+
+```python
+ConnectedComponent(graph: BaseGraph, output_indices: list[int])
+```
+
+A connected subgraph with its associated output indices.
+
+
+## class `SamplingGraph`
+
+```python
+SamplingGraph(graph: BaseGraph, error_transform: np.ndarray, channel_probs: list[np.ndarray], num_outputs: int, num_detectors: int)
+```
+
+Result of the graph preparation phase for sampling.
+
+Contains all data structures needed for sampling. This represents a circuit
+that has been:
+1. Parsed from stim format
+2. Converted to a ZX graph
+3. Doubled (composed with adjoint)
+4. Reduced via zx.full_reduce
+5. Had its error basis transformed (Gaussian elimination: e → f)
+
+
+## `classify_direct`
+
+```python
+classify_direct(component: ConnectedComponent) -> tuple[int, bool] | None
+```
+
+Check if a component is directly determined by a single f-variable.
+
+A component qualifies when its graph consists of exactly two vertices — one
+boundary output and one Z-spider — connected by a Hadamard edge, where the
+Z-spider carries a single ``f`` parameter and a constant phase of either 0
+(no flip) or π (flip).
+
+**Parameters:**
+
+- `component` (`ConnectedComponent`) — A connected component to classify.
+
+**Returns:**
+
+- `tuple[int, bool] | None` — ``(f_index, flip)`` if the fast path applies, otherwise ``None``.
+
+
+## `compile_program`
+
+```python
+compile_program(prepared: SamplingGraph, mode: DecompositionMode, strategy: DecompositionStrategy = 'cat5') -> CompiledProgram
+```
+
+Compile a prepared graph into an executable sampling program.
+
+This function performs the second phase of compilation:
+1. Split the graph into connected components
+2. For each component:
+   - Plug outputs according to mode (sequential or joint)
+   - Reduce each plugged graph
+   - Perform stabilizer rank decomposition
+   - Compile into CompiledScalarGraphs objects
+3. Assemble into CompiledProgram with output ordering
+
+**Parameters:**
+
+- `prepared` (`SamplingGraph`) — The prepared graph from prepare_graph().
+- `mode` (`DecompositionMode`) — Decomposition mode: - "sequential": For sampling - creates [0, 1, 2, ..., n] circuits - "joint": For probability estimation - creates [0, n] circuits
+- `strategy` (`DecompositionStrategy`) — Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".
+
+**Returns:**
+
+- `CompiledProgram` — A CompiledProgram ready for sampling.
+
+
+## `compile_scalar_graphs`
+
+```python
+compile_scalar_graphs(g_list: list[BaseGraph], params: list[str]) -> CompiledScalarGraphs
+```
+
+Compile ZX-graph list into JAX-compatible structure for fast evaluation.
+
+**Parameters:**
+
+- `g_list` (`list[BaseGraph]`) — List of ZX-graphs to compile (must be scalar graphs with no vertices)
+- `params` (`list[str]`) — List of parameter names used by this circuit. Each parameter will correspond to columns in the jax.Arrays of the compiled circuit.
+
+**Returns:**
+
+- `CompiledScalarGraphs` — CompiledScalarGraphs with all data in static-shaped JAX arrays
+
+
+## `connected_components`
+
+```python
+connected_components(g: BaseGraph) -> list[ConnectedComponent]
+```
+
+Return each connected component of ``g`` as its own ZX subgraph.
+
+Each component is packaged inside a :class:`ConnectedComponent` that contains
+the subgraph and a list of output indices matching the original output indices.
+
+
+## `find_stab`
+
+```python
+find_stab(graph: BaseGraph, strategy: DecompositionStrategy) -> list[BaseGraph]
+```
+
+Decompose a ZX-graph into a sum of stabilizer components.
+
+This is the main entry point for stabilizer rank decomposition. It first removes
+U3 phases, then decomposes T gates via BSS decompositions, producing a sum of
+scalar graphs.
+
+**Parameters:**
+
+- `graph` (`BaseGraph`) — The ZX graph to decompose.
+- `strategy` (`DecompositionStrategy`) — Decomposition strategy. Must be one of "cat5", "bss", "cutting".
+
+**Returns:**
+
+- `list[BaseGraph]` — A list of scalar graphs whose sum equals the original graph.
+
+
+## `get_params`
+
+```python
+get_params(g: BaseGraph) -> set[str]
+```
+
+Get all parameter variables that appear in the graph and its scalar.
+
+Collects variables from:
+- Vertex phases (g._phaseVars)
+- Scalar phase variables (phasevars_pi, phasevars_pi_pair, phasevars_halfpi)
+- Scalar phase pairs (phasepairs with paramsA, paramsB)
+- Scalar phase nodes (phasenodevars)
+
+**Parameters:**
+
+- `g` (`BaseGraph`) — A ZX graph with parametrized phases
+
+**Returns:**
+
+- `set[str]` — Set of all variable names (e.g., \{'f0', 'f2', 'm1'\}) that appear in the graph
