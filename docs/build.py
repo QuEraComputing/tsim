@@ -146,6 +146,12 @@ def _extract_diagram_svgs(
     def replacer(m: re.Match) -> str:
         counter[0] += 1
         block = _stretch_zoom_block(m.group(0))
+        # Replace the random uuid (used in both the container attribute and
+        # the script's querySelector) with a deterministic per-notebook id so
+        # the generated file is byte-stable across builds (avoids git churn).
+        uid_m = re.search(r'data-tsim-zoom="([^"]+)"', block)
+        if uid_m:
+            block = block.replace(uid_m.group(1), f"tsim-zoom-{counter[0]:03d}")
         height = int(float(m.group("height")))
         # body overflow:hidden so only the inner zoom container scrolls
         # (otherwise the iframe body scrolls too -> nested scrollbars).
@@ -238,6 +244,13 @@ def _extract_pyzx_iframes(
         counter[0] += 1
         script = m.group(2)
         block = m.group(1) + script
+        # Replace pyzx's random ``graph-output-XXXX`` id (used in the div and
+        # the ``showGraph('#…')`` call) with a deterministic per-notebook id
+        # so the generated file is byte-stable across builds. The CSS uses an
+        # ``[id^="graph-output-"]`` prefix selector, so it still matches.
+        gid_m = re.search(r'id="(graph-output-[^"]+)"', block)
+        if gid_m:
+            block = block.replace(gid_m.group(1), f"graph-output-{counter[0]:03d}")
         hm = height_re.search(script)
         height = int(float(hm.group(1))) + 12 if hm else 400
         html = (
