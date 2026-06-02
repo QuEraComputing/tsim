@@ -11,20 +11,29 @@ back to ``numpy.array``.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-try:
-    from cuda.bindings import runtime as cudart
-    _CUDA_BINDINGS_AVAILABLE = True
-except Exception:
+if TYPE_CHECKING:
+    cudart: Any = None
     _CUDA_BINDINGS_AVAILABLE = False
+else:
+    try:
+        from cuda.bindings import runtime as cudart
+        _CUDA_BINDINGS_AVAILABLE = True
+    except Exception:
+        cudart = None
+        _CUDA_BINDINGS_AVAILABLE = False
 
 
 def _src_on_host(src) -> bool:
-    """True iff ``src`` lives on a CPU device — its buffer pointer would be
-    a host address and unsafe to feed to ``cudaMemcpy(..., DeviceToHost)``.
+    """Return True iff ``src`` lives on a CPU device.
+
+    Its buffer pointer would be a host address and unsafe to feed to
+    ``cudaMemcpy(..., DeviceToHost)``.
     """
     devices = getattr(src, "devices", None)
     if devices is None:
@@ -44,7 +53,7 @@ class _PinnedBuf:
     numpy view is garbage-collected).
     """
 
-    __slots__ = ("ptr", "nbytes")
+    __slots__ = ("nbytes", "ptr")
 
     def __init__(self, nbytes: int):
         err, ptr = cudart.cudaHostAlloc(nbytes, cudart.cudaHostAllocDefault)
@@ -55,11 +64,9 @@ class _PinnedBuf:
 
     def __del__(self):
         if self.ptr:
-            try:
+            # cudart may be torn down at interpreter exit.
+            with contextlib.suppress(Exception):
                 cudart.cudaFreeHost(self.ptr)
-            except Exception:
-                # cudart may be torn down at interpreter exit.
-                pass
             self.ptr = 0
 
 
@@ -82,6 +89,7 @@ def alloc_pinned_numpy(nbytes: int, dtype, shape) -> np.ndarray:
     Raises:
         RuntimeError: if cuda.bindings is unavailable, or the underlying
             ``cudaHostAlloc`` fails.
+
     """
     if not _CUDA_BINDINGS_AVAILABLE:
         raise RuntimeError(
@@ -90,7 +98,7 @@ def alloc_pinned_numpy(nbytes: int, dtype, shape) -> np.ndarray:
         )
     buf = _PinnedBuf(nbytes)
     carr = (ctypes.c_uint8 * nbytes).from_address(buf.ptr)
-    carr._owner = buf  # arr.base = carr; carr._owner = buf → buf stays alive
+    carr._owner = buf  # type: ignore[attr-defined]  # arr.base = carr; carr._owner = buf → buf stays alive
     return np.frombuffer(carr, dtype=np.uint8).view(dtype).reshape(shape)
 
 
@@ -107,6 +115,7 @@ def copy_d2h(src, *, dst: np.ndarray | None = None) -> np.ndarray:
 
     Returns:
         ndarray with the same shape and dtype as ``src``.
+
     """
     if not _CUDA_BINDINGS_AVAILABLE or _src_on_host(src):
         # Fallback path. Two cases:
