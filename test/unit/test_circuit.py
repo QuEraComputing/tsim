@@ -143,6 +143,34 @@ def test_u3_gate_shorthand():
     assert c1._stim_circ == c2._stim_circ
 
 
+def test_ccz_ccx_shorthand_and_append():
+    """Test that CCZ/CCX shorthand matches append behavior."""
+    c1 = Circuit("CCZ 0 1 2\nCCX 0 1 2")
+
+    c2 = Circuit()
+    c2.append("CCZ", [0, 1, 2])
+    c2.append("CCX", [0, 1, 2])
+
+    assert c1._stim_circ == c2._stim_circ
+
+
+def test_ccz_gate_matrix():
+    c = Circuit("CCZ 0 1 2")
+    ccz_matrix = np.eye(8, dtype=complex)
+    ccz_matrix[-1, -1] = -1
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), ccz_matrix)
+
+
+def test_ccx_gate_matrix():
+    c = Circuit("CCX 0 1 2")
+    ccx_matrix = np.eye(8, dtype=complex)
+    ccx_matrix[6, 6] = 0
+    ccx_matrix[7, 7] = 0
+    ccx_matrix[6, 7] = 1
+    ccx_matrix[7, 6] = 1
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), ccx_matrix)
+
+
 @pytest.mark.parametrize(
     "stim_gate",
     [

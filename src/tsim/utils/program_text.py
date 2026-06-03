@@ -5,9 +5,70 @@ import re
 # Matches valid numeric literals including scientific notation (e.g. 0.5, 4e-4, 1.2e3)
 FLOAT_RE = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
 
-_TSIM_GATES = {"R_X", "R_Y", "R_Z", "U3"}
+_TSIM_GATES = {"CCZ", "CCX", "R_X", "R_Y", "R_Z", "U3"}
 _GATE_NOT_FOUND_RE = re.compile(r"Gate not found: '(\w+)'")
-_GATE_USAGE_RE = re.compile(r"(?<!\[)\b(R_[A-Z]\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)")
+_GATE_USAGE_RE = re.compile(
+    r"(?<!\[)\b(CCZ\b|CCX\b|R_[A-Z]\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)"
+)
+
+
+def controlled_gate_decomposition_lines(
+    gate: str,
+    control1: int | str,
+    control2: int | str,
+    target: int | str,
+) -> list[str]:
+    """Return a Clifford+T decomposition for a controlled-controlled gate."""
+    if gate not in ("CCZ", "CCX"):
+        raise ValueError(f"Unsupported controlled-controlled gate: {gate!r}")
+
+    a, b, c = str(control1), str(control2), str(target)
+    ccz_lines = [
+        f"CNOT {b} {c}",
+        f"T_DAG {c}",
+        f"CNOT {a} {c}",
+        f"T {c}",
+        f"CNOT {b} {c}",
+        f"T_DAG {c}",
+        f"CNOT {a} {c}",
+        f"T {b}",
+        f"T {c}",
+        f"CNOT {a} {b}",
+        f"T {a}",
+        f"T_DAG {b}",
+        f"CNOT {a} {b}",
+    ]
+    if gate == "CCZ":
+        return ccz_lines
+    return [f"H {c}", *ccz_lines, f"H {c}"]
+
+
+def _expand_controlled_gates(text: str) -> str:
+    lines: list[str] = []
+    for line in text.splitlines():
+        body, sep, comment = line.partition("#")
+        match = re.match(r"^(\s*)(CCZ|CCX)\s+(.+?)\s*$", body)
+        if not match:
+            lines.append(line)
+            continue
+
+        indent, gate, targets_text = match.groups()
+        targets = targets_text.split()
+        if len(targets) % 3 != 0 or not all(target.isdecimal() for target in targets):
+            raise ValueError(
+                f"{gate} expects bare qubit integer targets in groups of three."
+            )
+
+        if sep:
+            lines.append(f"{indent}{sep}{comment}")
+        for i in range(0, len(targets), 3):
+            lines.extend(
+                f"{indent}{decomp_line}"
+                for decomp_line in controlled_gate_decomposition_lines(
+                    gate, targets[i], targets[i + 1], targets[i + 2]
+                )
+            )
+    return "\n".join(lines)
 
 
 def enriched_stim_error(exc: ValueError, converted_text: str) -> ValueError:
@@ -31,6 +92,8 @@ def shorthand_to_stim(text: str) -> str:
     """Convert tsim shorthand syntax to valid stim instructions.
 
     Converts:
+        CCZ 0 1 2           → Clifford+T decomposition of CCZ
+        CCX 0 1 2           → Clifford+T decomposition of CCX/Toffoli
         T 0 1               → S[T] 0 1
         T_DAG 0 1           → S_DAG[T] 0 1
         TPP X0*Y1           → SPP[T] X0*Y1
@@ -41,6 +104,8 @@ def shorthand_to_stim(text: str) -> str:
         U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0
 
     """
+    text = _expand_controlled_gates(text)
+
     # TPP_DAG/TPP must come before T_DAG/T to avoid partial matches
     # (?<!\[) ensures we don't match T inside [T]
     text = re.sub(r"(?<!\[)\bTPP_DAG\b(?!\[)", "SPP_DAG[T]", text)
