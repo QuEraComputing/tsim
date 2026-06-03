@@ -114,6 +114,19 @@ ROT_GATE_MATRICES = {
     "R_Z": lambda frac: np.array(
         [[np.exp(-1j * np.pi / 2 * frac), 0], [0, np.exp(1j * np.pi / 2 * frac)]]
     ),
+    # Two-qubit Pauli rotations: exp(-i frac pi/2 PP) = cos(frac pi/2) I - i sin(frac pi/2) PP
+    "R_XX": lambda frac: np.cos(frac * np.pi / 2) * np.eye(4)
+    - 1j
+    * np.sin(frac * np.pi / 2)
+    * np.kron(SINGLE_QUBIT_GATE_MATRICES["X"], SINGLE_QUBIT_GATE_MATRICES["X"]),
+    "R_YY": lambda frac: np.cos(frac * np.pi / 2) * np.eye(4)
+    - 1j
+    * np.sin(frac * np.pi / 2)
+    * np.kron(SINGLE_QUBIT_GATE_MATRICES["Y"], SINGLE_QUBIT_GATE_MATRICES["Y"]),
+    "R_ZZ": lambda frac: np.cos(frac * np.pi / 2) * np.eye(4)
+    - 1j
+    * np.sin(frac * np.pi / 2)
+    * np.kron(SINGLE_QUBIT_GATE_MATRICES["Z"], SINGLE_QUBIT_GATE_MATRICES["Z"]),
     "U3": lambda frac_theta, frac_phi, frac_lambda: np.array(
         [
             [
