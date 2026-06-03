@@ -16,6 +16,7 @@ from tsim.core.instructions import (
     mpad,
     mpp,
     observable_include,
+    r_pauli,
     r_x,
     r_y,
     r_z,
@@ -29,8 +30,11 @@ _PARAMETRIC_GATE_PARAMS: dict[str, frozenset[str]] = {
     "R_X": frozenset({"theta"}),
     "R_Y": frozenset({"theta"}),
     "R_Z": frozenset({"theta"}),
+    "R_PAULI": frozenset({"theta"}),
     "U3": frozenset({"theta", "phi", "lambda"}),
 }
+
+R_PAULI_MAX_QUBITS = 64
 
 
 def parse_parametric_tag(
@@ -230,6 +234,22 @@ def parse_stim_circuit(
             for paulis, invert in _iter_pauli_products(instruction):
                 tpp(b, paulis, dagger=is_dag ^ invert)
             continue
+        if name in ("SPP", "SPP_DAG") and instruction.tag:
+            parsed = parse_parametric_tag(instruction)
+            if parsed is not None and parsed[0] == "R_PAULI":
+                params = parsed[1]
+                n_qubits = len(
+                    {t.value for t in instruction.targets_copy() if not t.is_combiner}
+                )
+                if n_qubits > R_PAULI_MAX_QUBITS:
+                    raise ValueError(
+                        f"R_PAULI supports at most {R_PAULI_MAX_QUBITS} qubits per "
+                        f"instruction, got {n_qubits}."
+                    )
+                is_dag = name == "SPP_DAG"
+                for paulis, invert in _iter_pauli_products(instruction):
+                    r_pauli(b, paulis, params["theta"], dagger=is_dag ^ invert)
+                continue
         if name in ("SPP", "SPP_DAG"):
             is_dag = name == "SPP_DAG"
             for paulis, invert in _iter_pauli_products(instruction):
