@@ -119,6 +119,12 @@ def is_clifford(source: stim.Circuit) -> bool:
         if instr.name in ["S", "S_DAG", "SPP", "SPP_DAG"] and instr.tag == "T":
             return False
 
+        if instr.name in ["SPP", "SPP_DAG"] and instr.tag:
+            result = parse_parametric_tag(instr)
+            if result is not None and not is_half_pi_multiple(result[1]["theta"]):
+                return False
+            continue
+
         if instr.name == "I" and instr.tag:
             result = parse_parametric_tag(instr)
             if result is None:
@@ -154,6 +160,8 @@ def expand_clifford_rotations(source: stim.Circuit) -> stim.Circuit:
                 )
             )
             continue
+        if _expand_clifford_spp(instr, out):
+            continue
         expansion = _try_clifford_expansion(instr)
         if expansion is not None:
             gates, targets = expansion
@@ -162,6 +170,33 @@ def expand_clifford_rotations(source: stim.Circuit) -> stim.Circuit:
         else:
             out.append(instr)
     return out
+
+
+def _expand_clifford_spp(instr: stim.CircuitInstruction, out: stim.Circuit) -> bool:
+    """Expand a Clifford-angle ``SPP[R_PAULI(...)]`` into plain SPP gates.
+
+    Appends the equivalent tag-free instructions to ``out`` and returns True when
+    the instruction was an expandable Clifford-angle Pauli rotation; returns False
+    (appending nothing) otherwise, so the caller falls through to other handling.
+    """
+    if instr.name not in ("SPP", "SPP_DAG") or not instr.tag:
+        return False
+
+    parsed = parse_parametric_tag(instr)
+    if parsed is None or parsed[0] != "R_PAULI":
+        return False
+
+    idx = _to_half_pi_index(parsed[1]["theta"])
+    if idx is None:
+        return False
+
+    targets = instr.targets_copy()
+    if instr.name == "SPP_DAG":
+        idx = (4 - idx) % 4
+    repeats = {0: [], 1: ["SPP"], 2: ["SPP", "SPP"], 3: ["SPP_DAG"]}[idx]
+    for gate in repeats:
+        out.append(gate, targets, [])
+    return True
 
 
 def _try_clifford_expansion(
