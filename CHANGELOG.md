@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Fast path in the detector sampler for components whose output is deterministically given by a single error variable. These components now skip the JAX compilation and autoregressive sampling pipeline, significantly speeding up detector sampling for surface-code circuits at low physical error rates.
+- `CompiledDetectorSampler.sample` now accepts an optional `postselection_mask` argument for postselected simulations. When masked direct detectors fire, expensive JAX sampling is skipped for those shots while still returning one row per requested shot (#41).
 
 
 
