@@ -142,7 +142,7 @@ def stim_to_shorthand(text: str) -> str:
         return f"R_{pauli}{pauli}({alpha}) {q0} {q1}"
 
     text = re.sub(
-        rf"\bSPP\[R_PAULI\(theta=({FLOAT_RE})\*pi\)\] ([XYZ])(\d+)\*\2(\d+)",
+        rf"\bSPP\[R_PAULI\(theta=({FLOAT_RE})\*pi\)\] ([XYZ])(\d+)\*\2(\d+)(?!\*)\b",
         replace_pauli_pair,
         text,
     )
