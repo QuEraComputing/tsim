@@ -108,6 +108,36 @@ _PAULI_PRODUCT: dict[
 }
 
 
+def _validate_r_pauli_targets(instruction: stim.CircuitInstruction) -> None:
+    """Validate an ``R_PAULI``-tagged SPP instruction's raw targets.
+
+    Rejects duplicate target qubits within a single Pauli product (before any
+    algebraic simplification) and enforces the per-instruction qubit limit, both
+    checked on the raw (un-reduced) target list.
+    """
+    targets = instruction.targets_copy()
+    total_qubits = sum(1 for t in targets if not t.is_combiner)
+    if total_qubits > R_PAULI_MAX_QUBITS:
+        raise ValueError(
+            f"R_PAULI supports at most {R_PAULI_MAX_QUBITS} qubits per instruction, "
+            f"got {total_qubits}."
+        )
+
+    seen: set[int] = set()
+    for i, target in enumerate(targets):
+        if target.is_combiner:
+            continue
+        if target.value in seen:
+            raise ValueError(
+                f"R_PAULI target qubits must be distinct within a product, "
+                f"got repeated qubit {target.value} in {str(instruction)!r}."
+            )
+        seen.add(target.value)
+        next_idx = i + 1
+        if next_idx >= len(targets) or not targets[next_idx].is_combiner:
+            seen = set()
+
+
 def _iter_pauli_products(
     instruction: stim.CircuitInstruction,
 ) -> Iterator[tuple[list[tuple[Literal["X", "Y", "Z"], int]], bool]]:
@@ -238,14 +268,7 @@ def parse_stim_circuit(
             parsed = parse_parametric_tag(instruction)
             if parsed is not None and parsed[0] == "R_PAULI":
                 params = parsed[1]
-                n_qubits = len(
-                    {t.value for t in instruction.targets_copy() if not t.is_combiner}
-                )
-                if n_qubits > R_PAULI_MAX_QUBITS:
-                    raise ValueError(
-                        f"R_PAULI supports at most {R_PAULI_MAX_QUBITS} qubits per "
-                        f"instruction, got {n_qubits}."
-                    )
+                _validate_r_pauli_targets(instruction)
                 is_dag = name == "SPP_DAG"
                 for paulis, invert in _iter_pauli_products(instruction):
                     r_pauli(b, paulis, params["theta"], dagger=is_dag ^ invert)
