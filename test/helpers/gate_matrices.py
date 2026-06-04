@@ -127,6 +127,10 @@ ROT_GATE_MATRICES = {
     - 1j
     * np.sin(frac * np.pi / 2)
     * np.kron(SINGLE_QUBIT_GATE_MATRICES["Z"], SINGLE_QUBIT_GATE_MATRICES["Z"]),
+    # General Pauli-product rotation: exp(-i frac pi/2 P) for a Pauli product matrix P
+    "R_PAULI": lambda frac, pauli_product: np.cos(frac * np.pi / 2)
+    * np.eye(pauli_product.shape[0])
+    - 1j * np.sin(frac * np.pi / 2) * pauli_product,
     "U3": lambda frac_theta, frac_phi, frac_lambda: np.array(
         [
             [
