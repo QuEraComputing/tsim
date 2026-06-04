@@ -785,6 +785,19 @@ def test_inverse_r_pauli():
     assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
 
 
+def test_r_pauli_duplicate_target_in_product_rejected():
+    """Repeated qubits within one R_PAULI product are rejected before simplification."""
+    with pytest.raises(ValueError, match="distinct"):
+        Circuit("R_PAULI(0.25) X0*X0").get_graph()
+
+
+def test_r_pauli_long_product_roundtrip():
+    """A same-axis product with >2 factors round-trips as R_PAULI, not a mangled R_XX."""
+    c = Circuit("R_PAULI(0.3) X0*X1*X2")
+    assert str(c) == "R_PAULI(0.3) X0*X1*X2"
+    assert Circuit(str(c)) == c
+
+
 def test_inverse_mixed_circuit():
     c = Circuit("H 0\nT 0\nR_Z(0.22) 0\nCNOT 0 1")
     c_inv = c.inverse()
