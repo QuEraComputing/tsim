@@ -8,9 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-
-`R_XX`, `R_YY`, `R_ZZ`, and `R_PAULI` parametric Pauli-product rotation gates. `R_XX(alpha) q0 q1` applies `exp(-i * alpha * pi/2 * XX)` (and likewise for `YY`/`ZZ`), while `R_PAULI(alpha) X0*Y1*Z2` applies the rotation for an arbitrary Pauli product (up to 64 qubits per instruction). The `alpha` parameter is in half-turns, matching the existing `R_X`/`R_Y`/`R_Z` convention. Duplicate target qubits are rejected at parse time. (#142)
-
+- `R_XX`, `R_YY`, `R_ZZ`, and `R_PAULI` parametric Pauli-product rotation gates. `R_XX(alpha) q0 q1` applies `exp(-i * alpha * pi/2 * XX)` (and likewise for `YY`/`ZZ`), while `R_PAULI(alpha) X0*Y1*Z2` applies the rotation for an arbitrary Pauli product (up to 64 qubits per instruction). The `alpha` parameter is in half-turns, matching the existing `R_X`/`R_Y`/`R_Z` convention. Duplicate target qubits are rejected at parse time. (#142)
 - Fast path in the detector sampler for components whose output is deterministically given by a single error variable. These components now skip the JAX compilation and autoregressive sampling pipeline, significantly speeding up detector sampling for surface-code circuits at low physical error rates.
 
 
