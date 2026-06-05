@@ -24,6 +24,7 @@ from tsim.core.instructions import (
     tpp,
     u3,
 )
+from tsim.core.tags import is_t_tag
 
 _PARAMETRIC_GATE_PARAMS: dict[str, frozenset[str]] = {
     "R_X": frozenset({"theta"}),
@@ -192,9 +193,9 @@ def parse_stim_circuit(
                 f"in instruction {str(instruction)!r}"
             )
 
-        if name == "S" and instruction.tag == "T":
+        if name == "S" and is_t_tag(instruction.tag):
             name = "T"
-        elif name == "S_DAG" and instruction.tag == "T":
+        elif name == "S_DAG" and is_t_tag(instruction.tag):
             name = "T_DAG"
 
         # Handle parametric gates via tags (e.g., I with tag "R_Z(theta=0.3*pi)")
@@ -225,7 +226,7 @@ def parse_stim_circuit(
             for paulis, invert in _iter_pauli_products(instruction):
                 mpp(b, paulis, invert, p=p)
             continue
-        if name in ("SPP", "SPP_DAG") and instruction.tag == "T":
+        if name in ("SPP", "SPP_DAG") and is_t_tag(instruction.tag):
             is_dag = name == "SPP_DAG"
             for paulis, invert in _iter_pauli_products(instruction):
                 tpp(b, paulis, dagger=is_dag ^ invert)

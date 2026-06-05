@@ -154,6 +154,44 @@ def test_ccz_ccx_shorthand_and_append():
     assert c1._stim_circ == c2._stim_circ
 
 
+def test_tagged_ccx_shorthand_expands_with_tags():
+    c = Circuit("""
+        X 0
+        CCX[tag] 0 1 2
+        M 2
+        """)
+    assert str(c) == "\n".join(
+        [
+            "X 0",
+            "H[tag] 2",
+            "CX[tag] 1 2",
+            "T_DAG[tag] 2",
+            "CX[tag] 0 2",
+            "T[tag] 2",
+            "CX[tag] 1 2",
+            "T_DAG[tag] 2",
+            "CX[tag] 0 2",
+            "T[tag] 1 2",
+            "CX[tag] 0 1",
+            "T[tag] 0",
+            "T_DAG[tag] 1",
+            "CX[tag] 0 1",
+            "H[tag] 2",
+            "M 2",
+        ]
+    )
+
+
+def test_tagged_controlled_gate_append_matches_shorthand():
+    c1 = Circuit("CCZ[tag] 0 1 2\nCCX[tag] 0 1 2")
+
+    c2 = Circuit()
+    c2.append("CCZ", [0, 1, 2], tag="tag")
+    c2.append("CCX", [0, 1, 2], tag="tag")
+
+    assert c1._stim_circ == c2._stim_circ
+
+
 def test_ccz_gate_matrix():
     c = Circuit("CCZ 0 1 2")
     ccz_matrix = np.eye(8, dtype=complex)
@@ -163,6 +201,23 @@ def test_ccz_gate_matrix():
 
 def test_ccx_gate_matrix():
     c = Circuit("CCX 0 1 2")
+    ccx_matrix = np.eye(8, dtype=complex)
+    ccx_matrix[6, 6] = 0
+    ccx_matrix[7, 7] = 0
+    ccx_matrix[6, 7] = 1
+    ccx_matrix[7, 6] = 1
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), ccx_matrix)
+
+
+def test_tagged_ccz_gate_matrix():
+    c = Circuit("CCZ[tag] 0 1 2")
+    ccz_matrix = np.eye(8, dtype=complex)
+    ccz_matrix[-1, -1] = -1
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), ccz_matrix)
+
+
+def test_tagged_ccx_gate_matrix():
+    c = Circuit("CCX[tag] 0 1 2")
     ccx_matrix = np.eye(8, dtype=complex)
     ccx_matrix[6, 6] = 0
     ccx_matrix[7, 7] = 0
