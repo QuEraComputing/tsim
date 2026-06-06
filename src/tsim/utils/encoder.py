@@ -173,6 +173,40 @@ class TransversalEncoder:
         assert self.encoding_program_text is not None
         return stim.Circuit(self.encoding_program_text).flow_generators()
 
+class SteaneEncoder(TransversalEncoder):
+    """Transversal encoder for the [[7,1,3]] Steane code."""
+
+    def __init__(self):
+        """Initialize the Steane code encoder."""
+        encoding_program = """
+        R 0 1 2 3 4 5
+        TICK
+        SQRT_Y_DAG 0 1 2 3 4 5
+        TICK
+        CZ 1 2 3 4 5 6
+        TICK
+        SQRT_Y 6
+        TICK
+        CZ 0 3 2 5 4 6
+        TICK
+        SQRT_Y 2 3 4 5 6
+        TICK
+        CZ 0 1 2 3 4 5
+        TICK
+        SQRT_Y 1 2 4
+        TICK
+        X 3
+        Z 5 1
+        TICK
+        """
+        super().__init__(
+            n=7,
+            encoding_qubit=6,
+            encoding_program_text=encoding_program,
+            stabilizer_generators=[[0, 1, 2, 3], [1, 2, 4, 5], [2, 3, 4, 6]],
+            observables=[[0, 1, 5]],
+        )
+
 
 class ColorEncoder5(TransversalEncoder):
     """Transversal encoder for the [[17,1,5]] 2D color code."""
