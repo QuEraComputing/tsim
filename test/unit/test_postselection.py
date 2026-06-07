@@ -163,7 +163,7 @@ def test_postselection_discarded_and_surviving_rows():
 
 
 def test_postselection_direct_cols_always_equal_numpy():
-    """Direct output columns match NumPy computation for every row (discard or not)."""
+    """Direct detector columns match NumPy computation for every row."""
     sampler = _make(MIXED_DIRECT_CIRCUIT, seed=3)
     mask = np.array([True, False])
     drawn: list[np.ndarray] = []
@@ -179,7 +179,11 @@ def test_postselection_direct_cols_always_equal_numpy():
 
     f_all = np.concatenate(drawn)
     expected_direct = sampler._compute_direct_outputs(f_all)
-    assert np.array_equal(samples & sampler._direct_output_mask, expected_direct)
+    direct_det = sampler._direct_detector_mask
+    assert np.array_equal(
+        samples[:, : sampler._num_detectors] & direct_det,
+        expected_direct[:, : sampler._num_detectors] & direct_det,
+    )
 
 
 # ────────────────────────── JAX-skip behaviour ───────────────────────────────
@@ -564,3 +568,30 @@ def test_postselection_surface_code_caller_filter():
     survivors = _keep(samples[:, :num_det], mask)
     assert survivors.any()
     assert not np.any(samples[survivors] & mask)
+
+
+def test_postselection_discarded_rows_zero_direct_observable():
+    """Discarded rows keep direct detector cols but zero direct observable cols."""
+    circ = stim.Circuit.generated(
+        "surface_code:rotated_memory_x",
+        distance=3,
+        rounds=2,
+        after_clifford_depolarization=0.01,
+    )
+    c = Circuit.from_stim_program(circ)
+    sampler = c.compile_detector_sampler(seed=0)
+    assert sampler._direct_output_mask[sampler._num_detectors :].any(), (
+        "expected a direct observable for this circuit"
+    )
+
+    mask = np.zeros(c.num_detectors, dtype=np.bool_)
+    mask[0] = True
+    dets, obs = sampler.sample(
+        64,
+        batch_size=16,
+        postselection_mask=mask,
+        separate_observables=True,
+    )
+    discarded = np.any(dets & mask, axis=1)
+    assert discarded.any() and (~discarded).any()
+    assert not np.any(obs[discarded])

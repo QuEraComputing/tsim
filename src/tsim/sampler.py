@@ -423,7 +423,7 @@ class _CompiledSamplerBase:
         """Sample with postselection, skipping JAX for direct discarded shots.
 
         Shots discarded by a direct masked detector are filled with their
-        direct-column bits and ``False`` elsewhere; JAX is never called for
+        direct detector columns and ``False`` elsewhere; JAX is never called for
         those shots.  Survivors are buffered until a full batch of
         ``batch_size`` is ready, then dispatched to ``sample_program`` in one
         call.  The final partial batch is padded to keep the JAX batch size
@@ -508,7 +508,9 @@ class _CompiledSamplerBase:
 
             discarded = (det_cols & postselect_direct).any(axis=1)
 
-            result[shot_idx : shot_idx + chunk] = direct_full
+            result[shot_idx : shot_idx + chunk, : self._num_detectors] = direct_full[
+                :, : self._num_detectors
+            ]
             was_discarded[shot_idx : shot_idx + chunk] = discarded
 
             survivor_local = np.flatnonzero(~discarded)
