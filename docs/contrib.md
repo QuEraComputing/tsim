@@ -46,3 +46,7 @@ uv run just doc
 ```
 
 This will launch a local server to preview the documentation. You can also run `uv run just doc-build` to build the documentation without launching the server.
+
+Postselection support lives in `CompiledDetectorSampler.sample(postselection_mask=...)`.
+See the **Postselected simulations** section in `docs/index.md` and unit tests in
+`test/unit/test_postselection.py`.
