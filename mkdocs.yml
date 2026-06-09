@@ -15,6 +15,7 @@ nav:
     - Contributing: contrib.md
   - Tutorials:
     - demos/encoding_demo.ipynb
+    - demos/global_rotations.ipynb
     - demos/magic_state_distillation.ipynb
     - demos/from_stim_to_tsim.ipynb
   - API Reference: reference/

@@ -6,6 +6,9 @@
 .vscode
 experiments/
 
+# Local reference material (papers, notes) — not part of the repo
+*.pdf
+
 # mkdocs
 site/
 docs/reference/
