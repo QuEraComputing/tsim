@@ -179,8 +179,41 @@ def logical_y_from_xz(logical_x: str, logical_z: str) -> Observable:
     return Observable(float(np.real(coefficient)), pauli)
 
 
-def normalized_state(circuit: tsim.Circuit) -> np.ndarray:
-    state = np.asarray(circuit.to_matrix()).reshape(-1)
+_STATE_INIT_OPS = frozenset(
+    {"R", "RX", "RY", "RZ", "MR", "MRX", "MRY", "MRZ", "MPP", "MXX", "MYY", "MZZ"}
+)
+
+
+def _has_state_initialization(stim_circuit: stim.Circuit) -> bool:
+    return any(instruction.name in _STATE_INIT_OPS for instruction in stim_circuit)
+
+
+def normalized_state(circuit: tsim.Circuit, *, n_qubits: int | None = None) -> np.ndarray:
+    """Return a normalized state vector from a Tsim preparation circuit.
+
+    ``Circuit.to_matrix()`` returns a column state vector only when the Stim
+    program includes initialization (``R`` / ``RX`` / …). A Clifford-only circuit
+    would materialize the full unitary and ``reshape(-1)`` would yield length
+    ``2**(2n)``, which is both expensive and incompatible with our phase sweep.
+    """
+    stim_circuit = circuit.stim_circuit
+    if not _has_state_initialization(stim_circuit):
+        raise ValueError(
+            "Preparation circuit has no R/RX-style initialization; "
+            "cannot extract a state vector via to_matrix()."
+        )
+
+    matrix = np.asarray(circuit.to_matrix())
+    if matrix.ndim == 2 and matrix.shape[0] == matrix.shape[1] and matrix.shape[1] != 1:
+        raise ValueError(
+            f"Expected a state vector from to_matrix(), got unitary shape "
+            f"{matrix.shape}."
+        )
+    state = matrix.reshape(-1)
+    if n_qubits is not None and state.size != 1 << n_qubits:
+        raise ValueError(
+            f"Expected state vector of length {1 << n_qubits}, got {state.size}."
+        )
     return state / np.sqrt(np.vdot(state, state).real)
 
 
@@ -319,8 +352,9 @@ def build_reed_muller_15() -> tuple[
         allow_underconstrained=False,
         allow_redundant=False,
     ).to_circuit(method="graph_state")
+    # graph_state synthesis prepends RX on all qubits before the Clifford layer.
     prep_circuit = tsim.Circuit.from_stim_program(prep_stim)
-    base_state = normalized_state(prep_circuit)
+    base_state = normalized_state(prep_circuit, n_qubits=rm_n)
 
     logical_y = logical_y_from_xz(logical_x.pauli, logical_z)
     test_state = rotate_state_from_base(base_state, rm_n, 1.0)
@@ -351,7 +385,7 @@ def build_steane_7() -> tuple[list[str], Observable, Observable, np.ndarray]:
     logical_z = pauli_string(n, "Z", STEANE_LOGICAL_X_SUPPORT)
     logical_y = logical_y_from_xz(logical_x.pauli, logical_z)
 
-    base_state = normalized_state(tsim.Circuit(STEANE_PREP))
+    base_state = normalized_state(tsim.Circuit(STEANE_PREP), n_qubits=n)
     test_state = rotate_state_from_base(base_state, n, 1.0)
     if observable_expectation(test_state, logical_y) < 0:
         logical_y = Observable(-logical_y.coefficient, logical_y.pauli)
@@ -364,7 +398,8 @@ def build_systems() -> list[RotationSystem]:
     rm_x, _, rm_lx, rm_ly, rm_state = build_reed_muller_15()
 
     product_state = normalized_state(
-        tsim.Circuit("RX " + " ".join(map(str, range(15))))
+        tsim.Circuit("RX " + " ".join(map(str, range(15)))),
+        n_qubits=15,
     )
 
     rm_corner_flip = pauli_string(15, "X", [0, 1, 3, 7])
