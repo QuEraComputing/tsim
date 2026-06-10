@@ -16,6 +16,7 @@ from tsim.core.instructions import (
     mpad,
     mpp,
     observable_include,
+    r_pauli,
     r_x,
     r_y,
     r_z,
@@ -29,6 +30,10 @@ _PARAMETRIC_GATE_PARAMS: dict[str, frozenset[str]] = {
     "R_X": frozenset({"theta"}),
     "R_Y": frozenset({"theta"}),
     "R_Z": frozenset({"theta"}),
+    "R_XX": frozenset({"theta"}),
+    "R_YY": frozenset({"theta"}),
+    "R_ZZ": frozenset({"theta"}),
+    "R_PAULI": frozenset({"theta"}),
     "U3": frozenset({"theta", "phi", "lambda"}),
 }
 
@@ -38,7 +43,7 @@ def parse_parametric_tag(
 ) -> tuple[str, dict[str, Fraction]] | None:
     """Parse the parametric tag on an instruction (e.g. ``I[R_Z(theta=0.3*pi)]``).
 
-    Supports gates: R_Z, R_X, R_Y, U3.
+    Supports gates: R_Z, R_X, R_Y, R_XX, R_YY, R_ZZ, R_PAULI, U3.
 
     Args:
         instruction: The stim instruction whose tag will be parsed.
@@ -225,6 +230,15 @@ def parse_stim_circuit(
             for paulis, invert in _iter_pauli_products(instruction):
                 mpp(b, paulis, invert, p=p)
             continue
+        if name in ("SPP", "SPP_DAG") and instruction.tag and instruction.tag != "T":
+            parsed = parse_parametric_tag(instruction)
+            if parsed is not None:
+                gate_name, params = parsed
+                if gate_name in ("R_PAULI", "R_XX", "R_YY", "R_ZZ"):
+                    is_dag = name == "SPP_DAG"
+                    for paulis, invert in _iter_pauli_products(instruction):
+                        r_pauli(b, paulis, params["theta"], dagger=is_dag ^ invert)
+                    continue
         if name in ("SPP", "SPP_DAG") and instruction.tag == "T":
             is_dag = name == "SPP_DAG"
             for paulis, invert in _iter_pauli_products(instruction):

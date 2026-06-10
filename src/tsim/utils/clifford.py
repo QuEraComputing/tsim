@@ -116,7 +116,12 @@ def is_clifford(source: stim.Circuit) -> bool:
                 return False
             continue
 
-        if instr.name in ["S", "S_DAG", "SPP", "SPP_DAG"] and instr.tag == "T":
+        if instr.name in [
+            "S",
+            "S_DAG",
+            "SPP",
+            "SPP_DAG",
+        ] and instr.tag == "T":
             return False
 
         if instr.name == "I" and instr.tag:
@@ -136,6 +141,15 @@ def is_clifford(source: stim.Circuit) -> bool:
                     return False
             else:
                 return False
+
+        # SPP with parametric theta tag: Clifford iff theta is a half-π multiple
+        if instr.name in ("SPP", "SPP_DAG") and instr.tag and instr.tag != "T":
+            result = parse_parametric_tag(instr)
+            if result is not None:
+                gate_name, params = result
+                if gate_name in ("R_PAULI", "R_XX", "R_YY", "R_ZZ"):
+                    if not is_half_pi_multiple(params["theta"]):
+                        return False
 
     return True
 

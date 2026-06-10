@@ -963,6 +963,44 @@ def _pauli_product_phase(
             s(b, qubit)
 
 
+def r_pauli(
+    b: GraphRepresentation,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+    theta: Fraction,
+    dagger: bool = False,
+) -> None:
+    """Apply ``exp(-i theta pi/2 P)`` for an arbitrary Pauli product ``P``.
+
+    Generalises the single-qubit rotations :func:`r_x`, :func:`r_y`, and
+    :func:`r_z` to multi-qubit Pauli strings.  ``R_XX``, ``R_YY``, and
+    ``R_ZZ`` are the two-qubit special cases with ``paulis = [(P, q0), (P, q1)]``.
+
+    This reuses the ladder-of-CNOTs decomposition shared by :func:`spp` and
+    :func:`tpp`: rotate each qubit into the Z basis, accumulate Z-parity onto
+    the last qubit, apply the parametric Z rotation, then uncompute.
+
+    Args:
+        b: The graph representation to modify.
+        paulis: List of ``(pauli_type, qubit)`` pairs defining the Pauli
+            product ``P``.  Must be non-empty.
+        theta: Rotation angle in *half-turns* (units of π), so the unitary
+            is ``exp(-i theta π/2 P)``.  For example, ``theta=1/2`` gives the
+            S-gate for ``P = Z`` (matching ``SPP``).
+        dagger: If ``True``, negate the rotation angle, applying
+            ``exp(+i theta π/2 P)`` instead.
+
+    """
+    if dagger:
+        theta = -theta
+    _pauli_product_phase(
+        b,
+        paulis,
+        lambda b_, q: r_z(b_, q, theta),
+        lambda b_, q: r_z(b_, q, -theta),
+        dagger=False,
+    )
+
+
 def spp(
     b: GraphRepresentation,
     paulis: list[tuple[Literal["X", "Y", "Z"], int]],

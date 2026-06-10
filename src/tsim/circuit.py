@@ -173,6 +173,49 @@ class Circuit:
                 tag = f"{name}(theta={args[0]}*pi)"
                 name = "I"
                 arg = None
+            elif name in ("R_XX", "R_YY", "R_ZZ"):
+                if arg is None:
+                    raise ValueError(f"For {name} gates, an angle must be provided.")
+                args = list(arg) if isinstance(arg, Iterable) else [arg]
+                if len(args) != 1:
+                    raise ValueError(
+                        f"For {name} gates, a single angle must be provided."
+                    )
+                t_list: list[int] = (
+                    [targets] if isinstance(targets, int) else list(targets)  # type: ignore[arg-type]
+                )
+                if len(t_list) != 2:
+                    raise ValueError(
+                        f"For {name} gates, exactly two target qubits must be provided."
+                    )
+                q0, q1 = (
+                    t.value if isinstance(t, stim.GateTarget) else t for t in t_list
+                )
+                if q0 == q1:
+                    raise ValueError(
+                        f"Duplicate target qubits in {name}: both targets are qubit {q0}."
+                    )
+                pauli = name[2]  # 'X', 'Y', or 'Z'
+                target_fn = {
+                    "X": stim.target_x,
+                    "Y": stim.target_y,
+                    "Z": stim.target_z,
+                }[pauli]
+                tag = f"{name}(theta={args[0]}*pi)"
+                targets = [target_fn(q0), stim.target_combiner(), target_fn(q1)]
+                name = "SPP"
+                arg = None
+            elif name == "R_PAULI":
+                if arg is None:
+                    raise ValueError("For R_PAULI gates, an angle must be provided.")
+                args = list(arg) if isinstance(arg, Iterable) else [arg]
+                if len(args) != 1:
+                    raise ValueError(
+                        "For R_PAULI gates, a single angle must be provided."
+                    )
+                tag = f"R_PAULI(theta={args[0]}*pi)"
+                name = "SPP"
+                arg = None
             elif name == "U3":
                 args = list(arg) if isinstance(arg, Iterable) else []
                 if arg is None or len(args) != 3:
@@ -805,6 +848,19 @@ class Circuit:
                             new_tag = f"{gate_name}(theta={theta}*pi)"
                         result.append("I", targets, args, tag=new_tag)
                         continue
+
+                # Parametric Pauli rotations (R_PAULI, R_XX, R_YY, R_ZZ) are stored
+                # as SPP[tag]. Stim's inverse() correctly flips SPP <-> SPP_DAG and
+                # reverses target order. Our parse.py interprets SPP_DAG[tag] with
+                # dagger=True, which is exactly the inverse we want. So we just pass
+                # these instructions through unchanged.
+                if name in ("SPP", "SPP_DAG") and tag and tag != "T":
+                    parsed = parse_parametric_tag(instr)
+                    if parsed is not None:
+                        gate_name, params = parsed
+                        if gate_name in ("R_PAULI", "R_XX", "R_YY", "R_ZZ"):
+                            result.append(instr)
+                            continue
 
                 result.append(instr)
             return result
