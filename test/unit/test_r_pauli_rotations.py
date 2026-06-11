@@ -210,10 +210,7 @@ class TestCliffordAngleParity:
     def test_clifford_angle_matches_stim(self, gate: str, alpha: int):
         pauli = gate[2]  # 'X', 'Y', or 'Z'
         # For even alpha, result is identity (mod global phase); for odd, it's PP.
-        if alpha % 2 == 0:
-            stim_prog = "I 0\nI 1"
-        else:
-            stim_prog = f"{pauli} 0\n{pauli} 1"
+        stim_prog = "I 0\nI 1" if alpha % 2 == 0 else f"{pauli} 0\n{pauli} 1"
         c = Circuit(f"{gate}({alpha}) 0 1")
         ref = np.array(
             stim.Circuit(stim_prog).to_tableau().to_unitary_matrix(endian="big")

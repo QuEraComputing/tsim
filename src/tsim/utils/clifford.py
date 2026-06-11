@@ -147,9 +147,8 @@ def is_clifford(source: stim.Circuit) -> bool:
             result = parse_parametric_tag(instr)
             if result is not None:
                 gate_name, params = result
-                if gate_name in ("R_PAULI", "R_XX", "R_YY", "R_ZZ"):
-                    if not is_half_pi_multiple(params["theta"]):
-                        return False
+                if gate_name in ("R_PAULI", "R_XX", "R_YY", "R_ZZ") and not is_half_pi_multiple(params["theta"]):
+                    return False
 
     return True
 
