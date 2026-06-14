@@ -509,3 +509,174 @@ def test_detector_sampler_out_of_order_observable_indices():
     assert not np.any(obs[:, 0])
     assert not np.any(obs[:, 1])
     assert np.all(obs[:, 2])
+
+
+# ── Postselection mask tests ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("append", [False, True])
+def test_postselection_mask_noiseless(append):
+    """postselection_mask on noiseless circuit — no detectors ever fire,
+    so results are identical to no mask."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    kwargs = {}
+    if append:
+        kwargs["append_observables"] = True
+
+    baseline = sampler.sample(5, **kwargs)
+    masked = sampler.sample(5, postselection_mask=[True, False], **kwargs)
+    assert np.array_equal(masked, baseline), (
+        "Noiseless circuit: postselection_mask should not change output "
+        "when no postselected detectors fire"
+    )
+
+
+def test_postselection_mask_shape():
+    """Output shape is unchanged by postselection_mask."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    result = sampler.sample(7, postselection_mask=[True, False])
+    assert result.shape == (7, 2)
+
+
+def test_postselection_mask_with_separate_observables():
+    """postselection_mask works with separate_observables."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    det, obs = sampler.sample(
+        5,
+        separate_observables=True,
+        postselection_mask=[True, False],
+    )
+    assert det.shape == (5, 2)
+    assert obs.shape == (5, 1)
+
+
+def test_postselection_mask_wrong_length_raises():
+    """postselection_mask length must match num_detectors."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    with pytest.raises(ValueError, match="postselection_mask"):
+        sampler.sample(5, postselection_mask=[True])
+
+
+def test_postselection_mask_empty_raises():
+    """Empty postselection_mask raises."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    with pytest.raises(ValueError, match="postselection_mask"):
+        sampler.sample(5, postselection_mask=[])
+
+
+def test_postselection_mask_all_false():
+    """postselection_mask all False means no detectors are postselected,
+    which is equivalent to passing None."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    baseline = sampler.sample(10)
+    masked = sampler.sample(10, postselection_mask=[False, False])
+    assert np.array_equal(masked, baseline)
+
+
+def test_postselection_mask_with_reference():
+    """postselection_mask combined with reference sample."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    result = sampler.sample(
+        5,
+        postselection_mask=[True, False],
+        use_detector_reference_sample=True,
+        use_observable_reference_sample=True,
+        append_observables=True,
+    )
+    assert result.shape == (5, 3)
+
+
+def test_postselection_mask_zeros_with_separate_observables():
+    """postselection_mask with all-zeros (no postselected detectors) and separate_observables."""
+    c = Circuit("""
+        R 0 1 2
+        X 2
+        M 0 1 2
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    sampler = c.compile_detector_sampler()
+    det, obs = sampler.sample(5, separate_observables=True, postselection_mask=[False, False])
+    assert det.shape == (5, 2)
+    assert obs.shape == (5, 1)
+
+
+def test_postselection_mask_with_noise():
+    """postselection_mask with a noisy circuit — verify shape and
+    that masked-detector columns are present (direct or component)."""
+    import stim
+    from tsim.circuit import Circuit as TsimCircuit
+
+    circ = stim.Circuit.generated(
+        "repetition_code:memory",
+        distance=3,
+        rounds=3,
+        after_clifford_depolarization=0.01,
+        before_measure_flip_probability=0.01,
+    )
+    c = TsimCircuit.from_stim_program(circ)
+    sampler = c.compile_detector_sampler()
+    n_det = sampler._num_detectors
+
+    mask = np.zeros(n_det, dtype=np.bool_)
+    mask[0] = True
+    result = sampler.sample(100, postselection_mask=mask)
+
+    assert result.shape == (100, n_det)
