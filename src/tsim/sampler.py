@@ -118,6 +118,8 @@ def sample_program(
     program: CompiledProgram,
     f_params: jax.Array,
     key: PRNGKey,
+    *,
+    survivor_mask: jax.Array | None = None,
 ) -> jax.Array:
     """Sample all outputs from a compiled program.
 
@@ -125,6 +127,10 @@ def sample_program(
         program: The compiled program to sample from.
         f_params: Error parameters, shape (batch_size, num_f_params).
         key: JAX random key.
+        survivor_mask: Optional boolean mask of shape (batch_size,) indicating
+            which shots survive postselection. When provided, JAX components
+            are only computed for survivor shots; non-survivors get ``False``
+            for those outputs. Direct outputs are always computed for all shots.
 
     Returns:
         Samples array of shape (batch_size, num_outputs), reordered to
@@ -132,9 +138,9 @@ def sample_program(
 
     """
     results: list[jax.Array] = []
+    batch_size = f_params.shape[0]
 
     if program.num_outputs == 0:
-        batch_size = f_params.shape[0]
         return jnp.zeros((batch_size, 0), dtype=jnp.bool_)
 
     if len(program.direct_f_indices) > 0:
@@ -145,7 +151,30 @@ def sample_program(
         results.append(direct_bits)
 
     for component in program.components:
-        samples, key, max_norm_deviation = sample_component(component, f_params, key)
+        if survivor_mask is not None:
+            # Only run JAX for survivor shots
+            n_survivors = survivor_mask.sum()
+            if n_survivors == 0:
+                # All shots discarded — fill with False
+                samples = jnp.zeros(
+                    (batch_size, len(component.output_indices)), dtype=jnp.bool_
+                )
+                max_norm_deviation = jnp.array(0.0)
+            else:
+                f_params_survivors = f_params[survivor_mask]
+                survivor_samples, key, max_norm_deviation = sample_component(
+                    component, f_params_survivors, key
+                )
+                # Reconstruct full batch: survivors get real samples, others get False
+                samples = jnp.zeros(
+                    (batch_size, survivor_samples.shape[1]), dtype=jnp.bool_
+                )
+                samples = samples.at[survivor_mask].set(survivor_samples)
+        else:
+            samples, key, max_norm_deviation = sample_component(
+                component, f_params, key
+            )
+
         if np.isclose(max_norm_deviation, 1):
             raise ValueError(
                 "A vanishing marginal probability distribution was encountered (normalization 0). "
@@ -261,6 +290,7 @@ class _CompiledSamplerBase:
         batch_size: int | None = None,
         *,
         compute_reference: Literal[False] = False,
+        postselection_mask: np.ndarray | None = None,
     ) -> np.ndarray: ...
 
     @overload
@@ -270,6 +300,7 @@ class _CompiledSamplerBase:
         batch_size: int | None = None,
         *,
         compute_reference: Literal[True],
+        postselection_mask: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray]: ...
 
     def _sample_batches(
@@ -278,6 +309,7 @@ class _CompiledSamplerBase:
         batch_size: int | None = None,
         *,
         compute_reference: bool = False,
+        postselection_mask: np.ndarray | None = None,
     ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         """Sample in batches and concatenate results.
 
@@ -286,9 +318,15 @@ class _CompiledSamplerBase:
             batch_size: Samples per batch. Auto-determined if None.
             compute_reference: If True, add one extra sample to the first
                 batch for a noiseless reference (f_params=0).
+            postselection_mask: Optional boolean array of length
+                ``num_detectors``. A shot is discarded if any masked detector
+                fires. Direct (classical) postselected detectors skip the JAX
+                sampling loop; non-direct postselected detectors are computed
+                in full.
 
         Returns:
-            Samples array, or (samples, reference) tuple when compute_reference=True.
+            Samples array, or (samples, reference) tuple when
+            ``compute_reference=True``.
 
         """
         if shots < 0:
@@ -302,7 +340,7 @@ class _CompiledSamplerBase:
                 return empty, np.zeros(self._program.num_outputs, dtype=np.bool_)
             return empty
 
-        if not self._program.components and not compute_reference:
+        if not self._program.components and not compute_reference and postselection_mask is None:
             return self._sample_direct(shots)
 
         if batch_size is None:
@@ -313,9 +351,31 @@ class _CompiledSamplerBase:
             num_batches = ceil(shots / batch_size)
 
         if compute_reference and batch_size * num_batches == shots:
-            # Bump batch_size so the first batch's reference sample fits
-            # within existing batches (keeps shapes uniform for JIT).
             batch_size += 1
+
+        # Precompute mapping from direct entries to detector positions.
+        # direct_f_indices[i] corresponds to program.output_order[i].
+        # If output_order[i] < num_detectors, it's a detector output.
+        direct_is_detector: np.ndarray | None = None
+        direct_detector_indices: list[int] = []
+        if postselection_mask is not None:
+            det_mask_input = np.asarray(postselection_mask, dtype=np.bool_)
+            if det_mask_input.shape[0] != self._num_detectors:
+                raise ValueError(
+                    f"postselection_mask length {det_mask_input.shape[0]} "
+                    f"does not match num_detectors {self._num_detectors}"
+                )
+            if det_mask_input.shape[0] == 0:
+                raise ValueError(
+                    "postselection_mask must not be empty"
+                )
+            prog = self._program
+            direct_is_detector = np.array(
+                [idx < self._num_detectors for idx in prog.output_order[: len(prog.direct_f_indices)]]
+            )
+            for i, is_det in enumerate(direct_is_detector):
+                if is_det:
+                    direct_detector_indices.append(i)
 
         batches: list[jax.Array] = []
         reference: np.ndarray | None = None
@@ -326,9 +386,31 @@ class _CompiledSamplerBase:
             if compute_reference and reference is None:
                 f_params_np[0] = 0
 
+            survivor_mask = None
+            if postselection_mask is not None:
+                n_direct = len(self._program.direct_f_indices)
+                if n_direct > 0 and direct_detector_indices:
+                    direct_bits = (
+                        f_params_np[:, self._program.direct_f_indices].astype(np.bool_)
+                        ^ np.asarray(self._program.direct_flips, dtype=np.bool_)
+                    )
+                    predet_bits = direct_bits[:, direct_detector_indices]
+                    # For each shot: fire if ANY masked direct detector fired
+                    relevant = predet_bits[:, det_mask_input[direct_is_detector[direct_detector_indices]]]
+                    if relevant.shape[1] > 0:
+                        fired = relevant.any(axis=1)
+                    else:
+                        fired = np.zeros(batch_size, dtype=np.bool_)
+                    survivor_mask = jnp.asarray(~fired)
+                else:
+                    survivor_mask = jnp.ones(batch_size, dtype=jnp.bool_)
+
             f_params = jnp.asarray(f_params_np)
             self._key, subkey = jax.random.split(self._key)
-            samples = sample_program(self._program, f_params, subkey)
+            samples = sample_program(
+                self._program, f_params, subkey,
+                survivor_mask=survivor_mask,
+            )
 
             if compute_reference and reference is None:
                 reference = np.asarray(samples[0])
@@ -517,6 +599,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         bit_packed: bool = False,
         use_detector_reference_sample: bool = False,
         use_observable_reference_sample: bool = False,
+        postselection_mask: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray]: ...
 
     @overload
@@ -531,6 +614,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         bit_packed: bool = False,
         use_detector_reference_sample: bool = False,
         use_observable_reference_sample: bool = False,
+        postselection_mask: np.ndarray | None = None,
     ) -> np.ndarray: ...
 
     def sample(
@@ -544,6 +628,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         bit_packed: bool = False,
         use_detector_reference_sample: bool = False,
         use_observable_reference_sample: bool = False,
+        postselection_mask: np.ndarray | None = None,
     ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         """Return detector samples from the circuit.
 
@@ -576,6 +661,12 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 results represent deviations from the noiseless baseline. This should
                 only be used when observables are deterministic. Otherwise, it can
                 unpredictably change the results.
+            postselection_mask: Optional boolean array of length
+                ``num_detectors``. A shot is discarded if any masked detector
+                fires. Direct (classical) postselected detectors trigger a
+                fast path that skips the JAX sampling loop for discarded
+                shots; their non-direct outputs are filled with ``False``.
+                Non-direct postselected detectors are computed in full.
 
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.
@@ -597,7 +688,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
 
         if compute_reference:
             samples, reference = self._sample_batches(
-                shots, batch_size, compute_reference=True
+                shots, batch_size, compute_reference=True,
+                postselection_mask=postselection_mask,
             )
             num_detectors = self._num_detectors
             if use_detector_reference_sample:
@@ -605,7 +697,9 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             if use_observable_reference_sample:
                 samples[:, num_detectors:] ^= reference[num_detectors:]
         else:
-            samples = self._sample_batches(shots, batch_size)
+            samples = self._sample_batches(
+                shots, batch_size, postselection_mask=postselection_mask,
+            )
 
         num_detectors = self._num_detectors
         det_samples = samples[:, :num_detectors]
