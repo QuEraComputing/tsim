@@ -33,7 +33,7 @@ An introductory tutorial is available [here](https://tsim.mintlify.app/tutorials
 
 For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and currently supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference).
 
-Additionally, Tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, `U3`, `TPP`, and `TPP_DAG`.
+Additionally, Tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, `U3`, `TPP`, `TPP_DAG`, `CCZ`, and `CCX`.
 ```python
 import tsim
 
@@ -142,6 +142,15 @@ U3(0.5, 0.25, 0.125) 0  # Apply U3 with θ=π/2, φ=π/4, λ=π/8
 ```
 TPP X0*Y1      # Apply exp(-i π/8 · X0⊗Y1) (up to global phase)
 TPP_DAG Z0     # Apply exp(+i π/8 · Z) = T_DAG (up to global phase)
+```
+
+### `CCZ` and `CCX` Gates
+
+`CCZ` applies a controlled-controlled Z gate, and `CCX` applies the controlled-controlled X gate (Toffoli). Both gates are expanded internally into a Clifford+T decomposition:
+
+```
+CCZ 0 1 2  # Apply CCZ with controls 0 and 1, target 2
+CCX 0 1 2  # Apply Toffoli/CCX with controls 0 and 1, target 2
 ```
 
 ## Publications Using Tsim

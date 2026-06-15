@@ -18,6 +18,7 @@ import numpy as np
 import stim
 
 from tsim.core.parse import parse_parametric_tag
+from tsim.core.tags import is_t_tag
 from tsim.external.vec_sim import VecSim
 
 
@@ -74,10 +75,10 @@ def sample_circuit_with_vec_sim_return_data(
         sim.do_qalloc_z(q)
     for inst in circuit:
         assert not isinstance(inst, stim.CircuitRepeatBlock)
-        if inst.name == "S" and inst.tag == "T":
+        if inst.name == "S" and is_t_tag(inst.tag):
             for q in inst.targets_copy():
                 sim.do_t(q.qubit_value)
-        elif inst.name == "S_DAG" and inst.tag == "T":
+        elif inst.name == "S_DAG" and is_t_tag(inst.tag):
             for q in inst.targets_copy():
                 sim.do_t_dag(q.qubit_value)
         elif inst.name == "I" and inst.tag:

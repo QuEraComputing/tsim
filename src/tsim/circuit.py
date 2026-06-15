@@ -21,14 +21,41 @@ if TYPE_CHECKING:
 
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
+from tsim.core.tags import encode_t_tag
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
 from tsim.utils.diagram import render_pyzx_d3, render_svg
 from tsim.utils.program_text import (
+    controlled_gate_decomposition_lines,
     enriched_stim_error,
     shorthand_to_stim,
     stim_to_shorthand,
 )
+
+
+def _bare_qubit_targets(
+    gate_name: str,
+    targets: (
+        int
+        | stim.GateTarget
+        | stim.PauliString
+        | Iterable[int | stim.GateTarget | stim.PauliString]
+    ),
+) -> list[int]:
+    if isinstance(targets, int | stim.GateTarget | stim.PauliString):
+        target_items: list[int | stim.GateTarget | stim.PauliString] = [targets]
+    else:
+        target_items = list(targets)
+
+    qubits: list[int] = []
+    for target in target_items:
+        if isinstance(target, int):
+            qubits.append(target)
+        elif isinstance(target, stim.GateTarget) and target.is_qubit_target:
+            qubits.append(target.value)
+        else:
+            raise ValueError(f"{gate_name} only supports bare qubit targets.")
+    return qubits
 
 
 class Circuit:
@@ -150,18 +177,37 @@ class Circuit:
 
         """
         if isinstance(name, str):
+            if name in ("CCZ", "CCX"):
+                if arg is not None:
+                    raise ValueError(f"For {name} gates, no arguments are accepted.")
+                qubits = _bare_qubit_targets(name, targets)
+                if len(qubits) % 3 != 0:
+                    raise ValueError(
+                        f"{name} expects qubit targets in groups of three."
+                    )
+                self.append_from_stim_program_text(
+                    "\n".join(
+                        line
+                        for i in range(0, len(qubits), 3)
+                        for line in controlled_gate_decomposition_lines(
+                            name, qubits[i], qubits[i + 1], qubits[i + 2], tag=tag
+                        )
+                    )
+                )
+                return
+
             if name == "TPP":
                 name = "SPP"
-                tag = "T"
+                tag = encode_t_tag(tag)
             elif name == "TPP_DAG":
                 name = "SPP_DAG"
-                tag = "T"
+                tag = encode_t_tag(tag)
             elif name == "T":
                 name = "S"
-                tag = "T"
+                tag = encode_t_tag(tag)
             elif name == "T_DAG":
                 name = "S_DAG"
-                tag = "T"
+                tag = encode_t_tag(tag)
             elif name in ("R_X", "R_Y", "R_Z"):
                 if arg is None:
                     raise ValueError(f"For {name} gates, an angle must be provided.")
