@@ -554,6 +554,84 @@ def sqrt_zz_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     s_dag(b, qubit2)
 
 
+def r_zz(b: GraphRepresentation, q0: int, q1: int, phase: Fraction) -> None:
+    """Apply R_ZZ rotation gate: exp(-i phase π Z⊗Z).
+
+    Decomposed as CNOT(q0,q1) · (I⊗R_Z(phase)) · CNOT(q0,q1).
+    """
+    cnot(b, q0, q1)
+    r_z(b, q1, phase)
+    cnot(b, q0, q1)
+
+
+def r_xx(b: GraphRepresentation, q0: int, q1: int, phase: Fraction) -> None:
+    """Apply R_XX rotation gate: exp(-i phase π X⊗X).
+
+    Decomposed as CNOT(q0,q1) · (R_X(phase)⊗I) · CNOT(q0,q1).
+    """
+    cnot(b, q0, q1)
+    r_x(b, q0, phase)
+    cnot(b, q0, q1)
+
+
+def r_yy(b: GraphRepresentation, q0: int, q1: int, phase: Fraction) -> None:
+    """Apply R_YY rotation gate: exp(-i phase π Y⊗Y).
+
+    Decomposed as S·S · R_XX · S†·S† using Y = S·X·S†.
+    """
+    s(b, q0)
+    s(b, q1)
+    r_xx(b, q0, q1, phase)
+    s_dag(b, q0)
+    s_dag(b, q1)
+
+
+def r_pauli(
+    b: GraphRepresentation,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+    phase: Fraction,
+    dagger: bool = False,
+) -> None:
+    """Apply exp(-i phase π P) for a Pauli product P.
+
+    If dagger is True, apply exp(+i phase π P) instead.
+    Uses the same parity-accumulation pattern as _pauli_product_phase.
+    """
+    if len(paulis) == 0:
+        return
+
+    # Rotate each qubit so its Pauli eigenvalue maps to Z
+    for pauli_type, qubit in paulis:
+        if pauli_type == "X":
+            h(b, qubit)
+        elif pauli_type == "Y":
+            s_dag(b, qubit)
+            h(b, qubit)
+
+    # Accumulate Z-parity into the last qubit
+    _, last_qubit = paulis[-1]
+    for _, qubit in paulis[:-1]:
+        cnot(b, qubit, last_qubit)
+
+    # Phase the parity with the given angle
+    if dagger:
+        r_z(b, last_qubit, -phase)
+    else:
+        r_z(b, last_qubit, phase)
+
+    # Uncompute parity accumulation
+    for _, qubit in reversed(paulis[:-1]):
+        cnot(b, qubit, last_qubit)
+
+    # Undo basis rotations
+    for pauli_type, qubit in paulis:
+        if pauli_type == "X":
+            h(b, qubit)
+        elif pauli_type == "Y":
+            h(b, qubit)
+            s(b, qubit)
+
+
 def xcx(b: GraphRepresentation, control: int, target: int) -> None:
     """X-controlled X gate. Applies X to target if control is in |-> state."""
     h(b, control)

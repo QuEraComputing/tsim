@@ -16,9 +16,13 @@ from tsim.core.instructions import (
     mpad,
     mpp,
     observable_include,
+    r_pauli,
     r_x,
+    r_xx,
     r_y,
+    r_yy,
     r_z,
+    r_zz,
     spp,
     tick,
     tpp,
@@ -30,6 +34,10 @@ _PARAMETRIC_GATE_PARAMS: dict[str, frozenset[str]] = {
     "R_X": frozenset({"theta"}),
     "R_Y": frozenset({"theta"}),
     "R_Z": frozenset({"theta"}),
+    "R_XX": frozenset({"theta"}),
+    "R_YY": frozenset({"theta"}),
+    "R_ZZ": frozenset({"theta"}),
+    "R_PAULI": frozenset({"theta"}),
     "U3": frozenset({"theta", "phi", "lambda"}),
 }
 
@@ -204,17 +212,32 @@ def parse_stim_circuit(
             if result is not None:
                 gate_name, params = result
                 targets = [t.value for t in instruction.targets_copy()]
-                for qubit in targets:
-                    if gate_name == "R_Z":
-                        r_z(b, qubit, params["theta"])
-                    elif gate_name == "R_X":
-                        r_x(b, qubit, params["theta"])
-                    elif gate_name == "R_Y":
-                        r_y(b, qubit, params["theta"])
-                    elif gate_name == "U3":
-                        u3(b, qubit, params["theta"], params["phi"], params["lambda"])
-                    else:
-                        raise ValueError(f"Unknown parametric gate: {gate_name}")
+                if gate_name in ("R_XX", "R_YY", "R_ZZ"):
+                    if len(targets) < 2 or len(targets) % 2 != 0:
+                        raise ValueError(
+                            f"{gate_name} requires an even number of targets "
+                            f"(got {len(targets)})"
+                        )
+                    theta = params["theta"]
+                    for i in range(0, len(targets), 2):
+                        if gate_name == "R_XX":
+                            r_xx(b, targets[i], targets[i + 1], theta)
+                        elif gate_name == "R_YY":
+                            r_yy(b, targets[i], targets[i + 1], theta)
+                        elif gate_name == "R_ZZ":
+                            r_zz(b, targets[i], targets[i + 1], theta)
+                else:
+                    for qubit in targets:
+                        if gate_name == "R_Z":
+                            r_z(b, qubit, params["theta"])
+                        elif gate_name == "R_X":
+                            r_x(b, qubit, params["theta"])
+                        elif gate_name == "R_Y":
+                            r_y(b, qubit, params["theta"])
+                        elif gate_name == "U3":
+                            u3(b, qubit, params["theta"], params["phi"], params["lambda"])
+                        else:
+                            raise ValueError(f"Unknown parametric gate: {gate_name}")
                 continue
 
         if name == "TICK":
@@ -226,11 +249,22 @@ def parse_stim_circuit(
             for paulis, invert in _iter_pauli_products(instruction):
                 mpp(b, paulis, invert, p=p)
             continue
-        if name in ("SPP", "SPP_DAG") and is_t_tag(instruction.tag):
+        if name in ("SPP", "SPP_DAG") and instruction.tag:
             is_dag = name == "SPP_DAG"
-            for paulis, invert in _iter_pauli_products(instruction):
-                tpp(b, paulis, dagger=is_dag ^ invert)
-            continue
+            # Check for parametric R_PAULI tag
+            result = parse_parametric_tag(instruction)
+            if result is not None:
+                gate_name, params = result
+                if gate_name == "R_PAULI":
+                    theta = params["theta"]
+                    for paulis, invert in _iter_pauli_products(instruction):
+                        r_pauli(b, paulis, theta, dagger=is_dag ^ invert)
+                    continue
+            # Fall through to TPP for tag=="T" or other recognized tags
+            if instruction.tag == "T":
+                for paulis, invert in _iter_pauli_products(instruction):
+                    tpp(b, paulis, dagger=is_dag ^ invert)
+                continue
         if name in ("SPP", "SPP_DAG"):
             is_dag = name == "SPP_DAG"
             for paulis, invert in _iter_pauli_products(instruction):
