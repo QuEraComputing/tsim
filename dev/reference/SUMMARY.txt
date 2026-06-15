@@ -11,6 +11,7 @@
         * [graph](tsim/core/graph.md)
         * [instructions](tsim/core/instructions.md)
         * [parse](tsim/core/parse.md)
+        * [tags](tsim/core/tags.md)
         * [types](tsim/core/types.md)
     * [noise](tsim/noise/index.md)
         * [channels](tsim/noise/channels.md)
