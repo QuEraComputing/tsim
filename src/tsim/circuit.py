@@ -219,6 +219,28 @@ class Circuit:
                 tag = f"{name}(theta={args[0]}*pi)"
                 name = "I"
                 arg = None
+            elif name in ("R_XX", "R_YY", "R_ZZ"):
+                if arg is None:
+                    raise ValueError(f"For {name} gates, an angle must be provided.")
+                args = list(arg) if isinstance(arg, Iterable) else [arg]
+                if len(args) != 1:
+                    raise ValueError(
+                        f"For {name} gates, a single angle must be provided."
+                    )
+                tag = f"{name}(theta={args[0]}*pi)"
+                name = "I"
+                arg = None
+            elif name == "R_PAULI":
+                if arg is None:
+                    raise ValueError("For R_PAULI gate, an angle must be provided.")
+                args = list(arg) if isinstance(arg, Iterable) else [arg]
+                if len(args) != 1:
+                    raise ValueError(
+                        "For R_PAULI gate, a single angle must be provided."
+                    )
+                tag = f"R_PAULI(theta={args[0]}*pi)"
+                name = "SPP"
+                arg = None
             elif name == "U3":
                 args = list(arg) if isinstance(arg, Iterable) else []
                 if arg is None or len(args) != 3:

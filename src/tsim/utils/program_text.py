@@ -159,6 +159,19 @@ def shorthand_to_stim(text: str) -> str:
 
     text = re.sub(rf"\bR_([XYZ])\(({FLOAT_RE})\)", replace_rotation, text)
 
+    def replace_two_qubit_rotation(m: re.Match) -> str:
+        axis = m.group(1)
+        return f"I[R_{axis}(theta={float(m.group(2))}*pi)]"
+
+    text = re.sub(
+        rf"\bR_(XX|YY|ZZ)\(({FLOAT_RE})\)", replace_two_qubit_rotation, text
+    )
+
+    def replace_r_pauli(m: re.Match) -> str:
+        return f"SPP[R_PAULI(theta={float(m.group(1))}*pi)]"
+
+    text = re.sub(rf"\bR_PAULI\(({FLOAT_RE})\)", replace_r_pauli, text)
+
     def replace_u3(m: re.Match) -> str:
         theta, phi, lam = float(m.group(1)), float(m.group(2)), float(m.group(3))
         return f"I[U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)]"
@@ -217,6 +230,28 @@ def stim_to_shorthand(text: str) -> str:
     text = re.sub(
         rf"\bI\[R_([XYZ])\(theta=({FLOAT_RE})\*pi\)\]",
         replace_rotation,
+        text,
+    )
+
+    # Replace I[R_XX(...)] / I[R_YY(...)] / I[R_ZZ(...)] with R_XX(α) / R_YY(α) / R_ZZ(α)
+    def replace_two_qubit_rotation(m: re.Match) -> str:
+        axis = m.group(1)
+        angle = m.group(2)
+        return f"R_{axis}({angle})"
+
+    text = re.sub(
+        rf"\bI\[R_(XX|YY|ZZ)\(theta=({FLOAT_RE})\*pi\)\]",
+        replace_two_qubit_rotation,
+        text,
+    )
+
+    # Replace SPP[R_PAULI(theta=α*pi)] with R_PAULI(α)
+    def replace_r_pauli(m: re.Match) -> str:
+        return f"R_PAULI({m.group(1)})"
+
+    text = re.sub(
+        rf"\bSPP\[R_PAULI\(theta=({FLOAT_RE})\*pi\)\]",
+        replace_r_pauli,
         text,
     )
 

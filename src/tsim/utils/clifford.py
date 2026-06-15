@@ -50,6 +50,9 @@ U3_CLIFFORD: dict[tuple[int, int, int], list[str]] = {
 RZ_CLIFFORD: dict[int, str] = {0: "I", 1: "S", 2: "Z", 3: "S_DAG"}
 RX_CLIFFORD: dict[int, str] = {0: "I", 1: "SQRT_X", 2: "X", 3: "SQRT_X_DAG"}
 RY_CLIFFORD: dict[int, str] = {0: "I", 1: "SQRT_Y", 2: "Y", 3: "SQRT_Y_DAG"}
+RXX_CLIFFORD: dict[int, str] = {0: "I", 1: "SQRT_XX", 3: "SQRT_XX_DAG"}
+RYY_CLIFFORD: dict[int, str] = {0: "I", 1: "SQRT_YY", 3: "SQRT_YY_DAG"}
+RZZ_CLIFFORD: dict[int, str] = {0: "I", 1: "SQRT_ZZ", 3: "SQRT_ZZ_DAG"}
 
 
 def _to_half_pi_index(phase: Fraction) -> int | None:
@@ -69,9 +72,9 @@ def parametric_to_clifford_gates(
 ) -> list[str] | None:
     """Convert a parametric gate with half-π angles to stim Clifford gate names.
 
-    Args:
-        gate_name: One of ``"R_X"``, ``"R_Y"``, ``"R_Z"``, ``"U3"``.
-        params: Dict as returned by :func:`~tsim.core.parse.parse_parametric_tag`.
+    For single-qubit gates (``R_X``, ``R_Y``, ``R_Z``) and ``U3``, returns
+    stim gate names in circuit order.  For two-qubit gates (``R_XX``, ``R_YY``,
+    ``R_ZZ``) use :func:`_expand_clifford_gates` which handles per-gate targets.
 
     Returns:
         Stim gate names in circuit order,
@@ -84,6 +87,22 @@ def parametric_to_clifford_gates(
             return None
         table = {"R_Z": RZ_CLIFFORD, "R_X": RX_CLIFFORD, "R_Y": RY_CLIFFORD}[gate_name]
         return [table[idx]]
+
+    if gate_name in ("R_XX", "R_YY", "R_ZZ"):
+        idx = _to_half_pi_index(params["theta"])
+        if idx is None:
+            return None
+        if idx == 2:
+            return None  # decomposed via _expand_clifford_gates
+        table = {
+            "R_XX": RXX_CLIFFORD,
+            "R_YY": RYY_CLIFFORD,
+            "R_ZZ": RZZ_CLIFFORD,
+        }[gate_name]
+        return [table[idx]]
+
+    if gate_name == "R_PAULI":
+        return None
 
     if gate_name == "U3":
         theta_idx = _to_half_pi_index(params["theta"])
@@ -98,6 +117,82 @@ def parametric_to_clifford_gates(
             gates = U3_CLIFFORD.get(_equivalent_u3_key(*key))
         assert gates is not None
         return list(gates)
+
+    return None
+
+
+def _expand_clifford_gates(
+    gate_name: str,
+    params: dict[str, Fraction],
+    targets: list[int],
+) -> list[tuple[str, list[int]]] | None:
+    """Convert a parametric gate with half-π angles to a sequence of stim
+    Clifford gate operations.
+
+    Each returned tuple is ``(stim_gate_name, qubit_targets)``.
+
+    Args:
+        gate_name: One of ``"R_X"``, ``"R_Y"``, ``"R_Z"``, ``"R_XX"``,
+            ``"R_YY"``, ``"R_ZZ"``, ``"R_PAULI"``, ``"U3"``.
+        params: Dict as returned by :func:`~tsim.core.parse.parse_parametric_tag`.
+        targets: Qubit target indices from the original instruction.
+
+    Returns:
+        List of ``(gate_name, targets)`` tuples in circuit order,
+        or ``None`` when the angles are not half-π multiples.
+
+    """
+    if gate_name in ("R_X", "R_Y", "R_Z"):
+        idx = _to_half_pi_index(params["theta"])
+        if idx is None:
+            return None
+        table = {"R_Z": RZ_CLIFFORD, "R_X": RX_CLIFFORD, "R_Y": RY_CLIFFORD}[gate_name]
+        return [(table[idx], targets)]
+
+    if gate_name in ("R_XX", "R_YY", "R_ZZ"):
+        idx = _to_half_pi_index(params["theta"])
+        if idx is None:
+            return None
+        if idx == 2:
+            # Full Pauli product: decompose into stim-native gate sequences
+            # since single-gate names like "XX" are not stim gates.
+            q0, q1 = targets
+            if gate_name == "R_ZZ":
+                # ZZ = CNOT·(I⊗Z)·CNOT
+                return [("CNOT", [q0, q1]), ("Z", [q1]), ("CNOT", [q0, q1])]
+            if gate_name == "R_XX":
+                # XX = CNOT·(X⊗I)·CNOT
+                return [("CNOT", [q0, q1]), ("X", [q0]), ("CNOT", [q0, q1])]
+            if gate_name == "R_YY":
+                # YY = S·S · XX · S_DAG·S_DAG
+                return [
+                    ("S", [q0]), ("S", [q1]),
+                    ("CNOT", [q0, q1]), ("X", [q0]), ("CNOT", [q0, q1]),
+                    ("S_DAG", [q0]), ("S_DAG", [q1]),
+                ]
+        table = {
+            "R_XX": RXX_CLIFFORD,
+            "R_YY": RYY_CLIFFORD,
+            "R_ZZ": RZZ_CLIFFORD,
+        }[gate_name]
+        return [(table[idx], targets)]
+
+    if gate_name == "R_PAULI":
+        return None
+
+    if gate_name == "U3":
+        theta_idx = _to_half_pi_index(params["theta"])
+        phi_idx = _to_half_pi_index(params["phi"])
+        lam_idx = _to_half_pi_index(params["lambda"])
+        if theta_idx is None or phi_idx is None or lam_idx is None:
+            return None
+
+        key = (theta_idx, phi_idx, lam_idx)
+        gates = U3_CLIFFORD.get(key)
+        if gates is None:
+            gates = U3_CLIFFORD.get(_equivalent_u3_key(*key))
+        assert gates is not None
+        return [(g, targets) for g in gates]
 
     return None
 
@@ -117,7 +212,17 @@ def is_clifford(source: stim.Circuit) -> bool:
                 return False
             continue
 
-        if instr.name in ["S", "S_DAG", "SPP", "SPP_DAG"] and is_t_tag(instr.tag):
+        if instr.name in ["SPP", "SPP_DAG"] and instr.tag:
+            result = parse_parametric_tag(instr)
+            if result is not None:
+                gate_name, params = result
+                if gate_name == "R_PAULI":
+                    if not is_half_pi_multiple(params["theta"]):
+                        return False
+            elif instr.tag == "T":
+                return False
+
+        if instr.name in ["S", "S_DAG"] and instr.tag == "T":
             return False
 
         if instr.name == "I" and instr.tag:
@@ -126,7 +231,10 @@ def is_clifford(source: stim.Circuit) -> bool:
                 continue
 
             gate_name, params = result
-            if gate_name in ["R_X", "R_Y", "R_Z"]:
+            if gate_name in ["R_X", "R_Y", "R_Z", "R_XX", "R_YY", "R_ZZ"]:
+                if not is_half_pi_multiple(params["theta"]):
+                    return False
+            elif gate_name == "R_PAULI":
                 if not is_half_pi_multiple(params["theta"]):
                     return False
             elif gate_name == "U3":
@@ -157,9 +265,8 @@ def expand_clifford_rotations(source: stim.Circuit) -> stim.Circuit:
             continue
         expansion = _try_clifford_expansion(instr)
         if expansion is not None:
-            gates, targets = expansion
-            for gate in gates:
-                out.append(gate, targets, [])
+            for gate_name, gate_targets in expansion:
+                out.append(gate_name, gate_targets, [])
         else:
             out.append(instr)
     return out
@@ -167,13 +274,12 @@ def expand_clifford_rotations(source: stim.Circuit) -> stim.Circuit:
 
 def _try_clifford_expansion(
     instr: stim.CircuitInstruction,
-) -> tuple[list[str], list[int]] | None:
+) -> list[tuple[str, list[int]]] | None:
     """Try to expand a tagged ``I`` instruction into equivalent Clifford gates.
 
     Returns:
-        ``(gate_names, targets)`` where *gate_names* are stim gate names in
-        circuit order and *targets* are the qubit indices, or ``None`` if the
-        instruction is not an expandable parametric rotation.
+        List of ``(gate_name, targets)`` tuples in circuit order,
+        or ``None`` if the instruction is not an expandable parametric rotation.
 
     """
     if instr.name != "I" or not instr.tag:
@@ -184,9 +290,5 @@ def _try_clifford_expansion(
         return None
 
     gate_name, params = parsed
-    gates = parametric_to_clifford_gates(gate_name, params)
-    if gates is None:
-        return None
-
     targets = [t.value for t in instr.targets_copy()]
-    return gates, targets
+    return _expand_clifford_gates(gate_name, params, targets)
