@@ -1082,3 +1082,250 @@ def test_stim_circuit_repeat_block_expands_half_pi_parametric():
     assert block.repeat_count == 3
     body = block.body_copy()
     assert [instr.name for instr in body] == ["SQRT_X"]
+
+
+# =============================================================================
+# R_XX / R_YY / R_ZZ / R_PAULI tests
+# =============================================================================
+
+
+def test_two_qubit_pauli_rotation_append():
+    """R_XX / R_YY / R_ZZ are encoded as I with parametric tag."""
+    for gate in ("R_XX", "R_YY", "R_ZZ"):
+        c = Circuit()
+        c.append(gate, [0, 1], arg=0.3)
+        assert str(c) == f"{gate}(0.3) 0 1"
+
+
+def test_two_qubit_pauli_rotation_missing_arg():
+    """R_XX / R_YY / R_ZZ without angle raises."""
+    for gate in ("R_XX", "R_YY", "R_ZZ"):
+        c = Circuit()
+        with pytest.raises(ValueError, match=f"For {gate} gates"):
+            c.append(gate, [0, 1])
+
+
+def test_r_pauli_append():
+    """R_PAULI is encoded as SPP with parametric tag."""
+    c = Circuit()
+    c.append("R_PAULI", [stim.target_x(0), stim.target_y(1)], arg=0.3)
+    s = str(c)
+    assert "R_PAULI(0.3)" in s
+
+
+def test_r_pauli_missing_arg():
+    """R_PAULI without angle raises."""
+    c = Circuit()
+    with pytest.raises(ValueError, match="For R_PAULI gate"):
+        c.append("R_PAULI", [stim.target_x(0)])
+
+
+def test_two_qubit_pauli_rotation_shorthand():
+    """Shorthand R_XX(0.3) 0 1 expands to I tag via shorthand_to_stim."""
+    for gate in ("R_XX", "R_YY", "R_ZZ"):
+        c = Circuit(f"{gate}(0.3) 0 1")
+        stim_tag = f"{gate}(theta=0.3*pi)"
+        stim_circ = c.stim_circuit
+        assert len(stim_circ) == 1
+        instr = stim_circ[0]
+        assert instr.name == "I"
+        assert stim_tag in instr.tag
+
+
+def test_r_pauli_shorthand():
+    """Shorthand R_PAULI(0.3) X0*Y1 expands to SPP tag via shorthand_to_stim."""
+    for targets in ("X0*Y1", "Z0", "X0*X1"):
+        c = Circuit(f"R_PAULI(0.3) {targets}")
+        stim_circ = c.stim_circuit
+        assert len(stim_circ) == 1
+        instr = stim_circ[0]
+        assert instr.name == "SPP"
+        assert "R_PAULI(theta=0.3*pi)" in instr.tag
+
+
+def _assert_measurement_statistics_match(
+    tsim_circ, stim_circ, n_shots: int = 10000, rtol: float = 0.05
+):
+    """Assert tsim and stim produce statistically indistinguishable measurement outcomes.
+
+    Both circuits must have the same number of qubits and measurements.
+    Compares the frequency of each outcome bitstring using a relative tolerance.
+    """
+    tsim_samples = tsim_circ.compile_sampler(seed=0).sample(n_shots, batch_size=n_shots)
+    stim_samples = stim_circ.compile_sampler(seed=0).sample(n_shots)
+
+    n_qubits = stim_samples.shape[1]
+    for q in range(n_qubits):
+        tsim_freq = np.mean(tsim_samples[:, q])
+        stim_freq = np.mean(stim_samples[:, q])
+        max_freq = max(tsim_freq, stim_freq, 1 - tsim_freq, 1 - stim_freq)
+        if max_freq < 2 * rtol:
+            # Both are near 50%; check consistency within tighter absolute tolerance
+            assert abs(tsim_freq - stim_freq) < rtol, (
+                f"Qubit {q} frequency mismatch: "
+                f"tsim={tsim_freq:.4f}, stim={stim_freq:.4f}"
+            )
+        else:
+            # One outcome dominates; check relative tolerance
+            assert abs(tsim_freq - stim_freq) < rtol * max(tsim_freq, 1 - tsim_freq), (
+                f"Qubit {q} frequency mismatch: "
+                f"tsim={tsim_freq:.4f}, stim={stim_freq:.4f}"
+            )
+
+
+def test_two_qubit_pauli_rotation_stim_parity_clifford():
+    for gate_name, stim_gate in [
+        ("R_XX", "SQRT_XX"),
+        ("R_YY", "SQRT_YY"),
+        ("R_ZZ", "SQRT_ZZ"),
+    ]:
+        program = f"R 0 1\n{gate_name}(0.5) 0 1\nM 0 1"
+        stim_program = f"R 0 1\n{stim_gate} 0 1\nM 0 1"
+        _assert_measurement_statistics_match(
+            Circuit(program), stim.Circuit(stim_program)
+        )
+
+
+def test_two_qubit_pauli_rotation_non_clifford_self_consistency():
+    """Non-Clifford R_ZZ(0.25) matches decomposed CNOT+R_Z+CNOT."""
+    tsim_circ = Circuit("R 0 1\nR_ZZ(0.25) 0 1\nM 0 1")
+    ref_circ = Circuit("R 0 1\nCNOT 0 1\nR_Z(0.25) 1\nCNOT 0 1\nM 0 1")
+    _assert_measurement_statistics_match(tsim_circ, ref_circ)
+
+
+def test_r_xx_non_clifford_self_consistency():
+    """Non-Clifford R_XX(0.25) matches decomposed CNOT+R_X+CNOT."""
+    tsim_circ = Circuit("R 0 1\nR_XX(0.25) 0 1\nM 0 1")
+    ref_circ = Circuit("R 0 1\nCNOT 0 1\nR_X(0.25) 0\nCNOT 0 1\nM 0 1")
+    _assert_measurement_statistics_match(tsim_circ, ref_circ)
+
+
+def test_r_yy_non_clifford_self_consistency():
+    """Non-Clifford R_YY(0.25) matches decomposed S+S+R_XX+S_DAG+S_DAG."""
+    tsim_circ = Circuit("R 0 1\nR_YY(0.25) 0 1\nM 0 1")
+    ref_circ = Circuit(
+        "R 0 1\n"
+        "S 0\nS 1\n"
+        "CNOT 0 1\nR_X(0.25) 0\nCNOT 0 1\n"
+        "S_DAG 0\nS_DAG 1\n"
+        "M 0 1"
+    )
+    _assert_measurement_statistics_match(tsim_circ, ref_circ)
+
+
+def test_r_pauli_non_clifford_self_consistency():
+    """Non-Clifford R_PAULI(0.25) X0*Y1 matches decomposed parity trick."""
+    tsim_circ = Circuit("R 0 1\nR_PAULI(0.25) X0*Y1\nM 0 1")
+    # Pauli X on qubit 0 → rotate to Z via H
+    # Pauli Y on qubit 1 → rotate to Z via S_DAG + H
+    ref_circ = Circuit(
+        "R 0 1\n"
+        "H 0\n"
+        "S_DAG 1\nH 1\n"
+        "CNOT 0 1\n"
+        "R_Z(0.25) 1\n"
+        "CNOT 0 1\n"
+        "H 0\n"
+        "H 1\nS 1\n"
+        "M 0 1"
+    )
+    _assert_measurement_statistics_match(tsim_circ, ref_circ)
+
+
+@pytest.mark.parametrize("gate_name", ["R_XX", "R_YY", "R_ZZ"])
+def test_two_qubit_pauli_rotation_inverse(gate_name):
+    """R_XX / R_YY / R_ZZ followed by same gate with negated angle gives identity."""
+    c = Circuit()
+    c.append(gate_name, [0, 1], arg=0.37)
+    c_inv = c.inverse()
+    combined = (c + c_inv).to_matrix()
+    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+
+
+def test_r_pauli_inverse():
+    """R_PAULI(0.37) X0*Y1 followed by its inverse gives identity."""
+    c = Circuit()
+    c.append("R_PAULI", [stim.target_x(0), stim.target_y(1)], arg=0.37)
+    c_inv = c.inverse()
+    combined = (c + c_inv).to_matrix()
+    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+
+
+@pytest.mark.parametrize("gate_name", ["R_XX", "R_YY", "R_ZZ", "R_PAULI"])
+def test_is_clifford_parametric_two_qubit(gate_name):
+    """Half-π parametric rotations are detected as Clifford."""
+    c = Circuit()
+    if gate_name == "R_PAULI":
+        c.append(gate_name, [stim.target_x(0), stim.target_x(1)], arg=0.5)
+    else:
+        c.append(gate_name, [0, 1], arg=0.5)
+    assert c.is_clifford
+
+
+@pytest.mark.parametrize("gate_name", ["R_XX", "R_YY", "R_ZZ", "R_PAULI"])
+def test_is_not_clifford_parametric_two_qubit(gate_name):
+    """Non-half-π parametric rotations are NOT detected as Clifford."""
+    c = Circuit()
+    if gate_name == "R_PAULI":
+        c.append(gate_name, [stim.target_x(0)], arg=0.25)
+    else:
+        c.append(gate_name, [0, 1], arg=0.25)
+    assert not c.is_clifford
+
+
+def test_r_xx_clifford_expansion():
+    """R_XX(0.5) expands to SQRT_XX in stim_circuit."""
+    c = Circuit()
+    c.append("R_XX", [0, 1], arg=0.5)
+    stim_circ = c.stim_circuit
+    assert len(stim_circ) == 1
+    assert stim_circ[0].name == "SQRT_XX"
+
+
+def test_r_yy_clifford_expansion():
+    """R_YY(-0.5) expands to SQRT_YY_DAG in stim_circuit."""
+    c = Circuit()
+    c.append("R_YY", [0, 1], arg=-0.5)
+    stim_circ = c.stim_circuit
+    assert len(stim_circ) == 1
+    assert stim_circ[0].name == "SQRT_YY_DAG"
+
+
+def test_r_zz_clifford_expansion():
+    """R_ZZ(1.0) expands to CNOT+Z+CNOT in stim_circuit."""
+    c = Circuit()
+    c.append("R_ZZ", [0, 1], arg=1.0)
+    stim_circ = c.stim_circuit
+    assert len(stim_circ) == 3
+    assert stim_circ[0].name == "CX"
+    assert stim_circ[0].targets_copy() == [stim.GateTarget(0), stim.GateTarget(1)]
+    assert stim_circ[1].name == "Z"
+    assert stim_circ[1].targets_copy() == [stim.GateTarget(1)]
+    assert stim_circ[2].name == "CX"
+    assert stim_circ[2].targets_copy() == [stim.GateTarget(0), stim.GateTarget(1)]
+
+
+def test_r_xx_clifford_expansion_full():
+    """R_XX(1.0) expands to CNOT+X+CNOT in stim_circuit."""
+    c = Circuit()
+    c.append("R_XX", [0, 1], arg=1.0)
+    stim_circ = c.stim_circuit
+    assert len(stim_circ) == 3
+    assert stim_circ[0].name == "CX"
+    assert stim_circ[0].targets_copy() == [stim.GateTarget(0), stim.GateTarget(1)]
+    assert stim_circ[1].name == "X"
+    assert stim_circ[1].targets_copy() == [stim.GateTarget(0)]
+    assert stim_circ[2].name == "CX"
+    assert stim_circ[2].targets_copy() == [stim.GateTarget(0), stim.GateTarget(1)]
+
+
+def test_r_yy_clifford_expansion_full():
+    """R_YY(1.0) expands to CNOT+X+CNOT with S/S_DAG in stim_circuit."""
+    c = Circuit()
+    c.append("R_YY", [0, 1], arg=1.0)
+    stim_circ = c.stim_circuit
+    # stim may merge adjacent same-type gates on different targets
+    # (S 0, S 1 → S 0 1; S_DAG 0, S_DAG 1 → S_DAG 0 1)
+    # Final gates: S 0 1, CX 0 1, X 0, CX 0 1, S_DAG 0 1
+    assert len(stim_circ) == 5
+
