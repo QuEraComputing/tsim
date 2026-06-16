@@ -19,6 +19,7 @@
     * [sampler](tsim/sampler.md)
     * [utils](tsim/utils/index.md)
         * [clifford](tsim/utils/clifford.md)
+        * [cuda_helpers](tsim/utils/cuda_helpers.md)
         * [diagram](tsim/utils/diagram.md)
         * [encoder](tsim/utils/encoder.md)
         * [linalg](tsim/utils/linalg.md)
