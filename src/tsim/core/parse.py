@@ -260,8 +260,7 @@ def parse_stim_circuit(
                     for paulis, invert in _iter_pauli_products(instruction):
                         r_pauli(b, paulis, theta, dagger=is_dag ^ invert)
                     continue
-            # Fall through to TPP for tag=="T" or other recognized tags
-            if instruction.tag == "T":
+            if is_t_tag(instruction.tag):
                 for paulis, invert in _iter_pauli_products(instruction):
                     tpp(b, paulis, dagger=is_dag ^ invert)
                 continue

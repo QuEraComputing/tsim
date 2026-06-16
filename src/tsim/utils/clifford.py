@@ -156,20 +156,28 @@ def _expand_clifford_gates(
         if idx == 2:
             # Full Pauli product: decompose into stim-native gate sequences
             # since single-gate names like "XX" are not stim gates.
-            q0, q1 = targets
+            # Handle multi-pair by iterating over pairs.
+            result: list[tuple[str, list[int]]] = []
             if gate_name == "R_ZZ":
                 # ZZ = CNOT·(I⊗Z)·CNOT
-                return [("CNOT", [q0, q1]), ("Z", [q1]), ("CNOT", [q0, q1])]
-            if gate_name == "R_XX":
+                for i in range(0, len(targets), 2):
+                    q0, q1 = targets[i], targets[i + 1]
+                    result += [("CNOT", [q0, q1]), ("Z", [q1]), ("CNOT", [q0, q1])]
+            elif gate_name == "R_XX":
                 # XX = CNOT·(X⊗I)·CNOT
-                return [("CNOT", [q0, q1]), ("X", [q0]), ("CNOT", [q0, q1])]
-            if gate_name == "R_YY":
+                for i in range(0, len(targets), 2):
+                    q0, q1 = targets[i], targets[i + 1]
+                    result += [("CNOT", [q0, q1]), ("X", [q0]), ("CNOT", [q0, q1])]
+            elif gate_name == "R_YY":
                 # YY = S·S · XX · S_DAG·S_DAG
-                return [
-                    ("S", [q0]), ("S", [q1]),
-                    ("CNOT", [q0, q1]), ("X", [q0]), ("CNOT", [q0, q1]),
-                    ("S_DAG", [q0]), ("S_DAG", [q1]),
-                ]
+                for i in range(0, len(targets), 2):
+                    q0, q1 = targets[i], targets[i + 1]
+                    result += [
+                        ("S", [q0]), ("S", [q1]),
+                        ("CNOT", [q0, q1]), ("X", [q0]), ("CNOT", [q0, q1]),
+                        ("S_DAG", [q0]), ("S_DAG", [q1]),
+                    ]
+            return result
         table = {
             "R_XX": RXX_CLIFFORD,
             "R_YY": RYY_CLIFFORD,
@@ -219,10 +227,10 @@ def is_clifford(source: stim.Circuit) -> bool:
                 if gate_name == "R_PAULI":
                     if not is_half_pi_multiple(params["theta"]):
                         return False
-            elif instr.tag == "T":
+            elif is_t_tag(instr.tag):
                 return False
 
-        if instr.name in ["S", "S_DAG"] and instr.tag == "T":
+        if instr.name in ["S", "S_DAG"] and is_t_tag(instr.tag):
             return False
 
         if instr.name == "I" and instr.tag:
