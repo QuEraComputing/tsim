@@ -395,12 +395,19 @@ class _CompiledSamplerBase:
                         ^ np.asarray(self._program.direct_flips, dtype=np.bool_)
                     )
                     predet_bits = direct_bits[:, direct_detector_indices]
+                    # Map direct output positions to detector IDs via output_order
+                    # (use numpy array since JAX rejects Python list indexing on 1D arrays).
+                    det_ids = np.asarray(self._program.output_order)[direct_detector_indices]
+                    mask_for_direct = det_mask_input[det_ids]
                     # For each shot: fire if ANY masked direct detector fired
-                    relevant = predet_bits[:, det_mask_input[direct_is_detector[direct_detector_indices]]]
+                    relevant = predet_bits[:, mask_for_direct]
                     if relevant.shape[1] > 0:
                         fired = relevant.any(axis=1)
                     else:
                         fired = np.zeros(batch_size, dtype=np.bool_)
+                    # Ensure the reference shot (f_params=0) always survives
+                    if compute_reference and reference is None:
+                        fired[0] = False
                     survivor_mask = jnp.asarray(~fired)
                 else:
                     survivor_mask = jnp.ones(batch_size, dtype=jnp.bool_)
