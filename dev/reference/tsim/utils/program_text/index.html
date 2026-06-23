@@ -6,18 +6,7 @@
     <span class=o>*</span><span class=p>,</span>
     <span class=n>tag</span><span class=p>:</span> <span class=nb>str</span> <span class=o>=</span> <span class=s2>&quot;&quot;</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>list</span><span class=p>[</span><span class=nb>str</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a Clifford+T decomposition for a controlled-controlled gate.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>18</span>
-<span class=normal>19</span>
-<span class=normal>20</span>
-<span class=normal>21</span>
-<span class=normal>22</span>
-<span class=normal>23</span>
-<span class=normal>24</span>
-<span class=normal>25</span>
-<span class=normal>26</span>
-<span class=normal>27</span>
-<span class=normal>28</span>
-<span class=normal>29</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a Clifford+T decomposition for a controlled-controlled gate.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>29</span>
 <span class=normal>30</span>
 <span class=normal>31</span>
 <span class=normal>32</span>
@@ -39,7 +28,18 @@
 <span class=normal>48</span>
 <span class=normal>49</span>
 <span class=normal>50</span>
-<span class=normal>51</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>controlled_gate_decomposition_lines</span><span class=p>(</span>
+<span class=normal>51</span>
+<span class=normal>52</span>
+<span class=normal>53</span>
+<span class=normal>54</span>
+<span class=normal>55</span>
+<span class=normal>56</span>
+<span class=normal>57</span>
+<span class=normal>58</span>
+<span class=normal>59</span>
+<span class=normal>60</span>
+<span class=normal>61</span>
+<span class=normal>62</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>controlled_gate_decomposition_lines</span><span class=p>(</span>
     <span class=n>gate</span><span class=p>:</span> <span class=nb>str</span><span class=p>,</span>
     <span class=n>control1</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=nb>str</span><span class=p>,</span>
     <span class=n>control2</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=nb>str</span><span class=p>,</span>
@@ -76,21 +76,21 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.program_text.enriched_stim_error class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">enriched_stim_error</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>enriched_stim_error</span><span class=p>(</span>
     <span class=n>exc</span><span class=p>:</span> <span class=ne>ValueError</span><span class=p>,</span> <span class=n>converted_text</span><span class=p>:</span> <span class=nb>str</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=ne>ValueError</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Improve stim parse errors for tsim-specific gates.</p> <p>When stim raises a 'Gate not found' error for a gate that should have been converted by shorthand_to_stim, this searches the converted text for the unconverted usage and returns a more helpful error message.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 98</span>
-<span class=normal> 99</span>
-<span class=normal>100</span>
-<span class=normal>101</span>
-<span class=normal>102</span>
-<span class=normal>103</span>
-<span class=normal>104</span>
-<span class=normal>105</span>
-<span class=normal>106</span>
-<span class=normal>107</span>
-<span class=normal>108</span>
-<span class=normal>109</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Improve stim parse errors for tsim-specific gates.</p> <p>When stim raises a 'Gate not found' error for a gate that should have been converted by shorthand_to_stim, this searches the converted text for the unconverted usage and returns a more helpful error message.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>109</span>
 <span class=normal>110</span>
 <span class=normal>111</span>
-<span class=normal>112</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>enriched_stim_error</span><span class=p>(</span><span class=n>exc</span><span class=p>:</span> <span class=ne>ValueError</span><span class=p>,</span> <span class=n>converted_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=ne>ValueError</span><span class=p>:</span>
+<span class=normal>112</span>
+<span class=normal>113</span>
+<span class=normal>114</span>
+<span class=normal>115</span>
+<span class=normal>116</span>
+<span class=normal>117</span>
+<span class=normal>118</span>
+<span class=normal>119</span>
+<span class=normal>120</span>
+<span class=normal>121</span>
+<span class=normal>122</span>
+<span class=normal>123</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>enriched_stim_error</span><span class=p>(</span><span class=n>exc</span><span class=p>:</span> <span class=ne>ValueError</span><span class=p>,</span> <span class=n>converted_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=ne>ValueError</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Improve stim parse errors for tsim-specific gates.</span>
 
 <span class=sd>    When stim raises a &#39;Gate not found&#39; error for a gate that should have been</span>
@@ -106,18 +106,7 @@
         <span class=k>return</span> <span class=n>exc</span>
     <span class=k>return</span> <span class=ne>ValueError</span><span class=p>(</span><span class=sa>f</span><span class=s2>&quot;Could not parse &#39;</span><span class=si>{</span><span class=n>usage</span><span class=o>.</span><span class=n>group</span><span class=p>()</span><span class=si>}</span><span class=s2>&#39; in program text.&quot;</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.program_text.shorthand_to_stim class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">shorthand_to_stim</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>shorthand_to_stim</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Convert tsim shorthand syntax to valid stim instructions.</p> <details class=converts open> <summary>Converts</summary> <p>CCZ 0 1 2 → Clifford+T decomposition of CCZ CCX 0 1 2 → Clifford+T decomposition of CCX/Toffoli T 0 1 → S[T] 0 1 T_DAG 0 1 → S_DAG[T] 0 1 TPP X0<em>Y1 → SPP[T] X0</em>Y1 TPP_DAG X0<em>Y1 → SPP_DAG[T] X0</em>Y1 R_Z(0.3) 0 → I[R_Z(theta=0.3<em>pi)] 0 R_X(0.25) 0 → I[R_X(theta=0.25</em>pi)] 0 R_Y(-0.5) 0 → I[R_Y(theta=-0.5<em>pi)] 0 U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3</em>pi, phi=0.24<em>pi, lambda=0.49</em>pi)] 0</p> </details> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>115</span>
-<span class=normal>116</span>
-<span class=normal>117</span>
-<span class=normal>118</span>
-<span class=normal>119</span>
-<span class=normal>120</span>
-<span class=normal>121</span>
-<span class=normal>122</span>
-<span class=normal>123</span>
-<span class=normal>124</span>
-<span class=normal>125</span>
-<span class=normal>126</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Convert tsim shorthand syntax to valid stim instructions.</p> <details class=converts open> <summary>Converts</summary> <p>CCZ 0 1 2 → Clifford+T decomposition of CCZ CCX 0 1 2 → Clifford+T decomposition of CCX/Toffoli T 0 1 → S[T] 0 1 T_DAG 0 1 → S_DAG[T] 0 1 TPP X0<em>Y1 → SPP[T] X0</em>Y1 TPP_DAG X0<em>Y1 → SPP_DAG[T] X0</em>Y1 R_Z(0.3) 0 → I[R_Z(theta=0.3<em>pi)] 0 R_X(0.25) 0 → I[R_X(theta=0.25</em>pi)] 0 R_Y(-0.5) 0 → I[R_Y(theta=-0.5<em>pi)] 0 R_XX(0.5) 0 1 → SPP[R_PAULI(theta=0.5</em>pi)] X0<em>X1 R_YY(0.5) 0 1 → SPP[R_PAULI(theta=0.5</em>pi)] Y0<em>Y1 R_ZZ(0.5) 0 1 → SPP[R_PAULI(theta=0.5</em>pi)] Z0<em>Z1 R_PAULI(0.3) X0</em>Y1 → SPP[R_PAULI(theta=0.3<em>pi)] X0</em>Y1 U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3<em>pi, phi=0.24</em>pi, lambda=0.49*pi)] 0</p> </details> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>126</span>
 <span class=normal>127</span>
 <span class=normal>128</span>
 <span class=normal>129</span>
@@ -176,79 +165,10 @@
 <span class=normal>182</span>
 <span class=normal>183</span>
 <span class=normal>184</span>
-<span class=normal>185</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>shorthand_to_stim</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
-<span class=w>    </span><span class=sd>&quot;&quot;&quot;Convert tsim shorthand syntax to valid stim instructions.</span>
-
-<span class=sd>    Converts:</span>
-<span class=sd>        CCZ 0 1 2           → Clifford+T decomposition of CCZ</span>
-<span class=sd>        CCX 0 1 2           → Clifford+T decomposition of CCX/Toffoli</span>
-<span class=sd>        T 0 1               → S[T] 0 1</span>
-<span class=sd>        T_DAG 0 1           → S_DAG[T] 0 1</span>
-<span class=sd>        TPP X0*Y1           → SPP[T] X0*Y1</span>
-<span class=sd>        TPP_DAG X0*Y1       → SPP_DAG[T] X0*Y1</span>
-<span class=sd>        R_Z(0.3) 0          → I[R_Z(theta=0.3*pi)] 0</span>
-<span class=sd>        R_X(0.25) 0         → I[R_X(theta=0.25*pi)] 0</span>
-<span class=sd>        R_Y(-0.5) 0         → I[R_Y(theta=-0.5*pi)] 0</span>
-<span class=sd>        U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0</span>
-
-<span class=sd>    &quot;&quot;&quot;</span>
-    <span class=n>text</span> <span class=o>=</span> <span class=n>_expand_controlled_gates</span><span class=p>(</span><span class=n>text</span><span class=p>)</span>
-
-    <span class=c1># TPP_DAG/TPP must come before T_DAG/T to avoid partial matches</span>
-    <span class=c1># (?&lt;!\[) ensures we don&#39;t match T inside [T]</span>
-    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
-        <span class=sa>r</span><span class=s2>&quot;(?&lt;!\[)\bTPP_DAG(?:\[([^\]\n]*)\])?(?!\w)&quot;</span><span class=p>,</span>
-        <span class=n>_replace_t_family</span><span class=p>(</span><span class=s2>&quot;SPP_DAG&quot;</span><span class=p>),</span>
-        <span class=n>text</span><span class=p>,</span>
-    <span class=p>)</span>
-    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
-        <span class=sa>r</span><span class=s2>&quot;(?&lt;!\[)\bTPP(?:\[([^\]\n]*)\])?(?!\w)&quot;</span><span class=p>,</span>
-        <span class=n>_replace_t_family</span><span class=p>(</span><span class=s2>&quot;SPP&quot;</span><span class=p>),</span>
-        <span class=n>text</span><span class=p>,</span>
-    <span class=p>)</span>
-    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
-        <span class=sa>r</span><span class=s2>&quot;(?&lt;!\[)\bT_DAG(?:\[([^\]\n]*)\])?(?!\w)&quot;</span><span class=p>,</span>
-        <span class=n>_replace_t_family</span><span class=p>(</span><span class=s2>&quot;S_DAG&quot;</span><span class=p>),</span>
-        <span class=n>text</span><span class=p>,</span>
-    <span class=p>)</span>
-    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
-        <span class=sa>r</span><span class=s2>&quot;(?&lt;!\[)\bT(?:\[([^\]\n]*)\])?(?!\w)&quot;</span><span class=p>,</span>
-        <span class=n>_replace_t_family</span><span class=p>(</span><span class=s2>&quot;S&quot;</span><span class=p>),</span>
-        <span class=n>text</span><span class=p>,</span>
-    <span class=p>)</span>
-
-    <span class=k>def</span><span class=w> </span><span class=nf>replace_rotation</span><span class=p>(</span><span class=n>m</span><span class=p>:</span> <span class=n>re</span><span class=o>.</span><span class=n>Match</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
-        <span class=n>axis</span> <span class=o>=</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>)</span>
-        <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;I[R_</span><span class=si>{</span><span class=n>axis</span><span class=si>}</span><span class=s2>(theta=</span><span class=si>{</span><span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>2</span><span class=p>))</span><span class=si>}</span><span class=s2>*pi)]&quot;</span>
-
-    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span><span class=sa>rf</span><span class=s2>&quot;\bR_([XYZ])\((</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\)&quot;</span><span class=p>,</span> <span class=n>replace_rotation</span><span class=p>,</span> <span class=n>text</span><span class=p>)</span>
-
-    <span class=k>def</span><span class=w> </span><span class=nf>replace_u3</span><span class=p>(</span><span class=n>m</span><span class=p>:</span> <span class=n>re</span><span class=o>.</span><span class=n>Match</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
-        <span class=n>theta</span><span class=p>,</span> <span class=n>phi</span><span class=p>,</span> <span class=n>lam</span> <span class=o>=</span> <span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>)),</span> <span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>2</span><span class=p>)),</span> <span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>3</span><span class=p>))</span>
-        <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;I[U3(theta=</span><span class=si>{</span><span class=n>theta</span><span class=si>}</span><span class=s2>*pi, phi=</span><span class=si>{</span><span class=n>phi</span><span class=si>}</span><span class=s2>*pi, lambda=</span><span class=si>{</span><span class=n>lam</span><span class=si>}</span><span class=s2>*pi)]&quot;</span>
-
-    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
-        <span class=sa>rf</span><span class=s2>&quot;\bU3\((</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\s*,\s*(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\s*,\s*(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\)&quot;</span><span class=p>,</span>
-        <span class=n>replace_u3</span><span class=p>,</span>
-        <span class=n>text</span><span class=p>,</span>
-    <span class=p>)</span>
-
-    <span class=c1># Canonicalize literals inside already-expanded parametric tags so that</span>
-    <span class=c1># equivalent inputs like `I[R_X(theta=0.5e-2*pi)]` and</span>
-    <span class=c1># `I[R_X(theta=0.005*pi)]` produce the same stim tag string. This keeps</span>
-    <span class=c1># `tsim.Circuit(str(c)) == c` round-trip stable across notations.</span>
-    <span class=k>def</span><span class=w> </span><span class=nf>_canonicalize_param</span><span class=p>(</span><span class=n>m</span><span class=p>:</span> <span class=n>re</span><span class=o>.</span><span class=n>Match</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
-        <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;</span><span class=si>{</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>)</span><span class=si>}</span><span class=s2>=</span><span class=si>{</span><span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>2</span><span class=p>))</span><span class=si>}</span><span class=s2>*pi&quot;</span>
-
-    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
-        <span class=sa>rf</span><span class=s2>&quot;\b(theta|phi|lambda)=(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi&quot;</span><span class=p>,</span>
-        <span class=n>_canonicalize_param</span><span class=p>,</span>
-        <span class=n>text</span><span class=p>,</span>
-    <span class=p>)</span>
-
-    <span class=k>return</span> <span class=n>text</span>
-</code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.program_text.stim_to_shorthand class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">stim_to_shorthand</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Convert expanded stim annotations back to tsim shorthand.</p> <p>Rewrites: - I[U3(theta=θ<em>pi, phi=φ</em>pi, lambda=λ<em>pi)] → U3(θ, φ, λ) - I[R_X(theta=α</em>pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α) - SPP[T] → TPP - SPP_DAG[T] → TPP_DAG - S[T] → T - S_DAG[T] → T_DAG</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>188</span>
+<span class=normal>185</span>
+<span class=normal>186</span>
+<span class=normal>187</span>
+<span class=normal>188</span>
 <span class=normal>189</span>
 <span class=normal>190</span>
 <span class=normal>191</span>
@@ -284,10 +204,107 @@
 <span class=normal>221</span>
 <span class=normal>222</span>
 <span class=normal>223</span>
-<span class=normal>224</span>
-<span class=normal>225</span>
-<span class=normal>226</span>
-<span class=normal>227</span>
+<span class=normal>224</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>shorthand_to_stim</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+<span class=w>    </span><span class=sd>&quot;&quot;&quot;Convert tsim shorthand syntax to valid stim instructions.</span>
+
+<span class=sd>    Converts:</span>
+<span class=sd>        CCZ 0 1 2           → Clifford+T decomposition of CCZ</span>
+<span class=sd>        CCX 0 1 2           → Clifford+T decomposition of CCX/Toffoli</span>
+<span class=sd>        T 0 1               → S[T] 0 1</span>
+<span class=sd>        T_DAG 0 1           → S_DAG[T] 0 1</span>
+<span class=sd>        TPP X0*Y1           → SPP[T] X0*Y1</span>
+<span class=sd>        TPP_DAG X0*Y1       → SPP_DAG[T] X0*Y1</span>
+<span class=sd>        R_Z(0.3) 0          → I[R_Z(theta=0.3*pi)] 0</span>
+<span class=sd>        R_X(0.25) 0         → I[R_X(theta=0.25*pi)] 0</span>
+<span class=sd>        R_Y(-0.5) 0         → I[R_Y(theta=-0.5*pi)] 0</span>
+<span class=sd>        R_XX(0.5) 0 1       → SPP[R_PAULI(theta=0.5*pi)] X0*X1</span>
+<span class=sd>        R_YY(0.5) 0 1       → SPP[R_PAULI(theta=0.5*pi)] Y0*Y1</span>
+<span class=sd>        R_ZZ(0.5) 0 1       → SPP[R_PAULI(theta=0.5*pi)] Z0*Z1</span>
+<span class=sd>        R_PAULI(0.3) X0*Y1  → SPP[R_PAULI(theta=0.3*pi)] X0*Y1</span>
+<span class=sd>        U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0</span>
+
+<span class=sd>    &quot;&quot;&quot;</span>
+    <span class=n>text</span> <span class=o>=</span> <span class=n>_expand_controlled_gates</span><span class=p>(</span><span class=n>text</span><span class=p>)</span>
+
+    <span class=c1># TPP_DAG/TPP must come before T_DAG/T to avoid partial matches</span>
+    <span class=c1># (?&lt;!\[) ensures we don&#39;t match T inside [T]</span>
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
+        <span class=sa>r</span><span class=s2>&quot;(?&lt;!\[)\bTPP_DAG(?:\[([^\]\n]*)\])?(?!\w)&quot;</span><span class=p>,</span>
+        <span class=n>_replace_t_family</span><span class=p>(</span><span class=s2>&quot;SPP_DAG&quot;</span><span class=p>),</span>
+        <span class=n>text</span><span class=p>,</span>
+    <span class=p>)</span>
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
+        <span class=sa>r</span><span class=s2>&quot;(?&lt;!\[)\bTPP(?:\[([^\]\n]*)\])?(?!\w)&quot;</span><span class=p>,</span>
+        <span class=n>_replace_t_family</span><span class=p>(</span><span class=s2>&quot;SPP&quot;</span><span class=p>),</span>
+        <span class=n>text</span><span class=p>,</span>
+    <span class=p>)</span>
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
+        <span class=sa>r</span><span class=s2>&quot;(?&lt;!\[)\bT_DAG(?:\[([^\]\n]*)\])?(?!\w)&quot;</span><span class=p>,</span>
+        <span class=n>_replace_t_family</span><span class=p>(</span><span class=s2>&quot;S_DAG&quot;</span><span class=p>),</span>
+        <span class=n>text</span><span class=p>,</span>
+    <span class=p>)</span>
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
+        <span class=sa>r</span><span class=s2>&quot;(?&lt;!\[)\bT(?:\[([^\]\n]*)\])?(?!\w)&quot;</span><span class=p>,</span>
+        <span class=n>_replace_t_family</span><span class=p>(</span><span class=s2>&quot;S&quot;</span><span class=p>),</span>
+        <span class=n>text</span><span class=p>,</span>
+    <span class=p>)</span>
+
+    <span class=k>def</span><span class=w> </span><span class=nf>replace_pauli_pair</span><span class=p>(</span><span class=n>m</span><span class=p>:</span> <span class=n>re</span><span class=o>.</span><span class=n>Match</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+        <span class=n>pauli</span> <span class=o>=</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>)</span>
+        <span class=n>alpha</span> <span class=o>=</span> <span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>2</span><span class=p>))</span>
+        <span class=n>q0</span><span class=p>,</span> <span class=n>q1</span> <span class=o>=</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>3</span><span class=p>),</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>4</span><span class=p>)</span>
+        <span class=k>if</span> <span class=n>q0</span> <span class=o>==</span> <span class=n>q1</span><span class=p>:</span>
+            <span class=k>raise</span> <span class=ne>ValueError</span><span class=p>(</span>
+                <span class=sa>f</span><span class=s2>&quot;R_</span><span class=si>{</span><span class=n>pauli</span><span class=si>}{</span><span class=n>pauli</span><span class=si>}</span><span class=s2> target qubits must be distinct, got </span><span class=si>{</span><span class=n>q0</span><span class=si>}</span><span class=s2> </span><span class=si>{</span><span class=n>q1</span><span class=si>}</span><span class=s2>.&quot;</span>
+            <span class=p>)</span>
+        <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;SPP[R_PAULI(theta=</span><span class=si>{</span><span class=n>alpha</span><span class=si>}</span><span class=s2>*pi)] </span><span class=si>{</span><span class=n>pauli</span><span class=si>}{</span><span class=n>q0</span><span class=si>}</span><span class=s2>*</span><span class=si>{</span><span class=n>pauli</span><span class=si>}{</span><span class=n>q1</span><span class=si>}</span><span class=s2>&quot;</span>
+
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
+        <span class=sa>rf</span><span class=s2>&quot;\bR_([XYZ])\1\((</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\)\s+(\d+)\s+(\d+)&quot;</span><span class=p>,</span> <span class=n>replace_pauli_pair</span><span class=p>,</span> <span class=n>text</span>
+    <span class=p>)</span>
+
+    <span class=k>def</span><span class=w> </span><span class=nf>replace_pauli</span><span class=p>(</span><span class=n>m</span><span class=p>:</span> <span class=n>re</span><span class=o>.</span><span class=n>Match</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+        <span class=n>alpha</span> <span class=o>=</span> <span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>))</span>
+        <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;SPP[R_PAULI(theta=</span><span class=si>{</span><span class=n>alpha</span><span class=si>}</span><span class=s2>*pi)] </span><span class=si>{</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>2</span><span class=p>)</span><span class=si>}</span><span class=s2>&quot;</span>
+
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
+        <span class=sa>rf</span><span class=s2>&quot;\bR_PAULI\((</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\)\s+((?:[XYZ]\d+)(?:\*[XYZ]\d+)*)&quot;</span><span class=p>,</span>
+        <span class=n>replace_pauli</span><span class=p>,</span>
+        <span class=n>text</span><span class=p>,</span>
+    <span class=p>)</span>
+
+    <span class=k>def</span><span class=w> </span><span class=nf>replace_rotation</span><span class=p>(</span><span class=n>m</span><span class=p>:</span> <span class=n>re</span><span class=o>.</span><span class=n>Match</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+        <span class=n>axis</span> <span class=o>=</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>)</span>
+        <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;I[R_</span><span class=si>{</span><span class=n>axis</span><span class=si>}</span><span class=s2>(theta=</span><span class=si>{</span><span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>2</span><span class=p>))</span><span class=si>}</span><span class=s2>*pi)]&quot;</span>
+
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span><span class=sa>rf</span><span class=s2>&quot;\bR_([XYZ])\((</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\)&quot;</span><span class=p>,</span> <span class=n>replace_rotation</span><span class=p>,</span> <span class=n>text</span><span class=p>)</span>
+
+    <span class=k>def</span><span class=w> </span><span class=nf>replace_u3</span><span class=p>(</span><span class=n>m</span><span class=p>:</span> <span class=n>re</span><span class=o>.</span><span class=n>Match</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+        <span class=n>theta</span><span class=p>,</span> <span class=n>phi</span><span class=p>,</span> <span class=n>lam</span> <span class=o>=</span> <span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>)),</span> <span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>2</span><span class=p>)),</span> <span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>3</span><span class=p>))</span>
+        <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;I[U3(theta=</span><span class=si>{</span><span class=n>theta</span><span class=si>}</span><span class=s2>*pi, phi=</span><span class=si>{</span><span class=n>phi</span><span class=si>}</span><span class=s2>*pi, lambda=</span><span class=si>{</span><span class=n>lam</span><span class=si>}</span><span class=s2>*pi)]&quot;</span>
+
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
+        <span class=sa>rf</span><span class=s2>&quot;\bU3\((</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\s*,\s*(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\s*,\s*(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\)&quot;</span><span class=p>,</span>
+        <span class=n>replace_u3</span><span class=p>,</span>
+        <span class=n>text</span><span class=p>,</span>
+    <span class=p>)</span>
+
+    <span class=c1># Canonicalize literals inside already-expanded parametric tags so that</span>
+    <span class=c1># equivalent inputs like `I[R_X(theta=0.5e-2*pi)]` and</span>
+    <span class=c1># `I[R_X(theta=0.005*pi)]` produce the same stim tag string. This keeps</span>
+    <span class=c1># `tsim.Circuit(str(c)) == c` round-trip stable across notations.</span>
+    <span class=k>def</span><span class=w> </span><span class=nf>_canonicalize_param</span><span class=p>(</span><span class=n>m</span><span class=p>:</span> <span class=n>re</span><span class=o>.</span><span class=n>Match</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+        <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;</span><span class=si>{</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>)</span><span class=si>}</span><span class=s2>=</span><span class=si>{</span><span class=nb>float</span><span class=p>(</span><span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>2</span><span class=p>))</span><span class=si>}</span><span class=s2>*pi&quot;</span>
+
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
+        <span class=sa>rf</span><span class=s2>&quot;\b(theta|phi|lambda)=(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi&quot;</span><span class=p>,</span>
+        <span class=n>_canonicalize_param</span><span class=p>,</span>
+        <span class=n>text</span><span class=p>,</span>
+    <span class=p>)</span>
+
+    <span class=k>return</span> <span class=n>text</span>
+</code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.program_text.stim_to_shorthand class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">stim_to_shorthand</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Convert expanded stim annotations back to tsim shorthand.</p> <p>Rewrites: - I[U3(theta=θ<em>pi, phi=φ</em>pi, lambda=λ<em>pi)] → U3(θ, φ, λ) - I[R_X(theta=α</em>pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α) - SPP[R_PAULI(theta=α<em>pi)] P0</em>P1 → R_PP(α) 0 1 (P ∈ {X, Y, Z}) - SPP[R_PAULI(theta=α<em>pi)] X0</em>Y1 → R_PAULI(α) X0*Y1 - SPP[T] → TPP - SPP_DAG[T] → TPP_DAG - S[T] → T - S_DAG[T] → T_DAG</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>227</span>
 <span class=normal>228</span>
 <span class=normal>229</span>
 <span class=normal>230</span>
@@ -309,12 +326,77 @@
 <span class=normal>246</span>
 <span class=normal>247</span>
 <span class=normal>248</span>
-<span class=normal>249</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+<span class=normal>249</span>
+<span class=normal>250</span>
+<span class=normal>251</span>
+<span class=normal>252</span>
+<span class=normal>253</span>
+<span class=normal>254</span>
+<span class=normal>255</span>
+<span class=normal>256</span>
+<span class=normal>257</span>
+<span class=normal>258</span>
+<span class=normal>259</span>
+<span class=normal>260</span>
+<span class=normal>261</span>
+<span class=normal>262</span>
+<span class=normal>263</span>
+<span class=normal>264</span>
+<span class=normal>265</span>
+<span class=normal>266</span>
+<span class=normal>267</span>
+<span class=normal>268</span>
+<span class=normal>269</span>
+<span class=normal>270</span>
+<span class=normal>271</span>
+<span class=normal>272</span>
+<span class=normal>273</span>
+<span class=normal>274</span>
+<span class=normal>275</span>
+<span class=normal>276</span>
+<span class=normal>277</span>
+<span class=normal>278</span>
+<span class=normal>279</span>
+<span class=normal>280</span>
+<span class=normal>281</span>
+<span class=normal>282</span>
+<span class=normal>283</span>
+<span class=normal>284</span>
+<span class=normal>285</span>
+<span class=normal>286</span>
+<span class=normal>287</span>
+<span class=normal>288</span>
+<span class=normal>289</span>
+<span class=normal>290</span>
+<span class=normal>291</span>
+<span class=normal>292</span>
+<span class=normal>293</span>
+<span class=normal>294</span>
+<span class=normal>295</span>
+<span class=normal>296</span>
+<span class=normal>297</span>
+<span class=normal>298</span>
+<span class=normal>299</span>
+<span class=normal>300</span>
+<span class=normal>301</span>
+<span class=normal>302</span>
+<span class=normal>303</span>
+<span class=normal>304</span>
+<span class=normal>305</span>
+<span class=normal>306</span>
+<span class=normal>307</span>
+<span class=normal>308</span>
+<span class=normal>309</span>
+<span class=normal>310</span>
+<span class=normal>311</span>
+<span class=normal>312</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Convert expanded stim annotations back to tsim shorthand.</span>
 
 <span class=sd>    Rewrites:</span>
 <span class=sd>    - I[U3(theta=θ*pi, phi=φ*pi, lambda=λ*pi)] → U3(θ, φ, λ)</span>
 <span class=sd>    - I[R_X(theta=α*pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α)</span>
+<span class=sd>    - SPP[R_PAULI(theta=α*pi)] P0*P1 → R_PP(α) 0 1 (P ∈ {X, Y, Z})</span>
+<span class=sd>    - SPP[R_PAULI(theta=α*pi)] X0*Y1 → R_PAULI(α) X0*Y1</span>
 <span class=sd>    - SPP[T] → TPP</span>
 <span class=sd>    - SPP_DAG[T] → TPP_DAG</span>
 <span class=sd>    - S[T] → T</span>
@@ -329,6 +411,28 @@
     <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
         <span class=sa>rf</span><span class=s2>&quot;\bI\[U3\(theta=(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi, phi=(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi, lambda=(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi\)\]&quot;</span><span class=p>,</span>
         <span class=n>replace_u3</span><span class=p>,</span>
+        <span class=n>text</span><span class=p>,</span>
+    <span class=p>)</span>
+
+    <span class=c1># SPP[R_PAULI(...)] with a same-axis two-qubit product → R_XX/R_YY/R_ZZ shorthand.</span>
+    <span class=c1># Must precede the general R_PAULI rewrite below.</span>
+    <span class=k>def</span><span class=w> </span><span class=nf>replace_pauli_pair</span><span class=p>(</span><span class=n>m</span><span class=p>:</span> <span class=n>re</span><span class=o>.</span><span class=n>Match</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+        <span class=n>alpha</span><span class=p>,</span> <span class=n>pauli</span><span class=p>,</span> <span class=n>q0</span><span class=p>,</span> <span class=n>q1</span> <span class=o>=</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>),</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>2</span><span class=p>),</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>3</span><span class=p>),</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>4</span><span class=p>)</span>
+        <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;R_</span><span class=si>{</span><span class=n>pauli</span><span class=si>}{</span><span class=n>pauli</span><span class=si>}</span><span class=s2>(</span><span class=si>{</span><span class=n>alpha</span><span class=si>}</span><span class=s2>) </span><span class=si>{</span><span class=n>q0</span><span class=si>}</span><span class=s2> </span><span class=si>{</span><span class=n>q1</span><span class=si>}</span><span class=s2>&quot;</span>
+
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
+        <span class=sa>rf</span><span class=s2>&quot;\bSPP\[R_PAULI\(theta=(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi\)\] ([XYZ])(\d+)\*\2(\d+)(?!\*)\b&quot;</span><span class=p>,</span>
+        <span class=n>replace_pauli_pair</span><span class=p>,</span>
+        <span class=n>text</span><span class=p>,</span>
+    <span class=p>)</span>
+
+    <span class=k>def</span><span class=w> </span><span class=nf>replace_pauli</span><span class=p>(</span><span class=n>m</span><span class=p>:</span> <span class=n>re</span><span class=o>.</span><span class=n>Match</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+        <span class=n>alpha</span><span class=p>,</span> <span class=n>product</span> <span class=o>=</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>),</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>2</span><span class=p>)</span>
+        <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;R_PAULI(</span><span class=si>{</span><span class=n>alpha</span><span class=si>}</span><span class=s2>) </span><span class=si>{</span><span class=n>product</span><span class=si>}</span><span class=s2>&quot;</span>
+
+    <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
+        <span class=sa>rf</span><span class=s2>&quot;\bSPP\[R_PAULI\(theta=(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi\)\] ((?:[XYZ]\d+)(?:\*[XYZ]\d+)*)&quot;</span><span class=p>,</span>
+        <span class=n>replace_pauli</span><span class=p>,</span>
         <span class=n>text</span><span class=p>,</span>
     <span class=p>)</span>
 
