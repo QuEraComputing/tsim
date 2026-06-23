@@ -32,6 +32,48 @@ from tsim.utils.program_text import (
     stim_to_shorthand,
 )
 
+_PAULI_TARGET = {"X": stim.target_x, "Y": stim.target_y, "Z": stim.target_z}
+
+
+def _single_angle(name: str, arg: float | Iterable[float] | None) -> float:
+    """Extract the single rotation angle required by a parametric gate."""
+    if arg is None:
+        raise ValueError(f"For {name} gates, an angle must be provided.")
+    args = list(arg) if isinstance(arg, Iterable) else [arg]
+    if len(args) != 1:
+        raise ValueError(f"For {name} gates, a single angle must be provided.")
+    return args[0]
+
+
+def _two_distinct_qubits(
+    name: str,
+    targets: int | stim.GateTarget | stim.PauliString | Iterable,
+) -> tuple[int, int]:
+    """Validate and unpack the two distinct qubit targets of an R_XX/R_YY/R_ZZ gate."""
+    qubits = list(targets) if isinstance(targets, Iterable) else [targets]
+    if len(qubits) != 2:
+        raise ValueError(f"For {name} gates, exactly two qubit targets are required.")
+    q0, q1 = qubits
+    if not isinstance(q0, int) or not isinstance(q1, int):
+        raise ValueError(f"For {name} gates, both targets must be qubit indices.")
+    if q0 == q1:
+        raise ValueError(
+            f"For {name} gates, the two target qubits must be distinct, got {q0} {q1}."
+        )
+    return q0, q1
+
+
+def _pauli_product_targets(
+    paulis: list[tuple[str, int]],
+) -> list[stim.GateTarget]:
+    """Build combiner-joined Pauli targets (e.g. ``X0*X1``) for an SPP instruction."""
+    out: list[stim.GateTarget] = []
+    for pauli, qubit in paulis:
+        if out:
+            out.append(stim.target_combiner())
+        out.append(_PAULI_TARGET[pauli](qubit))
+    return out
+
 
 def _bare_qubit_targets(
     gate_name: str,
@@ -228,6 +270,19 @@ class Circuit:
                 theta, phi, lam = args
                 tag = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
                 name = "I"
+                arg = None
+            elif name in ("R_XX", "R_YY", "R_ZZ"):
+                alpha = _single_angle(name, arg)
+                pauli = name[2]
+                q0, q1 = _two_distinct_qubits(name, targets)
+                targets = _pauli_product_targets([(pauli, q0), (pauli, q1)])
+                tag = f"R_PAULI(theta={alpha}*pi)"
+                name = "SPP"
+                arg = None
+            elif name == "R_PAULI":
+                alpha = _single_angle(name, arg)
+                tag = f"R_PAULI(theta={alpha}*pi)"
+                name = "SPP"
                 arg = None
 
             self._stim_circ.append(name=name, targets=targets, arg=arg, tag=tag)  # type: ignore

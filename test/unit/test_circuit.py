@@ -266,6 +266,23 @@ def test_two_qubit_gate(stim_gate: str):
     assert unitaries_equal_up_to_global_phase(c.to_matrix(), stim_c_matrix)
 
 
+@pytest.mark.parametrize("gate", ["R_XX", "R_YY", "R_ZZ"])
+@pytest.mark.parametrize("alpha", [0.0, 1.0, 2.0, 3.0])
+def test_pauli_rotation_clifford_matches_stim(gate: str, alpha: float):
+    """At Clifford angles, R_XX/R_YY/R_ZZ match stim's reference Clifford gate.
+
+    R_PP(alpha) = exp(-i alpha pi/2 PP) is Clifford for integer alpha: identity for
+    even alpha, and the Pauli pair PP for odd alpha (both up to global phase).
+    """
+    pauli = gate[2]
+    stim_program = "I 0\nI 1" if alpha % 2 == 0 else f"{pauli} 0\n{pauli} 1"
+    c = Circuit(f"{gate}({alpha}) 0 1")
+    stim_matrix = (
+        stim.Circuit(stim_program).to_tableau().to_unitary_matrix(endian="big")
+    )
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), stim_matrix)
+
+
 def test_num_measurements():
     c = Circuit()
     assert c.num_measurements == 0
@@ -835,6 +852,33 @@ def test_inverse_tpp_dag():
     c_inv = c.inverse()
     combined = (c + c_inv).to_matrix()
     assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+
+
+def test_inverse_r_xx():
+    c = Circuit("R_XX(0.345) 0 1")
+    c_inv = c.inverse()
+    combined = (c + c_inv).to_matrix()
+    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+
+
+def test_inverse_r_pauli():
+    c = Circuit("R_PAULI(0.345) X0*Y1*Z2")
+    c_inv = c.inverse()
+    combined = (c + c_inv).to_matrix()
+    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+
+
+def test_r_pauli_duplicate_target_in_product_rejected():
+    """Repeated qubits within one R_PAULI product are rejected before simplification."""
+    with pytest.raises(ValueError, match="distinct"):
+        Circuit("R_PAULI(0.25) X0*X0").get_graph()
+
+
+def test_r_pauli_long_product_roundtrip():
+    """A same-axis product with >2 factors round-trips as R_PAULI, not a mangled R_XX."""
+    c = Circuit("R_PAULI(0.3) X0*X1*X2")
+    assert str(c) == "R_PAULI(0.3) X0*X1*X2"
+    assert Circuit(str(c)) == c
 
 
 def test_inverse_mixed_circuit():

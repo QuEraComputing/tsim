@@ -8,10 +8,21 @@ from tsim.core.tags import decode_t_user_tag, encode_t_tag
 # Matches valid numeric literals including scientific notation (e.g. 0.5, 4e-4, 1.2e3)
 FLOAT_RE = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
 
-_TSIM_GATES = {"CCZ", "CCX", "R_X", "R_Y", "R_Z", "U3"}
+_TSIM_GATES = {
+    "CCZ",
+    "CCX",
+    "R_X",
+    "R_Y",
+    "R_Z",
+    "R_XX",
+    "R_YY",
+    "R_ZZ",
+    "R_PAULI",
+    "U3",
+}
 _GATE_NOT_FOUND_RE = re.compile(r"Gate not found: '(\w+)'")
 _GATE_USAGE_RE = re.compile(
-    r"(?<!\[)\b(CCZ\b|CCX\b|R_[A-Z]\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)"
+    r"(?<!\[)\b(CCZ\b|CCX\b|R_PAULI\([^)]*\)|R_[XYZ]{1,2}\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)"
 )
 
 
@@ -125,6 +136,10 @@ def shorthand_to_stim(text: str) -> str:
         R_Z(0.3) 0          → I[R_Z(theta=0.3*pi)] 0
         R_X(0.25) 0         → I[R_X(theta=0.25*pi)] 0
         R_Y(-0.5) 0         → I[R_Y(theta=-0.5*pi)] 0
+        R_XX(0.5) 0 1       → SPP[R_PAULI(theta=0.5*pi)] X0*X1
+        R_YY(0.5) 0 1       → SPP[R_PAULI(theta=0.5*pi)] Y0*Y1
+        R_ZZ(0.5) 0 1       → SPP[R_PAULI(theta=0.5*pi)] Z0*Z1
+        R_PAULI(0.3) X0*Y1  → SPP[R_PAULI(theta=0.3*pi)] X0*Y1
         U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0
 
     """
@@ -150,6 +165,30 @@ def shorthand_to_stim(text: str) -> str:
     text = re.sub(
         r"(?<!\[)\bT(?:\[([^\]\n]*)\])?(?!\w)",
         _replace_t_family("S"),
+        text,
+    )
+
+    def replace_pauli_pair(m: re.Match) -> str:
+        pauli = m.group(1)
+        alpha = float(m.group(2))
+        q0, q1 = m.group(3), m.group(4)
+        if q0 == q1:
+            raise ValueError(
+                f"R_{pauli}{pauli} target qubits must be distinct, got {q0} {q1}."
+            )
+        return f"SPP[R_PAULI(theta={alpha}*pi)] {pauli}{q0}*{pauli}{q1}"
+
+    text = re.sub(
+        rf"\bR_([XYZ])\1\(({FLOAT_RE})\)\s+(\d+)\s+(\d+)", replace_pauli_pair, text
+    )
+
+    def replace_pauli(m: re.Match) -> str:
+        alpha = float(m.group(1))
+        return f"SPP[R_PAULI(theta={alpha}*pi)] {m.group(2)}"
+
+    text = re.sub(
+        rf"\bR_PAULI\(({FLOAT_RE})\)\s+((?:[XYZ]\d+)(?:\*[XYZ]\d+)*)",
+        replace_pauli,
         text,
     )
 
@@ -191,6 +230,8 @@ def stim_to_shorthand(text: str) -> str:
     Rewrites:
     - I[U3(theta=θ*pi, phi=φ*pi, lambda=λ*pi)] → U3(θ, φ, λ)
     - I[R_X(theta=α*pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α)
+    - SPP[R_PAULI(theta=α*pi)] P0*P1 → R_PP(α) 0 1 (P ∈ {X, Y, Z})
+    - SPP[R_PAULI(theta=α*pi)] X0*Y1 → R_PAULI(α) X0*Y1
     - SPP[T] → TPP
     - SPP_DAG[T] → TPP_DAG
     - S[T] → T
@@ -205,6 +246,28 @@ def stim_to_shorthand(text: str) -> str:
     text = re.sub(
         rf"\bI\[U3\(theta=({FLOAT_RE})\*pi, phi=({FLOAT_RE})\*pi, lambda=({FLOAT_RE})\*pi\)\]",
         replace_u3,
+        text,
+    )
+
+    # SPP[R_PAULI(...)] with a same-axis two-qubit product → R_XX/R_YY/R_ZZ shorthand.
+    # Must precede the general R_PAULI rewrite below.
+    def replace_pauli_pair(m: re.Match) -> str:
+        alpha, pauli, q0, q1 = m.group(1), m.group(2), m.group(3), m.group(4)
+        return f"R_{pauli}{pauli}({alpha}) {q0} {q1}"
+
+    text = re.sub(
+        rf"\bSPP\[R_PAULI\(theta=({FLOAT_RE})\*pi\)\] ([XYZ])(\d+)\*\2(\d+)(?!\*)\b",
+        replace_pauli_pair,
+        text,
+    )
+
+    def replace_pauli(m: re.Match) -> str:
+        alpha, product = m.group(1), m.group(2)
+        return f"R_PAULI({alpha}) {product}"
+
+    text = re.sub(
+        rf"\bSPP\[R_PAULI\(theta=({FLOAT_RE})\*pi\)\] ((?:[XYZ]\d+)(?:\*[XYZ]\d+)*)",
+        replace_pauli,
         text,
     )
 

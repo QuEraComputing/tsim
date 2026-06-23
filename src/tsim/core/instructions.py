@@ -1001,6 +1001,35 @@ def tpp(
     _pauli_product_phase(b, paulis, t, t_dag, dagger)
 
 
+def r_pauli(
+    b: GraphRepresentation,
+    paulis: list[tuple[Literal["X", "Y", "Z"], int]],
+    theta: Fraction,
+    dagger: bool = False,
+) -> None:
+    """Apply exp(-i theta pi/2 P) for a Pauli product P, with theta in half-turns.
+
+    Generalizes ``SPP`` (theta=1/2) and ``TPP`` (theta=1/4) to an arbitrary angle.
+    For a single qubit, ``r_pauli`` reduces to the named single-qubit rotation in
+    that Pauli's basis (e.g. ``R_PAULI Z0`` is ``R_Z``). If `dagger` is True, apply
+    exp(+i theta pi/2 P) instead.
+
+    Args:
+        b: The graph representation to modify.
+        paulis: List of (pauli_type, qubit) pairs defining the Pauli product P.
+        theta: Rotation angle in half-turns (units of pi).
+        dagger: If True, negate the rotation angle.
+
+    """
+    _pauli_product_phase(
+        b,
+        paulis,
+        lambda b, qubit: r_z(b, qubit, theta),
+        lambda b, qubit: r_z(b, qubit, -theta),
+        dagger,
+    )
+
+
 def mpad(b: GraphRepresentation, value: int, p: float = 0) -> None:
     """Pad measurement record with a fixed bit value.
 
