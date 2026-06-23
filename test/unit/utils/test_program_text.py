@@ -15,6 +15,12 @@ def test_shorthand_to_stim_t_and_t_dag():
     assert shorthand_to_stim(text) == expected
 
 
+def test_shorthand_to_stim_tagged_t_and_t_dag():
+    text = "T[phase] 0\nT_DAG[phase] 1"
+    expected = "S[T:phase] 0\nS_DAG[T:phase] 1"
+    assert shorthand_to_stim(text) == expected
+
+
 def test_shorthand_to_stim_tpp_and_tpp_dag():
     text = "TPP X0*Y1\nTPP_DAG Z0"
     expected = "SPP[T] X0*Y1\nSPP_DAG[T] Z0"
@@ -49,6 +55,12 @@ def test_shorthand_to_stim_u3():
 def test_stim_to_shorthand_t_and_t_dag():
     text = "S[T] 0 1\nS_DAG[T] 2"
     expected = "T 0 1\nT_DAG 2"
+    assert stim_to_shorthand(text) == expected
+
+
+def test_stim_to_shorthand_tagged_t_and_t_dag():
+    text = "S[T:phase] 0\nS_DAG[T:phase] 1"
+    expected = "T[phase] 0\nT_DAG[phase] 1"
     assert stim_to_shorthand(text) == expected
 
 

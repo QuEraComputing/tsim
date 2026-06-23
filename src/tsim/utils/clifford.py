@@ -7,6 +7,7 @@ from fractions import Fraction
 import stim
 
 from tsim.core.parse import parse_parametric_tag
+from tsim.core.tags import is_t_tag
 
 # Clifford decompositions for U3(θ, φ, λ) = R_Z(φ) · R_Y(θ) · R_Z(λ).
 # Keys: (θ_idx, φ_idx, λ_idx) where each index ∈ {0,1,2,3} is the angle in half-pi units.
@@ -116,7 +117,7 @@ def is_clifford(source: stim.Circuit) -> bool:
                 return False
             continue
 
-        if instr.name in ["S", "S_DAG", "SPP", "SPP_DAG"] and instr.tag == "T":
+        if instr.name in ["S", "S_DAG", "SPP", "SPP_DAG"] and is_t_tag(instr.tag):
             return False
 
         if instr.name in ["SPP", "SPP_DAG"] and instr.tag:

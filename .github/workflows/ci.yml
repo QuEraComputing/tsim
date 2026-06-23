@@ -35,7 +35,7 @@ jobs:
         # For example, using `pytest`
         run: uv run just coverage
       - name: Upload Coverage to Codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: coverage.xml # optional
           fail_ci_if_error: true # optional (default = false)
@@ -51,7 +51,10 @@ jobs:
   post:
     runs-on: ubuntu-latest
     needs: build
-    if: github.event.pull_request
+    # Only same-repo PRs get a writable GITHUB_TOKEN; fork PRs cannot post comments.
+    if: github.event.pull_request && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      pull-requests: write
     steps:
         - uses: actions/checkout@v6
         - name: download coverage
