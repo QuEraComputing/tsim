@@ -16,8 +16,8 @@ jobs:
     steps:
       - uses: actions/first-interaction@v3
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          pr-message: |
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          pr_message: |
             👋 Thanks for opening your first pull request against **Tsim**!
 
             A quick note on contribution terms: by submitting this PR you
@@ -37,7 +37,7 @@ jobs:
               for commit messages.
 
             We'll get to your PR as soon as we can. Thanks for contributing!
-          issue-message: |
+          issue_message: |
             👋 Thanks for opening your first issue against **Tsim**!
 
             A maintainer will take a look soon. To help us resolve it
