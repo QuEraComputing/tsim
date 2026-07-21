@@ -35,10 +35,12 @@ jobs:
         # For example, using `pytest`
         run: uv run just coverage
       - name: Upload Coverage to Codecov
+        if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v7
         with:
           files: coverage.xml # optional
           fail_ci_if_error: true # optional (default = false)
+          use_pypi: true
           verbose: true # optional (default = false)
           token: ${{ secrets.CODECOV_TOKEN }} # required
       - name: Archive code coverage results
