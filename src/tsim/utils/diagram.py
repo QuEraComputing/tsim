@@ -14,6 +14,7 @@ from pyzx_param.graph.graph_s import GraphS
 
 from tsim.core.graph import scale_horizontally
 from tsim.core.parse import parse_stim_circuit
+from tsim.core.tags import is_t_tag
 from tsim.utils.program_text import FLOAT_RE
 
 
@@ -390,7 +391,7 @@ def _replace_tagged_gates(
         # Double each Pauli target so the SVG contains duplicate rect+text
         # pairs at the same position, which _deduplicate_doubled_spp() later
         # detects and renames SPP → TPP.
-        if instr.tag == "T" and instr.name in ["SPP", "SPP_DAG"]:
+        if is_t_tag(instr.tag) and instr.name in ["SPP", "SPP_DAG"]:
             targets = instr.targets_copy()
             doubled: list[stim.GateTarget] = []
             for target in targets:
@@ -405,7 +406,7 @@ def _replace_tagged_gates(
             continue
 
         # Handle T gates (S[T] and S_DAG[T])
-        if instr.tag == "T" and instr.name in ["S", "S_DAG"]:
+        if is_t_tag(instr.tag) and instr.name in ["S", "S_DAG"]:
             for target in instr.targets_copy():
                 identifier = np.round(np.random.rand(), 6)
                 DAG = '<tspan baseline-shift="super" font-size="14">†</tspan>'

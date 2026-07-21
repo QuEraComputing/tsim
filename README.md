@@ -1,4 +1,4 @@
-[![Docs](https://img.shields.io/badge/docs-latest-blue?style=flat&logo=mintlify)](https://queracomputing.github.io/tsim/latest)
+[![Docs](https://img.shields.io/badge/docs-latest-blue?style=flat&logo=mintlify)](https://tsim.mintlify.app/)
 [![Coverage](https://img.shields.io/codecov/c/github/QuEraComputing/tsim?style=flat&logo=codecov)](https://codecov.io/gh/QuEraComputing/tsim)
 [![arXiv](https://img.shields.io/badge/arXiv-2403.06777-b31b1b.svg?style=flat&logo=arxiv)](https://arxiv.org/abs/2604.01059)
 [![Like This? Leave a star](https://img.shields.io/github/stars/QuEraComputing/tsim?style=flat&label=Like%20Tsim%3F%20Leave%20a%20star&color=yellow&logo=github)](https://github.com/QuEraComputing/tsim)
@@ -29,11 +29,11 @@ pip install "bloqade-tsim[cuda13]"
 
 
 ## Quick Start
-An introductory tutorial is available [here](https://queracomputing.github.io/tsim/latest/demos/encoding_demo/). Please also refer to the [documentation](https://queracomputing.github.io/tsim/latest/).
+An introductory tutorial is available [here](https://tsim.mintlify.app/tutorials/encoding_demo). Please also refer to the [documentation](https://tsim.mintlify.app/).
 
 For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and currently supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference).
 
-Additionally, Tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, `U3`, `TPP`, and `TPP_DAG`.
+Additionally, Tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, `U3`, `TPP`, `TPP_DAG`, `R_XX`, `R_YY`, `R_ZZ`, `R_PAULI`, `CCZ`, and `CCX`.
 ```python
 import tsim
 
@@ -142,6 +142,26 @@ U3(0.5, 0.25, 0.125) 0  # Apply U3 with θ=π/2, φ=π/4, λ=π/8
 ```
 TPP X0*Y1      # Apply exp(-i π/8 · X0⊗Y1) (up to global phase)
 TPP_DAG Z0     # Apply exp(+i π/8 · Z) = T_DAG (up to global phase)
+```
+
+### Pauli Rotation Gates: `R_XX`, `R_YY`, `R_ZZ`, `R_PAULI`
+
+Parametric Pauli-product rotations apply exp(−i α·π/2 · P) for a Pauli product P, where α is specified as the parameter (in half-turns, matching `R_X`/`R_Y`/`R_Z`). `R_XX`, `R_YY` and `R_ZZ` are the two-qubit specializations; `R_PAULI` takes an arbitrary Pauli product (up to 64 qubits) in Stim's `X0*Y1*Z2` syntax. The two target qubits of `R_XX`/`R_YY`/`R_ZZ` must be distinct.
+
+```
+R_XX(0.5) 0 1          # Apply exp(-i π/4 · X0⊗X1)
+R_YY(0.25) 0 1         # Apply exp(-i π/8 · Y0⊗Y1)
+R_ZZ(0.5) 0 2          # Apply exp(-i π/4 · Z0⊗Z2)
+R_PAULI(0.3) X0*Y1*Z2  # Apply exp(-i 0.3·π/2 · X0⊗Y1⊗Z2)
+```
+
+### `CCZ` and `CCX` Gates
+
+`CCZ` applies a controlled-controlled Z gate, and `CCX` applies the controlled-controlled X gate (Toffoli). Both gates are expanded internally into a Clifford+T decomposition:
+
+```
+CCZ 0 1 2  # Apply CCZ with controls 0 and 1, target 2
+CCX 0 1 2  # Apply Toffoli/CCX with controls 0 and 1, target 2
 ```
 
 ## Publications Using Tsim

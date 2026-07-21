@@ -21,14 +21,83 @@ if TYPE_CHECKING:
 
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
+from tsim.core.tags import encode_t_tag
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
 from tsim.utils.diagram import render_pyzx_d3, render_svg
 from tsim.utils.program_text import (
+    controlled_gate_decomposition_lines,
     enriched_stim_error,
     shorthand_to_stim,
     stim_to_shorthand,
 )
+
+_PAULI_TARGET = {"X": stim.target_x, "Y": stim.target_y, "Z": stim.target_z}
+
+
+def _single_angle(name: str, arg: float | Iterable[float] | None) -> float:
+    """Extract the single rotation angle required by a parametric gate."""
+    if arg is None:
+        raise ValueError(f"For {name} gates, an angle must be provided.")
+    args = list(arg) if isinstance(arg, Iterable) else [arg]
+    if len(args) != 1:
+        raise ValueError(f"For {name} gates, a single angle must be provided.")
+    return args[0]
+
+
+def _two_distinct_qubits(
+    name: str,
+    targets: int | stim.GateTarget | stim.PauliString | Iterable,
+) -> tuple[int, int]:
+    """Validate and unpack the two distinct qubit targets of an R_XX/R_YY/R_ZZ gate."""
+    qubits = list(targets) if isinstance(targets, Iterable) else [targets]
+    if len(qubits) != 2:
+        raise ValueError(f"For {name} gates, exactly two qubit targets are required.")
+    q0, q1 = qubits
+    if not isinstance(q0, int) or not isinstance(q1, int):
+        raise ValueError(f"For {name} gates, both targets must be qubit indices.")
+    if q0 == q1:
+        raise ValueError(
+            f"For {name} gates, the two target qubits must be distinct, got {q0} {q1}."
+        )
+    return q0, q1
+
+
+def _pauli_product_targets(
+    paulis: list[tuple[str, int]],
+) -> list[stim.GateTarget]:
+    """Build combiner-joined Pauli targets (e.g. ``X0*X1``) for an SPP instruction."""
+    out: list[stim.GateTarget] = []
+    for pauli, qubit in paulis:
+        if out:
+            out.append(stim.target_combiner())
+        out.append(_PAULI_TARGET[pauli](qubit))
+    return out
+
+
+def _bare_qubit_targets(
+    gate_name: str,
+    targets: (
+        int
+        | stim.GateTarget
+        | stim.PauliString
+        | Iterable[int | stim.GateTarget | stim.PauliString]
+    ),
+) -> list[int]:
+    if isinstance(targets, int | stim.GateTarget | stim.PauliString):
+        target_items: list[int | stim.GateTarget | stim.PauliString] = [targets]
+    else:
+        target_items = list(targets)
+
+    qubits: list[int] = []
+    for target in target_items:
+        if isinstance(target, int):
+            qubits.append(target)
+        elif isinstance(target, stim.GateTarget) and target.is_qubit_target:
+            qubits.append(target.value)
+        else:
+            raise ValueError(f"{gate_name} only supports bare qubit targets.")
+    return qubits
 
 
 class Circuit:
@@ -150,18 +219,37 @@ class Circuit:
 
         """
         if isinstance(name, str):
+            if name in ("CCZ", "CCX"):
+                if arg is not None:
+                    raise ValueError(f"For {name} gates, no arguments are accepted.")
+                qubits = _bare_qubit_targets(name, targets)
+                if len(qubits) % 3 != 0:
+                    raise ValueError(
+                        f"{name} expects qubit targets in groups of three."
+                    )
+                self.append_from_stim_program_text(
+                    "\n".join(
+                        line
+                        for i in range(0, len(qubits), 3)
+                        for line in controlled_gate_decomposition_lines(
+                            name, qubits[i], qubits[i + 1], qubits[i + 2], tag=tag
+                        )
+                    )
+                )
+                return
+
             if name == "TPP":
                 name = "SPP"
-                tag = "T"
+                tag = encode_t_tag(tag)
             elif name == "TPP_DAG":
                 name = "SPP_DAG"
-                tag = "T"
+                tag = encode_t_tag(tag)
             elif name == "T":
                 name = "S"
-                tag = "T"
+                tag = encode_t_tag(tag)
             elif name == "T_DAG":
                 name = "S_DAG"
-                tag = "T"
+                tag = encode_t_tag(tag)
             elif name in ("R_X", "R_Y", "R_Z"):
                 if arg is None:
                     raise ValueError(f"For {name} gates, an angle must be provided.")
@@ -182,6 +270,19 @@ class Circuit:
                 theta, phi, lam = args
                 tag = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
                 name = "I"
+                arg = None
+            elif name in ("R_XX", "R_YY", "R_ZZ"):
+                alpha = _single_angle(name, arg)
+                pauli = name[2]
+                q0, q1 = _two_distinct_qubits(name, targets)
+                targets = _pauli_product_targets([(pauli, q0), (pauli, q1)])
+                tag = f"R_PAULI(theta={alpha}*pi)"
+                name = "SPP"
+                arg = None
+            elif name == "R_PAULI":
+                alpha = _single_angle(name, arg)
+                tag = f"R_PAULI(theta={alpha}*pi)"
+                name = "SPP"
                 arg = None
 
             self._stim_circ.append(name=name, targets=targets, arg=arg, tag=tag)  # type: ignore

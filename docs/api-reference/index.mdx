@@ -395,7 +395,7 @@ Samples detector and observable outcomes from a quantum circuit.
 ### `sample`
 
 ```python
-sample(shots: int, batch_size: int | None = None, prepend_observables: bool = False, append_observables: bool = False, separate_observables: bool = False, bit_packed: bool = False, use_detector_reference_sample: bool = False, use_observable_reference_sample: bool = False) -> np.ndarray | tuple[np.ndarray, np.ndarray]
+sample(shots: int, batch_size: int | None = None, prepend_observables: bool = False, append_observables: bool = False, separate_observables: bool = False, bit_packed: bool = False, use_detector_reference_sample: bool = False, use_observable_reference_sample: bool = False, postselection_mask: np.ndarray | None = None) -> np.ndarray | tuple[np.ndarray, np.ndarray]
 ```
 
 Return detector samples from the circuit.
@@ -414,6 +414,7 @@ as honorary detectors.
 - `bit_packed` (`bool`) — Defaults to false. When set, results are bit-packed.
 - `use_detector_reference_sample` (`bool`) — Defaults to False. When True, a noiseless reference sample is computed and XORed with detector outcomes so that results represent deviations from the noiseless baseline. This should only be used when detectors are deterministic. Otherwise, it can unpredictably change the results.
 - `use_observable_reference_sample` (`bool`) — Defaults to False. When True, a noiseless reference sample is computed and XORed with observable outcomes so that results represent deviations from the noiseless baseline. This should only be used when observables are deterministic. Otherwise, it can unpredictably change the results.
+- `postselection_mask` (`np.ndarray | None`) — Optional boolean array of length ``num_detectors``. When set, shots where any masked direct detector fires skip the JAX sampling loop. All ``shots`` rows are still returned: survivors contain the full sample, while discarded rows retain direct detector columns and fill component columns with ``False``. Re-apply the mask to the returned detector columns to recover surviving shots.
 
 **Returns:**
 

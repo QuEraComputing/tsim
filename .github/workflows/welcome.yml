@@ -1,0 +1,47 @@
+name: Welcome new contributors
+
+on:
+  pull_request_target:
+    types: [opened]
+  issues:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/first-interaction@v3
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          pr_message: |
+            👋 Thanks for opening your first pull request against **Tsim**!
+
+            A quick note on contribution terms: by submitting this PR you
+            agree that your contribution is licensed under the
+            [Apache License 2.0](https://github.com/${{ github.repository }}/blob/main/LICENSE)
+            and that you accept the
+            [Tsim Contributor License Agreement](https://github.com/${{ github.repository }}/blob/main/CLA.md).
+            Please skim those before a maintainer reviews — opening this PR
+            counts as your acceptance.
+
+            A few things that will speed up review:
+            - Read [`CONTRIBUTING.md`](https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md)
+              for the workflow, commands, and style notes.
+            - Run `pre-commit run --all-files` and `uv run pytest` locally;
+              CI runs the same checks.
+            - Use [Conventional Commits](https://www.conventionalcommits.org/)
+              for commit messages.
+
+            We'll get to your PR as soon as we can. Thanks for contributing!
+          issue_message: |
+            👋 Thanks for opening your first issue against **Tsim**!
+
+            A maintainer will take a look soon. To help us resolve it
+            faster, please include:
+            - A minimal reproducer (Python code that triggers the behavior).
+            - The Tsim version (commit SHA or release tag).
+            - What you expected vs. what happened.

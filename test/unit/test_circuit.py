@@ -143,6 +143,89 @@ def test_u3_gate_shorthand():
     assert c1._stim_circ == c2._stim_circ
 
 
+def test_ccz_ccx_shorthand_and_append():
+    """Test that CCZ/CCX shorthand matches append behavior."""
+    c1 = Circuit("CCZ 0 1 2\nCCX 0 1 2")
+
+    c2 = Circuit()
+    c2.append("CCZ", [0, 1, 2])
+    c2.append("CCX", [0, 1, 2])
+
+    assert c1._stim_circ == c2._stim_circ
+
+
+def test_tagged_ccx_shorthand_expands_with_tags():
+    c = Circuit("""
+        X 0
+        CCX[tag] 0 1 2
+        M 2
+        """)
+    assert str(c) == "\n".join(
+        [
+            "X 0",
+            "H[tag] 2",
+            "CX[tag] 1 2",
+            "T_DAG[tag] 2",
+            "CX[tag] 0 2",
+            "T[tag] 2",
+            "CX[tag] 1 2",
+            "T_DAG[tag] 2",
+            "CX[tag] 0 2",
+            "T[tag] 1 2",
+            "CX[tag] 0 1",
+            "T[tag] 0",
+            "T_DAG[tag] 1",
+            "CX[tag] 0 1",
+            "H[tag] 2",
+            "M 2",
+        ]
+    )
+
+
+def test_tagged_controlled_gate_append_matches_shorthand():
+    c1 = Circuit("CCZ[tag] 0 1 2\nCCX[tag] 0 1 2")
+
+    c2 = Circuit()
+    c2.append("CCZ", [0, 1, 2], tag="tag")
+    c2.append("CCX", [0, 1, 2], tag="tag")
+
+    assert c1._stim_circ == c2._stim_circ
+
+
+def test_ccz_gate_matrix():
+    c = Circuit("CCZ 0 1 2")
+    ccz_matrix = np.eye(8, dtype=complex)
+    ccz_matrix[-1, -1] = -1
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), ccz_matrix)
+
+
+def test_ccx_gate_matrix():
+    c = Circuit("CCX 0 1 2")
+    ccx_matrix = np.eye(8, dtype=complex)
+    ccx_matrix[6, 6] = 0
+    ccx_matrix[7, 7] = 0
+    ccx_matrix[6, 7] = 1
+    ccx_matrix[7, 6] = 1
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), ccx_matrix)
+
+
+def test_tagged_ccz_gate_matrix():
+    c = Circuit("CCZ[tag] 0 1 2")
+    ccz_matrix = np.eye(8, dtype=complex)
+    ccz_matrix[-1, -1] = -1
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), ccz_matrix)
+
+
+def test_tagged_ccx_gate_matrix():
+    c = Circuit("CCX[tag] 0 1 2")
+    ccx_matrix = np.eye(8, dtype=complex)
+    ccx_matrix[6, 6] = 0
+    ccx_matrix[7, 7] = 0
+    ccx_matrix[6, 7] = 1
+    ccx_matrix[7, 6] = 1
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), ccx_matrix)
+
+
 @pytest.mark.parametrize(
     "stim_gate",
     [
@@ -181,6 +264,23 @@ def test_two_qubit_gate(stim_gate: str):
     stim_c = stim.Circuit(f"{stim_gate} 0 1")
     stim_c_matrix = stim_c.to_tableau().to_unitary_matrix(endian="big")
     assert unitaries_equal_up_to_global_phase(c.to_matrix(), stim_c_matrix)
+
+
+@pytest.mark.parametrize("gate", ["R_XX", "R_YY", "R_ZZ"])
+@pytest.mark.parametrize("alpha", [0.0, 1.0, 2.0, 3.0])
+def test_pauli_rotation_clifford_matches_stim(gate: str, alpha: float):
+    """At Clifford angles, R_XX/R_YY/R_ZZ match stim's reference Clifford gate.
+
+    R_PP(alpha) = exp(-i alpha pi/2 PP) is Clifford for integer alpha: identity for
+    even alpha, and the Pauli pair PP for odd alpha (both up to global phase).
+    """
+    pauli = gate[2]
+    stim_program = "I 0\nI 1" if alpha % 2 == 0 else f"{pauli} 0\n{pauli} 1"
+    c = Circuit(f"{gate}({alpha}) 0 1")
+    stim_matrix = (
+        stim.Circuit(stim_program).to_tableau().to_unitary_matrix(endian="big")
+    )
+    assert unitaries_equal_up_to_global_phase(c.to_matrix(), stim_matrix)
 
 
 def test_num_measurements():
@@ -752,6 +852,33 @@ def test_inverse_tpp_dag():
     c_inv = c.inverse()
     combined = (c + c_inv).to_matrix()
     assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+
+
+def test_inverse_r_xx():
+    c = Circuit("R_XX(0.345) 0 1")
+    c_inv = c.inverse()
+    combined = (c + c_inv).to_matrix()
+    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+
+
+def test_inverse_r_pauli():
+    c = Circuit("R_PAULI(0.345) X0*Y1*Z2")
+    c_inv = c.inverse()
+    combined = (c + c_inv).to_matrix()
+    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+
+
+def test_r_pauli_duplicate_target_in_product_rejected():
+    """Repeated qubits within one R_PAULI product are rejected before simplification."""
+    with pytest.raises(ValueError, match="distinct"):
+        Circuit("R_PAULI(0.25) X0*X0").get_graph()
+
+
+def test_r_pauli_long_product_roundtrip():
+    """A same-axis product with >2 factors round-trips as R_PAULI, not a mangled R_XX."""
+    c = Circuit("R_PAULI(0.3) X0*X1*X2")
+    assert str(c) == "R_PAULI(0.3) X0*X1*X2"
+    assert Circuit(str(c)) == c
 
 
 def test_inverse_mixed_circuit():

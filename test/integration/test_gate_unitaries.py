@@ -336,3 +336,33 @@ def test_heralded_erase_bell_state():
     mat = get_heralded_matrix(sampler, herald_value=1, batch_size=10000)
     expected = np.full((2, 2), 0.5)
     assert np.allclose(mat, expected, atol=0.05)
+
+
+@pytest.mark.parametrize("gate", ["R_XX", "R_YY", "R_ZZ"])
+def test_pauli_rotation_arbitrary_angle(gate: str):
+    c = Circuit(f"""
+        R 0 1 2 3
+        H 0 1
+        CNOT 0 2 1 3
+        {gate}(0.345) 0 1
+        M 0 1 2 3
+        """)
+    sampler = CompiledStateProbs(c)
+    mat = get_matrix(sampler)
+    expected = np.abs(ROT_GATE_MATRICES[gate](0.345)) ** 2
+    assert np.allclose(mat, expected)
+
+
+def test_r_pauli_arbitrary_angle():
+    c = Circuit("""
+        R 0 1 2 3
+        H 0 1
+        CNOT 0 2 1 3
+        R_PAULI(0.345) X0*Y1
+        M 0 1 2 3
+        """)
+    sampler = CompiledStateProbs(c)
+    mat = get_matrix(sampler)
+    product = np.kron(SINGLE_QUBIT_GATE_MATRICES["X"], SINGLE_QUBIT_GATE_MATRICES["Y"])
+    expected = np.abs(ROT_GATE_MATRICES["R_PAULI"](0.345, product)) ** 2
+    assert np.allclose(mat, expected)

@@ -12,7 +12,7 @@ A detailed description of tsim is given in [arXiv:2604.01059](https://arxiv.org/
 
 An introductory tutorial is available [here](/tutorials/encoding_demo). For many existing scripts, replacing `stim` with `tsim` should just work. tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference).
 
-Additionally, tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, and `U3`.
+Additionally, tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, `U3`, `TPP`, `TPP_DAG`, `R_XX`, `R_YY`, `R_ZZ`, `R_PAULI`, `CCZ`, and `CCX`.
 
 ```python
 import tsim
@@ -86,6 +86,52 @@ samples = sampler.sample(
 When set to `True`, a noiseless reference sample is computed and XORed with the
 results, so that output values represent deviations from the noiseless baseline.
 Note that this feature should be used carefully. If detectors or observables are not deterministic, this may lead to incorrect statistics.
+
+## Postselected simulations
+
+For postselected QEC experiments, pass a boolean mask to
+`CompiledDetectorSampler.sample`. The mask has length `num_detectors`; a shot is
+*discarded* when any masked detector fires.
+
+```python
+import numpy as np
+
+c = tsim.Circuit(
+    """
+    X_ERROR(0.01) 0 1
+    M 0 1
+    DETECTOR rec[-2]
+    DETECTOR rec[-1] rec[-2]
+    OBSERVABLE_INCLUDE(0) rec[-1]
+    """
+)
+sampler = c.compile_detector_sampler()
+mask = np.array([True, False])  # postselect on detector 0
+
+samples = sampler.sample(
+    shots=10_000,
+    postselection_mask=mask,
+    append_observables=True,
+)
+keep = ~np.any(samples[:, : c.num_detectors] & mask, axis=1)
+survivors = samples[keep]
+```
+
+`sample` always returns exactly `shots` rows. Shots discarded by a **direct**
+postselected detector skip the expensive JAX autoregressive loop; their direct
+detector columns are still correct, and all other columns are filled with
+`False`. Re-apply the mask to the detector columns (as above) to recover the
+surviving shots. Detectors that live inside a JAX component cannot be evaluated
+without running JAX, so those shots are always computed in full.
+
+This is independent of `prepend_observables`, `append_observables`,
+`separate_observables`, and `bit_packed`. When combined with
+`use_detector_reference_sample`, the reference XOR is applied before the
+postselection discard check. On surviving rows it is applied to every detector
+column; on direct-discarded partial rows it is applied only to direct detector
+columns (component columns stay `False`). When combined with
+`use_observable_reference_sample`, the reference XOR is applied to every row
+that ran JAX; direct-discarded partial rows are left unchanged.
 
 ## Benchmarks
 

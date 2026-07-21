@@ -599,6 +599,27 @@ Forces each target qubit into the |0\> state by silently measuring it in the Z b
 and applying an X gate if it ended up in the |1\> state.
 
 
+## `r_pauli`
+
+```python
+r_pauli(b: GraphRepresentation, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], theta: Fraction, dagger: bool = False) -> None
+```
+
+Apply exp(-i theta pi/2 P) for a Pauli product P, with theta in half-turns.
+
+Generalizes ``SPP`` (theta=1/2) and ``TPP`` (theta=1/4) to an arbitrary angle.
+For a single qubit, ``r_pauli`` reduces to the named single-qubit rotation in
+that Pauli's basis (e.g. ``R_PAULI Z0`` is ``R_Z``). If `dagger` is True, apply
+exp(+i theta pi/2 P) instead.
+
+**Parameters:**
+
+- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `paulis` (`list[tuple[Literal['X', 'Y', 'Z'], int]]`) — List of (pauli_type, qubit) pairs defining the Pauli product P.
+- `theta` (`Fraction`) — Rotation angle in half-turns (units of pi).
+- `dagger` (`bool`) — If True, negate the rotation angle.
+
+
 ## `r_x`
 
 ```python

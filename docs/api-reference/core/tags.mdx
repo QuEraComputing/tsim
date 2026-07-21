@@ -1,0 +1,30 @@
+---
+title: "tags"
+description: "Helpers for tags that encode tsim-specific gate metadata."
+---
+
+## `decode_t_user_tag`
+
+```python
+decode_t_user_tag(tag: str) -> str
+```
+
+Return the user tag attached to an encoded T-family gate tag.
+
+
+## `encode_t_tag`
+
+```python
+encode_t_tag(user_tag: str = '') -> str
+```
+
+Encode a T-family gate tag while preserving an optional user tag.
+
+
+## `is_t_tag`
+
+```python
+is_t_tag(tag: str) -> bool
+```
+
+Return whether a Stim tag encodes a tsim T-family gate.

@@ -34,6 +34,7 @@ classifiers = [
 
 dependencies = [
     "equinox>=0.11.0",
+    "ipywidgets>=8.0.0",
     "jax>=0.4.38",
     "lxml>=5.0.0",
     "numpy>=1.25.0",
@@ -78,7 +79,6 @@ dev = [
     "sinter~=1.16.dev",
     "tesseract-decoder>=0.1.1.dev20251113222502",
     "tqdm>=4.67.1",
-    "ipywidgets>=8.0.0",
     "vulture>=2.16",
     "radon>=6.0.1",
 ]
@@ -157,6 +157,9 @@ extend_exclude = [
     "^docs/",
     "^test/",
 ]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["ipywidgets"]
 
 [tool.vulture]
 paths = ["src", "test"]

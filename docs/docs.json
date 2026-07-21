@@ -60,6 +60,7 @@
               "api-reference/core/graph",
               "api-reference/core/instructions",
               "api-reference/core/parse",
+              "api-reference/core/tags",
               "api-reference/core/types"
             ]
           },
@@ -74,6 +75,7 @@
             "group": "utils",
             "pages": [
               "api-reference/utils/clifford",
+              "api-reference/utils/cuda_helpers",
               "api-reference/utils/diagram",
               "api-reference/utils/encoder",
               "api-reference/utils/linalg",
