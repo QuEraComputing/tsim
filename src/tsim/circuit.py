@@ -555,7 +555,11 @@ class Circuit:
             for instr in circuit:
                 if isinstance(instr, stim.CircuitRepeatBlock):
                     stripped = strip(instr.body_copy())
-                    result.append(stim.CircuitRepeatBlock(instr.repeat_count, stripped))
+                    result.append(
+                        stim.CircuitRepeatBlock(
+                            instr.repeat_count, stripped, tag=instr.tag
+                        )
+                    )
                     continue
                 if instr.name in ["OBSERVABLE_INCLUDE", "DETECTOR"]:
                     continue
@@ -881,7 +885,11 @@ class Circuit:
             for instr in circuit:
                 if isinstance(instr, stim.CircuitRepeatBlock):
                     fixed = fix_tags(instr.body_copy())
-                    result.append(stim.CircuitRepeatBlock(instr.repeat_count, fixed))
+                    result.append(
+                        stim.CircuitRepeatBlock(
+                            instr.repeat_count, fixed, tag=instr.tag
+                        )
+                    )
                     continue
 
                 name = instr.name

@@ -754,6 +754,20 @@ def test_stim_circuit_repeat_block_preserves_non_clifford():
     assert block.repeat_count == 2
 
 
+def test_stim_circuit_preserves_repeat_block_tags():
+    """Tags on REPEAT blocks survive the round-trip through stim_circuit."""
+    c = Circuit(
+        "REPEAT[outer] 3 {\n    H 0\n    REPEAT[inner] 2 {\n        CX 0 1\n    }\n}"
+    )
+    stim_c = c.stim_circuit
+    outer = stim_c[0]
+    assert isinstance(outer, stim.CircuitRepeatBlock)
+    assert outer.tag == "outer"
+    inner = outer.body_copy()[-1]
+    assert isinstance(inner, stim.CircuitRepeatBlock)
+    assert inner.tag == "inner"
+
+
 def test_get_graph():
     """Test get_graph returns a ZX graph."""
     c = Circuit("H 0\nCNOT 0 1")

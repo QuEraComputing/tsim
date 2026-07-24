@@ -383,7 +383,9 @@ def _replace_tagged_gates(
         if isinstance(instr, stim.CircuitRepeatBlock):
             modified_body = _replace_tagged_gates(instr.body_copy(), replace_dict)
             modified_circ.append(
-                stim.CircuitRepeatBlock(instr.repeat_count, modified_body)
+                stim.CircuitRepeatBlock(
+                    instr.repeat_count, modified_body, tag=instr.tag
+                )
             )
             continue
 

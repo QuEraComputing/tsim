@@ -157,7 +157,9 @@ def expand_clifford_rotations(source: stim.Circuit) -> stim.Circuit:
         if isinstance(instr, stim.CircuitRepeatBlock):
             out.append(
                 stim.CircuitRepeatBlock(
-                    instr.repeat_count, expand_clifford_rotations(instr.body_copy())
+                    instr.repeat_count,
+                    expand_clifford_rotations(instr.body_copy()),
+                    tag=instr.tag,
                 )
             )
             continue
