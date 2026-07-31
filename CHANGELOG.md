@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `"timeline-text"` diagram type. Renders tsim's custom gates under their
+  logical names instead of the Clifford placeholders used to store them, so
+  `T` prints as `T` rather than `S`. Covers `T`, `T_DAG`, `TPP`, `TPP_DAG`,
+  `R_X`, `R_Y`, `R_Z`, and `U3`. `R_XX`, `R_YY`, and `R_ZZ` share `R_PAULI`'s
+  metadata tag and render as `R_PAULI(alpha)`. Rendering is provided by the
+  `stim-timeline-text` package. (#171)
+
 ## [0.1.5] - 2026-07-21
 
 ### Added

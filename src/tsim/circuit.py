@@ -656,6 +656,7 @@ class Circuit:
             "pyzx-meas",
             "timeline-svg",
             "timeslice-svg",
+            "timeline-text",
         ] = "timeline-svg",
         tick: int | range | None = None,
         filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),),
@@ -681,6 +682,10 @@ class Circuit:
                 "timeslice-svg": An SVG image of the operations applied
                     between two TICK instructions in the circuit, with the
                     operations laid out in 2d.
+                "timeline-text": An ASCII text diagram of the operations
+                    applied by the circuit over time, with tsim's custom
+                    gates rendered under their logical names rather than
+                    the Clifford placeholders used to store them.
             tick: Required for time slice diagrams. Specifies
                 which TICK instruction, or range of TICK instructions, to
                 slice at. Note that the first TICK instruction in the
@@ -759,6 +764,10 @@ class Circuit:
                 scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
             zx.draw(g, **kwargs)
             return g
+        elif type == "timeline-text":
+            from stim_timeline_text import render_timeline_text
+
+            return render_timeline_text(str(self._stim_circ))
         else:
             return self._stim_circ.diagram(type=type, **kwargs)  # pragma: no cover
 
