@@ -31,7 +31,9 @@ def test_detector_sampler_bell_state_with_measurement_error():
         M 0 1
         DETECTOR rec[-1] rec[-2]
         """)
-    sampler = c.compile_detector_sampler(seed=1)
+    # Pins the numpy channel sampler: the expected count is tied to its
+    # random stream (the cuStabilizer backend draws a different one).
+    sampler = c.compile_detector_sampler(seed=1, channel_backend="numpy")
 
     d = sampler.sample(10)
     assert np.count_nonzero(d) == 4

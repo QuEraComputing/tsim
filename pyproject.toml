@@ -54,6 +54,11 @@ Issues = "https://github.com/QuEraComputing/tsim/issues"
 [project.optional-dependencies]
 cuda12 = ["jax[cuda12]>=0.4.38"]
 cuda13 = ["jax[cuda13]>=0.6.0"]
+# NVIDIA extras: pinned host memory for device-to-host copies (cuda-bindings),
+# on-device error-channel sampling with cuStabilizer (cupy + cuquantum), NVTX
+# ranges for Nsight Systems. All optional; tsim falls back to numpy without them.
+nvidia12 = ["cuda-bindings", "cupy-cuda12x", "cuquantum-python-cu12>=25.09", "nvtx"]
+nvidia13 = ["cuda-bindings", "cupy-cuda13x", "cuquantum-python-cu13>=25.09", "nvtx"]
 
 [build-system]
 requires = ["hatchling"]

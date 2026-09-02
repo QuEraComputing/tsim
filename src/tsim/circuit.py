@@ -17,7 +17,11 @@ from pyzx_param.graph.base import BaseGraph
 from pyzx_param.simulate import DecompositionStrategy
 
 if TYPE_CHECKING:
-    from tsim.sampler import CompiledDetectorSampler, CompiledMeasurementSampler
+    from tsim.sampler import (
+        ChannelBackend,
+        CompiledDetectorSampler,
+        CompiledMeasurementSampler,
+    )
 
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
@@ -829,6 +833,7 @@ class Circuit:
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
         precision: Precision = "exact",
+        channel_backend: ChannelBackend = "auto",
     ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
@@ -836,7 +841,8 @@ class Circuit:
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
-                only produce deterministic samples for fixed batch size. If
+                only produce deterministic samples for a fixed batch size and
+                channel backend. If
                 deterministic samples are needed, the batch size should be set
                 manually.
             precision: Scalar arithmetic used to evaluate the stabilizer
@@ -844,6 +850,12 @@ class Circuit:
                 arithmetic. ``"float32"`` / ``"float64"`` use complex64 /
                 complex128 mantissas with a separate power of two; they are
                 faster but round. ``"float64"`` requires JAX's x64 mode.
+            channel_backend: Where error channels are sampled. ``"auto"``
+                (default) uses NVIDIA cuStabilizer on the GPU when ``cupy``
+                and ``cuquantum`` are installed and every channel admits an
+                exact independent-Bernoulli decomposition, otherwise the
+                host numpy sampler. ``"numpy"`` and ``"custabilizer"`` force
+                a backend.
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
@@ -852,7 +864,11 @@ class Circuit:
         from tsim.sampler import CompiledMeasurementSampler
 
         return CompiledMeasurementSampler(
-            self, seed=seed, strategy=strategy, precision=precision
+            self,
+            seed=seed,
+            strategy=strategy,
+            precision=precision,
+            channel_backend=channel_backend,
         )
 
     def compile_detector_sampler(
@@ -861,6 +877,7 @@ class Circuit:
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
         precision: Precision = "exact",
+        channel_backend: ChannelBackend = "auto",
     ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
 
@@ -873,7 +890,8 @@ class Circuit:
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
-                only produce deterministic samples for fixed batch size. If
+                only produce deterministic samples for a fixed batch size and
+                channel backend. If
                 deterministic samples are needed, the batch size should be set
                 manually.
             precision: Scalar arithmetic used to evaluate the stabilizer
@@ -881,6 +899,12 @@ class Circuit:
                 arithmetic. ``"float32"`` / ``"float64"`` use complex64 /
                 complex128 mantissas with a separate power of two; they are
                 faster but round. ``"float64"`` requires JAX's x64 mode.
+            channel_backend: Where error channels are sampled. ``"auto"``
+                (default) uses NVIDIA cuStabilizer on the GPU when ``cupy``
+                and ``cuquantum`` are installed and every channel admits an
+                exact independent-Bernoulli decomposition, otherwise the
+                host numpy sampler. ``"numpy"`` and ``"custabilizer"`` force
+                a backend.
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.
@@ -889,7 +913,11 @@ class Circuit:
         from tsim.sampler import CompiledDetectorSampler
 
         return CompiledDetectorSampler(
-            self, seed=seed, strategy=strategy, precision=precision
+            self,
+            seed=seed,
+            strategy=strategy,
+            precision=precision,
+            channel_backend=channel_backend,
         )
 
     def cast_to_stim(self) -> stim.Circuit:

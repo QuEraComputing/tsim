@@ -19,12 +19,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   small `tsim.core.scalar.ScalarArray` interface, so further representations
   can be added without touching the term families.
 
+- `channel_backend` option on `compile_sampler`, `compile_detector_sampler` and
+  `CompiledStateProbs`. With `"auto"` (default) error channels are sampled on
+  the GPU by NVIDIA cuStabilizer's sparse Bernoulli sampler whenever `cupy` and
+  `cuquantum-python` are installed (new optional extras `nvidia12` /
+  `nvidia13`) and JAX runs on a GPU; otherwise the host numpy sampler is
+  used. Every categorical channel is first decomposed *exactly* into
+  independent Bernoulli errors (Walsh-Hadamard deconvolution,
+  `tsim.noise.channels.independent_bernoulli_decomposition`), so the sampled
+  distribution is identical to the numpy sampler's. Circuits with channels
+  that admit no such decomposition (e.g. depolarising noise above 75%) fall
+  back to numpy. Samples stay on the device for the JAX pipeline; for fully
+  direct circuits (e.g. surface-code memory experiments) only the output
+  bits are copied back. Measured on an RTX 5090: d=7 surface code 0.29 ->
+  0.06 us/shot, d=5 distillation 0.52 -> 0.21 us/shot.
+- NVTX ranges (`tsim.channel_sample`, `tsim.sample_program`, `tsim.d2h`,
+  `tsim.sample_direct`) around the sampling phases when the `nvtx` package is
+  installed, for Nsight Systems profiling.
+
 ### Fixed
 - Term evaluation produced wrong signs when JAX's x64 mode was enabled
   (`PiProducts` relied on unsigned wrap-around). Signs are now taken from a
   lookup table and the test-suite passes with `JAX_ENABLE_X64=1`.
 
 ### Changed
+- Pinned host buffers used for device-to-host copies are recycled through a
+  small pool instead of being allocated per call (`cudaHostAlloc` costs
+  ~0.1 ms/MB, which made the pinned path slower than the pageable one for
+  every call that allocated afresh). The pool keeps at most 2 GB of free
+  blocks and pins at most 8 GB in total; beyond that, copies fall back to
+  pageable memory.
 - `PhasePairs` terms use a single 64-entry lookup instead of three lookups,
   making exact evaluation ~15-20% faster on GPU for circuits dominated by
   pair terms (e.g. cultivation with the `cutting` strategy).

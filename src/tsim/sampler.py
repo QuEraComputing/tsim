@@ -18,12 +18,23 @@ from tsim.core.graph import prepare_graph
 from tsim.core.scalar import Precision, scalar_type
 from tsim.core.types import CompiledComponent, CompiledProgram
 from tsim.noise.channels import ChannelSampler
-from tsim.utils.cuda_helpers import copy_d2h
+from tsim.utils.cuda_helpers import copy_d2h, custabilizer_available, nvtx_range
 
 if TYPE_CHECKING:
     from jax import Array as PRNGKey
 
     from tsim.circuit import Circuit
+    from tsim.noise.custabilizer import CuStabilizerChannelSampler
+
+ChannelBackend = Literal["auto", "numpy", "custabilizer"]
+"""Where error channels are sampled.
+
+* ``"auto"``: cuStabilizer on the GPU when ``cupy`` and ``cuquantum`` are
+  installed, JAX runs on a GPU and every channel admits an exact
+  independent-Bernoulli decomposition; otherwise numpy on the host.
+* ``"numpy"``: always the host geometric-skip sampler.
+* ``"custabilizer"``: require the GPU sampler; raises if unavailable.
+"""
 
 
 def _sample_component(
@@ -180,6 +191,7 @@ class _CompiledSamplerBase:
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
         precision: Precision = "exact",
+        channel_backend: ChannelBackend = "auto",
     ):
         """Initialize the sampler by compiling the circuit.
 
@@ -190,15 +202,23 @@ class _CompiledSamplerBase:
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
             seed: Random seed. If None, a random seed is generated. Note that
-                deterministic results are only guaranteed for a fixed batch size
-                and fixed reference sample settings.
+                deterministic results are only guaranteed for a fixed batch size,
+                channel backend and reference sample settings.
             precision: Scalar arithmetic used to evaluate compiled graphs.
                 One of "exact" (default), "float32", "float64".
+            channel_backend: Where error channels are sampled: "auto"
+                (default; cuStabilizer on the GPU when available), "numpy"
+                or "custabilizer".
 
         """
         # Validates the name and (for float64) JAX's x64 mode before compiling.
         scalar_type(precision)
         self.precision: Precision = precision
+        if channel_backend not in ("auto", "numpy", "custabilizer"):
+            raise ValueError(
+                f"Unknown channel_backend {channel_backend!r}; expected "
+                "'auto', 'numpy' or 'custabilizer'"
+            )
 
         if seed is None:
             seed = int(np.random.default_rng().integers(0, 2**30))
@@ -210,11 +230,19 @@ class _CompiledSamplerBase:
             prepared, mode=mode, strategy=strategy, precision=precision
         )
 
-        channel_seed = int(np.random.default_rng(seed).integers(0, 2**30))
+        seed_rng = np.random.default_rng(seed)
+        channel_seed = int(seed_rng.integers(0, 2**30))
+        device_seed = int(seed_rng.integers(0, 2**30))
         self._channel_sampler = ChannelSampler(
             channel_probs=prepared.channel_probs,
             error_transform=prepared.error_transform,
             seed=channel_seed,
+        )
+        self._device_channel_sampler: CuStabilizerChannelSampler | None = (
+            self._make_device_channel_sampler(channel_backend, device_seed)
+        )
+        self.channel_backend: str = (
+            "numpy" if self._device_channel_sampler is None else "custabilizer"
         )
 
         self.circuit = circuit
@@ -244,6 +272,49 @@ class _CompiledSamplerBase:
         self._direct_detector_mask = self._direct_output_mask[
             : self._num_detectors
         ].copy()
+
+    def _make_device_channel_sampler(
+        self, channel_backend: str, seed: int
+    ) -> CuStabilizerChannelSampler | None:
+        """Build the cuStabilizer sampler if requested/possible, else ``None``."""
+        if channel_backend == "numpy":
+            return None
+        explicit = channel_backend == "custabilizer"
+        if not custabilizer_available():
+            if explicit:
+                raise RuntimeError(
+                    "channel_backend='custabilizer' requires cupy, cuquantum "
+                    "(cuStabilizer) and a GPU JAX backend."
+                )
+            return None
+        model = self._channel_sampler.independent_error_model()
+        if model is None:
+            if explicit:
+                raise ValueError(
+                    "channel_backend='custabilizer' is not possible: some error "
+                    "channel has no exact independent-Bernoulli decomposition "
+                    "(too noisy). Use channel_backend='numpy'."
+                )
+            return None
+        probs, patterns = model
+        if probs.size == 0:
+            # Noiseless circuit: nothing to sample on the device.
+            return None
+        from tsim.noise.custabilizer import CuStabilizerChannelSampler
+
+        return CuStabilizerChannelSampler(probs, patterns, seed=seed)
+
+    def _sample_f_params_host(self, num_samples: int) -> np.ndarray:
+        """Sample f-parameters as a host uint8 array with the active backend."""
+        if self._device_channel_sampler is not None:
+            return self._device_channel_sampler.sample(num_samples)
+        return self._channel_sampler.sample(num_samples)
+
+    def _sample_f_params_device(self, num_samples: int) -> jax.Array:
+        """Sample f-parameters as a device uint8 array with the active backend."""
+        if self._device_channel_sampler is not None:
+            return self._device_channel_sampler.sample_device(num_samples)
+        return jnp.asarray(self._channel_sampler.sample(num_samples))
 
     def _compute_direct_outputs(self, f_params_np: np.ndarray) -> np.ndarray:
         """Scatter direct output bits into a full (batch, num_outputs) bool array.
@@ -403,14 +474,15 @@ class _CompiledSamplerBase:
         reference: np.ndarray | None = None
 
         for _ in range(num_batches):
-            f_params_np = self._channel_sampler.sample(batch_size)
+            with nvtx_range("tsim.channel_sample"):
+                f_params = self._sample_f_params_device(batch_size)
 
             if compute_reference and reference is None:
-                f_params_np[0] = 0
+                f_params = f_params.at[0].set(0)
 
-            f_params = jnp.asarray(f_params_np)
             self._key, subkey = jax.random.split(self._key)
-            samples = sample_program(self._program, f_params, subkey)
+            with nvtx_range("tsim.sample_program"):
+                samples = sample_program(self._program, f_params, subkey)
 
             if compute_reference and reference is None:
                 reference = np.asarray(samples[0])
@@ -423,9 +495,12 @@ class _CompiledSamplerBase:
         # plus a host-side memcpy into a fresh numpy buffer for the concat
         # output. For big bool tensors (e.g. 500k shots × 528 detector bits)
         # the host memcpy alone was ~1 s on top of the PCIe transfer.
-        combined = batches[0] if len(batches) == 1 else jnp.concatenate(batches, axis=0)
-        jax.block_until_ready(combined)
-        result = copy_d2h(combined)[:shots]
+        with nvtx_range("tsim.d2h"):
+            combined = (
+                batches[0] if len(batches) == 1 else jnp.concatenate(batches, axis=0)
+            )
+            jax.block_until_ready(combined)
+            result = copy_d2h(combined)[:shots]
 
         if compute_reference:
             assert reference is not None
@@ -521,7 +596,7 @@ class _CompiledSamplerBase:
 
         while shot_idx < shots:
             chunk = min(batch_size, shots - shot_idx)
-            f_params_np = self._channel_sampler.sample(chunk)
+            f_params_np = self._sample_f_params_host(chunk)
             direct_full = self._compute_direct_outputs(f_params_np)
             det_cols = direct_full[:, : self._num_detectors]
             if xor_detector_ref and reference is not None:
@@ -558,7 +633,19 @@ class _CompiledSamplerBase:
         return result, None, was_discarded
 
     def _sample_direct(self, shots: int) -> np.ndarray:
-        """Fast path when all components are direct (pure numpy, no JAX)."""
+        """Fast path when all components are direct (no JAX).
+
+        With the cuStabilizer backend the error sampling and the column
+        selection run on the GPU and only the output bits are copied back.
+        """
+        if self._device_channel_sampler is not None:
+            with nvtx_range("tsim.sample_direct"):
+                return self._device_channel_sampler.sample_outputs(
+                    shots,
+                    self._direct_f_indices,
+                    self._direct_flips,
+                    self._direct_reindex,
+                )
         f_params = self._channel_sampler.sample(shots)
         if self._direct_zero_copy:
             return f_params[:, : len(self._direct_f_indices)].view(np.bool_)
@@ -613,6 +700,8 @@ class _CompiledSamplerBase:
         precision_str = (
             "" if self.precision == "exact" else f", precision={self.precision}"
         )
+        if self.channel_backend != "numpy":
+            precision_str += f", channel_backend={self.channel_backend}"
         return (
             f"{type(self).__name__}({n_direct} direct, "
             f"{np.sum(c_graphs)} graphs, "
@@ -640,6 +729,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
         precision: Precision = "exact",
+        channel_backend: ChannelBackend = "auto",
     ):
         """Create a measurement sampler.
 
@@ -648,11 +738,15 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
-                will only produce deterministic samples for fixed batch size. If
+                will only produce deterministic samples for a fixed batch size and
+                channel backend. If
                 deterministic samples are needed, the batch size should be set
                 manually.
             precision: Scalar arithmetic used to evaluate the stabilizer
                 decomposition: "exact" (default), "float32" or "float64".
+            channel_backend: Where error channels are sampled: "auto"
+                (default; NVIDIA cuStabilizer on the GPU when available),
+                "numpy" (host) or "custabilizer" (GPU, raises if unavailable).
 
         """
         super().__init__(
@@ -662,6 +756,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             seed=seed,
             strategy=strategy,
             precision=precision,
+            channel_backend=channel_backend,
         )
 
     def sample(self, shots: int, *, batch_size: int | None = None) -> np.ndarray:
@@ -699,6 +794,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
         precision: Precision = "exact",
+        channel_backend: ChannelBackend = "auto",
     ):
         """Create a detector sampler.
 
@@ -707,11 +803,14 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
-                will only produce deterministic samples for fixed batch size and
-                fixed reference sample settings. If deterministic samples are
+                will only produce deterministic samples for a fixed batch size,
+                channel backend and reference sample settings. If deterministic samples are
                 needed, the batch size should be set manually.
             precision: Scalar arithmetic used to evaluate the stabilizer
                 decomposition: "exact" (default), "float32" or "float64".
+            channel_backend: Where error channels are sampled: "auto"
+                (default; NVIDIA cuStabilizer on the GPU when available),
+                "numpy" (host) or "custabilizer" (GPU, raises if unavailable).
 
         """
         super().__init__(
@@ -721,6 +820,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             seed=seed,
             strategy=strategy,
             precision=precision,
+            channel_backend=channel_backend,
         )
 
     @overload
@@ -908,6 +1008,7 @@ class CompiledStateProbs(_CompiledSamplerBase):
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
         precision: Precision = "exact",
+        channel_backend: ChannelBackend = "auto",
     ):
         """Create a probability estimator.
 
@@ -917,9 +1018,13 @@ class CompiledStateProbs(_CompiledSamplerBase):
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
             seed: Random seed. If None, a random seed is generated. Note that
-                deterministic results are only guaranteed for a fixed batch size.
+                deterministic results are only guaranteed for a fixed batch size
+                and channel backend.
             precision: Scalar arithmetic used to evaluate the stabilizer
                 decomposition: "exact" (default), "float32" or "float64".
+            channel_backend: Where error channels are sampled: "auto"
+                (default; NVIDIA cuStabilizer on the GPU when available),
+                "numpy" (host) or "custabilizer" (GPU, raises if unavailable).
 
         """
         super().__init__(
@@ -929,6 +1034,7 @@ class CompiledStateProbs(_CompiledSamplerBase):
             seed=seed,
             strategy=strategy,
             precision=precision,
+            channel_backend=channel_backend,
         )
 
     def probability_of(self, state: np.ndarray, *, batch_size: int) -> np.ndarray:
@@ -949,7 +1055,7 @@ class CompiledStateProbs(_CompiledSamplerBase):
             raise ValueError(
                 f"state must have shape ({expected_outputs},), got {state.shape}"
             )
-        f_samples = jnp.asarray(self._channel_sampler.sample(batch_size))
+        f_samples = self._sample_f_params_device(batch_size)
         p_norm = jnp.ones(batch_size)
         p_joint = jnp.ones(batch_size)
 

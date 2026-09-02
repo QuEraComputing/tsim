@@ -198,6 +198,65 @@ def correlated_error_probs(probabilities: list[float]) -> np.ndarray:
     return probs
 
 
+def _walsh_hadamard(v: np.ndarray) -> np.ndarray:
+    """Unnormalised Walsh-Hadamard transform of a length-2^k vector."""
+    v = np.array(v, dtype=np.float64)
+    n = v.size
+    h = 1
+    while h < n:
+        v = v.reshape(-1, 2, h)
+        v = np.stack([v[:, 0] + v[:, 1], v[:, 0] - v[:, 1]], axis=1).reshape(-1)
+        h *= 2
+    return v
+
+
+_INCIDENCE_INVERSE: dict[int, np.ndarray] = {}
+
+
+def _incidence_inverse(k: int) -> np.ndarray:
+    """Inverse of ``A[T, S] = <S, T> mod 2`` over the non-zero patterns of GF(2)^k."""
+    if k not in _INCIDENCE_INVERSE:
+        idx = np.arange(1, 2**k)
+        a = (np.bitwise_count(idx[None, :] & idx[:, None]) & 1).astype(np.float64)
+        _INCIDENCE_INVERSE[k] = np.linalg.inv(a)
+    return _INCIDENCE_INVERSE[k]
+
+
+def independent_bernoulli_decomposition(probs: np.ndarray) -> np.ndarray | None:
+    """Decompose a k-bit channel into independent Bernoulli errors, if possible.
+
+    Finds ``q`` with ``q[0] = 0`` such that independently applying the error
+    pattern ``S`` with probability ``q[S]`` for every non-zero ``S`` and
+    XOR-ing the results reproduces the categorical distribution ``probs``
+    exactly. In the Walsh-Hadamard domain the XOR convolution of Bernoulli
+    factors is a product, ``p̂(T) = Π_{S: <S,T>=1} (1 - 2 q_S)``, so the
+    decomposition is a linear solve for ``log(1 - 2 q_S)``. It exists iff
+    every ``p̂(T)`` is positive and the solution satisfies ``0 <= q_S < 1/2``
+    (e.g. depolarising channels with ``p < 3/4``).
+
+    Args:
+        probs: Shape ``(2**k,)`` probabilities indexed by error pattern.
+
+    Returns:
+        Shape ``(2**k,)`` Bernoulli probabilities (entry 0 is zero), or
+        ``None`` when no such decomposition exists.
+
+    """
+    probs = np.asarray(probs, dtype=np.float64)
+    n = probs.size
+    k = n.bit_length() - 1
+    if n == 1:
+        return np.zeros(1)
+    phat = _walsh_hadamard(probs)
+    if np.any(phat[1:] <= 0):
+        return None
+    x = _incidence_inverse(k) @ np.log(phat[1:])
+    q = (1.0 - np.exp(x)) / 2.0
+    if np.any(q < -1e-12) or np.any(q >= 0.5):
+        return None
+    return np.concatenate([[0.0], np.clip(q, 0.0, 0.5)])
+
+
 def xor_convolve(probs_a: np.ndarray, probs_b: np.ndarray) -> np.ndarray:
     """XOR convolution of two probability distributions.
 
@@ -620,6 +679,42 @@ class ChannelSampler:
 
             data.append((p_fire, cond_cdf, xor_patterns))
         return data
+
+    def independent_error_model(self) -> tuple[np.ndarray, np.ndarray] | None:
+        """Express all channels as independent Bernoulli errors on f-variables.
+
+        Every channel is decomposed exactly with
+        :func:`independent_bernoulli_decomposition`; the resulting errors are
+        flattened into a probability vector and a matrix of XOR patterns.
+        This is the input format of sparse "detector error model" samplers
+        such as cuStabilizer's ``BitMatrixSparseSampler``.
+
+        Returns:
+            ``(probs, patterns)`` with ``probs`` of shape ``(n_errors,)`` in
+            ``(0, 1/2)`` and ``patterns`` a uint8 matrix of shape
+            ``(n_errors, num_f)``, or ``None`` if some channel has no exact
+            independent decomposition (this happens for very noisy channels,
+            e.g. depolarising with ``p >= 3/4``).
+
+        """
+        num_f = self.signature_matrix.shape[1]
+        probs: list[np.ndarray] = []
+        patterns: list[np.ndarray] = []
+        for ch in self.channels:
+            q = independent_bernoulli_decomposition(ch.probs)
+            if q is None:
+                return None
+            k = ch.num_bits
+            outcomes = np.arange(1, 2**k)
+            bits = ((outcomes[:, None] >> np.arange(k)) & 1).astype(np.uint8)
+            col_ids = np.asarray(ch.unique_col_ids, dtype=np.int64)
+            xor_patterns = (bits @ self.signature_matrix[col_ids]) % 2
+            keep = q[1:] > 0
+            probs.append(q[1:][keep])
+            patterns.append(xor_patterns[keep].astype(np.uint8))
+        if not probs:
+            return np.zeros(0), np.zeros((0, num_f), dtype=np.uint8)
+        return np.concatenate(probs), np.concatenate(patterns, axis=0)
 
     def sample(self, num_samples: int = 1) -> np.ndarray:
         """Sample from all error channels and transform to new error basis.

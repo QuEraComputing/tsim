@@ -20,6 +20,23 @@ uv add "bloqade-tsim[cuda13]"
 uv add "bloqade-tsim[cuda12]"
 ```
 
+### NVIDIA extras
+
+On CUDA machines two more optional packages speed up sampling:
+
+- [`cuStabilizer`](https://docs.nvidia.com/cuda/cuquantum/latest/custabilizer/) (part of
+  `cuquantum-python`) together with `cupy` samples the error channels on the GPU instead
+  of the host. tsim uses it automatically when it is installed (`channel_backend="auto"`).
+- `cuda-bindings` lets tsim copy results back through pinned host memory.
+
+```bash
+# For CUDA 13
+uv add "bloqade-tsim[cuda13,nvidia13]"
+
+# For CUDA 12
+uv add "bloqade-tsim[cuda12,nvidia12]"
+```
+
 ## Using pip
 
 ```bash
