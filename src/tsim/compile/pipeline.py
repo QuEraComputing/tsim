@@ -18,6 +18,7 @@ from tsim.core.graph import (
     connected_components,
     get_params,
 )
+from tsim.core.scalar import Precision
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingGraph
 
 DecompositionMode = Literal["sequential", "joint"]
@@ -28,6 +29,7 @@ def compile_program(
     *,
     mode: DecompositionMode,
     strategy: DecompositionStrategy = "cat5",
+    precision: Precision = "exact",
 ) -> CompiledProgram:
     """Compile a prepared graph into an executable sampling program.
 
@@ -47,6 +49,8 @@ def compile_program(
             - "joint": For probability estimation - creates [0, n] circuits
         strategy: Stabilizer rank decomposition strategy.
             Must be one of "cat5", "bss", "cutting".
+        precision: Scalar arithmetic used when evaluating compiled graphs.
+            One of "exact" (default), "float32", "float64".
 
     Returns:
         A CompiledProgram ready for sampling.
@@ -75,6 +79,7 @@ def compile_program(
                 f_indices_global=f_indices_global,
                 mode=mode,
                 strategy=strategy,
+                precision=precision,
             )
             compiled_components.append(compiled)
             compiled_output_order.extend(component.output_indices)
@@ -121,6 +126,7 @@ def _compile_component(
     f_indices_global: list[int],
     mode: DecompositionMode,
     strategy: DecompositionStrategy = "cat5",
+    precision: Precision = "exact",
 ) -> CompiledComponent:
     """Compile a single connected component.
 
@@ -129,6 +135,7 @@ def _compile_component(
         f_indices_global: Global list of all f-parameter indices (numerically sorted).
         mode: Decomposition mode (sequential or joint).
         strategy: Stabilizer rank decomposition strategy.
+        precision: Scalar arithmetic used when evaluating compiled graphs.
 
     Returns:
         A CompiledComponent ready for sampling.
@@ -184,7 +191,7 @@ def _compile_component(
             # This is a Clifford graph, we can clear the global phase terms
             _remove_phase_terms(g_list[0])
 
-        compiled = compile_scalar_graphs(g_list, param_names)
+        compiled = compile_scalar_graphs(g_list, param_names, precision=precision)
         compiled_graphs.append(compiled)
 
     return CompiledComponent(

@@ -4,7 +4,15 @@ Each compiled ZX scalar is the product of four term families plus a global
 phase and a floatfactor. This module defines the four families as
 ``equinox.Module`` records, bundles the shared phase tables, and gives each
 family an ``evaluate`` method that turns a batch of binary parameter values
-into an ``ExactScalarArray``.
+into a :class:`~tsim.core.scalar.ScalarArray`.
+
+Every family reduces to the same pattern: a GF(2) matrix product gives one
+small integer index per (batch, graph, term), a lookup table maps the index
+to an exact dyadic scalar, and the scalars are multiplied along the term
+axis. The lookup tables are stored as exact coefficient arrays; the
+:class:`~tsim.core.scalar.ScalarArray` backend passed to ``evaluate``
+decides how they are represented and reduced (exact dyadic, complex64, or
+complex128 arithmetic).
 
 Downstream, ``compile.py`` builds instances of these classes from
 ``pyzx_param`` scalars, and ``evaluate.py`` orchestrates the products.
@@ -12,9 +20,11 @@ Downstream, ``compile.py`` builds instances of these classes from
 
 import equinox as eqx
 import jax.numpy as jnp
+import numpy as np
 from jax import Array
 
 from tsim.core.exact_scalar import ExactScalarArray
+from tsim.core.scalar import ScalarArray
 from tsim.utils.linalg import matmul_gf2
 
 # Powers of ω = e^(iπ/4). UNIT_PHASES[k] is the exact 4-coefficient
@@ -38,6 +48,30 @@ _ONE_PLUS_PHASES = UNIT_PHASES.at[:, 0].add(1)
 
 _IDENTITY = jnp.array([1, 0, 0, 0], dtype=jnp.int32)
 
+# Lookup table for the signs (-1)^s, s ∈ {0, 1}.
+_SIGNS = jnp.array([[1, 0, 0, 0], [-1, 0, 0, 0]], dtype=jnp.int32)
+
+
+def _build_pair_table() -> Array:
+    """Exact table of ``1 + ω^a + ω^b − ω^(a+b)`` indexed by ``8·a + b``."""
+    unit = np.asarray(UNIT_PHASES)
+    table = np.zeros((64, 4), dtype=np.int32)
+    for a in range(8):
+        for b in range(8):
+            table[8 * a + b] = (
+                np.asarray(_IDENTITY) + unit[a] + unit[b] - unit[(a + b) % 8]
+            )
+    return jnp.asarray(table)
+
+
+# Lookup table for exact scalars (1 + ω^α + ω^β − ω^(α+β)), indexed by 8·α + β.
+_PAIR_TABLE = _build_pair_table()
+
+
+def _pad_mask(counts: Array, max_terms: int) -> Array:
+    """Boolean ``(num_graphs, max_terms)`` mask of the real (non-padded) slots."""
+    return jnp.arange(max_terms)[None, :] < counts[:, None]
+
 
 class NodePhases(eqx.Module):
     """Product of ``1 + exp(i·(α + ⊕params)·π)`` terms, one factor per stored term.
@@ -53,24 +87,25 @@ class NodePhases(eqx.Module):
     params: Array  # uint8, parameter parity bitmasks
     counts: Array  # int32, number of real (non-padded) terms per graph
 
-    def evaluate(self, param_vals: Array) -> ExactScalarArray:
+    def evaluate(
+        self, param_vals: Array, scalar: type[ScalarArray] = ExactScalarArray
+    ) -> ScalarArray:
         """Evaluate Π (1 + ω^(4·parity + phase)) per graph, batched over param_vals.
 
         Args:
             param_vals: Binary parameter values, shape ``(batch, n_params)``.
+            scalar: Scalar backend used for the arithmetic.
 
         Returns:
-            ``ExactScalarArray`` of shape ``(batch, num_graphs)``.
+            ``ScalarArray`` of shape ``(batch, num_graphs)``.
 
         """
         rowsum = matmul_gf2(self.params, param_vals)
         phase_idx = (4 * rowsum + self.phases) % 8
 
-        term_vals = _ONE_PLUS_PHASES[phase_idx]
-        mask = jnp.arange(self.phases.shape[1])[None, :] < self.counts[:, None]
-        term_vals = jnp.where(mask[..., None], term_vals, _IDENTITY)
-
-        return ExactScalarArray(term_vals).prod(axis=-1)
+        mask = _pad_mask(self.counts, self.phases.shape[1])
+        terms = scalar.from_exact(_ONE_PLUS_PHASES).take(phase_idx)
+        return terms.where(mask, scalar.one()).prod(axis=-1)
 
 
 class HalfPiPhases(eqx.Module):
@@ -91,20 +126,23 @@ class HalfPiPhases(eqx.Module):
     coeffs: Array  # uint8, values in {0, 2, 4, 6}  (= 2·j', with 0 = padding)
     params: Array  # uint8, parameter parity bitmasks
 
-    def evaluate(self, param_vals: Array) -> ExactScalarArray:
+    def evaluate(
+        self, param_vals: Array, scalar: type[ScalarArray] = ExactScalarArray
+    ) -> ScalarArray:
         """Evaluate ω^(Σ coeffs · parity) per graph, batched over param_vals.
 
         Args:
             param_vals: Binary parameter values, shape ``(batch, n_params)``.
+            scalar: Scalar backend used for the arithmetic.
 
         Returns:
-            ``ExactScalarArray`` of shape ``(batch, num_graphs)``.
+            ``ScalarArray`` of shape ``(batch, num_graphs)``.
 
         """
         rowsum = matmul_gf2(self.params, param_vals)
         phase_idx = (rowsum * self.coeffs) % 8
         total_phase = jnp.sum(phase_idx, axis=-1) % 8
-        return ExactScalarArray(UNIT_PHASES[total_phase])
+        return scalar.from_exact(UNIT_PHASES).take(total_phase)
 
 
 class PiProducts(eqx.Module):
@@ -122,15 +160,18 @@ class PiProducts(eqx.Module):
     phi_const: Array  # uint8, values {0, 1}
     phi_params: Array  # uint8, parameter parity bitmask for φ
 
-    def evaluate(self, param_vals: Array) -> ExactScalarArray:
-        """Evaluate Π (-1)^(ψ·φ) per graph as a real ±1 exact scalar.
+    def evaluate(
+        self, param_vals: Array, scalar: type[ScalarArray] = ExactScalarArray
+    ) -> ScalarArray:
+        """Evaluate Π (-1)^(ψ·φ) per graph as a real ±1 scalar.
 
         Args:
             param_vals: Binary parameter values, shape ``(batch, n_params)``.
+            scalar: Scalar backend used for the arithmetic.
 
         Returns:
-            ``ExactScalarArray`` of shape ``(batch, num_graphs)``, with values
-            in {+1, -1} represented exactly.
+            ``ScalarArray`` of shape ``(batch, num_graphs)``, with values
+            in {+1, -1}.
 
         """
         psi = (self.psi_const + matmul_gf2(self.psi_params, param_vals)) % 2
@@ -138,10 +179,10 @@ class PiProducts(eqx.Module):
 
         exponent = (psi * phi) % 2
         sum_exponents = jnp.sum(exponent, axis=-1) % 2
-
-        # (1 - 2·bit) ∈ {+1, -1}; promote to the 4-coefficient ExactScalar basis.
-        summands_exact = (1 - 2 * sum_exponents)[..., None] * _IDENTITY
-        return ExactScalarArray(summands_exact)
+        # Table lookup rather than ``1 - 2·s``: the latter wraps in unsigned
+        # arithmetic (s is uint8/uint32) and only recovers -1 by accident of
+        # int32 truncation when JAX's x64 mode is off.
+        return scalar.from_exact(_SIGNS).take(sum_exponents)
 
 
 class PhasePairs(eqx.Module):
@@ -161,14 +202,17 @@ class PhasePairs(eqx.Module):
     beta_params: Array  # uint8, parameter parity bitmask for β
     counts: Array  # int32, number of real (non-padded) terms per graph
 
-    def evaluate(self, param_vals: Array) -> ExactScalarArray:
+    def evaluate(
+        self, param_vals: Array, scalar: type[ScalarArray] = ExactScalarArray
+    ) -> ScalarArray:
         """Evaluate Π (1 + ω^α + ω^β - ω^(α+β)) per graph, batched.
 
         Args:
             param_vals: Binary parameter values, shape ``(batch, n_params)``.
+            scalar: Scalar backend used for the arithmetic.
 
         Returns:
-            ``ExactScalarArray`` of shape ``(batch, num_graphs)``.
+            ``ScalarArray`` of shape ``(batch, num_graphs)``.
 
         """
         rowsum_a = matmul_gf2(self.alpha_params, param_vals)
@@ -176,15 +220,11 @@ class PhasePairs(eqx.Module):
 
         alpha = (self.alpha + rowsum_a * 4) % 8
         beta = (self.beta + rowsum_b * 4) % 8
-        gamma = (alpha + beta) % 8
+        pair_idx = alpha * 8 + beta  # < 64, fits uint8
 
-        term_vals = (
-            _IDENTITY + UNIT_PHASES[alpha] + UNIT_PHASES[beta] - UNIT_PHASES[gamma]
-        )
-        mask = jnp.arange(self.alpha.shape[1])[None, :] < self.counts[:, None]
-        term_vals = jnp.where(mask[..., None], term_vals, _IDENTITY)
-
-        return ExactScalarArray(term_vals).prod(axis=-1)
+        mask = _pad_mask(self.counts, self.alpha.shape[1])
+        terms = scalar.from_exact(_PAIR_TABLE).take(pair_idx)
+        return terms.where(mask, scalar.one()).prod(axis=-1)
 
 
 class ScalarPrefactor(eqx.Module):

@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `precision` option on `compile_sampler`, `compile_detector_sampler` and
+  `CompiledStateProbs` selecting the scalar arithmetic used to evaluate the
+  stabilizer decomposition: `"exact"` (default, unchanged dyadic integer
+  arithmetic), `"float32"` (complex64 mantissa + int32 power of two) or
+  `"float64"` (complex128, requires JAX x64 mode). The float backends cut
+  the per-shot time of term-evaluation-bound circuits by ~2x on GPU;
+  conditional probabilities deviate by <= 1e-6 (float32) / ~1e-15 (float64)
+  from the exact result on the benchmark circuits. Backends implement the
+  small `tsim.core.scalar.ScalarArray` interface, so further representations
+  can be added without touching the term families.
+
+### Fixed
+- Term evaluation produced wrong signs when JAX's x64 mode was enabled
+  (`PiProducts` relied on unsigned wrap-around). Signs are now taken from a
+  lookup table and the test-suite passes with `JAX_ENABLE_X64=1`.
+
+### Changed
+- `PhasePairs` terms use a single 64-entry lookup instead of three lookups,
+  making exact evaluation ~15-20% faster on GPU for circuits dominated by
+  pair terms (e.g. cultivation with the `cutting` strategy).
 - `"timeline-text"` diagram type. Renders tsim's custom gates under their
   logical names instead of the Clifford placeholders used to store them, so
   `T` prints as `T` rather than `S`. Covers `T`, `T_DAG`, `TPP`, `TPP_DAG`,

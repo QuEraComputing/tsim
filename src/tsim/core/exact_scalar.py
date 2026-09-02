@@ -7,10 +7,18 @@ This representation enables exact computation of phases in ZX-calculus graphs
 without floating-point errors.
 """
 
-import equinox as eqx
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import jax
 import jax.numpy as jnp
 from jax import Array, lax
+
+from tsim.core.scalar import ScalarArray
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
 
 _E4 = jnp.exp(1j * jnp.pi / 4)
 _E4D = jnp.exp(-1j * jnp.pi / 4)
@@ -132,12 +140,14 @@ def _reduce_along_scan(power, coeffs, op, axis):
 
     init_state = (final_power, final_coeffs, jnp.bool_(True))
     final_power, final_coeffs, _ = lax.while_loop(
-        _fixpoint_cond, _fixpoint_body, init_state,
+        _fixpoint_cond,
+        _fixpoint_body,
+        init_state,
     )
     return final_power, final_coeffs
 
 
-class ExactScalarArray(eqx.Module):
+class ExactScalarArray(ScalarArray):
     """Exact scalar array for ZX-calculus phase arithmetic using dyadic representation.
 
     Represents values of the form (c_0 + c_1·ω + c_2·ω² + c_3·ω³) × 2^power
@@ -164,13 +174,46 @@ class ExactScalarArray(eqx.Module):
         else:
             self.power = power
 
-    def __mul__(self, other: "ExactScalarArray") -> "ExactScalarArray":
+    @classmethod
+    def from_exact(cls, coeffs: Array, power: Array | None = None) -> Self:
+        """Build from dyadic coefficients; the exact backend stores them as-is."""
+        return cls(coeffs, power)
+
+    @classmethod
+    def complex_dtype(cls) -> jax.typing.DTypeLike:
+        """Complex dtype produced by :meth:`to_complex` (follows JAX's x64 mode)."""
+        return _E4.dtype
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        """Logical shape (the coefficient axis is not part of it)."""
+        return self.power.shape
+
+    def __mul__(
+        self, other: Self
+    ) -> Self:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Element-wise multiplication."""
         new_coeffs = _scalar_mul(self.coeffs, other.coeffs)
         new_power = self.power + other.power
-        return ExactScalarArray(new_coeffs, new_power)
+        return type(self)(new_coeffs, new_power)
 
-    def sum(self, axis: int = -1) -> "ExactScalarArray":
+    def take(self, indices: Array) -> Self:
+        """Gather along the first logical axis."""
+        return type(self)(self.coeffs[indices], self.power[indices])
+
+    def where(
+        self, mask: Array, other: Self
+    ) -> Self:  # pyright: ignore[reportIncompatibleMethodOverride]
+        """Select ``self`` where ``mask`` is true, else ``other``."""
+        coeffs = jnp.where(mask[..., None], self.coeffs, other.coeffs)
+        power = jnp.where(mask, self.power, other.power)
+        return type(self)(coeffs, power)
+
+    def scale_power2(self, power: Array) -> Self:
+        """Multiply by ``2**power`` (exact: only the power changes)."""
+        return type(self)(self.coeffs, self.power + power)
+
+    def sum(self, axis: int = -1) -> Self:
         """Sum elements along the specified axis using normalized pairwise adds.
 
         Args:
@@ -184,11 +227,14 @@ class ExactScalarArray(eqx.Module):
             axis += self.power.ndim
 
         result_power, result_coeffs = _reduce_along_scan(
-            self.power, self.coeffs, _scalar_add_with_power, axis,
+            self.power,
+            self.coeffs,
+            _scalar_add_with_power,
+            axis,
         )
-        return ExactScalarArray(result_coeffs, result_power)
+        return type(self)(result_coeffs, result_power)
 
-    def prod(self, axis: int = -1) -> "ExactScalarArray":
+    def prod(self, axis: int = -1) -> Self:
         """Compute product along the specified axis using associative scan.
 
         Returns identity (1+0i with power 0) for empty reductions.
@@ -208,12 +254,15 @@ class ExactScalarArray(eqx.Module):
             coeffs_shape = self.coeffs.shape[:axis] + self.coeffs.shape[axis + 1 :]
             result_coeffs = jnp.zeros(coeffs_shape, dtype=self.coeffs.dtype)
             result_coeffs = result_coeffs.at[..., 0].set(1)
-            return ExactScalarArray(result_coeffs)
+            return type(self)(result_coeffs)
 
         result_power, result_coeffs = _reduce_along_scan(
-            self.power, self.coeffs, _scalar_mul_with_power, axis,
+            self.power,
+            self.coeffs,
+            _scalar_mul_with_power,
+            axis,
         )
-        return ExactScalarArray(result_coeffs, result_power)
+        return type(self)(result_coeffs, result_power)
 
     def to_complex(self) -> jax.Array:
         """Convert to complex number."""

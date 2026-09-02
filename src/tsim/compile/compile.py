@@ -16,6 +16,7 @@ from tsim.compile.terms import (
     PiProducts,
     ScalarPrefactor,
 )
+from tsim.core.scalar import Precision
 
 
 class CompiledScalarGraphs(eqx.Module):
@@ -35,6 +36,9 @@ class CompiledScalarGraphs(eqx.Module):
     pi_products: PiProducts
     phase_pairs: PhasePairs
     prefactor: ScalarPrefactor
+    # Scalar backend used by ``evaluate`` (see ``tsim.core.scalar.Precision``).
+    # Static so that ``jax.jit`` specialises on it.
+    precision: str = eqx.field(static=True, default="exact")
 
 
 def _compile_node_phases(
@@ -335,7 +339,7 @@ def _compile_prefactor(g_list: list[BaseGraph]) -> ScalarPrefactor:
 
 
 def compile_scalar_graphs(
-    g_list: list[BaseGraph], params: list[str]
+    g_list: list[BaseGraph], params: list[str], *, precision: Precision = "exact"
 ) -> CompiledScalarGraphs:
     """Compile ZX-graph list into JAX-compatible structure for fast evaluation.
 
@@ -343,6 +347,8 @@ def compile_scalar_graphs(
         g_list: List of ZX-graphs to compile (must be scalar graphs with no vertices)
         params: List of parameter names used by this circuit. Each parameter will correspond to columns in
             the jax.Arrays of the compiled circuit.
+        precision: Scalar arithmetic used when evaluating the compiled graphs
+            (``"exact"``, ``"float32"`` or ``"float64"``).
 
     Returns:
         CompiledScalarGraphs with all data in static-shaped JAX arrays
@@ -374,4 +380,5 @@ def compile_scalar_graphs(
         pi_products=_compile_pi_products(g_list, char_to_idx, n_params),
         phase_pairs=_compile_phase_pairs(g_list, char_to_idx, n_params),
         prefactor=_compile_prefactor(g_list),
+        precision=precision,
     )

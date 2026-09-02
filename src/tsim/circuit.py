@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 from tsim.core.graph import build_sampling_graph
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
+from tsim.core.scalar import Precision
 from tsim.core.tags import encode_t_tag
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
@@ -827,6 +828,7 @@ class Circuit:
         *,
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
+        precision: Precision = "exact",
     ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
@@ -837,6 +839,11 @@ class Circuit:
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
                 manually.
+            precision: Scalar arithmetic used to evaluate the stabilizer
+                decomposition. ``"exact"`` (default) uses exact dyadic integer
+                arithmetic. ``"float32"`` / ``"float64"`` use complex64 /
+                complex128 mantissas with a separate power of two; they are
+                faster but round. ``"float64"`` requires JAX's x64 mode.
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
@@ -844,13 +851,16 @@ class Circuit:
         """
         from tsim.sampler import CompiledMeasurementSampler
 
-        return CompiledMeasurementSampler(self, seed=seed, strategy=strategy)
+        return CompiledMeasurementSampler(
+            self, seed=seed, strategy=strategy, precision=precision
+        )
 
     def compile_detector_sampler(
         self,
         *,
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
+        precision: Precision = "exact",
     ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
 
@@ -866,6 +876,11 @@ class Circuit:
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
                 manually.
+            precision: Scalar arithmetic used to evaluate the stabilizer
+                decomposition. ``"exact"`` (default) uses exact dyadic integer
+                arithmetic. ``"float32"`` / ``"float64"`` use complex64 /
+                complex128 mantissas with a separate power of two; they are
+                faster but round. ``"float64"`` requires JAX's x64 mode.
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.
@@ -873,7 +888,9 @@ class Circuit:
         """
         from tsim.sampler import CompiledDetectorSampler
 
-        return CompiledDetectorSampler(self, seed=seed, strategy=strategy)
+        return CompiledDetectorSampler(
+            self, seed=seed, strategy=strategy, precision=precision
+        )
 
     def cast_to_stim(self) -> stim.Circuit:
         """Return self with type cast to `stim.Circuit`.

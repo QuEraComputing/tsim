@@ -15,6 +15,7 @@ from pyzx_param.simulate import DecompositionStrategy
 from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
+from tsim.core.scalar import Precision, scalar_type
 from tsim.core.types import CompiledComponent, CompiledProgram
 from tsim.noise.channels import ChannelSampler
 from tsim.utils.cuda_helpers import copy_d2h
@@ -178,6 +179,7 @@ class _CompiledSamplerBase:
         mode: Literal["sequential", "joint"],
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
+        precision: Precision = "exact",
     ):
         """Initialize the sampler by compiling the circuit.
 
@@ -190,15 +192,23 @@ class _CompiledSamplerBase:
             seed: Random seed. If None, a random seed is generated. Note that
                 deterministic results are only guaranteed for a fixed batch size
                 and fixed reference sample settings.
+            precision: Scalar arithmetic used to evaluate compiled graphs.
+                One of "exact" (default), "float32", "float64".
 
         """
+        # Validates the name and (for float64) JAX's x64 mode before compiling.
+        scalar_type(precision)
+        self.precision: Precision = precision
+
         if seed is None:
             seed = int(np.random.default_rng().integers(0, 2**30))
 
         self._key = jax.random.key(seed)
 
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
-        self._program = compile_program(prepared, mode=mode, strategy=strategy)
+        self._program = compile_program(
+            prepared, mode=mode, strategy=strategy, precision=precision
+        )
 
         channel_seed = int(np.random.default_rng(seed).integers(0, 2**30))
         self._channel_sampler = ChannelSampler(
@@ -293,6 +303,9 @@ class _CompiledSamplerBase:
 
     def _peak_bytes_per_sample(self) -> int:
         """Estimate peak device memory per sample from compiled program structure."""
+        # Bytes per scalar of the largest per-term intermediate: four int32
+        # coefficients for the exact backend, one complex value otherwise.
+        elem = {"exact": 16, "float32": 8, "float64": 16}[self.precision]
         peak = 0
         for component in self._program.components:
             for circuit in component.compiled_scalar_graphs:
@@ -301,7 +314,7 @@ class _CompiledSamplerBase:
                 max_b = circuit.halfpi_phases.coeffs.shape[1]
                 max_c = circuit.pi_products.psi_const.shape[1]
                 max_d = circuit.phase_pairs.alpha.shape[1]
-                largest = max(max_a * 16, max_b * 4, max_c * 4, max_d * 16)
+                largest = max(max_a * elem, max_b * 4, max_c * 4, max_d * elem)
                 peak = max(peak, G * largest * 3)
         return max(peak, 1)
 
@@ -597,6 +610,9 @@ class _CompiledSamplerBase:
             channel.num_bits for channel in self._channel_sampler.channels
         )
 
+        precision_str = (
+            "" if self.precision == "exact" else f", precision={self.precision}"
+        )
         return (
             f"{type(self).__name__}({n_direct} direct, "
             f"{np.sum(c_graphs)} graphs, "
@@ -605,7 +621,7 @@ class _CompiledSamplerBase:
             f"≤ {np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
             f"{np.sum(c_b_terms)} B terms, "
             f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms, "
-            f"{total_memory_str})"
+            f"{total_memory_str}{precision_str})"
         )
 
 
@@ -623,6 +639,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         *,
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
+        precision: Precision = "exact",
     ):
         """Create a measurement sampler.
 
@@ -634,6 +651,8 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
                 will only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
                 manually.
+            precision: Scalar arithmetic used to evaluate the stabilizer
+                decomposition: "exact" (default), "float32" or "float64".
 
         """
         super().__init__(
@@ -642,6 +661,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             mode="sequential",
             seed=seed,
             strategy=strategy,
+            precision=precision,
         )
 
     def sample(self, shots: int, *, batch_size: int | None = None) -> np.ndarray:
@@ -678,6 +698,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         *,
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
+        precision: Precision = "exact",
     ):
         """Create a detector sampler.
 
@@ -689,6 +710,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 will only produce deterministic samples for fixed batch size and
                 fixed reference sample settings. If deterministic samples are
                 needed, the batch size should be set manually.
+            precision: Scalar arithmetic used to evaluate the stabilizer
+                decomposition: "exact" (default), "float32" or "float64".
 
         """
         super().__init__(
@@ -697,6 +720,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             mode="sequential",
             seed=seed,
             strategy=strategy,
+            precision=precision,
         )
 
     @overload
@@ -883,6 +907,7 @@ class CompiledStateProbs(_CompiledSamplerBase):
         sample_detectors: bool = False,
         strategy: DecompositionStrategy = "cat5",
         seed: int | None = None,
+        precision: Precision = "exact",
     ):
         """Create a probability estimator.
 
@@ -893,6 +918,8 @@ class CompiledStateProbs(_CompiledSamplerBase):
                 Must be one of "cat5", "bss", "cutting".
             seed: Random seed. If None, a random seed is generated. Note that
                 deterministic results are only guaranteed for a fixed batch size.
+            precision: Scalar arithmetic used to evaluate the stabilizer
+                decomposition: "exact" (default), "float32" or "float64".
 
         """
         super().__init__(
@@ -901,6 +928,7 @@ class CompiledStateProbs(_CompiledSamplerBase):
             mode="joint",
             seed=seed,
             strategy=strategy,
+            precision=precision,
         )
 
     def probability_of(self, state: np.ndarray, *, batch_size: int) -> np.ndarray:
