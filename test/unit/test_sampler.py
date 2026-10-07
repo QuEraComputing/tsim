@@ -227,10 +227,50 @@ def test_seed():
         """)
     for _ in range(2):
         sampler = c.compile_sampler(seed=0)
-        assert np.count_nonzero(sampler.sample(100)) == 48
-        assert np.count_nonzero(sampler.sample(100)) == 53
-        assert np.count_nonzero(sampler.sample(100)) == 52
-        assert np.count_nonzero(sampler.sample(100)) == 50
+        assert np.count_nonzero(sampler.sample(100)) == 54
+        assert np.count_nonzero(sampler.sample(100)) == 51
+        assert np.count_nonzero(sampler.sample(100)) == 57
+        assert np.count_nonzero(sampler.sample(100)) == 55
+
+
+@pytest.mark.parametrize("batch_size", [1, 7, 10, 50, 100, None])
+def test_seed_batch_size_independent(batch_size):
+    """A fixed seed must give identical samples for any batch_size.
+
+    Regression test for https://github.com/QuEraComputing/tsim/issues/104.
+    """
+    c = Circuit("""
+        R 0
+        H 0
+        T 0
+        H 0
+        X_ERROR(0.05) 0
+        M 0
+        """)
+    expected = c.compile_sampler(seed=0).sample(100, batch_size=100)
+    result = c.compile_sampler(seed=0).sample(100, batch_size=batch_size)
+    np.testing.assert_array_equal(result, expected)
+
+
+@pytest.mark.parametrize("batch_size", [10, 50, 100, None])
+def test_seed_batch_size_independent_with_reference(batch_size):
+    """Reference-sample computation must not perturb the sampling stream."""
+    c = Circuit("""
+        R 0 1
+        H 0
+        T 0
+        CNOT 0 1
+        X_ERROR(0.05) 0 1
+        M 0 1
+        DETECTOR rec[-1]
+        """)
+    expected = c.compile_detector_sampler(seed=0).sample(
+        100, batch_size=100, use_detector_reference_sample=True
+    )
+    result = c.compile_detector_sampler(seed=0).sample(
+        100, batch_size=batch_size, use_detector_reference_sample=True
+    )
+    np.testing.assert_array_equal(result, expected)
 
 
 def test_sampler_repr():

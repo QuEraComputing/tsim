@@ -202,10 +202,10 @@ def _sample_channels(channels, matrix, n_samples, seed=42):
     sampler = object.__new__(ChannelSampler)
     sampler.channels = channels
     sampler.signature_matrix = np.asarray(matrix, dtype=np.uint8)
-    sampler._rng = np.random.default_rng(seed)
     sampler._sparse_data = ChannelSampler._precompute_sparse(
         channels, sampler.signature_matrix
     )
+    sampler._init_sampling_state(seed)
     return sampler.sample(n_samples)
 
 
