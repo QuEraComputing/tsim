@@ -24,26 +24,38 @@ if TYPE_CHECKING:
 
     from tsim.circuit import Circuit
 
+# Shot index given to rows that don't correspond to a real shot (noiseless
+# reference row, padding rows in postselected batches).
+_RESERVED_SHOT_INDEX = np.iinfo(np.uint32).max
+# fold_in data that derives the reference-sample key from the sampler key.
+_REFERENCE_KEY_DATA = np.uint32(0x5EEDBEEF)
+
 
 def _sample_component(
     component: CompiledComponent,
     f_params: jax.Array,
     key: PRNGKey,
-) -> tuple[jax.Array, PRNGKey, jax.Array]:
+    shot_indices: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
     """Sample from component using autoregressive sampling.
 
     Args:
         component: The compiled component to sample from.
         f_params: Error parameters, shape (batch_size, num_f_params).
         key: JAX random key.
+        shot_indices: Global index of each row, shape (batch_size,). Each
+            row's random bits are derived from (key, shot_index), so results
+            do not depend on how sampling is partitioned into batches.
 
     Returns:
-        Tuple of (samples, next_key, max_norm_deviation) where samples has
+        Tuple of (samples, max_norm_deviation) where samples has
         shape (batch_size, num_outputs_for_component).
 
     """
     batch_size = f_params.shape[0]
     num_outputs = len(component.compiled_scalar_graphs) - 1
+
+    row_keys = jax.vmap(lambda i: jax.random.fold_in(key, i))(shot_indices)
 
     f_selected = f_params[:, component.f_selection].astype(jnp.bool_)
 
@@ -71,14 +83,14 @@ def _sample_component(
         norm = (p0_single + p1[0]) / prev[0]
         max_norm_deviation = jnp.maximum(max_norm_deviation, jnp.abs(norm - 1.0))
 
-        key, subkey = jax.random.split(key)
-        bits = jax.random.bernoulli(subkey, p=p1 / prev)
+        bit_keys = jax.vmap(lambda k, i=i: jax.random.fold_in(k, i))(row_keys)
+        bits = jax.vmap(jax.random.bernoulli)(bit_keys, p1 / prev)
         m_accumulated = m_accumulated.at[:, i].set(bits)
 
         # Update prev using chain rule
         prev = jnp.where(bits, p1, prev - p1)
 
-    return m_accumulated, key, max_norm_deviation
+    return m_accumulated, max_norm_deviation
 
 
 @jax.jit
@@ -86,38 +98,42 @@ def _sample_component_jit(
     component: CompiledComponent,
     f_params: jax.Array,
     key: PRNGKey,
-) -> tuple[jax.Array, PRNGKey, jax.Array]:
+    shot_indices: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
     """JIT-compiled version of _sample_component."""
-    return _sample_component(component, f_params, key)
+    return _sample_component(component, f_params, key, shot_indices)
 
 
 def sample_component(
     component: CompiledComponent,
     f_params: jax.Array,
     key: PRNGKey,
-) -> tuple[jax.Array, PRNGKey, jax.Array]:
+    shot_indices: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
     """Sample outputs from a single component using autoregressive sampling.
 
     Args:
         component: The compiled component to sample from.
         f_params: Error parameters, shape (batch_size, num_f_params).
         key: JAX random key.
+        shot_indices: Global index of each row, shape (batch_size,).
 
     Returns:
-        Tuple of (samples, next_key, max_norm_deviation) where samples has shape
+        Tuple of (samples, max_norm_deviation) where samples has shape
         (batch_size, num_outputs_for_component).
 
     """
     # Skip JIT for small components (overhead not worth it)
     if len(component.output_indices) <= 1:
-        return _sample_component(component, f_params, key)
-    return _sample_component_jit(component, f_params, key)
+        return _sample_component(component, f_params, key, shot_indices)
+    return _sample_component_jit(component, f_params, key, shot_indices)
 
 
 def sample_program(
     program: CompiledProgram,
     f_params: jax.Array,
     key: PRNGKey,
+    shot_indices: jax.Array | None = None,
 ) -> jax.Array:
     """Sample all outputs from a compiled program.
 
@@ -125,6 +141,9 @@ def sample_program(
         program: The compiled program to sample from.
         f_params: Error parameters, shape (batch_size, num_f_params).
         key: JAX random key.
+        shot_indices: Global index of each row, shape (batch_size,). Random
+            bits are derived from (key, shot_index), making results
+            independent of batch partitioning. Defaults to ``arange``.
 
     Returns:
         Samples array of shape (batch_size, num_outputs), reordered to
@@ -137,6 +156,9 @@ def sample_program(
         batch_size = f_params.shape[0]
         return jnp.zeros((batch_size, 0), dtype=jnp.bool_)
 
+    if shot_indices is None:
+        shot_indices = jnp.arange(f_params.shape[0], dtype=jnp.uint32)
+
     if len(program.direct_f_indices) > 0:
         direct_bits = (
             f_params[:, program.direct_f_indices].astype(jnp.bool_)
@@ -144,8 +166,11 @@ def sample_program(
         )
         results.append(direct_bits)
 
-    for component in program.components:
-        samples, key, max_norm_deviation = sample_component(component, f_params, key)
+    for component_index, component in enumerate(program.components):
+        component_key = jax.random.fold_in(key, component_index)
+        samples, max_norm_deviation = sample_component(
+            component, f_params, component_key, shot_indices
+        )
         if np.isclose(max_norm_deviation, 1):
             raise ValueError(
                 "A vanishing marginal probability distribution was encountered (normalization 0). "
@@ -187,15 +212,22 @@ class _CompiledSamplerBase:
             mode: Compilation mode - "sequential" for autoregressive, "joint" for probabilities.
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed. If None, a random seed is generated. Note that
-                deterministic results are only guaranteed for a fixed batch size
-                and fixed reference sample settings.
+            seed: Random seed. If None, a random seed is generated. A fixed
+                seed gives deterministic results regardless of batch size and
+                reference sample settings.
 
         """
         if seed is None:
             seed = int(np.random.default_rng().integers(0, 2**30))
 
         self._key = jax.random.key(seed)
+        # Dedicated key for noiseless reference samples so that computing a
+        # reference never perturbs the main sampling stream.
+        self._ref_key = jax.random.fold_in(self._key, _REFERENCE_KEY_DATA)
+        # Global shot counter: the random bits of each sampled shot are
+        # derived from its index, so results are deterministic for a fixed
+        # seed regardless of batch size or batching strategy.
+        self._shot_cursor = 0
 
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
         self._program = compile_program(prepared, mode=mode, strategy=strategy)
@@ -269,9 +301,14 @@ class _CompiledSamplerBase:
         f_ref = np.zeros((1, num_f), dtype=np.uint8)
         if not self._program.components:
             return self._compute_direct_outputs(f_ref)[0]
-        self._key, subkey = jax.random.split(self._key)
+        self._ref_key, subkey = jax.random.split(self._ref_key)
         return np.asarray(
-            sample_program(self._program, jnp.asarray(f_ref), subkey)[0],
+            sample_program(
+                self._program,
+                jnp.asarray(f_ref),
+                subkey,
+                jnp.zeros(1, dtype=jnp.uint32),
+            )[0],
             dtype=np.bool_,
         )
 
@@ -388,16 +425,30 @@ class _CompiledSamplerBase:
 
         batches: list[jax.Array] = []
         reference: np.ndarray | None = None
+        base = self._shot_cursor
+        self._shot_cursor += shots
+        shot_idx = 0
 
         for _ in range(num_batches):
             f_params_np = self._channel_sampler.sample(batch_size)
 
+            idx = base + shot_idx + np.arange(batch_size, dtype=np.uint64)
             if compute_reference and reference is None:
                 f_params_np[0] = 0
+                # Row 0 holds the reference; row k > 0 holds shot k - 1.
+                idx -= 1
+                idx[0] = _RESERVED_SHOT_INDEX
+                shot_idx += batch_size - 1
+            else:
+                shot_idx += batch_size
 
             f_params = jnp.asarray(f_params_np)
-            self._key, subkey = jax.random.split(self._key)
-            samples = sample_program(self._program, f_params, subkey)
+            samples = sample_program(
+                self._program,
+                f_params,
+                self._key,
+                jnp.asarray(idx.astype(np.uint32)),
+            )
 
             if compute_reference and reference is None:
                 reference = np.asarray(samples[0])
@@ -472,6 +523,9 @@ class _CompiledSamplerBase:
         if compute_reference:
             reference = self._compute_reference_sample()
 
+        base = self._shot_cursor
+        self._shot_cursor += shots
+
         result = np.zeros((shots, num_outputs), dtype=np.bool_)
         was_discarded = np.zeros(shots, dtype=np.bool_)
         survivor_f_buf: list[np.ndarray] = []
@@ -479,9 +533,19 @@ class _CompiledSamplerBase:
         shot_idx = 0
 
         def _dispatch(f_batch: np.ndarray, indices: list[int], n_valid: int) -> None:
-            self._key, subkey = jax.random.split(self._key)
+            shot_idx_arr = np.full(
+                f_batch.shape[0], _RESERVED_SHOT_INDEX, dtype=np.uint64
+            )
+            shot_idx_arr[:n_valid] = base + np.asarray(
+                indices[:n_valid], dtype=np.uint64
+            )
             jax_out = np.asarray(
-                sample_program(self._program, jnp.asarray(f_batch), subkey)
+                sample_program(
+                    self._program,
+                    jnp.asarray(f_batch),
+                    self._key,
+                    jnp.asarray(shot_idx_arr.astype(np.uint32)),
+                )
             )
             result[indices[:n_valid]] = jax_out[:n_valid]
 
@@ -630,10 +694,8 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
-                will only produce deterministic samples for fixed batch size. If
-                deterministic samples are needed, the batch size should be set
-                manually.
+            seed: Random seed for the sampler. A fixed seed gives
+                deterministic samples for any batch size.
 
         """
         super().__init__(
@@ -652,8 +714,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             batch_size: The number of samples to process in each batch. Defaults to
                 None, which automatically chooses a batch size based on available
                 memory. When using a GPU, setting this explicitly can help fully
-                utilize VRAM for maximum performance. NOTE: Changing the batch size
-                will affect reproducibility even with a fixed seed.
+                utilize VRAM for maximum performance.
 
         Returns:
             A numpy array containing the measurement samples.
@@ -685,10 +746,9 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
-                will only produce deterministic samples for fixed batch size and
-                fixed reference sample settings. If deterministic samples are
-                needed, the batch size should be set manually.
+            seed: Random seed for the sampler. A fixed seed gives
+                deterministic samples for any batch size and reference sample
+                setting.
 
         """
         super().__init__(
@@ -753,8 +813,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             batch_size: The number of samples to process in each batch. Defaults to
                 None, which automatically chooses a batch size based on available
                 memory. When using a GPU, setting this explicitly can help fully
-                utilize VRAM for maximum performance. NOTE: Changing the batch size
-                will affect reproducibility even with a fixed seed.
+                utilize VRAM for maximum performance.
             separate_observables: Defaults to False. When set to True, the return value
                 is a (detection_events, observable_flips) tuple instead of a flat
                 detection_events array.
@@ -891,8 +950,8 @@ class CompiledStateProbs(_CompiledSamplerBase):
             sample_detectors: If True, compute detector/observable probabilities.
             strategy: Stabilizer rank decomposition strategy.
                 Must be one of "cat5", "bss", "cutting".
-            seed: Random seed. If None, a random seed is generated. Note that
-                deterministic results are only guaranteed for a fixed batch size.
+            seed: Random seed. If None, a random seed is generated. A fixed
+                seed gives deterministic results for any batch size.
 
         """
         super().__init__(

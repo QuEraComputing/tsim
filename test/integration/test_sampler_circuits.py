@@ -19,7 +19,7 @@ def test_sample_bell_state():
     m = sampler.sample(100)
 
     assert np.array_equal(m[:, 0], m[:, 1])
-    assert np.count_nonzero(m[:, 0]) == 48
+    assert np.count_nonzero(m[:, 0]) == 54
 
 
 def test_detector_sampler_bell_state_with_measurement_error():
@@ -34,7 +34,7 @@ def test_detector_sampler_bell_state_with_measurement_error():
     sampler = c.compile_detector_sampler(seed=1)
 
     d = sampler.sample(10)
-    assert np.count_nonzero(d) == 4
+    assert np.count_nonzero(d) == 3
 
 
 def test_t_gate():
@@ -46,7 +46,7 @@ def test_t_gate():
         """)
     sampler = c.compile_sampler(seed=0)
     m = sampler.sample(100)
-    assert np.count_nonzero(m) == 9
+    assert np.count_nonzero(m) == 15
 
 
 def test_s_gate():
@@ -58,7 +58,7 @@ def test_s_gate():
         """)
     sampler = c.compile_sampler(seed=0)
     m = sampler.sample(100)
-    assert np.count_nonzero(m) == 48
+    assert np.count_nonzero(m) == 54
 
 
 def test_t_dag_gate():
@@ -101,7 +101,7 @@ def test_r_gate():
     sampler = c.compile_sampler(seed=0)
     m = sampler.sample(10)
     assert np.count_nonzero(m[:, 0]) == 7
-    assert np.count_nonzero(m[:, 1]) == 4
+    assert np.count_nonzero(m[:, 1]) == 6
     assert np.count_nonzero(m[:, 2]) == 0
 
     det_sampler = c.compile_detector_sampler(seed=0)

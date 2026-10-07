@@ -130,12 +130,12 @@ def test_sample_program_raises_on_component_norm_deviation(monkeypatch):
 
     component_results = iter(
         [
-            (jnp.array([[False]]), jax.random.key(1), jnp.array(5e-7)),
-            (jnp.array([[True]]), jax.random.key(2), jnp.array(2e-5)),
+            (jnp.array([[False]]), jnp.array(5e-7)),
+            (jnp.array([[True]]), jnp.array(2e-5)),
         ]
     )
 
-    def fake_sample_component(component, f_params, key):
+    def fake_sample_component(component, f_params, key, shot_indices):
         return next(component_results)
 
     monkeypatch.setattr(sampler_module, "sample_component", fake_sample_component)

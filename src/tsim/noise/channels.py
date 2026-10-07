@@ -568,12 +568,31 @@ class ChannelSampler:
         self.channels = simplify_channels(channels, null_col_id=null_col_id)
         self.signature_matrix = signature_matrix.astype(np.uint8)
 
-        self._rng = np.random.default_rng(
-            seed if seed is not None else np.random.default_rng().integers(0, 2**30)
-        )
         self._sparse_data = self._precompute_sparse(
             self.channels, self.signature_matrix
         )
+        self._init_sampling_state(seed)
+
+    def _init_sampling_state(self, seed: int | None) -> None:
+        """(Re)initialize the per-channel RNG streams and the sample cursor.
+
+        Positions (geometric skips) and outcomes use separate streams so that
+        the random variates consumed never depend on how sampling is
+        partitioned into batches. Fire positions are tracked as absolute
+        sample indices on a persistent cursor, so splitting the same stream
+        into batches of any size yields identical results.
+        """
+        children = np.random.SeedSequence(seed).spawn(2 * len(self._sparse_data))
+        self._channel_states = [
+            {
+                "pos_rng": np.random.default_rng(children[2 * i]),
+                "outcome_rng": np.random.default_rng(children[2 * i + 1]),
+                "fires": np.empty(0, dtype=np.int64),
+                "next": 0,
+            }
+            for i in range(len(self._sparse_data))
+        ]
+        self._cursor = 0
 
     @staticmethod
     def _precompute_sparse(
@@ -638,21 +657,35 @@ class ChannelSampler:
         num_outputs = self.signature_matrix.shape[1]
         result = np.zeros((num_samples, num_outputs), dtype=np.uint8)
 
-        for p_fire, cond_cdf, xor_pats in self._sparse_data:
-            expected = num_samples * p_fire
-            sigma = np.sqrt(expected * (1.0 - p_fire))
-            # At 7 sigma, we undersample in about 1 out of 1e12 cases
-            n_draws = int(expected + 7.0 * sigma) + 100
+        start = self._cursor
+        end = start + num_samples
+        self._cursor = end
 
-            positions = np.cumsum(self._rng.geometric(p_fire, size=n_draws)) - 1
-            positions = positions[positions < num_samples]
+        for (p_fire, cond_cdf, xor_pats), state in zip(
+            self._sparse_data, self._channel_states, strict=True
+        ):
+            fires = state["fires"]
+            # Extend the stream of absolute fire positions until it covers
+            # this batch. Draws are sized to need but all leftover variates
+            # stay in the buffer, so partitioning never changes the stream.
+            while fires.size == 0 or fires[-1] < end:
+                remaining = max(end - state["next"], 1)
+                expected = remaining * p_fire
+                sigma = np.sqrt(expected * (1.0 - p_fire))
+                # At 7 sigma, we undersample in about 1 out of 1e12 cases
+                n_draws = int(expected + 7.0 * sigma) + 64
+                jumps = state["pos_rng"].geometric(p_fire, size=n_draws)
+                fires = np.concatenate([fires, state["next"] + np.cumsum(jumps) - 1])
+                state["next"] = int(fires[-1]) + 1
 
-            if len(positions) == 0:
-                continue
-
-            outcome_idx = np.searchsorted(
-                cond_cdf, self._rng.uniform(size=len(positions))
-            )
-            result[positions] ^= xor_pats[outcome_idx]
+            in_range = (fires >= start) & (fires < end)
+            n_fires = int(in_range.sum())
+            if n_fires:
+                positions = fires[in_range] - start
+                outcome_idx = np.searchsorted(
+                    cond_cdf, state["outcome_rng"].uniform(size=n_fires)
+                )
+                result[positions] ^= xor_pats[outcome_idx]
+            state["fires"] = fires[fires >= end]
 
         return result

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Sampling is now fully deterministic for a fixed `seed`, regardless of
+  `batch_size`, automatic batch-size selection, or reference-sample
+  computation. Error-channel sampling uses persistent per-channel streams over
+  absolute sample indices, and autoregressive sampling derives each shot's
+  random bits from its global index. (#104)
+
 ### Added
 - `"timeline-text"` diagram type. Renders tsim's custom gates under their
   logical names instead of the Clifford placeholders used to store them, so

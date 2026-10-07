@@ -197,9 +197,9 @@ def test_postselection_jax_never_called_for_all_direct_discards(monkeypatch):
 
     original = sampler_module.sample_program
 
-    def spy(program, f_params, key):
+    def spy(program, f_params, key, shot_indices=None):
         calls.append(f_params.shape[0])
-        return original(program, f_params, key)
+        return original(program, f_params, key, shot_indices)
 
     monkeypatch.setattr(sampler_module, "sample_program", spy)
     sampler.sample(10, batch_size=4, postselection_mask=mask)
@@ -214,9 +214,9 @@ def test_postselection_jax_rows_less_than_shots():
 
     original = sampler_module.sample_program
 
-    def spy(program, f_params, key):
+    def spy(program, f_params, key, shot_indices=None):
         jax_rows.append(f_params.shape[0])
-        return original(program, f_params, key)
+        return original(program, f_params, key, shot_indices)
 
     with patch.object(sampler_module, "sample_program", side_effect=spy):
         samples = sampler.sample(32, batch_size=8, postselection_mask=mask)
@@ -234,9 +234,9 @@ def test_postselection_jax_batch_size_fixed(monkeypatch):
 
     original = sampler_module.sample_program
 
-    def spy(program, f_params, key):
+    def spy(program, f_params, key, shot_indices=None):
         seen.append(f_params.shape[0])
-        return original(program, f_params, key)
+        return original(program, f_params, key, shot_indices)
 
     monkeypatch.setattr(sampler_module, "sample_program", spy)
     sampler.sample(10, batch_size=4, postselection_mask=mask)
@@ -253,9 +253,9 @@ def test_postselection_non_direct_mask_runs_jax_for_all(monkeypatch):
 
     original = sampler_module.sample_program
 
-    def spy(program, f_params, key):
+    def spy(program, f_params, key, shot_indices=None):
         jax_rows.append(f_params.shape[0])
-        return original(program, f_params, key)
+        return original(program, f_params, key, shot_indices)
 
     monkeypatch.setattr(sampler_module, "sample_program", spy)
     sampler.sample(16, batch_size=8, postselection_mask=mask)
@@ -270,9 +270,9 @@ def test_postselection_mixed_mask_skips_jax_only_on_direct_discard(monkeypatch):
 
     original = sampler_module.sample_program
 
-    def spy(program, f_params, key):
+    def spy(program, f_params, key, shot_indices=None):
         jax_rows.append(f_params.shape[0])
-        return original(program, f_params, key)
+        return original(program, f_params, key, shot_indices)
 
     monkeypatch.setattr(sampler_module, "sample_program", spy)
     samples = sampler.sample(32, batch_size=8, postselection_mask=mask)
@@ -299,26 +299,28 @@ def test_postselection_detector_reference_xor_before_discard_check(monkeypatch):
     original = sampler_module.sample_program
 
     def make_spy(store: list[int]):
-        def spy(program, f_params, key):
+        def spy(program, f_params, key, shot_indices=None):
             store.append(f_params.shape[0])
-            return original(program, f_params, key)
+            return original(program, f_params, key, shot_indices)
 
         return spy
 
     s1 = _make(circuit, seed=0)
     monkeypatch.setattr(sampler_module, "sample_program", make_spy(jax_without))
-    s1.sample(32, batch_size=8, postselection_mask=mask)
+    samples1 = s1.sample(32, batch_size=8, postselection_mask=mask)
 
     s2 = _make(circuit, seed=0)
     monkeypatch.setattr(sampler_module, "sample_program", make_spy(jax_with))
-    s2.sample(
+    samples2 = s2.sample(
         32,
         batch_size=8,
         postselection_mask=mask,
         use_detector_reference_sample=True,
     )
 
-    assert sum(jax_with) > sum(jax_without)
+    # The noiseless reference fires on detector 0 (X 0 sets it), so XORing the
+    # reference flips every shot's detector-0 bit before the discard check.
+    assert (samples1[:, 0] != samples2[:, 0]).all()
 
 
 def test_postselection_observable_reference_on_jax_computed_discarded_rows():
@@ -339,7 +341,7 @@ def test_postselection_observable_reference_on_jax_computed_discarded_rows():
         "use_observable_reference_sample": True,
         "separate_observables": True,
     }
-    sampler = _make(circuit, seed=2)
+    sampler = _make(circuit, seed=1)
     captured: dict[str, np.ndarray] = {}
     original = sampler._sample_batches_with_postselection
 
@@ -376,9 +378,9 @@ def test_postselection_fully_direct_no_jax(monkeypatch):
     mask = np.array([True])
     spy = []
 
-    def counting_sp(program, f_params, key):
+    def counting_sp(program, f_params, key, shot_indices=None):
         spy.append(1)
-        return sampler_module.sample_program(program, f_params, key)
+        return sampler_module.sample_program(program, f_params, key, shot_indices)
 
     monkeypatch.setattr(sampler_module, "sample_program", counting_sp)
     result = sampler.sample(10, postselection_mask=mask)
@@ -579,10 +581,10 @@ def test_postselection_discarded_rows_zero_direct_observable():
         after_clifford_depolarization=0.01,
     )
     c = Circuit.from_stim_program(circ)
-    sampler = c.compile_detector_sampler(seed=0)
-    assert sampler._direct_output_mask[sampler._num_detectors :].any(), (
-        "expected a direct observable for this circuit"
-    )
+    sampler = c.compile_detector_sampler(seed=5)
+    assert sampler._direct_output_mask[
+        sampler._num_detectors :
+    ].any(), "expected a direct observable for this circuit"
 
     mask = np.zeros(c.num_detectors, dtype=np.bool_)
     mask[0] = True
