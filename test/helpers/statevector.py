@@ -24,6 +24,7 @@ from tsim.statevector.heisenberg import (
     HeisenbergOps,
     heisenberg_ops,
 )
+from tsim.statevector.plan import MeasureActive, Plan, Record, Rotate
 
 Distribution = dict[tuple[int, ...], float]
 
@@ -362,4 +363,88 @@ def ops_distribution(ops: HeisenbergOps, f: Sequence[int]) -> Distribution:
     for state, record in branches:
         key = tuple(record[s] for s in range(ops.num_outputs))
         result[key] = result.get(key, 0.0) + float(np.vdot(state, state).real)
+    return result
+
+
+def reference_rotate(
+    psi: np.ndarray, x: int, z: int, angle: float, negate: bool
+) -> np.ndarray:
+    """Return exp(-iθ (±P)) ψ, the ``ROTATE`` and ``ROTATE_DIAG`` kernels."""
+    sign = -1 if negate else 1
+    return cos(angle) * psi - 1j * sin(angle) * sign * apply_pauli(psi, x, z)
+
+
+def reference_measure(
+    psi: np.ndarray, x: int, z: int, pivot: int, outcome: int
+) -> tuple[np.ndarray, float]:
+    """Return the ``MEASURE`` / ``MEASURE_DIAG`` kernel's state and outcome probability.
+
+    The kernel projects onto the (-1)^outcome eigenspace of P and resets the
+    pivot axis to |0⟩: it keeps the pivot-0 half and renormalizes.
+    """
+    index = np.arange(len(psi))
+    keep = ((index >> pivot) & 1) == 0
+    norm = float(np.vdot(psi, psi).real)
+    if x:
+        paulied = apply_pauli(psi, x, z)
+        expectation = float(np.vdot(psi, paulied).real)
+        p1 = min(max((norm - expectation) / (2 * norm), 0.0), 1.0)
+        p = p1 if outcome else 1 - p1
+        projected = (psi + (-1) ** outcome * paulied) / np.sqrt(
+            max(2 * norm * p, 1e-300)
+        )
+        return np.where(keep, projected, 0), p
+    odd = parity(index & z)
+    p1 = float(np.sum(np.abs(psi[odd]) ** 2)) / norm
+    p = p1 if outcome else 1 - p1
+    source = index ^ ((odd ^ bool(outcome)).astype(np.int64) << pivot)
+    return np.where(keep, psi[source] / np.sqrt(max(norm * p, 1e-300)), 0), p
+
+
+def plan_distribution(plan: Plan, f: Sequence[int]) -> Distribution:
+    """Return the exact output distribution of a plan by enumerating its branches."""
+    result: Distribution = {}
+
+    def written(record: list[int], slot: int, value: int) -> list[int]:
+        if slot < 0:
+            return record
+        updated = list(record)
+        updated[slot] = value
+        return updated
+
+    def walk(
+        a: int, psi: np.ndarray, symbols: list[int], record: list[int], weight: float
+    ) -> None:
+        if weight < 1e-14:
+            return
+        if a == len(plan.actions):
+            key = tuple(record)
+            result[key] = result.get(key, 0.0) + weight
+            return
+        action = plan.actions[a]
+        sign = action.sign.evaluate(symbols)
+        if isinstance(action, Rotate):
+            rotated = reference_rotate(
+                psi, action.x, action.z, action.angle, bool(sign)
+            )
+            walk(a + 1, rotated, symbols, record, weight)
+            return
+        if isinstance(action, Record):
+            walk(a + 1, psi, symbols, written(record, action.slot, sign), weight)
+            return
+        for outcome in (0, 1):
+            if isinstance(action, MeasureActive):
+                new, p = reference_measure(
+                    psi, action.x, action.z, action.pivot, outcome
+                )
+            else:
+                new, p = psi, 0.5
+            branched = list(symbols)
+            branched[action.branch] = outcome
+            value = outcome ^ sign
+            walk(a + 1, new, branched, written(record, action.slot, value), weight * p)
+
+    psi = np.zeros(2**plan.width, dtype=complex)
+    psi[0] = 1
+    walk(0, psi, [*f, *[0] * plan.num_branches], [0] * plan.num_outputs, 1.0)
     return result
