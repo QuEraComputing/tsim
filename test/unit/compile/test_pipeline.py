@@ -1,14 +1,18 @@
 """compile_program on zx_param: plugging normalization and the direct path."""
 
 import itertools
+from fractions import Fraction
 
 import jax.numpy as jnp
 import numpy as np
+import pytest
+from zx_param import Domain, EdgeType, Graph, Phase, VertexType
 
 from tsim.circuit import Circuit
 from tsim.compile.evaluate import evaluate
-from tsim.compile.pipeline import compile_program
+from tsim.compile.pipeline import _plugged, classify_direct, compile_program
 from tsim.core.graph import prepare_graph
+from tsim.core.params import ParamLayout
 from tsim.sampler import CompiledStateProbs
 
 H = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
@@ -23,13 +27,11 @@ def _abs_value(compiled, bits: list[int]) -> float:
 
 
 def test_sequential_plugged_graphs_are_consistent_marginals():
-    circuit = Circuit(
-        "R 0 1 2\nH 0\nT 0\nCNOT 0 1\nT 1\nCNOT 1 2\nH 2\nT 2\nH 1\nM 0 1 2"
-    )
+    circuit = Circuit("R 0 1\nH 0\nT 0\nH 0\nCNOT 0 1\nM 0 1")
     program = compile_program(
         prepare_graph(circuit, sample_detectors=False), mode="sequential"
     )
-    assert program.components
+    assert any(len(c.output_indices) > 1 for c in program.components)
     for component in program.components:
         graphs = component.compiled_scalar_graphs
         for k in range(len(graphs) - 1):
@@ -40,10 +42,14 @@ def test_sequential_plugged_graphs_are_consistent_marginals():
 
 
 def test_joint_probabilities_match_the_state_vector():
-    circuit = Circuit("R 0 1\nH 0\nT 0\nCNOT 0 1\nH 0\nM 0 1")
+    circuit = Circuit("R 0 1\nH 0\nT 0\nH 0\nCNOT 0 1\nM 0 1")
+    program = compile_program(
+        prepare_graph(circuit, sample_detectors=False), mode="joint"
+    )
+    assert any(len(c.output_indices) > 1 for c in program.components)
     psi = np.zeros(4, dtype=complex)
     psi[0] = 1
-    for u in (np.kron(H, I2), np.kron(T, I2), CNOT, np.kron(H, I2)):
+    for u in (np.kron(H, I2), np.kron(T, I2), np.kron(H, I2), CNOT):
         psi = u @ psi
     probs = CompiledStateProbs(circuit, seed=0)
     for index, bits in enumerate(itertools.product((False, True), repeat=2)):
@@ -61,3 +67,62 @@ def test_single_error_detectors_take_the_direct_path():
     assert program.components == ()
     assert sorted(np.asarray(program.direct_f_indices).tolist()) == [0, 1]
     assert not np.asarray(program.direct_flips).any()
+
+
+LAYOUT = ParamLayout(num_errors=3, num_basis=2, num_outputs=1)
+
+
+def _direct_candidate(
+    value: int = 0,
+    params: tuple[int, ...] = (LAYOUT.basis(1),),
+    edge_type: EdgeType = EdgeType.HADAMARD,
+    output_domain: Domain = Domain.CLASSICAL,
+    spider_domain: Domain = Domain.CLASSICAL,
+) -> Graph:
+    g = Graph()
+    out = g.add_vertex(VertexType.BOUNDARY, domain=output_domain)
+    g.set_port(out, 0)
+    phase = Phase(Fraction(value), frozenset(params))
+    spider = g.add_vertex(VertexType.Z, phase, domain=spider_domain)
+    g.add_edge(out, spider, edge_type)
+    return g
+
+
+@pytest.mark.parametrize("value, flip", [(0, False), (1, True)])
+def test_classify_direct_reads_the_basis_index_and_flip(value, flip):
+    component = _direct_candidate(value=value)
+    assert classify_direct(component, LAYOUT) == (1, flip)
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        pytest.param(_direct_candidate(params=(LAYOUT.error(0),)), id="error-param"),
+        pytest.param(_direct_candidate(params=(LAYOUT.output(0),)), id="output-param"),
+        pytest.param(
+            _direct_candidate(params=(LAYOUT.basis(0), LAYOUT.basis(1))),
+            id="two-params",
+        ),
+        pytest.param(_direct_candidate(params=()), id="no-param"),
+        pytest.param(_direct_candidate(value=1, params=()), id="no-param-flip"),
+        pytest.param(_direct_candidate(edge_type=EdgeType.SIMPLE), id="simple-edge"),
+        pytest.param(
+            _direct_candidate(output_domain=Domain.QUANTUM),
+            id="quantum-output",
+        ),
+        pytest.param(
+            _direct_candidate(
+                output_domain=Domain.QUANTUM, spider_domain=Domain.QUANTUM
+            ),
+            id="quantum-output-and-spider",
+        ),
+    ],
+)
+def test_classify_direct_rejects_other_components(candidate):
+    assert classify_direct(candidate, LAYOUT) is None
+
+
+def test_plugging_a_quantum_output_is_an_error():
+    component = _direct_candidate(output_domain=Domain.QUANTUM)
+    with pytest.raises(ValueError, match="not classical"):
+        _plugged(component, LAYOUT, 0)

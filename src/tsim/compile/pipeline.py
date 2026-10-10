@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 from zx_param import (
     DecompositionStrategy,
+    Domain,
     Dyadic,
     EdgeType,
     Graph,
@@ -108,13 +109,19 @@ def classify_direct(component: Graph, layout: ParamLayout) -> tuple[int, bool] |
     """Return ``(basis index, flip)`` if the component's only output is one basis bit.
 
     That is the case when the component is a classical output boundary joined by
-    a Hadamard edge to a Z spider whose phase is 0 or π plus one parameter.
+    a Hadamard edge to a classical Z spider whose phase is 0 or π plus one
+    error-basis parameter.
     """
     outputs = component.outputs()
     if len(outputs) != 1 or component.num_vertices() != 2:
         return None
     (out,) = outputs
     (spider,) = component.neighbors(out)
+    if Domain.QUANTUM in (
+        component.vertex_domain(out),
+        component.vertex_domain(spider),
+    ):
+        return None
     if component.vertex_type(spider) != VertexType.Z:
         return None
     if component.edge_type(out, spider) != EdgeType.HADAMARD:
@@ -123,6 +130,8 @@ def classify_direct(component: Graph, layout: ParamLayout) -> tuple[int, bool] |
     if len(phase.parameters) != 1 or phase.value not in (0, 1):
         return None
     (param,) = phase.parameters
+    if not layout.num_errors <= param < layout.num_errors + layout.num_basis:
+        return None
     return layout.basis_index(param), phase.value == 1
 
 
@@ -146,9 +155,16 @@ def _plugged(component: Graph, layout: ParamLayout, k: int) -> Graph:
     ``√2·⟨m_i|``, so the graph is multiplied by ``√2^-k``; a Z(0) spider sums
     over the output. All of a component's plugged graphs then share one
     normalization.
+
+    Raises:
+        ValueError: An output boundary is not classical, so the normalization
+            above would be wrong.
+
     """
     g = component.copy()
     for j, v in enumerate(component.outputs()):
+        if component.vertex_domain(v) != Domain.CLASSICAL:
+            raise ValueError(f"output {_port(component, v)} is not classical")
         if j < k:
             bit = Phase(Fraction(0), frozenset({layout.output(_port(component, v))}))
             g.plug(v, VertexType.X, bit)
