@@ -465,3 +465,39 @@ def stabilizer_rank_distribution(
     f_row = np.array([list(f)], dtype=np.uint8).reshape(1, len(f))
     norm = float(np.abs(np.asarray(evaluate(norm_graphs, jnp.asarray(f_row))))[0])
     return {o: float(p) / norm for o, p in zip(outcomes, joint, strict=True)}
+
+
+_PAULI_MATRICES = {
+    (0, 0): np.eye(2),
+    (1, 0): np.array([[0, 1], [1, 0]]),
+    (0, 1): np.diag([1, -1]),
+    (1, 1): np.array([[0, -1j], [1j, 0]]),
+}
+
+
+def pauli_matrix(x: int, z: int, num_qubits: int) -> np.ndarray:
+    """Return the dense matrix of P = i^|x∧z| X^x Z^z (bit q is qubit q)."""
+    matrix = np.ones((1, 1), dtype=complex)
+    for q in reversed(range(num_qubits)):
+        matrix = np.kron(matrix, _PAULI_MATRICES[((x >> q) & 1, (z >> q) & 1)])
+    return matrix
+
+
+def assert_matches_distribution(
+    samples: np.ndarray, distribution: Distribution
+) -> None:
+    """Assert that sampled rows follow ``distribution`` (5σ + 3 per outcome)."""
+    shots = samples.shape[0]
+    counts: dict[tuple[int, ...], int] = {}
+    for row in samples.astype(int):
+        key = tuple(row.tolist())
+        counts[key] = counts.get(key, 0) + 1
+    for key in set(counts) | set(distribution):
+        p = distribution.get(key, 0.0)
+        expected = shots * p
+        sigma = np.sqrt(shots * p * (1 - p))
+        assert abs(counts.get(key, 0) - expected) <= 5 * sigma + 3, (
+            key,
+            counts.get(key, 0),
+            expected,
+        )
