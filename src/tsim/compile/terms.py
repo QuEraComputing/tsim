@@ -1,13 +1,15 @@
 """Term-family modules for compiled scalar graphs.
 
-Each compiled ZX scalar is the product of four term families plus a global
-phase and a floatfactor. This module defines the four families as
-``equinox.Module`` records, bundles the shared phase tables, and gives each
-family an ``evaluate`` method that turns a batch of binary parameter values
-into an ``ExactScalarArray``.
+Each compiled scalar is the product of four exact term families (``NodePhases``,
+``HalfPiPhases``, ``PiProducts``, ``PhasePairs``) and a floating-point family
+(``FloatTerms``, for angles that are not multiples of π/4), times a global phase
+and a floatfactor. This module defines the families as ``equinox.Module``
+records, bundles the shared phase tables, and gives each family an ``evaluate``
+method that turns a batch of binary parameter values into an
+``ExactScalarArray`` (or, for ``FloatTerms``, a complex array).
 
-Downstream, ``compile.py`` builds instances of these classes from
-``pyzx_param`` scalars, and ``evaluate.py`` orchestrates the products.
+Downstream, ``compile.py`` builds instances of these classes from ``zx_param``
+scalars (``compile_scalars``), and ``evaluate.py`` orchestrates the products.
 """
 
 import equinox as eqx
@@ -77,9 +79,10 @@ class HalfPiPhases(eqx.Module):
     """Sum of ``exp(i·j·π·⊕params / 2)`` terms with ``j ∈ {1, 3}``.
 
     Terms sharing a parameter bitstring have been combined to a single stored
-    coefficient ``j' ∈ {1, 2, 3}`` (see ``_compile_halfpi_phases``). Coefficients
-    are stored in eighth-turn units — i.e. as ``2·j'`` — so the evaluator can
-    reuse the ``ω = e^(iπ/4)`` phase table.
+    coefficient (see ``_compile_halfpi_phases`` and ``compile_scalars``).
+    Coefficients are stored in eighth-turn units, so the evaluator can reuse the
+    ``ω = e^(iπ/4)`` phase table. The coefficient may be any value ``0..7``
+    (angles that are multiples of π/4), not only ``{2, 4, 6}``.
 
     Padded slots use ``0`` (the additive identity for phase sums), so padded
     entries contribute nothing to the summed exponent.
@@ -88,7 +91,7 @@ class HalfPiPhases(eqx.Module):
     ``(num_graphs, max_terms, n_params)``.
     """
 
-    coeffs: Array  # uint8, values in {0, 2, 4, 6}  (= 2·j', with 0 = padding)
+    coeffs: Array  # uint8, values 0-7 in eighth turns (0 = padding)
     params: Array  # uint8, parameter parity bitmasks
 
     def evaluate(self, param_vals: Array) -> ExactScalarArray:
@@ -205,3 +208,36 @@ class ScalarPrefactor(eqx.Module):
     power2: Array  # int32, shape (num_graphs,) — exponent on the 2^(·) scaling
     approximate_floatfactors: Array  # complex64, shape (num_graphs,)
     has_approximate_floatfactors: bool = eqx.field(static=True)
+
+
+class FloatTerms(eqx.Module):
+    """Product of terms whose angles are not multiples of π/4, in floating point.
+
+    Each term has up to two parameter parities ``p_a`` and ``p_b`` and a table of
+    its four values, indexed by ``p_a + 2·p_b``. Padded slots hold a table of ones
+    and empty masks.
+
+    Shapes are ``(num_graphs, max_terms, 4)`` for ``table`` and
+    ``(num_graphs, max_terms, n_params)`` for the masks.
+    """
+
+    table: Array  # complex64
+    a_params: Array  # uint8, parity mask of p_a
+    b_params: Array  # uint8, parity mask of p_b
+
+    def evaluate(self, param_vals: Array) -> Array:
+        """Evaluate the product per graph, batched over ``param_vals``.
+
+        Args:
+            param_vals: Binary parameter values, shape ``(batch, n_params)``.
+
+        Returns:
+            Complex array of shape ``(batch, num_graphs)``.
+
+        """
+        pa = matmul_gf2(self.a_params, param_vals).astype(jnp.int32)
+        pb = matmul_gf2(self.b_params, param_vals).astype(jnp.int32)
+        index = pa + 2 * pb
+        table = jnp.broadcast_to(self.table[None], (*index.shape, 4))
+        values = jnp.take_along_axis(table, index[..., None], axis=-1)[..., 0]
+        return jnp.prod(values, axis=-1)

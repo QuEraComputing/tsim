@@ -16,10 +16,12 @@ from tsim.core.exact_scalar import ExactScalarArray
 def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
     """Evaluate compiled circuit with batched parameter values.
 
-    Each term family (``NodePhases``, ``HalfPiPhases``, ``PiProducts``,
+    Each exact term family (``NodePhases``, ``HalfPiPhases``, ``PiProducts``,
     ``PhasePairs``) computes its own contribution via ``.evaluate(param_vals)``.
     This function multiplies those together with the per-graph
     ``ScalarPrefactor`` and folds in ``power2`` / any approximate floatfactor.
+    The floating-point ``FloatTerms`` family (angles that are not multiples of
+    π/4) is multiplied in only when the circuit has float terms.
 
     Args:
         circuit: Compiled circuit representation.
@@ -49,11 +51,14 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
         ],
     )
 
-    if not prefactor.has_approximate_floatfactors:
+    if not prefactor.has_approximate_floatfactors and not circuit.has_float_terms:
         total = ExactScalarArray(total.coeffs, total.power + prefactor.power2)
         return total.sum().to_complex()
 
     return jnp.sum(
-        total.to_complex() * prefactor.approximate_floatfactors * 2.0**prefactor.power2,
+        total.to_complex()
+        * circuit.float_terms.evaluate(param_vals)
+        * prefactor.approximate_floatfactors
+        * 2.0**prefactor.power2,
         axis=-1,
     )

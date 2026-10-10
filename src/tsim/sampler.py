@@ -301,7 +301,8 @@ class _CompiledSamplerBase:
                 max_b = circuit.halfpi_phases.coeffs.shape[1]
                 max_c = circuit.pi_products.psi_const.shape[1]
                 max_d = circuit.phase_pairs.alpha.shape[1]
-                largest = max(max_a * 16, max_b * 4, max_c * 4, max_d * 16)
+                max_e = circuit.float_terms.table.shape[1]
+                largest = max(max_a * 16, max_b * 4, max_c * 4, max_d * 16, max_e * 16)
                 peak = max(peak, G * largest * 3)
         return max(peak, 1)
 

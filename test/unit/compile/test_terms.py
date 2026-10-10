@@ -2,7 +2,13 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from tsim.compile.terms import HalfPiPhases, NodePhases, PhasePairs, PiProducts
+from tsim.compile.terms import (
+    FloatTerms,
+    HalfPiPhases,
+    NodePhases,
+    PhasePairs,
+    PiProducts,
+)
 
 
 def _ref_parity(bits: np.ndarray, param_vals: np.ndarray) -> np.ndarray:
@@ -260,3 +266,22 @@ class TestPhasePairs:
         module = PhasePairs(empty, empty_p, empty, empty_p, counts)
         got = np.asarray(module.evaluate(param_vals).to_complex())
         np.testing.assert_allclose(got, np.ones((B, G), dtype=complex))
+
+
+def test_float_terms_look_up_their_table():
+    table = jnp.array([[[1, 2, 3, 4]]], dtype=jnp.complex64)
+    a = jnp.array([[[1, 0]]], dtype=jnp.uint8)
+    b = jnp.array([[[0, 1]]], dtype=jnp.uint8)
+    terms = FloatTerms(table=table, a_params=a, b_params=b)
+    vals = jnp.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=jnp.uint8)
+    np.testing.assert_allclose(np.asarray(terms.evaluate(vals))[:, 0], [1, 2, 3, 4])
+
+
+def test_empty_float_terms_evaluate_to_one():
+    terms = FloatTerms(
+        table=jnp.ones((2, 0, 4), dtype=jnp.complex64),
+        a_params=jnp.zeros((2, 0, 3), dtype=jnp.uint8),
+        b_params=jnp.zeros((2, 0, 3), dtype=jnp.uint8),
+    )
+    result = terms.evaluate(jnp.ones((5, 3), dtype=jnp.uint8))
+    np.testing.assert_allclose(np.asarray(result), np.ones((5, 2)))

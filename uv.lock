@@ -184,6 +184,7 @@ dependencies = [
     { name = "pyzx-param" },
     { name = "stim" },
     { name = "stim-timeline-text" },
+    { name = "zx-param" },
 ]
 
 [package.optional-dependencies]
@@ -252,6 +253,7 @@ requires-dist = [
     { name = "pyzx-param", specifier = ">=0.9.3" },
     { name = "stim", specifier = ">=1.0.0" },
     { name = "stim-timeline-text", specifier = ">=0.1.0" },
+    { name = "zx-param", editable = "../../../zx_param/.worktrees/tsim-support" },
 ]
 provides-extras = ["cuda12", "cuda13"]
 
