@@ -40,6 +40,18 @@ def _align_wire_ends(g: Graph, built: GraphRepresentation) -> None:
             g.set_col(v, end)
 
 
+def _move_label(g: Graph, source: Vertex, target: Vertex) -> None:
+    """Move the display label of ``source`` to ``target``."""
+    g.set_vertex_label(target, g.vertex_label(source))
+    g.set_vertex_label(source, None)
+
+
+def _clear_measurement_labels(g: Graph, built: GraphRepresentation) -> None:
+    """Remove the ``rec[i]`` and ``m[i]`` labels from the measurement spiders."""
+    for v in [*built.rec, *built.silent_rec]:
+        g.set_vertex_label(v, None)
+
+
 def _attach_annotation_outputs(
     g: Graph, built: GraphRepresentation, first_port: int
 ) -> None:
@@ -47,7 +59,8 @@ def _attach_annotation_outputs(
 
     Ports are ``first_port, first_port + 1, …``: detectors first, then
     observables in index order. Each spider is scaled so that, with its output
-    leg, its tensor is exactly the parity of its measurement records.
+    leg, its tensor is exactly the parity of its measurement records. The
+    spider's ``det[i]`` / ``obs[k]`` label moves to its boundary.
     """
     annotations = [(v, -2.0) for v in built.detectors]
     annotations += [(v, -2.5) for v in built.observables]
@@ -60,6 +73,7 @@ def _attach_annotation_outputs(
         )
         g.set_port(b, port)
         g.add_edge(v, b)
+        _move_label(g, v, b)
 
 
 def circuit_graph(built: GraphRepresentation, *, annotations: bool = True) -> Graph:
@@ -72,9 +86,11 @@ def circuit_graph(built: GraphRepresentation, *, annotations: bool = True) -> Gr
     With ``annotations=True``, every detector and observable spider gets a
     classical output boundary, with ports after the qubit outputs (detectors,
     then observables), so the graph's tensor is the circuit's channel together
-    with the detector and observable bits. With ``annotations=False``, the
-    detector and observable spiders are left out, and the graph's tensor is the
-    circuit's channel.
+    with the detector and observable bits; the ``det[i]`` / ``obs[k]`` labels
+    sit on those boundaries, and the ``rec[i]`` / ``m[i]`` labels on the
+    measurement spiders. With ``annotations=False``, the detector and
+    observable spiders are left out, and the graph's tensor is the circuit's
+    channel.
     """
     g = built.graph.copy()
     _align_wire_ends(g, built)
@@ -106,6 +122,8 @@ def build_sampling_graph(
     detector (ports ``0 … D−1``) followed by one per observable. In measurement
     mode the detector and observable spiders are removed. For bound error
     parameters, the graph's tensor is the joint distribution of the outputs.
+    Only the output boundaries carry labels (``rec[i]``, or ``det[i]`` and
+    ``obs[k]``), so the labels survive reduction.
     """
     g = built.graph.copy()
     _align_wire_ends(g, built)
@@ -117,6 +135,7 @@ def build_sampling_graph(
         _discard(g, v)
     if sample_detectors:
         _attach_annotation_outputs(g, built, first_port=0)
+        _clear_measurement_labels(g, built)
         return g
     for v in [*built.detectors, *built.observables]:
         g.remove_vertex(v)
@@ -127,6 +146,8 @@ def build_sampling_graph(
         )
         g.set_port(b, port)
         g.add_edge(v, b)
+        _move_label(g, v, b)
+    _clear_measurement_labels(g, built)
     return g
 
 

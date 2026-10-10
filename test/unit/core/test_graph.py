@@ -74,6 +74,53 @@ def test_sampling_outputs_are_classical_and_ordered():
     assert all(not g.has_vertex(v) for v in built.detectors)
 
 
+LABELLED = (
+    "R 0\nH 0 1\nM 0 1\nMR 0\nDETECTOR rec[-1] rec[-3]\n"
+    "OBSERVABLE_INCLUDE(0) rec[-2]"
+)
+
+
+def _labels(g: zx_param.Graph) -> dict[str, VertexType]:
+    labels = {}
+    for v in g.vertices():
+        label = g.vertex_label(v)
+        if label is not None:
+            labels[label] = g.vertex_type(v)
+    return labels
+
+
+def _output_labels(g: zx_param.Graph) -> list[str | None]:
+    return [g.vertex_label(v) for v in g.outputs()]
+
+
+def test_circuit_graph_labels_records_and_annotation_outputs():
+    built = parse_stim_circuit(stim.Circuit(LABELLED))
+    g = circuit_graph(built)
+    assert _labels(g) == {
+        "rec[0]": VertexType.Z,
+        "rec[1]": VertexType.Z,
+        "rec[2]": VertexType.Z,
+        "m[0]": VertexType.Z,
+        "det[0]": VertexType.BOUNDARY,
+        "obs[0]": VertexType.BOUNDARY,
+    }
+    assert _output_labels(g)[-2:] == ["det[0]", "obs[0]"]
+
+
+def test_detector_sampling_graph_labels_only_its_outputs():
+    built = parse_stim_circuit(stim.Circuit(LABELLED))
+    g = build_sampling_graph(built, sample_detectors=True)
+    assert _labels(g) == {"det[0]": VertexType.BOUNDARY, "obs[0]": VertexType.BOUNDARY}
+    assert _output_labels(g) == ["det[0]", "obs[0]"]
+
+
+def test_measurement_sampling_graph_labels_only_its_outputs():
+    built = parse_stim_circuit(stim.Circuit(LABELLED))
+    g = build_sampling_graph(built)
+    assert set(_labels(g).values()) == {VertexType.BOUNDARY}
+    assert _output_labels(g) == ["rec[0]", "rec[1]", "rec[2]"]
+
+
 def test_circuit_graph_ports_and_helper_lanes():
     built = parse_stim_circuit(stim.Circuit("H 0\nMPP X0*Z1\nM 0"))
     g = circuit_graph(built)

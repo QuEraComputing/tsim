@@ -1018,6 +1018,28 @@ def test_diagram_zx_dets():
         _assert_drew_a_graph(mock_draw, result)
 
 
+@pytest.mark.parametrize(
+    "type,labels",
+    [("zx-meas", ["rec[0]", "rec[1]"]), ("zx-dets", ["det[0]", "obs[0]"])],
+)
+def test_reduced_diagrams_keep_labels_on_their_outputs(
+    type: Literal["zx-meas", "zx-dets"], labels: list[str]
+):
+    c = Circuit(
+        "R 0 1\nH 0\nT 0\nCNOT 0 1\nX_ERROR(0.1) 1\nM 0 1\n"
+        "DETECTOR rec[-1] rec[-2]\nOBSERVABLE_INCLUDE(0) rec[-1]"
+    )
+    with patch("zx_param.draw") as mock_draw:
+        c.diagram(type=type)
+    g = mock_draw.call_args.args[0]
+    assert [g.vertex_label(v) for v in g.outputs()] == labels
+    assert all(
+        g.vertex_label(v) is None
+        for v in g.vertices()
+        if g.vertex_type(v) != zx_param.VertexType.BOUNDARY
+    )
+
+
 @pytest.mark.parametrize("scale", [2, 0, False])
 @pytest.mark.parametrize("type", ["zx", "zx-meas", "zx-dets"])
 def test_diagram_zx_scale_horizontally(
