@@ -74,7 +74,8 @@ def build_sampling_graph(
     wire ends are discarded, and classical output boundaries are attached: one
     per measurement record (port ``i``), or, with ``sample_detectors``, one per
     detector (ports ``0 … D−1``) followed by one per observable. In measurement
-    mode the detector and observable spiders are removed.
+    mode the detector and observable spiders are removed. For bound error
+    parameters, the graph's tensor is the joint distribution of the outputs.
     """
     g = built.graph.copy()
     _align_wire_ends(g, built)
@@ -86,6 +87,10 @@ def build_sampling_graph(
         _discard(g, v)
     if sample_detectors:
         outputs = [*built.detectors, *built.observables]
+        for v in outputs:
+            # NOTE: an X spider with n legs is 2^(1 - n/2) times a parity check;
+            # with its output leg, an annotation has degree + 1 legs.
+            g.mul_scalar(Scalar.one().add_power_sqrt2(g.degree(v) - 1))
     else:
         for v in [*built.detectors, *built.observables]:
             g.remove_vertex(v)

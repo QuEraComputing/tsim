@@ -1137,6 +1137,20 @@ def _annotation_col(b: GraphRepresentation, rec: list[int]) -> float:
     return col
 
 
+def _xor_record(b: GraphRepresentation, annotation: Vertex, rec: int) -> None:
+    """Add measurement record ``rec`` to the parity of ``annotation``.
+
+    A record that is already in the parity cancels: its edge is removed rather
+    than Hopf-cancelled by ``add_edge``, which would leave a scalar of 1/2 behind
+    in graphs that drop the annotation.
+    """
+    record = b.rec[rec]
+    if b.graph.has_edge(annotation, record):
+        b.graph.remove_edge(annotation, record)
+    else:
+        b.graph.add_edge(annotation, record)
+
+
 def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
     """Add detector annotation that XORs the given measurement record bits."""
     v0 = b.graph.add_vertex(
@@ -1147,7 +1161,7 @@ def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
         label=f"det[{len(b.detectors)}]",
     )
     for rec_ in rec:
-        b.graph.add_edge(v0, b.rec[rec_])
+        _xor_record(b, v0, rec_)
     b.detectors.append(v0)
 
 
@@ -1167,7 +1181,7 @@ def observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None
 
     v0 = b.observables_dict[idx]
     for rec_ in rec:
-        b.graph.add_edge(v0, b.rec[rec_])
+        _xor_record(b, v0, rec_)
 
 
 def tick(b: GraphRepresentation) -> None:

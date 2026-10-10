@@ -811,6 +811,11 @@ def test_to_tensor_leaves_out_detectors():
     np.testing.assert_allclose(
         Circuit("M 0\nDETECTOR rec[-1]").to_tensor(), dephasing, atol=1e-9
     )
+    repeated = Circuit(
+        "M 0\nDETECTOR rec[-1] rec[-1]\n"
+        "OBSERVABLE_INCLUDE(0) rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]"
+    )
+    np.testing.assert_allclose(repeated.to_tensor(), dephasing, atol=1e-9)
 
 
 def test_detector_error_model_basic():

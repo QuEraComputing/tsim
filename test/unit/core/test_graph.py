@@ -1,9 +1,11 @@
 """Closing for sampling, the circuit graph and preparation on zx_param."""
 
 import numpy as np
+import pytest
 import stim
 import zx_param
 from zx_param import Domain, VertexType
+from zx_param.phase import Bit
 
 from tsim.circuit import Circuit
 from tsim.core.graph import build_sampling_graph, circuit_graph, prepare_graph
@@ -87,3 +89,44 @@ def test_prepare_graph_maps_errors_to_basis_ids():
     assert params == {layout.basis(0)}
     np.testing.assert_array_equal(prepared.error_transform, [[1]])
     assert isinstance(prepared.graph, zx_param.Graph)
+
+
+NORMALIZATION_CIRCUITS = {
+    "mpp": "H 0\nMPP X0*Z1 Y0*Y1\nM 0 1\nDETECTOR rec[-1] rec[-3]\n"
+    "OBSERVABLE_INCLUDE(0) rec[-2]",
+    "mxx-myy-mzz": "H 0\nMXX 0 1\nMYY(0.1) 0 1\nMZZ 0 1\nDETECTOR rec[-1] rec[-3]\n"
+    "OBSERVABLE_INCLUDE(0) rec[-2]",
+    "mpad": "H 0\nMPAD 0 1\nM 0\nDETECTOR rec[-2] rec[-1]\n"
+    "OBSERVABLE_INCLUDE(0) rec[-3]",
+    "heralded": "H 0\nHERALDED_ERASE(0.2) 0\n"
+    "HERALDED_PAULI_CHANNEL_1(0.1, 0.1, 0.1, 0.1) 1\nM 0 1\n"
+    "DETECTOR rec[-4]\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-2]",
+    "correlated": "H 0\nCORRELATED_ERROR(0.1) X0 Z1\n"
+    "ELSE_CORRELATED_ERROR(0.2) Y0 X1\nM 0 1\nDETECTOR rec[-1]\n"
+    "OBSERVABLE_INCLUDE(0) rec[-2]",
+    "noisy-measurement": "H 0\nCX 0 1\nM(0.1) 0 1\nDETECTOR rec[-1] rec[-2]\n"
+    "OBSERVABLE_INCLUDE(0) rec[-1]",
+    "feedforward": "H 0 2\nM 0\nCX rec[-1] 1\nM 2\nH 3\nCZ rec[-1] 3\nH 3\n"
+    "X_ERROR(0.1) 1 3\nM 1 3\nDETECTOR rec[-4] rec[-2]\nDETECTOR rec[-3] rec[-1]\n"
+    "OBSERVABLE_INCLUDE(0) rec[-1]",
+    "resets": "H 0\nMR 0\nRX 1\nRY 2\nT 1 2\nDEPOLARIZE1(0.1) 0 1 2\nMRX(0.1) 1\n"
+    "MRY 2\nM 0\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-2] rec[-3]",
+    "annotations": "H 0\nT 0\nM 0 1\nDETECTOR\nDETECTOR rec[-2] rec[-2]\n"
+    "DETECTOR rec[-1] rec[-2] rec[-2]\nOBSERVABLE_INCLUDE(0) rec[-1]\n"
+    "OBSERVABLE_INCLUDE(0) rec[-2]",
+}
+
+
+@pytest.mark.parametrize("sample_detectors", [False, True])
+@pytest.mark.parametrize(
+    "text", NORMALIZATION_CIRCUITS.values(), ids=NORMALIZATION_CIRCUITS.keys()
+)
+def test_sampling_graph_sums_to_one(text, sample_detectors):
+    circuit = Circuit(text)
+    num_errors = parse_stim_circuit(circuit.stim_circuit).num_error_bits
+    rng = np.random.default_rng(0)
+    zeros: dict[int, Bit] = {j: 0 for j in range(num_errors)}
+    random: dict[int, Bit] = {j: 1 if rng.integers(2) else 0 for j in zeros}
+    for bindings in (zeros, random):
+        g = circuit.get_sampling_graph(sample_detectors=sample_detectors)
+        np.testing.assert_allclose(np.sum(g.to_tensor(bindings)), 1, atol=1e-9)
