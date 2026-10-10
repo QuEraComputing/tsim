@@ -24,6 +24,11 @@ _I_POWERS = (1, 1j, -1, -1j)
 _TINY = 1e-30
 _TWO_TO_32 = 2.0**32
 
+# NOTE: every outcome probability is normalized by the measured weights, so norm
+# drift is harmless until it exceeds what rounding can explain: each rotation
+# adds ~1e-7 relative drift under complex64.
+NORM_WARNING_THRESHOLDS = {"complex64": 1e-3, "complex128": 1e-9}
+
 
 class LaneState(NamedTuple):
     """Per-lane state of the executor; the leading axis is the lane.

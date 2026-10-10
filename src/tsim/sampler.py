@@ -17,7 +17,10 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
-from tsim.statevector.execute import sample_statevector_component
+from tsim.statevector.execute import (
+    NORM_WARNING_THRESHOLDS,
+    sample_statevector_component,
+)
 from tsim.statevector.program import StatevectorComponent
 from tsim.utils.cuda_helpers import copy_d2h
 
@@ -151,17 +154,19 @@ def sample_program(
             samples, key, max_norm_deviation = sample_statevector_component(
                 component, f_params, key
             )
+            warning_threshold = NORM_WARNING_THRESHOLDS[component.dtype]
         else:
             samples, key, max_norm_deviation = sample_component(
                 component, f_params, key
             )
+            warning_threshold = 1e-5
         if np.isclose(max_norm_deviation, 1):
             raise ValueError(
                 "A vanishing marginal probability distribution was encountered (normalization 0). "
                 "This is likely the result of an underflow error. Please report this "
                 "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
             )  # pragma: no cover
-        if max_norm_deviation > 1e-5:
+        if max_norm_deviation > warning_threshold:
             warnings.warn(
                 "A marginal probability was not normalized correctly "
                 f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "

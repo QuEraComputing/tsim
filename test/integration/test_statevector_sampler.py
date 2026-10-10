@@ -1,9 +1,11 @@
 """strategy="statevector" end to end, against stabilizer rank and VecSampler."""
 
+import warnings
 from test.helpers.gen import gen_stim_circuit
 from test.helpers.statevector import CIRCUITS, assert_counts_match
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -121,3 +123,54 @@ def test_a_lane_that_does_not_fit_in_memory_is_rejected(monkeypatch):
     )
     with pytest.raises(ValueError, match="cat5"):
         Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(strategy="statevector")
+
+
+def _norm_warnings(monkeypatch, strategy, deviation, *, x64=False):
+    name = (
+        "sample_statevector_component"
+        if strategy == "statevector"
+        else "sample_component"
+    )
+    sample = getattr(sampler_module, name)
+
+    def drifting(component, f_params, key):
+        samples, key, _ = sample(component, f_params, key)
+        return samples, key, jnp.asarray(deviation)
+
+    monkeypatch.setattr(sampler_module, name, drifting)
+    with jax.enable_x64(x64):
+        sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
+            strategy=strategy, seed=0
+        )
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            sampler.sample(10)
+    return [w for w in caught if "not normalized" in str(w.message)]
+
+
+@pytest.mark.parametrize(
+    "x64, deviation, warns",
+    [
+        (False, 5e-4, False),
+        (False, 2e-3, True),
+        (True, 1e-10, False),
+        (True, 1e-8, True),
+    ],
+)
+def test_statevector_norm_warnings_depend_on_the_amplitude_dtype(
+    monkeypatch, x64, deviation, warns
+):
+    caught = _norm_warnings(monkeypatch, "statevector", deviation, x64=x64)
+    assert bool(caught) == warns
+
+
+@pytest.mark.parametrize("deviation, warns", [(5e-6, False), (2e-5, True)])
+def test_stabilizer_rank_norm_warnings_keep_their_threshold(
+    monkeypatch, deviation, warns
+):
+    assert bool(_norm_warnings(monkeypatch, "cat5", deviation)) == warns
+
+
+def test_a_vanishing_statevector_norm_raises(monkeypatch):
+    with pytest.raises(ValueError, match="vanishing"):
+        _norm_warnings(monkeypatch, "statevector", 1.0)
