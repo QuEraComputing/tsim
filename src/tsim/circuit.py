@@ -818,11 +818,12 @@ class Circuit:
     def get_graph(self) -> Graph:
         """Construct the circuit's quantum/classical ZX graph, with qubit ports.
 
-        Error parameters have the error index as their ID. Detector and
-        observable spiders are included: under ``to_tensor`` each one post-selects
-        the parity of its measurement records to 0 (up to a constant factor), so
-        the graph's tensor is not the circuit's channel; use ``Circuit.to_tensor``
-        for that.
+        Error parameters have the error index as their ID. Each detector and
+        observable is a classical XOR spider with its own classical output
+        boundary; their ports follow the qubit outputs (detectors, then
+        observables), so the graph's tensor is the circuit's channel together
+        with the detector and observable bits. ``Circuit.to_tensor`` returns the
+        channel alone.
         """
         return circuit_graph(parse_stim_circuit(self._stim_circ))
 

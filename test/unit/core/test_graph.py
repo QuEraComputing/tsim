@@ -1,5 +1,7 @@
 """Closing for sampling, the circuit graph and preparation on zx_param."""
 
+from test.helpers.tensors import doubled
+
 import numpy as np
 import pytest
 import stim
@@ -10,6 +12,8 @@ from zx_param.phase import Bit
 from tsim.circuit import Circuit
 from tsim.core.graph import build_sampling_graph, circuit_graph, prepare_graph
 from tsim.core.parse import parse_stim_circuit
+
+H = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
 
 
 def _distribution(text: str, *, sample_detectors: bool = False) -> np.ndarray:
@@ -80,9 +84,69 @@ def test_circuit_graph_ports_and_helper_lanes():
 
 
 def test_circuit_graph_without_annotations_drops_detectors():
-    built = parse_stim_circuit(stim.Circuit("M 0\nDETECTOR rec[-1]"))
+    built = parse_stim_circuit(
+        stim.Circuit("M 0\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]")
+    )
     g = circuit_graph(built, annotations=False)
-    assert all(not g.has_vertex(v) for v in built.detectors)
+    assert all(not g.has_vertex(v) for v in [*built.detectors, *built.observables])
+    assert [g.port(v) for v in g.outputs()] == [0]
+
+
+def test_circuit_graph_gives_annotations_classical_outputs():
+    built = parse_stim_circuit(
+        stim.Circuit(
+            "H 0 1\nM 0 1\nDETECTOR rec[-1]\nDETECTOR rec[-2]\n"
+            "OBSERVABLE_INCLUDE(0) rec[-1]"
+        )
+    )
+    g = circuit_graph(built)
+    outputs = g.outputs()
+    assert [g.port(v) for v in outputs] == [0, 1, 2, 3, 4]
+    annotations = [*built.detectors, *built.observables]
+    for b, v in zip(outputs[2:], annotations, strict=True):
+        assert g.vertex_domain(b) == Domain.CLASSICAL
+        assert list(g.neighbors(b)) == [v]
+
+
+def _with_annotation_bits(terms: list[tuple[np.ndarray, list[int]]]) -> np.ndarray:
+    """Return Σ doubled(K) ⊗ |bits⟩, with the bit axes after the qubit outputs."""
+    total = 0
+    for kraus, bits in terms:
+        t = doubled(kraus)
+        for bit in bits:
+            t = np.multiply.outer(t, np.eye(2)[bit])
+        half = (t.ndim - len(bits)) // 2
+        axes = [*range(half), *range(2 * half, t.ndim), *range(half, 2 * half)]
+        total = total + t.transpose(axes)
+    return np.asarray(total)
+
+
+def test_circuit_graph_tensor_is_the_channel_with_annotation_bits():
+    built = parse_stim_circuit(
+        stim.Circuit("H 0\nM 0\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]")
+    )
+    expected = _with_annotation_bits(
+        [(np.outer(np.eye(2)[k], np.eye(2)[k]) @ H, [k, k]) for k in (0, 1)]
+    )
+    np.testing.assert_allclose(circuit_graph(built).to_tensor(), expected, atol=1e-9)
+
+
+def test_circuit_graph_tensor_xors_records_into_annotations():
+    built = parse_stim_circuit(
+        stim.Circuit(
+            "H 0\nCNOT 0 1\nH 1\nM 0 1\nDETECTOR rec[-1] rec[-2]\n"
+            "OBSERVABLE_INCLUDE(0) rec[-1] rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-2]"
+        )
+    )
+    cnot = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]])
+    u = np.kron(np.eye(2), H) @ cnot @ np.kron(H, np.eye(2))
+    terms = []
+    for k0 in (0, 1):
+        for k1 in (0, 1):
+            e = np.eye(4)[2 * k0 + k1]
+            terms.append((np.outer(e, e) @ u, [k0 ^ k1, k0]))
+    expected = _with_annotation_bits(terms)
+    np.testing.assert_allclose(circuit_graph(built).to_tensor(), expected, atol=1e-9)
 
 
 def test_prepare_graph_maps_errors_to_basis_ids():

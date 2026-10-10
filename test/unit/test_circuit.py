@@ -980,6 +980,23 @@ def test_diagram_zx():
         _assert_drew_a_graph(mock_draw, result)
 
 
+def test_diagram_zx_draws_annotation_boundaries():
+    c = Circuit("H 0\nM 0\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]")
+    with patch("zx_param.draw") as mock_draw:
+        c.diagram(type="zx")
+    g = mock_draw.call_args.args[0]
+    classical = [
+        v
+        for v in g.vertices()
+        if g.vertex_type(v) == zx_param.VertexType.BOUNDARY
+        and g.vertex_domain(v) == zx_param.Domain.CLASSICAL
+    ]
+    assert len(classical) == 2
+    for b in classical:
+        (spider,) = g.neighbors(b)
+        assert g.vertex_type(spider) == zx_param.VertexType.X
+
+
 def test_diagram_zx_empty():
     c = Circuit()
     with patch("zx_param.draw") as mock_draw:

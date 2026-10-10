@@ -40,14 +40,41 @@ def _align_wire_ends(g: Graph, built: GraphRepresentation) -> None:
             g.set_col(v, end)
 
 
+def _attach_annotation_outputs(
+    g: Graph, built: GraphRepresentation, first_port: int
+) -> None:
+    """Give every detector and observable spider a classical output boundary.
+
+    Ports are ``first_port, first_port + 1, …``: detectors first, then
+    observables in index order. Each spider is scaled so that, with its output
+    leg, its tensor is exactly the parity of its measurement records.
+    """
+    annotations = [(v, -2.0) for v in built.detectors]
+    annotations += [(v, -2.5) for v in built.observables]
+    for port, (v, row) in enumerate(annotations, start=first_port):
+        # NOTE: an X spider with n legs is 2^(1 - n/2) times a parity check;
+        # with its output leg, an annotation has degree + 1 legs.
+        g.mul_scalar(Scalar.one().add_power_sqrt2(g.degree(v) - 1))
+        b = g.add_vertex(
+            VertexType.BOUNDARY, col=g.col(v), row=row, domain=Domain.CLASSICAL
+        )
+        g.set_port(b, port)
+        g.add_edge(v, b)
+
+
 def circuit_graph(built: GraphRepresentation, *, annotations: bool = True) -> Graph:
     """Return the circuit's graph with qubit ports.
 
     For qubit ``q``, a wire start that is still a boundary gets input port
     ``-(q + 1)`` and the wire end gets output port ``q``. Helper lanes (negative
     indices, used by MPP, MPAD and heralded channels) are discarded at the end.
-    Detector and observable spiders are annotations; with ``annotations=False``
-    they are left out, so the graph's tensor is the circuit's channel.
+
+    With ``annotations=True``, every detector and observable spider gets a
+    classical output boundary, with ports after the qubit outputs (detectors,
+    then observables), so the graph's tensor is the circuit's channel together
+    with the detector and observable bits. With ``annotations=False``, the
+    detector and observable spiders are left out, and the graph's tensor is the
+    circuit's channel.
     """
     g = built.graph.copy()
     _align_wire_ends(g, built)
@@ -59,7 +86,10 @@ def circuit_graph(built: GraphRepresentation, *, annotations: bool = True) -> Gr
             g.set_port(v, q)
         else:
             _discard(g, v)
-    if not annotations:
+    if annotations:
+        first_port = max((q for q in built.last_vertex if q >= 0), default=-1) + 1
+        _attach_annotation_outputs(g, built, first_port)
+    else:
         for v in [*built.detectors, *built.observables]:
             g.remove_vertex(v)
     return g
@@ -86,17 +116,12 @@ def build_sampling_graph(
     for v in built.last_vertex.values():
         _discard(g, v)
     if sample_detectors:
-        outputs = [*built.detectors, *built.observables]
-        for v in outputs:
-            # NOTE: an X spider with n legs is 2^(1 - n/2) times a parity check;
-            # with its output leg, an annotation has degree + 1 legs.
-            g.mul_scalar(Scalar.one().add_power_sqrt2(g.degree(v) - 1))
-    else:
-        for v in [*built.detectors, *built.observables]:
-            g.remove_vertex(v)
-        outputs = list(built.rec)
+        _attach_annotation_outputs(g, built, first_port=0)
+        return g
+    for v in [*built.detectors, *built.observables]:
+        g.remove_vertex(v)
     col = max((g.col(v) for v in g.vertices()), default=0.0) + 1
-    for port, v in enumerate(outputs):
+    for port, v in enumerate(built.rec):
         b = g.add_vertex(
             VertexType.BOUNDARY, col=col, row=g.row(v), domain=Domain.CLASSICAL
         )
