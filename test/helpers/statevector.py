@@ -10,14 +10,17 @@ from collections.abc import Iterator, Mapping, Sequence
 from fractions import Fraction
 from math import cos, pi, sin
 
+import jax.numpy as jnp
 import numpy as np
 from zx_param import Graph, Phase, Scalar
 from zx_param.extract import ExtractedCircuit, Gate, extract_circuit
 
 from tsim.circuit import Circuit
+from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import classify_direct
 from tsim.core.graph import prepare_graph
 from tsim.core.params import ParamLayout
+from tsim.core.types import CompiledComponent
 from tsim.statevector.heisenberg import (
     ROTATION,
     ComponentLayout,
@@ -448,3 +451,17 @@ def plan_distribution(plan: Plan, f: Sequence[int]) -> Distribution:
     psi[0] = 1
     walk(0, psi, [*f, *[0] * plan.num_branches], [0] * plan.num_outputs, 1.0)
     return result
+
+
+def stabilizer_rank_distribution(
+    compiled: CompiledComponent, f: Sequence[int]
+) -> Distribution:
+    """Return P(outputs | f) of a joint-mode stabilizer-rank component."""
+    norm_graphs, joint_graphs = compiled.compiled_scalar_graphs
+    outcomes = list(itertools.product((0, 1), repeat=len(compiled.output_indices)))
+    params = np.array([[*f, *o] for o in outcomes], dtype=np.uint8)
+    params = params.reshape(len(outcomes), len(f) + len(compiled.output_indices))
+    joint = np.abs(np.asarray(evaluate(joint_graphs, jnp.asarray(params))))
+    f_row = np.array([list(f)], dtype=np.uint8).reshape(1, len(f))
+    norm = float(np.abs(np.asarray(evaluate(norm_graphs, jnp.asarray(f_row))))[0])
+    return {o: float(p) / norm for o, p in zip(outcomes, joint, strict=True)}
