@@ -137,3 +137,15 @@ def test_a_parameter_without_a_column_raises():
 def test_coefficients_beyond_int32_raise():
     with pytest.raises(OverflowError):
         compile_scalars([Scalar(base=Dyadic(2**31 + 1, 0, 0, 0, 0))], [])
+
+
+def test_power_of_two_is_merged_before_float_conversion():
+    p = frozenset({3})
+    s = Scalar(
+        base=Dyadic(1, 0, 0, 0, -140),
+        nodes=[NodeTerm(Fraction(0), p) for _ in range(140)],
+        phases=[PhaseTerm(Fraction(1, 10), p)],
+    )
+    got = _compiled([s], [3])
+    assert np.isfinite(got).all()
+    _assert_matches([s], [3])

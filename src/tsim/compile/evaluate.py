@@ -19,9 +19,11 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
     Each exact term family (``NodePhases``, ``HalfPiPhases``, ``PiProducts``,
     ``PhasePairs``) computes its own contribution via ``.evaluate(param_vals)``.
     This function multiplies those together with the per-graph
-    ``ScalarPrefactor`` and folds in ``power2`` / any approximate floatfactor.
-    The floating-point ``FloatTerms`` family (angles that are not multiples of
-    π/4) is multiplied in only when the circuit has float terms.
+    ``ScalarPrefactor`` and merges ``power2`` into the exponent of the exact
+    product before converting to floating point, so the powers of two cannot
+    overflow or underflow separately. Any approximate floatfactor is multiplied
+    in afterwards. The floating-point ``FloatTerms`` family (angles that are not
+    multiples of π/4) is multiplied in only when the circuit has float terms.
 
     Args:
         circuit: Compiled circuit representation.
@@ -51,14 +53,13 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
         ],
     )
 
+    total = ExactScalarArray(total.coeffs, total.power + prefactor.power2)
     if not prefactor.has_approximate_floatfactors and not circuit.has_float_terms:
-        total = ExactScalarArray(total.coeffs, total.power + prefactor.power2)
         return total.sum().to_complex()
 
     return jnp.sum(
         total.to_complex()
         * circuit.float_terms.evaluate(param_vals)
-        * prefactor.approximate_floatfactors
-        * 2.0**prefactor.power2,
+        * prefactor.approximate_floatfactors,
         axis=-1,
     )
