@@ -764,8 +764,9 @@ class Circuit:
             zx.full_reduce(g)
             g, error_transform = transform_error_basis(g, built.num_error_bits)
             squash_graph(g)
-            if kwargs.get("scale_horizontally", False):
-                scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
+            scale = kwargs.pop("scale_horizontally", None)
+            if scale:
+                scale_horizontally(g, scale)
             layout = ParamLayout(
                 num_errors=built.num_error_bits,
                 num_basis=error_transform.shape[0],
@@ -776,6 +777,11 @@ class Circuit:
             from stim_timeline_text import render_timeline_text
 
             return render_timeline_text(str(self._stim_circ))
+        elif type in ("pyzx", "pyzx-dets", "pyzx-meas"):
+            replacement = type.replace("pyzx", "zx")
+            raise ValueError(
+                f"Diagram type {type!r} was removed; use {replacement!r} instead."
+            )
         else:
             return self._stim_circ.diagram(type=type, **kwargs)  # pragma: no cover
 
@@ -784,12 +790,18 @@ class Circuit:
 
         Axes follow zx_param's ``Graph.to_tensor``: outputs then inputs, by qubit,
         each with a copy and a conjugate axis. Error bits default to 0 (the
-        noiseless circuit); ``bindings`` maps error indices to bits. Detector and
-        observable annotations are left out. Needs ``zx-param[quimb]``.
+        noiseless circuit); ``bindings`` maps error indices to bits and raises
+        ``ValueError`` for any other key. Detector and observable annotations are
+        left out. Needs ``zx-param[quimb]``.
         """
         built = parse_stim_circuit(self._stim_circ)
         values: dict[int, Bit] = {j: 0 for j in range(built.num_error_bits)}
         for j, bit in (bindings or {}).items():
+            if j not in values:
+                raise ValueError(
+                    f"{j!r} is not an error index of this circuit, which has "
+                    f"{built.num_error_bits} error bit(s)"
+                )
             values[j] = 1 if bit else 0
         return circuit_graph(built, annotations=False).to_tensor(values)
 
@@ -804,7 +816,14 @@ class Circuit:
         )
 
     def get_graph(self) -> Graph:
-        """Construct the circuit's quantum/classical ZX graph, with qubit ports."""
+        """Construct the circuit's quantum/classical ZX graph, with qubit ports.
+
+        Error parameters have the error index as their ID. Detector and
+        observable spiders are included: under ``to_tensor`` each one post-selects
+        the parity of its measurement records to 0 (up to a constant factor), so
+        the graph's tensor is not the circuit's channel; use ``Circuit.to_tensor``
+        for that.
+        """
         return circuit_graph(parse_stim_circuit(self._stim_circ))
 
     def get_sampling_graph(self, sample_detectors: bool = False) -> Graph:
@@ -820,6 +839,11 @@ class Circuit:
             removed since they are ignored when sampling measurements.
         (b) When sampling detectors and observables (i.e. `sample_detectors` is True),
             add an output for each detector, then for each observable.
+
+        Error parameters have the error index as their ID, so the graph's
+        ``to_tensor`` needs a bit for every error index in its bindings (unbound
+        parameters raise); its tensor is then the joint distribution of the
+        outputs.
 
         Args:
             sample_detectors: If True, sample detectors and observables instead of

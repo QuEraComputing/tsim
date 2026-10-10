@@ -191,9 +191,11 @@ class ScalarPrefactor(eqx.Module):
 
     Each graph's amplitude is the product of the four exact term families and
     ``FloatTerms`` times the prefactor ``ω^phase_index · floatfactor · 2^power2``,
-    with an additional complex ``approximate_floatfactor`` multiplied in when any
-    graph's phase had a denominator outside ``{1, 2, 4}`` and was folded into
-    float form.
+    times the graph's complex entry of ``approximate_floatfactors``. That entry
+    collects the parameter-free factors whose angles are not multiples of π/4
+    (see ``_split_scalar`` in ``compile.py``): a global phase whose denominator
+    is outside ``{1, 2, 4}``, and parameter-free ``NodeTerm``s and
+    ``PhasePair``s with such angles. It is ``1`` when a graph has none of them.
 
     This class is pure data; the final fold-in with the term-family product
     (which branches on ``has_approximate_floatfactors`` and on

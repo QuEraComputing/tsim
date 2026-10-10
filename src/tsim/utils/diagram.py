@@ -499,8 +499,9 @@ def render_zx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> Any:
     """
     built = parse_stim_circuit(stim_circ)
     g = circuit_graph(built)
-    if kwargs.get("scale_horizontally", False):
-        scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
+    scale = kwargs.pop("scale_horizontally", None)
+    if scale:
+        scale_horizontally(g, scale)
     names = ParamLayout(num_errors=built.num_error_bits).names()
     return zx.draw(g, param_names=names, **kwargs)
 

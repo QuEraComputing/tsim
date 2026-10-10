@@ -1,3 +1,4 @@
+import re
 from collections.abc import Mapping
 from test.helpers.tensors import channel, doubled
 from typing import Literal
@@ -805,6 +806,12 @@ def test_to_tensor_defaults_errors_to_zero():
     np.testing.assert_allclose(c.to_tensor({0: 1}), doubled(x), atol=1e-9)
 
 
+@pytest.mark.parametrize("key", [1, -1])
+def test_to_tensor_rejects_keys_that_are_not_error_indices(key: int):
+    with pytest.raises(ValueError, match="not an error index"):
+        Circuit("X_ERROR(0.3) 0").to_tensor({key: 1})
+
+
 def test_to_tensor_leaves_out_detectors():
     zero, one = np.array([1, 0]), np.array([0, 1])
     dephasing = channel(np.outer(zero, zero), np.outer(one, one))
@@ -994,20 +1001,29 @@ def test_diagram_zx_dets():
         _assert_drew_a_graph(mock_draw, result)
 
 
+@pytest.mark.parametrize("scale", [2, 0, False])
 @pytest.mark.parametrize("type", ["zx", "zx-meas", "zx-dets"])
 def test_diagram_zx_scale_horizontally(
-    type: Literal["zx", "zx-meas", "zx-dets"],
+    type: Literal["zx", "zx-meas", "zx-dets"], scale: float
 ):
     c = Circuit("H 0\nCNOT 0 1")
     with patch("zx_param.draw") as mock_draw:
-        result = c.diagram(type=type, scale_horizontally=2)
+        result = c.diagram(type=type, scale_horizontally=scale)
         _assert_drew_a_graph(mock_draw, result)
     assert "scale_horizontally" not in mock_draw.call_args.kwargs
 
 
-def test_pyzx_diagram_types_are_gone():
-    with pytest.raises(ValueError, match="pyzx"):
-        Circuit("H 0").diagram(type="pyzx")  # type: ignore[arg-type]
+@pytest.mark.parametrize("type", ["zx", "zx-meas", "zx-dets"])
+def test_diagram_zx_with_zero_scale_draws(type: Literal["zx", "zx-meas", "zx-dets"]):
+    html = Circuit("H 0\nM 0").diagram(type=type, scale_horizontally=0)
+    assert "renderZx" in html._repr_html_()
+
+
+@pytest.mark.parametrize("type", ["pyzx", "pyzx-dets", "pyzx-meas"])
+def test_pyzx_diagram_types_are_gone(type: str):
+    replacement = type.replace("pyzx", "zx")
+    with pytest.raises(ValueError, match=re.escape(f"use {replacement!r} instead")):
+        Circuit("H 0").diagram(type=type)  # type: ignore[arg-type]
 
 
 def test_append():
