@@ -15,6 +15,7 @@ import tsim.statevector.program as program
 from tsim.circuit import Circuit
 from tsim.compile.pipeline import classify_direct, compile_program
 from tsim.core.graph import prepare_graph
+from tsim.core.types import CompiledComponent
 from tsim.statevector.heisenberg import ComponentLayout
 from tsim.statevector.plan import (
     AffineRow,
@@ -50,6 +51,7 @@ def test_plans_match_stabilizer_rank(name, sample_detectors):
             continue
         planned, component_layout = plan_component(component, prepared.layout)
         reference = by_outputs[component_layout.output_indices]
+        assert isinstance(reference, CompiledComponent)
         selection = tuple(np.asarray(reference.f_selection).tolist())
         assert selection == component_layout.f_selection
         for f in f_patterns(planned.num_f):

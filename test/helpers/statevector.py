@@ -501,3 +501,18 @@ def assert_matches_distribution(
             counts.get(key, 0),
             expected,
         )
+
+
+def assert_counts_match(samples: np.ndarray, reference: np.ndarray) -> None:
+    """Assert that two sets of sampled rows have the same row distribution."""
+    width = samples.shape[1]
+    powers = 2 ** np.arange(width)
+    bins = 2**width
+    a = np.bincount(samples.astype(np.int64) @ powers, minlength=bins)
+    b = np.bincount(reference.astype(np.int64) @ powers, minlength=bins)
+    scale_a, scale_b = 1 / samples.shape[0], 1 / reference.shape[0]
+    pooled = (a + b) / (samples.shape[0] + reference.shape[0])
+    sigma = np.sqrt(pooled * (1 - pooled) * (scale_a + scale_b))
+    assert np.all(
+        np.abs(a * scale_a - b * scale_b) <= 5 * sigma + 3 * (scale_a + scale_b)
+    )

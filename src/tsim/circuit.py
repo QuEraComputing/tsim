@@ -16,7 +16,7 @@ from typing import (
 import numpy as np
 import stim
 import zxparam as zx
-from zxparam import DecompositionStrategy, Graph
+from zxparam import Graph
 from zxparam.phase import Bit
 
 if TYPE_CHECKING:
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 from tsim.core.graph import transform_error_basis
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.core.tags import encode_t_tag
+from tsim.core.types import SamplingStrategy
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
 from tsim.utils.diagram import draw_zx, render_svg
@@ -862,14 +863,15 @@ class Circuit:
     def compile_sampler(
         self,
         *,
-        strategy: DecompositionStrategy = "cat5",
+        strategy: SamplingStrategy = "cat5",
         seed: int | None = None,
     ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
         Args:
-            strategy: Stabilizer rank decomposition strategy.
-                Must be one of "cat5", "bss", "cutting".
+            strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
+                "cutting"), or "statevector" to simulate each non-direct
+                component as an extracted circuit on a dense state vector.
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -886,7 +888,7 @@ class Circuit:
     def compile_detector_sampler(
         self,
         *,
-        strategy: DecompositionStrategy = "cat5",
+        strategy: SamplingStrategy = "cat5",
         seed: int | None = None,
     ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
@@ -897,8 +899,9 @@ class Circuit:
         compilation pipeline.
 
         Args:
-            strategy: Stabilizer rank decomposition strategy.
-                Must be one of "cat5", "bss", "cutting".
+            strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
+                "cutting"), or "statevector" to simulate each non-direct
+                component as an extracted circuit on a dense state vector.
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set

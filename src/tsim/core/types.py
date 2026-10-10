@@ -11,17 +11,22 @@ stages of circuit compilation:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import equinox as eqx
 import numpy as np
 from jax import Array
+from zxparam import DecompositionStrategy
 
 if TYPE_CHECKING:
     from zxparam import Graph
 
     from tsim.compile.compile import CompiledScalarGraphs
     from tsim.core.params import ParamLayout
+    from tsim.statevector.program import StatevectorComponent
+
+SamplingStrategy = DecompositionStrategy | Literal["statevector"]
+"""A stabilizer-rank decomposition strategy, or ``"statevector"``."""
 
 
 @dataclass(frozen=True)
@@ -89,7 +94,8 @@ class CompiledProgram:
     needed to sample from the circuit.
 
     Attributes:
-        components: The compiled components, sorted by number of outputs.
+        components: The compiled components, sorted by number of outputs:
+            stabilizer-rank ``CompiledComponent``s or ``StatevectorComponent``s.
         direct_f_indices: Precomputed f-parameter indices for direct components.
         direct_flips: Precomputed flip flags for direct components.
         output_order: Maps concatenated position to original output index.
@@ -102,7 +108,7 @@ class CompiledProgram:
 
     """
 
-    components: tuple[CompiledComponent, ...]
+    components: tuple[CompiledComponent | StatevectorComponent, ...]
     direct_f_indices: Array
     direct_flips: Array
     output_order: Array
