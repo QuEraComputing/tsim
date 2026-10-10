@@ -39,7 +39,6 @@ dependencies = [
     "lxml>=5.0.0",
     "numpy>=1.25.0",
     "psutil>=5.9.0",
-    "pyzx-param>=0.9.3",
     "stim>=1.0.0",
     "stim-timeline-text>=0.1.0",
     "stim-timeline-text>=0.1.0",

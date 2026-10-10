@@ -20,7 +20,6 @@ from zx_param import (
     VertexType,
     decompose,
 )
-from zx_param.from_pyzx_param import from_pyzx_param
 
 from tsim.compile.compile import CompiledScalarGraphs, compile_scalars
 from tsim.core.params import ParamLayout
@@ -52,7 +51,7 @@ def compile_program(
         A CompiledProgram ready for sampling.
 
     """
-    graph = _zx_graph(prepared)
+    graph = prepared.graph
     layout = prepared.layout
     basis_global = _basis_indices(graph, layout)
 
@@ -92,17 +91,6 @@ def compile_program(
         num_outputs=prepared.num_outputs,
         num_detectors=prepared.num_detectors,
     )
-
-
-def _zx_graph(prepared: SamplingGraph) -> Graph:
-    """Return the prepared graph as a zx_param graph.
-
-    NOTE: temporary bridge — the prepared graph is still built with pyzx_param;
-    its basis-bit names ``f{j}`` are mapped to their layout IDs.
-    """
-    layout = prepared.layout
-    names = {f"f{j}": layout.basis(j) for j in range(layout.num_basis)}
-    return from_pyzx_param(prepared.graph, param_ids=names)
 
 
 def classify_direct(component: Graph, layout: ParamLayout) -> tuple[int, bool] | None:

@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import IntEnum
 from fractions import Fraction
 from typing import Callable, Literal
 
 import numpy as np
-from pyzx_param.graph.graph_s import GraphS
-from pyzx_param.utils import EdgeType, VertexType
+from zx_param import Domain, EdgeType, Graph, Phase, Scalar, Vertex, VertexType
 
 from tsim.noise.channels import (
     correlated_error_probs,
@@ -20,80 +18,91 @@ from tsim.noise.channels import (
 )
 
 
-class _EdgeTypeBold(IntEnum):
-    SIMPLE = 4
-    HADAMARD = 5
-
-
-class _VertexTypeBold(IntEnum):
-    Z = 7
-    X = 8
-
-
 @dataclass
 class GraphRepresentation:
-    """ZX graph built from a stim circuit.
+    """ZX graph built from a stim circuit, with quantum wires and classical records.
 
-    Contains the graph and all auxiliary data needed for sampling.
+    Qubit wires are quantum; measurement records, detectors and observables are
+    classical spiders, found through the lists below (their labels are only for
+    display).
     """
 
-    graph: GraphS = field(default_factory=GraphS)
-    rec: list[int] = field(default_factory=list)
-    silent_rec: list[int] = field(default_factory=list)
-    detectors: list[int] = field(default_factory=list)
-    observables_dict: dict[int, int] = field(default_factory=dict)
-    first_vertex: dict[int, int] = field(default_factory=dict)
-    last_vertex: dict[int, int] = field(default_factory=dict)
+    graph: Graph = field(default_factory=Graph)
+    rec: list[Vertex] = field(default_factory=list)
+    silent_rec: list[Vertex] = field(default_factory=list)
+    detectors: list[Vertex] = field(default_factory=list)
+    observables_dict: dict[int, Vertex] = field(default_factory=dict)
+    first_vertex: dict[int, Vertex] = field(default_factory=dict)
+    last_vertex: dict[int, Vertex] = field(default_factory=dict)
     channel_probs: list[np.ndarray] = field(default_factory=list)
     correlated_error_probs: list[float] = field(default_factory=list)
+    pending_correlated: list[tuple[Vertex, int]] = field(default_factory=list)
     num_error_bits: int = 0
     num_correlated_error_bits: int = 0
-    track_classical_wires: bool = False
 
     @property
-    def edge_type(self):
-        """Edge type enum."""
-        return _EdgeTypeBold if self.track_classical_wires else EdgeType
-
-    @property
-    def vertex_type(self):
-        """Vertex type enum."""
-        return _VertexTypeBold if self.track_classical_wires else VertexType
-
-    @property
-    def observables(self) -> list[int]:
+    def observables(self) -> list[Vertex]:
         """Get list of observable vertices sorted by index."""
         return [self.observables_dict[i] for i in sorted(self.observables_dict)]
 
 
-def last_row(b: GraphRepresentation, qubit: int) -> float:
-    """Get the row of the last vertex for a qubit."""
-    return b.graph.row(b.last_vertex[qubit])
+def _scale(b: GraphRepresentation, sqrt2_power: int) -> None:
+    """Multiply both copies of the doubled diagram by ``√2^sqrt2_power``."""
+    b.graph.mul_scalar(Scalar.one().add_power_sqrt2(sqrt2_power), Domain.QUANTUM)
 
 
-def last_edge(b: GraphRepresentation, qubit: int):
+def _error_phase(error_bit: int) -> Phase:
+    """Return the phase of a noise spider for error bit ``error_bit`` (ID = bit)."""
+    return Phase(Fraction(0), frozenset({error_bit}))
+
+
+def _make_classical(b: GraphRepresentation, v: Vertex) -> None:
+    """Make spider ``v`` classical, keeping one wire edge per copy.
+
+    Between two classical spiders (e.g. two measurements in a row) a wire is one
+    edge per copy, which ``add_edge_per_copy`` collapses correctly.
+    """
+    g = b.graph
+    edges = [(n, g.edge_type(v, n)) for n in g.neighbors(v)]
+    for n, _ in edges:
+        g.remove_edge(v, n)
+    g.set_vertex_domain(v, Domain.CLASSICAL)
+    for n, edge_type in edges:
+        g.add_edge_per_copy(v, n, edge_type)
+
+
+def last_col(b: GraphRepresentation, qubit: int) -> float:
+    """Get the column of the last vertex for a qubit."""
+    return b.graph.col(b.last_vertex[qubit])
+
+
+def last_edge(b: GraphRepresentation, qubit: int) -> tuple[Vertex, Vertex]:
     """Get the last edge for a qubit."""
     edges = b.graph.incident_edges(b.last_vertex[qubit])
     assert len(edges) == 1
     return edges[0]
 
 
-def add_dummy(
-    b: GraphRepresentation, qubit: int, row: float | int | None = None
-) -> int:
-    """Add a dummy boundary vertex for a qubit."""
-    if row is None:
-        row = last_row(b, qubit) + 1
-    v1 = b.graph.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=row)
-    b.last_vertex[qubit] = v1
-    return v1
+def add_dummy(b: GraphRepresentation, qubit: int, col: float | None = None) -> Vertex:
+    """Add a dummy quantum boundary vertex at the end of a qubit's wire."""
+    if col is None:
+        col = last_col(b, qubit) + 1
+    v = b.graph.add_vertex(
+        VertexType.BOUNDARY, col=col, row=qubit, domain=Domain.QUANTUM
+    )
+    b.last_vertex[qubit] = v
+    return v
 
 
-def add_lane(b: GraphRepresentation, qubit: int) -> int:
-    """Initialize a qubit lane if it doesn't exist."""
-    v1 = b.graph.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=0)
-    v2 = b.graph.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=1)
-    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
+def add_lane(b: GraphRepresentation, qubit: int) -> Vertex:
+    """Initialize a qubit lane: two quantum boundaries joined by a wire."""
+    v1 = b.graph.add_vertex(
+        VertexType.BOUNDARY, col=0, row=qubit, domain=Domain.QUANTUM
+    )
+    v2 = b.graph.add_vertex(
+        VertexType.BOUNDARY, col=1, row=qubit, domain=Domain.QUANTUM
+    )
+    b.graph.add_edge(v1, v2)
     b.first_vertex[qubit] = v1
     b.last_vertex[qubit] = v2
     return v1
@@ -114,20 +123,20 @@ def x_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply X-axis rotation to qubit. This is equivalent to `r_x` up to a phase."""
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
-    b.graph.set_type(v1, b.vertex_type.X)
+    b.graph.set_vertex_type(v1, VertexType.X)
     b.graph.set_phase(v1, phase)
     v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
+    b.graph.add_edge(v1, v2)
 
 
 def z_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply Z-axis phase rotation to qubit. This is equivalent to `r_z` up to a phase."""
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
-    b.graph.set_type(v1, b.vertex_type.Z)
+    b.graph.set_vertex_type(v1, VertexType.Z)
     b.graph.set_phase(v1, phase)
     v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
+    b.graph.add_edge(v1, v2)
 
 
 def t(b: GraphRepresentation, qubit: int) -> None:
@@ -143,13 +152,11 @@ def t_dag(b: GraphRepresentation, qubit: int) -> None:
 def r_z(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply R_Z rotation gate with given phase (in units of π)."""
     z_phase(b, qubit, phase)
-    b.graph.scalar.add_phase(-phase / 2)
 
 
 def r_x(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply R_X rotation gate with given phase (in units of π)."""
     x_phase(b, qubit, phase)
-    b.graph.scalar.add_phase(-phase / 2)
 
 
 def r_y(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
@@ -170,7 +177,6 @@ def u3(
     r_z(b, qubit, lambda_)
     r_y(b, qubit, theta)
     r_z(b, qubit, phi)
-    b.graph.scalar.add_phase((phi + lambda_) / 2)
 
 
 # =============================================================================
@@ -179,14 +185,14 @@ def u3(
 
 
 def i(b: GraphRepresentation, qubit: int, *_args: float) -> None:
-    """Apply identity (advances the row)."""
+    """Apply identity (advances the column)."""
     ensure_lane(b, qubit)
     v = b.last_vertex[qubit]
-    b.graph.set_row(v, last_row(b, qubit) + 1)
+    b.graph.set_col(v, last_col(b, qubit) + 1)
 
 
 def ii(b: GraphRepresentation, qubit1: int, qubit2: int, *_args: float) -> None:
-    """Apply two-qubit identity (advances the row on both qubits)."""
+    """Apply two-qubit identity (advances the column on both qubits)."""
     i(b, qubit1)
     i(b, qubit2)
 
@@ -200,7 +206,6 @@ def y(b: GraphRepresentation, qubit: int) -> None:
     """Apply Pauli Y gate."""
     z(b, qubit)
     x(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 2))
 
 
 def z(b: GraphRepresentation, qubit: int) -> None:
@@ -217,14 +222,12 @@ def c_xyz(b: GraphRepresentation, qubit: int) -> None:
     """Right handed period 3 axis cycling gate, sending X -> Y -> Z -> X."""
     s_dag(b, qubit)
     h(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
 def c_nxyz(b: GraphRepresentation, qubit: int) -> None:
     """Period 3 axis cycling gate, sending -X -> Y -> Z -> -X."""
     s_dag(b, qubit)
     sqrt_y_dag(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 4))
 
 
 def c_xnyz(b: GraphRepresentation, qubit: int) -> None:
@@ -237,56 +240,42 @@ def c_xynz(b: GraphRepresentation, qubit: int) -> None:
     """Period 3 axis cycling gate, sending X -> Y -> -Z -> X."""
     s(b, qubit)
     sqrt_y_dag(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 4))
 
 
 def c_zyx(b: GraphRepresentation, qubit: int) -> None:
     """Left handed period 3 axis cycling gate, sending Z -> Y -> X -> Z."""
     h(b, qubit)
     s(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 4))
 
 
 def c_nzyx(b: GraphRepresentation, qubit: int) -> None:
     """Period 3 axis cycling gate, sending -Z -> Y -> X -> -Z."""
     s_dag(b, qubit)
     sqrt_x(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
 def c_znyx(b: GraphRepresentation, qubit: int) -> None:
     """Period 3 axis cycling gate, sending Z -> -Y -> X -> Z."""
     s(b, qubit)
     sqrt_x(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
 def c_zynx(b: GraphRepresentation, qubit: int) -> None:
     """Period 3 axis cycling gate, sending Z -> Y -> -X -> Z."""
     s(b, qubit)
     sqrt_x_dag(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 4))
 
 
 def h(b: GraphRepresentation, qubit: int) -> None:
     """Apply Hadamard gate."""
     ensure_lane(b, qubit)
-    e = last_edge(b, qubit)
-    b.graph.set_edge_type(
-        e,
-        (
-            b.edge_type.HADAMARD
-            if b.graph.edge_type(e) == b.edge_type.SIMPLE
-            else b.edge_type.SIMPLE
-        ),
-    )
+    b.graph.toggle_edge(*last_edge(b, qubit))
 
 
 def h_xy(b: GraphRepresentation, qubit: int) -> None:
     """Apply variant of Hadamard gate that swaps the X and Y axes (instead of X and Z)."""
     x(b, qubit)
     s(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
 def h_nxy(b: GraphRepresentation, qubit: int) -> None:
@@ -299,21 +288,18 @@ def h_nxz(b: GraphRepresentation, qubit: int) -> None:
     """Apply Hadamard-like gate that sends -X <-> Z."""
     z(b, qubit)
     sqrt_y_dag(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 4))
 
 
 def h_yz(b: GraphRepresentation, qubit: int) -> None:
     """Apply variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z)."""
     sqrt_x(b, qubit)
     z(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
 def h_nyz(b: GraphRepresentation, qubit: int) -> None:
     """Apply Hadamard-like gate that sends -Y <-> Z, X -> -X."""
     z(b, qubit)
     sqrt_x(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
 def s(b: GraphRepresentation, qubit: int) -> None:
@@ -335,14 +321,12 @@ def sqrt_y(b: GraphRepresentation, qubit: int) -> None:
     """Apply √Y gate (π/2 Y rotation)."""
     z(b, qubit)
     h(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 4))
 
 
 def sqrt_y_dag(b: GraphRepresentation, qubit: int) -> None:
     """Apply √Y† gate (-π/2 Y rotation)."""
     h(b, qubit)
     z(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
 def sqrt_z(b: GraphRepresentation, qubit: int) -> None:
@@ -373,10 +357,10 @@ def _cx_cz(
     classically_controlled: list[bool] | None = None,
 ) -> None:
     """Implement CNOT or CZ gate depending on is_cx flag."""
-    edge_type = b.edge_type.SIMPLE if is_cx else b.edge_type.HADAMARD
-    vertex_type = b.vertex_type.X if is_cx else b.vertex_type.Z
+    edge_type = EdgeType.SIMPLE if is_cx else EdgeType.HADAMARD
+    vertex_type = VertexType.X if is_cx else VertexType.Z
 
-    m_vertex = 0
+    m_vertex: Vertex | None = None
     if classically_controlled:
         assert len(classically_controlled) == 2
         if classically_controlled[1] and not is_cx:
@@ -386,34 +370,29 @@ def _cx_cz(
         if classically_controlled[1]:
             raise ValueError("Measurement record editing is not supported.")
         m_vertex = b.rec[control]
-        control = b.graph.qubit(m_vertex)
+        control = int(b.graph.row(m_vertex))
     ensure_lane(b, control)
     ensure_lane(b, target)
 
-    lr1 = last_row(b, control)
-    lr2 = last_row(b, target)
-    row = max(lr1, lr2)
+    col = max(last_col(b, control), last_col(b, target))
 
     v1 = b.last_vertex[control]
-    b.graph.set_type(v1, b.vertex_type.Z)
-    b.graph.set_row(v1, row)
-    v3 = add_dummy(b, control, int(row + 1))
-    b.graph.add_edge((v1, v3), b.edge_type.SIMPLE)
+    b.graph.set_vertex_type(v1, VertexType.Z)
+    b.graph.set_col(v1, col)
+    v3 = add_dummy(b, control, int(col + 1))
+    b.graph.add_edge(v1, v3)
 
     if control == target:
-        row += 1
+        col += 1
 
     v2 = b.last_vertex[target]
-    b.graph.set_type(v2, vertex_type)
-    b.graph.set_row(v2, row)
-    v4 = add_dummy(b, target, int(row + 1))
-    b.graph.add_edge((v2, v4), b.edge_type.SIMPLE)
+    b.graph.set_vertex_type(v2, vertex_type)
+    b.graph.set_col(v2, col)
+    v4 = add_dummy(b, target, int(col + 1))
+    b.graph.add_edge(v2, v4)
 
-    if classically_controlled:
-        b.graph.add_edge((m_vertex, v2), edge_type)
-    else:
-        b.graph.add_edge((v1, v2), edge_type)
-    b.graph.scalar.add_power(1)
+    b.graph.add_edge(v1 if m_vertex is None else m_vertex, v2, edge_type)
+    _scale(b, 1)
 
 
 def cnot(
@@ -458,8 +437,8 @@ def swap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     b.last_vertex[qubit1] = v2
     b.last_vertex[qubit2] = v1
 
-    b.graph.set_qubit(v1, qubit2)
-    b.graph.set_qubit(v2, qubit1)
+    b.graph.set_row(v1, qubit2)
+    b.graph.set_row(v2, qubit1)
 
 
 def cxswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
@@ -524,7 +503,6 @@ def sqrt_yy(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     h(b, qubit2)
     cnot(b, qubit2, qubit1)
     s(b, qubit1)
-    b.graph.scalar.add_phase(Fraction(1, 4))
 
 
 def sqrt_yy_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
@@ -535,7 +513,6 @@ def sqrt_yy_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     z(b, qubit1)
     cnot(b, qubit2, qubit1)
     s_dag(b, qubit1)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
 
 
 def sqrt_zz(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
@@ -617,15 +594,21 @@ def ycz(
 # =============================================================================
 
 
-def _error(b: GraphRepresentation, qubit: int, error_type: int, phase: str) -> None:
-    """Insert a parametrized error vertex for noise modeling."""
+def _error(
+    b: GraphRepresentation,
+    qubit: int,
+    vertex_type: VertexType,
+    error_bit: int | None,
+) -> Vertex:
+    """Insert a noise spider; it carries ``error_bit`` (its ID) unless None."""
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
     v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
-
-    b.graph.set_type(v1, error_type)
-    b.graph.set_phase(v1, phase)
+    b.graph.add_edge(v1, v2)
+    b.graph.set_vertex_type(v1, vertex_type)
+    if error_bit is not None:
+        b.graph.set_phase(v1, _error_phase(error_bit))
+    return v1
 
 
 def pauli_channel_1(
@@ -633,8 +616,8 @@ def pauli_channel_1(
 ) -> None:
     """Apply single-qubit Pauli channel with given X, Y, Z error probabilities."""
     b.channel_probs.append(pauli_channel_1_probs(px, py, pz))
-    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits}")
-    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits + 1}")
+    _error(b, qubit, VertexType.Z, b.num_error_bits)
+    _error(b, qubit, VertexType.X, b.num_error_bits + 1)
     b.num_error_bits += 2
 
 
@@ -664,10 +647,10 @@ def pauli_channel_2(
             pix, piy, piz, pxi, pxx, pxy, pxz, pyi, pyx, pyy, pyz, pzi, pzx, pzy, pzz
         )
     )
-    _error(b, qubit_i, b.vertex_type.Z, f"e{b.num_error_bits}")
-    _error(b, qubit_i, b.vertex_type.X, f"e{b.num_error_bits + 1}")
-    _error(b, qubit_j, b.vertex_type.Z, f"e{b.num_error_bits + 2}")
-    _error(b, qubit_j, b.vertex_type.X, f"e{b.num_error_bits + 3}")
+    _error(b, qubit_i, VertexType.Z, b.num_error_bits)
+    _error(b, qubit_i, VertexType.X, b.num_error_bits + 1)
+    _error(b, qubit_j, VertexType.Z, b.num_error_bits + 2)
+    _error(b, qubit_j, VertexType.X, b.num_error_bits + 3)
     b.num_error_bits += 4
 
 
@@ -703,7 +686,7 @@ def depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) ->
 def x_error(b: GraphRepresentation, qubit: int, p: float) -> None:
     """Apply X error with probability p."""
     b.channel_probs.append(error_probs(p))
-    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits}")
+    _error(b, qubit, VertexType.X, b.num_error_bits)
     b.num_error_bits += 1
 
 
@@ -711,15 +694,15 @@ def y_error(b: GraphRepresentation, qubit: int, p: float) -> None:
     """Apply Y error with probability p."""
     b.channel_probs.append(error_probs(p))
     # Y = X·Z, so both vertices use the same error bit
-    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits}")
-    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits}")
+    _error(b, qubit, VertexType.Z, b.num_error_bits)
+    _error(b, qubit, VertexType.X, b.num_error_bits)
     b.num_error_bits += 1
 
 
 def z_error(b: GraphRepresentation, qubit: int, p: float) -> None:
     """Apply Z error with probability p."""
     b.channel_probs.append(error_probs(p))
-    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits}")
+    _error(b, qubit, VertexType.Z, b.num_error_bits)
     b.num_error_bits += 1
 
 
@@ -740,10 +723,10 @@ def heralded_pauli_channel_1(
     b.channel_probs.append(heralded_pauli_channel_1_probs(pi, px, py, pz))
     aux = -2
     r(b, aux)
-    _error(b, aux, b.vertex_type.X, f"e{b.num_error_bits}")  # herald bit flip
+    _error(b, aux, VertexType.X, b.num_error_bits)  # herald bit flip
     m(b, aux)
-    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits + 1}")  # Z error bit
-    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits + 2}")  # X error bit
+    _error(b, qubit, VertexType.Z, b.num_error_bits + 1)  # Z error bit
+    _error(b, qubit, VertexType.X, b.num_error_bits + 2)  # X error bit
     b.num_error_bits += 3
 
 
@@ -759,36 +742,19 @@ def heralded_erase(b: GraphRepresentation, qubit: int, p: float) -> None:
 def finalize_correlated_error(b: GraphRepresentation) -> None:
     """Finalize the current correlated error channel.
 
-    1. Rename all "c{i}" phases to "e{num_error_bits + i}" in the graph
+    1. Give each pending noise spider its error bit ``num_error_bits + i``
     2. Compute and append the 2^k probability array to channel_probs
     3. Increment num_error_bits by k
     4. Reset num_correlated_error_bits to 0 and correlated_error_probs to []
     """
     k = b.num_correlated_error_bits
-
     if k == 0:
         return
-
-    # Rename "c{i}" phases to "e{num_error_bits + i}" in the graph
-    for v in b.graph.vertices():
-        phase_vars = b.graph._phaseVars.get(v, set())
-        new_phase_vars = set()
-        for var in phase_vars:
-            if isinstance(var, str) and var.startswith("c"):
-                # Extract the bit index from "c{i}"
-                bit_idx = int(var[1:])
-                new_phase_vars.add(f"e{b.num_error_bits + bit_idx}")
-            else:
-                new_phase_vars.add(var)
-        b.graph._phaseVars[v] = new_phase_vars
-
-    # Compute probability array from conditional probabilities
-    probs = correlated_error_probs(b.correlated_error_probs)
-    b.channel_probs.append(probs)
-
+    for v, bit in b.pending_correlated:
+        b.graph.set_phase(v, _error_phase(b.num_error_bits + bit))
+    b.pending_correlated = []
+    b.channel_probs.append(correlated_error_probs(b.correlated_error_probs))
     b.num_error_bits += k
-
-    # Reset correlated error state
     b.num_correlated_error_bits = 0
     b.correlated_error_probs = []
 
@@ -802,9 +768,13 @@ def correlated_error(
     """Add a correlated error term affecting multiple qubits with given Pauli types."""
     for qubit, type_ in zip(qubits, types, strict=True):
         if type_ == "X" or type_ == "Y":
-            _error(b, qubit, b.vertex_type.X, f"c{b.num_correlated_error_bits}")
+            b.pending_correlated.append(
+                (_error(b, qubit, VertexType.X, None), b.num_correlated_error_bits)
+            )
         if type_ == "Z" or type_ == "Y":
-            _error(b, qubit, b.vertex_type.Z, f"c{b.num_correlated_error_bits}")
+            b.pending_correlated.append(
+                (_error(b, qubit, VertexType.Z, None), b.num_correlated_error_bits)
+            )
 
     b.correlated_error_probs.append(p)
     b.num_correlated_error_bits += 1
@@ -817,26 +787,26 @@ def correlated_error(
 
 def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -> None:
     """Perform measurement on qubit with optional error probability."""
-    error_var = ""
+    error_bit = None
     if p > 0:
         b.channel_probs.append(error_probs(p))
-        error_var = f"e{b.num_error_bits}"
-        _error(b, qubit, b.vertex_type.X, error_var)
+        error_bit = b.num_error_bits
+        _error(b, qubit, VertexType.X, error_bit)
         b.num_error_bits += 1
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
-    b.graph.set_type(v1, VertexType.Z)
+    b.graph.set_vertex_type(v1, VertexType.Z)
+    _make_classical(b, v1)
     if not silent:
-        b.graph.set_phase(v1, f"rec[{len(b.rec)}]")
+        b.graph.set_vertex_label(v1, f"rec[{len(b.rec)}]")
         b.rec.append(v1)
     else:
-        b.graph.set_phase(v1, f"m[{len(b.silent_rec)}]")
+        b.graph.set_vertex_label(v1, f"m[{len(b.silent_rec)}]")
         b.silent_rec.append(v1)
     v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
-    if p > 0:
-        _error(b, qubit, b.vertex_type.X, error_var)
-    b.graph.scalar.add_power(-1)
+    b.graph.add_edge(v1, v2)
+    if error_bit is not None:
+        _error(b, qubit, VertexType.X, error_bit)
 
 
 def _r(b: GraphRepresentation, qubit: int) -> None:
@@ -848,21 +818,18 @@ def _r(b: GraphRepresentation, qubit: int) -> None:
     """
     if qubit not in b.last_vertex:
         v1 = add_lane(b, qubit)
-        b.graph.set_type(v1, b.vertex_type.X)
-        b.graph.scalar.add_power(-1)
-    else:
-        v = b.last_vertex[qubit]
-        neighbors = list(b.graph.neighbors(v))
-        assert len(neighbors) == 1
-        _m(b, qubit, silent=True)
-        row = last_row(b, qubit)
-        v1 = b.last_vertex[qubit]
-        b.graph.set_type(v1, b.vertex_type.X)
-        v2 = next(iter(b.graph.neighbors(v1)))
-        b.graph.remove_edge((v1, v2))
-        v3 = add_dummy(b, qubit, row + 1)
-        b.graph.add_edge((v1, v3), b.edge_type.SIMPLE)
-        b.graph.scalar.add_power(-1)
+        b.graph.set_vertex_type(v1, VertexType.X)
+        _scale(b, -1)
+        return
+    _m(b, qubit, silent=True)
+    col = last_col(b, qubit)
+    v1 = b.last_vertex[qubit]
+    b.graph.set_vertex_type(v1, VertexType.X)
+    (v2,) = b.graph.neighbors(v1)
+    b.graph.remove_edge(v1, v2)
+    v3 = add_dummy(b, qubit, col + 1)
+    b.graph.add_edge(v1, v3)
+    _scale(b, -1)
 
 
 def m(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
@@ -1153,31 +1120,34 @@ def ry(b: GraphRepresentation, qubit: int) -> None:
 # =============================================================================
 
 
-def _annotation_row(b: GraphRepresentation, rec: list[int]) -> float:
-    """Pick a fresh row for a detector/observable vertex.
+def _annotation_col(b: GraphRepresentation, rec: list[int]) -> float:
+    """Pick a fresh column for a detector/observable vertex.
 
     Empty `rec` is valid Stim and represents a deterministic-zero annotation;
-    fall back to a row above existing annotations rather than `min()` on an
+    fall back to a column after existing annotations rather than `min()` on an
     empty set.
     """
-    d_rows = {b.graph.row(d) for d in b.detectors + b.observables}
+    d_cols = {b.graph.col(d) for d in b.detectors + b.observables}
     if rec:
-        row: float = min(b.graph.row(b.rec[r]) for r in rec) - 0.5
+        col: float = min(b.graph.col(b.rec[r]) for r in rec) - 0.5
     else:
-        row = (max(d_rows) + 1) if d_rows else 0
-    while row in d_rows:
-        row += 1
-    return row
+        col = (max(d_cols) + 1) if d_cols else 0
+    while col in d_cols:
+        col += 1
+    return col
 
 
 def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
     """Add detector annotation that XORs the given measurement record bits."""
-    row = _annotation_row(b, rec)
     v0 = b.graph.add_vertex(
-        VertexType.X, qubit=-1, row=row, phase=f"det[{len(b.detectors)}]"
+        VertexType.X,
+        col=_annotation_col(b, rec),
+        row=-1,
+        domain=Domain.CLASSICAL,
+        label=f"det[{len(b.detectors)}]",
     )
     for rec_ in rec:
-        b.graph.add_edge((v0, b.rec[rec_]))
+        b.graph.add_edge(v0, b.rec[rec_])
     b.detectors.append(v0)
 
 
@@ -1186,22 +1156,27 @@ def observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None
     idx = int(idx)
 
     if idx not in b.observables_dict:
-        row = _annotation_row(b, rec)
-        v0 = b.graph.add_vertex(VertexType.X, qubit=-1, row=row, phase=f"obs[{idx}]")
+        v0 = b.graph.add_vertex(
+            VertexType.X,
+            col=_annotation_col(b, rec),
+            row=-1,
+            domain=Domain.CLASSICAL,
+            label=f"obs[{idx}]",
+        )
         b.observables_dict[idx] = v0
 
     v0 = b.observables_dict[idx]
     for rec_ in rec:
-        b.graph.add_edge((v0, b.rec[rec_]))
+        b.graph.add_edge(v0, b.rec[rec_])
 
 
 def tick(b: GraphRepresentation) -> None:
-    """Add a tick to the circuit (align all qubits to same row)."""
+    """Add a tick to the circuit (align all qubits to same column)."""
     if len(b.last_vertex) == 0:
         return
-    row = max(last_row(b, q) for q in b.last_vertex)
+    col = max(last_col(b, q) for q in b.last_vertex)
     for q in b.last_vertex:
-        b.graph.set_row(b.last_vertex[q], row)
+        b.graph.set_col(b.last_vertex[q], col)
 
 
 # =============================================================================

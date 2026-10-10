@@ -2,17 +2,19 @@
 
 import re
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any, Iterable
 
 import numpy as np
-import pyzx_param as zx
 import stim
+import zx_param as zx
 from lxml import etree  # type: ignore
-from pyzx_param.graph.graph_s import GraphS
+from zx_param import Graph, Vertex
 
-from tsim.core.graph import scale_horizontally
+from tsim.core.graph import circuit_graph
+from tsim.core.params import ParamLayout
 from tsim.core.parse import parse_stim_circuit
 from tsim.core.tags import is_t_tag
 from tsim.utils.program_text import FLOAT_RE
@@ -484,47 +486,82 @@ def render_svg(
     return Diagram(svg, html)
 
 
-def render_pyzx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> GraphS:
-    """Render a stim circuit as a pyzx ZX diagram using d3.js.
+def render_zx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> Any:
+    """Render a stim circuit's quantum/classical ZX graph with zx_param's D3 viewer.
 
     Args:
         stim_circ: The stim circuit to render.
-        kwargs: Additional keyword arguments passed to the underlying diagram renderer.
+        kwargs: ``labels`` and ``scale_horizontally``, passed on to the drawing.
 
     Returns:
-        A pyzx ZX diagram.
+        zx_param's D3 drawing object.
 
     """
-    built = parse_stim_circuit(stim_circ, track_classical_wires=True)
-    g = built.graph
-
-    if len(g.vertices()) == 0:
-        return g
-
-    g = g.clone()
-    if built.last_vertex:
-        max_row = max(g.row(v) for v in built.last_vertex.values())
-        for q in built.last_vertex:
-            g.set_row(built.last_vertex[q], max_row)
-
-    for v in list(g.vertices()):
-        phase_vars = g._phaseVars[v]
-        if len(phase_vars) != 1:
-            continue
-        phase = next(iter(phase_vars))
-        if phase.startswith("det") or phase.startswith("obs"):
-            row = g.row(v)
-            qubit = -2 if phase.startswith("det") else -2.5
-            vb = g.add_vertex(
-                zx.utils.VertexType.BOUNDARY,
-                qubit=qubit,
-                row=row,
-            )
-            g.add_edge((v, vb))
-        if phase.startswith("m["):
-            g.set_phase(v, 0)
-
+    built = parse_stim_circuit(stim_circ)
+    g = circuit_graph(built)
     if kwargs.get("scale_horizontally", False):
         scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
-    zx.draw(g, **kwargs)
-    return g
+    names = ParamLayout(num_errors=built.num_error_bits).names()
+    return zx.draw(g, param_names=names, **kwargs)
+
+
+def squash_graph(g: Graph) -> None:
+    """Compact the graph by placing vertices underneath their output connections.
+
+    Starting from output vertices, each vertex is placed directly underneath
+    (same column, row - 1) its already-placed neighbor. Positions are assigned
+    via BFS traversal from outputs, ensuring no (row, col) collisions.
+    """
+    outputs = g.outputs()
+    if not outputs:
+        return
+
+    num_outputs = len(outputs)
+    for col, v in enumerate(outputs):
+        g.set_col(v, col)
+
+    occupied: set[tuple[int, int]] = {(num_outputs, col) for col in range(num_outputs)}
+    placed: set[Vertex] = set(outputs)
+    queue: deque[Vertex] = deque(outputs)
+
+    while queue:
+        current = queue.popleft()
+        current_row = int(g.row(current))
+        current_col = int(g.col(current))
+
+        for neighbor in g.neighbors(current):
+            if neighbor in placed:
+                continue
+
+            target_row = current_row - 1
+            target_col = current_col
+
+            if (target_row, target_col) in occupied:
+                for offset in range(1, 1000):
+                    if (target_row, target_col + offset) not in occupied:
+                        target_col = target_col + offset
+                        break
+                    if (
+                        target_row,
+                        target_col - offset,
+                    ) not in occupied and target_col - offset >= 0:
+                        target_col = target_col - offset
+                        break
+
+            g.set_row(neighbor, target_row)
+            g.set_col(neighbor, target_col)
+            occupied.add((target_row, target_col))
+            placed.add(neighbor)
+            queue.append(neighbor)
+
+    for v in g.outputs():
+        neighbors = list(g.neighbors(v))
+        if neighbors and len(list(g.neighbors(neighbors[0]))) == 1:
+            g.set_row(neighbors[0], g.row(v) + 1)
+            g.set_col(neighbors[0], g.col(v))
+
+
+def scale_horizontally(g: Graph, scale: float) -> None:
+    """Scale the horizontal positions (columns) of the graph's vertices by ``scale``."""
+    for v in g.vertices():
+        g.set_col(v, g.col(v) * scale)

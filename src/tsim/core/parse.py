@@ -196,21 +196,17 @@ def _iter_pauli_products(
             invert = False
 
 
-def parse_stim_circuit(
-    stim_circuit: stim.Circuit,
-    track_classical_wires: bool = False,
-) -> GraphRepresentation:
+def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphRepresentation:
     """Parse a stim circuit into a GraphRepresentation.
 
     Args:
         stim_circuit: The stim circuit to convert.
-        track_classical_wires: Whether to track classical wires.
 
     Returns:
         A GraphRepresentation containing the ZX graph and all auxiliary data.
 
     """
-    b = GraphRepresentation(track_classical_wires=track_classical_wires)
+    b = GraphRepresentation()
 
     for instruction in stim_circuit.flattened():
         assert not isinstance(instruction, stim.CircuitRepeatBlock)

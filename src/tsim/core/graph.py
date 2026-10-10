@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from collections import defaultdict, deque
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
-import pyzx_param as zx
-from pyzx_param.graph.base import BaseGraph
-from pyzx_param.graph.scalar import Scalar
-from pyzx_param.utils import VertexType
+import zx_param
+from zx_param import Domain, Graph, Phase, Scalar, Vertex, VertexType
 
 from tsim.core.instructions import GraphRepresentation
 from tsim.core.params import ParamLayout
@@ -21,305 +18,159 @@ if TYPE_CHECKING:
     from tsim.circuit import Circuit
 
 
-def build_sampling_graph(
-    built: GraphRepresentation, sample_detectors: bool = False
-) -> BaseGraph:
-    """Build a ZX graph for sampling from a GraphRepresentation.
+def _discard(g: Graph, v: Vertex) -> None:
+    """Turn the wire-end boundary ``v`` into a classical Z(0) spider (a discard).
 
-    This is the internal implementation of get_sampling_graph.
+    The wire edge is re-added one per copy, so this stays right when the
+    neighbour is classical (e.g. a measurement record).
+    """
+    (n,) = g.neighbors(v)
+    edge_type = g.edge_type(v, n)
+    g.remove_edge(v, n)
+    g.set_vertex_type(v, VertexType.Z)
+    g.set_vertex_domain(v, Domain.CLASSICAL)
+    g.add_edge_per_copy(v, n, edge_type)
+
+
+def _align_wire_ends(g: Graph, built: GraphRepresentation) -> None:
+    """Put every wire's last vertex in the same column (for drawing)."""
+    if built.last_vertex:
+        end = max(g.col(v) for v in built.last_vertex.values())
+        for v in built.last_vertex.values():
+            g.set_col(v, end)
+
+
+def circuit_graph(built: GraphRepresentation, *, annotations: bool = True) -> Graph:
+    """Return the circuit's graph with qubit ports.
+
+    For qubit ``q``, a wire start that is still a boundary gets input port
+    ``-(q + 1)`` and the wire end gets output port ``q``. Helper lanes (negative
+    indices, used by MPP, MPAD and heralded channels) are discarded at the end.
+    Detector and observable spiders are annotations; with ``annotations=False``
+    they are left out, so the graph's tensor is the circuit's channel.
     """
     g = built.graph.copy()
-
-    # Initialize un-initialized first vertices to the 0 state
-    for v in built.first_vertex.values():
-        if g.type(v) == VertexType.BOUNDARY:
-            g.set_type(v, VertexType.X)
-
-    # Clean up last row
-    if built.last_vertex:
-        max_row = max(g.row(v) for v in built.last_vertex.values())
-        for q in built.last_vertex:
-            g.set_row(built.last_vertex[q], max_row)
-
-    num_measurements = len(built.rec)
-    outputs = [v for v in g.vertices() if g.type(v) == VertexType.BOUNDARY]
-    g.set_outputs(tuple(outputs))
-
-    g_adj = g.adjoint()
-    g.compose(g_adj)
-
-    g = g.copy()
-
-    label_to_vertex: dict[str, list[int]] = defaultdict(list)
-    annotation_to_vertex: dict[str, list[int]] = defaultdict(list)
-    for v in g.vertices():
-        phase_vars = g._phaseVars[v]
-        if len(phase_vars) != 1:
-            continue
-        phase = next(iter(phase_vars))
-        if "det" in phase or "obs" in phase or "rec" in phase or "m" in phase:
-            label_to_vertex[phase].append(v)
-        if "det" in phase or "obs" in phase:
-            annotation_to_vertex[phase].append(v)
-
-    outputs = [0] * num_measurements if not sample_detectors else []
-
-    # Connect all rec[i] vertices to each other and add red vertex with rec[i] label
-    for i in range(num_measurements):
-        label = f"rec[{i}]"
-        vertices = label_to_vertex[label]
-
-        assert len(vertices) == 2
-        v0, v1 = vertices
-        if not g.connected(v0, v1):
-            g.add_edge((v0, v1))
-        g.set_phase(v0, 0)
-        g.set_phase(v1, 0)
-
-        # Add outputs
-        if not sample_detectors:
-            v3 = g.add_vertex(VertexType.BOUNDARY, qubit=-1, row=i + 1, phase=0)
-            outputs[i] = v3
-            g.add_edge((v0, v3))
-
-    # Connect all m[i] vertices to each other
-    for i in range(len(built.silent_rec)):
-        label = f"m[{i}]"
-        vertices = label_to_vertex[label]
-
-        assert len(vertices) == 2
-        v0, v1 = vertices
-        if not g.connected(v0, v1):
-            g.add_edge((v0, v1))
-        g.set_phase(v0, 0)
-        g.set_phase(v1, 0)
-
-    if not sample_detectors:
-        # Sample measurements: remove detectors and observables
-        for vertices in annotation_to_vertex.values():
-            assert len(vertices) == 2
-            for v in vertices:
-                g.remove_vertex(v)
-    else:
-        # Sample detectors and observables:
-        # Keep detector and observables but remove the adjoint (duplicated)
-        # annotation nodes
-        for vertices in annotation_to_vertex.values():
-            assert len(vertices) == 2
-            g.remove_vertex(vertices.pop())
-
-        labels = [f"det[{i}]" for i in range(len(built.detectors))] + [
-            f"obs[{i}]" for i in sorted(built.observables_dict)
-        ]
-        for label in labels:
-            vs = annotation_to_vertex[label]
-            assert len(vs) == 1
-            v = vs[0]
-            row = g.row(v)
-            vb = g.add_vertex(
-                VertexType.BOUNDARY, qubit=-2 if "det" in label else -2.5, row=row
-            )
-            g.add_edge((v, vb))
-            g.set_phase(v, 0)
-            outputs.append(vb)
-
-    g.set_outputs(tuple(outputs))
-
+    _align_wire_ends(g, built)
+    for q, v in built.first_vertex.items():
+        if q >= 0 and g.vertex_type(v) == VertexType.BOUNDARY:
+            g.set_port(v, -(q + 1))
+    for q, v in built.last_vertex.items():
+        if q >= 0:
+            g.set_port(v, q)
+        else:
+            _discard(g, v)
+    if not annotations:
+        for v in [*built.detectors, *built.observables]:
+            g.remove_vertex(v)
     return g
 
 
-def transform_error_basis(
-    g: BaseGraph, num_e: int | None = None
-) -> tuple[BaseGraph, np.ndarray]:
-    """Transform phase variables from the original 'e' basis to a reduced 'f' basis.
+def build_sampling_graph(
+    built: GraphRepresentation, sample_detectors: bool = False
+) -> Graph:
+    """Close the circuit graph into a sampling graph with classical outputs.
 
-    This function finds a linearly independent basis for the phase variables
-    across all vertices and transforms them accordingly. The original variables
-    (e0, e1, ...) are mapped to a smaller set (f0, f1, ...) where each f_i
-    corresponds to a linear combination of original e variables.
+    Wire starts that are still boundaries become ``|0⟩`` (a quantum X(0) spider),
+    wire ends are discarded, and classical output boundaries are attached: one
+    per measurement record (port ``i``), or, with ``sample_detectors``, one per
+    detector (ports ``0 … D−1``) followed by one per observable. In measurement
+    mode the detector and observable spiders are removed.
+    """
+    g = built.graph.copy()
+    _align_wire_ends(g, built)
+    for v in built.first_vertex.values():
+        if g.vertex_type(v) == VertexType.BOUNDARY:
+            g.set_vertex_type(v, VertexType.X)
+            g.mul_scalar(Scalar.one().add_power_sqrt2(-1), Domain.QUANTUM)
+    for v in built.last_vertex.values():
+        _discard(g, v)
+    if sample_detectors:
+        outputs = [*built.detectors, *built.observables]
+    else:
+        for v in [*built.detectors, *built.observables]:
+            g.remove_vertex(v)
+        outputs = list(built.rec)
+    col = max((g.col(v) for v in g.vertices()), default=0.0) + 1
+    for port, v in enumerate(outputs):
+        b = g.add_vertex(
+            VertexType.BOUNDARY, col=col, row=g.row(v), domain=Domain.CLASSICAL
+        )
+        g.set_port(b, port)
+        g.add_edge(v, b)
+    return g
+
+
+def transform_error_basis(g: Graph, num_errors: int) -> tuple[Graph, np.ndarray]:
+    """Rewrite error parameters in a smaller basis of error-basis bits.
+
+    Finds a linearly independent basis over GF(2) for the parity sets on the
+    graph's vertices and rewrites each vertex's error IDs as basis IDs
+    (``ParamLayout(num_errors).basis(j)``). Output-connected spiders come first,
+    so basis bits are numbered in output order where possible, which helps the
+    direct path avoid a reindex.
 
     Args:
-        g: A ZX graph with phase variables attached to vertices.
-        num_e: Total number of e-variables. If provided, the returned matrix
-            will have exactly this many columns (padded with zeros if needed).
-            If None, the matrix will have only the columns that appear in the graph.
+        g: A graph whose vertex parameters are error IDs ``0 … num_errors − 1``.
+        num_errors: The number of error bits.
 
     Returns:
-        A tuple containing:
-            - The modified graph (same object, mutated in place)
-            - A binary matrix of shape (num_f, num_e) where entry [i, j] = 1
-              means f_i depends on e_j. For example, if row 0 is [0, 1, 0, 1],
-              then f0 = e1 XOR e3.
+        The graph (mutated in place) and a binary matrix of shape
+        ``(num_basis, num_errors)`` whose row ``j`` lists the errors whose XOR is
+        basis bit ``j``.
 
     """
-    # Prioritize output-connected detector vertices so that f0, f1, ...
-    # are assigned in output order.  This maximises the chance that the
-    # direct-component fast path produces an identity permutation, avoiding
-    # a column reindex at sample time.
-    output_detectors = []
-    for v_out in g.outputs():
-        neighbors = list(g.neighbors(v_out))
-        if len(neighbors) == 1 and g._phaseVars.get(neighbors[0]):
-            output_detectors.append(neighbors[0])
-
-    output_det_set = set(output_detectors)
-    other_param_vertices = [
-        v for v in g.vertices() if v not in output_det_set and g._phaseVars.get(v)
+    layout = ParamLayout(num_errors=num_errors)
+    output_spiders: list[Vertex] = []
+    for b in g.outputs():
+        nbrs = list(g.neighbors(b))
+        if len(nbrs) == 1 and g.phase(nbrs[0]).parameters:
+            output_spiders.append(nbrs[0])
+    output_spiders = list(dict.fromkeys(output_spiders))
+    first = set(output_spiders)
+    parametrized = output_spiders + [
+        v for v in g.vertices() if v not in first and g.phase(v).parameters
     ]
-    parametrized_vertices = output_detectors + other_param_vertices
+    if not parametrized:
+        return g, np.zeros((0, num_errors), dtype=np.uint8)
 
-    if not parametrized_vertices:
-        g.scalar = Scalar()
-        num_cols = num_e if num_e is not None else 0
-        return g, np.zeros((0, num_cols), dtype=np.uint8)
-
-    # Parse variable indices and find the dimension
-    for var in (var for v in parametrized_vertices for var in g._phaseVars[v]):
-        assert (
-            var.startswith("e") and var[1:].isdigit()
-        ), f"unexpected phase var {var!r}"
-    error_indices = [
-        [int(var[1:]) for var in g._phaseVars[v]] for v in parametrized_vertices
-    ]
-    num_errors = max(max(indices) for indices in error_indices) + 1
-    if num_e is not None:
-        num_errors = max(num_errors, num_e)
-
-    # Build binary matrix representation
-    error_matrix = np.zeros((len(error_indices), num_errors), dtype=np.uint8)
-    for row_idx, indices in enumerate(error_indices):
-        error_matrix[row_idx, indices] = 1
+    error_matrix = np.zeros((len(parametrized), num_errors), dtype=np.uint8)
+    for row, v in enumerate(parametrized):
+        params = sorted(g.phase(v).parameters)
+        if params[-1] >= num_errors:
+            raise ValueError(f"vertex {v} carries a parameter that is not an error bit")
+        error_matrix[row, params] = 1
 
     basis, transform = find_basis(error_matrix)
-    # Now: error_matrix = transform @ basis
-
-    for v, transform_row in zip(parametrized_vertices, transform, strict=True):
-        new_vars = {f"f{j}" for j in np.nonzero(transform_row)[0]}
-        g._phaseVars[v] = new_vars
-
+    for v, transform_row in zip(parametrized, transform, strict=True):
+        ids = frozenset(layout.basis(int(j)) for j in np.nonzero(transform_row)[0])
+        g.set_phase(v, Phase(g.phase(v).value, ids))
     return g, basis
-
-
-def squash_graph(g: BaseGraph) -> None:
-    """Compact the graph by placing vertices underneath their output connections.
-
-    Starting from output vertices, each vertex is placed directly underneath
-    (same row, qubit - 1) its already-placed neighbor. Positions are assigned
-    via BFS traversal from outputs, ensuring no (qubit, row) collisions.
-    """
-    outputs = list(g.outputs())
-    if not outputs:
-        return
-
-    # Normalize output positions: consecutive rows at qubit = num_outputs
-    num_outputs = len(outputs)
-    for row, v in enumerate(outputs):
-        g.set_row(v, row)
-
-    # Track occupied positions and placed vertices
-    occupied: set[tuple[int, int]] = {(num_outputs, row) for row in range(num_outputs)}
-    placed: set[Any] = set(outputs)
-
-    # BFS from outputs
-    queue: deque[Any] = deque(outputs)
-
-    while queue:
-        current = queue.popleft()
-        current_qubit = int(g.qubit(current))
-        current_row = int(g.row(current))
-
-        for neighbor in g.neighbors(current):
-            if neighbor in placed:
-                continue
-
-            # Try to place directly underneath: same row, qubit - 1
-            target_qubit = current_qubit - 1
-            target_row = current_row
-
-            # If spot is taken, search for nearest free spot at same qubit level
-            if (target_qubit, target_row) in occupied:
-                # Search outward from target_row
-                for offset in range(1, 1000):
-                    if (target_qubit, target_row + offset) not in occupied:
-                        target_row = target_row + offset
-                        break
-                    if (
-                        target_qubit,
-                        target_row - offset,
-                    ) not in occupied and target_row - offset >= 0:
-                        target_row = target_row - offset
-                        break
-
-            g.set_qubit(neighbor, target_qubit)
-            g.set_row(neighbor, target_row)
-            occupied.add((target_qubit, target_row))
-            placed.add(neighbor)
-            queue.append(neighbor)
-
-    for v in g.outputs():
-        neighbors = list(g.neighbors(v))
-        if neighbors and len(list(g.neighbors(neighbors[0]))) == 1:
-            g.set_qubit(neighbors[0], g.qubit(v) + 1)
-            g.set_row(neighbors[0], g.row(v))
-
-
-def scale_horizontally(g: BaseGraph, scale: float) -> None:
-    """Scale horizontal positions of graph vertices by a factor of ``scale``.
-
-    Args:
-        g: A ZX graph
-        scale: The factor to scale the graph by
-
-    """
-    for v in g.vertices():
-        g.set_row(v, g.row(v) * scale)
 
 
 def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> SamplingGraph:
     """Prepare a circuit for compilation.
 
-    This function performs the graph preparation phase:
-    1. Parse the stim circuit into a ZX graph
-    2. Build the sampling graph (compose with adjoint, add outputs)
-    3. Reduce the graph via zx.full_reduce
-    4. Transform error basis via Gaussian elimination (e → f)
-    5. Clear the scalar (safe before stabilizer rank decomposition)
-
-    Args:
-        circuit: The quantum circuit to prepare.
-        sample_detectors: If True, prepare for detector sampling.
-            If False, prepare for measurement sampling.
-
-    Returns:
-        A SamplingGraph containing the reduced graph and error transformation.
-
+    1. Parse the stim circuit into a quantum/classical ZX graph.
+    2. Close it into a sampling graph with classical outputs.
+    3. Reduce it with zx_param's ``full_reduce``.
+    4. Rewrite error bits as error-basis bits (Gaussian elimination).
+    5. Reset the scalar (normalization is computed separately).
     """
     built = parse_stim_circuit(circuit._stim_circ)
-
-    # Build sampling graph (doubles the diagram)
     graph = build_sampling_graph(built, sample_detectors=sample_detectors)
-
-    zx.full_reduce(graph, paramSafe=True)
-    squash_graph(graph)
-
-    # Transform error basis: e-params → f-params via Gaussian elimination
-    graph, error_transform = transform_error_basis(graph, num_e=built.num_error_bits)
-
-    # Since we compute normalization separately, discard all scalar terms.
-    # This avoids computing scalars that would cancel out anyway during normalization.
-    graph.scalar = Scalar()
-
+    zx_param.full_reduce(graph)
+    graph, error_transform = transform_error_basis(graph, built.num_error_bits)
+    graph.scalar = Scalar.one()
     layout = ParamLayout(
-        num_errors=error_transform.shape[1],
+        num_errors=built.num_error_bits,
         num_basis=error_transform.shape[0],
         num_outputs=len(graph.outputs()),
     )
-
     return SamplingGraph(
         graph=graph,
         error_transform=error_transform,
         channel_probs=built.channel_probs,
-        num_outputs=len(graph.outputs()),
+        num_outputs=layout.num_outputs,
         num_detectors=len(built.detectors),
         layout=layout,
     )

@@ -5,7 +5,7 @@ from unittest.mock import ANY, patch
 import pytest
 import stim
 from numpy.testing import assert_allclose
-from pyzx_param.utils import VertexType
+from zx_param import VertexType
 
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 
@@ -14,14 +14,13 @@ def _assert_error_vertex_layout(b, expected):
     """Assert which ZX error vertices are controlled by each error bit."""
     actual = {}
     for v in b.graph.vertices():
-        for phase in b.graph._phaseVars.get(v, set()):
-            if isinstance(phase, str) and phase.startswith("e"):
-                actual.setdefault(phase, Counter()).update(
-                    [(b.graph.type(v), b.graph.qubit(v))]
-                )
+        for param in b.graph.phase(v).parameters:
+            actual.setdefault(param, Counter()).update(
+                [(b.graph.vertex_type(v), b.graph.row(v))]
+            )
 
     expected_counters = {
-        phase: Counter(vertices) for phase, vertices in expected.items()
+        param: Counter(vertices) for param, vertices in expected.items()
     }
     assert actual == expected_counters
 
@@ -76,11 +75,10 @@ class TestParseCorrelatedError:
         b = parse_stim_circuit(circuit)
 
         assert b.num_error_bits == 1
-        # Count vertices with error phases (stored in _phaseVars)
+        # Count vertices that carry error bit 0
         e0_count = 0
         for v in b.graph.vertices():
-            phase_vars = b.graph._phaseVars.get(v, set())
-            if "e0" in phase_vars:
+            if 0 in b.graph.phase(v).parameters:
                 e0_count += 1
 
         # Y error should create 2 vertices (X and Z), both with same phase
@@ -91,34 +89,31 @@ class TestCorrelatedErrorGraph:
     """Tests for graph structure with correlated errors."""
 
     def test_error_vertices_have_e_phase(self):
-        """Verify error vertices use 'e' prefix after finalization."""
+        """Verify error vertices carry their error bit after finalization."""
         circuit = stim.Circuit("CORRELATED_ERROR(0.1) X0")
         b = parse_stim_circuit(circuit)
 
-        # Find vertices with error phases (stored in _phaseVars)
+        # Find vertices that carry error bit 0
         found_e0 = False
         for v in b.graph.vertices():
-            phase_vars = b.graph._phaseVars.get(v, set())
-            if "e0" in phase_vars:
+            if 0 in b.graph.phase(v).parameters:
                 found_e0 = True
                 break
 
         assert found_e0
 
     def test_no_c_phases_after_finalization(self):
-        """Verify no 'c' prefixed phases remain after finalization."""
+        """Verify no correlated-error bits are left pending after finalization."""
         circuit = stim.Circuit("""
             CORRELATED_ERROR(0.1) X0 Z1
             ELSE_CORRELATED_ERROR(0.2) Y0
         """)
         b = parse_stim_circuit(circuit)
 
-        # Check that no vertices have "c" phases (stored in _phaseVars)
+        assert b.pending_correlated == []
         for v in b.graph.vertices():
-            phase_vars = b.graph._phaseVars.get(v, set())
-            for var in phase_vars:
-                if isinstance(var, str):
-                    assert not var.startswith("c"), f"Found unfinalized phase: {var}"
+            for param in b.graph.phase(v).parameters:
+                assert param < b.num_error_bits, f"Found unfinalized parameter: {param}"
 
     def test_chain_multiple_qubits(self):
         """Test a chain affecting multiple qubits."""
@@ -330,18 +325,18 @@ class TestChannelBitLayoutMatchesGraph:
     @pytest.mark.parametrize(
         ("program", "expected_layout"),
         [
-            ("X_ERROR(0.07) 5", {"e0": [(VertexType.X, 5)]}),
-            ("Y_ERROR(0.07) 5", {"e0": [(VertexType.Z, 5), (VertexType.X, 5)]}),
-            ("Z_ERROR(0.07) 5", {"e0": [(VertexType.Z, 5)]}),
-            ("M(0.07) 5", {"e0": [(VertexType.X, 5), (VertexType.X, 5)]}),
-            ("MX(0.07) 5", {"e0": [(VertexType.X, 5), (VertexType.X, 5)]}),
-            ("MY(0.07) 5", {"e0": [(VertexType.X, 5), (VertexType.X, 5)]}),
-            ("MR(0.07) 5", {"e0": [(VertexType.X, 5), (VertexType.X, 5)]}),
-            ("MRX(0.07) 5", {"e0": [(VertexType.X, 5), (VertexType.X, 5)]}),
-            ("MRY(0.07) 5", {"e0": [(VertexType.X, 5), (VertexType.X, 5)]}),
-            ("MXX(0.07) 5 7", {"e0": [(VertexType.X, -2), (VertexType.X, -2)]}),
-            ("MPP(0.07) X5*Z7", {"e0": [(VertexType.X, -2), (VertexType.X, -2)]}),
-            ("MPAD(0.07) 1", {"e0": [(VertexType.X, -2), (VertexType.X, -2)]}),
+            ("X_ERROR(0.07) 5", {0: [(VertexType.X, 5)]}),
+            ("Y_ERROR(0.07) 5", {0: [(VertexType.Z, 5), (VertexType.X, 5)]}),
+            ("Z_ERROR(0.07) 5", {0: [(VertexType.Z, 5)]}),
+            ("M(0.07) 5", {0: [(VertexType.X, 5), (VertexType.X, 5)]}),
+            ("MX(0.07) 5", {0: [(VertexType.X, 5), (VertexType.X, 5)]}),
+            ("MY(0.07) 5", {0: [(VertexType.X, 5), (VertexType.X, 5)]}),
+            ("MR(0.07) 5", {0: [(VertexType.X, 5), (VertexType.X, 5)]}),
+            ("MRX(0.07) 5", {0: [(VertexType.X, 5), (VertexType.X, 5)]}),
+            ("MRY(0.07) 5", {0: [(VertexType.X, 5), (VertexType.X, 5)]}),
+            ("MXX(0.07) 5 7", {0: [(VertexType.X, -2), (VertexType.X, -2)]}),
+            ("MPP(0.07) X5*Z7", {0: [(VertexType.X, -2), (VertexType.X, -2)]}),
+            ("MPAD(0.07) 1", {0: [(VertexType.X, -2), (VertexType.X, -2)]}),
         ],
     )
     def test_single_bit_channel_layout_matches_graph(self, program, expected_layout):
@@ -364,8 +359,8 @@ class TestChannelBitLayoutMatchesGraph:
         _assert_error_vertex_layout(
             b,
             {
-                "e0": [(VertexType.Z, 5)],
-                "e1": [(VertexType.X, 5)],
+                0: [(VertexType.Z, 5)],
+                1: [(VertexType.X, 5)],
             },
         )
 
@@ -388,10 +383,10 @@ class TestChannelBitLayoutMatchesGraph:
         _assert_error_vertex_layout(
             b,
             {
-                "e0": [(VertexType.Z, 5)],
-                "e1": [(VertexType.X, 5)],
-                "e2": [(VertexType.Z, 7)],
-                "e3": [(VertexType.X, 7)],
+                0: [(VertexType.Z, 5)],
+                1: [(VertexType.X, 5)],
+                2: [(VertexType.Z, 7)],
+                3: [(VertexType.X, 7)],
             },
         )
 
@@ -411,9 +406,9 @@ class TestChannelBitLayoutMatchesGraph:
         _assert_error_vertex_layout(
             b,
             {
-                "e0": [(VertexType.X, -2)],
-                "e1": [(VertexType.Z, 5)],
-                "e2": [(VertexType.X, 5)],
+                0: [(VertexType.X, -2)],
+                1: [(VertexType.Z, 5)],
+                2: [(VertexType.X, 5)],
             },
         )
 
@@ -430,13 +425,13 @@ class TestChannelBitLayoutMatchesGraph:
         _assert_error_vertex_layout(
             b,
             {
-                "e0": [
+                0: [
                     (VertexType.X, 5),
                     (VertexType.Z, 6),
                     (VertexType.X, 6),
                     (VertexType.Z, 7),
                 ],
-                "e1": [(VertexType.Z, 5)],
+                1: [(VertexType.Z, 5)],
             },
         )
 
@@ -474,7 +469,7 @@ class TestParseWithRepeatBlocks:
         b_flat = parse_stim_circuit(flat_circuit)
         b_repeat = parse_stim_circuit(repeat_circuit)
 
-        assert len(b_flat.graph.vertices()) == len(b_repeat.graph.vertices())
+        assert b_flat.graph.num_vertices() == b_repeat.graph.num_vertices()
         assert list(b_flat.graph.edges()) == list(b_repeat.graph.edges())
 
     def test_parse_repeat_block_with_measurements(self):
@@ -491,7 +486,7 @@ class TestParseWithRepeatBlocks:
         b_nested = parse_stim_circuit(circuit)
         b_flat = parse_stim_circuit(flat)
 
-        assert len(b_nested.graph.vertices()) == len(b_flat.graph.vertices())
+        assert b_nested.graph.num_vertices() == b_flat.graph.num_vertices()
 
 
 class TestCorrelatedErrorState:
@@ -707,14 +702,14 @@ class TestParseEmptyAnnotations:
         b = parse_stim_circuit(stim.Circuit("DETECTOR"))
         assert len(b.detectors) == 1
         v = b.detectors[0]
-        assert b.graph.type(v) == VertexType.X
+        assert b.graph.vertex_type(v) == VertexType.X
         assert list(b.graph.neighbors(v)) == []
 
     def test_empty_observable_alone(self):
         b = parse_stim_circuit(stim.Circuit("OBSERVABLE_INCLUDE(0)"))
         assert set(b.observables_dict) == {0}
         v = b.observables_dict[0]
-        assert b.graph.type(v) == VertexType.X
+        assert b.graph.vertex_type(v) == VertexType.X
         assert list(b.graph.neighbors(v)) == []
 
     def test_empty_detector_after_measurement(self):

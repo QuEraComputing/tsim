@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -11,20 +12,27 @@ from typing import (
     overload,
 )
 
-import pyzx_param as zx
+import numpy as np
 import stim
-from pyzx_param.graph.base import BaseGraph
-from zx_param import DecompositionStrategy
+import zx_param as zx
+from zx_param import DecompositionStrategy, Graph, VertexType
+from zx_param.phase import Bit
 
 if TYPE_CHECKING:
     from tsim.sampler import CompiledDetectorSampler, CompiledMeasurementSampler
 
-from tsim.core.graph import build_sampling_graph
+from tsim.core.graph import build_sampling_graph, circuit_graph, transform_error_basis
+from tsim.core.params import ParamLayout
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.core.tags import encode_t_tag
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
-from tsim.utils.diagram import render_pyzx_d3, render_svg
+from tsim.utils.diagram import (
+    render_svg,
+    render_zx_d3,
+    scale_horizontally,
+    squash_graph,
+)
 from tsim.utils.program_text import (
     controlled_gate_decomposition_lines,
     enriched_stim_error,
@@ -651,9 +659,9 @@ class Circuit:
     def diagram(
         self,
         type: Literal[
-            "pyzx",
-            "pyzx-dets",
-            "pyzx-meas",
+            "zx",
+            "zx-dets",
+            "zx-meas",
             "timeline-svg",
             "timeslice-svg",
             "timeline-text",
@@ -670,11 +678,12 @@ class Circuit:
 
         Args:
             type: The type of diagram. Available types are:
-                "pyzx": A pyzx SVG of the ZX diagram of the circuit.
-                "pyzx-dets": A pyzx SVG of the ZX diagram that is used to compute
-                    probabilities of detectors and observables.
-                "pyzx-meas": A pyzx SVG of the ZX diagram that is used to compute
-                    probabilities of measurements.
+                "zx": A zx_param D3 drawing of the circuit's quantum/classical
+                    ZX graph.
+                "zx-dets": A zx_param D3 drawing of the reduced ZX graph that is
+                    used to compute probabilities of detectors and observables.
+                "zx-meas": A zx_param D3 drawing of the reduced ZX graph that is
+                    used to compute probabilities of measurements.
                 "timeline-svg": An SVG image of the operations applied by
                     the circuit over time. Includes annotations showing the
                     measurement record index that each measurement writes
@@ -747,23 +756,22 @@ class Circuit:
                 height=height,
                 zoomable=zoomable,
             )
-        elif type == "pyzx":
-            return render_pyzx_d3(self._stim_circ, kwargs)
-        elif type in ["pyzx-dets", "pyzx-meas"]:
-            from tsim.core.graph import (
-                scale_horizontally,
-                squash_graph,
-                transform_error_basis,
-            )
-
-            g = self.get_sampling_graph(sample_detectors=type == "pyzx-dets")
-            zx.full_reduce(g, paramSafe=True)
-            g, _ = transform_error_basis(g)
+        elif type == "zx":
+            return render_zx_d3(self._stim_circ, kwargs)
+        elif type in ("zx-dets", "zx-meas"):
+            built = parse_stim_circuit(self._stim_circ)
+            g = build_sampling_graph(built, sample_detectors=type == "zx-dets")
+            zx.full_reduce(g)
+            g, error_transform = transform_error_basis(g, built.num_error_bits)
             squash_graph(g)
             if kwargs.get("scale_horizontally", False):
                 scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
-            zx.draw(g, **kwargs)
-            return g
+            layout = ParamLayout(
+                num_errors=built.num_error_bits,
+                num_basis=error_transform.shape[0],
+                num_outputs=len(g.outputs()),
+            )
+            return zx.draw(g, param_names=layout.names(), **kwargs)
         elif type == "timeline-text":
             from stim_timeline_text import render_timeline_text
 
@@ -771,45 +779,47 @@ class Circuit:
         else:
             return self._stim_circ.diagram(type=type, **kwargs)  # pragma: no cover
 
-    def to_tensor(self) -> Any:
-        """Convert circuit to tensor representation."""
-        built = parse_stim_circuit(self._stim_circ)
-        g = built.graph.copy()
-        g.normalize()
-        return g.to_tensor()
+    def to_tensor(self, bindings: Mapping[int, int] | None = None) -> np.ndarray:
+        """Return the circuit's doubled tensor (its channel, U ⊗ Ū for unitaries).
 
-    def to_matrix(self) -> Any:
-        """Convert circuit to matrix representation."""
+        Axes follow zx_param's ``Graph.to_tensor``: outputs then inputs, by qubit,
+        each with a copy and a conjugate axis. Error bits default to 0 (the
+        noiseless circuit); ``bindings`` maps error indices to bits. Detector and
+        observable annotations are left out. Needs ``zx-param[quimb]``.
+        """
         built = parse_stim_circuit(self._stim_circ)
-        g = built.graph.copy()
-        g.normalize()
-        return g.to_matrix()
+        values: dict[int, Bit] = {j: 0 for j in range(built.num_error_bits)}
+        for j, bit in (bindings or {}).items():
+            values[j] = 1 if bit else 0
+        return circuit_graph(built, annotations=False).to_tensor(values)
 
     def tcount(self) -> int:
-        """Count the number of T gates in the circuit."""
-        built = parse_stim_circuit(self._stim_circ)
-        return zx.tcount(built.graph)
+        """Count the spiders whose angle is not a multiple of π/2."""
+        g = parse_stim_circuit(self._stim_circ).graph
+        return sum(
+            1
+            for v in g.vertices()
+            if g.vertex_type(v) != VertexType.BOUNDARY
+            and g.phase(v).value.denominator > 2
+        )
 
-    def get_graph(self) -> BaseGraph:
-        """Construct the ZX graph."""
-        built = parse_stim_circuit(self._stim_circ)
-        return built.graph
+    def get_graph(self) -> Graph:
+        """Construct the circuit's quantum/classical ZX graph, with qubit ports."""
+        return circuit_graph(parse_stim_circuit(self._stim_circ))
 
-    def get_sampling_graph(self, sample_detectors: bool = False) -> BaseGraph:
+    def get_sampling_graph(self, sample_detectors: bool = False) -> Graph:
         """Get a ZX graph that can be used to compute probabilities.
 
-        This graph will be constructed as follows:
+        The graph is not doubled: qubit wires are quantum and measurement records
+        are classical spiders. It is constructed as follows:
 
-        1. Double the ZX-diagram by composing it with its adjoint.
-        2. Connect all rec[i] vertices to their corresponding adjoint rec[i] vertices.
-        3. Add outputs:
+        1. Wire starts become ``|0⟩`` and wire ends are discarded.
+        2. Add outputs, which are classical boundaries:
         (a) When sampling measurements (i.e. `sample_detectors` is False),
-            add output nodes for each measurement. Detectors and observables are
+            add an output for each measurement. Detectors and observables are
             removed since they are ignored when sampling measurements.
         (b) When sampling detectors and observables (i.e. `sample_detectors` is True),
-            add output nodes for each detector and observable. Only one set of detector
-            and observable nodes is kept, i.e., detectors and observables are not
-            composed with their adjoints.
+            add an output for each detector, then for each observable.
 
         Args:
             sample_detectors: If True, sample detectors and observables instead of
