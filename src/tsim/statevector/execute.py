@@ -154,6 +154,15 @@ def _rotate(
     return state._replace(amps=amps.astype(state.amps.dtype))
 
 
+def _squared(values: Array) -> Array:
+    return jnp.real(values) ** 2 + jnp.imag(values) ** 2
+
+
+def _probability_of_one(weight_0: Array, weight_1: Array) -> Array:
+    """Return ``w1 / (w0 + w1)`` from the outcome weights, without cancellation."""
+    return jnp.clip(weight_1 / jnp.maximum(weight_0 + weight_1, _TINY), 0, 1)
+
+
 def _measured(state: LaneState, new: Array, norm: Array) -> LaneState:
     deviation = jnp.maximum(state.max_norm_deviation, jnp.max(jnp.abs(norm - 1)))
     return state._replace(
@@ -168,16 +177,17 @@ def _measure(
     index = _index(component)
     amps = state.amps
     paulied = _apply_pauli(amps, index, component.x_mask[a], component.z_mask[a])
-    norm = jnp.sum(jnp.abs(amps) ** 2, axis=1)
-    expectation = jnp.real(jnp.sum(jnp.conj(amps) * paulied, axis=1))
-    p1 = jnp.clip((norm - expectation) / (2 * norm), 0, 1)
+    plus, minus = amps + paulied, amps - paulied
+    weight_0 = jnp.sum(_squared(plus), axis=1) / 4
+    weight_1 = jnp.sum(_squared(minus), axis=1) / 4
+    p1 = _probability_of_one(weight_0, weight_1)
     outcome = choose_outcome(p1, state.count, jax.random.fold_in(key, a))
-    p_outcome = jnp.where(outcome, p1, 1 - p1)
-    scale = jax.lax.rsqrt(jnp.maximum(2 * norm * p_outcome, _TINY))[:, None]
-    signed = jnp.where(outcome, -1, 1)[:, None]
+    weight = jnp.where(outcome, weight_1, weight_0)
+    scale = jax.lax.rsqrt(jnp.maximum(2 * weight, _TINY))[:, None]
     keep = ((index >> component.pivot[a].astype(jnp.uint32)) & 1) == 0
-    new = jnp.where(keep[None, :], (amps + signed * paulied) * scale, 0)
-    return _write(component, _measured(state, new, norm), a, outcome)
+    projected = jnp.where(outcome[:, None], minus, plus)
+    new = jnp.where(keep[None, :], projected * scale, 0)
+    return _write(component, _measured(state, new, weight_0 + weight_1), a, outcome)
 
 
 def _measure_diag(
@@ -186,11 +196,12 @@ def _measure_diag(
     index = _index(component)
     amps = state.amps
     odd = _parity(index & component.z_mask[a])
-    weights = jnp.abs(amps) ** 2
-    norm = jnp.sum(weights, axis=1)
-    p1 = jnp.clip(jnp.sum(jnp.where(odd[None, :], weights, 0), axis=1) / norm, 0, 1)
+    weights = _squared(amps)
+    weight_0 = jnp.sum(jnp.where(odd[None, :], 0, weights), axis=1)
+    weight_1 = jnp.sum(jnp.where(odd[None, :], weights, 0), axis=1)
+    p1 = _probability_of_one(weight_0, weight_1)
     outcome = choose_outcome(p1, state.count, jax.random.fold_in(key, a))
-    p_outcome = jnp.where(outcome, p1, 1 - p1)
+    weight = jnp.where(outcome, weight_1, weight_0)
     pivot = component.pivot[a].astype(jnp.uint32)
     bit = jnp.uint32(1) << pivot
     source_if_0 = (index ^ (bit * odd.astype(jnp.uint32))).astype(jnp.int32)
@@ -201,9 +212,9 @@ def _measure_diag(
         jnp.take(amps, source_if_0, axis=1),
     )
     keep = ((index >> pivot) & 1) == 0
-    scale = jax.lax.rsqrt(jnp.maximum(norm * p_outcome, _TINY))[:, None]
+    scale = jax.lax.rsqrt(jnp.maximum(weight, _TINY))[:, None]
     new = jnp.where(keep[None, :], gathered * scale, 0)
-    return _write(component, _measured(state, new, norm), a, outcome)
+    return _write(component, _measured(state, new, weight_0 + weight_1), a, outcome)
 
 
 def _measure_dormant(

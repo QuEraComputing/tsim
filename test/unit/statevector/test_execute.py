@@ -1,5 +1,6 @@
 from test.helpers.statevector import (
     CIRCUITS,
+    apply_pauli,
     assert_matches_distribution,
     f_patterns,
     pauli_matrix,
@@ -212,3 +213,73 @@ def test_choose_outcome_frequency_matches_p1(p1, dtype):
         ones = _count_outcomes(p1, jnp.dtype(dtype), draws)
     expected = draws * p1
     assert abs(ones - expected) <= 5 * np.sqrt(draws * p1 * (1 - p1)) + 1
+
+
+def _projected(vectors, x, z, eigenvalue):
+    projected = np.array([v + eigenvalue * apply_pauli(v, x, z) for v in vectors])
+    return projected / np.linalg.norm(projected, axis=1, keepdims=True)
+
+
+def _run_recording_p1(monkeypatch, component, state):
+    recorded = []
+    choose = execute.choose_outcome
+
+    def recording(p1, count, key):
+        recorded.append(np.asarray(p1, dtype=np.float64))
+        return choose(p1, count, key)
+
+    monkeypatch.setattr(execute, "choose_outcome", recording)
+    with jax.disable_jit():
+        out = run(component, state, jax.random.key(3), 0, 1)
+    (p1,) = recorded
+    return p1, out
+
+
+_MEASUREMENTS = [(0b011, 0b110, 0), (0b110, 0b010, 2), (0, 0b101, 2), (0, 0b011, 0)]
+
+
+@pytest.mark.parametrize("eigenvalue", [1, -1])
+@pytest.mark.parametrize("x, z, pivot", _MEASUREMENTS)
+def test_measuring_an_eigenstate_never_samples_the_impossible_outcome(
+    monkeypatch, x, z, pivot, eigenvalue
+):
+    lanes = 4096
+    action = MeasureActive(
+        x, z, pivot, branch=1, sign=AffineRow(False, frozenset()), slot=0
+    )
+    component = _component([action], width=3, num_branches=1, num_outputs=1)
+    # NOTE: the noise is of the size rotations leave in complex64 amplitudes.
+    rounding = 1e-7 * _random_states(lanes, 3, seed=1)
+    psi = _projected(_random_states(lanes, 3), x, z, eigenvalue) + rounding
+    state = initial_state(component, jnp.zeros((lanes, 1), dtype=bool))._replace(
+        amps=jnp.asarray(psi, jnp.complex64)
+    )
+    p1, out = _run_recording_p1(monkeypatch, component, state)
+    impossible = p1 if eigenvalue == 1 else 1 - p1
+    assert impossible.max() < 1e-12
+    assert np.all(np.asarray(out.records[:, 0]) == (eigenvalue == -1))
+
+
+@pytest.mark.parametrize("unlikely", [0, 1])
+@pytest.mark.parametrize("x, z, pivot", _MEASUREMENTS)
+def test_an_unlikely_outcome_leaves_a_normalized_state(
+    monkeypatch, x, z, pivot, unlikely
+):
+    lanes = 64
+    action = MeasureActive(
+        x, z, pivot, branch=1, sign=AffineRow(False, frozenset()), slot=0
+    )
+    component = _component([action], width=3, num_branches=1, num_outputs=1)
+    vectors = _random_states(lanes, 3)
+    likely = _projected(vectors, x, z, (-1) ** (1 - unlikely))
+    rare = _projected(vectors, x, z, (-1) ** unlikely)
+    p = np.logspace(-5, -3, lanes)[:, None]
+    psi = np.sqrt(1 - p) * likely + np.sqrt(p) * rare
+    outcomes = jnp.full(lanes, bool(unlikely))
+    monkeypatch.setattr(execute, "choose_outcome", lambda p1, count, key: outcomes)
+    state = initial_state(component, jnp.zeros((lanes, 1), dtype=bool))._replace(
+        amps=jnp.asarray(psi, jnp.complex64)
+    )
+    out = run(component, state, jax.random.key(0), 0, 1)
+    norms = np.linalg.norm(np.asarray(out.amps, dtype=np.complex128), axis=1) ** 2
+    assert np.abs(norms - 1).max() < 1e-5
