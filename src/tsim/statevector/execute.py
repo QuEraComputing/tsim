@@ -22,6 +22,7 @@ from tsim.statevector.program import StatevectorComponent
 
 _I_POWERS = (1, 1j, -1, -1j)
 _TINY = 1e-30
+_TWO_TO_32 = 2.0**32
 
 
 class LaneState(NamedTuple):
@@ -48,10 +49,20 @@ class LaneState(NamedTuple):
 def choose_outcome(p1: Array, count: Array, key: Array) -> Array:
     """Return each lane's outcome: True with probability ``p1``.
 
-    ``count`` is unused for now; trajectory sharing will split it binomially.
+    Two uint32 draws per lane form a uniform 64-bit fraction ``high + low·2^-32``
+    (in units of 2^-32), compared with ``t = p1·2^32`` (an exact scaling), so the
+    resolution is 2^-64 for any float dtype of ``p1``. ``p1 = 0`` never and
+    ``p1 = 1`` always gives True. ``count`` is unused for now; trajectory sharing
+    will split it binomially.
     """
     del count
-    return jax.random.uniform(key, p1.shape, dtype=p1.dtype) < p1
+    high, low = jax.random.bits(key, (2, *p1.shape), dtype=jnp.uint32)
+    scaled = jnp.clip(p1, 0, 1) * _TWO_TO_32
+    whole = jnp.floor(scaled)
+    high_bound = whole.astype(jnp.uint32)
+    low_bound = jnp.floor((scaled - whole) * _TWO_TO_32).astype(jnp.uint32)
+    below = (high < high_bound) | ((high == high_bound) & (low < low_bound))
+    return (p1 >= 1) | ((p1 > 0) & below)
 
 
 def pack_bits(bits: Array, num_words: int) -> Array:

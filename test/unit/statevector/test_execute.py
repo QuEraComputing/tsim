@@ -179,3 +179,36 @@ def test_complex128_amplitudes():
         assert state.amps.dtype == jnp.complex128
         out = run(compiled, state, jax.random.key(0), 0, compiled.num_actions)
         assert out.amps.dtype == jnp.complex128
+
+
+def _count_outcomes(p1, dtype, draws, chunk=2**22):
+    @jax.jit
+    def ones_in_chunk(key):
+        probabilities = jnp.full(chunk, p1, dtype=dtype)
+        count = jnp.ones(chunk, dtype=jnp.int32)
+        return jnp.sum(execute.choose_outcome(probabilities, count, key))
+
+    return sum(
+        int(ones_in_chunk(jax.random.key(seed))) for seed in range(draws // chunk)
+    )
+
+
+@pytest.mark.parametrize("p1", [0.0, 1e-15])
+def test_choose_outcome_never_returns_true_below_its_resolution(p1):
+    assert _count_outcomes(p1, jnp.float32, 2**26) == 0
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+def test_choose_outcome_always_returns_true_for_p1_one(dtype):
+    with jax.enable_x64(dtype == "float64"):
+        assert _count_outcomes(1.0, jnp.dtype(dtype), 2**22) == 2**22
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+@pytest.mark.parametrize("p1", [0.5, 0.3, 1e-3, 1e-6])
+def test_choose_outcome_frequency_matches_p1(p1, dtype):
+    draws = 2**24
+    with jax.enable_x64(dtype == "float64"):
+        ones = _count_outcomes(p1, jnp.dtype(dtype), draws)
+    expected = draws * p1
+    assert abs(ones - expected) <= 5 * np.sqrt(draws * p1 * (1 - p1)) + 1
