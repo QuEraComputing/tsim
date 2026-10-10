@@ -123,6 +123,20 @@ def test_dormant_measurements_and_records_write_outcome_xor_sign(monkeypatch):
     assert np.asarray(out.records[:, :2]).tolist() == [[True, True], [False, False]]
 
 
+def test_a_component_without_actions_samples_no_outputs():
+    component = _component([], width=0, num_f=0)
+    assert component.num_actions == 0
+    state = initial_state(component, jnp.zeros((3, 0), dtype=bool))
+    out = run(component, state, jax.random.key(0), 0, component.num_actions)
+    for got, initial in zip(out, state, strict=True):
+        np.testing.assert_array_equal(np.asarray(got), np.asarray(initial))
+    samples, _, deviation = sample_statevector_component(
+        component, jnp.zeros((3, 0), dtype=jnp.uint8), jax.random.key(0)
+    )
+    assert samples.shape == (3, 0)
+    assert float(deviation) == 0.0
+
+
 @pytest.mark.parametrize(
     "name",
     [

@@ -221,7 +221,12 @@ def run(
     start: int | Array,
     stop: int | Array,
 ) -> LaneState:
-    """Run actions ``start … stop-1`` of the tape on every lane."""
+    """Run actions ``start … stop-1`` of the tape on every lane.
+
+    A component without actions returns ``state`` unchanged.
+    """
+    if component.num_actions == 0:
+        return state
     branches = [partial(kernel, component) for kernel in _KERNELS]
 
     def step(a: Array, carry: LaneState) -> LaneState:
