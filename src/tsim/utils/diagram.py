@@ -509,9 +509,10 @@ def render_zx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> Any:
 def squash_graph(g: Graph) -> None:
     """Compact the graph by placing vertices underneath their output connections.
 
-    Starting from output vertices, each vertex is placed directly underneath
-    (same column, row - 1) its already-placed neighbor. Positions are assigned
-    via BFS traversal from outputs, ensuring no (row, col) collisions.
+    The outputs are placed side by side in one row. Starting from them, each
+    vertex is placed directly underneath (same column, row - 1) its
+    already-placed neighbor. Positions are assigned via BFS traversal from
+    outputs, ensuring no (row, col) collisions.
     """
     outputs = g.outputs()
     if not outputs:
@@ -519,6 +520,7 @@ def squash_graph(g: Graph) -> None:
 
     num_outputs = len(outputs)
     for col, v in enumerate(outputs):
+        g.set_row(v, num_outputs)
         g.set_col(v, col)
 
     occupied: set[tuple[int, int]] = {(num_outputs, col) for col in range(num_outputs)}

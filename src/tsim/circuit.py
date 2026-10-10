@@ -763,6 +763,7 @@ class Circuit:
             g = build_sampling_graph(built, sample_detectors=type == "zx-dets")
             zx.full_reduce(g)
             g, error_transform = transform_error_basis(g, built.num_error_bits)
+            g.to_rg()
             squash_graph(g)
             scale = kwargs.pop("scale_horizontally", None)
             if scale:
