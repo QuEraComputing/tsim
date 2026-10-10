@@ -12,6 +12,9 @@ bit flipped that lies in the support of detector 0, 1 and 2 respectively. The
 states are deduplicated, and
 ``{name: {"text": ..., "strategy": "cat5", "states": [[0/1, ...], ...]}}`` is
 written to STATES_JSON.
+
+The clifft-bench circuits are read from the directory in the
+``CLIFFT_BENCH_CIRCUITS`` environment variable (see ``circuits.py``).
 """
 
 import itertools

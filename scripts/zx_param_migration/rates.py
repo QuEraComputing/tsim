@@ -11,6 +11,9 @@ distillation and msc_d3) in batches of 8,192 (64 for msc_d3) with the
 observables appended, and writes the mean of every column as
 ``{"tsim": tsim.__file__, "circuits": {name: {"shots": ..., "rates": [...]}}}``
 to OUT_JSON. The file is rewritten after each circuit.
+
+The clifft-bench circuits are read from the directory in the
+``CLIFFT_BENCH_CIRCUITS`` environment variable (see ``circuits.py``).
 """
 
 import json

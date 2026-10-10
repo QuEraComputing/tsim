@@ -1,14 +1,24 @@
 """Circuits for comparing two Tsim versions (works with both).
 
 Imported by the other scripts in this directory; it is not run on its own.
+``clifft()`` reads clifft-bench's circuit files from the directory named by the
+``CLIFFT_BENCH_CIRCUITS`` environment variable (``workloads/circuits`` of a
+clifft-bench checkout), which defaults to
+``/Users/rafaelhaenel/Documents/quera/clifft-bench/workloads/circuits``.
 """
 
+import os
 from pathlib import Path
 from typing import Literal
 
 import stim
 
-CLIFFT = Path("/Users/rafaelhaenel/Documents/quera/clifft-bench/workloads/circuits")
+CLIFFT = Path(
+    os.environ.get(
+        "CLIFFT_BENCH_CIRCUITS",
+        "/Users/rafaelhaenel/Documents/quera/clifft-bench/workloads/circuits",
+    )
+)
 
 Strategy = Literal["cat5", "cutting"]
 

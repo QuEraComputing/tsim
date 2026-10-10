@@ -16,6 +16,9 @@ compiled scalar graphs), makes one warm-up ``sample(4096)`` call, then times one
 ``sample(65536)`` call in batches of 8,192 (4,096 shots in batches of 64 for
 msc_d3). It writes ``{"tsim": tsim.__file__, "circuits": {name: {...}}}`` to
 OUT_JSON, rewriting the file after each circuit.
+
+The clifft-bench circuits are read from the directory in the
+``CLIFFT_BENCH_CIRCUITS`` environment variable (see ``circuits.py``).
 """
 
 import json

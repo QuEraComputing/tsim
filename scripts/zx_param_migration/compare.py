@@ -13,6 +13,9 @@ Probabilities must satisfy ``np.allclose(p_new, p_old, rtol=1e-4, atol=1e-7)``;
 every detector and observable rate must satisfy
 ``|p_old - p_new| <= 5 * sigma + 1e-4``. Benchmarks are reported, not gated.
 Exits with status 1 if a probability or rate row fails or two paths coincide.
+
+The clifft-bench circuits are read from the directory in the
+``CLIFFT_BENCH_CIRCUITS`` environment variable (see ``circuits.py``).
 """
 
 import json
