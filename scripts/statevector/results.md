@@ -1,7 +1,12 @@
 # strategy="statevector" on the clifft-bench circuits
 
 - **Date:** 2026-10-10
-- **Machine:** Apple M4 Pro (JAX CPU backend)
+- **Machine:** Apple M4 Pro, 14 cores (10 performance, 4 efficiency)
+- **Backend:** JAX CPU, default settings (no `XLA_FLAGS` or thread limits), so
+  XLA may use every core
+- **Threads used:** the full run took 219.23 s user + 14.67 s system over
+  82.98 s wall (shell `time`), about 2.8 cores busy on average. Tsim's shots/s
+  below are multi-threaded, not one-core figures.
 - **JAX:** 0.9.2
 - **Commit:** `bf80f7e`
 
@@ -10,7 +15,9 @@ Command, from the repository root:
     uv run python scripts/statevector/benchmark.py --seconds 10
 
 See the docstring of `benchmark.py` for what is timed and counted. Amplitudes
-are complex64 (the default).
+are complex64 (the default). "warmup s" is the first sample call, which
+includes JIT compilation and one full sample call of the workload's shots per
+call (see JIT time below).
 
 ## Measured
 
@@ -32,14 +39,53 @@ are complex64 (the default).
 | cultivation_d5 | 197k | does not compile in 120 s |
 | coherent_d5_r5 | 5.9k | does not compile in 120 s |
 
+## Logical-error rate
+
+Tsim's rate is logical errors / accepted from the measured table. Clifft
+0.10.0's rates are from the design spec (section 11). "Expected" is accepted
+times Clifft's rate.
+
+| circuit | Tsim errors / accepted | Tsim rate | Clifft 0.10.0 rate | expected errors at Clifft's rate |
+|---|---:|---:|---:|---:|
+| distillation | 990898 / 2344917 | 0.4226 | 0.422 | 989,555 (binomial sd 756) |
+| cultivation_d3 | 6 / 8279256 | 7.2e-7 | 9.6e-7 | 7.95 |
+| coherent_d3_r3 | 0 / 2152025 | 0 | 5.1e-8 | 0.11 |
+| cultivation_d5 | 0 / 859817 | 0 | 0 (in 3.0e7 shots) | 0 |
+| coherent_d5_r5 | 0 / 154 | 0 | 0 (in 8.8e5 shots) | 0 |
+
+distillation is 1,343 errors (1.8 sd) above the count expected at 0.422. The
+reference's third-digit rounding (±0.0005) by itself moves that expected count
+by up to ±1,172. For cultivation_d3, a Poisson count with mean 7.95 is 6 or
+fewer with probability 0.32. For coherent_d3_r3, a Poisson count with mean
+0.11 is 0 with probability 0.90.
+
+## JIT time
+
+The script does not time JIT separately. Estimate it as warmup s minus one
+call's time, where one call's time is shots per call divided by the measured
+shots/s. This assumes the warmup call samples at the timed rate. The estimate
+also includes any other first-call overhead, and warmup s is rounded to
+0.01 s.
+
+| circuit | warmup s | shots per call | one call s | JIT estimate s |
+|---|---:|---:|---:|---:|
+| distillation | 0.61 | 262,144 | 0.090 | 0.52 |
+| cultivation_d3 | 0.74 | 262,144 | 0.220 | 0.52 |
+| coherent_d3_r3 | 1.02 | 262,144 | 0.460 | 0.56 |
+| cultivation_d5 | 0.69 | 65,536 | 0.110 | 0.58 |
+| coherent_d5_r5 | 18.72 | 16,384 | 18.184 | 0.54 |
+
 ## Summary
 
 All five acceptances agree with Clifft 0.10.0 within 5 standard errors, and
-every circuit compiles in under 1 s, including the three that the stabilizer
-rank strategy does not compile in 120 s. Shots/s exceeds Clifft's one-core
-figure (measured on a different machine) on distillation and cultivation_d5
-and falls below it on cultivation_d3, coherent_d3_r3 and coherent_d5_r5
-(901 against 5.9k).
+all five logical-error counts are consistent with Clifft's rates. Every
+circuit compiles in under 1 s, including the three that the stabilizer rank
+strategy does not compile in 120 s, and JIT takes about 0.5 s. Tsim's
+multi-threaded shots/s on this machine (about 2.8 cores busy on average) is
+above Clifft's one-core EPYC figure on distillation and cultivation_d5, and
+below it on cultivation_d3, coherent_d3_r3 and coherent_d5_r5 (901 against
+5.9k). This compares different machines and thread counts, so it is not a
+per-core comparison.
 
 Run notes:
 
