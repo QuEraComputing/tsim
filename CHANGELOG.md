@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   metadata tag and render as `R_PAULI(alpha)`. Rendering is provided by the
   `stim-timeline-text` package. (#171)
 
+### Changed
+- Tsim now uses zx_param instead of pyzx-param. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zx_param.
+- `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zx_param.Graph`.
+- `Circuit.to_tensor()` returns the doubled tensor (the circuit's channel, `U ⊗ Ū` for unitaries), with error parameters set to 0 unless bound.
+- The ZX diagram types are now `"zx"`, `"zx-dets"` and `"zx-meas"`.
+
+### Removed
+- `Circuit.to_matrix()` (compare `to_tensor()` with `U ⊗ Ū` instead).
+- The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types.
+- The `pyzx-param` dependency.
+
 ## [0.1.5] - 2026-07-21
 
 ### Added

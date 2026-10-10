@@ -12,9 +12,9 @@ from zx_param import Scalar
 
 from tsim.compile.terms import (
     FloatTerms,
-    HalfPiPhases,
     NodePhases,
     PhasePairs,
+    PhaseTerms,
     PiProducts,
     ScalarPrefactor,
 )
@@ -23,9 +23,10 @@ from tsim.compile.terms import (
 class CompiledScalarGraphs(eqx.Module):
     """JAX-compatible compiled representation of a list of scalar ZX graphs.
 
-    The scalar for each graph is a product of four term families, multiplied by
-    a per-graph ``ScalarPrefactor`` (global phase, floatfactor, ``2^power2``,
-    optional approximate complex floatfactor). All arrays are static-shaped so
+    The scalar for each graph is a product of four exact term families and the
+    floating-point ``FloatTerms`` family, multiplied by a per-graph
+    ``ScalarPrefactor`` (global phase, floatfactor, ``2^power2``, optional
+    approximate complex floatfactor). All arrays are static-shaped so
     the whole struct can be traced under ``jax.jit``.
     """
 
@@ -33,7 +34,7 @@ class CompiledScalarGraphs(eqx.Module):
     n_params: int
 
     node_phases: NodePhases
-    halfpi_phases: HalfPiPhases
+    phase_terms: PhaseTerms
     pi_products: PiProducts
     phase_pairs: PhasePairs
     float_terms: FloatTerms
@@ -149,7 +150,7 @@ def _node_phase_family(split: list[_SplitScalar], n_params: int) -> NodePhases:
     )
 
 
-def _phase_term_family(split: list[_SplitScalar], n_params: int) -> HalfPiPhases:
+def _phase_term_family(split: list[_SplitScalar], n_params: int) -> PhaseTerms:
     rows = [[(k, bits) for bits, k in s.phases.items() if k] for s in split]
     width = max((len(r) for r in rows), default=0)
     coeffs = np.zeros((len(split), width), dtype=np.uint8)
@@ -158,24 +159,18 @@ def _phase_term_family(split: list[_SplitScalar], n_params: int) -> HalfPiPhases
         for j, (k, bits) in enumerate(row):
             coeffs[i, j] = k
             params[i, j] = bits
-    return HalfPiPhases(coeffs=jnp.array(coeffs), params=jnp.array(params))
+    return PhaseTerms(coeffs=jnp.array(coeffs), params=jnp.array(params))
 
 
 def _pi_product_family(split: list[_SplitScalar], n_params: int) -> PiProducts:
     width = max((len(s.pi_pairs) for s in split), default=0)
-    zeros = np.zeros((len(split), width), dtype=np.uint8)
     psi = np.zeros((len(split), width, n_params), dtype=np.uint8)
     phi = np.zeros((len(split), width, n_params), dtype=np.uint8)
     for i, s in enumerate(split):
         for j, (a, b) in enumerate(s.pi_pairs):
             psi[i, j] = a
             phi[i, j] = b
-    return PiProducts(
-        psi_const=jnp.array(zeros),
-        psi_params=jnp.array(psi),
-        phi_const=jnp.array(zeros),
-        phi_params=jnp.array(phi),
-    )
+    return PiProducts(psi_params=jnp.array(psi), phi_params=jnp.array(phi))
 
 
 def _phase_pair_family(split: list[_SplitScalar], n_params: int) -> PhasePairs:
@@ -253,7 +248,7 @@ def compile_scalars(
         num_graphs=len(split),
         n_params=n_params,
         node_phases=_node_phase_family(split, n_params),
-        halfpi_phases=_phase_term_family(split, n_params),
+        phase_terms=_phase_term_family(split, n_params),
         pi_products=_pi_product_family(split, n_params),
         phase_pairs=_phase_pair_family(split, n_params),
         float_terms=_float_term_family(split, n_params),

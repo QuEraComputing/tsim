@@ -115,8 +115,8 @@ def test_phase_terms_with_one_mask_are_combined():
         ],
     )
     compiled = compile_scalars([s], [3])
-    assert compiled.halfpi_phases.coeffs.shape == (1, 1)
-    assert int(compiled.halfpi_phases.coeffs[0, 0]) == 4
+    assert compiled.phase_terms.coeffs.shape == (1, 1)
+    assert int(compiled.phase_terms.coeffs[0, 0]) == 4
     _assert_matches([s], [3])
 
 

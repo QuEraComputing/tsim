@@ -1,7 +1,7 @@
 """Term-family modules for compiled scalar graphs.
 
 Each compiled scalar is the product of four exact term families (``NodePhases``,
-``HalfPiPhases``, ``PiProducts``, ``PhasePairs``) and a floating-point family
+``PhaseTerms``, ``PiProducts``, ``PhasePairs``) and a floating-point family
 (``FloatTerms``, for angles that are not multiples of π/4), times a global phase
 and a floatfactor. This module defines the families as ``equinox.Module``
 records, bundles the shared phase tables, and gives each family an ``evaluate``
@@ -75,14 +75,12 @@ class NodePhases(eqx.Module):
         return ExactScalarArray(term_vals).prod(axis=-1)
 
 
-class HalfPiPhases(eqx.Module):
-    """Sum of ``exp(i·j·π·⊕params / 2)`` terms with ``j ∈ {1, 3}``.
+class PhaseTerms(eqx.Module):
+    """Product of ``exp(i·π·α·⊕params)`` terms, each angle ``π·α`` a multiple of π/4.
 
-    Terms sharing a parameter bitstring have been combined to a single stored
-    coefficient (see ``compile_scalars``).
-    Coefficients are stored in eighth-turn units, so the evaluator can reuse the
-    ``ω = e^(iπ/4)`` phase table. The coefficient may be any value ``0..7``
-    (angles that are multiples of π/4), not only ``{2, 4, 6}``.
+    Each term is stored as ``k = 4·α mod 8 ∈ 0..7`` and evaluates to
+    ``ω^(k·⊕params)`` with ``ω = e^(iπ/4)``. Terms sharing a parameter bitstring
+    have been combined to a single stored coefficient (see ``compile_scalars``).
 
     Padded slots use ``0`` (the additive identity for phase sums), so padded
     entries contribute nothing to the summed exponent.
@@ -111,18 +109,16 @@ class HalfPiPhases(eqx.Module):
 
 
 class PiProducts(eqx.Module):
-    """Product of ``(-1)^(ψ · φ)`` terms, with ψ and φ each a parity expression.
+    """Product of ``(-1)^(ψ · φ)`` terms, with ψ and φ each a parameter parity.
 
-    Each side is encoded as a constant bit plus a parameter bitmask. Padded slots
-    use ``0`` everywhere; a padded term contributes ``(-1)^0 = 1`` to the product.
+    Each side is encoded as a parameter bitmask (zx_param expands constant bits
+    into other terms). Padded slots use ``0`` everywhere; a padded term
+    contributes ``(-1)^0 = 1`` to the product.
 
-    Shapes are ``(num_graphs, max_terms)`` except ``*_params`` which are
-    ``(num_graphs, max_terms, n_params)``.
+    Shapes are ``(num_graphs, max_terms, n_params)``.
     """
 
-    psi_const: Array  # uint8, values {0, 1}
     psi_params: Array  # uint8, parameter parity bitmask for ψ
-    phi_const: Array  # uint8, values {0, 1}
     phi_params: Array  # uint8, parameter parity bitmask for φ
 
     def evaluate(self, param_vals: Array) -> ExactScalarArray:
@@ -136,8 +132,8 @@ class PiProducts(eqx.Module):
             in {+1, -1} represented exactly.
 
         """
-        psi = (self.psi_const + matmul_gf2(self.psi_params, param_vals)) % 2
-        phi = (self.phi_const + matmul_gf2(self.phi_params, param_vals)) % 2
+        psi = matmul_gf2(self.psi_params, param_vals)
+        phi = matmul_gf2(self.phi_params, param_vals)
 
         exponent = (psi * phi) % 2
         sum_exponents = jnp.sum(exponent, axis=-1) % 2
@@ -193,14 +189,15 @@ class PhasePairs(eqx.Module):
 class ScalarPrefactor(eqx.Module):
     """Per-graph static scalar prefactor — independent of parameter values.
 
-    Each graph's amplitude is the product of the four term families times the
-    prefactor ``ω^phase_index · floatfactor · 2^power2``, with an additional
-    complex ``approximate_floatfactor`` multiplied in when any graph's phase
-    had a denominator outside ``{1, 2, 4}`` and was folded into float form.
+    Each graph's amplitude is the product of the four exact term families and
+    ``FloatTerms`` times the prefactor ``ω^phase_index · floatfactor · 2^power2``,
+    with an additional complex ``approximate_floatfactor`` multiplied in when any
+    graph's phase had a denominator outside ``{1, 2, 4}`` and was folded into
+    float form.
 
     This class is pure data; the final fold-in with the term-family product
-    (which requires branching on ``has_approximate_floatfactors``) lives in
-    ``evaluate.py``.
+    (which branches on ``has_approximate_floatfactors`` and on
+    ``CompiledScalarGraphs.has_float_terms``) lives in ``evaluate.py``.
     """
 
     phase_indices: Array  # uint8, shape (num_graphs,), values 0-7

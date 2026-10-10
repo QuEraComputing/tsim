@@ -298,8 +298,8 @@ class _CompiledSamplerBase:
             for circuit in component.compiled_scalar_graphs:
                 G = circuit.num_graphs
                 max_a = circuit.node_phases.phases.shape[1]
-                max_b = circuit.halfpi_phases.coeffs.shape[1]
-                max_c = circuit.pi_products.psi_const.shape[1]
+                max_b = circuit.phase_terms.coeffs.shape[1]
+                max_c = circuit.pi_products.psi_params.shape[1]
                 max_d = circuit.phase_pairs.alpha.shape[1]
                 max_e = circuit.float_terms.table.shape[1]
                 largest = max(max_a * 16, max_b * 4, max_c * 4, max_d * 16, max_e * 16)
@@ -565,6 +565,7 @@ class _CompiledSamplerBase:
         c_b_terms = []
         c_c_terms = []
         c_d_terms = []
+        c_e_terms = []
         total_memory_bytes = 0
         num_outputs = []
 
@@ -574,10 +575,17 @@ class _CompiledSamplerBase:
                 c_graphs.append(circuit.num_graphs)
                 c_params.append(circuit.n_params)
                 c_a_terms.append(circuit.node_phases.phases.size)
-                c_b_terms.append(circuit.halfpi_phases.coeffs.size)
-                c_c_terms.append(circuit.pi_products.psi_const.size)
+                c_b_terms.append(circuit.phase_terms.coeffs.size)
+                c_c_terms.append(
+                    circuit.pi_products.psi_params.shape[0]
+                    * circuit.pi_products.psi_params.shape[1]
+                )
                 c_d_terms.append(
                     circuit.phase_pairs.alpha.size + circuit.phase_pairs.beta.size
+                )
+                c_e_terms.append(
+                    circuit.float_terms.table.shape[0]
+                    * circuit.float_terms.table.shape[1]
                 )
 
                 total_memory_bytes += sum(
@@ -606,6 +614,7 @@ class _CompiledSamplerBase:
             f"≤ {np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
             f"{np.sum(c_b_terms)} B terms, "
             f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms, "
+            f"{np.sum(c_e_terms)} E terms, "
             f"{total_memory_str})"
         )
 

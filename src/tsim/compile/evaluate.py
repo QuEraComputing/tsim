@@ -16,7 +16,7 @@ from tsim.core.exact_scalar import ExactScalarArray
 def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
     """Evaluate compiled circuit with batched parameter values.
 
-    Each exact term family (``NodePhases``, ``HalfPiPhases``, ``PiProducts``,
+    Each exact term family (``NodePhases``, ``PhaseTerms``, ``PiProducts``,
     ``PhasePairs``) computes its own contribution via ``.evaluate(param_vals)``.
     This function multiplies those together with the per-graph
     ``ScalarPrefactor`` and merges ``power2`` into the exponent of the exact
@@ -45,7 +45,7 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
         operator.mul,
         [
             circuit.node_phases.evaluate(param_vals),
-            circuit.halfpi_phases.evaluate(param_vals),
+            circuit.phase_terms.evaluate(param_vals),
             circuit.pi_products.evaluate(param_vals),
             circuit.phase_pairs.evaluate(param_vals),
             static_phases,
