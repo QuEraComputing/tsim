@@ -14,7 +14,7 @@ from typing import (
 import pyzx_param as zx
 import stim
 from pyzx_param.graph.base import BaseGraph
-from pyzx_param.simulate import DecompositionStrategy
+from zx_param import DecompositionStrategy
 
 if TYPE_CHECKING:
     from tsim.sampler import CompiledDetectorSampler, CompiledMeasurementSampler

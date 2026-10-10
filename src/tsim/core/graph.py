@@ -3,203 +3,22 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from dataclasses import dataclass
-from fractions import Fraction
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pyzx_param as zx
 from pyzx_param.graph.base import BaseGraph
-from pyzx_param.graph.graph import Graph
-from pyzx_param.graph.graph_s import GraphS
 from pyzx_param.graph.scalar import Scalar
-from pyzx_param.utils import EdgeType, VertexType
+from pyzx_param.utils import VertexType
 
 from tsim.core.instructions import GraphRepresentation
+from tsim.core.params import ParamLayout
 from tsim.core.parse import parse_stim_circuit
 from tsim.core.types import SamplingGraph
 from tsim.utils.linalg import find_basis
 
 if TYPE_CHECKING:
     from tsim.circuit import Circuit
-
-
-@dataclass
-class ConnectedComponent:
-    """A connected subgraph with its associated output indices."""
-
-    graph: BaseGraph
-    output_indices: list[int]
-
-
-def connected_components(g: BaseGraph) -> list[ConnectedComponent]:
-    """Return each connected component of ``g`` as its own ZX subgraph.
-
-    Each component is packaged inside a :class:`ConnectedComponent` that contains
-    the subgraph and a list of output indices matching the original output indices.
-    """
-    components: list[ConnectedComponent] = []
-    visited: set[Any] = set()
-    outputs = tuple(g.outputs())
-    output_indices = {vertex: idx for idx, vertex in enumerate(outputs)}
-
-    for vertex in list(g.vertices()):
-        if vertex in visited:
-            continue
-
-        component_vertices = _collect_vertices(g, vertex, visited)
-        subgraph = _induced_subgraph(g, component_vertices)
-
-        component_output_indices = [
-            output_indices[v] for v in component_vertices if v in output_indices
-        ]
-        component_output_indices.sort()
-
-        components.append(
-            ConnectedComponent(
-                graph=subgraph,
-                output_indices=component_output_indices,
-            )
-        )
-
-    return components
-
-
-def classify_direct(
-    component: ConnectedComponent,
-) -> tuple[int, bool] | None:
-    """Check if a component is directly determined by a single f-variable.
-
-    A component qualifies when its graph consists of exactly two vertices — one
-    boundary output and one Z-spider — connected by a Hadamard edge, where the
-    Z-spider carries a single ``f`` parameter and a constant phase of either 0
-    (no flip) or π (flip).
-
-    Args:
-        component: A connected component to classify.
-
-    Returns:
-        ``(f_index, flip)`` if the fast path applies, otherwise ``None``.
-
-    """
-    graph = component.graph
-    outputs = list(graph.outputs())
-    if len(outputs) != 1:
-        return None
-
-    vertices = list(graph.vertices())
-    if len(vertices) != 2:
-        return None
-
-    v_out = outputs[0]
-    neighbors = list(graph.neighbors(v_out))
-    if len(neighbors) != 1:
-        return None
-
-    v_det = neighbors[0]
-    if graph.type(v_det) != VertexType.Z:
-        return None
-    if graph.edge_type(graph.edge(v_out, v_det)) != EdgeType.HADAMARD:
-        return None
-
-    params = graph.get_params(v_det)
-    if len(params) != 1:
-        return None
-    f_param = next(iter(params))
-    if not f_param.startswith("f"):
-        return None
-
-    all_graph_params = get_params(graph)
-    if all_graph_params != {f_param}:
-        return None
-
-    phase = graph.phase(v_det)
-    if phase == 0:
-        flip = False
-    elif phase == Fraction(1, 1):
-        flip = True
-    else:
-        return None
-
-    return int(f_param[1:]), flip
-
-
-def _collect_vertices(
-    g: BaseGraph,
-    start: Any,
-    visited: set[Any],
-) -> list[Any]:
-    """Depth-first search to collect the connected component of ``start``."""
-    queue: deque[Any] = deque([start])
-    component: list[Any] = []
-
-    while queue:
-        vertex = queue.pop()
-        if vertex in visited:
-            continue
-
-        visited.add(vertex)
-        component.append(vertex)
-
-        for neighbor in g.neighbors(vertex):
-            if neighbor not in visited:
-                queue.appendleft(neighbor)
-
-    return component
-
-
-def _induced_subgraph(
-    g: BaseGraph,
-    vertices: Sequence[Any],
-) -> BaseGraph:
-    """Build the subgraph that is induced by ``vertices``."""
-    subgraph = Graph()
-    subgraph.track_phases = g.track_phases
-    subgraph.merge_vdata = g.merge_vdata
-
-    vert_map: dict[Any, Any] = {}
-    phases = g.phases()
-    qubits = g.qubits()
-    rows = g.rows()
-    types = g.types()
-    get_params = getattr(g, "get_params", None)
-
-    for vertex in vertices:
-        params = None
-        if get_params is not None:
-            params = set(get_params(vertex))
-
-        new_vertex = subgraph.add_vertex(
-            types[vertex],
-            qubit=qubits.get(vertex, -1),
-            row=rows.get(vertex, -1),
-            phase=phases.get(vertex, 0),
-            phaseVars=params,
-        )
-
-        for key in g.vdata_keys(vertex):
-            subgraph.set_vdata(new_vertex, key, g.vdata(vertex, key))
-
-        vert_map[vertex] = new_vertex
-
-    added_edges: set[tuple[Any, Any]] = set()
-    for vertex in vertices:
-        for neighbor in g.neighbors(vertex):
-            if neighbor not in vert_map:
-                continue
-            edge = g.edge(vertex, neighbor)
-            if edge in added_edges:
-                continue
-            added_edges.add(edge)
-            new_edge = subgraph.edge(vert_map[vertex], vert_map[neighbor])
-            subgraph.add_edge(new_edge, g.edge_type(edge))
-
-    component_inputs = tuple(vert_map[v] for v in g.inputs() if v in vert_map)
-    component_outputs = tuple(vert_map[v] for v in g.outputs() if v in vert_map)
-    subgraph.set_inputs(component_inputs)
-    subgraph.set_outputs(component_outputs)
-
-    return subgraph
 
 
 def build_sampling_graph(
@@ -444,64 +263,6 @@ def squash_graph(g: BaseGraph) -> None:
             g.set_row(neighbors[0], g.row(v))
 
 
-def evaluate_graph(g: GraphS, vals: dict[str, Fraction] | None = None) -> np.ndarray:
-    """Evaluate a ZX graph to a tensor with given parameter values."""
-    if vals is None:
-        vals = defaultdict(lambda: Fraction(0, 1))
-    g = g.copy()  # type: ignore
-    for v in g.vertices():
-        param_phase = g.phase(v)
-        for p in g.get_params(v):
-            param_phase += vals[p]
-        g.set_phase(v, param_phase, clearParams=True)
-    scalar_val = g.scalar.evaluate_scalar(vals)
-    g.scalar = Scalar()
-    return g.to_tensor() * scalar_val
-
-
-def get_params(g: BaseGraph) -> set[str]:
-    """Get all parameter variables that appear in the graph and its scalar.
-
-    Collects variables from:
-    - Vertex phases (g._phaseVars)
-    - Scalar phase variables (phasevars_pi, phasevars_pi_pair, phasevars_halfpi)
-    - Scalar phase pairs (phasepairs with paramsA, paramsB)
-    - Scalar phase nodes (phasenodevars)
-
-    Args:
-        g: A ZX graph with parametrized phases
-
-    Returns:
-        Set of all variable names (e.g., {'f0', 'f2', 'm1'}) that appear in the graph
-
-    """
-    active: set[str] = set()
-
-    for v in g.vertices():
-        active |= g._phaseVars[v]
-
-    scalar = g.scalar
-
-    active |= scalar.phasevars_pi
-
-    for pair in scalar.phasevars_pi_pair:
-        for var_set in pair:
-            active |= var_set
-
-    for coeff in scalar.phasevars_halfpi:  # coeff is 1 or 3
-        for var_set in scalar.phasevars_halfpi[coeff]:
-            active |= var_set
-
-    for spider_pair in scalar.phasepairs:
-        active |= spider_pair.paramsA
-        active |= spider_pair.paramsB
-
-    for var_set in scalar.phasenodevars:
-        active |= var_set
-
-    return active
-
-
 def scale_horizontally(g: BaseGraph, scale: float) -> None:
     """Scale horizontal positions of graph vertices by a factor of ``scale``.
 
@@ -548,10 +309,17 @@ def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> SamplingGraph:
     # This avoids computing scalars that would cancel out anyway during normalization.
     graph.scalar = Scalar()
 
+    layout = ParamLayout(
+        num_errors=error_transform.shape[1],
+        num_basis=error_transform.shape[0],
+        num_outputs=len(graph.outputs()),
+    )
+
     return SamplingGraph(
         graph=graph,
         error_transform=error_transform,
         channel_probs=built.channel_probs,
         num_outputs=len(graph.outputs()),
         num_detectors=len(built.detectors),
+        layout=layout,
     )

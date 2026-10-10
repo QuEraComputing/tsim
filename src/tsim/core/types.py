@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from pyzx_param.graph.base import BaseGraph
 
     from tsim.compile.compile import CompiledScalarGraphs
+    from tsim.core.params import ParamLayout
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class SamplingGraph:
         channel_probs: List of probability arrays for error channels.
         num_outputs: Number of output vertices (measurements or detectors).
         num_detectors: Number of detector vertices.
+        layout: Parameter ID ranges: errors, basis bits, outputs.
 
     """
 
@@ -50,6 +52,7 @@ class SamplingGraph:
     channel_probs: list[np.ndarray]
     num_outputs: int
     num_detectors: int
+    layout: ParamLayout
 
 
 class CompiledComponent(eqx.Module):

@@ -79,7 +79,7 @@ class HalfPiPhases(eqx.Module):
     """Sum of ``exp(i·j·π·⊕params / 2)`` terms with ``j ∈ {1, 3}``.
 
     Terms sharing a parameter bitstring have been combined to a single stored
-    coefficient (see ``_compile_halfpi_phases`` and ``compile_scalars``).
+    coefficient (see ``compile_scalars``).
     Coefficients are stored in eighth-turn units, so the evaluator can reuse the
     ``ω = e^(iπ/4)`` phase table. The coefficient may be any value ``0..7``
     (angles that are multiples of π/4), not only ``{2, 4, 6}``.

@@ -2,22 +2,27 @@
 
 from __future__ import annotations
 
+from fractions import Fraction
 from typing import Literal
 
 import jax.numpy as jnp
 import numpy as np
-import pyzx_param as zx
-from pyzx_param.graph.base import BaseGraph
-from pyzx_param.simulate import DecompositionStrategy
-
-from tsim.compile.compile import CompiledScalarGraphs, compile_scalar_graphs
-from tsim.compile.stabrank import find_stab
-from tsim.core.graph import (
-    ConnectedComponent,
-    classify_direct,
-    connected_components,
-    get_params,
+from zx_param import (
+    DecompositionStrategy,
+    Dyadic,
+    EdgeType,
+    Graph,
+    Phase,
+    Scalar,
+    ScalarSum,
+    Vertex,
+    VertexType,
+    decompose,
 )
+from zx_param.from_pyzx_param import from_pyzx_param
+
+from tsim.compile.compile import CompiledScalarGraphs, compile_scalars
+from tsim.core.params import ParamLayout
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingGraph
 
 DecompositionMode = Literal["sequential", "joint"]
@@ -31,204 +36,184 @@ def compile_program(
 ) -> CompiledProgram:
     """Compile a prepared graph into an executable sampling program.
 
-    This function performs the second phase of compilation:
-    1. Split the graph into connected components
-    2. For each component:
-       - Plug outputs according to mode (sequential or joint)
-       - Reduce each plugged graph
-       - Perform stabilizer rank decomposition
-       - Compile into CompiledScalarGraphs objects
-    3. Assemble into CompiledProgram with output ordering
+    The graph is split into connected components. A component whose single
+    output equals one error-basis bit takes the direct path; every other
+    component has its outputs plugged (all prefixes in ``sequential`` mode, none
+    and all in ``joint`` mode), each plugged graph is decomposed into stabilizer
+    terms, and the terms are compiled into JAX arrays.
 
     Args:
-        prepared: The prepared graph from prepare_graph().
-        mode: Decomposition mode:
-            - "sequential": For sampling - creates [0, 1, 2, ..., n] circuits
-            - "joint": For probability estimation - creates [0, n] circuits
-        strategy: Stabilizer rank decomposition strategy.
-            Must be one of "cat5", "bss", "cutting".
+        prepared: The prepared graph from ``prepare_graph``.
+        mode: ``"sequential"`` for sampling, ``"joint"`` for probabilities.
+        strategy: Stabilizer-rank decomposition strategy.
 
     Returns:
         A CompiledProgram ready for sampling.
 
     """
-    components = connected_components(prepared.graph)
+    graph = _zx_graph(prepared)
+    layout = prepared.layout
+    basis_global = _basis_indices(graph, layout)
 
-    # Determine global f-indices (numerically sorted) from the prepared graph
-    f_indices_global = _get_f_indices(prepared.graph)
-    num_outputs = prepared.num_outputs
-
-    direct_entries: list[tuple[int, int, bool]] = []  # (output_idx, f_idx, flip)
+    direct_entries: list[tuple[int, int, bool]] = []
     compiled_components: list[CompiledComponent] = []
     compiled_output_order: list[int] = []
 
-    sorted_components = sorted(components, key=lambda c: len(c.output_indices))
-
-    for component in sorted_components:
-        direct = classify_direct(component)
+    components = sorted(graph.connected_components(), key=lambda c: len(c.outputs()))
+    for component in components:
+        output_indices = [_port(component, v) for v in component.outputs()]
+        direct = classify_direct(component, layout)
         if direct is not None:
-            f_idx, flip = direct
-            direct_entries.append((component.output_indices[0], f_idx, flip))
-        else:
-            compiled = _compile_component(
-                component=component,
-                f_indices_global=f_indices_global,
-                mode=mode,
-                strategy=strategy,
-            )
-            compiled_components.append(compiled)
-            compiled_output_order.extend(component.output_indices)
+            basis_index, flip = direct
+            direct_entries.append((output_indices[0], basis_index, flip))
+            continue
+        compiled_components.append(
+            _compile_component(component, basis_global, layout, mode, strategy)
+        )
+        compiled_output_order.extend(output_indices)
 
     # Sort direct entries by output index so that — together with the output
     # prioritisation in transform_error_basis — the concatenated layout often
     # matches the original output order, sparing a reindex at sample time.
     direct_entries.sort()
-    direct_output_order = [e[0] for e in direct_entries]
-    direct_f_indices = [e[1] for e in direct_entries]
-    direct_flips = [e[2] for e in direct_entries]
-
-    output_order = np.array(direct_output_order + compiled_output_order, dtype=np.int32)
+    output_order = np.array(
+        [e[0] for e in direct_entries] + compiled_output_order, dtype=np.int32
+    )
     reindex = np.argsort(output_order)
     is_identity = np.array_equal(reindex, np.arange(len(output_order)))
 
     return CompiledProgram(
         components=tuple(compiled_components),
-        direct_f_indices=jnp.array(direct_f_indices, dtype=jnp.int32),
-        direct_flips=jnp.array(direct_flips, dtype=jnp.bool_),
+        direct_f_indices=jnp.array([e[1] for e in direct_entries], dtype=jnp.int32),
+        direct_flips=jnp.array([e[2] for e in direct_entries], dtype=jnp.bool_),
         output_order=jnp.asarray(output_order),
         output_reindex=None if is_identity else jnp.asarray(reindex),
-        num_outputs=num_outputs,
+        num_outputs=prepared.num_outputs,
         num_detectors=prepared.num_detectors,
     )
 
 
-def _get_f_indices(graph: BaseGraph) -> list[int]:
-    """Extract numerically sorted list of f-parameter indices from the graph."""
-    all_params = get_params(graph)
-    f_indices = sorted([int(p[1:]) for p in all_params if p.startswith("f")])
-    return f_indices
+def _zx_graph(prepared: SamplingGraph) -> Graph:
+    """Return the prepared graph as a zx_param graph.
+
+    NOTE: temporary bridge — the prepared graph is still built with pyzx_param;
+    its basis-bit names ``f{j}`` are mapped to their layout IDs.
+    """
+    layout = prepared.layout
+    names = {f"f{j}": layout.basis(j) for j in range(layout.num_basis)}
+    return from_pyzx_param(prepared.graph, param_ids=names)
 
 
-def _remove_phase_terms(graph: BaseGraph) -> None:
-    """Remove phase terms from the graph."""
-    graph.scalar.phasevars_halfpi = {}
-    graph.scalar.phasevars_pi_pair = []
-    # TODO: clear additional phase terms
+def classify_direct(component: Graph, layout: ParamLayout) -> tuple[int, bool] | None:
+    """Return ``(basis index, flip)`` if the component's only output is one basis bit.
+
+    That is the case when the component is a classical output boundary joined by
+    a Hadamard edge to a Z spider whose phase is 0 or π plus one parameter.
+    """
+    outputs = component.outputs()
+    if len(outputs) != 1 or component.num_vertices() != 2:
+        return None
+    (out,) = outputs
+    (spider,) = component.neighbors(out)
+    if component.vertex_type(spider) != VertexType.Z:
+        return None
+    if component.edge_type(out, spider) != EdgeType.HADAMARD:
+        return None
+    phase = component.phase(spider)
+    if len(phase.parameters) != 1 or phase.value not in (0, 1):
+        return None
+    (param,) = phase.parameters
+    return layout.basis_index(param), phase.value == 1
+
+
+def _port(g: Graph, v: Vertex) -> int:
+    port = g.port(v)
+    assert port is not None
+    return port
+
+
+def _basis_indices(g: Graph, layout: ParamLayout) -> list[int]:
+    """Return the sorted basis indices of the parameters on ``g``'s vertices."""
+    return sorted(
+        {layout.basis_index(p) for v in g.vertices() for p in g.phase(v).parameters}
+    )
+
+
+def _plugged(component: Graph, layout: ParamLayout, k: int) -> Graph:
+    """Plug the first ``k`` outputs with their output bits and trace the rest.
+
+    Output ``i`` plugged with a classical X spider of phase ``m_i·π`` is
+    ``√2·⟨m_i|``, so the graph is multiplied by ``√2^-k``; a Z(0) spider sums
+    over the output. All of a component's plugged graphs then share one
+    normalization.
+    """
+    g = component.copy()
+    for j, v in enumerate(component.outputs()):
+        if j < k:
+            bit = Phase(Fraction(0), frozenset({layout.output(_port(component, v))}))
+            g.plug(v, VertexType.X, bit)
+        else:
+            g.plug(v, VertexType.Z)
+    g.mul_scalar(Scalar.one().add_power_sqrt2(-k))
+    return g
+
+
+def _without_unit_factors(s: Scalar) -> Scalar:
+    """Return ``s`` without its modulus-1 factors (global and parametric phases).
+
+    The sampler only uses ``|amplitude|``, so factors of modulus 1 shared by all
+    terms change nothing.
+    """
+    out = s.copy()
+    out.phase = Fraction(0)
+    out.phases = []
+    out.pi_pairs = []
+    return out
+
+
+def _terms(ssum: ScalarSum, shift: int) -> list[Scalar]:
+    """Return the decomposition's terms, ready to compile.
+
+    ``common`` loses its modulus-1 factors (and so does the term if it is the
+    only one), is multiplied into every term, and every term is divided by
+    ``2^shift`` to keep the exact arithmetic in range.
+    """
+    common = _without_unit_factors(ssum.common)
+    terms = ssum.terms
+    if len(terms) == 1:
+        terms = [_without_unit_factors(terms[0])]
+    scale = Scalar(base=Dyadic(1, 0, 0, 0, -shift))
+    return [common * t * scale for t in terms]
 
 
 def _compile_component(
-    component: ConnectedComponent,
-    f_indices_global: list[int],
+    component: Graph,
+    basis_global: list[int],
+    layout: ParamLayout,
     mode: DecompositionMode,
-    strategy: DecompositionStrategy = "cat5",
+    strategy: DecompositionStrategy,
 ) -> CompiledComponent:
-    """Compile a single connected component.
-
-    Args:
-        component: The connected component to compile.
-        f_indices_global: Global list of all f-parameter indices (numerically sorted).
-        mode: Decomposition mode (sequential or joint).
-        strategy: Stabilizer rank decomposition strategy.
-
-    Returns:
-        A CompiledComponent ready for sampling.
-
-    """
-    graph = component.graph
-    output_indices = component.output_indices
-    num_component_outputs = len(graph.outputs())
-
-    # f_selection: subset of global f-indices used by this component
-    component_f_set = set(_get_f_indices(graph))
-    f_selection = [i for i in f_indices_global if i in component_f_set]
-
-    outputs_to_plug = (
-        list(range(num_component_outputs + 1))
+    """Compile one connected component."""
+    output_indices = [_port(component, v) for v in component.outputs()]
+    basis_here = set(_basis_indices(component, layout))
+    f_selection = [i for i in basis_global if i in basis_here]
+    counts = (
+        list(range(len(output_indices) + 1))
         if mode == "sequential"
-        else [0, num_component_outputs]
+        else [0, len(output_indices)]
     )
 
-    # Plug outputs and compile each graph
-    compiled_graphs: list[CompiledScalarGraphs] = []
+    sums = [decompose(_plugged(component, layout, k), strategy) for k in counts]
+    shift = sums[0].common.base.power
 
-    component_m_chars = [f"m{i}" for i in output_indices]
-    plugged_graphs = _plug_outputs(graph, component_m_chars, outputs_to_plug)
-
-    # Track power2 for balancing scalar magnitudes
-    power2_base: int | None = None
-
-    for num_m_plugged, plugged_graph in zip(
-        outputs_to_plug, plugged_graphs, strict=True
-    ):
-        g_copy = plugged_graph.copy()
-        zx.full_reduce(g_copy, paramSafe=True)
-        g_copy.normalize()
-
-        # Balance power2 across graphs to avoid overflow/underflow
-        if power2_base is None:
-            power2_base = g_copy.scalar.power2
-        g_copy.scalar.add_power(-power2_base)
-
-        # Remove parametrized global phase terms. Global phases only matter once we
-        # have started stabilizer rank decomposition.
-        _remove_phase_terms(g_copy)
-
-        # Parameter names: all f-params + m-params plugged so far
-        param_names = [f"f{i}" for i in f_selection]
-        param_names += [f"m{output_indices[j]}" for j in range(num_m_plugged)]
-
-        # Perform stabilizer rank decomposition and compile
-        g_list = find_stab(g_copy, strategy=strategy)
-
-        if len(g_list) == 1:
-            # This is a Clifford graph, we can clear the global phase terms
-            _remove_phase_terms(g_list[0])
-
-        compiled = compile_scalar_graphs(g_list, param_names)
-        compiled_graphs.append(compiled)
+    compiled: list[CompiledScalarGraphs] = []
+    for k, ssum in zip(counts, sums, strict=True):
+        param_ids = [layout.basis(i) for i in f_selection]
+        param_ids += [layout.output(output_indices[j]) for j in range(k)]
+        compiled.append(compile_scalars(_terms(ssum, shift), param_ids))
 
     return CompiledComponent(
         output_indices=tuple(output_indices),
         f_selection=jnp.array(f_selection, dtype=jnp.int32),
-        compiled_scalar_graphs=tuple(compiled_graphs),
+        compiled_scalar_graphs=tuple(compiled),
     )
-
-
-def _plug_outputs(
-    graph: BaseGraph,
-    m_chars: list[str],
-    outputs_to_plug: list[int],
-) -> list[BaseGraph]:
-    """Create graphs with specified numbers of outputs plugged.
-
-    Args:
-        graph: The component graph.
-        m_chars: The m-parameter names for this component's outputs.
-        outputs_to_plug: List of integers specifying how many outputs to plug
-            for each graph. E.g., [0, 1, 2, 3] creates 4 graphs.
-
-    Returns:
-        List of graphs with outputs plugged according to outputs_to_plug.
-
-    """
-    graphs: list[BaseGraph] = []
-    num_outputs = len(graph.outputs())
-
-    for num_plugged in outputs_to_plug:
-        g = graph.copy()
-        output_vertices = list(g.outputs())
-
-        # Plug outputs either with an X vertex with phase m_char[i]
-        # or with a Z vertex. Z vertices are equal to |0> + |1> and therefore
-        # implement a trace.
-        effect = "0" * num_plugged + "+" * (num_outputs - num_plugged)
-        g.apply_effect(effect)
-        for i, v in enumerate(output_vertices[:num_plugged]):
-            g.set_phase(v, m_chars[i])  # type: ignore[arg-type]
-
-        # Compensate power for trace of unplugged outputs
-        g.scalar.add_power(num_outputs - num_plugged)
-
-        graphs.append(g)
-
-    return graphs

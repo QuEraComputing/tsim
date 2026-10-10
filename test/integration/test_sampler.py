@@ -7,8 +7,8 @@ import pymatching
 import pytest
 import pyzx_param as zx
 import stim
-from pyzx_param.simulate import DecompositionStrategy
 from tqdm import tqdm
+from zx_param import DecompositionStrategy
 
 import tsim.sampler as sampler_module
 from tsim.circuit import Circuit
