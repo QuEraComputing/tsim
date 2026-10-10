@@ -57,6 +57,40 @@ def test_joint_probabilities_match_the_state_vector():
         np.testing.assert_allclose(got, abs(psi[index]) ** 2, atol=1e-5)
 
 
+def _outcome_probabilities(text: str) -> list[float]:
+    probs = CompiledStateProbs(Circuit(text), seed=0)
+    return [
+        float(probs.probability_of(np.array([m]), batch_size=1)[0])
+        for m in (False, True)
+    ]
+
+
+# NOTE: error probabilities of 0 and 1 make every sampled error bit
+# deterministic, so the probabilities below are conditioned on the error bits.
+
+
+@pytest.mark.parametrize("e0, e1", [(0, 0), (1, 0), (0, 1), (1, 1)])
+def test_z_errors_around_a_z_rotation_condition_the_x_outcome(e0, e1):
+    # Z^e1 R_Z(θ) Z^e0 |+> measured in the X basis: P(+) = (1 ± cos πθ) / 2,
+    # with + for even e0 + e1 (both errors map to one basis bit).
+    text = f"RX 0\nZ_ERROR({e0}) 0\nR_Z(0.17) 0\nZ_ERROR({e1}) 0\nH 0\nM 0"
+    p_plus = (1 + (-1) ** (e0 + e1) * np.cos(0.17 * np.pi)) / 2
+    np.testing.assert_allclose(
+        _outcome_probabilities(text), [p_plus, 1 - p_plus], atol=1e-5
+    )
+
+
+@pytest.mark.parametrize("e", [0, 1])
+def test_x_error_before_a_u3_conditions_the_x_outcome(e):
+    # U3(θ, φ, λ) X^e |0> measured in the X basis: P(+) = (1 ± sin πθ cos πφ) / 2,
+    # with + for e = 0; λ is a global phase of each branch.
+    text = f"R 0\nX_ERROR({e}) 0\nU3(0.37, 0.2, 0.6) 0\nH 0\nM 0"
+    p_plus = (1 + (-1) ** e * np.sin(0.37 * np.pi) * np.cos(0.2 * np.pi)) / 2
+    np.testing.assert_allclose(
+        _outcome_probabilities(text), [p_plus, 1 - p_plus], atol=1e-5
+    )
+
+
 def test_single_error_detectors_take_the_direct_path():
     circuit = Circuit(
         "R 0 1\nX_ERROR(0.1) 0 1\nM 0 1\nDETECTOR rec[-2]\nDETECTOR rec[-1]"

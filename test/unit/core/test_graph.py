@@ -38,6 +38,13 @@ def test_feedforward_copies_the_record():
     np.testing.assert_allclose(
         _distribution("H 0\nM 0\nCX rec[-1] 1\nM 1"), [0.5, 0, 0, 0.5], atol=1e-9
     )
+    # NOTE: after the second H, qubit 0's wire no longer equals rec0, so a
+    # control taken from the wire would correlate rec2 with rec1, not rec0.
+    np.testing.assert_allclose(
+        _distribution("H 0\nM 0\nH 0\nCX rec[-1] 1\nM 0 1"),
+        [0.25, 0, 0.25, 0, 0, 0.25, 0, 0.25],
+        atol=1e-9,
+    )
 
 
 def test_detector_and_observable_outputs():
