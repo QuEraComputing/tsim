@@ -167,6 +167,7 @@ ignore_notebooks = true
 extend_exclude = [
     "^accel-cutting-magic-state-main/",
     "^benchmarks/",
+    "^scripts/",
     "^docs/",
     "^test/",
 ]

@@ -1,10 +1,14 @@
 """Time compilation and sampling of the clifft-bench circuits with one Tsim.
 
-Run once per Tsim version, one after the other on an otherwise idle machine,
+Run it for one Tsim version and then the other, on an otherwise idle machine,
 from inside that version's checkout so that ``uv run`` picks its environment,
 giving this script's absolute path:
 
     uv run python /path/to/scripts/zx_param_migration/benchmark.py OUT_JSON
+
+For several runs, repeat that pair with OUT_JSON named ``benchmark-1.json``,
+``benchmark-2.json``, ... in each version's output directory; ``compare.py``
+reads every ``benchmark*.json`` there.
 
 For every circuit in ``clifft()`` this times ``compile_detector_sampler`` (its
 strategy, seed 0), counts the stabilizer terms (``num_graphs`` summed over all
@@ -16,16 +20,13 @@ OUT_JSON, rewriting the file after each circuit.
 
 import json
 import os
-import runpy
 import sys
 import time
 from pathlib import Path
 
-import tsim
+from circuits import clifft
 
-# NOTE: circuits.py is loaded by path because deptry reports `import circuits`
-# as a missing dependency.
-circuits = runpy.run_path(str(Path(__file__).with_name("circuits.py")))
+import tsim
 
 BATCH_SIZES = {"msc_d3": 64}
 SHOTS = {"msc_d3": 4096}
@@ -35,7 +36,7 @@ def main() -> None:
     """Write compile time, term count and sampling rate to the given JSON path."""
     print(f"tsim: {tsim.__file__}", flush=True)
     results = {}
-    for name, (text, strategy) in circuits["clifft"]().items():
+    for name, (text, strategy) in clifft().items():
         batch_size = BATCH_SIZES.get(name, 8192)
         shots = SHOTS.get(name, 65536)
         circuit = tsim.Circuit(text)

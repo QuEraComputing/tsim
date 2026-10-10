@@ -8,7 +8,8 @@ Run once per Tsim version, from inside that version's checkout so that
 
 STATES_JSON is written by ``states.py``. For each circuit this builds
 ``CompiledStateProbs`` (joint mode) on the noiseless circuit with seed 0 and
-writes ``{name: [probability of each state, ...]}`` to OUT_JSON.
+writes ``{"tsim": tsim.__file__, "circuits": {name: [probability of each
+state, ...]}}`` to OUT_JSON.
 """
 
 import json
@@ -39,7 +40,8 @@ def main() -> None:
         ]
         elapsed = time.perf_counter() - start
         print(f"{name}: {probabilities[name]}, {elapsed:.1f} s", flush=True)
-    Path(sys.argv[2]).write_text(json.dumps(probabilities, indent=1))
+    output = {"tsim": tsim.__file__, "circuits": probabilities}
+    Path(sys.argv[2]).write_text(json.dumps(output, indent=1))
 
 
 if __name__ == "__main__":

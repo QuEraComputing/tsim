@@ -4,10 +4,13 @@ Imported by the other scripts in this directory; it is not run on its own.
 """
 
 from pathlib import Path
+from typing import Literal
 
 import stim
 
 CLIFFT = Path("/Users/rafaelhaenel/Documents/quera/clifft-bench/workloads/circuits")
+
+Strategy = Literal["cat5", "cutting"]
 
 SMALL = {
     "bell_t": "R 0 1\nH 0\nT 0\nCNOT 0 1\nT_DAG 1\nH 0\nM 0 1",
@@ -36,9 +39,9 @@ def generated() -> dict[str, str]:
     return {"surface_d3_r2": str(surface), "repetition_d5_r3": str(repetition)}
 
 
-def clifft() -> dict[str, tuple[str, str]]:
+def clifft() -> dict[str, tuple[str, Strategy]]:
     """Return clifft-bench circuits that compile in time, with their strategy."""
-    files = {
+    files: dict[str, tuple[str, Strategy]] = {
         "surface_d7_r7": ("pure_surface_d7_r7_p1e-3.stim", "cat5"),
         "coherent_d3_r1": ("coherent_d3_r1.stim", "cat5"),
         "coherent_d5_r1": ("coherent_d5_r1.stim", "cat5"),
