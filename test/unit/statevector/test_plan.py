@@ -10,15 +10,23 @@ from test.helpers.statevector import (
 
 import numpy as np
 import pytest
+import stim
 from zx_param import Phase, Scalar
 from zx_param.extract import ExtractedCircuit, Gate
 
-from tsim.statevector.heisenberg import ComponentLayout, heisenberg_ops
+from tsim.statevector.heisenberg import (
+    MEASUREMENT,
+    ROTATION,
+    ComponentLayout,
+    HeisenbergOps,
+    heisenberg_ops,
+)
 from tsim.statevector.plan import (
     AffineRow,
     MeasureActive,
     MeasureDormant,
     Rotate,
+    _Planner,
     plan,
 )
 from tsim.statevector.schedule import Schedule, schedule
@@ -93,3 +101,94 @@ def test_plans_are_well_formed():
                 assert action.branch not in defined
                 defined.add(action.branch)
         assert defined == set(range(planned.num_symbols))
+
+
+def _ops(entries):
+    """Return ops from (Pauli, angle or None for a measurement, f-sign, slot)."""
+    paulis = [stim.PauliString(pauli).to_numpy() for pauli, _, _, _ in entries]
+    return HeisenbergOps(
+        num_lines=len(entries[0][0]),
+        num_f=1,
+        kind=np.array(
+            [MEASUREMENT if angle is None else ROTATION for _, angle, _, _ in entries],
+            dtype=np.uint8,
+        ),
+        x=np.array([x for x, _ in paulis], dtype=bool),
+        z=np.array([z for _, z in paulis], dtype=bool),
+        angle=np.array([angle or 0.0 for _, angle, _, _ in entries]),
+        sign=np.array([[False, f_sign] for _, _, f_sign, _ in entries], dtype=bool),
+        slot=np.array([slot for _, _, _, slot in entries], dtype=np.int32),
+    )
+
+
+def _plan_recording_gates(monkeypatch, ops):
+    """Plan ``ops`` and check it; return the plan and the applied virtual gates."""
+    applied = []
+    apply = _Planner._apply
+
+    def recording(self, gate, *targets):
+        applied.append((gate, targets, frozenset(self.active)))
+        apply(self, gate, *targets)
+
+    monkeypatch.setattr(_Planner, "_apply", recording)
+    scheduled = schedule(ops)
+    planned = plan(ops, scheduled)
+    reordered = ops.take(scheduled.order)
+    for f in f_patterns(ops.num_f):
+        assert_distributions_close(
+            plan_distribution(planned, f), ops_distribution(reordered, f), atol=1e-9
+        )
+    return planned, applied
+
+
+def test_a_dormant_measurement_of_y_turns_its_pivot_with_s_dag(monkeypatch):
+    ops = _ops(
+        [
+            ("YX", None, True, 0),
+            ("X_", 0.3, False, -1),
+            ("_Y", 0.7, True, -1),
+            ("Z_", None, False, 1),
+            ("_Z", None, False, 2),
+        ]
+    )
+    planned, applied = _plan_recording_gates(monkeypatch, ops)
+    assert isinstance(planned.actions[0], MeasureDormant)
+    assert any(
+        gate == "S_DAG" and targets[0] not in active
+        for gate, targets, active in applied
+    )
+
+
+def test_a_forgotten_dormant_measurement_nothing_depends_on_is_skipped(monkeypatch):
+    ops = _ops(
+        [
+            ("X_", 0.4, True, -1),
+            ("_X", None, False, -1),
+            ("Z_", 0.3, False, -1),
+            ("Z_", 0.2, True, -1),
+            ("Y_", None, False, 0),
+        ]
+    )
+    planned, _ = _plan_recording_gates(monkeypatch, ops)
+    assert not any(isinstance(action, MeasureDormant) for action in planned.actions)
+    assert planned.num_branches == 1
+
+
+def test_a_diagonal_measurement_on_several_active_axes(monkeypatch):
+    ops = _ops(
+        [
+            ("X_", 0.3, True, -1),
+            ("_X", 0.5, False, -1),
+            ("ZZ", None, False, 0),
+            ("_Y", 0.6, True, -1),
+            ("_Z", None, False, 1),
+        ]
+    )
+    planned, applied = _plan_recording_gates(monkeypatch, ops)
+    assert any(
+        isinstance(action, MeasureActive)
+        and action.x == 0
+        and bin(action.z).count("1") == 2
+        for action in planned.actions
+    )
+    assert ("CX", (1, 0), frozenset({0, 1})) in applied

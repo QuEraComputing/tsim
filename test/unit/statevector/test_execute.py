@@ -30,7 +30,14 @@ from tsim.statevector.plan import (
     Record,
     Rotate,
 )
-from tsim.statevector.program import lower, plan_component, resolve_dtype
+from tsim.statevector.program import (
+    MEASURE,
+    MEASURE_DIAG,
+    MEASURE_DORMANT,
+    lower,
+    plan_component,
+    resolve_dtype,
+)
 
 
 def _component(
@@ -283,3 +290,23 @@ def test_an_unlikely_outcome_leaves_a_normalized_state(
     out = run(component, state, jax.random.key(0), 0, 1)
     norms = np.linalg.norm(np.asarray(out.amps, dtype=np.complex128), axis=1) ** 2
     assert np.abs(norms - 1).max() < 1e-5
+
+
+def test_running_a_tape_in_two_parts_equals_running_it_whole():
+    (component,), layout = quantum_components(
+        CIRCUITS["midcircuit_feedforward"], sample_detectors=True
+    )
+    planned, component_layout = plan_component(component, layout)
+    compiled = lower(planned, component_layout, "complex64")
+    lanes, split, stop = 512, 4, compiled.num_actions
+    kinds = np.asarray(compiled.kind)
+    measurements = np.isin(kinds, [MEASURE_DIAG, MEASURE, MEASURE_DORMANT])
+    assert measurements[:split].any() and measurements[split:].any()
+    rng = np.random.default_rng(0)
+    f_bits = jnp.asarray(rng.integers(0, 2, (lanes, planned.num_f)).astype(bool))
+    state = initial_state(compiled, f_bits)
+    key = jax.random.key(5)
+    whole = run(compiled, state, key, 0, stop)
+    parts = run(compiled, run(compiled, state, key, 0, split), key, split, stop)
+    for got, expected in zip(parts, whole, strict=True):
+        np.testing.assert_array_equal(np.asarray(got), np.asarray(expected))
