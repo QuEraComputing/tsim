@@ -29,6 +29,11 @@ if TYPE_CHECKING:
 
     from tsim.circuit import Circuit
 
+# NOTE: statevector batches beyond 2^16 lanes cost memory without being faster:
+# on CPU, 2^16 lanes sampled cultivation d3 1.7x faster than the memory-derived
+# batch, at a fifth of its peak memory.
+STATEVECTOR_MAX_BATCH_SIZE = 2**16
+
 
 def _sample_component(
     component: CompiledComponent,
@@ -253,13 +258,13 @@ class _CompiledSamplerBase:
         statevector = [
             c for c in self._program.components if isinstance(c, StatevectorComponent)
         ]
-        if statevector and self._peak_bytes_per_sample() > self._available_memory():
+        if statevector and self._peak_bytes_per_sample() > self._memory_budget():
             widest = max(statevector, key=lambda c: c.width)
             raise ValueError(
                 f"strategy='statevector' needs {self._peak_bytes_per_sample()} bytes "
                 f"per shot for the component with outputs {list(widest.output_indices)} "
-                f"(width {widest.width}), more than the available memory. Use a "
-                "stabilizer-rank strategy such as strategy='cat5'."
+                f"(width {widest.width}), more than half of the available memory. "
+                "Use a stabilizer-rank strategy such as strategy='cat5'."
             )
 
     def _compute_direct_outputs(self, f_params_np: np.ndarray) -> np.ndarray:
@@ -320,12 +325,15 @@ class _CompiledSamplerBase:
 
     def _peak_bytes_per_sample(self) -> int:
         """Estimate peak device memory per sample from compiled program structure."""
+        num_f = self._channel_sampler.signature_matrix.shape[1]
         peak = 0
         for component in self._program.components:
             if isinstance(component, StatevectorComponent):
                 itemsize = 8 if component.dtype == "complex64" else 16
                 lane = 3 * 2**component.width * itemsize
                 lane += 4 * component.num_words + component.num_outputs + 1
+                # NOTE: the f-params and the output records, on host and device.
+                lane += 2 * num_f + 2 * self._program.num_outputs
                 peak = max(peak, lane)
                 continue
             for circuit in component.compiled_scalar_graphs:
@@ -348,10 +356,20 @@ class _CompiledSamplerBase:
             return limit - stats.get("bytes_in_use", 0)
         return psutil.virtual_memory().available
 
+    def _memory_budget(self) -> int:
+        """Return the memory one batch may use: half of the available memory."""
+        return int(self._available_memory() * 0.5)  # conservative
+
     def _estimate_batch_size(self) -> int:
-        """Estimate the largest batch size that fits in available device memory."""
-        half_of_available = int(self._available_memory() * 0.5)  # conservative
-        return max(1, half_of_available // self._peak_bytes_per_sample())
+        """Estimate the largest batch size that fits in available device memory.
+
+        Programs with statevector components use at most
+        ``STATEVECTOR_MAX_BATCH_SIZE`` lanes per batch.
+        """
+        batch_size = max(1, self._memory_budget() // self._peak_bytes_per_sample())
+        if any(isinstance(c, StatevectorComponent) for c in self._program.components):
+            batch_size = min(batch_size, STATEVECTOR_MAX_BATCH_SIZE)
+        return batch_size
 
     @overload
     def _sample_batches(

@@ -174,3 +174,56 @@ def test_stabilizer_rank_norm_warnings_keep_their_threshold(
 def test_a_vanishing_statevector_norm_raises(monkeypatch):
     with pytest.raises(ValueError, match="vanishing"):
         _norm_warnings(monkeypatch, "statevector", 1.0)
+
+
+def test_the_automatic_batch_size_of_a_statevector_sampler_is_capped(monkeypatch):
+    monkeypatch.setattr(
+        sampler_module._CompiledSamplerBase, "_available_memory", lambda self: 2**50
+    )
+    circuit = Circuit(CIRCUITS["t_ghz"])
+    sampler = circuit.compile_detector_sampler(strategy="statevector", seed=0)
+    assert sampler._estimate_batch_size() == 2**16
+    assert sampler._resolve_batch_size(10**7, None, compute_reference=False) <= 2**16
+    lanes = []
+    sample_program = sampler_module.sample_program
+
+    def recording(program, f_params, key):
+        lanes.append(f_params.shape[0])
+        return sample_program(program, f_params, key)
+
+    monkeypatch.setattr(sampler_module, "sample_program", recording)
+    sampler.sample(2**16 + 1)
+    sampler.sample(
+        2**16 + 1, postselection_mask=np.ones(circuit.num_detectors, dtype=bool)
+    )
+    assert lanes and max(lanes) <= 2**16
+    stabilizer_rank = circuit.compile_detector_sampler(strategy="cat5")
+    assert stabilizer_rank._estimate_batch_size() > 2**16
+
+
+def test_the_per_shot_estimate_counts_f_params_and_records():
+    sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
+        strategy="statevector"
+    )
+    widest = max(
+        c.width
+        for c in sampler._program.components
+        if isinstance(c, StatevectorComponent)
+    )
+    num_f = sampler._channel_sampler.signature_matrix.shape[1]
+    records = sampler._program.num_outputs
+    amplitudes = 3 * 2**widest * 8
+    assert sampler._peak_bytes_per_sample() >= amplitudes + 2 * num_f + 2 * records
+
+
+def test_a_lane_must_fit_in_half_of_the_available_memory(monkeypatch):
+    circuit = Circuit(CIRCUITS["t_ghz"])
+    peak = circuit.compile_detector_sampler(
+        strategy="statevector"
+    )._peak_bytes_per_sample()
+    base = sampler_module._CompiledSamplerBase
+    monkeypatch.setattr(base, "_available_memory", lambda self: 2 * peak - 1)
+    with pytest.raises(ValueError, match="cat5"):
+        circuit.compile_detector_sampler(strategy="statevector")
+    monkeypatch.setattr(base, "_available_memory", lambda self: 2 * peak)
+    circuit.compile_detector_sampler(strategy="statevector")
