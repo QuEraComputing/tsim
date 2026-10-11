@@ -2,43 +2,29 @@
 
 Run from the repository root:
 
-    uv run python scripts/statevector/benchmark.py [--seconds S] [NAME ...]
+    uv run python scripts/statevector/benchmark.py [--seconds S] [--seed N] [NAME ...]
 
-Circuits are read from the directory in ``CLIFFT_BENCH_CIRCUITS`` (default
-``/Users/rafaelhaenel/Documents/quera/clifft-bench/workloads/circuits``). For
-every circuit this compiles a detector sampler with ``strategy="statevector"``,
-makes one untimed warmup call (JIT), then samples for at least ``--seconds``
-with postselection on every detector, counting as clifft-bench does: attempted
-shots, accepted shots (no detector fired) and logical errors (observable 0
-among accepted shots). Acceptance is checked against Clifft 0.10.0's value
-(clifft-bench release-v1-20260909-130000) within 5 standard errors.
+Prefix the command with ``NPROC=1`` to run JAX on one thread: XLA sizes its CPU
+thread pools from ``NPROC``.
+
+The workloads are defined in ``workloads.py``. For every circuit this compiles
+a detector sampler with ``strategy="statevector"``, makes one untimed warmup
+call (JIT), then samples for at least ``--seconds`` with postselection on every
+detector, counting as clifft-bench does: attempted shots, accepted shots (no
+detector fired) and logical errors (observable 0 among accepted shots).
+Acceptance is checked against Clifft 0.10.0's value (clifft-bench
+release-v1-20260909-130000) within 5 standard errors. "cores busy" is the
+process CPU time divided by wall time over the timed window.
 """
 
 import argparse
 import math
-import os
 import time
-from pathlib import Path
 
 import numpy as np
+from workloads import CIRCUITS, WORKLOADS, cpu_seconds
 
 import tsim
-
-CIRCUITS = Path(
-    os.environ.get(
-        "CLIFFT_BENCH_CIRCUITS",
-        "/Users/rafaelhaenel/Documents/quera/clifft-bench/workloads/circuits",
-    )
-)
-
-# name: (file, Clifft 0.10.0 acceptance, shots per sample call, batch size)
-WORKLOADS = {
-    "distillation": ("distillation.stim", 0.0798, 262_144, 65_536),
-    "cultivation_d3": ("msc_d3_inject_cultivate_p1e-3.stim", 0.6868, 262_144, 65_536),
-    "coherent_d3_r3": ("coherent_d3_r3.stim", 0.3732, 262_144, 65_536),
-    "cultivation_d5": ("msc_d5_inject_cultivate_p1e-3.stim", 0.1440, 65_536, 16_384),
-    "coherent_d5_r5": ("coherent_d5_r5.stim", 0.0078, 16_384, 4_096),
-}
 
 
 def count(sampler, shots: int, batch_size: int, num_detectors: int) -> tuple[int, int]:
@@ -58,22 +44,26 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("names", nargs="*", default=list(WORKLOADS))
     parser.add_argument("--seconds", type=float, default=10.0)
+    parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
     print(
-        "| circuit | compile s | warmup s | shots/s | acceptance | Clifft "
-        "acceptance | check | logical errors / accepted | sampler |"
+        "| circuit | compile s | warmup s | shots/s | cores busy | acceptance | "
+        "Clifft acceptance | check | logical errors / accepted | sampler |"
     )
-    print("|---|---:|---:|---:|---:|---:|---|---:|---|")
+    print("|---|---:|---:|---:|---:|---:|---:|---|---:|---|")
     for name in args.names:
         file, reference, shots, batch_size = WORKLOADS[name]
         circuit = tsim.Circuit.from_file(str(CIRCUITS / file))
         start = time.perf_counter()
-        sampler = circuit.compile_detector_sampler(strategy="statevector", seed=0)
+        sampler = circuit.compile_detector_sampler(
+            strategy="statevector", seed=args.seed
+        )
         compile_seconds = time.perf_counter() - start
         start = time.perf_counter()
         count(sampler, shots, batch_size, circuit.num_detectors)
         warmup_seconds = time.perf_counter() - start
         attempted = accepted = errors = 0
+        cpu_start = cpu_seconds()
         start = time.perf_counter()
         while time.perf_counter() - start < args.seconds:
             kept, wrong = count(sampler, shots, batch_size, circuit.num_detectors)
@@ -81,12 +71,14 @@ def main() -> None:
             accepted += kept
             errors += wrong
         elapsed = time.perf_counter() - start
+        cores = (cpu_seconds() - cpu_start) / elapsed
         acceptance = accepted / attempted
         sigma = math.sqrt(reference * (1 - reference) / attempted)
         check = "ok" if abs(acceptance - reference) <= 5 * sigma else "MISMATCH"
         print(
             f"| {name} | {compile_seconds:.2f} | {warmup_seconds:.2f} | "
-            f"{attempted / elapsed:,.0f} | {acceptance:.4f} | {reference:.4f} | "
+            f"{attempted / elapsed:,.0f} | {cores:.1f} | {acceptance:.4f} | "
+            f"{reference:.4f} | "
             f"{check} | {errors} / {accepted} | `{sampler!r}` |",
             flush=True,
         )
