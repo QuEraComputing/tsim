@@ -16,7 +16,7 @@ from typing import (
 import numpy as np
 import stim
 import zxparam as zx
-from zxparam import DecompositionStrategy, Graph, VertexType
+from zxparam import DecompositionStrategy, Graph
 from zxparam.phase import Bit
 
 if TYPE_CHECKING:
@@ -823,13 +823,7 @@ class Circuit:
 
     def tcount(self) -> int:
         """Count the spiders whose angle is not a multiple of π/2."""
-        g = parse_stim_circuit(self._stim_circ).graph
-        return sum(
-            1
-            for v in g.vertices()
-            if g.vertex_type(v) != VertexType.BOUNDARY
-            and g.phase(v).value.denominator > 2
-        )
+        return zx.tcount(parse_stim_circuit(self._stim_circ).graph)
 
     def get_graph(self) -> Graph:
         """Construct the circuit's quantum/classical ZX graph, with qubit ports.

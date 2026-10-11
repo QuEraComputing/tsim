@@ -201,10 +201,7 @@ def test_prepare_graph_maps_errors_to_basis_ids():
     prepared = prepare_graph(circuit, sample_detectors=True)
     layout = prepared.layout
     assert (layout.num_errors, layout.num_basis, layout.num_outputs) == (1, 1, 1)
-    params = {
-        p for v in prepared.graph.vertices() for p in prepared.graph.phase(v).parameters
-    }
-    assert params == {layout.basis(0)}
+    assert prepared.graph.parameters() == {layout.basis(0)}
     np.testing.assert_array_equal(prepared.error_transform, [[1]])
     assert isinstance(prepared.graph, zxparam.Graph)
 

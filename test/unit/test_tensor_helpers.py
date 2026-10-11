@@ -2,7 +2,7 @@ from fractions import Fraction
 from test.helpers.tensors import channel, doubled, doubled_state
 
 import numpy as np
-from zxparam import Domain, EdgeType, Graph, Scalar, VertexType
+from zxparam import Domain, EdgeType, Graph, VertexType
 
 H = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
 ZERO = np.array([1, 0], dtype=complex)
@@ -52,5 +52,5 @@ def test_doubled_state_matches_a_zero_preparation():
     o = g.add_vertex(VertexType.BOUNDARY, domain=Q, col=1)
     g.set_port(o, 0)
     g.add_edge(x, o)
-    g.mul_scalar(Scalar.one().add_power_sqrt2(-1), Q)
+    g.mul_sqrt2(-1, Q)
     np.testing.assert_allclose(g.to_tensor(), doubled_state(ZERO), atol=1e-12)

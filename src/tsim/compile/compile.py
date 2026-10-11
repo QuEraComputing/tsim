@@ -9,6 +9,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
 from zxparam import Scalar
+from zxparam.dyadic import omega_exponent
 
 from tsim.compile.terms import (
     FloatTerms,
@@ -47,14 +48,6 @@ def _cis(alpha: Fraction | float) -> complex:
     return cmath.exp(1j * math.pi * float(alpha))
 
 
-def _eighths(alpha: Fraction) -> int | None:
-    """Return ``4·alpha mod 8`` if ``alpha`` is a multiple of 1/4, else None."""
-    scaled = Fraction(alpha) * 4
-    if scaled.denominator != 1:
-        return None
-    return int(scaled) % 8
-
-
 def _phase_pair_value(alpha: Fraction, beta: Fraction, pa: int, pb: int) -> complex:
     """Return ``1 + e^{iπ(α+pa)} + e^{iπ(β+pb)} − e^{iπ(α+β+pa+pb)}``."""
     return 1 + _cis(alpha + pa) + _cis(beta + pb) - _cis(alpha + beta + pa + pb)
@@ -65,7 +58,7 @@ class _SplitScalar:
     """One scalar's terms, sorted into the compiled families."""
 
     nodes: list[tuple[int, list[int]]] = field(default_factory=list)
-    phases: dict[tuple[int, ...], int] = field(default_factory=dict)
+    phases: list[tuple[int, list[int]]] = field(default_factory=list)
     pi_pairs: list[tuple[list[int], list[int]]] = field(default_factory=list)
     phase_pairs: list[tuple[int, int, list[int], list[int]]] = field(
         default_factory=list
@@ -74,13 +67,17 @@ class _SplitScalar:
         default_factory=list
     )
     float_factor: complex = 1.0
-    phase_index: int = 0
     coeffs: tuple[int, int, int, int] = (1, 0, 0, 0)
     power2: int = 0
 
 
 def _split_scalar(s: Scalar, column: dict[int, int], n_params: int) -> _SplitScalar:
-    """Sort the terms of ``s`` into exact families, float terms and float factor."""
+    """Sort the terms of ``s`` into exact families, float terms and float factor.
+
+    ``s`` must be ``Scalar.simplified``: each phase term has its own nonempty
+    parameter set, no pi-pair has an empty side, and a global phase that is a
+    multiple of π/4 is already in ``base``.
+    """
 
     def mask(params: frozenset[int]) -> list[int]:
         bits = [0] * n_params
@@ -90,7 +87,7 @@ def _split_scalar(s: Scalar, column: dict[int, int], n_params: int) -> _SplitSca
 
     split = _SplitScalar()
     for n in s.nodes:
-        k = _eighths(n.alpha)
+        k = omega_exponent(n.alpha)
         if k is not None:
             split.nodes.append((k, mask(n.a)))
         elif n.a:
@@ -99,20 +96,16 @@ def _split_scalar(s: Scalar, column: dict[int, int], n_params: int) -> _SplitSca
         else:
             split.float_factor *= 1 + _cis(n.alpha)
     for h in s.phases:
-        if not h.a:
-            continue
-        k = _eighths(h.alpha)
+        k = omega_exponent(h.alpha)
         if k is not None:
-            key = tuple(mask(h.a))
-            split.phases[key] = (split.phases.get(key, 0) + k) % 8
+            split.phases.append((k, mask(h.a)))
         else:
             w = _cis(h.alpha)
             split.floats.append(([1, w, 1, w], mask(h.a), [0] * n_params))
     for p in s.pi_pairs:
-        if p.a and p.b:
-            split.pi_pairs.append((mask(p.a), mask(p.b)))
+        split.pi_pairs.append((mask(p.a), mask(p.b)))
     for q in s.phase_pairs:
-        ka, kb = _eighths(q.alpha), _eighths(q.beta)
+        ka, kb = omega_exponent(q.alpha), omega_exponent(q.beta)
         if ka is not None and kb is not None:
             split.phase_pairs.append((ka, kb, mask(q.a), mask(q.b)))
             continue
@@ -123,10 +116,7 @@ def _split_scalar(s: Scalar, column: dict[int, int], n_params: int) -> _SplitSca
             split.floats.append((table, mask(q.a), mask(q.b)))
         else:
             split.float_factor *= table[0]
-    k = _eighths(s.phase)
-    if k is not None:
-        split.phase_index = k
-    else:
+    if s.phase:
         split.float_factor *= _cis(s.phase)
     base = s.base
     split.coeffs = (base.a, base.b, base.c, base.d)
@@ -151,7 +141,7 @@ def _node_phase_family(split: list[_SplitScalar], n_params: int) -> NodePhases:
 
 
 def _phase_term_family(split: list[_SplitScalar], n_params: int) -> PhaseTerms:
-    rows = [[(k, bits) for bits, k in s.phases.items() if k] for s in split]
+    rows = [s.phases for s in split]
     width = max((len(r) for r in rows), default=0)
     coeffs = np.zeros((len(split), width), dtype=np.uint8)
     params = np.zeros((len(split), width, n_params), dtype=np.uint8)
@@ -218,7 +208,6 @@ def _scalar_prefactor(split: list[_SplitScalar]) -> ScalarPrefactor:
         raise OverflowError("a scalar's Dyadic coefficients do not fit in int32")
     approximate = [s.float_factor for s in split]
     return ScalarPrefactor(
-        phase_indices=jnp.array([s.phase_index for s in split], dtype=jnp.uint8),
         floatfactor=jnp.array(coeffs, dtype=jnp.int32).reshape(-1, 4),
         power2=jnp.array([s.power2 for s in split], dtype=jnp.int32),
         approximate_floatfactors=jnp.array(approximate, dtype=jnp.complex64),
@@ -232,9 +221,10 @@ def compile_scalars(
     """Compile exact scalars, one per stabilizer term, into JAX arrays.
 
     Column ``k`` of the parameter values the result is evaluated on holds the bit
-    of parameter ``param_ids[k]``. Zero scalars are dropped. Angles that are
-    multiples of π/4 stay exact; other angles go into each term's float factor
-    (terms without parameters) or into the float term family.
+    of parameter ``param_ids[k]``. Each scalar is ``Scalar.simplified`` first,
+    and zero scalars are dropped. Angles that are multiples of π/4 stay exact;
+    other angles go into each term's float factor (terms without parameters) or
+    into the float term family.
 
     Raises:
         KeyError: A term uses a parameter that is not in ``param_ids``.
@@ -243,7 +233,8 @@ def compile_scalars(
     """
     column = {p: k for k, p in enumerate(param_ids)}
     n_params = len(param_ids)
-    split = [_split_scalar(s, column, n_params) for s in scalars if not s.is_zero]
+    simplified = [s.simplified() for s in scalars]
+    split = [_split_scalar(s, column, n_params) for s in simplified if not s.is_zero]
     return CompiledScalarGraphs(
         num_graphs=len(split),
         n_params=n_params,

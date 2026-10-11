@@ -6,7 +6,7 @@ from fractions import Fraction
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from zxparam import Domain, EdgeType, Graph, Phase, VertexType
+from zxparam import Domain, EdgeType, Graph, Phase, VertexType, decompose
 
 from tsim.circuit import Circuit
 from tsim.compile.evaluate import evaluate
@@ -156,7 +156,16 @@ def test_classify_direct_rejects_other_components(candidate):
     assert classify_direct(candidate, LAYOUT) is None
 
 
-def test_plugging_a_quantum_output_is_an_error():
-    component = _direct_candidate(output_domain=Domain.QUANTUM)
-    with pytest.raises(ValueError, match="not classical"):
-        _plugged(component, LAYOUT, 0)
+@pytest.mark.parametrize("output_domain", [Domain.CLASSICAL, Domain.QUANTUM])
+def test_plugged_outputs_give_outcome_probabilities(output_domain):
+    g = Graph()
+    zero = g.add_vertex(VertexType.X, domain=output_domain)
+    out = g.add_vertex(VertexType.BOUNDARY, domain=output_domain)
+    g.set_port(out, 0)
+    g.add_edge(zero, out)
+    g.mul_sqrt2(-1, output_domain)
+    m = LAYOUT.output(0)
+    measured = decompose(_plugged(g, LAYOUT, 1))
+    assert measured.evaluate({m: 0}) == pytest.approx(1)
+    assert measured.evaluate({m: 1}) == pytest.approx(0)
+    assert decompose(_plugged(g, LAYOUT, 0)).evaluate({}) == pytest.approx(1)

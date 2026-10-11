@@ -111,9 +111,7 @@ class TestCorrelatedErrorGraph:
         b = parse_stim_circuit(circuit)
 
         assert b.pending_correlated == []
-        for v in b.graph.vertices():
-            for param in b.graph.phase(v).parameters:
-                assert param < b.num_error_bits, f"Found unfinalized parameter: {param}"
+        assert max(b.graph.parameters()) < b.num_error_bits
 
     def test_chain_multiple_qubits(self):
         """Test a chain affecting multiple qubits."""

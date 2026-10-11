@@ -130,35 +130,23 @@ def _port(g: Graph, v: Vertex) -> int:
 
 
 def _basis_indices(g: Graph, layout: ParamLayout) -> list[int]:
-    """Return the sorted basis indices of the parameters on ``g``'s vertices."""
-    return sorted(
-        {layout.basis_index(p) for v in g.vertices() for p in g.phase(v).parameters}
-    )
+    """Return the sorted basis indices of ``g``'s parameters (its scalar is 1)."""
+    return sorted(layout.basis_index(p) for p in g.parameters())
 
 
 def _plugged(component: Graph, layout: ParamLayout, k: int) -> Graph:
-    """Plug the first ``k`` outputs with their output bits and trace the rest.
+    """Plug the first ``k`` outputs with their output bits and trace out the rest.
 
-    Output ``i`` plugged with a classical X spider of phase ``m_i·π`` is
-    ``√2·⟨m_i|``, so the graph is multiplied by ``√2^-k``; a Z(0) spider sums
-    over the output. All of a component's plugged graphs then share one
-    normalization.
-
-    Raises:
-        ValueError: An output boundary is not classical, so the normalization
-            above would be wrong.
-
+    Output ``i`` gets the normalized effect ``⟨m_i|`` for its output parameter
+    ``m_i``, so all of a component's plugged graphs share one normalization.
     """
     g = component.copy()
     for j, v in enumerate(component.outputs()):
-        if component.vertex_domain(v) != Domain.CLASSICAL:
-            raise ValueError(f"output {_port(component, v)} is not classical")
         if j < k:
             bit = Phase(Fraction(0), frozenset({layout.output(_port(component, v))}))
-            g.plug(v, VertexType.X, bit)
+            g.plug_basis(v, bit)
         else:
-            g.plug(v, VertexType.Z)
-    g.mul_scalar(Scalar.one().add_power_sqrt2(-k))
+            g.discard(v)
     return g
 
 

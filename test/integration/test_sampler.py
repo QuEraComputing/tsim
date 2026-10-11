@@ -8,7 +8,7 @@ import pytest
 import stim
 from tqdm import tqdm
 from zxparam import DecompositionStrategy
-from zxparam.stabrank.selection import is_u3_spider
+from zxparam.stabrank import is_u3_spider
 
 import tsim.sampler as sampler_module
 from tsim.circuit import Circuit

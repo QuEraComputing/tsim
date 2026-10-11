@@ -120,12 +120,11 @@ def test_phase_terms_with_one_mask_are_combined():
     _assert_matches([s], [3])
 
 
-@pytest.mark.parametrize(
-    "phase,index", [(Fraction(-1, 4), 7), (Fraction(9, 4), 1), (Fraction(5, 4), 5)]
-)
-def test_prefactor_phase_is_reduced_mod_8(phase, index):
-    compiled = compile_scalars([Scalar(base=Dyadic.one(), phase=phase)], [])
-    assert int(compiled.prefactor.phase_indices[0]) == index
+@pytest.mark.parametrize("phase", [Fraction(-1, 4), Fraction(9, 4), Fraction(5, 4)])
+def test_pi_over_four_global_phases_stay_exact(phase):
+    scalars = [Scalar(base=Dyadic.one(), phase=phase)]
+    assert not compile_scalars(scalars, []).prefactor.has_approximate_floatfactors
+    _assert_matches(scalars, [])
 
 
 def test_a_parameter_without_a_column_raises():

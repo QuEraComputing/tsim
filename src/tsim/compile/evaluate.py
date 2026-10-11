@@ -8,7 +8,6 @@ import jax.numpy as jnp
 from jax import Array
 
 from tsim.compile.compile import CompiledScalarGraphs
-from tsim.compile.terms import UNIT_PHASES
 from tsim.core.exact_scalar import ExactScalarArray
 
 
@@ -35,10 +34,9 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
 
     """
     prefactor = circuit.prefactor
-    if prefactor.phase_indices.shape[0] == 0:
+    if prefactor.power2.shape[0] == 0:
         return jnp.zeros(param_vals.shape[0], dtype=jnp.complex64)
 
-    static_phases = ExactScalarArray(UNIT_PHASES[prefactor.phase_indices])
     float_factor = ExactScalarArray(prefactor.floatfactor)
 
     total = functools.reduce(
@@ -48,7 +46,6 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
             circuit.phase_terms.evaluate(param_vals),
             circuit.pi_products.evaluate(param_vals),
             circuit.phase_pairs.evaluate(param_vals),
-            static_phases,
             float_factor,
         ],
     )

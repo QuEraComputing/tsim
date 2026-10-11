@@ -18,20 +18,6 @@ if TYPE_CHECKING:
     from tsim.circuit import Circuit
 
 
-def _discard(g: Graph, v: Vertex) -> None:
-    """Turn the wire-end boundary ``v`` into a classical Z(0) spider (a discard).
-
-    The wire edge is re-added one per copy, so this stays right when the
-    neighbour is classical (e.g. a measurement record).
-    """
-    (n,) = g.neighbors(v)
-    edge_type = g.edge_type(v, n)
-    g.remove_edge(v, n)
-    g.set_vertex_type(v, VertexType.Z)
-    g.set_vertex_domain(v, Domain.CLASSICAL)
-    g.add_edge_per_copy(v, n, edge_type)
-
-
 def _align_wire_ends(g: Graph, built: GraphRepresentation) -> None:
     """Put every wire's last vertex in the same column (for drawing)."""
     if built.last_vertex:
@@ -67,7 +53,7 @@ def _attach_annotation_outputs(
     for port, (v, row) in enumerate(annotations, start=first_port):
         # NOTE: an X spider with n legs is 2^(1 - n/2) times a parity check;
         # with its output leg, an annotation has degree + 1 legs.
-        g.mul_scalar(Scalar.one().add_power_sqrt2(g.degree(v) - 1))
+        g.mul_sqrt2(g.degree(v) - 1)
         b = g.add_vertex(
             VertexType.BOUNDARY, col=g.col(v), row=row, domain=Domain.CLASSICAL
         )
@@ -101,7 +87,7 @@ def circuit_graph(built: GraphRepresentation, *, annotations: bool = True) -> Gr
         if q >= 0:
             g.set_port(v, q)
         else:
-            _discard(g, v)
+            g.discard(v)
     if annotations:
         first_port = max((q for q in built.last_vertex if q >= 0), default=-1) + 1
         _attach_annotation_outputs(g, built, first_port)
@@ -129,10 +115,9 @@ def build_sampling_graph(
     _align_wire_ends(g, built)
     for v in built.first_vertex.values():
         if g.vertex_type(v) == VertexType.BOUNDARY:
-            g.set_vertex_type(v, VertexType.X)
-            g.mul_scalar(Scalar.one().add_power_sqrt2(-1), Domain.QUANTUM)
+            g.plug_basis(v)
     for v in built.last_vertex.values():
-        _discard(g, v)
+        g.discard(v)
     if sample_detectors:
         _attach_annotation_outputs(g, built, first_port=0)
         _clear_measurement_labels(g, built)

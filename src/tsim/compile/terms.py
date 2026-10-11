@@ -190,19 +190,19 @@ class ScalarPrefactor(eqx.Module):
     """Per-graph static scalar prefactor — independent of parameter values.
 
     Each graph's amplitude is the product of the four exact term families and
-    ``FloatTerms`` times the prefactor ``ω^phase_index · floatfactor · 2^power2``,
-    times the graph's complex entry of ``approximate_floatfactors``. That entry
-    collects the parameter-free factors whose angles are not multiples of π/4
-    (see ``_split_scalar`` in ``compile.py``): a global phase whose denominator
-    is outside ``{1, 2, 4}``, and parameter-free ``NodeTerm``s and
-    ``PhasePair``s with such angles. It is ``1`` when a graph has none of them.
+    ``FloatTerms`` times the prefactor ``floatfactor · 2^power2`` (which includes
+    any global phase that is a multiple of π/4), times the graph's complex entry
+    of ``approximate_floatfactors``. That entry collects the parameter-free
+    factors whose angles are not multiples of π/4 (see ``_split_scalar`` in
+    ``compile.py``): a global phase whose denominator is outside ``{1, 2, 4}``,
+    and parameter-free ``NodeTerm``s and ``PhasePair``s with such angles. It is
+    ``1`` when a graph has none of them.
 
     This class is pure data; the final fold-in with the term-family product
     (which branches on ``has_approximate_floatfactors`` and on
     ``CompiledScalarGraphs.has_float_terms``) lives in ``evaluate.py``.
     """
 
-    phase_indices: Array  # uint8, shape (num_graphs,), values 0-7
     floatfactor: Array  # int32, shape (num_graphs, 4) — exact dyadic (a,b,c,d)
     power2: Array  # int32, shape (num_graphs,) — exponent on the 2^(·) scaling
     approximate_floatfactors: Array  # complex64, shape (num_graphs,)

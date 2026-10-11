@@ -4848,7 +4848,7 @@ wheels = [
 [[package]]
 name = "zxparam"
 version = "0.1.0.dev0"
-source = { git = "https://github.com/QuEraComputing/zxparam?branch=main#decddb268b109beb21bdd5af4a54021c37e5e163" }
+source = { git = "https://github.com/QuEraComputing/zxparam?branch=main#35c2bf964d5b7ae0debda0cc4a59de82a65377d2" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },

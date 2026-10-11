@@ -3,9 +3,10 @@
 Qubit wires are quantum. Every wire vertex starts as a quantum boundary from
 ``add_lane`` or ``add_quantum_boundary``, and gates turn a wire's trailing
 boundary into a spider in place (see ``_wire_spider``), so the spider stays
-quantum. Only measurements (``_make_classical``) and detector and observable
-annotations create classical vertices. NOTE: zxparam's ``Graph.add_vertex``
-defaults to the classical domain, so do not call it directly for wire vertices.
+quantum. Only measurements (``merge_mirror_copies`` in ``_m``) and detector and
+observable annotations create classical vertices. NOTE: zxparam's
+``Graph.add_vertex`` defaults to the classical domain, so do not call it directly
+for wire vertices.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from fractions import Fraction
 from typing import Callable, Literal
 
 import numpy as np
-from zxparam import Domain, EdgeType, Graph, Phase, Scalar, Vertex, VertexType
+from zxparam import Domain, EdgeType, Graph, Phase, Vertex, VertexType
 
 from tsim.noise.channels import (
     correlated_error_probs,
@@ -54,29 +55,9 @@ class GraphRepresentation:
         return [self.observables_dict[i] for i in sorted(self.observables_dict)]
 
 
-def _scale(b: GraphRepresentation, sqrt2_power: int) -> None:
-    """Multiply both copies of the doubled diagram by ``√2^sqrt2_power``."""
-    b.graph.mul_scalar(Scalar.one().add_power_sqrt2(sqrt2_power), Domain.QUANTUM)
-
-
 def _error_phase(error_bit: int) -> Phase:
     """Return the phase of a noise spider for error bit ``error_bit`` (ID = bit)."""
     return Phase(Fraction(0), frozenset({error_bit}))
-
-
-def _make_classical(b: GraphRepresentation, v: Vertex) -> None:
-    """Make spider ``v`` classical, keeping one wire edge per copy.
-
-    Between two classical spiders (e.g. two measurements in a row) a wire is one
-    edge per copy, which ``add_edge_per_copy`` collapses correctly.
-    """
-    g = b.graph
-    edges = [(n, g.edge_type(v, n)) for n in g.neighbors(v)]
-    for n, _ in edges:
-        g.remove_edge(v, n)
-    g.set_vertex_domain(v, Domain.CLASSICAL)
-    for n, edge_type in edges:
-        g.add_edge_per_copy(v, n, edge_type)
 
 
 def last_col(b: GraphRepresentation, qubit: int) -> float:
@@ -413,7 +394,7 @@ def _cx_cz(
     b.graph.add_edge(v2, v4)
 
     b.graph.add_edge(v1 if m_vertex is None else m_vertex, v2, edge_type)
-    _scale(b, 1)
+    b.graph.mul_sqrt2(1, Domain.QUANTUM)
 
 
 def cnot(
@@ -811,7 +792,7 @@ def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
     b.graph.set_vertex_type(v1, VertexType.Z)
-    _make_classical(b, v1)
+    b.graph.merge_mirror_copies(v1)
     if not silent:
         b.graph.set_vertex_label(v1, f"rec[{len(b.rec)}]")
         b.rec.append(v1)
@@ -832,19 +813,16 @@ def _r(b: GraphRepresentation, qubit: int) -> None:
     state before reconnecting the qubit in the reset state.
     """
     if qubit not in b.last_vertex:
-        v1 = add_lane(b, qubit)
-        b.graph.set_vertex_type(v1, VertexType.X)
-        _scale(b, -1)
+        b.graph.plug_basis(add_lane(b, qubit))
         return
     _m(b, qubit, silent=True)
     col = last_col(b, qubit)
     v1 = b.last_vertex[qubit]
-    b.graph.set_vertex_type(v1, VertexType.X)
     (v2,) = b.graph.neighbors(v1)
     b.graph.remove_edge(v1, v2)
+    b.graph.plug_basis(v1)
     v3 = add_quantum_boundary(b, qubit, col + 1)
     b.graph.add_edge(v1, v3)
-    _scale(b, -1)
 
 
 def m(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
