@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import stim
 import zxparam
+from zxparam.viz.layout import compute_positions
 
 from tsim.circuit import Circuit
 
@@ -1030,9 +1031,12 @@ def test_reduced_diagrams_are_red_green_with_outputs_in_a_row(
     with patch("zxparam.draw") as mock_draw:
         c.diagram(type=type)
     g = mock_draw.call_args.args[0]
+    layout = mock_draw.call_args.kwargs["layout"]
+    assert layout == "outputs"
+    positions = compute_positions(g, layout)
     outputs = g.outputs()
-    assert len({g.row(v) for v in outputs}) == 1
-    assert len({g.col(v) for v in outputs}) == len(outputs)
+    assert len({positions[v][1] for v in outputs}) == 1
+    assert len({positions[v][0] for v in outputs}) == len(outputs)
     assert any(g.vertex_type(v) == zxparam.VertexType.X for v in g.vertices())
 
 
@@ -1067,7 +1071,9 @@ def test_diagram_zx_scale_horizontally(
     with patch("zxparam.draw") as mock_draw:
         result = c.diagram(type=type, scale_horizontally=scale)
         _assert_drew_a_graph(mock_draw, result)
-    assert "scale_horizontally" not in mock_draw.call_args.kwargs
+    kwargs = mock_draw.call_args.kwargs
+    assert "scale_horizontally" not in kwargs
+    assert kwargs.get("scale") == ((40 * scale, 40) if scale else None)
 
 
 @pytest.mark.parametrize("type", ["zx", "zx-meas", "zx-dets"])

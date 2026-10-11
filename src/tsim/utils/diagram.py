@@ -2,7 +2,6 @@
 
 import re
 import uuid
-from collections import deque
 from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any, Iterable
@@ -11,13 +10,17 @@ import numpy as np
 import stim
 import zxparam as zx
 from lxml import etree  # type: ignore
-from zxparam import Graph, Vertex
+from zxparam import Graph
+from zxparam.viz.layout import Layout
 
 from tsim.core.graph import circuit_graph
 from tsim.core.params import ParamLayout
 from tsim.core.parse import parse_stim_circuit
 from tsim.core.tags import is_t_tag
 from tsim.utils.program_text import FLOAT_RE
+
+_ZX_SCALE = 40
+"""zxparam's default number of pixels per unit of (col, row)."""
 
 
 class Diagram:
@@ -486,85 +489,30 @@ def render_svg(
     return Diagram(svg, html)
 
 
-def render_zx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> Any:
-    """Render a stim circuit's quantum/classical ZX graph with zxparam's D3 viewer.
+def draw_zx(
+    g: Graph, num_errors: int, kwargs: dict[str, Any], layout: Layout = "auto"
+) -> Any:
+    """Draw ``g`` with zxparam's D3 viewer, naming its parameters.
 
     Args:
-        stim_circ: The stim circuit to render.
-        kwargs: ``labels`` and ``scale_horizontally``, passed on to the drawing.
+        g: The graph to draw; it is not changed.
+        num_errors: The circuit's number of error bits (see ``ParamLayout``).
+        kwargs: ``labels``, and ``scale_horizontally``, a factor on the
+            horizontal spacing.
+        layout: zxparam's drawing layout.
 
     Returns:
         zxparam's D3 drawing object.
 
     """
+    stretch = kwargs.pop("scale_horizontally", None)
+    if stretch:
+        kwargs["scale"] = (_ZX_SCALE * stretch, _ZX_SCALE)
+    names = ParamLayout(num_errors).names(g.parameters())
+    return zx.draw(g, param_names=names, layout=layout, **kwargs)
+
+
+def render_zx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> Any:
+    """Render a stim circuit's quantum/classical ZX graph with zxparam's D3 viewer."""
     built = parse_stim_circuit(stim_circ)
-    g = circuit_graph(built)
-    scale = kwargs.pop("scale_horizontally", None)
-    if scale:
-        scale_horizontally(g, scale)
-    names = ParamLayout(built.num_error_bits).names(g.parameters())
-    return zx.draw(g, param_names=names, **kwargs)
-
-
-def squash_graph(g: Graph) -> None:
-    """Compact the graph by placing vertices underneath their output connections.
-
-    The outputs are placed side by side in one row. Starting from them, each
-    vertex is placed directly underneath (same column, row - 1) its
-    already-placed neighbor. Positions are assigned via BFS traversal from
-    outputs, ensuring no (row, col) collisions.
-    """
-    outputs = g.outputs()
-    if not outputs:
-        return
-
-    num_outputs = len(outputs)
-    for col, v in enumerate(outputs):
-        g.set_row(v, num_outputs)
-        g.set_col(v, col)
-
-    occupied: set[tuple[int, int]] = {(num_outputs, col) for col in range(num_outputs)}
-    placed: set[Vertex] = set(outputs)
-    queue: deque[Vertex] = deque(outputs)
-
-    while queue:
-        current = queue.popleft()
-        current_row = int(g.row(current))
-        current_col = int(g.col(current))
-
-        for neighbor in g.neighbors(current):
-            if neighbor in placed:
-                continue
-
-            target_row = current_row - 1
-            target_col = current_col
-
-            if (target_row, target_col) in occupied:
-                for offset in range(1, 1000):
-                    if (target_row, target_col + offset) not in occupied:
-                        target_col = target_col + offset
-                        break
-                    if (
-                        target_row,
-                        target_col - offset,
-                    ) not in occupied and target_col - offset >= 0:
-                        target_col = target_col - offset
-                        break
-
-            g.set_row(neighbor, target_row)
-            g.set_col(neighbor, target_col)
-            occupied.add((target_row, target_col))
-            placed.add(neighbor)
-            queue.append(neighbor)
-
-    for v in g.outputs():
-        neighbors = list(g.neighbors(v))
-        if neighbors and len(list(g.neighbors(neighbors[0]))) == 1:
-            g.set_row(neighbors[0], g.row(v) + 1)
-            g.set_col(neighbors[0], g.col(v))
-
-
-def scale_horizontally(g: Graph, scale: float) -> None:
-    """Scale the horizontal positions (columns) of the graph's vertices by ``scale``."""
-    for v in g.vertices():
-        g.set_col(v, g.col(v) * scale)
+    return draw_zx(circuit_graph(built), built.num_error_bits, kwargs)

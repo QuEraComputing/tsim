@@ -23,17 +23,11 @@ if TYPE_CHECKING:
     from tsim.sampler import CompiledDetectorSampler, CompiledMeasurementSampler
 
 from tsim.core.graph import build_sampling_graph, circuit_graph, transform_error_basis
-from tsim.core.params import ParamLayout
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.core.tags import encode_t_tag
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
-from tsim.utils.diagram import (
-    render_svg,
-    render_zx_d3,
-    scale_horizontally,
-    squash_graph,
-)
+from tsim.utils.diagram import draw_zx, render_svg, render_zx_d3
 from tsim.utils.program_text import (
     controlled_gate_decomposition_lines,
     enriched_stim_error,
@@ -784,12 +778,7 @@ class Circuit:
             zx.full_reduce(g)
             g, _ = transform_error_basis(g, built.num_error_bits)
             g.to_rg()
-            squash_graph(g)
-            scale = kwargs.pop("scale_horizontally", None)
-            if scale:
-                scale_horizontally(g, scale)
-            names = ParamLayout(built.num_error_bits).names(g.parameters())
-            return zx.draw(g, param_names=names, **kwargs)
+            return draw_zx(g, built.num_error_bits, kwargs, layout="outputs")
         elif type == "timeline-text":
             from stim_timeline_text import render_timeline_text
 
