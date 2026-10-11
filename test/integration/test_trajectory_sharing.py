@@ -8,6 +8,70 @@ import pytest
 
 from tsim.circuit import Circuit
 
+# NOTE: t_ghz plus a direct detector: postselection only takes the pruning path
+# when it masks a direct detector, and t_ghz's random detectors give reference
+# bits of 1 for some seeds.
+GHZ_WITH_DIRECT_DETECTOR = """
+R 0 1 2 3
+H 0
+CNOT 0 1
+CNOT 1 2
+T 0 1 2
+H 0 1 2
+DEPOLARIZE1(0.05) 0 1 2
+T 0 1
+CZ 0 1
+H 0 1
+M 0 1 2
+DETECTOR rec[-3] rec[-2]
+DETECTOR rec[-2] rec[-1]
+OBSERVABLE_INCLUDE(0) rec[-1]
+X_ERROR(0.2) 3
+M 3
+DETECTOR rec[-1]
+"""
+
+
+def _accepted(sampler, shots, mask, *, reference=False):
+    detectors, observables = sampler.sample(
+        shots,
+        batch_size=5_000,
+        separate_observables=True,
+        postselection_mask=mask,
+        use_detector_reference_sample=reference,
+    )
+    keep = ~detectors.any(axis=1)
+    return keep.mean(), np.concatenate([detectors, observables], axis=1)[keep]
+
+
+@pytest.mark.parametrize("reference", [False, True])
+def test_pruning_through_the_sampler_keeps_the_accepted_distribution(reference):
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    mask = np.ones(circuit.num_detectors, dtype=bool)
+    shots = 40_000
+    seed = 1
+    if reference:
+        for seed in range(1, 40):
+            sampler = circuit.compile_detector_sampler(
+                strategy="statevector", seed=seed
+            )
+            if sampler._compute_reference_sample()[:2].any():
+                break
+    rate, expected = _accepted(
+        circuit.compile_detector_sampler(strategy="statevector", seed=seed),
+        shots,
+        mask,
+        reference=reference,
+    )
+    sampler = circuit.compile_detector_sampler(
+        strategy="statevector", seed=seed, trajectory_sharing=True
+    )
+    shared_rate, got = _accepted(sampler, shots, mask, reference=reference)
+    assert any(stats["dead"] > 0 for stats in sampler.sharing_stats)
+    sigma = np.sqrt(rate * (1 - rate) * 2 / shots)
+    assert abs(shared_rate - rate) <= 5 * sigma + 3 / shots
+    assert_counts_match(got, expected)
+
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
 def test_shared_detector_sampling_matches_one_lane_per_shot(name):
@@ -43,24 +107,15 @@ def test_pruned_postselection_keeps_the_accepted_distribution(name):
         pytest.skip("no detectors to postselect")
     shots = 20_000
     mask = np.ones(circuit.num_detectors, dtype=bool)
-
-    def accepted(sampler):
-        detectors, observables = sampler.sample(
-            shots,
-            batch_size=5_000,
-            separate_observables=True,
-            postselection_mask=mask,
-        )
-        keep = ~detectors.any(axis=1)
-        return keep.mean(), np.concatenate([detectors, observables], axis=1)[keep]
-
-    rate, expected = accepted(
-        circuit.compile_detector_sampler(strategy="statevector", seed=1)
+    rate, expected = _accepted(
+        circuit.compile_detector_sampler(strategy="statevector", seed=1), shots, mask
     )
-    shared_rate, got = accepted(
+    shared_rate, got = _accepted(
         circuit.compile_detector_sampler(
             strategy="statevector", seed=2, trajectory_sharing=True
-        )
+        ),
+        shots,
+        mask,
     )
     sigma = np.sqrt(rate * (1 - rate) * 2 / shots)
     assert abs(shared_rate - rate) <= 5 * sigma + 3 / shots
