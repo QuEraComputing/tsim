@@ -2,7 +2,8 @@
 
 Run from the repository root:
 
-    uv run python scripts/trajectory/sharing_stats.py [--lanes N ...] [NAME ...]
+    uv run python scripts/trajectory/sharing_stats.py [--lanes N ...] [--all-shots]
+        [--mode detectors|measurements] [--noiseless] [NAME ...]
 
 For every workload this samples f-bits, keeps the shots that survive
 postselection on every direct detector (as the benchmark does, so these are the
@@ -20,6 +21,12 @@ action by action on ``N`` lanes. After every action it counts
 Array work is counted as one unit per lane for every ``ROTATE*`` and
 ``MEASURE*`` action (dormant measurements and records touch no amplitudes).
 The shared executor's work is the number of histories after each such action.
+
+``--mode measurements`` samples raw measurement records instead of detectors
+(there are no detectors to postselect on, so every shot is kept), and
+``--noiseless`` zeroes every f-bit, which leaves only the branching that the
+quantum randomness causes. For several statevector components the widest is
+profiled.
 """
 
 import argparse
@@ -199,35 +206,58 @@ def main() -> None:
     parser.add_argument(
         "--all-shots", action="store_true", help="skip the postselection filter"
     )
+    parser.add_argument(
+        "--mode",
+        choices=["detectors", "measurements"],
+        default="detectors",
+        help="sample detectors (the benchmark) or raw measurement records",
+    )
+    parser.add_argument(
+        "--noiseless", action="store_true", help="zero every f-bit (no noise)"
+    )
     args = parser.parse_args()
+    detectors = args.mode == "detectors"
     results = []
     for name in args.names:
         file = WORKLOADS[name][0]
         circuit = tsim.Circuit.from_file(str(CIRCUITS / file))
-        sampler = circuit.compile_detector_sampler(strategy="statevector", seed=0)
-        component = max(
-            (
-                c
-                for c in sampler._program.components
-                if isinstance(c, StatevectorComponent)
-            ),
-            key=lambda c: c.width,
+        compile_ = (
+            circuit.compile_detector_sampler if detectors else circuit.compile_sampler
         )
+        sampler = compile_(strategy="statevector", seed=0)
+        components = [
+            c
+            for c in sampler._program.components
+            if isinstance(c, StatevectorComponent)
+        ]
+        component = max(components, key=lambda c: c.width)
         for lanes in args.lanes:
             if lanes * 2**component.width > args.max_amplitudes:
                 continue
             f_params, survival = survivor_f_params(
-                sampler, circuit.num_detectors, lanes, postselect=not args.all_shots
+                sampler,
+                circuit.num_detectors,
+                lanes,
+                postselect=detectors and not args.all_shots,
             )
             f_bits = f_params[:, np.asarray(component.f_selection)].astype(bool)
+            if args.noiseless:
+                f_bits[:] = False
             postselected = np.array(
-                [index < circuit.num_detectors for index in component.output_indices]
+                [
+                    detectors and index < circuit.num_detectors
+                    for index in component.output_indices
+                ]
             )
             start = time.perf_counter()
             result = profile_component(
                 component, f_bits, seed=lanes, postselected=postselected
             )
             summary = summarize(name, result)
+            summary["mode"] = args.mode
+            summary["components"] = [c.width for c in components]
+            summary["outputs"] = component.num_outputs
+            summary["actions"] = component.num_actions
             summary["survival"] = survival
             summary["seconds"] = round(time.perf_counter() - start, 1)
             results.append({"summary": summary, "rows": result["rows"]})

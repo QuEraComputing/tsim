@@ -5,33 +5,47 @@
 - **Branch:** `trajectory-sharing`, from `statevector-sampler` at `883b125`
 - **Circuits:** the five clifft-bench workloads of `scripts/statevector/benchmark.py`,
   postselected on every detector as clifft-bench does
+- **Code:** `src/tsim/statevector/shared.py` (the prototype, behind
+  `trajectory_sharing=True`), `scripts/trajectory/` (measurements)
 
-The question: shots whose quantum trajectories agree could share one state
-vector. How much sharing do the benchmark circuits allow, does it fit an executor
-that needs static array shapes, and what does it gain end to end?
+Shots whose quantum trajectories agree can share one state vector. The questions:
+
+1. How much sharing do the benchmark circuits allow?
+2. Does it fit an executor that needs static array shapes (JAX)?
+3. What does it gain end to end?
+4. Does Tsim's way of posing the problem (ZX reduction, an extracted circuit that
+   measures the detectors directly) help?
 
 ## Summary
 
-- **There is a lot of sharing.** In the components of all five circuits the only
-  per-shot input to the amplitudes is the sign of a rotation, and that sign
-  depends on noise bits alone (one rotation in distillation also depends on an
-  outcome). Postselection on the direct detectors removes almost every shot whose
-  noise reaches such a sign, so the surviving shots share a handful of
-  trajectories: one lane per shot does 700× to 12,000× more array work than
-  needed. coherent_d5_r5 is the exception (3×): coherent noise lets many outcomes
-  occasionally flip, so histories branch. Dropping a branch as soon as it fires a
+- **There is a lot of sharing.** In all five circuits the only per-shot input to
+  the amplitudes is the sign of a rotation, and that sign depends on noise bits
+  alone (one rotation in distillation also depends on an outcome). Once the
+  classical detectors are postselected, the surviving shots share a handful of
+  trajectories: one state vector per shot does 700× to 12,000× more array work
+  than needed. coherent_d5_r5 is the exception (3×), because coherent noise lets
+  many outcomes occasionally flip; dropping a branch as soon as it fires a
   postselected detector collapses it to 5 surviving histories (617× less work).
 - **It works with static shapes.** The prototype keeps lanes in fixed-capacity
   tables with a traced count, splits them with prefix sums and scatters, exits
   the loop when a table is full and lets the host double it and resume, and runs
   wide components in segments so the host can shrink the table to the live
   lanes. The costs are compilations (one per table capacity) and host syncs.
-- **End to end:** 78× on coherent_d5_r5 (890 → 69,019 shots/s, now 2.7× Clifft
-  0.11 on all threads), 3.2× on coherent_d3_r3, 2.2× on cultivation_d3, 2.0× on
+- **End to end:** 78× on coherent_d5_r5 (890 → 69,019 shots/s, 2.7× Clifft 0.11
+  on all threads), 3.2× on coherent_d3_r3, 2.2× on cultivation_d3, 2.0× on
   cultivation_d5, no change on distillation. On the small circuits the shared
   executor itself is 5× to 12× faster than one lane per shot, but the classical
   per-shot work (noise sampling, direct detectors, survivor buffering) now
   dominates the call.
+- **Tsim's representation helps a lot, mostly through the classical/quantum
+  split.** Postselecting on the classical (direct) detectors before any quantum
+  simulation multiplies the sharing by 34× to 195× on the cultivation circuits
+  and removes all noise-driven branching on coherent_d3_r3. The reduction also
+  turns random measurement outcomes into classical bits, so noiseless
+  cultivation has 2 trajectories in 16,384 shots. Sampling detectors rather than
+  raw records matters mostly because it makes that postselection possible; by
+  itself it changes little (2× on coherent_d3_r3). Nothing in the representation
+  removes genuinely quantum branching (coherent_d5_r5); only pruning does.
 - **Correctness:** an independent review confirmed the exactness argument and
   found four problems (reference-sample pruning, float32 resolution of rare
   outcomes, resume determinism, leftover values in pruned rows), all fixed and
@@ -39,12 +53,14 @@ that needs static array shapes, and what does it gain end to end?
 
 ## 1. How much sharing the circuits allow
 
-`sharing_stats.py` runs the existing executor action by action on shots that
-survive the direct detectors and counts, after every array action, the distinct
-histories (rotation signs and active outcomes so far: the lanes a splitting
-executor needs) and the distinct amplitude arrays. A work ratio is the array work
-of one lane per shot divided by the work of one lane per history (or state);
-"+ pruning" drops a lane once one of its postselected records is 1.
+`sharing_stats.py` runs the existing executor action by action and counts, after
+every array action, the distinct histories (rotation signs and active outcomes
+so far: the lanes a splitting executor needs) and the distinct amplitude arrays.
+A work ratio is the array work of one lane per shot divided by the work of one
+lane per history (or state); "+ pruning" drops a lane once one of its
+postselected records is 1.
+
+Shots that survive postselection on every direct detector (the benchmark):
 
 | circuit | lanes | final histories | final states | largest final lane | work ratio, histories | work ratio, states | work ratio, histories + pruning |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -58,7 +74,7 @@ The ratios grow with the number of shots (coherent_d3_r3: 103 at 4,096, 264 at
 16,384, 724 at 65,536), since the number of distinct histories grows much slower
 than the number of shots.
 
-Without postselection (all shots, as a decoder-based workflow would sample):
+All shots, as a decoder-based workflow would sample them:
 
 | circuit | lanes | final histories | final states | work ratio, histories | work ratio, states |
 |---|---:|---:|---:|---:|---:|
@@ -68,11 +84,120 @@ Without postselection (all shots, as a decoder-based workflow would sample):
 | cultivation_d5 | 65,536 | 17,055 | 4 | 10 | 35 |
 | coherent_d5_r5 | 16,384 | 14,837 | 14,823 | 3 | 3 |
 
-Histories now branch on noise too, but cultivation_d5's 17,055 histories end in 4
+Histories now branch on noise, but cultivation_d5's 17,055 histories end in 4
 distinct states: there, merging lanes that reach the same state would recover
 most of the sharing.
 
-## 2. Where the time goes with one lane per shot
+## 2. Does Tsim's representation help?
+
+Tsim does not simulate the circuit as written. It reduces the noisy circuit's ZX
+diagram, moves every output that equals a single error-basis bit to a classical
+("direct") path, rewrites the noise in a basis found by Gaussian elimination,
+and extracts a circuit for each remaining connected component whose outputs are
+the detectors and observables themselves. A frame simulator such as Clifft
+keeps the whole circuit and computes detectors from measurement records.
+
+### What the representation hands the executor
+
+`structure.py`, for detector sampling (the benchmark) and for raw measurement
+records:
+
+| circuit | sampling | raw error bits | basis bits | component f-bits | f-bits in rotation signs | key rank | direct / all outputs | quantum width | active / dormant measurements |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| distillation | detectors | 792 | 46 | 6 | 0 | 0 | 40 / 45 | 3 | 5 / 0 |
+| distillation | records | 792 | 46 | 46 | 0 | 0 | 0 / 85 | 3 | 5 / 40 |
+| cultivation_d3 | detectors | 1,157 | 45 | 38 | 17 | 17 | 16 / 21 | 5 | 6 / 1 |
+| cultivation_d3 | records | 1,157 | 45 | 33 | 17 | 17 | 15 / 21 | 5 | 6 / 1 |
+| coherent_d3_r3 | detectors | 74 | 48 | 31 | 19 | 19 | 17 / 25 | 5 | 12 / 4 |
+| coherent_d3_r3 | records | 74 | 52 | 40 | 23 | 19 | 12 / 33 | 4 | 8 / 8 |
+| cultivation_d5 | detectors | 7,871 | 194 | 173 | 75 | 57 | 93 / 108 | 6 | 16 / 2 |
+| cultivation_d5 | records | 7,871 | 194 | 118 | 57 | 57 | 85 / 112 | 6 | 16 / 2 |
+| coherent_d5_r5 | detectors | 314 | 214 | 141 | 81 | 81 | 73 / 121 | 12 | 60 / 12 |
+| coherent_d5_r5 | records | 314 | 226 | 166 | 92 | 81 | 60 / 145 | 15 | 48 / 24 |
+
+"key rank" is the rank of the rotation signs' f-parts: the grouping key without
+pruning. In detector mode, the postselected detectors sit on average at 57%
+(cultivation_d5) to 81% (cultivation_d3) of the way through the tape, and 12% to
+43% of them in its first half.
+
+### What each piece is worth
+
+Work ratio at 16,384 shots (coherent_d5_r5 records: 2,048 shots at width 15):
+
+| circuit | records, all shots | detectors, all shots | detectors, postselected | + pruning | detectors, noiseless |
+|---|---:|---:|---:|---:|---:|
+| distillation | 2,926 | 2,926 | 2,926 | 2,926 | 2,926 |
+| cultivation_d3 | 110 | 112 | 3,773 | 7,447 | 13,336 |
+| coherent_d3_r3 | 75 | 149 | 264 | 1,718 | 264 |
+| cultivation_d5 | 7.3 | 7.4 | 1,442 | 3,059 | 10,889 |
+| coherent_d5_r5 | 1.5 | 3.2 | 3.4 | 617 | 3.4 |
+
+Without noise, records branch as little as detectors on the cultivation circuits
+(2 histories in 16,384 shots in both modes) and more on the coherent ones
+(coherent_d3_r3: 1,209 against 399).
+
+1. **Classical detectors decided before any quantum simulation: the largest
+   effect.** The reduction separates every detector that depends on noise alone,
+   wherever it sits in the circuit, and the sampler evaluates it from the noise
+   bits first. Most noise that would flip a rotation sign also fires such a
+   detector, so postselection removes the shots that would split trajectories
+   before they start: 34× more sharing on cultivation_d3, 195× on cultivation_d5,
+   and on coherent_d3_r3 the postselected ratio equals the noiseless one (all
+   noise-driven branching is gone). It also removes work outright: only 8%
+   (distillation) to 96% (coherent_d3_r3) of the shots reach the quantum stage.
+2. **Random outcomes become classical bits.** In Tsim a uniformly random
+   measurement outcome is an error-basis bit with probability ½ on the direct
+   path, even when sampling raw records (cultivation_d5: 85 of 112 records are
+   direct). So gauge randomness never becomes a branch point: noiseless
+   cultivation has 2 trajectories whichever outputs are sampled.
+3. **Measuring detectors directly matters mainly through point 1.** Records
+   cannot be postselected before simulating, so that factor is lost entirely.
+   Without postselection, detectors share as well as records on the cultivation
+   circuits and 2× better on coherent_d3_r3 (3× fewer final histories without
+   noise), likely because a detector is one parity of records whose individual
+   outcomes branch more. The extracted
+   tape writes each detector at its own measurement, which is what makes pruning
+   possible, but the detectors come late in the tapes, so a scheduler that pulls
+   postselected detectors earlier would prune earlier.
+4. **A small linear key.** Noise reaches the amplitudes only as parities of a
+   few error-basis bits: 7,871 raw error bits become a 57-bit key on
+   cultivation_d5, 314 become 81 on coherent_d5_r5 (71 and 129 bits once the
+   postselected signs join for pruning). Shots group by those parities, so many
+   raw error patterns share a lane.
+5. **Narrow lanes.** Reduction and scheduling give width 6 against Clifft's 10
+   on cultivation_d5 (16× fewer amplitudes per lane) and 12 against 13 on
+   coherent_d5_r5, where hundreds of lanes remain alive.
+6. **What it cannot remove.** coherent_d5_r5 branches as much without noise as
+   with it (14,652 histories in 16,384 shots): coherent rotations make the
+   detector outcomes themselves random. Only pruning helps there.
+
+### Compared with a frame simulator
+
+This part is structural; I did not implement sharing in Clifft. Clifft's
+frame-factored state has the same core property: noise acts through the Pauli
+frame and reaches the active state only by flipping a later rotation's sign, so
+grouping shots by the frame's effect on rotation signs would work there too.
+Three things are harder without Tsim's representation:
+- **Postselection happens in circuit order.** Clifft aborts a shot at its first
+  failing postselected detector while simulating, so a noisy shot splits a
+  trajectory until that detector comes; Tsim filters it out before the
+  trajectory starts.
+- **Gauge randomness enters the frame per shot.** A random dormant outcome
+  leaves the active state alone but enters the frame, so it splits trajectories
+  wherever it reaches a later rotation sign, unless the compiler proves it does
+  not; the reduction has removed it.
+- **Lanes are wider.** Each lane would carry 2^10 rather than 2^6 amplitudes on
+  cultivation_d5.
+
+### Verdict
+
+Yes, significantly: the classical/quantum split of the ZX reduction is what
+turns "noisy shots" into "a handful of trajectories" (1,442× instead of 7.4× on
+cultivation_d5 at 16,384 shots), and the reduction keeps quantum branching at its
+intrinsic minimum. Sampling detectors rather than records is necessary for that
+postselection but adds little by itself.
+
+## 3. Where the time goes with one lane per shot
 
 `breakdown.py`, per benchmark call (shots per call and batch size of the
 statevector benchmark):
@@ -91,7 +216,7 @@ faster too. "call" exceeds the sum of the stages by up to 0.32 s (cultivation_d3
 that remainder is the postselection path itself, which buffers the surviving
 shots as a Python list of rows before stacking them into batches.
 
-## 3. The prototype
+## 4. The prototype
 
 `src/tsim/statevector/shared.py`, enabled with
 `compile_detector_sampler(strategy="statevector", trajectory_sharing=True)` (or
@@ -171,6 +296,8 @@ resizing and the segmented path are correct. It found four problems, now fixed:
 - rows discarded by a component detector carried leftover values in later
   columns (now False).
 
+Tests:
+
 - `test/unit/statevector/test_shared.py` (41 tests): samples match the exact plan
   distributions for one noise pattern per batch, for mixed patterns in one batch,
   and with pruning (with and without reference bits); pruned rows are False after
@@ -185,7 +312,7 @@ resizing and the segmented path are correct. It found four problems, now fixed:
 - Every acceptance in the benchmark below agrees with Clifft 0.10.0 within 5
   standard errors.
 
-## 4. Results
+## 5. Results
 
 ### The shared executor alone
 
@@ -204,12 +331,12 @@ loop, its host checks and resizes.
 The array work has nearly gone on the small circuits: what remains is fixed
 per-shot cost (key bits, sort, reconstruction) and the lane loop over a table
 sized for the initial groups. On coherent_d5_r5 the lane loop still dominates
-(section 5).
+(section 6).
 
 ### End to end
 
-`benchmark_sharing.py`, 10 s per row, postselection on every detector, same seed for
-every sampler. "shared" rows use the benchmark's batch size and a batch of
+`benchmark_sharing.py`, 10 s per row, postselection on every detector, same seed
+for every sampler. "shared" rows use the benchmark's batch size and a batch of
 65,536; a shared batch needs no state vector per shot, so it can be large.
 
 | circuit | one lane per shot | shared | shared, batch 65,536 | best speedup | Clifft 0.11, 1 thread | Clifft 0.11, all threads |
@@ -230,7 +357,7 @@ call, JIT included) is 1.4 to 2.4 s with sharing on the small circuits and 5.6
 to 12.6 s on coherent_d5_r5, against 0.6 to 1.0 s and 19 s with one lane per
 shot.
 
-## 5. What limits the gains, and what would come next
+## 6. What limits the gains, and what would come next
 
 - **Small circuits are now limited by classical per-shot work.** A cultivation_d5
   call with sharing takes about 60 ms: noise sampling 37 ms
@@ -241,13 +368,15 @@ shot.
 - **Wide circuits are limited by the grouping key.** The key holds every key bit
   from the start, so noise that only flips a late postselected detector gets its
   own lane from action 0: coherent_d5_r5 starts with 83 (4,096 shots) to 398
-  (65,536 shots) groups and peaks at 160 to 815 live lanes, while one lane per
-  surviving history would average about 14 to 27. Splitting lazily, when a key
-  bit is first needed, would need per-shot outcome draws: handing the last n
+  (65,536 shots) groups and peaks at about 160 to 820 live lanes, while one lane
+  per surviving history would average about 14 to 27. Splitting lazily, when a
+  key bit is first needed, would need per-shot outcome draws: handing the last n
   shots of a range to one outcome is biased once a lane's shots differ in later
-  key bits. That per-shot work is cheap next to 4,096 amplitudes per lane, and the
-  statistics above suggest up to about 10× more on coherent_d5_r5; at W ≤ 6 it
-  would cost about as much as it saves.
+  key bits. That per-shot work is cheap next to 4,096 amplitudes per lane, and
+  the statistics above suggest up to about 10× more on coherent_d5_r5; at W ≤ 6
+  it would cost about as much as it saves.
+- **Earlier detectors.** Postselected detectors sit late in the tapes (section
+  2); scheduling them earlier would prune branches sooner.
 - **Without postselection, merge states.** Histories branch on noise, but few
   distinct states remain (cultivation_d5: 4). Hashing amplitudes to merge equal
   lanes would recover most of the sharing.
@@ -266,6 +395,10 @@ From the worktree root (with the main checkout's environment):
 
     uv run python scripts/trajectory/sharing_stats.py --lanes 4096 16384 65536 --max-amplitudes 67108864
     uv run python scripts/trajectory/sharing_stats.py --all-shots --lanes 4096 16384 65536 --max-amplitudes 67108864
+    uv run python scripts/trajectory/sharing_stats.py --mode measurements --lanes 2048 16384 --max-amplitudes 67108864
+    uv run python scripts/trajectory/sharing_stats.py --all-shots --noiseless --lanes 16384 --max-amplitudes 67108864
+    uv run python scripts/trajectory/sharing_stats.py --mode measurements --noiseless --lanes 2048 16384 --max-amplitudes 67108864
+    uv run python scripts/trajectory/structure.py
     uv run python scripts/trajectory/breakdown.py
     uv run python scripts/trajectory/shared_breakdown.py
     uv run python scripts/trajectory/benchmark_sharing.py --seconds 10
