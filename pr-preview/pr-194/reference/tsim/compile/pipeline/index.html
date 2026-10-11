@@ -28,7 +28,8 @@
 <span class=normal>120</span>
 <span class=normal>121</span>
 <span class=normal>122</span>
-<span class=normal>123</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>classify_direct</span><span class=p>(</span><span class=n>component</span><span class=p>:</span> <span class=n>Graph</span><span class=p>,</span> <span class=n>layout</span><span class=p>:</span> <span class=n>ParamLayout</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=nb>int</span><span class=p>,</span> <span class=nb>bool</span><span class=p>]</span> <span class=o>|</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>123</span>
+<span class=normal>124</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>classify_direct</span><span class=p>(</span><span class=n>component</span><span class=p>:</span> <span class=n>Graph</span><span class=p>,</span> <span class=n>layout</span><span class=p>:</span> <span class=n>ParamLayout</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=nb>int</span><span class=p>,</span> <span class=nb>bool</span><span class=p>]</span> <span class=o>|</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return ``(basis index, flip)`` if the component&#39;s only output is one basis bit.</span>
 
 <span class=sd>    That is the case when the component is a classical output boundary joined by</span>
@@ -53,9 +54,10 @@
     <span class=k>if</span> <span class=nb>len</span><span class=p>(</span><span class=n>phase</span><span class=o>.</span><span class=n>parameters</span><span class=p>)</span> <span class=o>!=</span> <span class=mi>1</span> <span class=ow>or</span> <span class=n>phase</span><span class=o>.</span><span class=n>value</span> <span class=ow>not</span> <span class=ow>in</span> <span class=p>(</span><span class=mi>0</span><span class=p>,</span> <span class=mi>1</span><span class=p>):</span>
         <span class=k>return</span> <span class=kc>None</span>
     <span class=p>(</span><span class=n>param</span><span class=p>,)</span> <span class=o>=</span> <span class=n>phase</span><span class=o>.</span><span class=n>parameters</span>
-    <span class=k>if</span> <span class=ow>not</span> <span class=n>layout</span><span class=o>.</span><span class=n>num_errors</span> <span class=o>&lt;=</span> <span class=n>param</span> <span class=o>&lt;</span> <span class=n>layout</span><span class=o>.</span><span class=n>num_errors</span> <span class=o>+</span> <span class=n>layout</span><span class=o>.</span><span class=n>num_basis</span><span class=p>:</span>
+    <span class=n>kind</span><span class=p>,</span> <span class=n>basis_index</span> <span class=o>=</span> <span class=n>layout</span><span class=o>.</span><span class=n>kind</span><span class=p>(</span><span class=n>param</span><span class=p>)</span>
+    <span class=k>if</span> <span class=n>kind</span> <span class=o>!=</span> <span class=s2>&quot;f&quot;</span><span class=p>:</span>
         <span class=k>return</span> <span class=kc>None</span>
-    <span class=k>return</span> <span class=n>layout</span><span class=o>.</span><span class=n>basis_index</span><span class=p>(</span><span class=n>param</span><span class=p>),</span> <span class=n>phase</span><span class=o>.</span><span class=n>value</span> <span class=o>==</span> <span class=mi>1</span>
+    <span class=k>return</span> <span class=n>basis_index</span><span class=p>,</span> <span class=n>phase</span><span class=o>.</span><span class=n>value</span> <span class=o>==</span> <span class=mi>1</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.compile.pipeline.compile_program class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">compile_program</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>compile_program</span><span class=p>(</span>
     <span class=n>prepared</span><span class=p>:</span> <span class=n>SamplingGraph</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
