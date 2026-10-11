@@ -1077,10 +1077,15 @@ def test_diagram_zx_with_zero_scale_draws(type: Literal["zx", "zx-meas", "zx-det
 
 
 @pytest.mark.parametrize("type", ["pyzx", "pyzx-dets", "pyzx-meas"])
-def test_pyzx_diagram_types_are_gone(type: str):
+def test_pyzx_diagram_types_are_deprecated_aliases(
+    type: Literal["pyzx", "pyzx-dets", "pyzx-meas"],
+):
     replacement = type.replace("pyzx", "zx")
-    with pytest.raises(ValueError, match=re.escape(f"use {replacement!r} instead")):
-        Circuit("H 0").diagram(type=type)  # type: ignore[arg-type]
+    with pytest.warns(
+        DeprecationWarning, match=re.escape(f"use {replacement!r} instead")
+    ):
+        html = Circuit("H 0\nM 0").diagram(type=type)
+    assert "renderZx" in html._repr_html_()
 
 
 def test_append():

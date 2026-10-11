@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
@@ -41,6 +42,12 @@ from tsim.utils.program_text import (
 )
 
 _PAULI_TARGET = {"X": stim.target_x, "Y": stim.target_y, "Z": stim.target_z}
+
+_DEPRECATED_DIAGRAM_TYPES: dict[str, Literal["zx", "zx-dets", "zx-meas"]] = {
+    "pyzx": "zx",
+    "pyzx-dets": "zx-dets",
+    "pyzx-meas": "zx-meas",
+}
 
 
 def _single_angle(name: str, arg: float | Iterable[float] | None) -> float:
@@ -662,6 +669,9 @@ class Circuit:
             "zx",
             "zx-dets",
             "zx-meas",
+            "pyzx",
+            "pyzx-dets",
+            "pyzx-meas",
             "timeline-svg",
             "timeslice-svg",
             "timeline-text",
@@ -684,6 +694,8 @@ class Circuit:
                     used to compute probabilities of detectors and observables.
                 "zx-meas": A zxparam D3 drawing of the reduced ZX graph that is
                     used to compute probabilities of measurements.
+                "pyzx", "pyzx-dets", "pyzx-meas": Deprecated aliases for
+                    "zx", "zx-dets" and "zx-meas".
                 "timeline-svg": An SVG image of the operations applied by
                     the circuit over time. Includes annotations showing the
                     measurement record index that each measurement writes
@@ -740,6 +752,14 @@ class Circuit:
             viewer instead of as raw text.
 
         """
+        if type in _DEPRECATED_DIAGRAM_TYPES:
+            replacement = _DEPRECATED_DIAGRAM_TYPES[type]
+            warnings.warn(
+                f"Diagram type {type!r} is deprecated; use {replacement!r} instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            type = replacement
         if type in [
             "timeline-svg",
             "timeslice-svg",
@@ -778,11 +798,6 @@ class Circuit:
             from stim_timeline_text import render_timeline_text
 
             return render_timeline_text(str(self._stim_circ))
-        elif type in ("pyzx", "pyzx-dets", "pyzx-meas"):
-            replacement = type.replace("pyzx", "zx")
-            raise ValueError(
-                f"Diagram type {type!r} was removed; use {replacement!r} instead."
-            )
         else:
             return self._stim_circ.diagram(type=type, **kwargs)  # pragma: no cover
 

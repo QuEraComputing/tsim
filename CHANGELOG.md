@@ -25,9 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The ZX diagram types are now `"zx"`, `"zx-dets"` and `"zx-meas"`. They return zxparam's HTML drawing object instead of a graph.
 - Internals renamed or moved: `tsim.utils.diagram.render_pyzx_d3` is now `render_zx_d3`; `classify_direct` moved from `tsim.core.graph` to `tsim.compile.pipeline`; `squash_graph` and `scale_horizontally` moved from `tsim.core.graph` to `tsim.utils.diagram`.
 
+### Deprecated
+- The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types. They still work as aliases for `"zx"`, `"zx-dets"` and `"zx-meas"` but emit a `DeprecationWarning`.
+
 ### Removed
 - `Circuit.to_matrix()` (compare `to_tensor()` with `U ⊗ Ū` instead).
-- The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types (they raise a `ValueError` naming their replacement).
 - The `pyzx-param` dependency.
 - Internals: the `track_classical_wires` argument of `parse_stim_circuit`, the `tsim.compile.stabrank` module, and `ConnectedComponent`, `connected_components`, `get_params` and `evaluate_graph` from `tsim.core.graph`.
 
