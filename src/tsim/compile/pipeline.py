@@ -118,9 +118,10 @@ def classify_direct(component: Graph, layout: ParamLayout) -> tuple[int, bool] |
     if len(phase.parameters) != 1 or phase.value not in (0, 1):
         return None
     (param,) = phase.parameters
-    if not layout.num_errors <= param < layout.num_errors + layout.num_basis:
+    kind, basis_index = layout.kind(param)
+    if kind != "f":
         return None
-    return layout.basis_index(param), phase.value == 1
+    return basis_index, phase.value == 1
 
 
 def _port(g: Graph, v: Vertex) -> int:

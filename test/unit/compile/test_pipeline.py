@@ -103,7 +103,7 @@ def test_single_error_detectors_take_the_direct_path():
     assert not np.asarray(program.direct_flips).any()
 
 
-LAYOUT = ParamLayout(num_errors=3, num_basis=2, num_outputs=1)
+LAYOUT = ParamLayout(num_errors=3)
 
 
 def _direct_candidate(
@@ -123,9 +123,10 @@ def _direct_candidate(
 
 
 @pytest.mark.parametrize("value, flip", [(0, False), (1, True)])
-def test_classify_direct_reads_the_basis_index_and_flip(value, flip):
-    component = _direct_candidate(value=value)
-    assert classify_direct(component, LAYOUT) == (1, flip)
+@pytest.mark.parametrize("basis_index", [1, 5])
+def test_classify_direct_reads_the_basis_index_and_flip(value, flip, basis_index):
+    component = _direct_candidate(value=value, params=(LAYOUT.basis(basis_index),))
+    assert classify_direct(component, LAYOUT) == (basis_index, flip)
 
 
 @pytest.mark.parametrize(

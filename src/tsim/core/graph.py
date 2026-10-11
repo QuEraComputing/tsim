@@ -155,7 +155,7 @@ def transform_error_basis(g: Graph, num_errors: int) -> tuple[Graph, np.ndarray]
         basis bit ``j``.
 
     """
-    layout = ParamLayout(num_errors=num_errors)
+    layout = ParamLayout(num_errors)
     output_spiders: list[Vertex] = []
     for b in g.outputs():
         nbrs = list(g.neighbors(b))
@@ -197,16 +197,11 @@ def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> SamplingGraph:
     zxparam.full_reduce(graph)
     graph, error_transform = transform_error_basis(graph, built.num_error_bits)
     graph.scalar = Scalar.one()
-    layout = ParamLayout(
-        num_errors=built.num_error_bits,
-        num_basis=error_transform.shape[0],
-        num_outputs=len(graph.outputs()),
-    )
     return SamplingGraph(
         graph=graph,
         error_transform=error_transform,
         channel_probs=built.channel_probs,
-        num_outputs=layout.num_outputs,
+        num_outputs=len(graph.outputs()),
         num_detectors=len(built.detectors),
-        layout=layout,
+        layout=ParamLayout(built.num_error_bits),
     )

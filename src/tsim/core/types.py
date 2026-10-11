@@ -44,7 +44,7 @@ class SamplingGraph:
         channel_probs: List of probability arrays for error channels.
         num_outputs: Number of output vertices (measurements or detectors).
         num_detectors: Number of detector vertices.
-        layout: Parameter ID ranges: errors, basis bits, outputs.
+        layout: Parameter IDs of the error, error-basis and output bits.
 
     """
 

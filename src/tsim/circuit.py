@@ -782,18 +782,14 @@ class Circuit:
             built = parse_stim_circuit(self._stim_circ)
             g = build_sampling_graph(built, sample_detectors=type == "zx-dets")
             zx.full_reduce(g)
-            g, error_transform = transform_error_basis(g, built.num_error_bits)
+            g, _ = transform_error_basis(g, built.num_error_bits)
             g.to_rg()
             squash_graph(g)
             scale = kwargs.pop("scale_horizontally", None)
             if scale:
                 scale_horizontally(g, scale)
-            layout = ParamLayout(
-                num_errors=built.num_error_bits,
-                num_basis=error_transform.shape[0],
-                num_outputs=len(g.outputs()),
-            )
-            return zx.draw(g, param_names=layout.names(), **kwargs)
+            names = ParamLayout(built.num_error_bits).names(g.parameters())
+            return zx.draw(g, param_names=names, **kwargs)
         elif type == "timeline-text":
             from stim_timeline_text import render_timeline_text
 
