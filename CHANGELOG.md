@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `stim-timeline-text` package. (#171)
 
 ### Changed
-- Tsim now uses zxparam instead of pyzxparam. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zxparam.
+- Tsim now uses zxparam instead of pyzx-param. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zxparam.
 - `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`.
 - In `Circuit.get_graph()` (and the `"zx"` diagram), every detector and observable has a classical output boundary, with ports after the qubit outputs, so the graph's tensor is the circuit's channel together with the detector and observable bits.
 - `Circuit.to_tensor()` returns the doubled tensor (the circuit's channel, `U ⊗ Ū` for unitaries), with error parameters set to 0 unless bound.
