@@ -58,14 +58,15 @@ def breakdown(name: str, batch_size: int | None) -> str:
         [index < circuit.num_detectors for index in component.output_indices]
     )
     layout = shared.sharing_layout(component, postselected)
+    sharing = shared.Sharing(layout)
     key = jax.random.key(0)
 
     per_lane, _ = best_of(
         lambda: sample_statevector_component(component, f_params, key)[0]
     )
-    shared.sample_shared_component(component, layout, f_params, key)
+    shared.sample_shared_component(component, sharing, f_params, key)
     total, (_, _, _, stats) = best_of(
-        lambda: shared.sample_shared_component(component, layout, f_params, key)
+        lambda: shared.sample_shared_component(component, sharing, f_params, key)
     )
 
     f_bits = f_params[:, component.f_selection].astype(jnp.bool_)
@@ -85,7 +86,6 @@ def breakdown(name: str, batch_size: int | None) -> str:
         jnp.asarray(np.resize(count, capacity)),
         jnp.asarray(min(len(start), capacity), dtype=jnp.int32),
         capacity=capacity,
-        dead_capacity=stats["dead_capacity"],
     )
     device_order = jnp.asarray(order)
     rebuilding, _ = best_of(

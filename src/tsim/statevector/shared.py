@@ -320,14 +320,21 @@ def _rare_drawn(key: Array, count: Array, q: Array) -> Array:
     hit = jax.vmap(lambda k, p: execute.choose_outcome(p[None], once, k)[0])(
         keys[:, 0], p_any
     )
-    uniform = jax.vmap(lambda k: jax.random.uniform(k, dtype=q.dtype))(keys[:, 1])
-    first = jnp.ceil(
-        jnp.log1p(-uniform * p_any) / jnp.where(log_keep < 0, log_keep, -1)
+
+    def after_first_hit() -> Array:
+        uniform = jax.vmap(lambda k: jax.random.uniform(k, dtype=q.dtype))(keys[:, 1])
+        first = jnp.ceil(
+            jnp.log1p(-uniform * p_any) / jnp.where(log_keep < 0, log_keep, -1)
+        )
+        first = jnp.clip(first, 1, jnp.maximum(trials, 1))
+        rest = jax.vmap(jax.random.binomial)(keys[:, 2], trials - first, q)
+        return jnp.where(hit, 1 + jnp.round(rest), 0).astype(jnp.int32)
+
+    # NOTE: rare outcomes rarely happen, so most actions skip the binomials.
+    rare = jax.lax.cond(
+        jnp.any(hit), after_first_hit, lambda: jnp.zeros(count.shape, jnp.int32)
     )
-    first = jnp.clip(first, 1, jnp.maximum(trials, 1))
-    rest = jax.vmap(jax.random.binomial)(keys[:, 2], trials - first, q)
-    rare = jnp.where(hit, 1 + jnp.round(rest), 0)
-    return jnp.clip(rare.astype(jnp.int32), 0, count)
+    return jnp.clip(rare, 0, count)
 
 
 def _ones_drawn(key: Array, count: Array, weight_0: Array, weight_1: Array) -> Array:
@@ -564,9 +571,16 @@ def reconstruct(
     pruned_at = jnp.concatenate(
         [jnp.full(capacity, component.num_actions, jnp.int32), lanes.dead_action]
     )
-    by_start = jnp.argsort(start)
+    # The ranges partition the positions, so each position's entry is the one
+    # starting at the latest range start at or before it.
     position = jnp.arange(num_shots)
-    entry = by_start[jnp.searchsorted(start[by_start], position, side="right") - 1]
+    starting = (
+        jnp.full(num_shots, -1, jnp.int32)
+        .at[start]
+        .set(jnp.arange(start.shape[0], dtype=jnp.int32), mode="drop")
+    )
+    latest_start = jax.lax.cummax(jnp.where(starting >= 0, position, -1))
+    entry = starting[latest_start]
     coins = jax.random.bits(key, (num_shots, component.num_words), dtype=jnp.uint32)
     shot_symbols = (
         f_packed[order]

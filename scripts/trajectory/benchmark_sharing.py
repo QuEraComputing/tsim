@@ -2,7 +2,7 @@
 
 Run from the repository root:
 
-    uv run python scripts/trajectory/benchmark.py [--seconds S] [NAME ...]
+    uv run python scripts/trajectory/benchmark_sharing.py [--seconds S] [NAME ...]
 
 Same counting as ``scripts/statevector/benchmark.py`` (postselection on every
 detector, acceptance checked against Clifft 0.10.0 within 5 standard errors,
