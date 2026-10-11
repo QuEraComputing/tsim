@@ -2,7 +2,7 @@ import dataclasses
 from fractions import Fraction
 
 import pytest
-from zx_param import Phase
+from zxparam import Phase
 
 from tsim.core.params import ParamLayout
 
@@ -29,7 +29,7 @@ def test_names_cover_every_id():
     assert 5 not in names and -1 not in names
 
 
-def test_names_drive_zx_param_formatting():
+def test_names_drive_zxparam_formatting():
     names = ParamLayout(num_errors=2, num_basis=1).names()
     assert Phase(Fraction(0), frozenset({1, 2})).format(names) == "(e1⊕f0)π"
 

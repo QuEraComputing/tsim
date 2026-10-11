@@ -11,7 +11,7 @@ from test.helpers.tensors import channel, doubled, doubled_state
 
 import numpy as np
 import pytest
-from zx_param import Domain, VertexType
+from zxparam import Domain, VertexType
 
 from tsim.core import instructions
 from tsim.core.graph import circuit_graph

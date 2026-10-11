@@ -2,7 +2,7 @@ from fractions import Fraction
 from test.helpers.tensors import channel, doubled, doubled_state
 
 import numpy as np
-from zx_param import Domain, EdgeType, Graph, Scalar, VertexType
+from zxparam import Domain, EdgeType, Graph, Scalar, VertexType
 
 H = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
 ZERO = np.array([1, 0], dtype=complex)
@@ -18,7 +18,7 @@ def _wire(g: Graph, qubit: int, edge_type: EdgeType) -> None:
     g.add_edge(i, o, edge_type)
 
 
-def test_doubled_matches_zx_param_for_a_hadamard_wire():
+def test_doubled_matches_zxparam_for_a_hadamard_wire():
     g = Graph()
     _wire(g, 0, EdgeType.HADAMARD)
     np.testing.assert_allclose(g.to_tensor(), doubled(H), atol=1e-12)

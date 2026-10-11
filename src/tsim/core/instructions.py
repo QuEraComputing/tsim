@@ -7,7 +7,7 @@ from fractions import Fraction
 from typing import Callable, Literal
 
 import numpy as np
-from zx_param import Domain, EdgeType, Graph, Phase, Scalar, Vertex, VertexType
+from zxparam import Domain, EdgeType, Graph, Phase, Scalar, Vertex, VertexType
 
 from tsim.noise.channels import (
     correlated_error_probs,

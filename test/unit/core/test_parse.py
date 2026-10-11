@@ -5,7 +5,7 @@ from unittest.mock import ANY, patch
 import pytest
 import stim
 from numpy.testing import assert_allclose
-from zx_param import VertexType
+from zxparam import VertexType
 
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 

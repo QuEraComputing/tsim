@@ -36,7 +36,7 @@ def plot_comparison(
     Args:
         stim_state: Probabilities from VecSampler.
         tsim_state: Probabilities from tsim.
-        exact_state: Probabilities from zx_param tensor contraction.
+        exact_state: Probabilities from zxparam tensor contraction.
         plot_difference: If True, plot differences relative to tsim_state.
         xlim: Optional x-axis limits for the plot.
     """
@@ -80,7 +80,7 @@ def plot_comparison(
         x_pos + bar_width,
         exact_values,
         bar_width,
-        label="zx_param tensor contraction",
+        label="zxparam tensor contraction",
         color="green",
         alpha=0.7,
         edgecolor="black",

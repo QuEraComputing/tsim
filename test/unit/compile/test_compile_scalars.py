@@ -1,4 +1,4 @@
-"""compile_scalars: compiled evaluation equals zx_param's Scalar.evaluate."""
+"""compile_scalars: compiled evaluation equals zxparam's Scalar.evaluate."""
 
 import itertools
 import random
@@ -7,9 +7,9 @@ from fractions import Fraction
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from zx_param import Dyadic, Scalar
-from zx_param.phase import Bit
-from zx_param.terms import NodeTerm, PhasePair, PhaseTerm, PiPair
+from zxparam import Dyadic, Scalar
+from zxparam.phase import Bit
+from zxparam.terms import NodeTerm, PhasePair, PhaseTerm, PiPair
 
 from tsim.compile.compile import compile_scalars
 from tsim.compile.evaluate import evaluate

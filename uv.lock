@@ -183,7 +183,7 @@ dependencies = [
     { name = "psutil" },
     { name = "stim" },
     { name = "stim-timeline-text" },
-    { name = "zx-param" },
+    { name = "zxparam" },
 ]
 
 [package.optional-dependencies]
@@ -223,7 +223,7 @@ dev = [
     { name = "tesseract-decoder" },
     { name = "tqdm" },
     { name = "vulture" },
-    { name = "zx-param", extra = ["quimb"] },
+    { name = "zxparam", extra = ["quimb"] },
 ]
 doc = [
     { name = "griffe-inherited-docstrings" },
@@ -251,7 +251,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=5.9.0" },
     { name = "stim", specifier = ">=1.0.0" },
     { name = "stim-timeline-text", specifier = ">=0.1.0" },
-    { name = "zx-param", editable = "../../../zx_param/.worktrees/tsim-support" },
+    { name = "zxparam", git = "https://github.com/QuEraComputing/zxparam?branch=main" },
 ]
 provides-extras = ["cuda12", "cuda13"]
 
@@ -280,7 +280,7 @@ dev = [
     { name = "tesseract-decoder", specifier = ">=0.1.1.dev20251113222502" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "vulture", specifier = ">=2.16" },
-    { name = "zx-param", extras = ["quimb"], editable = "../../../zx_param/.worktrees/tsim-support" },
+    { name = "zxparam", extras = ["quimb"], git = "https://github.com/QuEraComputing/zxparam?branch=main" },
 ]
 doc = [
     { name = "griffe-inherited-docstrings", specifier = ">=1.1.1" },
@@ -4846,9 +4846,9 @@ wheels = [
 ]
 
 [[package]]
-name = "zx-param"
+name = "zxparam"
 version = "0.1.0.dev0"
-source = { editable = "../../../zx_param/.worktrees/tsim-support" }
+source = { git = "https://github.com/QuEraComputing/zxparam?branch=main#decddb268b109beb21bdd5af4a54021c37e5e163" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -4858,52 +4858,4 @@ dependencies = [
 quimb = [
     { name = "quimb", version = "1.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "quimb", version = "1.15.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "quimb", marker = "extra == 'quimb'", specifier = ">=1.7" },
-]
-provides-extras = ["quimb"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "black", extras = ["jupyter"], specifier = ">=24.10.0" },
-    { name = "coverage", specifier = ">=7.6.4" },
-    { name = "deptry", specifier = ">=0.25.1" },
-    { name = "ipykernel", specifier = ">=6.1.0" },
-    { name = "ipython", specifier = ">=8.29.0" },
-    { name = "ipywidgets", specifier = ">=8.0.0" },
-    { name = "isort", specifier = ">=5.13.2" },
-    { name = "jupytext", specifier = ">=1.17.2" },
-    { name = "matplotlib", specifier = ">=3.10.7" },
-    { name = "mkdocs-jupyter", specifier = ">=0.25.0" },
-    { name = "mypy", specifier = ">=1.13.0" },
-    { name = "optuna", specifier = ">=4.8.0" },
-    { name = "pre-commit", specifier = ">=4.0.1" },
-    { name = "py-spy", specifier = ">=0.4.1" },
-    { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.388" },
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-timeout", specifier = ">=2.4.0" },
-    { name = "pyzx", specifier = ">=0.10.0" },
-    { name = "quimb", specifier = ">=1.7" },
-    { name = "radon", specifier = ">=6.0.1" },
-    { name = "ruff", specifier = ">=0.7.3" },
-    { name = "rust-just", specifier = ">=1.36.0" },
-    { name = "tqdm", specifier = ">=4.67.3" },
-    { name = "vulture", specifier = ">=2.16" },
-]
-doc = [
-    { name = "griffe-inherited-docstrings", specifier = ">=1.1.1" },
-    { name = "griffe-kirin", specifier = ">=0.1.0" },
-    { name = "jupytext", specifier = ">=1.17.2" },
-    { name = "mike", specifier = ">=2.1.3" },
-    { name = "mkdocs", specifier = ">=1.6.1" },
-    { name = "mkdocs-gen-files", specifier = ">=0.5.0" },
-    { name = "mkdocs-jupyter", specifier = ">=0.25.0" },
-    { name = "mkdocs-literate-nav", specifier = ">=0.6.1" },
-    { name = "mkdocs-material", specifier = ">=9.5.44" },
-    { name = "mkdocs-minify-plugin", specifier = ">=0.8.0" },
-    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.27.0" },
 ]

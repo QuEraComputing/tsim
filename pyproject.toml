@@ -42,7 +42,7 @@ dependencies = [
     "stim>=1.0.0",
     "stim-timeline-text>=0.1.0",
     "stim-timeline-text>=0.1.0",
-    "zx-param",
+    "zxparam",
 ]
 
 [project.urls]
@@ -84,7 +84,7 @@ dev = [
     "tqdm>=4.67.1",
     "vulture>=2.16",
     "radon>=6.0.1",
-    "zx-param[quimb]",
+    "zxparam[quimb]",
 ]
 doc = [
     "griffe-kirin>=0.1.0",
@@ -104,9 +104,7 @@ doc = [
 allow-direct-references = true
 
 [tool.uv.sources]
-# NOTE: switch to { path = "../zx_param", editable = true } once zx_param's
-# tsim-support branch is merged.
-zx-param = { path = "/Users/rafaelhaenel/Documents/quera/zx_param/.worktrees/tsim-support", editable = true }
+zxparam = { git = "https://github.com/QuEraComputing/zxparam", branch = "main" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tsim"]

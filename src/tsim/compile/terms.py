@@ -8,7 +8,7 @@ records, bundles the shared phase tables, and gives each family an ``evaluate``
 method that turns a batch of binary parameter values into an
 ``ExactScalarArray`` (or, for ``FloatTerms``, a complex array).
 
-Downstream, ``compile.py`` builds instances of these classes from ``zx_param``
+Downstream, ``compile.py`` builds instances of these classes from ``zxparam``
 scalars (``compile_scalars``), and ``evaluate.py`` orchestrates the products.
 """
 
@@ -111,7 +111,7 @@ class PhaseTerms(eqx.Module):
 class PiProducts(eqx.Module):
     """Product of ``(-1)^(ψ · φ)`` terms, with ψ and φ each a parameter parity.
 
-    Each side is encoded as a parameter bitmask (zx_param expands constant bits
+    Each side is encoded as a parameter bitmask (zxparam expands constant bits
     into other terms). Padded slots use ``0`` everywhere; a padded term
     contributes ``(-1)^0 = 1`` to the product.
 

@@ -9,9 +9,9 @@ from typing import Any, Iterable
 
 import numpy as np
 import stim
-import zx_param as zx
+import zxparam as zx
 from lxml import etree  # type: ignore
-from zx_param import Graph, Vertex
+from zxparam import Graph, Vertex
 
 from tsim.core.graph import circuit_graph
 from tsim.core.params import ParamLayout
@@ -487,14 +487,14 @@ def render_svg(
 
 
 def render_zx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> Any:
-    """Render a stim circuit's quantum/classical ZX graph with zx_param's D3 viewer.
+    """Render a stim circuit's quantum/classical ZX graph with zxparam's D3 viewer.
 
     Args:
         stim_circ: The stim circuit to render.
         kwargs: ``labels`` and ``scale_horizontally``, passed on to the drawing.
 
     Returns:
-        zx_param's D3 drawing object.
+        zxparam's D3 drawing object.
 
     """
     built = parse_stim_circuit(stim_circ)

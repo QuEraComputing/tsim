@@ -7,7 +7,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 import stim
-import zx_param
+import zxparam
 
 from tsim.circuit import Circuit
 
@@ -771,14 +771,14 @@ def test_stim_circuit_preserves_repeat_block_tags():
 def test_get_graph():
     """Test get_graph returns a ZX graph."""
     c = Circuit("H 0\nCNOT 0 1")
-    assert isinstance(c.get_graph(), zx_param.Graph)
+    assert isinstance(c.get_graph(), zxparam.Graph)
 
 
 def test_get_sampling_graph_measurements():
     """Test get_sampling_graph for measurements."""
     c = Circuit("H 0\nM 0")
     g = c.get_sampling_graph(sample_detectors=False)
-    assert isinstance(g, zx_param.Graph)
+    assert isinstance(g, zxparam.Graph)
     assert len(g.outputs()) == 1
 
 
@@ -786,7 +786,7 @@ def test_get_sampling_graph_detectors():
     """Test get_sampling_graph for detectors."""
     c = Circuit("H 0\nM 0\nDETECTOR rec[-1]")
     g = c.get_sampling_graph(sample_detectors=True)
-    assert isinstance(g, zx_param.Graph)
+    assert isinstance(g, zxparam.Graph)
     assert len(g.outputs()) == 1
 
 
@@ -968,52 +968,52 @@ def test_diagram_timeslice_svg():
 
 def _assert_drew_a_graph(mock_draw, result) -> None:
     mock_draw.assert_called_once()
-    assert isinstance(mock_draw.call_args.args[0], zx_param.Graph)
+    assert isinstance(mock_draw.call_args.args[0], zxparam.Graph)
     assert isinstance(mock_draw.call_args.kwargs["param_names"], Mapping)
     assert result is mock_draw.return_value
 
 
 def test_diagram_zx():
     c = Circuit("H 0\nCNOT 0 1")
-    with patch("zx_param.draw") as mock_draw:
+    with patch("zxparam.draw") as mock_draw:
         result = c.diagram(type="zx")
         _assert_drew_a_graph(mock_draw, result)
 
 
 def test_diagram_zx_draws_annotation_boundaries():
     c = Circuit("H 0\nM 0\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]")
-    with patch("zx_param.draw") as mock_draw:
+    with patch("zxparam.draw") as mock_draw:
         c.diagram(type="zx")
     g = mock_draw.call_args.args[0]
     classical = [
         v
         for v in g.vertices()
-        if g.vertex_type(v) == zx_param.VertexType.BOUNDARY
-        and g.vertex_domain(v) == zx_param.Domain.CLASSICAL
+        if g.vertex_type(v) == zxparam.VertexType.BOUNDARY
+        and g.vertex_domain(v) == zxparam.Domain.CLASSICAL
     ]
     assert len(classical) == 2
     for b in classical:
         (spider,) = g.neighbors(b)
-        assert g.vertex_type(spider) == zx_param.VertexType.X
+        assert g.vertex_type(spider) == zxparam.VertexType.X
 
 
 def test_diagram_zx_empty():
     c = Circuit()
-    with patch("zx_param.draw") as mock_draw:
+    with patch("zxparam.draw") as mock_draw:
         result = c.diagram(type="zx")
         _assert_drew_a_graph(mock_draw, result)
 
 
 def test_diagram_zx_meas():
     c = Circuit("H 0\nM 0")
-    with patch("zx_param.draw") as mock_draw:
+    with patch("zxparam.draw") as mock_draw:
         result = c.diagram(type="zx-meas")
         _assert_drew_a_graph(mock_draw, result)
 
 
 def test_diagram_zx_dets():
     c = Circuit("H 0\nM 0\nDETECTOR rec[-1]")
-    with patch("zx_param.draw") as mock_draw:
+    with patch("zxparam.draw") as mock_draw:
         result = c.diagram(type="zx-dets")
         _assert_drew_a_graph(mock_draw, result)
 
@@ -1027,13 +1027,13 @@ def test_reduced_diagrams_are_red_green_with_outputs_in_a_row(
         "DETECTOR rec[-1] rec[-2]\nDETECTOR rec[-2] rec[-3]\n"
         "OBSERVABLE_INCLUDE(0) rec[-1]"
     )
-    with patch("zx_param.draw") as mock_draw:
+    with patch("zxparam.draw") as mock_draw:
         c.diagram(type=type)
     g = mock_draw.call_args.args[0]
     outputs = g.outputs()
     assert len({g.row(v) for v in outputs}) == 1
     assert len({g.col(v) for v in outputs}) == len(outputs)
-    assert any(g.vertex_type(v) == zx_param.VertexType.X for v in g.vertices())
+    assert any(g.vertex_type(v) == zxparam.VertexType.X for v in g.vertices())
 
 
 @pytest.mark.parametrize(
@@ -1047,14 +1047,14 @@ def test_reduced_diagrams_keep_labels_on_their_outputs(
         "R 0 1\nH 0\nT 0\nCNOT 0 1\nX_ERROR(0.1) 1\nM 0 1\n"
         "DETECTOR rec[-1] rec[-2]\nOBSERVABLE_INCLUDE(0) rec[-1]"
     )
-    with patch("zx_param.draw") as mock_draw:
+    with patch("zxparam.draw") as mock_draw:
         c.diagram(type=type)
     g = mock_draw.call_args.args[0]
     assert [g.vertex_label(v) for v in g.outputs()] == labels
     assert all(
         g.vertex_label(v) is None
         for v in g.vertices()
-        if g.vertex_type(v) != zx_param.VertexType.BOUNDARY
+        if g.vertex_type(v) != zxparam.VertexType.BOUNDARY
     )
 
 
@@ -1064,7 +1064,7 @@ def test_diagram_zx_scale_horizontally(
     type: Literal["zx", "zx-meas", "zx-dets"], scale: float
 ):
     c = Circuit("H 0\nCNOT 0 1")
-    with patch("zx_param.draw") as mock_draw:
+    with patch("zxparam.draw") as mock_draw:
         result = c.diagram(type=type, scale_horizontally=scale)
         _assert_drew_a_graph(mock_draw, result)
     assert "scale_horizontally" not in mock_draw.call_args.kwargs

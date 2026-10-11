@@ -1,13 +1,13 @@
-"""Closing for sampling, the circuit graph and preparation on zx_param."""
+"""Closing for sampling, the circuit graph and preparation on zxparam."""
 
 from test.helpers.tensors import doubled
 
 import numpy as np
 import pytest
 import stim
-import zx_param
-from zx_param import Domain, VertexType
-from zx_param.phase import Bit
+import zxparam
+from zxparam import Domain, VertexType
+from zxparam.phase import Bit
 
 from tsim.circuit import Circuit
 from tsim.core.graph import build_sampling_graph, circuit_graph, prepare_graph
@@ -80,7 +80,7 @@ LABELLED = (
 )
 
 
-def _labels(g: zx_param.Graph) -> dict[str, VertexType]:
+def _labels(g: zxparam.Graph) -> dict[str, VertexType]:
     labels = {}
     for v in g.vertices():
         label = g.vertex_label(v)
@@ -89,7 +89,7 @@ def _labels(g: zx_param.Graph) -> dict[str, VertexType]:
     return labels
 
 
-def _output_labels(g: zx_param.Graph) -> list[str | None]:
+def _output_labels(g: zxparam.Graph) -> list[str | None]:
     return [g.vertex_label(v) for v in g.outputs()]
 
 
@@ -206,7 +206,7 @@ def test_prepare_graph_maps_errors_to_basis_ids():
     }
     assert params == {layout.basis(0)}
     np.testing.assert_array_equal(prepared.error_transform, [[1]])
-    assert isinstance(prepared.graph, zx_param.Graph)
+    assert isinstance(prepared.graph, zxparam.Graph)
 
 
 NORMALIZATION_CIRCUITS = {

@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import psutil
-from zx_param import DecompositionStrategy
+from zxparam import DecompositionStrategy
 
 from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import compile_program

@@ -1,4 +1,4 @@
-"""compile_program on zx_param: plugging normalization and the direct path."""
+"""compile_program on zxparam: plugging normalization and the direct path."""
 
 import itertools
 from fractions import Fraction
@@ -6,7 +6,7 @@ from fractions import Fraction
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from zx_param import Domain, EdgeType, Graph, Phase, VertexType
+from zxparam import Domain, EdgeType, Graph, Phase, VertexType
 
 from tsim.circuit import Circuit
 from tsim.compile.evaluate import evaluate

@@ -7,7 +7,7 @@ from typing import Literal
 
 import jax.numpy as jnp
 import numpy as np
-from zx_param import (
+from zxparam import (
     DecompositionStrategy,
     Domain,
     Dyadic,

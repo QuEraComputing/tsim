@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-import zx_param
-from zx_param import Domain, Graph, Phase, Scalar, Vertex, VertexType
+import zxparam
+from zxparam import Domain, Graph, Phase, Scalar, Vertex, VertexType
 
 from tsim.core.instructions import GraphRepresentation
 from tsim.core.params import ParamLayout
@@ -203,13 +203,13 @@ def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> SamplingGraph:
 
     1. Parse the stim circuit into a quantum/classical ZX graph.
     2. Close it into a sampling graph with classical outputs.
-    3. Reduce it with zx_param's ``full_reduce``.
+    3. Reduce it with zxparam's ``full_reduce``.
     4. Rewrite error bits as error-basis bits (Gaussian elimination).
     5. Reset the scalar (normalization is computed separately).
     """
     built = parse_stim_circuit(circuit._stim_circ)
     graph = build_sampling_graph(built, sample_detectors=sample_detectors)
-    zx_param.full_reduce(graph)
+    zxparam.full_reduce(graph)
     graph, error_transform = transform_error_basis(graph, built.num_error_bits)
     graph.scalar = Scalar.one()
     layout = ParamLayout(

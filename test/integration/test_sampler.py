@@ -7,8 +7,8 @@ import pymatching
 import pytest
 import stim
 from tqdm import tqdm
-from zx_param import DecompositionStrategy
-from zx_param.stabrank.selection import is_u3_spider
+from zxparam import DecompositionStrategy
+from zxparam.stabrank.selection import is_u3_spider
 
 import tsim.sampler as sampler_module
 from tsim.circuit import Circuit
@@ -458,7 +458,7 @@ def simulate_with_tsim(
 
 
 def simulate_with_zx_tensor(stim_circuit: stim.Circuit) -> np.ndarray:
-    """Compute state probabilities using zx_param tensor contraction.
+    """Compute state probabilities using zxparam tensor contraction.
 
     Args:
         stim_circuit: The stim circuit (with tags) to simulate. Should not include measurements.

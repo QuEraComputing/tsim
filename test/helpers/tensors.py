@@ -1,6 +1,6 @@
-"""Doubled tensors laid out like zx_param's ``Graph.to_tensor``.
+"""Doubled tensors laid out like zxparam's ``Graph.to_tensor``.
 
-zx_param orders open indices as outputs then inputs, by qubit, and gives each
+zxparam orders open indices as outputs then inputs, by qubit, and gives each
 quantum boundary two adjacent axes (the copy, then its conjugate):
 (o0, o0*, o1, o1*, ..., i0, i0*, i1, i1*, ...).
 """
@@ -9,7 +9,7 @@ import numpy as np
 
 
 def doubled(u: np.ndarray) -> np.ndarray:
-    """Return ``u ⊗ conj(u)`` for a 2ⁿ×2ⁿ matrix, in zx_param's axis order."""
+    """Return ``u ⊗ conj(u)`` for a 2ⁿ×2ⁿ matrix, in zxparam's axis order."""
     n = u.shape[0].bit_length() - 1
     t = np.multiply.outer(u.reshape([2] * 2 * n), u.conj().reshape([2] * 2 * n))
     outs = [a for q in range(n) for a in (q, 2 * n + q)]

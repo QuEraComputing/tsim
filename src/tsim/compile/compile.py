@@ -8,7 +8,7 @@ from fractions import Fraction
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
-from zx_param import Scalar
+from zxparam import Scalar
 
 from tsim.compile.terms import (
     FloatTerms,

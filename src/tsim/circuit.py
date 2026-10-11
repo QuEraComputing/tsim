@@ -14,9 +14,9 @@ from typing import (
 
 import numpy as np
 import stim
-import zx_param as zx
-from zx_param import DecompositionStrategy, Graph, VertexType
-from zx_param.phase import Bit
+import zxparam as zx
+from zxparam import DecompositionStrategy, Graph, VertexType
+from zxparam.phase import Bit
 
 if TYPE_CHECKING:
     from tsim.sampler import CompiledDetectorSampler, CompiledMeasurementSampler
@@ -678,11 +678,11 @@ class Circuit:
 
         Args:
             type: The type of diagram. Available types are:
-                "zx": A zx_param D3 drawing of the circuit's quantum/classical
+                "zx": A zxparam D3 drawing of the circuit's quantum/classical
                     ZX graph.
-                "zx-dets": A zx_param D3 drawing of the reduced ZX graph that is
+                "zx-dets": A zxparam D3 drawing of the reduced ZX graph that is
                     used to compute probabilities of detectors and observables.
-                "zx-meas": A zx_param D3 drawing of the reduced ZX graph that is
+                "zx-meas": A zxparam D3 drawing of the reduced ZX graph that is
                     used to compute probabilities of measurements.
                 "timeline-svg": An SVG image of the operations applied by
                     the circuit over time. Includes annotations showing the
@@ -789,11 +789,11 @@ class Circuit:
     def to_tensor(self, bindings: Mapping[int, int] | None = None) -> np.ndarray:
         """Return the circuit's doubled tensor (its channel, U ⊗ Ū for unitaries).
 
-        Axes follow zx_param's ``Graph.to_tensor``: outputs then inputs, by qubit,
+        Axes follow zxparam's ``Graph.to_tensor``: outputs then inputs, by qubit,
         each with a copy and a conjugate axis. Error bits default to 0 (the
         noiseless circuit); ``bindings`` maps error indices to bits and raises
         ``ValueError`` for any other key. Detector and observable annotations are
-        left out. Needs ``zx-param[quimb]``.
+        left out. Needs ``zxparam[quimb]``.
         """
         built = parse_stim_circuit(self._stim_circ)
         values: dict[int, Bit] = {j: 0 for j in range(built.num_error_bits)}

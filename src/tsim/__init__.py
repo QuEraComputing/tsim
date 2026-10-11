@@ -8,8 +8,8 @@ The package is organized as follows:
 
 - `circuit.py`: The thin `Circuit` wrapper around `stim.Circuit`.
 - `sampler.py`: Orchestrates compilation and evaluation to sample measurements or detectors.
-- `core/`: Builds quantum/classical ZX graphs with zx_param; parsing and data types.
-- `compile/`: Compiles zx_param's stabilizer-rank decompositions to JAX.
+- `core/`: Builds quantum/classical ZX graphs with zxparam; parsing and data types.
+- `compile/`: Compiles zxparam's stabilizer-rank decompositions to JAX.
 - `noise/`: Pauli noise channels and detector error models.
 - `utils/`: Utility functions for visualization and linear algebra.
 """

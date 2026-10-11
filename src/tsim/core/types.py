@@ -18,7 +18,7 @@ import numpy as np
 from jax import Array
 
 if TYPE_CHECKING:
-    from zx_param import Graph
+    from zxparam import Graph
 
     from tsim.compile.compile import CompiledScalarGraphs
     from tsim.core.params import ParamLayout
@@ -33,7 +33,7 @@ class SamplingGraph:
     1. Parsed from stim format into a quantum/classical ZX graph (quantum
        wires, classical measurement records)
     2. Closed into a sampling graph with classical output boundaries
-    3. Reduced via zx_param's full_reduce
+    3. Reduced via zxparam's full_reduce
     4. Had its error basis transformed (Gaussian elimination: e → f)
 
     Attributes:

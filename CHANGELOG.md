@@ -16,13 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `stim-timeline-text` package. (#171)
 
 ### Changed
-- Tsim now uses zx_param instead of pyzx-param. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zx_param.
-- `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zx_param.Graph`.
+- Tsim now uses zxparam instead of pyzxparam. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zxparam.
+- `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`.
 - In `Circuit.get_graph()` (and the `"zx"` diagram), every detector and observable has a classical output boundary, with ports after the qubit outputs, so the graph's tensor is the circuit's channel together with the detector and observable bits.
 - `Circuit.to_tensor()` returns the doubled tensor (the circuit's channel, `U ⊗ Ū` for unitaries), with error parameters set to 0 unless bound.
-- `Circuit.to_tensor()` needs quimb, which is not a Tsim runtime dependency: install `zx-param[quimb]`, otherwise it raises `ImportError`.
+- `Circuit.to_tensor()` needs quimb, which is not a Tsim runtime dependency: install `zxparam[quimb]`, otherwise it raises `ImportError`.
 - `Circuit.get_sampling_graph()` is no longer doubled: qubit wires are quantum and measurement records are classical spiders. Its `to_tensor()` raises on unbound error parameters (pyzx treated them as 0); bind them by error index. With all errors bound, the tensor is the joint distribution of the outputs.
-- The ZX diagram types are now `"zx"`, `"zx-dets"` and `"zx-meas"`. They return zx_param's HTML drawing object instead of a graph.
+- The ZX diagram types are now `"zx"`, `"zx-dets"` and `"zx-meas"`. They return zxparam's HTML drawing object instead of a graph.
 - Internals renamed or moved: `tsim.utils.diagram.render_pyzx_d3` is now `render_zx_d3`; `classify_direct` moved from `tsim.core.graph` to `tsim.compile.pipeline`; `squash_graph` and `scale_horizontally` moved from `tsim.core.graph` to `tsim.utils.diagram`.
 
 ### Removed
