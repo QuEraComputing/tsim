@@ -1,4 +1,12 @@
-"""ZX graph representations of quantum gates and instructions."""
+"""ZX graph representations of quantum gates and instructions.
+
+Qubit wires are quantum. Every wire vertex starts as a quantum boundary from
+``add_lane`` or ``add_quantum_boundary``, and gates turn a wire's trailing
+boundary into a spider in place (see ``_wire_spider``), so the spider stays
+quantum. Only measurements (``_make_classical``) and detector and observable
+annotations create classical vertices. NOTE: zxparam's ``Graph.add_vertex``
+defaults to the classical domain, so do not call it directly for wire vertices.
+"""
 
 from __future__ import annotations
 
@@ -83,7 +91,9 @@ def last_edge(b: GraphRepresentation, qubit: int) -> tuple[Vertex, Vertex]:
     return edges[0]
 
 
-def add_dummy(b: GraphRepresentation, qubit: int, col: float | None = None) -> Vertex:
+def add_quantum_boundary(
+    b: GraphRepresentation, qubit: int, col: float | None = None
+) -> Vertex:
     """Add a dummy quantum boundary vertex at the end of a qubit's wire."""
     if col is None:
         col = last_col(b, qubit) + 1
@@ -114,6 +124,27 @@ def ensure_lane(b: GraphRepresentation, qubit: int) -> None:
         add_lane(b, qubit)
 
 
+def _wire_spider(
+    b: GraphRepresentation,
+    qubit: int,
+    vertex_type: VertexType,
+    phase: Phase | Fraction | None = None,
+) -> Vertex:
+    """Turn the trailing boundary of a qubit's wire into a quantum spider.
+
+    The spider keeps the boundary's quantum domain, and a new quantum boundary
+    is appended after it. Returns the spider.
+    """
+    ensure_lane(b, qubit)
+    v1 = b.last_vertex[qubit]
+    b.graph.set_vertex_type(v1, vertex_type)
+    if phase is not None:
+        b.graph.set_phase(v1, phase)
+    v2 = add_quantum_boundary(b, qubit)
+    b.graph.add_edge(v1, v2)
+    return v1
+
+
 # =============================================================================
 # Non-Clifford Gates
 # =============================================================================
@@ -121,22 +152,12 @@ def ensure_lane(b: GraphRepresentation, qubit: int) -> None:
 
 def x_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply X-axis rotation to qubit. This is equivalent to `r_x` up to a phase."""
-    ensure_lane(b, qubit)
-    v1 = b.last_vertex[qubit]
-    b.graph.set_vertex_type(v1, VertexType.X)
-    b.graph.set_phase(v1, phase)
-    v2 = add_dummy(b, qubit)
-    b.graph.add_edge(v1, v2)
+    _wire_spider(b, qubit, VertexType.X, phase)
 
 
 def z_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply Z-axis phase rotation to qubit. This is equivalent to `r_z` up to a phase."""
-    ensure_lane(b, qubit)
-    v1 = b.last_vertex[qubit]
-    b.graph.set_vertex_type(v1, VertexType.Z)
-    b.graph.set_phase(v1, phase)
-    v2 = add_dummy(b, qubit)
-    b.graph.add_edge(v1, v2)
+    _wire_spider(b, qubit, VertexType.Z, phase)
 
 
 def t(b: GraphRepresentation, qubit: int) -> None:
@@ -379,7 +400,7 @@ def _cx_cz(
     v1 = b.last_vertex[control]
     b.graph.set_vertex_type(v1, VertexType.Z)
     b.graph.set_col(v1, col)
-    v3 = add_dummy(b, control, int(col + 1))
+    v3 = add_quantum_boundary(b, control, int(col + 1))
     b.graph.add_edge(v1, v3)
 
     if control == target:
@@ -388,7 +409,7 @@ def _cx_cz(
     v2 = b.last_vertex[target]
     b.graph.set_vertex_type(v2, vertex_type)
     b.graph.set_col(v2, col)
-    v4 = add_dummy(b, target, int(col + 1))
+    v4 = add_quantum_boundary(b, target, int(col + 1))
     b.graph.add_edge(v2, v4)
 
     b.graph.add_edge(v1 if m_vertex is None else m_vertex, v2, edge_type)
@@ -601,14 +622,8 @@ def _error(
     error_bit: int | None,
 ) -> Vertex:
     """Insert a noise spider; it carries ``error_bit`` (its ID) unless None."""
-    ensure_lane(b, qubit)
-    v1 = b.last_vertex[qubit]
-    v2 = add_dummy(b, qubit)
-    b.graph.add_edge(v1, v2)
-    b.graph.set_vertex_type(v1, vertex_type)
-    if error_bit is not None:
-        b.graph.set_phase(v1, _error_phase(error_bit))
-    return v1
+    phase = None if error_bit is None else _error_phase(error_bit)
+    return _wire_spider(b, qubit, vertex_type, phase)
 
 
 def pauli_channel_1(
@@ -803,7 +818,7 @@ def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -
     else:
         b.graph.set_vertex_label(v1, f"m[{len(b.silent_rec)}]")
         b.silent_rec.append(v1)
-    v2 = add_dummy(b, qubit)
+    v2 = add_quantum_boundary(b, qubit)
     b.graph.add_edge(v1, v2)
     if error_bit is not None:
         _error(b, qubit, VertexType.X, error_bit)
@@ -827,7 +842,7 @@ def _r(b: GraphRepresentation, qubit: int) -> None:
     b.graph.set_vertex_type(v1, VertexType.X)
     (v2,) = b.graph.neighbors(v1)
     b.graph.remove_edge(v1, v2)
-    v3 = add_dummy(b, qubit, col + 1)
+    v3 = add_quantum_boundary(b, qubit, col + 1)
     b.graph.add_edge(v1, v3)
     _scale(b, -1)
 
