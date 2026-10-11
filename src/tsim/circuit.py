@@ -865,6 +865,7 @@ class Circuit:
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
+        trajectory_sharing: bool = False,
     ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
@@ -873,6 +874,8 @@ class Circuit:
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting").
+            trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
+                with equal histories on one lane (experimental).
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -884,13 +887,16 @@ class Circuit:
         """
         from tsim.sampler import CompiledMeasurementSampler
 
-        return CompiledMeasurementSampler(self, seed=seed, strategy=strategy)
+        return CompiledMeasurementSampler(
+            self, seed=seed, strategy=strategy, trajectory_sharing=trajectory_sharing
+        )
 
     def compile_detector_sampler(
         self,
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
+        trajectory_sharing: bool = False,
     ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
 
@@ -904,6 +910,8 @@ class Circuit:
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting").
+            trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
+                with equal histories on one lane (experimental).
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -915,7 +923,9 @@ class Circuit:
         """
         from tsim.sampler import CompiledDetectorSampler
 
-        return CompiledDetectorSampler(self, seed=seed, strategy=strategy)
+        return CompiledDetectorSampler(
+            self, seed=seed, strategy=strategy, trajectory_sharing=trajectory_sharing
+        )
 
     def cast_to_stim(self) -> stim.Circuit:
         """Return self with type cast to `stim.Circuit`.
