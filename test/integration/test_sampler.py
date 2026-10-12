@@ -5,10 +5,10 @@ import jax.numpy as jnp
 import numpy as np
 import pymatching
 import pytest
-import pyzx_param as zx
 import stim
-from pyzx_param.simulate import DecompositionStrategy
 from tqdm import tqdm
+from zxparam import DecompositionStrategy
+from zxparam.stabrank import is_u3_spider
 
 import tsim.sampler as sampler_module
 from tsim.circuit import Circuit
@@ -457,8 +457,8 @@ def simulate_with_tsim(
     return np.array(probabilities)
 
 
-def simulate_with_pyzx_tensor(stim_circuit: stim.Circuit) -> np.ndarray:
-    """Compute state probabilities using pyzx tensor contraction.
+def simulate_with_zx_tensor(stim_circuit: stim.Circuit) -> np.ndarray:
+    """Compute state probabilities using zxparam tensor contraction.
 
     Args:
         stim_circuit: The stim circuit (with tags) to simulate. Should not include measurements.
@@ -480,7 +480,7 @@ def simulate_with_pyzx_tensor(stim_circuit: stim.Circuit) -> np.ndarray:
 @pytest.mark.parametrize("num_qubits", [3, 4])
 @pytest.mark.parametrize("seed", [1, 2])
 @pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting"])
-def test_compare_to_statevector_simulator_and_pyzx_tensor(num_qubits, seed, strategy):
+def test_compare_to_statevector_simulator_and_zx_tensor(num_qubits, seed, strategy):
     stim_circuit = gen_stim_circuit(
         num_qubits,
         100,
@@ -488,17 +488,17 @@ def test_compare_to_statevector_simulator_and_pyzx_tensor(num_qubits, seed, stra
         seed=seed,
     )
     tsim_state_vector = simulate_with_tsim(stim_circuit, strategy=strategy)
-    pyzx_state_vector = simulate_with_pyzx_tensor(stim_circuit)
+    zx_state_vector = simulate_with_zx_tensor(stim_circuit)
     stim_state_vector = simulate_with_vec_sampler(stim_circuit)
 
-    assert np.allclose(stim_state_vector, pyzx_state_vector)
-    assert np.allclose(tsim_state_vector, pyzx_state_vector)
+    assert np.allclose(stim_state_vector, zx_state_vector)
+    assert np.allclose(tsim_state_vector, zx_state_vector)
 
 
 @pytest.mark.parametrize("num_qubits", [3, 4])
 @pytest.mark.parametrize("seed", [2, 42])
 @pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting"])
-def test_compare_to_statevector_simulator_and_pyzx_tensor_with_arbitrary_rotations(
+def test_compare_to_statevector_simulator_and_zx_tensor_with_arbitrary_rotations(
     num_qubits, seed, strategy
 ):
     stim_circuit = gen_stim_circuit(
@@ -512,15 +512,16 @@ def test_compare_to_statevector_simulator_and_pyzx_tensor_with_arbitrary_rotatio
         p_u3=1,
     )
     c = Circuit.from_stim_program(stim_circuit)
-    assert zx.simplify.u3_count(c.get_graph()) > 0
+    g = c.get_graph()
+    assert any(is_u3_spider(g, v) for v in g.vertices())
 
     tsim_state_vector = simulate_with_tsim(stim_circuit, strategy=strategy)
-    pyzx_state_vector = simulate_with_pyzx_tensor(stim_circuit)
+    zx_state_vector = simulate_with_zx_tensor(stim_circuit)
     stim_state_vector = simulate_with_vec_sampler(stim_circuit)
 
     tol = 1e-6
-    assert np.allclose(stim_state_vector, pyzx_state_vector, atol=tol, rtol=tol)
-    assert np.allclose(tsim_state_vector, pyzx_state_vector, atol=tol, rtol=tol)
+    assert np.allclose(stim_state_vector, zx_state_vector, atol=tol, rtol=tol)
+    assert np.allclose(tsim_state_vector, zx_state_vector, atol=tol, rtol=tol)
 
 
 if __name__ == "__main__":
@@ -543,13 +544,13 @@ if __name__ == "__main__":
             p_u3=1,
         )
         tsim_state_vector = simulate_with_tsim(stim_circuit)
-        pyzx_state_vector = simulate_with_pyzx_tensor(stim_circuit)
+        zx_state_vector = simulate_with_zx_tensor(stim_circuit)
         stim_state_vector = simulate_with_vec_sampler(stim_circuit)
 
         tol = 1e-6  # reduce tolerance when using U3 gates, since it uses fp32
         if not np.allclose(
-            tsim_state_vector, pyzx_state_vector, atol=tol, rtol=tol
-        ) or not np.allclose(stim_state_vector, pyzx_state_vector, atol=tol, rtol=tol):
+            tsim_state_vector, zx_state_vector, atol=tol, rtol=tol
+        ) or not np.allclose(stim_state_vector, zx_state_vector, atol=tol, rtol=tol):
             c = Circuit.from_stim_program(stim_circuit)
             from IPython.display import display
 
@@ -558,13 +559,13 @@ if __name__ == "__main__":
             plot_comparison(
                 stim_state_vector,
                 tsim_state_vector,
-                pyzx_state_vector,
+                zx_state_vector,
                 plot_difference=False,
             )
 
             assert np.allclose(
-                stim_state_vector, pyzx_state_vector, atol=tol, rtol=tol
+                stim_state_vector, zx_state_vector, atol=tol, rtol=tol
             ), f"Seed: {seed}"
             assert np.allclose(
-                tsim_state_vector, pyzx_state_vector, atol=tol, rtol=tol
+                tsim_state_vector, zx_state_vector, atol=tol, rtol=tol
             ), f"Seed: {seed}"

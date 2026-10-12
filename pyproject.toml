@@ -39,10 +39,10 @@ dependencies = [
     "lxml>=5.0.0",
     "numpy>=1.25.0",
     "psutil>=5.9.0",
-    "pyzx-param>=0.9.3",
     "stim>=1.0.0",
     "stim-timeline-text>=0.1.0",
     "stim-timeline-text>=0.1.0",
+    "zxparam",
 ]
 
 [project.urls]
@@ -84,6 +84,7 @@ dev = [
     "tqdm>=4.67.1",
     "vulture>=2.16",
     "radon>=6.0.1",
+    "zxparam[quimb]",
 ]
 doc = [
     "griffe-kirin>=0.1.0",
@@ -101,6 +102,9 @@ doc = [
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.uv.sources]
+zxparam = { git = "https://github.com/QuEraComputing/zxparam", branch = "main" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tsim"]
@@ -161,6 +165,7 @@ ignore_notebooks = true
 extend_exclude = [
     "^accel-cutting-magic-state-main/",
     "^benchmarks/",
+    "^scripts/",
     "^docs/",
     "^test/",
 ]

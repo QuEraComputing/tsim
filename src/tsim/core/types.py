@@ -18,9 +18,10 @@ import numpy as np
 from jax import Array
 
 if TYPE_CHECKING:
-    from pyzx_param.graph.base import BaseGraph
+    from zxparam import Graph
 
     from tsim.compile.compile import CompiledScalarGraphs
+    from tsim.core.params import ParamLayout
 
 
 @dataclass(frozen=True)
@@ -29,27 +30,30 @@ class SamplingGraph:
 
     Contains all data structures needed for sampling. This represents a circuit
     that has been:
-    1. Parsed from stim format
-    2. Converted to a ZX graph
-    3. Doubled (composed with adjoint)
-    4. Reduced via zx.full_reduce
-    5. Had its error basis transformed (Gaussian elimination: e → f)
+    1. Parsed from stim format into a quantum/classical ZX graph (quantum
+       wires, classical measurement records)
+    2. Closed into a sampling graph with classical output boundaries
+    3. Reduced via zxparam's full_reduce
+    4. Had its error basis transformed (Gaussian elimination: e → f)
 
     Attributes:
-        graph: The prepared ZX graph with f-parameters on vertices.
+        graph: The prepared quantum/classical ZX graph; its vertex parameters
+            are error-basis bit IDs (``layout.basis(j)``).
         error_transform: Binary matrix of shape (num_f, num_e) where entry [i, j] = 1
             means f_i depends on e_j (i.e., f_i = XOR of e_j where matrix[i,j] = 1).
         channel_probs: List of probability arrays for error channels.
         num_outputs: Number of output vertices (measurements or detectors).
         num_detectors: Number of detector vertices.
+        layout: Parameter IDs of the error, error-basis and output bits.
 
     """
 
-    graph: BaseGraph
+    graph: Graph
     error_transform: np.ndarray
     channel_probs: list[np.ndarray]
     num_outputs: int
     num_detectors: int
+    layout: ParamLayout
 
 
 class CompiledComponent(eqx.Module):

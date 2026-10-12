@@ -1,13 +1,15 @@
 """Term-family modules for compiled scalar graphs.
 
-Each compiled ZX scalar is the product of four term families plus a global
-phase and a floatfactor. This module defines the four families as
-``equinox.Module`` records, bundles the shared phase tables, and gives each
-family an ``evaluate`` method that turns a batch of binary parameter values
-into an ``ExactScalarArray``.
+Each compiled scalar is the product of four exact term families (``NodePhases``,
+``PhaseTerms``, ``PiProducts``, ``PhasePairs``) and a floating-point family
+(``FloatTerms``, for angles that are not multiples of π/4), times a global phase
+and a floatfactor. This module defines the families as ``equinox.Module``
+records, bundles the shared phase tables, and gives each family an ``evaluate``
+method that turns a batch of binary parameter values into an
+``ExactScalarArray`` (or, for ``FloatTerms``, a complex array).
 
-Downstream, ``compile.py`` builds instances of these classes from
-``pyzx_param`` scalars, and ``evaluate.py`` orchestrates the products.
+Downstream, ``compile.py`` builds instances of these classes from ``zxparam``
+scalars (``compile_scalars``), and ``evaluate.py`` orchestrates the products.
 """
 
 import equinox as eqx
@@ -73,13 +75,12 @@ class NodePhases(eqx.Module):
         return ExactScalarArray(term_vals).prod(axis=-1)
 
 
-class HalfPiPhases(eqx.Module):
-    """Sum of ``exp(i·j·π·⊕params / 2)`` terms with ``j ∈ {1, 3}``.
+class PhaseTerms(eqx.Module):
+    """Product of ``exp(i·π·α·⊕params)`` terms, each angle ``π·α`` a multiple of π/4.
 
-    Terms sharing a parameter bitstring have been combined to a single stored
-    coefficient ``j' ∈ {1, 2, 3}`` (see ``_compile_halfpi_phases``). Coefficients
-    are stored in eighth-turn units — i.e. as ``2·j'`` — so the evaluator can
-    reuse the ``ω = e^(iπ/4)`` phase table.
+    Each term is stored as ``k = 4·α mod 8 ∈ 0..7`` and evaluates to
+    ``ω^(k·⊕params)`` with ``ω = e^(iπ/4)``. Terms sharing a parameter bitstring
+    have been combined to a single stored coefficient (see ``compile_scalars``).
 
     Padded slots use ``0`` (the additive identity for phase sums), so padded
     entries contribute nothing to the summed exponent.
@@ -88,7 +89,7 @@ class HalfPiPhases(eqx.Module):
     ``(num_graphs, max_terms, n_params)``.
     """
 
-    coeffs: Array  # uint8, values in {0, 2, 4, 6}  (= 2·j', with 0 = padding)
+    coeffs: Array  # uint8, values 0-7 in eighth turns (0 = padding)
     params: Array  # uint8, parameter parity bitmasks
 
     def evaluate(self, param_vals: Array) -> ExactScalarArray:
@@ -108,18 +109,16 @@ class HalfPiPhases(eqx.Module):
 
 
 class PiProducts(eqx.Module):
-    """Product of ``(-1)^(ψ · φ)`` terms, with ψ and φ each a parity expression.
+    """Product of ``(-1)^(ψ · φ)`` terms, with ψ and φ each a parameter parity.
 
-    Each side is encoded as a constant bit plus a parameter bitmask. Padded slots
-    use ``0`` everywhere; a padded term contributes ``(-1)^0 = 1`` to the product.
+    Each side is encoded as a parameter bitmask (zxparam expands constant bits
+    into other terms). Padded slots use ``0`` everywhere; a padded term
+    contributes ``(-1)^0 = 1`` to the product.
 
-    Shapes are ``(num_graphs, max_terms)`` except ``*_params`` which are
-    ``(num_graphs, max_terms, n_params)``.
+    Shapes are ``(num_graphs, max_terms, n_params)``.
     """
 
-    psi_const: Array  # uint8, values {0, 1}
     psi_params: Array  # uint8, parameter parity bitmask for ψ
-    phi_const: Array  # uint8, values {0, 1}
     phi_params: Array  # uint8, parameter parity bitmask for φ
 
     def evaluate(self, param_vals: Array) -> ExactScalarArray:
@@ -133,8 +132,8 @@ class PiProducts(eqx.Module):
             in {+1, -1} represented exactly.
 
         """
-        psi = (self.psi_const + matmul_gf2(self.psi_params, param_vals)) % 2
-        phi = (self.phi_const + matmul_gf2(self.phi_params, param_vals)) % 2
+        psi = matmul_gf2(self.psi_params, param_vals)
+        phi = matmul_gf2(self.phi_params, param_vals)
 
         exponent = (psi * phi) % 2
         sum_exponents = jnp.sum(exponent, axis=-1) % 2
@@ -190,18 +189,54 @@ class PhasePairs(eqx.Module):
 class ScalarPrefactor(eqx.Module):
     """Per-graph static scalar prefactor — independent of parameter values.
 
-    Each graph's amplitude is the product of the four term families times the
-    prefactor ``ω^phase_index · floatfactor · 2^power2``, with an additional
-    complex ``approximate_floatfactor`` multiplied in when any graph's phase
-    had a denominator outside ``{1, 2, 4}`` and was folded into float form.
+    Each graph's amplitude is the product of the four exact term families and
+    ``FloatTerms`` times the prefactor ``floatfactor · 2^power2`` (which includes
+    any global phase that is a multiple of π/4), times the graph's complex entry
+    of ``approximate_floatfactors``. That entry collects the parameter-free
+    factors whose angles are not multiples of π/4 (see ``_split_scalar`` in
+    ``compile.py``): a global phase whose denominator is outside ``{1, 2, 4}``,
+    and parameter-free ``NodeTerm``s and ``PhasePair``s with such angles. It is
+    ``1`` when a graph has none of them.
 
     This class is pure data; the final fold-in with the term-family product
-    (which requires branching on ``has_approximate_floatfactors``) lives in
-    ``evaluate.py``.
+    (which branches on ``has_approximate_floatfactors`` and on
+    ``CompiledScalarGraphs.has_float_terms``) lives in ``evaluate.py``.
     """
 
-    phase_indices: Array  # uint8, shape (num_graphs,), values 0-7
     floatfactor: Array  # int32, shape (num_graphs, 4) — exact dyadic (a,b,c,d)
     power2: Array  # int32, shape (num_graphs,) — exponent on the 2^(·) scaling
     approximate_floatfactors: Array  # complex64, shape (num_graphs,)
     has_approximate_floatfactors: bool = eqx.field(static=True)
+
+
+class FloatTerms(eqx.Module):
+    """Product of terms whose angles are not multiples of π/4, in floating point.
+
+    Each term has up to two parameter parities ``p_a`` and ``p_b`` and a table of
+    its four values, indexed by ``p_a + 2·p_b``. Padded slots hold a table of ones
+    and empty masks.
+
+    Shapes are ``(num_graphs, max_terms, 4)`` for ``table`` and
+    ``(num_graphs, max_terms, n_params)`` for the masks.
+    """
+
+    table: Array  # complex64
+    a_params: Array  # uint8, parity mask of p_a
+    b_params: Array  # uint8, parity mask of p_b
+
+    def evaluate(self, param_vals: Array) -> Array:
+        """Evaluate the product per graph, batched over ``param_vals``.
+
+        Args:
+            param_vals: Binary parameter values, shape ``(batch, n_params)``.
+
+        Returns:
+            Complex array of shape ``(batch, num_graphs)``.
+
+        """
+        pa = matmul_gf2(self.a_params, param_vals).astype(jnp.int32)
+        pb = matmul_gf2(self.b_params, param_vals).astype(jnp.int32)
+        index = pa + 2 * pb
+        table = jnp.broadcast_to(self.table[None], (*index.shape, 4))
+        values = jnp.take_along_axis(table, index[..., None], axis=-1)[..., 0]
+        return jnp.prod(values, axis=-1)

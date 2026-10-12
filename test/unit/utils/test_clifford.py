@@ -177,7 +177,7 @@ class TestStimCircuitProperty:
     def test_mixed_circuit_unitary(self):
         c = Circuit("H 0\nR_Z(0.5) 0\nCNOT 0 1")
         expected = Circuit("H 0\nS 0\nCNOT 0 1")
-        assert _unitaries_equal_up_to_global_phase(c.to_matrix(), expected.to_matrix())
+        np.testing.assert_allclose(c.to_tensor(), expected.to_tensor(), atol=1e-9)
 
     def test_multi_target_rotation(self):
         c = Circuit("R_Z(1.0) 0 1 2")

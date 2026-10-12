@@ -1,21 +1,16 @@
-from typing import Any, Literal
+import re
+from collections.abc import Mapping
+from test.helpers.tensors import channel, doubled
+from typing import Literal
 from unittest.mock import patch
 
 import numpy as np
 import pytest
 import stim
+import zxparam
+from zxparam.viz.layout import compute_positions
 
 from tsim.circuit import Circuit
-
-
-def unitaries_equal_up_to_global_phase(
-    u1: np.ndarray, u2: np.ndarray[Any, Any]
-) -> bool:
-    product = u1 @ u2.conj().T
-    # If u1 = e^(i*phi) * u2, then product = e^(i*phi) * I
-    phase = product[0, 0]
-    expected = phase * np.eye(u1.shape[0])
-    return np.allclose(product, expected)
 
 
 @pytest.mark.parametrize(
@@ -58,13 +53,15 @@ def test_single_qubit_gate(stim_gate: str):
     c = Circuit(f"{stim_gate} 0")
     stim_c = stim.Circuit(f"{stim_gate} 0")
     stim_c_matrix = stim_c.to_tableau().to_unitary_matrix(endian="big")
-    assert unitaries_equal_up_to_global_phase(c.to_matrix(), stim_c_matrix)
+    np.testing.assert_allclose(
+        c.to_tensor(), doubled(np.asarray(stim_c_matrix)), atol=1e-9
+    )
 
 
 def test_t_gate():
     c = Circuit("S[T] 0")
     t_matrix = np.array([[1, 0], [0, np.exp(1j * np.pi / 4)]])
-    assert unitaries_equal_up_to_global_phase(c.to_matrix(), t_matrix)
+    np.testing.assert_allclose(c.to_tensor(), doubled(t_matrix), atol=1e-9)
 
 
 def test_t_gate_shorthand():
@@ -77,7 +74,7 @@ def test_t_gate_shorthand():
 def test_t_dag_gate():
     c = Circuit("S_DAG[T] 0")
     t_dag_matrix = np.array([[1, 0], [0, np.exp(-1j * np.pi / 4)]])
-    assert unitaries_equal_up_to_global_phase(c.to_matrix(), t_dag_matrix)
+    np.testing.assert_allclose(c.to_tensor(), doubled(t_dag_matrix), atol=1e-9)
 
 
 def test_t_dag_gate_shorthand():
@@ -196,7 +193,7 @@ def test_ccz_gate_matrix():
     c = Circuit("CCZ 0 1 2")
     ccz_matrix = np.eye(8, dtype=complex)
     ccz_matrix[-1, -1] = -1
-    assert unitaries_equal_up_to_global_phase(c.to_matrix(), ccz_matrix)
+    np.testing.assert_allclose(c.to_tensor(), doubled(ccz_matrix), atol=1e-9)
 
 
 def test_ccx_gate_matrix():
@@ -206,14 +203,14 @@ def test_ccx_gate_matrix():
     ccx_matrix[7, 7] = 0
     ccx_matrix[6, 7] = 1
     ccx_matrix[7, 6] = 1
-    assert unitaries_equal_up_to_global_phase(c.to_matrix(), ccx_matrix)
+    np.testing.assert_allclose(c.to_tensor(), doubled(ccx_matrix), atol=1e-9)
 
 
 def test_tagged_ccz_gate_matrix():
     c = Circuit("CCZ[tag] 0 1 2")
     ccz_matrix = np.eye(8, dtype=complex)
     ccz_matrix[-1, -1] = -1
-    assert unitaries_equal_up_to_global_phase(c.to_matrix(), ccz_matrix)
+    np.testing.assert_allclose(c.to_tensor(), doubled(ccz_matrix), atol=1e-9)
 
 
 def test_tagged_ccx_gate_matrix():
@@ -223,7 +220,7 @@ def test_tagged_ccx_gate_matrix():
     ccx_matrix[7, 7] = 0
     ccx_matrix[6, 7] = 1
     ccx_matrix[7, 6] = 1
-    assert unitaries_equal_up_to_global_phase(c.to_matrix(), ccx_matrix)
+    np.testing.assert_allclose(c.to_tensor(), doubled(ccx_matrix), atol=1e-9)
 
 
 @pytest.mark.parametrize(
@@ -263,7 +260,9 @@ def test_two_qubit_gate(stim_gate: str):
     c = Circuit(f"{stim_gate} 0 1")
     stim_c = stim.Circuit(f"{stim_gate} 0 1")
     stim_c_matrix = stim_c.to_tableau().to_unitary_matrix(endian="big")
-    assert unitaries_equal_up_to_global_phase(c.to_matrix(), stim_c_matrix)
+    np.testing.assert_allclose(
+        c.to_tensor(), doubled(np.asarray(stim_c_matrix)), atol=1e-9
+    )
 
 
 @pytest.mark.parametrize("gate", ["R_XX", "R_YY", "R_ZZ"])
@@ -280,7 +279,9 @@ def test_pauli_rotation_clifford_matches_stim(gate: str, alpha: float):
     stim_matrix = (
         stim.Circuit(stim_program).to_tableau().to_unitary_matrix(endian="big")
     )
-    assert unitaries_equal_up_to_global_phase(c.to_matrix(), stim_matrix)
+    np.testing.assert_allclose(
+        c.to_tensor(), doubled(np.asarray(stim_matrix)), atol=1e-9
+    )
 
 
 def test_num_measurements():
@@ -771,31 +772,58 @@ def test_stim_circuit_preserves_repeat_block_tags():
 def test_get_graph():
     """Test get_graph returns a ZX graph."""
     c = Circuit("H 0\nCNOT 0 1")
-    g = c.get_graph()
-    # Check it's a pyzx graph-like object
-    assert hasattr(g, "vertices")
-    assert hasattr(g, "edges")
+    assert isinstance(c.get_graph(), zxparam.Graph)
 
 
 def test_get_sampling_graph_measurements():
     """Test get_sampling_graph for measurements."""
     c = Circuit("H 0\nM 0")
     g = c.get_sampling_graph(sample_detectors=False)
-    assert hasattr(g, "vertices")
+    assert isinstance(g, zxparam.Graph)
+    assert len(g.outputs()) == 1
 
 
 def test_get_sampling_graph_detectors():
     """Test get_sampling_graph for detectors."""
     c = Circuit("H 0\nM 0\nDETECTOR rec[-1]")
     g = c.get_sampling_graph(sample_detectors=True)
-    assert hasattr(g, "vertices")
+    assert isinstance(g, zxparam.Graph)
+    assert len(g.outputs()) == 1
 
 
 def test_to_tensor():
     c = Circuit("H 0")
     tensor = c.to_tensor()
     assert isinstance(tensor, np.ndarray)
-    assert tensor.shape == (2, 2)
+    assert tensor.shape == (2, 2, 2, 2)
+    h = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
+    np.testing.assert_allclose(tensor, doubled(h), atol=1e-9)
+
+
+def test_to_tensor_defaults_errors_to_zero():
+    c = Circuit("X_ERROR(0.3) 0")
+    x = np.array([[0, 1], [1, 0]])
+    np.testing.assert_allclose(c.to_tensor(), doubled(np.eye(2)), atol=1e-9)
+    np.testing.assert_allclose(c.to_tensor({0: 1}), doubled(x), atol=1e-9)
+
+
+@pytest.mark.parametrize("key", [1, -1])
+def test_to_tensor_rejects_keys_that_are_not_error_indices(key: int):
+    with pytest.raises(ValueError, match="not an error index"):
+        Circuit("X_ERROR(0.3) 0").to_tensor({key: 1})
+
+
+def test_to_tensor_leaves_out_detectors():
+    zero, one = np.array([1, 0]), np.array([0, 1])
+    dephasing = channel(np.outer(zero, zero), np.outer(one, one))
+    np.testing.assert_allclose(
+        Circuit("M 0\nDETECTOR rec[-1]").to_tensor(), dephasing, atol=1e-9
+    )
+    repeated = Circuit(
+        "M 0\nDETECTOR rec[-1] rec[-1]\n"
+        "OBSERVABLE_INCLUDE(0) rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]"
+    )
+    np.testing.assert_allclose(repeated.to_tensor(), dephasing, atol=1e-9)
 
 
 def test_detector_error_model_basic():
@@ -809,7 +837,7 @@ def test_inverse_r_z():
     """Test inverse of R_Z gate."""
     c = Circuit("R_Z(0.25) 0")
     c_inv = c.inverse()
-    assert unitaries_equal_up_to_global_phase((c + c_inv).to_matrix(), np.eye(2))
+    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
 
 
 def test_inverse_simple():
@@ -822,64 +850,70 @@ def test_inverse_simple():
 def test_inverse_identity():
     c = Circuit("H 0")
     c_inv = c.inverse()
-    assert unitaries_equal_up_to_global_phase((c + c_inv).to_matrix(), np.eye(2))
+    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
 
 
 def test_inverse_r_x():
     c = Circuit("R_X(0.3) 0")
     c_inv = c.inverse()
-    assert unitaries_equal_up_to_global_phase((c + c_inv).to_matrix(), np.eye(2))
+    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
 
 
 def test_inverse_r_y():
     c = Circuit("R_Y(-0.5) 0")
     c_inv = c.inverse()
-    assert unitaries_equal_up_to_global_phase((c + c_inv).to_matrix(), np.eye(2))
+    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
 
 
 def test_inverse_u3():
     c = Circuit("U3(0.3, 0.24, 0.49) 0")
     c_inv = c.inverse()
-    assert unitaries_equal_up_to_global_phase((c + c_inv).to_matrix(), np.eye(2))
+    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
 
 
 def test_inverse_t_gate():
     c = Circuit("T 0")
     c_inv = c.inverse()
-    assert unitaries_equal_up_to_global_phase((c + c_inv).to_matrix(), np.eye(2))
+    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
 
 
 def test_inverse_t_dag_gate():
     c = Circuit("T_DAG 0")
     c_inv = c.inverse()
-    assert unitaries_equal_up_to_global_phase((c + c_inv).to_matrix(), np.eye(2))
+    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
 
 
 def test_inverse_tpp():
     c = Circuit("TPP Z0")
     c_inv = c.inverse()
-    assert unitaries_equal_up_to_global_phase((c + c_inv).to_matrix(), np.eye(2))
+    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
 
 
 def test_inverse_tpp_dag():
     c = Circuit("TPP_DAG X0*Y1")
     c_inv = c.inverse()
-    combined = (c + c_inv).to_matrix()
-    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+    combined = (c + c_inv).to_tensor()
+    np.testing.assert_allclose(
+        combined, doubled(np.eye(2 ** (combined.ndim // 4))), atol=1e-9
+    )
 
 
 def test_inverse_r_xx():
     c = Circuit("R_XX(0.345) 0 1")
     c_inv = c.inverse()
-    combined = (c + c_inv).to_matrix()
-    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+    combined = (c + c_inv).to_tensor()
+    np.testing.assert_allclose(
+        combined, doubled(np.eye(2 ** (combined.ndim // 4))), atol=1e-9
+    )
 
 
 def test_inverse_r_pauli():
     c = Circuit("R_PAULI(0.345) X0*Y1*Z2")
     c_inv = c.inverse()
-    combined = (c + c_inv).to_matrix()
-    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+    combined = (c + c_inv).to_tensor()
+    np.testing.assert_allclose(
+        combined, doubled(np.eye(2 ** (combined.ndim // 4))), atol=1e-9
+    )
 
 
 def test_r_pauli_duplicate_target_in_product_rejected():
@@ -898,8 +932,10 @@ def test_r_pauli_long_product_roundtrip():
 def test_inverse_mixed_circuit():
     c = Circuit("H 0\nT 0\nR_Z(0.22) 0\nCNOT 0 1")
     c_inv = c.inverse()
-    combined = (c + c_inv).to_matrix()
-    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+    combined = (c + c_inv).to_tensor()
+    np.testing.assert_allclose(
+        combined, doubled(np.eye(2 ** (combined.ndim // 4))), atol=1e-9
+    )
 
 
 def test_inverse_with_repeat_block():
@@ -910,8 +946,10 @@ def test_inverse_with_repeat_block():
     assert len(c_inv) == len(c_repeat)
     assert isinstance(c_inv[0], stim.CircuitRepeatBlock)
     assert c_inv.flattened() == c_repeat.flattened().inverse()
-    combined = (c_repeat + c_inv).to_matrix()
-    assert unitaries_equal_up_to_global_phase(combined, np.eye(combined.shape[0]))
+    combined = (c_repeat + c_inv).to_tensor()
+    np.testing.assert_allclose(
+        combined, doubled(np.eye(2 ** (combined.ndim // 4))), atol=1e-9
+    )
 
 
 def test_diagram_timeline_svg():
@@ -929,48 +967,150 @@ def test_diagram_timeslice_svg():
     assert "<svg" in svg_str
 
 
-def test_diagram_pyzx():
+def _assert_drew_a_graph(mock_draw, result) -> None:
+    mock_draw.assert_called_once()
+    assert isinstance(mock_draw.call_args.args[0], zxparam.Graph)
+    assert isinstance(mock_draw.call_args.kwargs["param_names"], Mapping)
+    assert result is mock_draw.return_value
+
+
+def test_diagram_zx():
     c = Circuit("H 0\nCNOT 0 1")
-    with patch("pyzx_param.draw") as mock_draw:
-        g = c.diagram(type="pyzx")
-        mock_draw.assert_called_once()
-    assert hasattr(g, "vertices")
-    assert hasattr(g, "edges")
+    with patch("zxparam.draw") as mock_draw:
+        result = c.diagram(type="zx")
+        _assert_drew_a_graph(mock_draw, result)
 
 
-def test_diagram_pyzx_empty():
+def test_diagram_zx_draws_annotation_boundaries():
+    c = Circuit("H 0\nM 0\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]")
+    with patch("zxparam.draw") as mock_draw:
+        c.diagram(type="zx")
+    g = mock_draw.call_args.args[0]
+    classical = [
+        v
+        for v in g.vertices()
+        if g.vertex_type(v) == zxparam.VertexType.BOUNDARY
+        and g.vertex_domain(v) == zxparam.Domain.CLASSICAL
+    ]
+    assert len(classical) == 2
+    for b in classical:
+        (spider,) = g.neighbors(b)
+        assert g.vertex_type(spider) == zxparam.VertexType.X
+
+
+def test_diagram_zx_empty():
     c = Circuit()
-    with patch("pyzx_param.draw") as mock_draw:
-        g = c.diagram(type="pyzx")
-        mock_draw.assert_not_called()
-    assert len(g.vertices()) == 0
+    with patch("zxparam.draw") as mock_draw:
+        result = c.diagram(type="zx")
+        _assert_drew_a_graph(mock_draw, result)
 
 
-def test_diagram_pyzx_meas():
+def test_diagram_zx_meas():
     c = Circuit("H 0\nM 0")
-    with patch("pyzx_param.draw") as mock_draw:
-        g = c.diagram(type="pyzx-meas")
-        mock_draw.assert_called_once()
-    assert hasattr(g, "vertices")
+    with patch("zxparam.draw") as mock_draw:
+        result = c.diagram(type="zx-meas")
+        _assert_drew_a_graph(mock_draw, result)
 
 
-def test_diagram_pyzx_dets():
+def test_diagram_zx_dets():
     c = Circuit("H 0\nM 0\nDETECTOR rec[-1]")
-    with patch("pyzx_param.draw") as mock_draw:
-        g = c.diagram(type="pyzx-dets")
-        mock_draw.assert_called_once()
-    assert hasattr(g, "vertices")
+    with patch("zxparam.draw") as mock_draw:
+        result = c.diagram(type="zx-dets")
+        _assert_drew_a_graph(mock_draw, result)
 
 
-@pytest.mark.parametrize("type", ["pyzx", "pyzx-meas", "pyzx-dets"])
-def test_diagram_pyzx_scale_horizontally(
-    type: Literal["pyzx", "pyzx-meas", "pyzx-dets"],
+@pytest.mark.parametrize("type", ["zx-meas", "zx-dets"])
+def test_reduced_diagrams_are_red_green_with_outputs_in_a_row(
+    type: Literal["zx-meas", "zx-dets"],
+):
+    c = Circuit(
+        "R 0 1 2\nH 0\nT 0\nCNOT 0 1\nCNOT 1 2\nX_ERROR(0.1) 1\nM 0 1 2\n"
+        "DETECTOR rec[-1] rec[-2]\nDETECTOR rec[-2] rec[-3]\n"
+        "OBSERVABLE_INCLUDE(0) rec[-1]"
+    )
+    with patch("zxparam.draw") as mock_draw:
+        c.diagram(type=type)
+    g = mock_draw.call_args.args[0]
+    layout = mock_draw.call_args.kwargs["layout"]
+    assert layout == "outputs"
+    positions = compute_positions(g, layout)
+    outputs = g.outputs()
+    assert len({positions[v][1] for v in outputs}) == 1
+    assert len({positions[v][0] for v in outputs}) == len(outputs)
+    assert any(g.vertex_type(v) == zxparam.VertexType.X for v in g.vertices())
+
+
+@pytest.mark.parametrize(
+    "type,labels",
+    [("zx-meas", ["rec[0]", "rec[1]"]), ("zx-dets", ["det[0]", "obs[0]"])],
+)
+def test_reduced_diagrams_keep_labels_on_their_outputs(
+    type: Literal["zx-meas", "zx-dets"], labels: list[str]
+):
+    c = Circuit(
+        "R 0 1\nH 0\nT 0\nCNOT 0 1\nX_ERROR(0.1) 1\nM 0 1\n"
+        "DETECTOR rec[-1] rec[-2]\nOBSERVABLE_INCLUDE(0) rec[-1]"
+    )
+    with patch("zxparam.draw") as mock_draw:
+        c.diagram(type=type)
+    g = mock_draw.call_args.args[0]
+    assert [g.vertex_label(v) for v in g.outputs()] == labels
+    assert all(
+        g.vertex_label(v) is None
+        for v in g.vertices()
+        if g.vertex_type(v) != zxparam.VertexType.BOUNDARY
+    )
+
+
+@pytest.mark.parametrize("scale", [2, 0, False])
+@pytest.mark.parametrize("type", ["zx", "zx-meas", "zx-dets"])
+def test_diagram_zx_scale_horizontally(
+    type: Literal["zx", "zx-meas", "zx-dets"], scale: float
 ):
     c = Circuit("H 0\nCNOT 0 1")
-    with patch("pyzx_param.draw") as mock_draw:
-        g = c.diagram(type=type, scale_horizontally=2)
-        mock_draw.assert_called_once()
-    assert hasattr(g, "vertices")
+    with patch("zxparam.draw") as mock_draw:
+        result = c.diagram(type=type, scale_horizontally=scale)
+        _assert_drew_a_graph(mock_draw, result)
+    kwargs = mock_draw.call_args.kwargs
+    assert "scale_horizontally" not in kwargs
+    assert kwargs.get("scale") == ((40 * scale, 40) if scale else None)
+
+
+@pytest.mark.parametrize("type", ["zx", "zx-meas", "zx-dets"])
+def test_diagram_zx_passes_draw_options_through(
+    type: Literal["zx", "zx-meas", "zx-dets"],
+):
+    c = Circuit("X_ERROR(0.1) 0\nM 0\nDETECTOR rec[-1]")
+    with patch("zxparam.draw") as mock_draw:
+        c.diagram(
+            type=type,
+            layout="stored",
+            param_names={0: "x"},
+            scale=(30, 20),
+            scale_horizontally=2,
+        )
+    kwargs = mock_draw.call_args.kwargs
+    assert kwargs["layout"] == "stored"
+    assert kwargs["param_names"][0] == "x"
+    assert kwargs["scale"] == (60, 20)
+
+
+@pytest.mark.parametrize("type", ["zx", "zx-meas", "zx-dets"])
+def test_diagram_zx_with_zero_scale_draws(type: Literal["zx", "zx-meas", "zx-dets"]):
+    html = Circuit("H 0\nM 0").diagram(type=type, scale_horizontally=0)
+    assert "renderZx" in html._repr_html_()
+
+
+@pytest.mark.parametrize("type", ["pyzx", "pyzx-dets", "pyzx-meas"])
+def test_pyzx_diagram_types_are_deprecated_aliases(
+    type: Literal["pyzx", "pyzx-dets", "pyzx-meas"],
+):
+    replacement = type.replace("pyzx", "zx")
+    with pytest.warns(
+        DeprecationWarning, match=re.escape(f"use {replacement!r} instead")
+    ):
+        html = Circuit("H 0\nM 0").diagram(type=type)
+    assert "renderZx" in html._repr_html_()
 
 
 def test_append():

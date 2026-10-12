@@ -2,7 +2,13 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from tsim.compile.terms import HalfPiPhases, NodePhases, PhasePairs, PiProducts
+from tsim.compile.terms import (
+    FloatTerms,
+    NodePhases,
+    PhasePairs,
+    PhaseTerms,
+    PiProducts,
+)
 
 
 def _ref_parity(bits: np.ndarray, param_vals: np.ndarray) -> np.ndarray:
@@ -21,16 +27,16 @@ def _ref_node_phases(phases, params, counts, param_vals):
     return np.prod(term, axis=-1)
 
 
-def _ref_halfpi_phases(coeffs, params, param_vals):
+def _ref_phase_terms(coeffs, params, param_vals):
     parity = _ref_parity(params, param_vals)
-    # Per term: exp(i·π·j'·parity/2),  with coeffs = 2·j' (so coeffs/4 = j'/2).
+    # Per term: exp(i·π·α·parity),  with coeffs = 4·α.
     per_term = np.exp(1j * np.pi * coeffs[None] * parity / 4)
     return np.prod(per_term, axis=-1)
 
 
-def _ref_pi_products(psi_const, psi_params, phi_const, phi_params, param_vals):
-    psi = (psi_const[None] + _ref_parity(psi_params, param_vals)) % 2
-    phi = (phi_const[None] + _ref_parity(phi_params, param_vals)) % 2
+def _ref_pi_products(psi_params, phi_params, param_vals):
+    psi = _ref_parity(psi_params, param_vals)
+    phi = _ref_parity(phi_params, param_vals)
     # (-1)^(ψ·φ) = exp(i·π·ψ·φ)
     sign = np.exp(1j * np.pi * psi * phi)
     return np.prod(sign, axis=-1)
@@ -105,7 +111,7 @@ class TestNodePhases:
         np.testing.assert_allclose(got, np.ones((B, G), dtype=complex))
 
 
-class TestHalfPiPhases:
+class TestPhaseTerms:
     @pytest.mark.parametrize("seed", (0, 42))
     def test_matches_reference(self, seed):
         np.random.seed(seed)
@@ -114,9 +120,9 @@ class TestHalfPiPhases:
         params = np.random.randint(0, 2, size=(G, T, P)).astype(np.uint8)
         param_vals = np.random.randint(0, 2, size=(B, P)).astype(np.uint8)
 
-        module = HalfPiPhases(jnp.asarray(coeffs), jnp.asarray(params))
+        module = PhaseTerms(jnp.asarray(coeffs), jnp.asarray(params))
         got = _eval_complex(module, param_vals)
-        expected = _ref_halfpi_phases(coeffs, params, param_vals)
+        expected = _ref_phase_terms(coeffs, params, param_vals)
         np.testing.assert_allclose(got, expected, atol=1e-6)
 
     @pytest.mark.parametrize("seed", (0, 42))
@@ -128,9 +134,9 @@ class TestHalfPiPhases:
         params = np.random.randint(0, 2, size=(G, 4, P)).astype(np.uint8)
         param_vals = np.random.randint(0, 2, size=(B, P)).astype(np.uint8)
 
-        module = HalfPiPhases(jnp.asarray(coeffs), jnp.asarray(params))
+        module = PhaseTerms(jnp.asarray(coeffs), jnp.asarray(params))
         got = _eval_complex(module, param_vals)
-        expected = _ref_halfpi_phases(coeffs, params, param_vals)
+        expected = _ref_phase_terms(coeffs, params, param_vals)
         np.testing.assert_allclose(got, expected, atol=1e-6)
 
     def test_max_terms_zero(self):
@@ -139,7 +145,7 @@ class TestHalfPiPhases:
         params = jnp.zeros((G, 0, P), dtype=jnp.uint8)
         param_vals = jnp.zeros((B, P), dtype=jnp.uint8)
 
-        module = HalfPiPhases(coeffs, params)
+        module = PhaseTerms(coeffs, params)
         got = np.asarray(module.evaluate(param_vals).to_complex())
         np.testing.assert_allclose(got, np.ones((B, G), dtype=complex))
 
@@ -149,22 +155,13 @@ class TestPiProducts:
     def test_matches_reference(self, seed):
         np.random.seed(seed)
         G, T, P, B = 3, 4, 5, 6
-        psi_const = np.random.randint(0, 2, size=(G, T)).astype(np.uint8)
         psi_params = np.random.randint(0, 2, size=(G, T, P)).astype(np.uint8)
-        phi_const = np.random.randint(0, 2, size=(G, T)).astype(np.uint8)
         phi_params = np.random.randint(0, 2, size=(G, T, P)).astype(np.uint8)
         param_vals = np.random.randint(0, 2, size=(B, P)).astype(np.uint8)
 
-        module = PiProducts(
-            jnp.asarray(psi_const),
-            jnp.asarray(psi_params),
-            jnp.asarray(phi_const),
-            jnp.asarray(phi_params),
-        )
+        module = PiProducts(jnp.asarray(psi_params), jnp.asarray(phi_params))
         got = _eval_complex(module, param_vals)
-        expected = _ref_pi_products(
-            psi_const, psi_params, phi_const, phi_params, param_vals
-        )
+        expected = _ref_pi_products(psi_params, phi_params, param_vals)
         np.testing.assert_allclose(got, expected, atol=1e-6)
 
     @pytest.mark.parametrize("seed", (0, 42))
@@ -172,28 +169,20 @@ class TestPiProducts:
         """All-zero psi/phi slots contribute (-1)^0 = 1, so they are valid padding."""
         np.random.seed(seed)
         G, T, P, B = 2, 5, 3, 4
-        psi_const = np.zeros((G, T), dtype=np.uint8)
         psi_params = np.zeros((G, T, P), dtype=np.uint8)
-        phi_const = np.zeros((G, T), dtype=np.uint8)
         phi_params = np.zeros((G, T, P), dtype=np.uint8)
         param_vals = np.random.randint(0, 2, size=(B, P)).astype(np.uint8)
 
-        module = PiProducts(
-            jnp.asarray(psi_const),
-            jnp.asarray(psi_params),
-            jnp.asarray(phi_const),
-            jnp.asarray(phi_params),
-        )
+        module = PiProducts(jnp.asarray(psi_params), jnp.asarray(phi_params))
         got = _eval_complex(module, param_vals)
         np.testing.assert_allclose(got, np.ones((B, G), dtype=complex), atol=1e-6)
 
     def test_max_terms_zero(self):
         G, P, B = 2, 3, 4
-        empty = jnp.zeros((G, 0), dtype=jnp.uint8)
         empty_p = jnp.zeros((G, 0, P), dtype=jnp.uint8)
         param_vals = jnp.zeros((B, P), dtype=jnp.uint8)
 
-        module = PiProducts(empty, empty_p, empty, empty_p)
+        module = PiProducts(empty_p, empty_p)
         got = np.asarray(module.evaluate(param_vals).to_complex())
         np.testing.assert_allclose(got, np.ones((B, G), dtype=complex))
 
@@ -260,3 +249,22 @@ class TestPhasePairs:
         module = PhasePairs(empty, empty_p, empty, empty_p, counts)
         got = np.asarray(module.evaluate(param_vals).to_complex())
         np.testing.assert_allclose(got, np.ones((B, G), dtype=complex))
+
+
+def test_float_terms_look_up_their_table():
+    table = jnp.array([[[1, 2, 3, 4]]], dtype=jnp.complex64)
+    a = jnp.array([[[1, 0]]], dtype=jnp.uint8)
+    b = jnp.array([[[0, 1]]], dtype=jnp.uint8)
+    terms = FloatTerms(table=table, a_params=a, b_params=b)
+    vals = jnp.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=jnp.uint8)
+    np.testing.assert_allclose(np.asarray(terms.evaluate(vals))[:, 0], [1, 2, 3, 4])
+
+
+def test_empty_float_terms_evaluate_to_one():
+    terms = FloatTerms(
+        table=jnp.ones((2, 0, 4), dtype=jnp.complex64),
+        a_params=jnp.zeros((2, 0, 3), dtype=jnp.uint8),
+        b_params=jnp.zeros((2, 0, 3), dtype=jnp.uint8),
+    )
+    result = terms.evaluate(jnp.ones((5, 3), dtype=jnp.uint8))
+    np.testing.assert_allclose(np.asarray(result), np.ones((5, 2)))

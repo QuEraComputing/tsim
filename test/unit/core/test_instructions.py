@@ -1,33 +1,43 @@
+"""Each instruction's doubled tensor is its exact channel."""
+
+from collections.abc import Callable
 from fractions import Fraction
 from test.helpers.gate_matrices import (
     ROT_GATE_MATRICES,
     SINGLE_QUBIT_GATE_MATRICES,
     TWO_QUBIT_GATE_MATRICES,
 )
-from typing import Callable
+from test.helpers.tensors import channel, doubled, doubled_state
 
 import numpy as np
 import pytest
-from pyzx_param.utils import EdgeType, VertexType
+from zxparam import Domain, VertexType
 
 from tsim.core import instructions
-from tsim.core.instructions import (
-    GraphRepresentation,
-    _EdgeTypeBold,
-    _VertexTypeBold,
-)
+from tsim.core.graph import circuit_graph
+from tsim.core.instructions import GraphRepresentation
+
+ZERO = np.array([1, 0], dtype=complex)
+ONE = np.array([0, 1], dtype=complex)
+PLUS = (ZERO + ONE) / np.sqrt(2)
+MINUS = (ZERO - ONE) / np.sqrt(2)
+PLUS_I = (ZERO + 1j * ONE) / np.sqrt(2)
+MINUS_I = (ZERO - 1j * ONE) / np.sqrt(2)
 
 
-def _build_and_get_matrix(gate_func: Callable | tuple[Callable, Callable], *args):
-    """Helper to build a graph with a single gate and get its matrix."""
+def _tensor(*steps: Callable[[GraphRepresentation], object]) -> np.ndarray:
     b = GraphRepresentation()
-    if isinstance(gate_func, tuple):
-        gate_func[0](b, *args)
-        gate_func[1](b, *args)
-    else:
-        gate_func(b, *args)
-    b.graph.normalize()
-    return b.graph.to_matrix()
+    for step in steps:
+        step(b)
+    return circuit_graph(b).to_tensor()
+
+
+def _dephasing(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    return channel(np.outer(a, a.conj()), np.outer(b, b.conj()))
+
+
+def _reset_to(psi: np.ndarray) -> np.ndarray:
+    return channel(np.outer(psi, ZERO), np.outer(psi, ONE))
 
 
 @pytest.mark.parametrize(
@@ -62,40 +72,47 @@ def _build_and_get_matrix(gate_func: Callable | tuple[Callable, Callable], *args
     ],
 )
 def test_single_qubit_instruction(gate_func, matrix: np.ndarray):
-    result = _build_and_get_matrix(gate_func, 0)
-    assert np.allclose(result, matrix)
+    np.testing.assert_allclose(
+        _tensor(lambda b: gate_func(b, 0)), doubled(matrix), atol=1e-9
+    )
 
 
 @pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
 def test_r_z(frac: Fraction):
-    result = _build_and_get_matrix(instructions.r_z, 0, frac)
-    expected = ROT_GATE_MATRICES["R_Z"](frac)
-    assert np.allclose(result, expected)
+    np.testing.assert_allclose(
+        _tensor(lambda b: instructions.r_z(b, 0, frac)),
+        doubled(ROT_GATE_MATRICES["R_Z"](frac)),
+        atol=1e-9,
+    )
 
 
 @pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
 def test_r_x(frac: Fraction):
-    result = _build_and_get_matrix(instructions.r_x, 0, frac)
-    expected = ROT_GATE_MATRICES["R_X"](frac)
-    assert np.allclose(result, expected)
+    np.testing.assert_allclose(
+        _tensor(lambda b: instructions.r_x(b, 0, frac)),
+        doubled(ROT_GATE_MATRICES["R_X"](frac)),
+        atol=1e-9,
+    )
 
 
 @pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
 def test_r_y(frac: Fraction):
-    result = _build_and_get_matrix(instructions.r_y, 0, frac)
-    expected = ROT_GATE_MATRICES["R_Y"](frac)
-    assert np.allclose(result, expected)
+    np.testing.assert_allclose(
+        _tensor(lambda b: instructions.r_y(b, 0, frac)),
+        doubled(ROT_GATE_MATRICES["R_Y"](frac)),
+        atol=1e-9,
+    )
 
 
 @pytest.mark.parametrize("frac_theta", [Fraction(1, 5), Fraction(-1, 3)])
 @pytest.mark.parametrize("frac_phi", [Fraction(1, 5), Fraction(1, 7)])
 @pytest.mark.parametrize("frac_lambda", [Fraction(-1, 13), Fraction(1, 7)])
 def test_u3(frac_theta: Fraction, frac_phi: Fraction, frac_lambda: Fraction):
-    result = _build_and_get_matrix(
-        instructions.u3, 0, frac_theta, frac_phi, frac_lambda
+    np.testing.assert_allclose(
+        _tensor(lambda b: instructions.u3(b, 0, frac_theta, frac_phi, frac_lambda)),
+        doubled(ROT_GATE_MATRICES["U3"](frac_theta, frac_phi, frac_lambda)),
+        atol=1e-9,
     )
-    expected = ROT_GATE_MATRICES["U3"](frac_theta, frac_phi, frac_lambda)
-    assert np.allclose(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -126,122 +143,86 @@ def test_u3(frac_theta: Fraction, frac_phi: Fraction, frac_lambda: Fraction):
     ],
 )
 def test_two_qubit_instruction(gate_func, matrix: np.ndarray):
-    result = _build_and_get_matrix(gate_func, 0, 1)
-    assert np.allclose(result, matrix)
+    np.testing.assert_allclose(
+        _tensor(lambda b: gate_func(b, 0, 1)), doubled(matrix), atol=1e-9
+    )
 
 
-def test_rz_mrz():
-    zero = np.array([1, 0], dtype=complex)
-    one = np.array([0, 1], dtype=complex)
-
-    plus = (zero + one) / np.sqrt(2)
-
-    result = _build_and_get_matrix((instructions.i, instructions.r), 0)
-    assert np.allclose(result, np.outer(zero, plus.conj()))
-
-    # MR is semantically equivalent to M followed by R; the resulting matrix
-    # carries an extra 1/sqrt(2) trace factor relative to plain R after I.
-    result = _build_and_get_matrix(instructions.mr, 0)
-    assert np.allclose(result, np.outer(zero, plus.conj()) / np.sqrt(2))
-
-    result = _build_and_get_matrix(instructions.r, 0)
-    assert np.allclose(result, np.outer(zero, 1))
+def _on_qubit_0(*gates: Callable[..., None]) -> np.ndarray:
+    return _tensor(*[lambda b, gate=gate: gate(b, 0) for gate in gates])
 
 
-def test_rx_mrx():
-    zero = np.array([1, 0], dtype=complex)
-    one = np.array([0, 1], dtype=complex)
-
-    plus = (zero + one) / np.sqrt(2)
-
-    result = _build_and_get_matrix((instructions.i, instructions.rx), 0)
-    assert np.allclose(result, np.outer(plus, zero.conj()))
-
-    result = _build_and_get_matrix(instructions.mrx, 0)
-    assert np.allclose(result, np.outer(plus, zero.conj()) / np.sqrt(2))
-
-    result = _build_and_get_matrix(instructions.rx, 0)
-    assert np.allclose(result, np.outer(plus, 1))
+def test_measurements_dephase():
+    m, mx, my = instructions.m, instructions.mx, instructions.my
+    np.testing.assert_allclose(_on_qubit_0(m), _dephasing(ZERO, ONE), atol=1e-9)
+    np.testing.assert_allclose(_on_qubit_0(mx), _dephasing(PLUS, MINUS), atol=1e-9)
+    np.testing.assert_allclose(_on_qubit_0(my), _dephasing(PLUS_I, MINUS_I), atol=1e-9)
 
 
-def test_ry_mry():
-    zero = np.array([1, 0], dtype=complex)
-    one = np.array([0, 1], dtype=complex)
-
-    plus = (zero + one) / np.sqrt(2)
-
-    plus_i = (zero + 1j * one) / np.sqrt(2)
-
-    h_yz = SINGLE_QUBIT_GATE_MATRICES["H_YZ"]
-
-    result = _build_and_get_matrix((instructions.i, instructions.ry), 0)
-    assert np.allclose(result, np.outer(plus_i, (h_yz @ plus).conj()))
-
-    result = _build_and_get_matrix(instructions.mry, 0)
-
-    assert np.allclose(result, np.outer(plus_i, (h_yz @ plus).conj()) / np.sqrt(2))
-
-    result = _build_and_get_matrix(instructions.ry, 0)
-    assert np.allclose(result, np.outer(plus_i, 1))
+@pytest.mark.parametrize(
+    "gates, expected",
+    [
+        ((instructions.r,), doubled_state(ZERO)),
+        ((instructions.i, instructions.r), _reset_to(ZERO)),
+        ((instructions.mr,), _reset_to(ZERO)),
+        ((instructions.rx,), doubled_state(PLUS)),
+        ((instructions.i, instructions.rx), _reset_to(PLUS)),
+        ((instructions.mrx,), _reset_to(PLUS)),
+        ((instructions.ry,), doubled_state(PLUS_I)),
+        ((instructions.i, instructions.ry), _reset_to(PLUS_I)),
+        ((instructions.mry,), _reset_to(PLUS_I)),
+    ],
+)
+def test_resets(gates, expected: np.ndarray):
+    np.testing.assert_allclose(_on_qubit_0(*gates), expected, atol=1e-9)
 
 
 def test_mr_matches_m_then_r():
-    """MR/MRX/MRY should produce the same matrix as M;R / MX;RX / MY;RY."""
-    mr = _build_and_get_matrix(instructions.mr, 0)
-    m_r = _build_and_get_matrix((instructions.m, instructions.r), 0)
-    assert np.allclose(mr, m_r)
-
-    mrx = _build_and_get_matrix(instructions.mrx, 0)
-    mx_rx = _build_and_get_matrix((instructions.mx, instructions.rx), 0)
-    assert np.allclose(mrx, mx_rx)
-
-    mry = _build_and_get_matrix(instructions.mry, 0)
-    my_ry = _build_and_get_matrix((instructions.my, instructions.ry), 0)
-    assert np.allclose(mry, my_ry)
-
-
-def test_m():
-    result = _build_and_get_matrix(instructions.m, 0)
-    assert np.allclose(result, np.eye(2) / np.sqrt(2))
-
-
-def test_mx():
-    result = _build_and_get_matrix(instructions.mx, 0)
-    assert np.allclose(result, np.eye(2) / np.sqrt(2))
+    """MR/MRX/MRY should produce the same tensor as M;R / MX;RX / MY;RY."""
+    np.testing.assert_allclose(
+        _on_qubit_0(instructions.mr),
+        _on_qubit_0(instructions.m, instructions.r),
+        atol=1e-9,
+    )
+    np.testing.assert_allclose(
+        _on_qubit_0(instructions.mrx),
+        _on_qubit_0(instructions.mx, instructions.rx),
+        atol=1e-9,
+    )
+    np.testing.assert_allclose(
+        _on_qubit_0(instructions.mry),
+        _on_qubit_0(instructions.my, instructions.ry),
+        atol=1e-9,
+    )
 
 
-def test_my():
-    result = _build_and_get_matrix(instructions.my, 0)
-    assert np.allclose(result, np.eye(2) / np.sqrt(2))
+def test_x_error_is_an_x_spider_with_its_error_bit():
+    b = GraphRepresentation()
+    instructions.x_error(b, 0, 0.1)
+    noisy = [v for v in b.graph.vertices() if b.graph.phase(v).parameters]
+    assert len(noisy) == 1
+    assert b.graph.vertex_type(noisy[0]) == VertexType.X
+    assert b.graph.phase(noisy[0]).parameters == {0}
+    g = circuit_graph(b)
+    np.testing.assert_allclose(g.to_tensor({0: 0}), doubled(np.eye(2)), atol=1e-9)
+    x = SINGLE_QUBIT_GATE_MATRICES["X"]
+    np.testing.assert_allclose(g.to_tensor({0: 1}), doubled(x), atol=1e-9)
 
 
-class TestClassicalWireTracking:
-
-    def test_type_properties_default(self):
-        """Default GraphRepresentation uses standard pyzx types."""
-        b = GraphRepresentation()
-        assert b.edge_type is EdgeType
-        assert b.vertex_type is VertexType
-
-    def test_type_properties_bold(self):
-        """With track_classical_wires=True, bold types are used."""
-        b = GraphRepresentation(track_classical_wires=True)
-        assert b.edge_type is _EdgeTypeBold
-        assert b.vertex_type is _VertexTypeBold
-        assert b.edge_type.SIMPLE != EdgeType.SIMPLE
-        assert b.edge_type.HADAMARD != EdgeType.HADAMARD
-        assert b.vertex_type.Z != VertexType.Z
-        assert b.vertex_type.X != VertexType.X
-
-    def test_bold_types_in_graph(self):
-        """Graph operations use bold edge/vertex types when tracking classical wires."""
-        b = GraphRepresentation(track_classical_wires=True)
-        instructions.z_phase(b, 0, Fraction(1, 4))
-
-        # The lane edge and the gate edge should both use bold SIMPLE
-        for e in b.graph.edges():
-            assert b.graph.edge_type(e) == _EdgeTypeBold.SIMPLE
-
-        # The Z-phase vertex should use bold Z type
-        types = [b.graph.type(v) for v in b.graph.vertices()]
-        assert _VertexTypeBold.Z in types
+def test_records_and_detectors_are_classical_spiders():
+    b = GraphRepresentation()
+    instructions.m(b, 0)
+    instructions.detector(b, [0])
+    (rec,) = b.rec
+    (det,) = b.detectors
+    g = b.graph
+    assert (g.vertex_type(rec), g.vertex_domain(rec)) == (
+        VertexType.Z,
+        Domain.CLASSICAL,
+    )
+    assert (g.vertex_type(det), g.vertex_domain(det)) == (
+        VertexType.X,
+        Domain.CLASSICAL,
+    )
+    assert (g.vertex_label(rec), g.vertex_label(det)) == ("rec[0]", "det[0]")
+    assert g.has_edge(rec, det)

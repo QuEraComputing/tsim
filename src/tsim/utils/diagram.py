@@ -7,15 +7,20 @@ from fractions import Fraction
 from typing import Any, Iterable
 
 import numpy as np
-import pyzx_param as zx
 import stim
+import zxparam as zx
 from lxml import etree  # type: ignore
-from pyzx_param.graph.graph_s import GraphS
+from zxparam import Graph
+from zxparam.viz.layout import Layout
 
-from tsim.core.graph import scale_horizontally
+from tsim.core.graph import circuit_graph
+from tsim.core.params import ParamLayout
 from tsim.core.parse import parse_stim_circuit
 from tsim.core.tags import is_t_tag
 from tsim.utils.program_text import FLOAT_RE
+
+_ZX_SCALE = 40
+"""zxparam's default number of pixels per unit of (col, row)."""
 
 
 class Diagram:
@@ -484,47 +489,38 @@ def render_svg(
     return Diagram(svg, html)
 
 
-def render_pyzx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> GraphS:
-    """Render a stim circuit as a pyzx ZX diagram using d3.js.
+def draw_zx(
+    g: Graph, num_errors: int, kwargs: dict[str, Any], layout: Layout = "auto"
+) -> Any:
+    """Draw ``g`` with zxparam's D3 viewer, naming its parameters.
 
     Args:
-        stim_circ: The stim circuit to render.
-        kwargs: Additional keyword arguments passed to the underlying diagram renderer.
+        g: The graph to draw; it is not changed.
+        num_errors: The circuit's number of error bits (see ``ParamLayout``).
+        kwargs: Options for ``zxparam.draw`` (``labels``, ``param_names``,
+            ``layout``, ``scale``), plus ``scale_horizontally``, a factor on the
+            horizontal spacing. ``param_names`` entries override the generated
+            names, and ``layout`` overrides the ``layout`` argument. Not
+            modified.
+        layout: zxparam's drawing layout unless ``kwargs`` sets one.
 
     Returns:
-        A pyzx ZX diagram.
+        zxparam's D3 drawing object.
 
     """
-    built = parse_stim_circuit(stim_circ, track_classical_wires=True)
-    g = built.graph
+    options = dict(kwargs)
+    stretch = options.pop("scale_horizontally", None)
+    if stretch:
+        scale = options.get("scale", _ZX_SCALE)
+        x, y = scale if isinstance(scale, tuple) else (scale, scale)
+        options["scale"] = (x * stretch, y)
+    names = ParamLayout(num_errors).names(g.parameters())
+    names.update(options.pop("param_names", None) or {})
+    options.setdefault("layout", layout)
+    return zx.draw(g, param_names=names, **options)
 
-    if len(g.vertices()) == 0:
-        return g
 
-    g = g.clone()
-    if built.last_vertex:
-        max_row = max(g.row(v) for v in built.last_vertex.values())
-        for q in built.last_vertex:
-            g.set_row(built.last_vertex[q], max_row)
-
-    for v in list(g.vertices()):
-        phase_vars = g._phaseVars[v]
-        if len(phase_vars) != 1:
-            continue
-        phase = next(iter(phase_vars))
-        if phase.startswith("det") or phase.startswith("obs"):
-            row = g.row(v)
-            qubit = -2 if phase.startswith("det") else -2.5
-            vb = g.add_vertex(
-                zx.utils.VertexType.BOUNDARY,
-                qubit=qubit,
-                row=row,
-            )
-            g.add_edge((v, vb))
-        if phase.startswith("m["):
-            g.set_phase(v, 0)
-
-    if kwargs.get("scale_horizontally", False):
-        scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
-    zx.draw(g, **kwargs)
-    return g
+def render_zx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> Any:
+    """Render a stim circuit's quantum/classical ZX graph with zxparam's D3 viewer."""
+    built = parse_stim_circuit(stim_circ)
+    return draw_zx(circuit_graph(built), built.num_error_bits, kwargs)
