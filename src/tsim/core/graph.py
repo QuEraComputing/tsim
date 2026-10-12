@@ -159,19 +159,12 @@ def transform_error_basis(g: Graph, num_errors: int) -> tuple[Graph, np.ndarray]
 
     """
     layout = ParamLayout(num_errors)
-    output_spiders: list[Vertex] = []
-    for b in g.outputs():
-        nbrs = list(g.neighbors(b))
-        if len(nbrs) == 1 and g.phase(nbrs[0]).parameters:
-            output_spiders.append(nbrs[0])
-    output_spiders = list(dict.fromkeys(output_spiders))
-    first = set(output_spiders)
-    parametrized = output_spiders + [
-        v for v in g.vertices() if v not in first and g.phase(v).parameters
-    ]
-    if not parametrized:
-        return g, np.zeros((0, num_errors), dtype=np.uint8)
-
+    near_outputs = [n for b in g.outputs() for n in g.neighbors(b)]
+    parametrized = list(
+        dict.fromkeys(
+            v for v in [*near_outputs, *g.vertices()] if g.phase(v).parameters
+        )
+    )
     error_matrix = np.zeros((len(parametrized), num_errors), dtype=np.uint8)
     for row, v in enumerate(parametrized):
         params = sorted(g.phase(v).parameters)
