@@ -497,19 +497,27 @@ def draw_zx(
     Args:
         g: The graph to draw; it is not changed.
         num_errors: The circuit's number of error bits (see ``ParamLayout``).
-        kwargs: ``labels``, and ``scale_horizontally``, a factor on the
-            horizontal spacing.
-        layout: zxparam's drawing layout.
+        kwargs: Options for ``zxparam.draw`` (``labels``, ``param_names``,
+            ``layout``, ``scale``), plus ``scale_horizontally``, a factor on the
+            horizontal spacing. ``param_names`` entries override the generated
+            names, and ``layout`` overrides the ``layout`` argument. Not
+            modified.
+        layout: zxparam's drawing layout unless ``kwargs`` sets one.
 
     Returns:
         zxparam's D3 drawing object.
 
     """
-    stretch = kwargs.pop("scale_horizontally", None)
+    options = dict(kwargs)
+    stretch = options.pop("scale_horizontally", None)
     if stretch:
-        kwargs["scale"] = (_ZX_SCALE * stretch, _ZX_SCALE)
+        scale = options.get("scale", _ZX_SCALE)
+        x, y = scale if isinstance(scale, tuple) else (scale, scale)
+        options["scale"] = (x * stretch, y)
     names = ParamLayout(num_errors).names(g.parameters())
-    return zx.draw(g, param_names=names, layout=layout, **kwargs)
+    names.update(options.pop("param_names", None) or {})
+    options.setdefault("layout", layout)
+    return zx.draw(g, param_names=names, **options)
 
 
 def render_zx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> Any:

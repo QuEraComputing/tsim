@@ -1077,6 +1077,25 @@ def test_diagram_zx_scale_horizontally(
 
 
 @pytest.mark.parametrize("type", ["zx", "zx-meas", "zx-dets"])
+def test_diagram_zx_passes_draw_options_through(
+    type: Literal["zx", "zx-meas", "zx-dets"],
+):
+    c = Circuit("X_ERROR(0.1) 0\nM 0\nDETECTOR rec[-1]")
+    with patch("zxparam.draw") as mock_draw:
+        c.diagram(
+            type=type,
+            layout="stored",
+            param_names={0: "x"},
+            scale=(30, 20),
+            scale_horizontally=2,
+        )
+    kwargs = mock_draw.call_args.kwargs
+    assert kwargs["layout"] == "stored"
+    assert kwargs["param_names"][0] == "x"
+    assert kwargs["scale"] == (60, 20)
+
+
+@pytest.mark.parametrize("type", ["zx", "zx-meas", "zx-dets"])
 def test_diagram_zx_with_zero_scale_draws(type: Literal["zx", "zx-meas", "zx-dets"]):
     html = Circuit("H 0\nM 0").diagram(type=type, scale_horizontally=0)
     assert "renderZx" in html._repr_html_()
