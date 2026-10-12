@@ -363,8 +363,12 @@ def _cx_cz(
     vertex_type = VertexType.X if is_cx else VertexType.Z
 
     m_vertex: Vertex | None = None
-    if classically_controlled:
+    if classically_controlled and any(classically_controlled):
         assert len(classically_controlled) == 2
+        if all(classically_controlled) and not is_cx:
+            # NOTE: a CZ between two measurement records only phases classical
+            # bits, so it does nothing (as in Stim).
+            return
         if classically_controlled[1] and not is_cx:
             # Only control is allowed to be classically controlled, swap control and target for symmetric CZ gate
             classically_controlled = classically_controlled[::-1]

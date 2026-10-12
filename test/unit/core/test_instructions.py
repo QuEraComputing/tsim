@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 from zxparam import Domain, VertexType
 
+from tsim.circuit import Circuit
 from tsim.core import instructions
 from tsim.core.graph import circuit_graph
 from tsim.core.instructions import GraphRepresentation
@@ -226,3 +227,18 @@ def test_records_and_detectors_are_classical_spiders():
     )
     assert (g.vertex_label(rec), g.vertex_label(det)) == ("rec[0]", "det[0]")
     assert g.has_edge(rec, det)
+
+
+def test_cz_between_two_measurement_records_does_nothing():
+    with_cz = Circuit("H 0 1\nM 0 1\nCZ rec[-1] rec[-2]\nH 0")
+    without = Circuit("H 0 1\nM 0 1\nH 0")
+    np.testing.assert_allclose(with_cz.to_tensor(), without.to_tensor(), atol=1e-12)
+
+
+@pytest.mark.parametrize("gate", [instructions.cnot, instructions.cz, instructions.cy])
+def test_unset_classical_control_flags_give_the_quantum_gate(gate):
+    np.testing.assert_allclose(
+        _tensor(lambda b: gate(b, 0, 1, classically_controlled=[False, False])),
+        _tensor(lambda b: gate(b, 0, 1)),
+        atol=1e-12,
+    )
