@@ -7,6 +7,10 @@ quantum. Only measurements (``merge_mirror_copies`` in ``_m``) and detector and
 observable annotations create classical vertices. NOTE: zxparam's
 ``Graph.add_vertex`` defaults to the classical domain, so do not call it directly
 for wire vertices.
+
+Gates are built up to a global phase: every graph is a doubled diagram (a
+channel, ``U ⊗ Ū`` for a unitary), where global phases cancel, so none are
+tracked.
 """
 
 from __future__ import annotations
@@ -137,34 +141,24 @@ def _wire_spider(
 # =============================================================================
 
 
-def x_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
-    """Apply X-axis rotation to qubit. This is equivalent to `r_x` up to a phase."""
-    _wire_spider(b, qubit, VertexType.X, phase)
-
-
-def z_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
-    """Apply Z-axis phase rotation to qubit. This is equivalent to `r_z` up to a phase."""
-    _wire_spider(b, qubit, VertexType.Z, phase)
-
-
 def t(b: GraphRepresentation, qubit: int) -> None:
     """Apply T gate (π/4 Z rotation)."""
-    z_phase(b, qubit, Fraction(1, 4))
+    r_z(b, qubit, Fraction(1, 4))
 
 
 def t_dag(b: GraphRepresentation, qubit: int) -> None:
     """Apply T† gate (-π/4 Z rotation)."""
-    z_phase(b, qubit, Fraction(-1, 4))
+    r_z(b, qubit, Fraction(-1, 4))
 
 
 def r_z(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply R_Z rotation gate with given phase (in units of π)."""
-    z_phase(b, qubit, phase)
+    _wire_spider(b, qubit, VertexType.Z, phase)
 
 
 def r_x(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply R_X rotation gate with given phase (in units of π)."""
-    x_phase(b, qubit, phase)
+    _wire_spider(b, qubit, VertexType.X, phase)
 
 
 def r_y(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
@@ -207,7 +201,7 @@ def ii(b: GraphRepresentation, qubit1: int, qubit2: int, *_args: float) -> None:
 
 def x(b: GraphRepresentation, qubit: int) -> None:
     """Apply Pauli X gate."""
-    x_phase(b, qubit, Fraction(1, 1))
+    r_x(b, qubit, Fraction(1, 1))
 
 
 def y(b: GraphRepresentation, qubit: int) -> None:
@@ -218,7 +212,7 @@ def y(b: GraphRepresentation, qubit: int) -> None:
 
 def z(b: GraphRepresentation, qubit: int) -> None:
     """Apply Pauli Z gate."""
-    z_phase(b, qubit, Fraction(1, 1))
+    r_z(b, qubit, Fraction(1, 1))
 
 
 # =============================================================================
@@ -312,17 +306,17 @@ def h_nyz(b: GraphRepresentation, qubit: int) -> None:
 
 def s(b: GraphRepresentation, qubit: int) -> None:
     """Apply S gate (π/2 Z rotation)."""
-    z_phase(b, qubit, Fraction(1, 2))
+    r_z(b, qubit, Fraction(1, 2))
 
 
 def sqrt_x(b: GraphRepresentation, qubit: int) -> None:
     """Apply √X gate (π/2 X rotation)."""
-    x_phase(b, qubit, Fraction(1, 2))
+    r_x(b, qubit, Fraction(1, 2))
 
 
 def sqrt_x_dag(b: GraphRepresentation, qubit: int) -> None:
     """Apply √X† gate (-π/2 X rotation)."""
-    x_phase(b, qubit, Fraction(-1, 2))
+    r_x(b, qubit, Fraction(-1, 2))
 
 
 def sqrt_y(b: GraphRepresentation, qubit: int) -> None:
@@ -337,19 +331,9 @@ def sqrt_y_dag(b: GraphRepresentation, qubit: int) -> None:
     z(b, qubit)
 
 
-def sqrt_z(b: GraphRepresentation, qubit: int) -> None:
-    """Apply √Z gate (alias for S gate)."""
-    s(b, qubit)
-
-
-def sqrt_z_dag(b: GraphRepresentation, qubit: int) -> None:
-    """Apply √Z† gate (alias for S† gate)."""
-    s_dag(b, qubit)
-
-
 def s_dag(b: GraphRepresentation, qubit: int) -> None:
     """Apply S† gate (-π/2 Z rotation)."""
-    z_phase(b, qubit, Fraction(-1, 2))
+    r_z(b, qubit, Fraction(-1, 2))
 
 
 # =============================================================================
