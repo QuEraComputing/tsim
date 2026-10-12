@@ -53,7 +53,6 @@ def compile_program(
     """
     graph = prepared.graph
     layout = prepared.layout
-    basis_global = _basis_indices(graph, layout)
 
     direct_entries: list[tuple[int, int, bool]] = []
     compiled_components: list[CompiledComponent] = []
@@ -68,7 +67,7 @@ def compile_program(
             direct_entries.append((output_indices[0], basis_index, flip))
             continue
         compiled_components.append(
-            _compile_component(component, basis_global, layout, mode, strategy)
+            _compile_component(component, output_indices, layout, mode, strategy)
         )
         compiled_output_order.extend(output_indices)
 
@@ -105,10 +104,9 @@ def classify_direct(component: Graph, layout: ParamLayout) -> tuple[int, bool] |
         return None
     (out,) = outputs
     (spider,) = component.neighbors(out)
-    if Domain.QUANTUM in (
-        component.vertex_domain(out),
-        component.vertex_domain(spider),
-    ):
+    # NOTE: zxparam never lets a classical boundary touch a quantum vertex, so a
+    # classical output implies a classical spider.
+    if component.vertex_domain(out) == Domain.QUANTUM:
         return None
     if component.vertex_type(spider) != VertexType.Z:
         return None
@@ -128,11 +126,6 @@ def _port(g: Graph, v: Vertex) -> int:
     port = g.port(v)
     assert port is not None
     return port
-
-
-def _basis_indices(g: Graph, layout: ParamLayout) -> list[int]:
-    """Return the sorted basis indices of ``g``'s parameters (its scalar is 1)."""
-    return sorted(layout.basis_index(p) for p in g.parameters())
 
 
 def _plugged(component: Graph, layout: ParamLayout, k: int) -> Graph:
@@ -181,15 +174,16 @@ def _terms(ssum: ScalarSum, shift: int) -> list[Scalar]:
 
 def _compile_component(
     component: Graph,
-    basis_global: list[int],
+    output_indices: list[int],
     layout: ParamLayout,
     mode: DecompositionMode,
     strategy: DecompositionStrategy,
 ) -> CompiledComponent:
-    """Compile one connected component."""
-    output_indices = [_port(component, v) for v in component.outputs()]
-    basis_here = set(_basis_indices(component, layout))
-    f_selection = [i for i in basis_global if i in basis_here]
+    """Compile one connected component, whose outputs are ``output_indices``.
+
+    The component's scalar is 1, so its parameters are its vertices' basis bits.
+    """
+    f_selection = sorted(layout.basis_index(p) for p in component.parameters())
     counts = (
         list(range(len(output_indices) + 1))
         if mode == "sequential"

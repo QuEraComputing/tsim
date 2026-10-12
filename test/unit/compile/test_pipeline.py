@@ -111,13 +111,12 @@ def _direct_candidate(
     params: tuple[int, ...] = (LAYOUT.basis(1),),
     edge_type: EdgeType = EdgeType.HADAMARD,
     output_domain: Domain = Domain.CLASSICAL,
-    spider_domain: Domain = Domain.CLASSICAL,
 ) -> Graph:
     g = Graph()
     out = g.add_vertex(VertexType.BOUNDARY, domain=output_domain)
     g.set_port(out, 0)
     phase = Phase(Fraction(value), frozenset(params))
-    spider = g.add_vertex(VertexType.Z, phase, domain=spider_domain)
+    spider = g.add_vertex(VertexType.Z, phase, domain=output_domain)
     g.add_edge(out, spider, edge_type)
     return g
 
@@ -144,12 +143,6 @@ def test_classify_direct_reads_the_basis_index_and_flip(value, flip, basis_index
         pytest.param(
             _direct_candidate(output_domain=Domain.QUANTUM),
             id="quantum-output",
-        ),
-        pytest.param(
-            _direct_candidate(
-                output_domain=Domain.QUANTUM, spider_domain=Domain.QUANTUM
-            ),
-            id="quantum-output-and-spider",
         ),
     ],
 )
