@@ -11,8 +11,8 @@ from test.helpers.statevector import (
 )
 
 import pytest
-from zx_param import Phase, Scalar
-from zx_param.extract import ExtractedCircuit, Gate, extract_circuit
+from zxparam import Phase, Scalar
+from zxparam.extract import ExtractedCircuit, Gate, extract_circuit
 
 from tsim.statevector.heisenberg import (
     MEASUREMENT,

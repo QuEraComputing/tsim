@@ -18,8 +18,8 @@ from math import pi
 
 import numpy as np
 import stim
-from zx_param import Graph, Vertex
-from zx_param.extract import ExtractedCircuit, Gate
+from zxparam import Graph, Vertex
+from zxparam.extract import ExtractedCircuit, Gate
 
 from tsim.core.params import ParamLayout
 

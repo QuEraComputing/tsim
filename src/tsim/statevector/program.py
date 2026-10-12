@@ -12,8 +12,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
-from zx_param import Graph
-from zx_param.extract import extract_circuit
+from zxparam import Graph
+from zxparam.extract import extract_circuit
 
 from tsim.core.params import ParamLayout
 from tsim.statevector.heisenberg import ComponentLayout, heisenberg_ops

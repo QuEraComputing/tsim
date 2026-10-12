@@ -12,8 +12,8 @@ from math import cos, pi, sin
 
 import jax.numpy as jnp
 import numpy as np
-from zx_param import Graph, Phase, Scalar
-from zx_param.extract import ExtractedCircuit, Gate, extract_circuit
+from zxparam import Graph, Phase, Scalar
+from zxparam.extract import ExtractedCircuit, Gate, extract_circuit
 
 from tsim.circuit import Circuit
 from tsim.compile.evaluate import evaluate
