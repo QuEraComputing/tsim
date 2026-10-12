@@ -1073,11 +1073,9 @@ def r(b: GraphRepresentation, qubit: int) -> None:
 def rx(b: GraphRepresentation, qubit: int) -> None:
     """X-basis reset.
 
-    Forces each target qubit into the |+> state by silently measuring it in the X basis
-    and applying a Z gate if it ended up in the |-> state.
+    Forces the qubit into the |+> state: a Z-basis reset followed by H. The reset
+    traces out the old state, which does not depend on the basis.
     """
-    if qubit in b.last_vertex:
-        h(b, qubit)
     r(b, qubit)
     h(b, qubit)
 
@@ -1085,11 +1083,9 @@ def rx(b: GraphRepresentation, qubit: int) -> None:
 def ry(b: GraphRepresentation, qubit: int) -> None:
     """Y-basis reset.
 
-    Forces each target qubit into the |i> state by silently measuring it in the Y basis
-    and applying an X gate if it ended up in the |-i> state.
+    Forces the qubit into the |i> state: a Z-basis reset followed by H_YZ. The
+    reset traces out the old state, which does not depend on the basis.
     """
-    if qubit in b.last_vertex:
-        h_yz(b, qubit)
     r(b, qubit)
     h_yz(b, qubit)
 
