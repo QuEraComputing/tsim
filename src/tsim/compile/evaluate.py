@@ -26,18 +26,18 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
 
     Args:
         circuit: Compiled circuit representation.
-        param_vals: Binary parameter values (error bits + measurement/detector
-            outcomes), shape ``(batch_size, n_params)``.
+        param_vals: Bits of the compiled parameters (error-basis bits, then
+            output bits), shape ``(batch_size, n_params)``.
 
     Returns:
-        Complex array of shape ``(batch_size,)`` — the per-sample amplitude.
+        Complex array of shape ``(batch_size,)``: the summed scalars per sample.
 
     """
     prefactor = circuit.prefactor
     if prefactor.power2.shape[0] == 0:
         return jnp.zeros(param_vals.shape[0], dtype=jnp.complex64)
 
-    float_factor = ExactScalarArray(prefactor.floatfactor)
+    exact_prefactor = ExactScalarArray(prefactor.floatfactor, prefactor.power2)
 
     total = functools.reduce(
         operator.mul,
@@ -46,11 +46,9 @@ def evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array:
             circuit.phase_terms.evaluate(param_vals),
             circuit.pi_products.evaluate(param_vals),
             circuit.phase_pairs.evaluate(param_vals),
-            float_factor,
+            exact_prefactor,
         ],
     )
-
-    total = ExactScalarArray(total.coeffs, total.power + prefactor.power2)
     if not prefactor.has_approximate_floatfactors and not circuit.has_float_terms:
         return total.sum().to_complex()
 

@@ -28,9 +28,9 @@ class CompiledScalarGraphs(eqx.Module):
 
     The scalar for each graph is a product of four exact term families and the
     floating-point ``FloatTerms`` family, multiplied by a per-graph
-    ``ScalarPrefactor`` (global phase, floatfactor, ``2^power2``, optional
-    approximate complex floatfactor). All arrays are static-shaped so
-    the whole struct can be traced under ``jax.jit``.
+    ``ScalarPrefactor`` (an exact Dyadic factor with its ``2^power2``, and an
+    approximate complex factor for angles that are not multiples of π/4). All
+    arrays are static-shaped so the whole struct can be traced under ``jax.jit``.
     """
 
     num_graphs: int
@@ -72,7 +72,7 @@ class _SplitScalar:
     floats: list[tuple[list[complex], list[int], list[int]]] = field(
         default_factory=list
     )
-    float_factor: complex = 1.0
+    approximate_factor: complex = 1.0
     coeffs: tuple[int, int, int, int] = (1, 0, 0, 0)
     power2: int = 0
 
@@ -100,7 +100,7 @@ def _split_scalar(s: Scalar, column: dict[int, int], n_params: int) -> _SplitSca
             v0, v1 = 1 + _cis(n.alpha), 1 - _cis(n.alpha)
             split.floats.append(([v0, v1, v0, v1], mask(n.a), [0] * n_params))
         else:
-            split.float_factor *= 1 + _cis(n.alpha)
+            split.approximate_factor *= 1 + _cis(n.alpha)
     for h in s.phases:
         k = omega_exponent(h.alpha)
         if k is not None:
@@ -121,9 +121,9 @@ def _split_scalar(s: Scalar, column: dict[int, int], n_params: int) -> _SplitSca
         if q.a or q.b:
             split.floats.append((table, mask(q.a), mask(q.b)))
         else:
-            split.float_factor *= table[0]
+            split.approximate_factor *= table[0]
     if s.phase:
-        split.float_factor *= _cis(s.phase)
+        split.approximate_factor *= _cis(s.phase)
     base = s.base
     split.coeffs = (base.a, base.b, base.c, base.d)
     split.power2 = base.power
@@ -149,7 +149,7 @@ def _scalar_prefactor(split: list[_SplitScalar]) -> ScalarPrefactor:
     coeffs = [s.coeffs for s in split]
     if any(abs(c) >= 2**31 for row in coeffs for c in row):
         raise OverflowError("a scalar's Dyadic coefficients do not fit in int32")
-    approximate = [s.float_factor for s in split]
+    approximate = [s.approximate_factor for s in split]
     return ScalarPrefactor(
         floatfactor=jnp.array(coeffs, dtype=jnp.int32).reshape(-1, 4),
         power2=jnp.array([s.power2 for s in split], dtype=jnp.int32),

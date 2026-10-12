@@ -147,8 +147,8 @@ def _plugged(component: Graph, layout: ParamLayout, k: int) -> Graph:
 def _without_unit_factors(s: Scalar) -> Scalar:
     """Return ``s`` without its modulus-1 factors (global and parametric phases).
 
-    The sampler only uses ``|amplitude|``, so factors of modulus 1 shared by all
-    terms change nothing.
+    The sampler only uses the magnitude of each value, so factors of modulus 1
+    shared by all terms change nothing.
     """
     out = s.copy()
     out.phase = Fraction(0)
