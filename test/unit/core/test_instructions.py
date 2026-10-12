@@ -79,28 +79,12 @@ def test_single_qubit_instruction(gate_func, matrix: np.ndarray):
 
 
 @pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
-def test_r_z(frac: Fraction):
+@pytest.mark.parametrize("name", ["R_X", "R_Y", "R_Z"])
+def test_rotation(name: str, frac: Fraction):
+    gate = getattr(instructions, name.lower())
     np.testing.assert_allclose(
-        _tensor(lambda b: instructions.r_z(b, 0, frac)),
-        doubled(ROT_GATE_MATRICES["R_Z"](frac)),
-        atol=1e-9,
-    )
-
-
-@pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
-def test_r_x(frac: Fraction):
-    np.testing.assert_allclose(
-        _tensor(lambda b: instructions.r_x(b, 0, frac)),
-        doubled(ROT_GATE_MATRICES["R_X"](frac)),
-        atol=1e-9,
-    )
-
-
-@pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
-def test_r_y(frac: Fraction):
-    np.testing.assert_allclose(
-        _tensor(lambda b: instructions.r_y(b, 0, frac)),
-        doubled(ROT_GATE_MATRICES["R_Y"](frac)),
+        _tensor(lambda b: gate(b, 0, frac)),
+        doubled(ROT_GATE_MATRICES[name](frac)),
         atol=1e-9,
     )
 
@@ -178,23 +162,11 @@ def test_resets(gates, expected: np.ndarray):
     np.testing.assert_allclose(_on_qubit_0(*gates), expected, atol=1e-9)
 
 
-def test_mr_matches_m_then_r():
+@pytest.mark.parametrize("basis", ["", "x", "y"])
+def test_mr_matches_m_then_r(basis: str):
     """MR/MRX/MRY should produce the same tensor as M;R / MX;RX / MY;RY."""
-    np.testing.assert_allclose(
-        _on_qubit_0(instructions.mr),
-        _on_qubit_0(instructions.m, instructions.r),
-        atol=1e-9,
-    )
-    np.testing.assert_allclose(
-        _on_qubit_0(instructions.mrx),
-        _on_qubit_0(instructions.mx, instructions.rx),
-        atol=1e-9,
-    )
-    np.testing.assert_allclose(
-        _on_qubit_0(instructions.mry),
-        _on_qubit_0(instructions.my, instructions.ry),
-        atol=1e-9,
-    )
+    mr, m, r = (getattr(instructions, f"{g}{basis}") for g in ("mr", "m", "r"))
+    np.testing.assert_allclose(_on_qubit_0(mr), _on_qubit_0(m, r), atol=1e-9)
 
 
 def test_x_error_is_an_x_spider_with_its_error_bit():
