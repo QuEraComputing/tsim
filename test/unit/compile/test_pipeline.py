@@ -2,6 +2,7 @@
 
 import itertools
 from fractions import Fraction
+from test.helpers.gate_matrices import CNOT, H, T
 
 import jax.numpy as jnp
 import numpy as np
@@ -15,10 +16,7 @@ from tsim.core.graph import prepare_graph
 from tsim.core.params import ParamLayout
 from tsim.sampler import CompiledStateProbs
 
-H = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
-T = np.diag([1, np.exp(1j * np.pi / 4)])
 I2 = np.eye(2)
-CNOT = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]])
 
 
 def _abs_value(compiled, bits: list[int]) -> float:
@@ -111,13 +109,13 @@ def _direct_candidate(
     params: tuple[int, ...] = (LAYOUT.basis(1),),
     edge_type: EdgeType = EdgeType.HADAMARD,
     output_domain: Domain = Domain.CLASSICAL,
-    spider_domain: Domain = Domain.CLASSICAL,
+    spider_type: VertexType = VertexType.Z,
 ) -> Graph:
     g = Graph()
     out = g.add_vertex(VertexType.BOUNDARY, domain=output_domain)
     g.set_port(out, 0)
     phase = Phase(Fraction(value), frozenset(params))
-    spider = g.add_vertex(VertexType.Z, phase, domain=spider_domain)
+    spider = g.add_vertex(spider_type, phase, domain=output_domain)
     g.add_edge(out, spider, edge_type)
     return g
 
@@ -141,15 +139,10 @@ def test_classify_direct_reads_the_basis_index_and_flip(value, flip, basis_index
         pytest.param(_direct_candidate(params=()), id="no-param"),
         pytest.param(_direct_candidate(value=1, params=()), id="no-param-flip"),
         pytest.param(_direct_candidate(edge_type=EdgeType.SIMPLE), id="simple-edge"),
+        pytest.param(_direct_candidate(spider_type=VertexType.X), id="x-spider"),
         pytest.param(
             _direct_candidate(output_domain=Domain.QUANTUM),
             id="quantum-output",
-        ),
-        pytest.param(
-            _direct_candidate(
-                output_domain=Domain.QUANTUM, spider_domain=Domain.QUANTUM
-            ),
-            id="quantum-output-and-spider",
         ),
     ],
 )

@@ -2,8 +2,8 @@
 
 Each compiled scalar is the product of four exact term families (``NodePhases``,
 ``PhaseTerms``, ``PiProducts``, ``PhasePairs``) and a floating-point family
-(``FloatTerms``, for angles that are not multiples of π/4), times a global phase
-and a floatfactor. This module defines the families as ``equinox.Module``
+(``FloatTerms``, for angles that are not multiples of π/4), times a per-graph
+prefactor (``ScalarPrefactor``). This module defines the families as ``equinox.Module``
 records, bundles the shared phase tables, and gives each family an ``evaluate``
 method that turns a batch of binary parameter values into an
 ``ExactScalarArray`` (or, for ``FloatTerms``, a complex array).
@@ -189,7 +189,7 @@ class PhasePairs(eqx.Module):
 class ScalarPrefactor(eqx.Module):
     """Per-graph static scalar prefactor — independent of parameter values.
 
-    Each graph's amplitude is the product of the four exact term families and
+    Each graph's value is the product of the four exact term families and
     ``FloatTerms`` times the prefactor ``floatfactor · 2^power2`` (which includes
     any global phase that is a multiple of π/4), times the graph's complex entry
     of ``approximate_floatfactors``. That entry collects the parameter-free

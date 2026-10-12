@@ -580,9 +580,9 @@ def test_postselection_discarded_rows_zero_direct_observable():
     )
     c = Circuit.from_stim_program(circ)
     sampler = c.compile_detector_sampler(seed=0)
-    assert sampler._direct_output_mask[sampler._num_detectors :].any(), (
-        "expected a direct observable for this circuit"
-    )
+    assert sampler._direct_output_mask[
+        sampler._num_detectors :
+    ].any(), "expected a direct observable for this circuit"
 
     mask = np.zeros(c.num_detectors, dtype=np.bool_)
     mask[0] = True

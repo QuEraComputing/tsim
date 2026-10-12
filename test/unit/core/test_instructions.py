@@ -7,18 +7,17 @@ from test.helpers.gate_matrices import (
     SINGLE_QUBIT_GATE_MATRICES,
     TWO_QUBIT_GATE_MATRICES,
 )
-from test.helpers.tensors import channel, doubled, doubled_state
+from test.helpers.tensors import ONE, ZERO, channel, doubled, doubled_state
 
 import numpy as np
 import pytest
 from zxparam import Domain, VertexType
 
+from tsim.circuit import Circuit
 from tsim.core import instructions
 from tsim.core.graph import circuit_graph
 from tsim.core.instructions import GraphRepresentation
 
-ZERO = np.array([1, 0], dtype=complex)
-ONE = np.array([0, 1], dtype=complex)
 PLUS = (ZERO + ONE) / np.sqrt(2)
 MINUS = (ZERO - ONE) / np.sqrt(2)
 PLUS_I = (ZERO + 1j * ONE) / np.sqrt(2)
@@ -78,28 +77,12 @@ def test_single_qubit_instruction(gate_func, matrix: np.ndarray):
 
 
 @pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
-def test_r_z(frac: Fraction):
+@pytest.mark.parametrize("name", ["R_X", "R_Y", "R_Z"])
+def test_rotation(name: str, frac: Fraction):
+    gate = getattr(instructions, name.lower())
     np.testing.assert_allclose(
-        _tensor(lambda b: instructions.r_z(b, 0, frac)),
-        doubled(ROT_GATE_MATRICES["R_Z"](frac)),
-        atol=1e-9,
-    )
-
-
-@pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
-def test_r_x(frac: Fraction):
-    np.testing.assert_allclose(
-        _tensor(lambda b: instructions.r_x(b, 0, frac)),
-        doubled(ROT_GATE_MATRICES["R_X"](frac)),
-        atol=1e-9,
-    )
-
-
-@pytest.mark.parametrize("frac", [Fraction(1, 5), Fraction(-1, 3), Fraction(1, 7)])
-def test_r_y(frac: Fraction):
-    np.testing.assert_allclose(
-        _tensor(lambda b: instructions.r_y(b, 0, frac)),
-        doubled(ROT_GATE_MATRICES["R_Y"](frac)),
+        _tensor(lambda b: gate(b, 0, frac)),
+        doubled(ROT_GATE_MATRICES[name](frac)),
         atol=1e-9,
     )
 
@@ -177,23 +160,11 @@ def test_resets(gates, expected: np.ndarray):
     np.testing.assert_allclose(_on_qubit_0(*gates), expected, atol=1e-9)
 
 
-def test_mr_matches_m_then_r():
+@pytest.mark.parametrize("basis", ["", "x", "y"])
+def test_mr_matches_m_then_r(basis: str):
     """MR/MRX/MRY should produce the same tensor as M;R / MX;RX / MY;RY."""
-    np.testing.assert_allclose(
-        _on_qubit_0(instructions.mr),
-        _on_qubit_0(instructions.m, instructions.r),
-        atol=1e-9,
-    )
-    np.testing.assert_allclose(
-        _on_qubit_0(instructions.mrx),
-        _on_qubit_0(instructions.mx, instructions.rx),
-        atol=1e-9,
-    )
-    np.testing.assert_allclose(
-        _on_qubit_0(instructions.mry),
-        _on_qubit_0(instructions.my, instructions.ry),
-        atol=1e-9,
-    )
+    mr, m, r = (getattr(instructions, f"{g}{basis}") for g in ("mr", "m", "r"))
+    np.testing.assert_allclose(_on_qubit_0(mr), _on_qubit_0(m, r), atol=1e-9)
 
 
 def test_x_error_is_an_x_spider_with_its_error_bit():
@@ -226,3 +197,18 @@ def test_records_and_detectors_are_classical_spiders():
     )
     assert (g.vertex_label(rec), g.vertex_label(det)) == ("rec[0]", "det[0]")
     assert g.has_edge(rec, det)
+
+
+def test_cz_between_two_measurement_records_does_nothing():
+    with_cz = Circuit("H 0 1\nM 0 1\nCZ rec[-1] rec[-2]\nH 0")
+    without = Circuit("H 0 1\nM 0 1\nH 0")
+    np.testing.assert_allclose(with_cz.to_tensor(), without.to_tensor(), atol=1e-12)
+
+
+@pytest.mark.parametrize("gate", [instructions.cnot, instructions.cz, instructions.cy])
+def test_unset_classical_control_flags_give_the_quantum_gate(gate):
+    np.testing.assert_allclose(
+        _tensor(lambda b: gate(b, 0, 1, classically_controlled=[False, False])),
+        _tensor(lambda b: gate(b, 0, 1)),
+        atol=1e-12,
+    )

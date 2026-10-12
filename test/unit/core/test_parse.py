@@ -7,6 +7,7 @@ import stim
 from numpy.testing import assert_allclose
 from zxparam import VertexType
 
+from tsim.core.instructions import HELPER_LANE
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 
 
@@ -75,14 +76,8 @@ class TestParseCorrelatedError:
         b = parse_stim_circuit(circuit)
 
         assert b.num_error_bits == 1
-        # Count vertices that carry error bit 0
-        e0_count = 0
-        for v in b.graph.vertices():
-            if 0 in b.graph.phase(v).parameters:
-                e0_count += 1
-
         # Y error should create 2 vertices (X and Z), both with same phase
-        assert e0_count == 2
+        assert sum(0 in b.graph.phase(v).parameters for v in b.graph.vertices()) == 2
 
 
 class TestCorrelatedErrorGraph:
@@ -93,14 +88,7 @@ class TestCorrelatedErrorGraph:
         circuit = stim.Circuit("CORRELATED_ERROR(0.1) X0")
         b = parse_stim_circuit(circuit)
 
-        # Find vertices that carry error bit 0
-        found_e0 = False
-        for v in b.graph.vertices():
-            if 0 in b.graph.phase(v).parameters:
-                found_e0 = True
-                break
-
-        assert found_e0
+        assert any(0 in b.graph.phase(v).parameters for v in b.graph.vertices())
 
     def test_no_c_phases_after_finalization(self):
         """Verify no correlated-error bits are left pending after finalization."""
@@ -332,9 +320,18 @@ class TestChannelBitLayoutMatchesGraph:
             ("MR(0.07) 5", {0: [(VertexType.X, 5), (VertexType.X, 5)]}),
             ("MRX(0.07) 5", {0: [(VertexType.X, 5), (VertexType.X, 5)]}),
             ("MRY(0.07) 5", {0: [(VertexType.X, 5), (VertexType.X, 5)]}),
-            ("MXX(0.07) 5 7", {0: [(VertexType.X, -2), (VertexType.X, -2)]}),
-            ("MPP(0.07) X5*Z7", {0: [(VertexType.X, -2), (VertexType.X, -2)]}),
-            ("MPAD(0.07) 1", {0: [(VertexType.X, -2), (VertexType.X, -2)]}),
+            (
+                "MXX(0.07) 5 7",
+                {0: [(VertexType.X, HELPER_LANE), (VertexType.X, HELPER_LANE)]},
+            ),
+            (
+                "MPP(0.07) X5*Z7",
+                {0: [(VertexType.X, HELPER_LANE), (VertexType.X, HELPER_LANE)]},
+            ),
+            (
+                "MPAD(0.07) 1",
+                {0: [(VertexType.X, HELPER_LANE), (VertexType.X, HELPER_LANE)]},
+            ),
         ],
     )
     def test_single_bit_channel_layout_matches_graph(self, program, expected_layout):
@@ -404,7 +401,7 @@ class TestChannelBitLayoutMatchesGraph:
         _assert_error_vertex_layout(
             b,
             {
-                0: [(VertexType.X, -2)],
+                0: [(VertexType.X, HELPER_LANE)],
                 1: [(VertexType.Z, 5)],
                 2: [(VertexType.X, 5)],
             },

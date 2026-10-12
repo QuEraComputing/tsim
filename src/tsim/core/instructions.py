@@ -7,6 +7,10 @@ quantum. Only measurements (``merge_mirror_copies`` in ``_m``) and detector and
 observable annotations create classical vertices. NOTE: zxparam's
 ``Graph.add_vertex`` defaults to the classical domain, so do not call it directly
 for wire vertices.
+
+Gates are built up to a global phase: every graph is a doubled diagram (a
+channel, ``U ⊗ Ū`` for a unitary), where global phases cancel, so none are
+tracked.
 """
 
 from __future__ import annotations
@@ -25,6 +29,12 @@ from tsim.noise.channels import (
     pauli_channel_1_probs,
     pauli_channel_2_probs,
 )
+
+HELPER_LANE = -1
+"""Qubit index, and row, of the helper wire used by MPP, MPAD and heralded channels."""
+
+ANNOTATION_ROW = -2.0
+"""Row of the detector and observable spiders, above the helper wire."""
 
 
 @dataclass
@@ -90,12 +100,8 @@ def add_lane(b: GraphRepresentation, qubit: int) -> Vertex:
     v1 = b.graph.add_vertex(
         VertexType.BOUNDARY, col=0, row=qubit, domain=Domain.QUANTUM
     )
-    v2 = b.graph.add_vertex(
-        VertexType.BOUNDARY, col=1, row=qubit, domain=Domain.QUANTUM
-    )
-    b.graph.add_edge(v1, v2)
     b.first_vertex[qubit] = v1
-    b.last_vertex[qubit] = v2
+    b.graph.add_edge(v1, add_quantum_boundary(b, qubit, col=1))
     return v1
 
 
@@ -110,15 +116,18 @@ def _wire_spider(
     qubit: int,
     vertex_type: VertexType,
     phase: Phase | Fraction | None = None,
+    col: float | None = None,
 ) -> Vertex:
     """Turn the trailing boundary of a qubit's wire into a quantum spider.
 
-    The spider keeps the boundary's quantum domain, and a new quantum boundary
-    is appended after it. Returns the spider.
+    The spider keeps the boundary's quantum domain, moves to column ``col`` if
+    given, and a new quantum boundary is appended after it. Returns the spider.
     """
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
     b.graph.set_vertex_type(v1, vertex_type)
+    if col is not None:
+        b.graph.set_col(v1, col)
     if phase is not None:
         b.graph.set_phase(v1, phase)
     v2 = add_quantum_boundary(b, qubit)
@@ -131,34 +140,24 @@ def _wire_spider(
 # =============================================================================
 
 
-def x_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
-    """Apply X-axis rotation to qubit. This is equivalent to `r_x` up to a phase."""
-    _wire_spider(b, qubit, VertexType.X, phase)
-
-
-def z_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
-    """Apply Z-axis phase rotation to qubit. This is equivalent to `r_z` up to a phase."""
-    _wire_spider(b, qubit, VertexType.Z, phase)
-
-
 def t(b: GraphRepresentation, qubit: int) -> None:
     """Apply T gate (π/4 Z rotation)."""
-    z_phase(b, qubit, Fraction(1, 4))
+    r_z(b, qubit, Fraction(1, 4))
 
 
 def t_dag(b: GraphRepresentation, qubit: int) -> None:
     """Apply T† gate (-π/4 Z rotation)."""
-    z_phase(b, qubit, Fraction(-1, 4))
+    r_z(b, qubit, Fraction(-1, 4))
 
 
 def r_z(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply R_Z rotation gate with given phase (in units of π)."""
-    z_phase(b, qubit, phase)
+    _wire_spider(b, qubit, VertexType.Z, phase)
 
 
 def r_x(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
     """Apply R_X rotation gate with given phase (in units of π)."""
-    x_phase(b, qubit, phase)
+    _wire_spider(b, qubit, VertexType.X, phase)
 
 
 def r_y(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
@@ -201,7 +200,7 @@ def ii(b: GraphRepresentation, qubit1: int, qubit2: int, *_args: float) -> None:
 
 def x(b: GraphRepresentation, qubit: int) -> None:
     """Apply Pauli X gate."""
-    x_phase(b, qubit, Fraction(1, 1))
+    r_x(b, qubit, Fraction(1, 1))
 
 
 def y(b: GraphRepresentation, qubit: int) -> None:
@@ -212,7 +211,7 @@ def y(b: GraphRepresentation, qubit: int) -> None:
 
 def z(b: GraphRepresentation, qubit: int) -> None:
     """Apply Pauli Z gate."""
-    z_phase(b, qubit, Fraction(1, 1))
+    r_z(b, qubit, Fraction(1, 1))
 
 
 # =============================================================================
@@ -306,17 +305,17 @@ def h_nyz(b: GraphRepresentation, qubit: int) -> None:
 
 def s(b: GraphRepresentation, qubit: int) -> None:
     """Apply S gate (π/2 Z rotation)."""
-    z_phase(b, qubit, Fraction(1, 2))
+    r_z(b, qubit, Fraction(1, 2))
 
 
 def sqrt_x(b: GraphRepresentation, qubit: int) -> None:
     """Apply √X gate (π/2 X rotation)."""
-    x_phase(b, qubit, Fraction(1, 2))
+    r_x(b, qubit, Fraction(1, 2))
 
 
 def sqrt_x_dag(b: GraphRepresentation, qubit: int) -> None:
     """Apply √X† gate (-π/2 X rotation)."""
-    x_phase(b, qubit, Fraction(-1, 2))
+    r_x(b, qubit, Fraction(-1, 2))
 
 
 def sqrt_y(b: GraphRepresentation, qubit: int) -> None:
@@ -331,19 +330,9 @@ def sqrt_y_dag(b: GraphRepresentation, qubit: int) -> None:
     z(b, qubit)
 
 
-def sqrt_z(b: GraphRepresentation, qubit: int) -> None:
-    """Apply √Z gate (alias for S gate)."""
-    s(b, qubit)
-
-
-def sqrt_z_dag(b: GraphRepresentation, qubit: int) -> None:
-    """Apply √Z† gate (alias for S† gate)."""
-    s_dag(b, qubit)
-
-
 def s_dag(b: GraphRepresentation, qubit: int) -> None:
     """Apply S† gate (-π/2 Z rotation)."""
-    z_phase(b, qubit, Fraction(-1, 2))
+    r_z(b, qubit, Fraction(-1, 2))
 
 
 # =============================================================================
@@ -363,8 +352,12 @@ def _cx_cz(
     vertex_type = VertexType.X if is_cx else VertexType.Z
 
     m_vertex: Vertex | None = None
-    if classically_controlled:
+    if classically_controlled and any(classically_controlled):
         assert len(classically_controlled) == 2
+        if all(classically_controlled) and not is_cx:
+            # NOTE: a CZ between two measurement records only phases classical
+            # bits, so it does nothing (as in Stim).
+            return
         if classically_controlled[1] and not is_cx:
             # Only control is allowed to be classically controlled, swap control and target for symmetric CZ gate
             classically_controlled = classically_controlled[::-1]
@@ -377,22 +370,10 @@ def _cx_cz(
     ensure_lane(b, target)
 
     col = max(last_col(b, control), last_col(b, target))
-
-    v1 = b.last_vertex[control]
-    b.graph.set_vertex_type(v1, VertexType.Z)
-    b.graph.set_col(v1, col)
-    v3 = add_quantum_boundary(b, control, int(col + 1))
-    b.graph.add_edge(v1, v3)
-
+    v1 = _wire_spider(b, control, VertexType.Z, col=col)
     if control == target:
         col += 1
-
-    v2 = b.last_vertex[target]
-    b.graph.set_vertex_type(v2, vertex_type)
-    b.graph.set_col(v2, col)
-    v4 = add_quantum_boundary(b, target, int(col + 1))
-    b.graph.add_edge(v2, v4)
-
+    v2 = _wire_spider(b, target, vertex_type, col=col)
     b.graph.add_edge(v1 if m_vertex is None else m_vertex, v2, edge_type)
     b.graph.mul_sqrt2(1, Domain.QUANTUM)
 
@@ -439,6 +420,11 @@ def swap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     b.last_vertex[qubit1] = v2
     b.last_vertex[qubit2] = v1
 
+    # NOTE: both wire ends move to the later column first, so neither lands on
+    # a position the other lane already uses.
+    col = max(b.graph.col(v1), b.graph.col(v2))
+    b.graph.set_col(v1, col)
+    b.graph.set_col(v2, col)
     b.graph.set_row(v1, qubit2)
     b.graph.set_row(v2, qubit1)
 
@@ -717,7 +703,7 @@ def heralded_pauli_channel_1(
     is applied. When it doesn't fire, the herald is 0 and nothing happens.
     """
     b.channel_probs.append(heralded_pauli_channel_1_probs(pi, px, py, pz))
-    aux = -2
+    aux = HELPER_LANE
     r(b, aux)
     _error(b, aux, VertexType.X, b.num_error_bits)  # herald bit flip
     m(b, aux)
@@ -849,7 +835,7 @@ def mpp(
         p: Measurement flip error probability.
 
     """
-    aux = -2
+    aux = HELPER_LANE
     r(b, aux)
     h(b, aux)
     _apply_pauli_controls(b, aux, paulis)
@@ -999,7 +985,7 @@ def mpad(b: GraphRepresentation, value: int, p: float = 0) -> None:
         p: Error probability for the recorded bit.
 
     """
-    aux = -2
+    aux = HELPER_LANE
     r(b, aux)
     if value == 1:
         x(b, aux)
@@ -1087,11 +1073,9 @@ def r(b: GraphRepresentation, qubit: int) -> None:
 def rx(b: GraphRepresentation, qubit: int) -> None:
     """X-basis reset.
 
-    Forces each target qubit into the |+> state by silently measuring it in the X basis
-    and applying a Z gate if it ended up in the |-> state.
+    Forces the qubit into the |+> state: a Z-basis reset followed by H. The reset
+    traces out the old state, which does not depend on the basis.
     """
-    if qubit in b.last_vertex:
-        h(b, qubit)
     r(b, qubit)
     h(b, qubit)
 
@@ -1099,11 +1083,9 @@ def rx(b: GraphRepresentation, qubit: int) -> None:
 def ry(b: GraphRepresentation, qubit: int) -> None:
     """Y-basis reset.
 
-    Forces each target qubit into the |i> state by silently measuring it in the Y basis
-    and applying an X gate if it ended up in the |-i> state.
+    Forces the qubit into the |i> state: a Z-basis reset followed by H_YZ. The
+    reset traces out the old state, which does not depend on the basis.
     """
-    if qubit in b.last_vertex:
-        h_yz(b, qubit)
     r(b, qubit)
     h_yz(b, qubit)
 
@@ -1149,7 +1131,7 @@ def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
     v0 = b.graph.add_vertex(
         VertexType.X,
         col=_annotation_col(b, rec),
-        row=-1,
+        row=ANNOTATION_ROW,
         domain=Domain.CLASSICAL,
         label=f"det[{len(b.detectors)}]",
     )
@@ -1166,7 +1148,7 @@ def observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None
         v0 = b.graph.add_vertex(
             VertexType.X,
             col=_annotation_col(b, rec),
-            row=-1,
+            row=ANNOTATION_ROW,
             domain=Domain.CLASSICAL,
             label=f"obs[{idx}]",
         )

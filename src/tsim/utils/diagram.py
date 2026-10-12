@@ -13,9 +13,7 @@ from lxml import etree  # type: ignore
 from zxparam import Graph
 from zxparam.viz.layout import Layout
 
-from tsim.core.graph import circuit_graph
 from tsim.core.params import ParamLayout
-from tsim.core.parse import parse_stim_circuit
 from tsim.core.tags import is_t_tag
 from tsim.utils.program_text import FLOAT_RE
 
@@ -518,9 +516,3 @@ def draw_zx(
     names.update(options.pop("param_names", None) or {})
     options.setdefault("layout", layout)
     return zx.draw(g, param_names=names, **options)
-
-
-def render_zx_d3(stim_circ: stim.Circuit, kwargs: dict[str, Any]) -> Any:
-    """Render a stim circuit's quantum/classical ZX graph with zxparam's D3 viewer."""
-    built = parse_stim_circuit(stim_circ)
-    return draw_zx(circuit_graph(built), built.num_error_bits, kwargs)

@@ -72,9 +72,15 @@ def _scalar_mul_with_power(x: tuple, y: tuple) -> tuple:
 
 
 def _scalar_add_with_power(x: tuple, y: tuple) -> tuple:
-    """Add two exact scalars represented as (power, coeffs) tuples."""
+    """Add two exact scalars represented as (power, coeffs) tuples.
+
+    A zero operand takes the other operand's power: its own power is stale
+    (zero is never reduced), and aligning to it could overflow the int32 shift.
+    """
     p1, c1 = x
     p2, c2 = y
+    p1 = jnp.where(jnp.all(c1 == 0, axis=-1), p2, p1)
+    p2 = jnp.where(jnp.all(c2 == 0, axis=-1), p1, p2)
 
     c1_scale = jnp.left_shift(jnp.ones_like(p1), jnp.maximum(p1 - p2, 0))[..., None]
     c2_scale = jnp.left_shift(jnp.ones_like(p2), jnp.maximum(p2 - p1, 0))[..., None]
@@ -132,7 +138,9 @@ def _reduce_along_scan(power, coeffs, op, axis):
 
     init_state = (final_power, final_coeffs, jnp.bool_(True))
     final_power, final_coeffs, _ = lax.while_loop(
-        _fixpoint_cond, _fixpoint_body, init_state,
+        _fixpoint_cond,
+        _fixpoint_body,
+        init_state,
     )
     return final_power, final_coeffs
 
@@ -184,7 +192,10 @@ class ExactScalarArray(eqx.Module):
             axis += self.power.ndim
 
         result_power, result_coeffs = _reduce_along_scan(
-            self.power, self.coeffs, _scalar_add_with_power, axis,
+            self.power,
+            self.coeffs,
+            _scalar_add_with_power,
+            axis,
         )
         return ExactScalarArray(result_coeffs, result_power)
 
@@ -211,7 +222,10 @@ class ExactScalarArray(eqx.Module):
             return ExactScalarArray(result_coeffs)
 
         result_power, result_coeffs = _reduce_along_scan(
-            self.power, self.coeffs, _scalar_mul_with_power, axis,
+            self.power,
+            self.coeffs,
+            _scalar_mul_with_power,
+            axis,
         )
         return ExactScalarArray(result_coeffs, result_power)
 

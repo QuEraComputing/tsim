@@ -1,5 +1,6 @@
 import re
 from collections.abc import Mapping
+from test.helpers.gate_matrices import H
 from test.helpers.tensors import channel, doubled
 from typing import Literal
 from unittest.mock import patch
@@ -189,38 +190,16 @@ def test_tagged_controlled_gate_append_matches_shorthand():
     assert c1._stim_circ == c2._stim_circ
 
 
-def test_ccz_gate_matrix():
-    c = Circuit("CCZ 0 1 2")
-    ccz_matrix = np.eye(8, dtype=complex)
-    ccz_matrix[-1, -1] = -1
-    np.testing.assert_allclose(c.to_tensor(), doubled(ccz_matrix), atol=1e-9)
+_CCZ = np.diag([1, 1, 1, 1, 1, 1, 1, -1]).astype(complex)
+_CCX = np.eye(8)[[0, 1, 2, 3, 4, 5, 7, 6]].astype(complex)
 
 
-def test_ccx_gate_matrix():
-    c = Circuit("CCX 0 1 2")
-    ccx_matrix = np.eye(8, dtype=complex)
-    ccx_matrix[6, 6] = 0
-    ccx_matrix[7, 7] = 0
-    ccx_matrix[6, 7] = 1
-    ccx_matrix[7, 6] = 1
-    np.testing.assert_allclose(c.to_tensor(), doubled(ccx_matrix), atol=1e-9)
-
-
-def test_tagged_ccz_gate_matrix():
-    c = Circuit("CCZ[tag] 0 1 2")
-    ccz_matrix = np.eye(8, dtype=complex)
-    ccz_matrix[-1, -1] = -1
-    np.testing.assert_allclose(c.to_tensor(), doubled(ccz_matrix), atol=1e-9)
-
-
-def test_tagged_ccx_gate_matrix():
-    c = Circuit("CCX[tag] 0 1 2")
-    ccx_matrix = np.eye(8, dtype=complex)
-    ccx_matrix[6, 6] = 0
-    ccx_matrix[7, 7] = 0
-    ccx_matrix[6, 7] = 1
-    ccx_matrix[7, 6] = 1
-    np.testing.assert_allclose(c.to_tensor(), doubled(ccx_matrix), atol=1e-9)
+@pytest.mark.parametrize("tag", ["", "[tag]"])
+@pytest.mark.parametrize("gate, matrix", [("CCZ", _CCZ), ("CCX", _CCX)])
+def test_toffoli_family_gate_matrix(gate, tag, matrix):
+    np.testing.assert_allclose(
+        Circuit(f"{gate}{tag} 0 1 2").to_tensor(), doubled(matrix), atol=1e-9
+    )
 
 
 @pytest.mark.parametrize(
@@ -796,8 +775,7 @@ def test_to_tensor():
     tensor = c.to_tensor()
     assert isinstance(tensor, np.ndarray)
     assert tensor.shape == (2, 2, 2, 2)
-    h = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
-    np.testing.assert_allclose(tensor, doubled(h), atol=1e-9)
+    np.testing.assert_allclose(tensor, doubled(H), atol=1e-9)
 
 
 def test_to_tensor_defaults_errors_to_zero():
@@ -833,11 +811,31 @@ def test_detector_error_model_basic():
     assert isinstance(dem, stim.DetectorErrorModel)
 
 
-def test_inverse_r_z():
-    """Test inverse of R_Z gate."""
-    c = Circuit("R_Z(0.25) 0")
-    c_inv = c.inverse()
-    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
+def _assert_identity_channel(c: Circuit) -> None:
+    t = c.to_tensor()
+    np.testing.assert_allclose(t, doubled(np.eye(2 ** (t.ndim // 4))), atol=1e-9)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "R_Z(0.25) 0",
+        "H 0",
+        "R_X(0.3) 0",
+        "R_Y(-0.5) 0",
+        "U3(0.3, 0.24, 0.49) 0",
+        "T 0",
+        "T_DAG 0",
+        "TPP Z0",
+        "TPP_DAG X0*Y1",
+        "R_XX(0.345) 0 1",
+        "R_PAULI(0.345) X0*Y1*Z2",
+        "H 0\nT 0\nR_Z(0.22) 0\nCNOT 0 1",
+    ],
+)
+def test_circuit_then_inverse_is_identity(text):
+    c = Circuit(text)
+    _assert_identity_channel(c + c.inverse())
 
 
 def test_inverse_simple():
@@ -845,75 +843,6 @@ def test_inverse_simple():
     c_inv = c.inverse()
     assert isinstance(c_inv, Circuit)
     assert len(c_inv) == len(c)
-
-
-def test_inverse_identity():
-    c = Circuit("H 0")
-    c_inv = c.inverse()
-    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
-
-
-def test_inverse_r_x():
-    c = Circuit("R_X(0.3) 0")
-    c_inv = c.inverse()
-    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
-
-
-def test_inverse_r_y():
-    c = Circuit("R_Y(-0.5) 0")
-    c_inv = c.inverse()
-    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
-
-
-def test_inverse_u3():
-    c = Circuit("U3(0.3, 0.24, 0.49) 0")
-    c_inv = c.inverse()
-    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
-
-
-def test_inverse_t_gate():
-    c = Circuit("T 0")
-    c_inv = c.inverse()
-    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
-
-
-def test_inverse_t_dag_gate():
-    c = Circuit("T_DAG 0")
-    c_inv = c.inverse()
-    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
-
-
-def test_inverse_tpp():
-    c = Circuit("TPP Z0")
-    c_inv = c.inverse()
-    np.testing.assert_allclose((c + c_inv).to_tensor(), doubled(np.eye(2)), atol=1e-9)
-
-
-def test_inverse_tpp_dag():
-    c = Circuit("TPP_DAG X0*Y1")
-    c_inv = c.inverse()
-    combined = (c + c_inv).to_tensor()
-    np.testing.assert_allclose(
-        combined, doubled(np.eye(2 ** (combined.ndim // 4))), atol=1e-9
-    )
-
-
-def test_inverse_r_xx():
-    c = Circuit("R_XX(0.345) 0 1")
-    c_inv = c.inverse()
-    combined = (c + c_inv).to_tensor()
-    np.testing.assert_allclose(
-        combined, doubled(np.eye(2 ** (combined.ndim // 4))), atol=1e-9
-    )
-
-
-def test_inverse_r_pauli():
-    c = Circuit("R_PAULI(0.345) X0*Y1*Z2")
-    c_inv = c.inverse()
-    combined = (c + c_inv).to_tensor()
-    np.testing.assert_allclose(
-        combined, doubled(np.eye(2 ** (combined.ndim // 4))), atol=1e-9
-    )
 
 
 def test_r_pauli_duplicate_target_in_product_rejected():
@@ -929,15 +858,6 @@ def test_r_pauli_long_product_roundtrip():
     assert Circuit(str(c)) == c
 
 
-def test_inverse_mixed_circuit():
-    c = Circuit("H 0\nT 0\nR_Z(0.22) 0\nCNOT 0 1")
-    c_inv = c.inverse()
-    combined = (c + c_inv).to_tensor()
-    np.testing.assert_allclose(
-        combined, doubled(np.eye(2 ** (combined.ndim // 4))), atol=1e-9
-    )
-
-
 def test_inverse_with_repeat_block():
     c = Circuit("H 0\nT 0\nR_Z(0.22) 0\nCNOT 0 1")
     c_repeat = c * 3
@@ -946,10 +866,7 @@ def test_inverse_with_repeat_block():
     assert len(c_inv) == len(c_repeat)
     assert isinstance(c_inv[0], stim.CircuitRepeatBlock)
     assert c_inv.flattened() == c_repeat.flattened().inverse()
-    combined = (c_repeat + c_inv).to_tensor()
-    np.testing.assert_allclose(
-        combined, doubled(np.eye(2 ** (combined.ndim // 4))), atol=1e-9
-    )
+    _assert_identity_channel(c_repeat + c_inv)
 
 
 def test_diagram_timeline_svg():
@@ -974,11 +891,19 @@ def _assert_drew_a_graph(mock_draw, result) -> None:
     assert result is mock_draw.return_value
 
 
-def test_diagram_zx():
-    c = Circuit("H 0\nCNOT 0 1")
+@pytest.mark.parametrize(
+    "text, type",
+    [
+        ("H 0\nCNOT 0 1", "zx"),
+        ("", "zx"),
+        ("H 0\nM 0", "zx-meas"),
+        ("H 0\nM 0\nDETECTOR rec[-1]", "zx-dets"),
+    ],
+)
+def test_diagram_draws_a_graph(text, type):
     with patch("zxparam.draw") as mock_draw:
-        result = c.diagram(type="zx")
-        _assert_drew_a_graph(mock_draw, result)
+        result = Circuit(text).diagram(type=type)
+    _assert_drew_a_graph(mock_draw, result)
 
 
 def test_diagram_zx_draws_annotation_boundaries():
@@ -996,27 +921,6 @@ def test_diagram_zx_draws_annotation_boundaries():
     for b in classical:
         (spider,) = g.neighbors(b)
         assert g.vertex_type(spider) == zxparam.VertexType.X
-
-
-def test_diagram_zx_empty():
-    c = Circuit()
-    with patch("zxparam.draw") as mock_draw:
-        result = c.diagram(type="zx")
-        _assert_drew_a_graph(mock_draw, result)
-
-
-def test_diagram_zx_meas():
-    c = Circuit("H 0\nM 0")
-    with patch("zxparam.draw") as mock_draw:
-        result = c.diagram(type="zx-meas")
-        _assert_drew_a_graph(mock_draw, result)
-
-
-def test_diagram_zx_dets():
-    c = Circuit("H 0\nM 0\nDETECTOR rec[-1]")
-    with patch("zxparam.draw") as mock_draw:
-        result = c.diagram(type="zx-dets")
-        _assert_drew_a_graph(mock_draw, result)
 
 
 @pytest.mark.parametrize("type", ["zx-meas", "zx-dets"])
@@ -1280,3 +1184,20 @@ def test_stim_circuit_repeat_block_expands_half_pi_parametric():
     assert block.repeat_count == 3
     body = block.body_copy()
     assert [instr.name for instr in body] == ["SQRT_X"]
+
+
+@pytest.mark.parametrize("type", ["zx", "zx-meas", "zx-dets"])
+def test_diagram_zx_names_parameters_by_kind_and_index(
+    type: Literal["zx", "zx-meas", "zx-dets"],
+):
+    c = Circuit("X_ERROR(0.1) 0 1\nCX 0 1\nM 0 1\nDETECTOR rec[-1]\nDETECTOR rec[-2]")
+    with patch("zxparam.draw") as mock_draw:
+        c.diagram(type=type)
+    g = mock_draw.call_args.args[0]
+    names = mock_draw.call_args.kwargs["param_names"]
+    assert g.parameters() and set(names) == set(g.parameters())
+    if type == "zx":
+        expected = {p: f"e{p}" for p in g.parameters()}
+    else:  # two error bits, so error-basis bit j has ID 2 + 2j
+        expected = {p: f"f{(p - 2) // 2}" for p in g.parameters()}
+    assert names == expected
