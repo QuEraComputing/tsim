@@ -2,6 +2,7 @@
 
 import itertools
 from fractions import Fraction
+from test.helpers.gate_matrices import CNOT, H, T
 
 import jax.numpy as jnp
 import numpy as np
@@ -15,10 +16,7 @@ from tsim.core.graph import prepare_graph
 from tsim.core.params import ParamLayout
 from tsim.sampler import CompiledStateProbs
 
-H = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
-T = np.diag([1, np.exp(1j * np.pi / 4)])
 I2 = np.eye(2)
-CNOT = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]])
 
 
 def _abs_value(compiled, bits: list[int]) -> float:

@@ -7,6 +7,9 @@ quantum boundary two adjacent axes (the copy, then its conjugate):
 
 import numpy as np
 
+ZERO = np.array([1, 0], dtype=complex)
+ONE = np.array([0, 1], dtype=complex)
+
 
 def doubled(u: np.ndarray) -> np.ndarray:
     """Return ``u ⊗ conj(u)`` for a 2ⁿ×2ⁿ matrix, in zxparam's axis order."""

@@ -1,5 +1,6 @@
 import re
 from collections.abc import Mapping
+from test.helpers.gate_matrices import H
 from test.helpers.tensors import channel, doubled
 from typing import Literal
 from unittest.mock import patch
@@ -774,8 +775,7 @@ def test_to_tensor():
     tensor = c.to_tensor()
     assert isinstance(tensor, np.ndarray)
     assert tensor.shape == (2, 2, 2, 2)
-    h = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
-    np.testing.assert_allclose(tensor, doubled(h), atol=1e-9)
+    np.testing.assert_allclose(tensor, doubled(H), atol=1e-9)
 
 
 def test_to_tensor_defaults_errors_to_zero():

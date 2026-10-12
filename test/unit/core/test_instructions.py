@@ -7,7 +7,7 @@ from test.helpers.gate_matrices import (
     SINGLE_QUBIT_GATE_MATRICES,
     TWO_QUBIT_GATE_MATRICES,
 )
-from test.helpers.tensors import channel, doubled, doubled_state
+from test.helpers.tensors import ONE, ZERO, channel, doubled, doubled_state
 
 import numpy as np
 import pytest
@@ -18,8 +18,6 @@ from tsim.core import instructions
 from tsim.core.graph import circuit_graph
 from tsim.core.instructions import GraphRepresentation
 
-ZERO = np.array([1, 0], dtype=complex)
-ONE = np.array([0, 1], dtype=complex)
 PLUS = (ZERO + ONE) / np.sqrt(2)
 MINUS = (ZERO - ONE) / np.sqrt(2)
 PLUS_I = (ZERO + 1j * ONE) / np.sqrt(2)

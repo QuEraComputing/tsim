@@ -1,12 +1,10 @@
 from fractions import Fraction
-from test.helpers.tensors import channel, doubled, doubled_state
+from test.helpers.gate_matrices import H
+from test.helpers.tensors import ONE, ZERO, channel, doubled, doubled_state
 
 import numpy as np
 from zxparam import Domain, EdgeType, Graph, VertexType
 
-H = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
-ZERO = np.array([1, 0], dtype=complex)
-ONE = np.array([0, 1], dtype=complex)
 Q = Domain.QUANTUM
 
 

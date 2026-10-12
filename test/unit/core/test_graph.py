@@ -1,6 +1,7 @@
 """Closing for sampling, the circuit graph and preparation on zxparam."""
 
 from fractions import Fraction
+from test.helpers.gate_matrices import CNOT, H
 from test.helpers.tensors import doubled
 
 import numpy as np
@@ -18,8 +19,6 @@ from tsim.core.graph import (
     transform_error_basis,
 )
 from tsim.core.parse import parse_stim_circuit
-
-H = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
 
 
 def _distribution(text: str, *, sample_detectors: bool = False) -> np.ndarray:
@@ -191,8 +190,7 @@ def test_circuit_graph_tensor_xors_records_into_annotations():
             "OBSERVABLE_INCLUDE(0) rec[-1] rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-2]"
         )
     )
-    cnot = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]])
-    u = np.kron(np.eye(2), H) @ cnot @ np.kron(H, np.eye(2))
+    u = np.kron(np.eye(2), H) @ CNOT @ np.kron(H, np.eye(2))
     terms = []
     for k0 in (0, 1):
         for k1 in (0, 1):
