@@ -100,12 +100,8 @@ def add_lane(b: GraphRepresentation, qubit: int) -> Vertex:
     v1 = b.graph.add_vertex(
         VertexType.BOUNDARY, col=0, row=qubit, domain=Domain.QUANTUM
     )
-    v2 = b.graph.add_vertex(
-        VertexType.BOUNDARY, col=1, row=qubit, domain=Domain.QUANTUM
-    )
-    b.graph.add_edge(v1, v2)
     b.first_vertex[qubit] = v1
-    b.last_vertex[qubit] = v2
+    b.graph.add_edge(v1, add_quantum_boundary(b, qubit, col=1))
     return v1
 
 
@@ -120,15 +116,18 @@ def _wire_spider(
     qubit: int,
     vertex_type: VertexType,
     phase: Phase | Fraction | None = None,
+    col: float | None = None,
 ) -> Vertex:
     """Turn the trailing boundary of a qubit's wire into a quantum spider.
 
-    The spider keeps the boundary's quantum domain, and a new quantum boundary
-    is appended after it. Returns the spider.
+    The spider keeps the boundary's quantum domain, moves to column ``col`` if
+    given, and a new quantum boundary is appended after it. Returns the spider.
     """
     ensure_lane(b, qubit)
     v1 = b.last_vertex[qubit]
     b.graph.set_vertex_type(v1, vertex_type)
+    if col is not None:
+        b.graph.set_col(v1, col)
     if phase is not None:
         b.graph.set_phase(v1, phase)
     v2 = add_quantum_boundary(b, qubit)
@@ -371,22 +370,10 @@ def _cx_cz(
     ensure_lane(b, target)
 
     col = max(last_col(b, control), last_col(b, target))
-
-    v1 = b.last_vertex[control]
-    b.graph.set_vertex_type(v1, VertexType.Z)
-    b.graph.set_col(v1, col)
-    v3 = add_quantum_boundary(b, control, int(col + 1))
-    b.graph.add_edge(v1, v3)
-
+    v1 = _wire_spider(b, control, VertexType.Z, col=col)
     if control == target:
         col += 1
-
-    v2 = b.last_vertex[target]
-    b.graph.set_vertex_type(v2, vertex_type)
-    b.graph.set_col(v2, col)
-    v4 = add_quantum_boundary(b, target, int(col + 1))
-    b.graph.add_edge(v2, v4)
-
+    v2 = _wire_spider(b, target, vertex_type, col=col)
     b.graph.add_edge(v1 if m_vertex is None else m_vertex, v2, edge_type)
     b.graph.mul_sqrt2(1, Domain.QUANTUM)
 
