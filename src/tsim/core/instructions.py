@@ -443,6 +443,11 @@ def swap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
     b.last_vertex[qubit1] = v2
     b.last_vertex[qubit2] = v1
 
+    # NOTE: both wire ends move to the later column first, so neither lands on
+    # a position the other lane already uses.
+    col = max(b.graph.col(v1), b.graph.col(v2))
+    b.graph.set_col(v1, col)
+    b.graph.set_col(v2, col)
     b.graph.set_row(v1, qubit2)
     b.graph.set_row(v2, qubit1)
 

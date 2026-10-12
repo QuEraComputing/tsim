@@ -245,3 +245,12 @@ def test_sampling_graph_sums_to_one(text, sample_detectors):
     for bindings in (zeros, random):
         g = circuit.get_sampling_graph(sample_detectors=sample_detectors)
         np.testing.assert_allclose(np.sum(g.to_tensor(bindings)), 1, atol=1e-9)
+
+
+@pytest.mark.parametrize(
+    "text", ["H 0\nT 0\nSWAP 0 1\nM 0 1", "H 0\nCX 0 1\nSWAP 1 2\nM 0 1 2"]
+)
+def test_swapping_wires_of_different_lengths_keeps_positions_distinct(text: str):
+    g = Circuit(text).get_graph()
+    positions = [(g.col(v), g.row(v)) for v in g.vertices()]
+    assert len(set(positions)) == len(positions)
