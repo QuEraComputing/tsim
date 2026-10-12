@@ -8,7 +8,8 @@ stay dormant (in ``|0⟩``). Each op becomes at most one action, and every sign 
 ``AffineRow`` over the symbols: the component f-bits, then the branch bits of
 random measurements. A random measurement keeps the reference state on its
 ``b = 0`` branch; its ``b = 1`` branch differs by a correction Pauli, which
-flips the sign of every later op it anticommutes with.
+flips the sign of every later op it anticommutes with. Each output is an
+``AffineRow`` too: the measurement's sign, XOR its branch bit if it is random.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from dataclasses import dataclass
 import numpy as np
 import stim
 
-from tsim.statevector.heisenberg import ROTATION, HeisenbergOps
+from tsim.statevector.heisenberg import ROTATION, HeisenbergOps, anticommute
 from tsim.statevector.schedule import Schedule
 
 
@@ -53,56 +54,47 @@ class Rotate:
 class MeasureActive:
     """Measure the Pauli ``x``, ``z`` on the array, then reset ``pivot`` to ``|0⟩``.
 
-    The sampled eigenvalue bit becomes symbol ``branch``; ``slot`` (if not -1)
-    records ``branch ⊕ sign``.
+    The sampled eigenvalue bit becomes symbol ``branch``.
     """
 
     x: int
     z: int
     pivot: int
     branch: int
-    sign: AffineRow
-    slot: int
 
 
 @dataclass(frozen=True)
 class MeasureDormant:
-    """Sample a fair bit into symbol ``branch``; ``slot`` records it ⊕ ``sign``."""
+    """Sample a fair bit into symbol ``branch``."""
 
     branch: int
-    sign: AffineRow
-    slot: int
 
 
-@dataclass(frozen=True)
-class Record:
-    """Record the deterministic value ``sign`` in ``slot``."""
-
-    sign: AffineRow
-    slot: int
-
-
-Action = Rotate | MeasureActive | MeasureDormant | Record
+Action = Rotate | MeasureActive | MeasureDormant
 
 
 @dataclass(frozen=True)
 class Plan:
-    """Actions on ``2^width`` amplitudes, with signs over the symbols.
+    """Actions on ``2^width`` amplitudes, and outputs over the symbols.
 
     Attributes:
         width: Number of array axes (W).
-        num_f: Number of f-bit symbols (symbols ``0 … num_f-1``).
-        num_branches: Number of branch symbols (``num_f …``).
-        num_outputs: Number of output slots.
+        num_f: Number of f-bit symbols (symbols ``0 … num_f-1``); the branch
+            symbols follow, one per measurement action.
         actions: The actions, in execution order.
+        outputs: The value of each output slot.
 
     """
 
     width: int
     num_f: int
-    num_branches: int
-    num_outputs: int
     actions: tuple[Action, ...]
+    outputs: tuple[AffineRow, ...]
+
+    @property
+    def num_branches(self) -> int:
+        """Return the number of branch symbols."""
+        return sum(not isinstance(action, Rotate) for action in self.actions)
 
     @property
     def num_symbols(self) -> int:
@@ -117,23 +109,15 @@ def plan(ops: HeisenbergOps, schedule: Schedule) -> Plan:
         RuntimeError: If the ops need more than ``schedule.width`` active axes.
 
     """
-    planner = _Planner(ops, schedule)
-    for position in range(len(schedule.order)):
-        planner.step(position)
+    planner = _Planner(ops.take(schedule.order), schedule.width)
+    for j in range(ops.num_ops):
+        planner.step(j)
     return Plan(
         width=schedule.width,
         num_f=ops.num_f,
-        num_branches=planner.num_branches,
-        num_outputs=ops.num_outputs,
         actions=tuple(planner.actions),
+        outputs=tuple(planner.outputs[slot] for slot in range(ops.num_outputs)),
     )
-
-
-def _anticommutes(
-    x: np.ndarray, z: np.ndarray, xs: np.ndarray, zs: np.ndarray
-) -> np.ndarray:
-    """Return which rows ``(xs[i], zs[i])`` anticommute with the Pauli ``(x, z)``."""
-    return np.logical_xor.reduce(xs & z, axis=1) ^ np.logical_xor.reduce(zs & x, axis=1)
 
 
 def _mask(bits: np.ndarray, axes: Iterable[int]) -> int:
@@ -146,18 +130,17 @@ _CONTROLLED_PAULI = {(True, False): "CX", (False, True): "CZ", (True, True): "CY
 class _Planner:
     """The frame, the active axes and the branch corrections during planning."""
 
-    def __init__(self, ops: HeisenbergOps, schedule: Schedule) -> None:
+    def __init__(self, ops: HeisenbergOps, width: int) -> None:
         """Start with the identity frame and every coordinate dormant."""
         self.ops = ops
-        self.order = schedule.order
-        self.width = schedule.width
+        self.width = width
         self.frame = stim.Tableau(ops.num_lines)
         self.active: set[int] = set()
-        self.num_branches = 0
         self.correction_x = np.zeros((0, ops.num_lines), dtype=bool)
         self.correction_z = np.zeros((0, ops.num_lines), dtype=bool)
         self.correction_condition: list[AffineRow] = []
         self.actions: list[Action] = []
+        self.outputs: dict[int, AffineRow] = {}
 
     def _apply(self, gate: str, *targets: int) -> None:
         """Apply a virtual Clifford: ``F ← gate ∘ F``."""
@@ -175,54 +158,58 @@ class _Planner:
         row = self.ops.sign[j]
         terms = frozenset(int(t) for t in np.flatnonzero(row[1:]))
         sign = AffineRow(bool(row[0]) ^ negative, terms)
-        anti = _anticommutes(
-            self.ops.x[j], self.ops.z[j], self.correction_x, self.correction_z
+        anti = anticommute(
+            self.correction_x, self.correction_z, self.ops.x[j], self.ops.z[j]
         )
         for m in np.flatnonzero(anti):
             sign = sign ^ self.correction_condition[m]
         return sign
-
-    def _new_branch(self) -> int:
-        branch = self.ops.num_f + self.num_branches
-        self.num_branches += 1
-        return branch
 
     def _correction(self, axis: int) -> tuple[np.ndarray, np.ndarray]:
         """Return ``F⁻¹(X_axis)``, the correction Pauli in the ``|0…0⟩`` frame."""
         x, z = self.frame.inverse_x_output(axis).to_numpy()
         return x, z
 
-    def _add_correction(self, axis: int, condition: AffineRow) -> None:
-        x, z = self._correction(axis)
+    def _branch(self, correction: tuple[np.ndarray, np.ndarray], flip: bool) -> int:
+        """Return a new branch symbol ``b``; ``correction`` applies when ``b ⊕ flip``."""
+        branch = self.ops.num_f + len(self.correction_condition)
+        x, z = correction
         self.correction_x = np.vstack([self.correction_x, x[None]])
         self.correction_z = np.vstack([self.correction_z, z[None]])
-        self.correction_condition.append(condition)
+        self.correction_condition.append(AffineRow(flip, frozenset({branch})))
+        return branch
 
-    def step(self, position: int) -> None:
-        """Plan the op at ``position`` of the schedule."""
-        j = int(self.order[position])
+    def step(self, j: int) -> None:
+        """Plan op ``j``."""
         x, z, negative = self._virtual(j)
-        sign = self._sign(j, negative)
         dormant_x = [int(q) for q in np.flatnonzero(x) if int(q) not in self.active]
         on_active = any(x[q] or z[q] for q in self.active)
         if self.ops.kind[j] == ROTATION:
             if dormant_x:
                 self._promote(j, dormant_x)
-            elif on_active:
-                axes = sorted(self.active)
-                angle = float(self.ops.angle[j])
-                self.actions.append(Rotate(_mask(x, axes), _mask(z, axes), angle, sign))
+                x, z, negative = self._virtual(j)
+            elif not on_active:
+                return
+            axes = sorted(self.active)
+            angle = float(self.ops.angle[j])
+            sign = self._sign(j, negative)
+            self.actions.append(Rotate(_mask(x, axes), _mask(z, axes), angle, sign))
             return
-        slot = int(self.ops.slot[j])
+        output = self._sign(j, negative)
         if dormant_x:
-            self._measure_dormant(position, j, dormant_x, negative, sign, slot)
+            branch = self._measure_dormant(j, dormant_x, negative)
         elif on_active:
-            self._measure_active(j, x, z, negative, sign, slot)
-        elif slot >= 0:
-            self.actions.append(Record(sign, slot))
+            branch = self._measure_active(j, x, z, negative)
+        else:
+            branch = None
+        if branch is not None:
+            output ^= AffineRow(False, frozenset({branch}))
+        slot = int(self.ops.slot[j])
+        if slot >= 0:
+            self.outputs[slot] = output
 
     def _promote(self, j: int, dormant_x: list[int]) -> None:
-        """Move the rotation's dormant X support onto one free axis and rotate."""
+        """Move the rotation's dormant X support onto one free axis and activate it."""
         free = [q for q in range(self.width) if q not in self.active]
         if not free:
             raise RuntimeError(
@@ -238,23 +225,15 @@ class _Planner:
         for q in np.flatnonzero(x):
             if int(q) != axis and int(q) not in self.active:
                 self._apply("CX", axis, int(q))
-        x, z, negative = self._virtual(j)
-        axes = sorted(self.active | {axis})
-        angle = float(self.ops.angle[j])
-        sign = self._sign(j, negative)
-        self.actions.append(Rotate(_mask(x, axes), _mask(z, axes), angle, sign))
         self.active.add(axis)
 
     def _measure_dormant(
-        self,
-        position: int,
-        j: int,
-        dormant_x: list[int],
-        negative: bool,
-        sign: AffineRow,
-        slot: int,
-    ) -> None:
-        """Turn the measured Pauli into ``±X_d`` without touching the state, then H."""
+        self, j: int, dormant_x: list[int], negative: bool
+    ) -> int | None:
+        """Turn the measured Pauli into ``±X_d`` without touching the state, then H.
+
+        Return the branch symbol, or None when no output or later op needs it.
+        """
         d = dormant_x[0]
         for q in dormant_x[1:]:
             self._apply("CX", d, q)
@@ -268,24 +247,18 @@ class _Planner:
         x, z, after = self._virtual(j)
         assert x[d] and x.sum() == 1 and not z.any()
         self._apply("H", d)
-        later = self.order[position + 1 :]
-        kx, kz = self._correction(d)
-        anti = _anticommutes(kx, kz, self.ops.x[later], self.ops.z[later])
-        if slot < 0 and not anti.any():
-            return
-        branch = self._new_branch()
-        self._add_correction(d, AffineRow(after ^ negative, frozenset({branch})))
-        self.actions.append(MeasureDormant(branch, sign, slot))
+        correction = self._correction(d)
+        later = slice(j + 1, None)
+        anti = anticommute(self.ops.x[later], self.ops.z[later], *correction)
+        if self.ops.slot[j] < 0 and not anti.any():
+            return None
+        branch = self._branch(correction, after ^ negative)
+        self.actions.append(MeasureDormant(branch))
+        return branch
 
     def _measure_active(
-        self,
-        j: int,
-        x: np.ndarray,
-        z: np.ndarray,
-        negative: bool,
-        sign: AffineRow,
-        slot: int,
-    ) -> None:
+        self, j: int, x: np.ndarray, z: np.ndarray, negative: bool
+    ) -> int:
         """Measure on the array, then turn the Pauli into ``±Z_pivot`` and free it."""
         axes = sorted(self.active)
         x_mask, z_mask = _mask(x, axes), _mask(z, axes)
@@ -309,7 +282,7 @@ class _Planner:
                 self._apply("CX", q, pivot)
         _, _, after = self._virtual(j)
         assert x_support or after == negative
-        branch = self._new_branch()
-        self.actions.append(MeasureActive(x_mask, z_mask, pivot, branch, sign, slot))
-        self._add_correction(pivot, AffineRow(after ^ negative, frozenset({branch})))
+        branch = self._branch(self._correction(pivot), after ^ negative)
+        self.actions.append(MeasureActive(x_mask, z_mask, pivot, branch))
         self.active.remove(pivot)
+        return branch

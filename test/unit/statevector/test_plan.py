@@ -1,9 +1,11 @@
 from fractions import Fraction
 from math import pi
 from test.helpers.statevector import (
+    ONE_LINE_LAYOUT,
     assert_distributions_close,
     component_ops,
     f_patterns,
+    one_line,
     ops_distribution,
     plan_distribution,
 )
@@ -11,13 +13,12 @@ from test.helpers.statevector import (
 import numpy as np
 import pytest
 import stim
-from zxparam import Phase, Scalar
-from zxparam.extract import ExtractedCircuit, Gate
+from zxparam import Phase
+from zxparam.extract import Gate
 
 from tsim.statevector.heisenberg import (
     MEASUREMENT,
     ROTATION,
-    ComponentLayout,
     HeisenbergOps,
     heisenberg_ops,
 )
@@ -35,15 +36,8 @@ from tsim.statevector.schedule import Schedule, schedule
 def _t_then_h():
     # |+⟩, T, H, measure Z: in the |0⟩ frame a rotation about X, then a
     # measurement of Z, which anticommute.
-    circuit = ExtractedCircuit(
-        gates=[Gate("Z", (0,), Phase(Fraction(1, 4))), Gate("H", (0,))],
-        n_lines=1,
-        line_start={0: None},
-        line_end={0: 0},
-        scalar=Scalar.one(),
-        classical_ports=frozenset({0}),
-    )
-    return heisenberg_ops(circuit, ComponentLayout((0,), {7: 0}, (0,)))
+    gates = [Gate("Z", (0,), Phase(Fraction(1, 4))), Gate("H", (0,))]
+    return heisenberg_ops(one_line(gates), ONE_LINE_LAYOUT)
 
 
 def test_t_then_h_promotes_one_axis_and_measures_it():
@@ -56,9 +50,8 @@ def test_t_then_h_promotes_one_axis_and_measures_it():
     assert (rotate.x, rotate.z) == (1, 0)
     assert rotate.angle == pytest.approx(pi / 8)
     assert rotate.sign == AffineRow(False, frozenset())
-    assert measure == MeasureActive(
-        x=0, z=1, pivot=0, branch=1, sign=AffineRow(False, frozenset()), slot=0
-    )
+    assert measure == MeasureActive(x=0, z=1, pivot=0, branch=1)
+    assert planned.outputs == (AffineRow(False, frozenset({1})),)
 
 
 def test_affine_rows_xor_and_evaluate():
@@ -74,26 +67,31 @@ def test_a_schedule_that_is_too_narrow_is_rejected():
         plan(ops, Schedule(order=np.arange(ops.num_ops, dtype=np.int32), width=0))
 
 
+def _checked_plan(ops):
+    """Plan ``ops`` and check that the plan reproduces the scheduled ops."""
+    scheduled = schedule(ops)
+    planned = plan(ops, scheduled)
+    reordered = ops.take(scheduled.order)
+    for f in f_patterns(ops.num_f):
+        assert_distributions_close(
+            plan_distribution(planned, f), ops_distribution(reordered, f), atol=1e-9
+        )
+    return planned
+
+
 def test_plans_reproduce_the_scheduled_ops():
     for ops in component_ops():
-        scheduled = schedule(ops)
-        planned = plan(ops, scheduled)
-        reordered = ops.take(scheduled.order)
-        for f in f_patterns(ops.num_f):
-            assert_distributions_close(
-                plan_distribution(planned, f), ops_distribution(reordered, f), atol=1e-9
-            )
+        _checked_plan(ops)
 
 
 def test_plans_are_well_formed():
     for ops in component_ops():
-        scheduled = schedule(ops)
-        planned = plan(ops, scheduled)
-        assert planned.width == scheduled.width
-        assert planned.num_outputs == ops.num_outputs
+        planned = plan(ops, schedule(ops))
+        assert len(planned.outputs) == ops.num_outputs
         defined = set(range(planned.num_f))
         for action in planned.actions:
-            assert action.sign.terms <= defined
+            if isinstance(action, Rotate):
+                assert action.sign.terms <= defined
             if isinstance(action, (Rotate, MeasureActive)):
                 assert 0 <= action.x < 2**planned.width
                 assert 0 <= action.z < 2**planned.width
@@ -101,14 +99,13 @@ def test_plans_are_well_formed():
                 assert action.branch not in defined
                 defined.add(action.branch)
         assert defined == set(range(planned.num_symbols))
+        assert all(output.terms <= defined for output in planned.outputs)
 
 
 def _ops(entries):
     """Return ops from (Pauli, angle or None for a measurement, f-sign, slot)."""
     paulis = [stim.PauliString(pauli).to_numpy() for pauli, _, _, _ in entries]
     return HeisenbergOps(
-        num_lines=len(entries[0][0]),
-        num_f=1,
         kind=np.array(
             [MEASUREMENT if angle is None else ROTATION for _, angle, _, _ in entries],
             dtype=np.uint8,
@@ -131,14 +128,7 @@ def _plan_recording_gates(monkeypatch, ops):
         apply(self, gate, *targets)
 
     monkeypatch.setattr(_Planner, "_apply", recording)
-    scheduled = schedule(ops)
-    planned = plan(ops, scheduled)
-    reordered = ops.take(scheduled.order)
-    for f in f_patterns(ops.num_f):
-        assert_distributions_close(
-            plan_distribution(planned, f), ops_distribution(reordered, f), atol=1e-9
-        )
-    return planned, applied
+    return _checked_plan(ops), applied
 
 
 def test_a_dormant_measurement_of_y_turns_its_pivot_with_s_dag(monkeypatch):
@@ -188,7 +178,7 @@ def test_a_diagonal_measurement_on_several_active_axes(monkeypatch):
     assert any(
         isinstance(action, MeasureActive)
         and action.x == 0
-        and bin(action.z).count("1") == 2
+        and action.z.bit_count() == 2
         for action in planned.actions
     )
     assert ("CX", (1, 0), frozenset({0, 1})) in applied

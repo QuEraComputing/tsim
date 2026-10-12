@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fractions import Fraction
+from functools import partial
 from typing import Literal
 
 import jax.numpy as jnp
@@ -30,6 +31,7 @@ from tsim.core.types import (
     SamplingStrategy,
 )
 from tsim.statevector.program import (
+    STABILIZER_RANK_HINT,
     StatevectorComponent,
     compile_statevector_component,
 )
@@ -65,11 +67,15 @@ def compile_program(
         ValueError: If ``strategy="statevector"`` is combined with ``mode="joint"``.
 
     """
-    if strategy == "statevector" and mode == "joint":
-        raise ValueError(
-            "strategy='statevector' samples outcomes and cannot compute "
-            "probabilities; use a stabilizer-rank strategy such as 'cat5'"
-        )
+    if strategy == "statevector":
+        if mode == "joint":
+            raise ValueError(
+                "strategy='statevector' samples outcomes and cannot compute "
+                f"probabilities. {STABILIZER_RANK_HINT}"
+            )
+        compile_component = compile_statevector_component
+    else:
+        compile_component = partial(_compile_component, mode=mode, strategy=strategy)
     graph = prepared.graph
     layout = prepared.layout
 
@@ -85,12 +91,7 @@ def compile_program(
             basis_index, flip = direct
             direct_entries.append((output_indices[0], basis_index, flip))
             continue
-        if strategy == "statevector":
-            compiled_components.append(compile_statevector_component(component, layout))
-        else:
-            compiled_components.append(
-                _compile_component(component, output_indices, layout, mode, strategy)
-            )
+        compiled_components.append(compile_component(component, output_indices, layout))
         compiled_output_order.extend(output_indices)
 
     # Sort direct entries by output index so that — together with the output

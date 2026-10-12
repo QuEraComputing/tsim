@@ -11,7 +11,7 @@ stages of circuit compilation:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import equinox as eqx
 import numpy as np
@@ -84,6 +84,9 @@ class CompiledComponent(eqx.Module):
     output_indices: tuple[int, ...] = eqx.field(static=True)
     f_selection: Array
     compiled_scalar_graphs: tuple[CompiledScalarGraphs, ...]
+
+    norm_warning_threshold: ClassVar[float] = 1e-5
+    """Largest normalization deviation that sampling tolerates without a warning."""
 
 
 @dataclass(frozen=True)

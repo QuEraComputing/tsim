@@ -18,8 +18,6 @@ def _bits(*rows):
 def _two_expansions_then_two_measurements():
     # Rotate about X0, rotate about X1, measure Z0, measure Z1.
     return HeisenbergOps(
-        num_lines=2,
-        num_f=0,
         kind=np.array([ROTATION, ROTATION, MEASUREMENT, MEASUREMENT], dtype=np.uint8),
         x=_bits([1, 0], [0, 1], [0, 0], [0, 0]),
         z=_bits([0, 0], [0, 0], [1, 0], [0, 1]),
@@ -80,9 +78,7 @@ def test_width_is_the_largest_structural_width_of_the_order():
         group = StabilizerGroup(ops.num_lines)
         widths = [0]
         for j in scheduled.order:
-            if ops.kind[j] == MEASUREMENT:
-                group.measure(ops.x[j], ops.z[j])
-            else:
-                group.rotate(ops.x[j], ops.z[j])
+            run = group.measure if ops.kind[j] == MEASUREMENT else group.rotate
+            run(ops.x[j], ops.z[j])
             widths.append(group.width)
         assert scheduled.width == max(widths)

@@ -18,11 +18,10 @@ process CPU time divided by wall time over the timed window.
 """
 
 import argparse
-import math
 import time
 
 import numpy as np
-from workloads import CIRCUITS, WORKLOADS, cpu_seconds
+from workloads import CIRCUITS, WORKLOADS, acceptance_check
 
 import tsim
 
@@ -63,7 +62,7 @@ def main() -> None:
         count(sampler, shots, batch_size, circuit.num_detectors)
         warmup_seconds = time.perf_counter() - start
         attempted = accepted = errors = 0
-        cpu_start = cpu_seconds()
+        cpu_start = time.process_time()
         start = time.perf_counter()
         while time.perf_counter() - start < args.seconds:
             kept, wrong = count(sampler, shots, batch_size, circuit.num_detectors)
@@ -71,10 +70,9 @@ def main() -> None:
             accepted += kept
             errors += wrong
         elapsed = time.perf_counter() - start
-        cores = (cpu_seconds() - cpu_start) / elapsed
+        cores = (time.process_time() - cpu_start) / elapsed
         acceptance = accepted / attempted
-        sigma = math.sqrt(reference * (1 - reference) / attempted)
-        check = "ok" if abs(acceptance - reference) <= 5 * sigma else "MISMATCH"
+        check = acceptance_check(acceptance, reference, attempted)
         print(
             f"| {name} | {compile_seconds:.2f} | {warmup_seconds:.2f} | "
             f"{attempted / elapsed:,.0f} | {cores:.1f} | {acceptance:.4f} | "

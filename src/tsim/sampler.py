@@ -17,11 +17,8 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
-from tsim.statevector.execute import (
-    NORM_WARNING_THRESHOLDS,
-    sample_statevector_component,
-)
-from tsim.statevector.program import StatevectorComponent
+from tsim.statevector.execute import lane_bytes, sample_statevector_component
+from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
 from tsim.utils.cuda_helpers import copy_d2h
 
 if TYPE_CHECKING:
@@ -102,11 +99,11 @@ def _sample_component_jit(
 
 
 def sample_component(
-    component: CompiledComponent,
+    component: CompiledComponent | StatevectorComponent,
     f_params: jax.Array,
     key: PRNGKey,
 ) -> tuple[jax.Array, PRNGKey, jax.Array]:
-    """Sample outputs from a single component using autoregressive sampling.
+    """Sample outputs from a single component.
 
     Args:
         component: The compiled component to sample from.
@@ -118,6 +115,8 @@ def sample_component(
         (batch_size, num_outputs_for_component).
 
     """
+    if isinstance(component, StatevectorComponent):
+        return sample_statevector_component(component, f_params, key)
     # Skip JIT for small components (overhead not worth it)
     if len(component.output_indices) <= 1:
         return _sample_component(component, f_params, key)
@@ -155,23 +154,14 @@ def sample_program(
         results.append(direct_bits)
 
     for component in program.components:
-        if isinstance(component, StatevectorComponent):
-            samples, key, max_norm_deviation = sample_statevector_component(
-                component, f_params, key
-            )
-            warning_threshold = NORM_WARNING_THRESHOLDS[component.dtype]
-        else:
-            samples, key, max_norm_deviation = sample_component(
-                component, f_params, key
-            )
-            warning_threshold = 1e-5
+        samples, key, max_norm_deviation = sample_component(component, f_params, key)
         if np.isclose(max_norm_deviation, 1):
             raise ValueError(
                 "A vanishing marginal probability distribution was encountered (normalization 0). "
                 "This is likely the result of an underflow error. Please report this "
                 "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
             )  # pragma: no cover
-        if max_norm_deviation > warning_threshold:
+        if max_norm_deviation > component.norm_warning_threshold:
             warnings.warn(
                 "A marginal probability was not normalized correctly "
                 f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
@@ -184,6 +174,12 @@ def sample_program(
     if program.output_reindex is not None:
         combined = combined[:, program.output_reindex]
     return combined
+
+
+def _nbytes(tree: object) -> int:
+    return sum(
+        v.nbytes for v in jax.tree_util.tree_leaves(tree) if isinstance(v, jax.Array)
+    )
 
 
 class _CompiledSamplerBase:
@@ -258,14 +254,16 @@ class _CompiledSamplerBase:
         statevector = [
             c for c in self._program.components if isinstance(c, StatevectorComponent)
         ]
-        if statevector and self._peak_bytes_per_sample() > self._memory_budget():
-            widest = max(statevector, key=lambda c: c.width)
-            raise ValueError(
-                f"strategy='statevector' needs {self._peak_bytes_per_sample()} bytes "
-                f"per shot for the component with outputs {list(widest.output_indices)} "
-                f"(width {widest.width}), more than half of the available memory. "
-                "Use a stabilizer-rank strategy such as strategy='cat5'."
-            )
+        if statevector:
+            peak = self._peak_bytes_per_sample()
+            if peak > self._memory_budget():
+                widest = max(statevector, key=lambda c: c.width)
+                raise ValueError(
+                    f"strategy='statevector' needs {peak} bytes per shot for the "
+                    f"component with outputs {list(widest.output_indices)} (width "
+                    f"{widest.width}), more than half of the available memory. "
+                    f"{STABILIZER_RANK_HINT}"
+                )
 
     def _compute_direct_outputs(self, f_params_np: np.ndarray) -> np.ndarray:
         """Scatter direct output bits into a full (batch, num_outputs) bool array.
@@ -329,11 +327,8 @@ class _CompiledSamplerBase:
         peak = 0
         for component in self._program.components:
             if isinstance(component, StatevectorComponent):
-                itemsize = 8 if component.dtype == "complex64" else 16
-                lane = 3 * 2**component.width * itemsize
-                lane += 4 * component.num_words + component.num_outputs + 1
-                # NOTE: the f-params and the output records, on host and device.
-                lane += 2 * num_f + 2 * self._program.num_outputs
+                # NOTE: plus the f-params and the output records, on host and device.
+                lane = lane_bytes(component) + 2 * num_f + 2 * self._program.num_outputs
                 peak = max(peak, lane)
                 continue
             for circuit in component.compiled_scalar_graphs:
@@ -347,18 +342,17 @@ class _CompiledSamplerBase:
                 peak = max(peak, G * largest * 3)
         return max(peak, 1)
 
-    def _available_memory(self) -> int:
-        """Return the free memory of the first JAX device, or of the host."""
+    def _memory_budget(self) -> int:
+        """Return the memory one batch may use: half of the free device memory."""
         device = jax.devices()[0]
         if device.platform == "gpu":
             stats = device.memory_stats()
-            limit = stats.get("bytes_limit", 8 * 1024**3)
-            return limit - stats.get("bytes_in_use", 0)
-        return psutil.virtual_memory().available
-
-    def _memory_budget(self) -> int:
-        """Return the memory one batch may use: half of the available memory."""
-        return int(self._available_memory() * 0.5)  # conservative
+            available = stats.get("bytes_limit", 8 * 1024**3) - stats.get(
+                "bytes_in_use", 0
+            )
+        else:
+            available = psutil.virtual_memory().available
+        return int(available * 0.5)  # conservative
 
     def _estimate_batch_size(self) -> int:
         """Estimate the largest batch size that fits in available device memory.
@@ -620,18 +614,14 @@ class _CompiledSamplerBase:
         total_memory_bytes = 0
         num_outputs = []
         statevector_widths: list[int] = []
-        statevector_actions: list[int] = []
+        statevector_actions = 0
 
         for component in self._program.components:
             if isinstance(component, StatevectorComponent):
                 statevector_widths.append(component.width)
-                statevector_actions.append(component.num_actions)
+                statevector_actions += component.num_actions
                 num_outputs.append(len(component.output_indices))
-                total_memory_bytes += sum(
-                    v.nbytes
-                    for v in jax.tree_util.tree_leaves(component)
-                    if isinstance(v, jax.Array)
-                )
+                total_memory_bytes += _nbytes(component)
                 continue
             for circuit in component.compiled_scalar_graphs:
                 num_outputs.append(len(component.output_indices))
@@ -651,11 +641,7 @@ class _CompiledSamplerBase:
                     * circuit.float_terms.table.shape[1]
                 )
 
-                total_memory_bytes += sum(
-                    v.nbytes
-                    for v in jax.tree_util.tree_leaves(circuit)
-                    if isinstance(v, jax.Array)
-                )
+                total_memory_bytes += _nbytes(circuit)
 
         def _format_bytes(n: int) -> str:
             if n < 1024:
@@ -672,7 +658,7 @@ class _CompiledSamplerBase:
         statevector = (
             f"{len(statevector_widths)} statevector components "
             f"(width ≤ {max(statevector_widths)}, "
-            f"{sum(statevector_actions)} actions), "
+            f"{statevector_actions} actions), "
             if statevector_widths
             else ""
         )

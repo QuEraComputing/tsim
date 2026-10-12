@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from tsim.statevector.heisenberg import MEASUREMENT, HeisenbergOps
+from tsim.statevector.heisenberg import MEASUREMENT, HeisenbergOps, anticommute
 
 
 class StabilizerGroup:
@@ -32,28 +32,29 @@ class StabilizerGroup:
 
     def anticommuting(self, x: np.ndarray, z: np.ndarray) -> np.ndarray:
         """Return which generators anticommute with the Pauli ``(x, z)``."""
-        return np.logical_xor.reduce(self.x & z, axis=1) ^ np.logical_xor.reduce(
-            self.z & x, axis=1
-        )
+        return anticommute(self.x, self.z, x, z)
 
-    def rotate(self, x: np.ndarray, z: np.ndarray) -> None:
-        """Keep the generators that a rotation about ``(x, z)`` preserves."""
+    def _eliminate(self, x: np.ndarray, z: np.ndarray) -> int | None:
+        """Leave one generator anticommuting with ``(x, z)``; return it, if any."""
         anti = np.flatnonzero(self.anticommuting(x, z))
         if len(anti) == 0:
-            return
+            return None
         first, rest = anti[0], anti[1:]
         self.x[rest] ^= self.x[first]
         self.z[rest] ^= self.z[first]
-        self.x = np.delete(self.x, first, axis=0)
-        self.z = np.delete(self.z, first, axis=0)
+        return int(first)
+
+    def rotate(self, x: np.ndarray, z: np.ndarray) -> None:
+        """Keep the generators that a rotation about ``(x, z)`` preserves."""
+        first = self._eliminate(x, z)
+        if first is not None:
+            self.x = np.delete(self.x, first, axis=0)
+            self.z = np.delete(self.z, first, axis=0)
 
     def measure(self, x: np.ndarray, z: np.ndarray) -> None:
         """Update the generators after measuring the Pauli ``(x, z)``."""
-        anti = np.flatnonzero(self.anticommuting(x, z))
-        if len(anti):
-            first, rest = anti[0], anti[1:]
-            self.x[rest] ^= self.x[first]
-            self.z[rest] ^= self.z[first]
+        first = self._eliminate(x, z)
+        if first is not None:
             self.x[first] = x
             self.z[first] = z
         elif not self.contains(x, z):
@@ -61,10 +62,13 @@ class StabilizerGroup:
             self.z = np.vstack([self.z, z[None]])
 
     def contains(self, x: np.ndarray, z: np.ndarray) -> bool:
-        """Return whether ``(x, z)`` is a product of the generators, up to sign."""
+        """Return whether ``(x, z)`` is a product of the generators, up to sign.
+
+        The generators commute and are independent, so their rank is their number.
+        """
         matrix = np.hstack([self.x, self.z])
         extended = np.vstack([matrix, np.concatenate([x, z])[None]])
-        return _rank(extended) == _rank(matrix)
+        return _rank(extended) == len(matrix)
 
 
 def _rank(matrix: np.ndarray) -> int:
@@ -88,9 +92,7 @@ def _rank(matrix: np.ndarray) -> int:
 
 def anticommutation(ops: HeisenbergOps) -> np.ndarray:
     """Return the symmetric matrix of which pairs of operations anticommute."""
-    x = ops.x.astype(np.float32)
-    z = ops.z.astype(np.float32)
-    return (x @ z.T + z @ x.T) % 2 == 1
+    return anticommute(ops.x, ops.z, ops.x, ops.z)
 
 
 def _ancestors(before: np.ndarray) -> np.ndarray:
@@ -148,7 +150,7 @@ def schedule(ops: HeisenbergOps) -> Schedule:
         while progressed:
             progressed = False
             for j in np.flatnonzero(~done):
-                if waiting[j] or done[j]:
+                if waiting[j]:
                     continue
                 keeps_width = not group.anticommuting(ops.x[j], ops.z[j]).any()
                 if is_measurement[j] or keeps_width:

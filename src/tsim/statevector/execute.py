@@ -2,11 +2,12 @@
 
 ``run`` interprets a component's action tape with one ``lax.fori_loop``; each
 step dispatches on the action's kind with ``lax.switch``. The loop carry is a
-``LaneState``: one lane per shot, each with ``2^W`` amplitudes, its symbols
-(f-bits, then branch bits as they are sampled) and its output records.
-All randomness goes through ``choose_outcome``, and ``count`` holds the number
-of shots a lane stands for (always 1 for now), so that trajectory sharing can
-later split lanes without touching the kernels.
+``LaneState``: one lane per shot, each with ``2^W`` amplitudes and its symbols
+(f-bits, then branch bits as they are sampled), from which ``outputs`` reads
+the output bits once the tape has run. All randomness goes through
+``choose_outcome``, and ``count`` holds the number of shots a lane stands for
+(always 1 for now), so that trajectory sharing can later split lanes without
+touching the kernels.
 """
 
 from __future__ import annotations
@@ -18,16 +19,18 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
-from tsim.statevector.program import StatevectorComponent
+from tsim.statevector.program import (
+    MEASURE,
+    MEASURE_DIAG,
+    MEASURE_DORMANT,
+    ROTATE,
+    ROTATE_DIAG,
+    StatevectorComponent,
+)
 
 _I_POWERS = (1, 1j, -1, -1j)
 _TINY = 1e-30
 _TWO_TO_32 = 2.0**32
-
-# NOTE: every outcome probability is normalized by the measured weights, so norm
-# drift is harmless until it exceeds what rounding can explain: each rotation
-# adds ~1e-7 relative drift under complex64.
-NORM_WARNING_THRESHOLDS = {"complex64": 1e-3, "complex128": 1e-9}
 
 
 class LaneState(NamedTuple):
@@ -37,8 +40,6 @@ class LaneState(NamedTuple):
         amps: Amplitudes, shape ``(L, 2^W)``.
         symbols: f-bits, then branch bits, packed into uint32 words,
             shape ``(L, num_words)``.
-        records: Output bits, plus one scratch column for actions without a
-            slot, shape ``(L, num_outputs + 1)``.
         count: Shots each lane stands for, shape ``(L,)``.
         max_norm_deviation: Largest ``|‖ψ‖² - 1|`` seen at a measurement.
 
@@ -46,9 +47,14 @@ class LaneState(NamedTuple):
 
     amps: Array
     symbols: Array
-    records: Array
     count: Array  # pyright: ignore[reportIncompatibleMethodOverride]
     max_norm_deviation: Array
+
+
+def lane_bytes(component: StatevectorComponent) -> int:
+    """Return the peak device memory of one lane, temporary amplitudes included."""
+    amplitudes = 3 * 2**component.width * jnp.dtype(component.dtype).itemsize
+    return amplitudes + 4 * component.num_words + component.num_outputs
 
 
 def choose_outcome(p1: Array, count: Array, key: Array) -> Array:
@@ -88,9 +94,25 @@ def initial_state(component: StatevectorComponent, f_bits: Array) -> LaneState:
     return LaneState(
         amps=amps,
         symbols=pack_bits(f_bits, component.num_words),
-        records=jnp.zeros((lanes, component.num_outputs + 1), dtype=jnp.bool_),
         count=jnp.ones(lanes, dtype=jnp.int32),
         max_norm_deviation=jnp.zeros((), dtype=jnp.finfo(dtype).dtype),
+    )
+
+
+def _parity(values: Array) -> Array:
+    return (jax.lax.population_count(values) & 1).astype(jnp.bool_)
+
+
+def _affine(symbols: Array, rows: Array, constant: Array) -> Array:
+    """Return ``constant ⊕ parity(symbols ∧ rows)`` over the last (word) axis."""
+    ones = jnp.sum(jax.lax.population_count(symbols & rows), axis=-1)
+    return ((ones & 1) == 1) ^ constant
+
+
+def outputs(component: StatevectorComponent, state: LaneState) -> Array:
+    """Return each lane's output bits, shape ``(L, num_outputs)``."""
+    return _affine(
+        state.symbols[:, None, :], component.output_row, component.output_const
     )
 
 
@@ -98,14 +120,9 @@ def _index(component: StatevectorComponent) -> Array:
     return jnp.arange(2**component.width, dtype=jnp.uint32)
 
 
-def _parity(values: Array) -> Array:
-    return (jax.lax.population_count(values) & 1).astype(jnp.bool_)
-
-
-def _sign(component: StatevectorComponent, symbols: Array, a: Array) -> Array:
-    """Return each lane's sign bit of action ``a``."""
-    ones = jnp.sum(jax.lax.population_count(symbols & component.sign_row[a]), axis=1)
-    return ((ones & 1) == 1) ^ component.sign_const[a]
+def _sign(component: StatevectorComponent, state: LaneState, a: Array) -> Array:
+    """Return each lane's sign bit of rotation ``a``."""
+    return _affine(state.symbols, component.sign_row[a], component.sign_const[a])
 
 
 def _apply_pauli(amps: Array, index: Array, x: Array, z: Array) -> Array:
@@ -117,32 +134,12 @@ def _apply_pauli(amps: Array, index: Array, x: Array, z: Array) -> Array:
     return i_power * signs * jnp.take(amps, flipped.astype(jnp.int32), axis=1)
 
 
-def _write(
-    component: StatevectorComponent, state: LaneState, a: Array, outcome: Array
-) -> LaneState:
-    """Record ``outcome ⊕ sign`` in the action's slot and set its branch bit."""
-    value = outcome ^ _sign(component, state.symbols, a)
-    slot = component.slot[a]
-    column = jnp.where(slot >= 0, slot, component.num_outputs)
-    records = state.records.at[:, column].set(value)
-    branch = component.branch[a]
-    word = jnp.maximum(branch, 0) // 32
-    bit = jnp.where(
-        branch >= 0,
-        jnp.uint32(1) << (jnp.maximum(branch, 0) % 32).astype(jnp.uint32),
-        jnp.uint32(0),
-    )
-    flags = jnp.where(outcome, bit, jnp.uint32(0))
-    symbols = state.symbols.at[:, word].set(state.symbols[:, word] | flags)
-    return state._replace(records=records, symbols=symbols)
-
-
 def _rotate_diag(
     component: StatevectorComponent, state: LaneState, a: Array, key: Array
 ) -> LaneState:
     del key
     odd = _parity(_index(component) & component.z_mask[a])
-    flip = _sign(component, state.symbols, a)[:, None] ^ odd[None, :]
+    flip = _sign(component, state, a)[:, None] ^ odd[None, :]
     factor = component.cos[a] - 1j * component.sin[a] * jnp.where(flip, -1, 1)
     return state._replace(amps=(state.amps * factor).astype(state.amps.dtype))
 
@@ -154,7 +151,7 @@ def _rotate(
     paulied = _apply_pauli(
         state.amps, _index(component), component.x_mask[a], component.z_mask[a]
     )
-    negate = jnp.where(_sign(component, state.symbols, a), -1, 1)[:, None]
+    negate = jnp.where(_sign(component, state, a), -1, 1)[:, None]
     amps = component.cos[a] * state.amps - 1j * component.sin[a] * negate * paulied
     return state._replace(amps=amps.astype(state.amps.dtype))
 
@@ -163,36 +160,59 @@ def _squared(values: Array) -> Array:
     return jnp.real(values) ** 2 + jnp.imag(values) ** 2
 
 
-def _probability_of_one(weight_0: Array, weight_1: Array) -> Array:
-    """Return ``w1 / (w0 + w1)`` from the outcome weights, without cancellation."""
-    return jnp.clip(weight_1 / jnp.maximum(weight_0 + weight_1, _TINY), 0, 1)
+def _set_branch(
+    component: StatevectorComponent, state: LaneState, a: Array, outcome: Array
+) -> LaneState:
+    """Set the measurement's branch symbol to ``outcome``."""
+    branch = component.branch[a]
+    word = branch // 32
+    bit = jnp.uint32(1) << (branch % 32).astype(jnp.uint32)
+    flags = jnp.where(outcome, bit, jnp.uint32(0))
+    symbols = state.symbols.at[:, word].set(state.symbols[:, word] | flags)
+    return state._replace(symbols=symbols)
 
 
-def _measured(state: LaneState, new: Array, norm: Array) -> LaneState:
+def _sample_outcome(
+    state: LaneState, a: Array, key: Array, weight_0: Array, weight_1: Array
+) -> tuple[Array, Array]:
+    """Return each lane's outcome and its weight, without cancellation in ``p1``."""
+    p1 = jnp.clip(weight_1 / jnp.maximum(weight_0 + weight_1, _TINY), 0, 1)
+    outcome = choose_outcome(p1, state.count, jax.random.fold_in(key, a))
+    return outcome, jnp.where(outcome, weight_1, weight_0)
+
+
+def _collapse(
+    component: StatevectorComponent,
+    state: LaneState,
+    a: Array,
+    outcome: Array,
+    projected: Array,
+    norm: Array,
+) -> LaneState:
+    """Keep the pivot-0 half of the normalized ``projected``; branch on ``outcome``."""
+    keep = ((_index(component) >> component.pivot[a].astype(jnp.uint32)) & 1) == 0
     deviation = jnp.maximum(state.max_norm_deviation, jnp.max(jnp.abs(norm - 1)))
-    return state._replace(
-        amps=new.astype(state.amps.dtype),
+    state = state._replace(
+        amps=jnp.where(keep[None, :], projected, 0).astype(state.amps.dtype),
         max_norm_deviation=deviation.astype(state.max_norm_deviation.dtype),
     )
+    return _set_branch(component, state, a, outcome)
 
 
 def _measure(
     component: StatevectorComponent, state: LaneState, a: Array, key: Array
 ) -> LaneState:
-    index = _index(component)
     amps = state.amps
-    paulied = _apply_pauli(amps, index, component.x_mask[a], component.z_mask[a])
+    paulied = _apply_pauli(
+        amps, _index(component), component.x_mask[a], component.z_mask[a]
+    )
     plus, minus = amps + paulied, amps - paulied
     weight_0 = jnp.sum(_squared(plus), axis=1) / 4
     weight_1 = jnp.sum(_squared(minus), axis=1) / 4
-    p1 = _probability_of_one(weight_0, weight_1)
-    outcome = choose_outcome(p1, state.count, jax.random.fold_in(key, a))
-    weight = jnp.where(outcome, weight_1, weight_0)
+    outcome, weight = _sample_outcome(state, a, key, weight_0, weight_1)
     scale = jax.lax.rsqrt(jnp.maximum(2 * weight, _TINY))[:, None]
-    keep = ((index >> component.pivot[a].astype(jnp.uint32)) & 1) == 0
-    projected = jnp.where(outcome[:, None], minus, plus)
-    new = jnp.where(keep[None, :], projected * scale, 0)
-    return _write(component, _measured(state, new, weight_0 + weight_1), a, outcome)
+    projected = jnp.where(outcome[:, None], minus, plus) * scale
+    return _collapse(component, state, a, outcome, projected, weight_0 + weight_1)
 
 
 def _measure_diag(
@@ -204,22 +224,13 @@ def _measure_diag(
     weights = _squared(amps)
     weight_0 = jnp.sum(jnp.where(odd[None, :], 0, weights), axis=1)
     weight_1 = jnp.sum(jnp.where(odd[None, :], weights, 0), axis=1)
-    p1 = _probability_of_one(weight_0, weight_1)
-    outcome = choose_outcome(p1, state.count, jax.random.fold_in(key, a))
-    weight = jnp.where(outcome, weight_1, weight_0)
-    pivot = component.pivot[a].astype(jnp.uint32)
-    bit = jnp.uint32(1) << pivot
-    source_if_0 = (index ^ (bit * odd.astype(jnp.uint32))).astype(jnp.int32)
-    source_if_1 = (index ^ (bit * (~odd).astype(jnp.uint32))).astype(jnp.int32)
-    gathered = jnp.where(
-        outcome[:, None],
-        jnp.take(amps, source_if_1, axis=1),
-        jnp.take(amps, source_if_0, axis=1),
-    )
-    keep = ((index >> pivot) & 1) == 0
+    outcome, weight = _sample_outcome(state, a, key, weight_0, weight_1)
+    bit = jnp.uint32(1) << component.pivot[a].astype(jnp.uint32)
+    partner = jnp.take(amps, (index ^ bit).astype(jnp.int32), axis=1)
+    gathered = jnp.where(odd[None, :] == outcome[:, None], amps, partner)
     scale = jax.lax.rsqrt(jnp.maximum(weight, _TINY))[:, None]
-    new = jnp.where(keep[None, :], gathered * scale, 0)
-    return _write(component, _measured(state, new, weight_0 + weight_1), a, outcome)
+    projected = gathered * scale
+    return _collapse(component, state, a, outcome, projected, weight_0 + weight_1)
 
 
 def _measure_dormant(
@@ -227,18 +238,16 @@ def _measure_dormant(
 ) -> LaneState:
     half = jnp.full(state.count.shape, 0.5, dtype=state.max_norm_deviation.dtype)
     outcome = choose_outcome(half, state.count, jax.random.fold_in(key, a))
-    return _write(component, state, a, outcome)
+    return _set_branch(component, state, a, outcome)
 
 
-def _record(
-    component: StatevectorComponent, state: LaneState, a: Array, key: Array
-) -> LaneState:
-    del key
-    return _write(component, state, a, jnp.zeros(state.count.shape, dtype=jnp.bool_))
-
-
-# NOTE: the order must match the kind codes ROTATE_DIAG … RECORD in program.py.
-_KERNELS = (_rotate_diag, _rotate, _measure_diag, _measure, _measure_dormant, _record)
+_KERNELS = {
+    ROTATE_DIAG: _rotate_diag,
+    ROTATE: _rotate,
+    MEASURE_DIAG: _measure_diag,
+    MEASURE: _measure,
+    MEASURE_DORMANT: _measure_dormant,
+}
 
 
 def run(
@@ -254,7 +263,7 @@ def run(
     """
     if component.num_actions == 0:
         return state
-    branches = [partial(kernel, component) for kernel in _KERNELS]
+    branches = [partial(_KERNELS[kind], component) for kind in range(len(_KERNELS))]
 
     def step(a: Array, carry: LaneState) -> LaneState:
         return jax.lax.switch(component.kind[a], branches, carry, a, key)
@@ -263,15 +272,6 @@ def run(
 
 
 @jax.jit
-def _run_lanes(
-    component: StatevectorComponent, f_bits: Array, key: Array
-) -> tuple[Array, Array]:
-    state = run(
-        component, initial_state(component, f_bits), key, 0, component.num_actions
-    )
-    return state.records[:, : component.num_outputs], state.max_norm_deviation
-
-
 def sample_statevector_component(
     component: StatevectorComponent, f_params: Array, key: Array
 ) -> tuple[Array, Array, Array]:
@@ -289,5 +289,6 @@ def sample_statevector_component(
     """
     f_bits = f_params[:, component.f_selection].astype(jnp.bool_)
     key, subkey = jax.random.split(key)
-    samples, deviation = _run_lanes(component, f_bits, subkey)
-    return samples, key, deviation
+    state = initial_state(component, f_bits)
+    state = run(component, state, subkey, 0, component.num_actions)
+    return outputs(component, state), key, state.max_norm_deviation

@@ -15,6 +15,7 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import SamplingStrategy
 from tsim.external.vec_sim.vec_sampler import VecSampler
+from tsim.statevector.execute import lane_bytes
 from tsim.statevector.program import StatevectorComponent
 
 
@@ -61,8 +62,6 @@ def test_statevector_samplers_hold_statevector_components():
     assert components
     assert all(isinstance(c, StatevectorComponent) for c in components)
     assert "statevector components" in repr(sampler)
-    widest = max(c.width for c in components if isinstance(c, StatevectorComponent))
-    assert sampler._peak_bytes_per_sample() >= 3 * 2**widest * 8
 
 
 def test_postselection_and_partial_batches():
@@ -117,27 +116,14 @@ def test_complex128_sampling_matches_stabilizer_rank():
     assert_counts_match(got, expected)
 
 
-def test_a_lane_that_does_not_fit_in_memory_is_rejected(monkeypatch):
-    monkeypatch.setattr(
-        sampler_module._CompiledSamplerBase, "_available_memory", lambda self: 1
-    )
-    with pytest.raises(ValueError, match="cat5"):
-        Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(strategy="statevector")
-
-
 def _norm_warnings(monkeypatch, strategy, deviation, *, x64=False):
-    name = (
-        "sample_statevector_component"
-        if strategy == "statevector"
-        else "sample_component"
-    )
-    sample = getattr(sampler_module, name)
+    sample = sampler_module.sample_component
 
     def drifting(component, f_params, key):
         samples, key, _ = sample(component, f_params, key)
         return samples, key, jnp.asarray(deviation)
 
-    monkeypatch.setattr(sampler_module, name, drifting)
+    monkeypatch.setattr(sampler_module, "sample_component", drifting)
     with jax.enable_x64(x64):
         sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
             strategy=strategy, seed=0
@@ -178,7 +164,7 @@ def test_a_vanishing_statevector_norm_raises(monkeypatch):
 
 def test_the_automatic_batch_size_of_a_statevector_sampler_is_capped(monkeypatch):
     monkeypatch.setattr(
-        sampler_module._CompiledSamplerBase, "_available_memory", lambda self: 2**50
+        sampler_module._CompiledSamplerBase, "_memory_budget", lambda self: 2**49
     )
     circuit = Circuit(CIRCUITS["t_ghz"])
     sampler = circuit.compile_detector_sampler(strategy="statevector", seed=0)
@@ -205,15 +191,14 @@ def test_the_per_shot_estimate_counts_f_params_and_records():
     sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
         strategy="statevector"
     )
-    widest = max(
-        c.width
+    lane = max(
+        lane_bytes(c)
         for c in sampler._program.components
         if isinstance(c, StatevectorComponent)
     )
     num_f = sampler._channel_sampler.signature_matrix.shape[1]
     records = sampler._program.num_outputs
-    amplitudes = 3 * 2**widest * 8
-    assert sampler._peak_bytes_per_sample() >= amplitudes + 2 * num_f + 2 * records
+    assert sampler._peak_bytes_per_sample() == lane + 2 * num_f + 2 * records
 
 
 def test_a_lane_must_fit_in_half_of_the_available_memory(monkeypatch):
@@ -222,8 +207,8 @@ def test_a_lane_must_fit_in_half_of_the_available_memory(monkeypatch):
         strategy="statevector"
     )._peak_bytes_per_sample()
     base = sampler_module._CompiledSamplerBase
-    monkeypatch.setattr(base, "_available_memory", lambda self: 2 * peak - 1)
+    monkeypatch.setattr(base, "_memory_budget", lambda self: peak - 1)
     with pytest.raises(ValueError, match="cat5"):
         circuit.compile_detector_sampler(strategy="statevector")
-    monkeypatch.setattr(base, "_available_memory", lambda self: 2 * peak)
+    monkeypatch.setattr(base, "_memory_budget", lambda self: peak)
     circuit.compile_detector_sampler(strategy="statevector")

@@ -6,8 +6,9 @@ Bit ``q`` of a basis-state index is qubit ``q`` (a line, or an array axis).
 from __future__ import annotations
 
 import itertools
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from fractions import Fraction
+from functools import cache
 from math import cos, pi, sin
 
 import jax.numpy as jnp
@@ -27,7 +28,7 @@ from tsim.statevector.heisenberg import (
     HeisenbergOps,
     heisenberg_ops,
 )
-from tsim.statevector.plan import MeasureActive, Plan, Record, Rotate
+from tsim.statevector.plan import MeasureActive, Plan, Rotate
 
 Distribution = dict[tuple[int, ...], float]
 
@@ -167,7 +168,31 @@ def quantum_components(
     return components, prepared.layout
 
 
-def hand_built_circuits() -> list[tuple[str, ExtractedCircuit, ComponentLayout]]:
+def output_indices(component: Graph) -> list[int]:
+    """Return the global output index of each of ``component``'s outputs."""
+    return [
+        port for v in component.outputs() if (port := component.port(v)) is not None
+    ]
+
+
+ONE_LINE_LAYOUT = ComponentLayout(
+    f_selection=(0,), f_position={7: 0}, output_indices=(0,)
+)
+
+
+def one_line(gates: list[Gate], *, line_start: int | None = None) -> ExtractedCircuit:
+    """Return a one-line circuit that ends at output 0; phase parameter 7 is f-bit 0."""
+    return ExtractedCircuit(
+        gates=gates,
+        n_lines=1,
+        line_start={0: line_start},
+        line_end={0: 0},
+        scalar=Scalar.one(),
+        classical_ports=frozenset({0}),
+    )
+
+
+def hand_built_circuits() -> list[tuple[ExtractedCircuit, ComponentLayout]]:
     """Return small extracted circuits with a DISCARD and a reused MEASURE line."""
     t = Phase(Fraction(1, 4))
     noise = Phase(Fraction(0), frozenset({7}))
@@ -207,23 +232,30 @@ def hand_built_circuits() -> list[tuple[str, ExtractedCircuit, ComponentLayout]]
         classical_ports=frozenset({0, 1}),
     )
     return [
-        ("discard", discard, ComponentLayout((0,), {7: 0}, (0,))),
-        ("measure", measure, ComponentLayout((0,), {7: 0}, (0, 1))),
+        (discard, ONE_LINE_LAYOUT),
+        (measure, ComponentLayout((0,), {7: 0}, (0, 1))),
     ]
 
 
-def component_ops() -> Iterator[HeisenbergOps]:
-    """Yield the ops of every test component (both modes) and hand-built circuit."""
+@cache
+def extracted_circuits() -> tuple[tuple[ExtractedCircuit, ComponentLayout], ...]:
+    """Return every test component's circuit (both modes), then the hand-built ones."""
+    extracted = []
     for name in sorted(CIRCUITS):
         for sample_detectors in (True, False):
             components, layout = quantum_components(
                 CIRCUITS[name], sample_detectors=sample_detectors
             )
             for component in components:
-                component_layout = ComponentLayout.of(component, layout)
-                yield heisenberg_ops(extract_circuit(component), component_layout)
-    for _, circuit, component_layout in hand_built_circuits():
-        yield heisenberg_ops(circuit, component_layout)
+                indices = output_indices(component)
+                component_layout = ComponentLayout.of(component, indices, layout)
+                extracted.append((extract_circuit(component), component_layout))
+    return (*extracted, *hand_built_circuits())
+
+
+def component_ops() -> list[HeisenbergOps]:
+    """Return the ops of every circuit in ``extracted_circuits``."""
+    return [heisenberg_ops(circuit, layout) for circuit, layout in extracted_circuits()]
 
 
 def f_patterns(num_f: int, limit: int = 32) -> list[tuple[int, ...]]:
@@ -408,32 +440,18 @@ def plan_distribution(plan: Plan, f: Sequence[int]) -> Distribution:
     """Return the exact output distribution of a plan by enumerating its branches."""
     result: Distribution = {}
 
-    def written(record: list[int], slot: int, value: int) -> list[int]:
-        if slot < 0:
-            return record
-        updated = list(record)
-        updated[slot] = value
-        return updated
-
-    def walk(
-        a: int, psi: np.ndarray, symbols: list[int], record: list[int], weight: float
-    ) -> None:
+    def walk(a: int, psi: np.ndarray, symbols: list[int], weight: float) -> None:
         if weight < 1e-14:
             return
         if a == len(plan.actions):
-            key = tuple(record)
+            key = tuple(output.evaluate(symbols) for output in plan.outputs)
             result[key] = result.get(key, 0.0) + weight
             return
         action = plan.actions[a]
-        sign = action.sign.evaluate(symbols)
         if isinstance(action, Rotate):
-            rotated = reference_rotate(
-                psi, action.x, action.z, action.angle, bool(sign)
-            )
-            walk(a + 1, rotated, symbols, record, weight)
-            return
-        if isinstance(action, Record):
-            walk(a + 1, psi, symbols, written(record, action.slot, sign), weight)
+            negate = bool(action.sign.evaluate(symbols))
+            rotated = reference_rotate(psi, action.x, action.z, action.angle, negate)
+            walk(a + 1, rotated, symbols, weight)
             return
         for outcome in (0, 1):
             if isinstance(action, MeasureActive):
@@ -444,12 +462,11 @@ def plan_distribution(plan: Plan, f: Sequence[int]) -> Distribution:
                 new, p = psi, 0.5
             branched = list(symbols)
             branched[action.branch] = outcome
-            value = outcome ^ sign
-            walk(a + 1, new, branched, written(record, action.slot, value), weight * p)
+            walk(a + 1, new, branched, weight * p)
 
     psi = np.zeros(2**plan.width, dtype=complex)
     psi[0] = 1
-    walk(0, psi, [*f, *[0] * plan.num_branches], [0] * plan.num_outputs, 1.0)
+    walk(0, psi, [*f, *[0] * plan.num_branches], 1.0)
     return result
 
 

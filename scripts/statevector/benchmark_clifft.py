@@ -18,11 +18,10 @@ divided by wall time over the timed window.
 """
 
 import argparse
-import math
 import time
 
 import clifft
-from workloads import CIRCUITS, WORKLOADS, cpu_seconds
+from workloads import CIRCUITS, WORKLOADS, acceptance_check
 
 BATCH_SIZES = (1, 2048)
 
@@ -33,7 +32,7 @@ def measure(program, shots: int, seconds: float, threads, batch_size: int):
         program, shots, seed=0, threads=threads, batch_size=batch_size
     )
     attempted = accepted = errors = calls = 0
-    cpu_start = cpu_seconds()
+    cpu_start = time.process_time()
     start = time.perf_counter()
     while time.perf_counter() - start < seconds:
         calls += 1
@@ -44,7 +43,7 @@ def measure(program, shots: int, seconds: float, threads, batch_size: int):
         accepted += int(result.passed_shots)
         errors += int(result.observable_ones[0])
     elapsed = time.perf_counter() - start
-    cores = (cpu_seconds() - cpu_start) / elapsed
+    cores = (time.process_time() - cpu_start) / elapsed
     return attempted / elapsed, cores, attempted, accepted, errors
 
 
@@ -82,8 +81,7 @@ def main() -> None:
                 runs.items(), key=lambda item: item[1][0]
             )
             acceptance = accepted / attempted
-            sigma = math.sqrt(reference * (1 - reference) / attempted)
-            check = "ok" if abs(acceptance - reference) <= 5 * sigma else "MISMATCH"
+            check = acceptance_check(acceptance, reference, attempted)
             print(
                 f"| {name} | {threads} | {batch_size} | {compile_seconds:.2f} | "
                 f"{program.peak_active_width} | {rate:,.0f} | {cores:.1f} | "

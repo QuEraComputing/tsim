@@ -11,14 +11,14 @@ commute can be reordered without touching their signs.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, fields
 from fractions import Fraction
 from math import pi
 
 import numpy as np
 import stim
-from zxparam import Graph, Vertex
+from zxparam import Graph
 from zxparam.extract import ExtractedCircuit, Gate
 
 from tsim.core.params import ParamLayout
@@ -26,6 +26,7 @@ from tsim.core.params import ParamLayout
 ROTATION = 0
 MEASUREMENT = 1
 
+_CLIFFORD_GATES = {"H": "h", "CNOT": "cx", "CZ": "cz"}
 _CLIFFORD_QUARTERS = {1: "s", 2: "z", 3: "s_dag"}
 
 
@@ -36,9 +37,7 @@ class ComponentLayout:
     Attributes:
         f_selection: Global f-bit index of each component f-bit, ascending.
         f_position: Position in ``f_selection`` of each phase parameter ID.
-        output_indices: Global output index of each output slot, in port order
-            (the order of ``Graph.outputs()``, as for stabilizer-rank
-            components).
+        output_indices: Global output index of each output slot.
 
     """
 
@@ -47,26 +46,27 @@ class ComponentLayout:
     output_indices: tuple[int, ...]
 
     @classmethod
-    def of(cls, component: Graph, layout: ParamLayout) -> ComponentLayout:
-        """Return the layout of ``component``'s f-bits and output ports."""
+    def of(
+        cls, component: Graph, output_indices: Sequence[int], layout: ParamLayout
+    ) -> ComponentLayout:
+        """Return the layout of ``component``, whose outputs are ``output_indices``."""
         f_selection = tuple(
-            sorted(
-                {
-                    layout.basis_index(param)
-                    for v in component.vertices()
-                    for param in component.phase(v).parameters
-                }
-            )
+            sorted(layout.basis_index(p) for p in component.parameters())
         )
         f_position = {layout.basis(i): pos for pos, i in enumerate(f_selection)}
-        outputs = tuple(_port(component, v) for v in component.outputs())
-        return cls(f_selection, f_position, outputs)
+        return cls(f_selection, f_position, tuple(output_indices))
 
 
-def _port(g: Graph, v: Vertex) -> int:
-    port = g.port(v)
-    assert port is not None
-    return port
+def anticommute(
+    x1: np.ndarray, z1: np.ndarray, x2: np.ndarray, z2: np.ndarray
+) -> np.ndarray:
+    """Return which Paulis ``(x1, z1)`` anticommute with which Paulis ``(x2, z2)``.
+
+    Each row of an argument is a Pauli; a 1-D argument is one Pauli, whose axis
+    the result drops.
+    """
+    f = np.float32
+    return (x1.astype(f) @ z2.T.astype(f) + z1.astype(f) @ x2.T.astype(f)) % 2 == 1
 
 
 @dataclass(frozen=True)
@@ -79,8 +79,6 @@ class HeisenbergOps:
     ``[1, f_0, f_1, …]``. A measurement records its eigenvalue bit.
 
     Attributes:
-        num_lines: Number of qubit lines.
-        num_f: Number of component f-bits the signs depend on.
         kind: ``ROTATION`` or ``MEASUREMENT``, shape ``(N,)``.
         x: X part of each Pauli, shape ``(N, num_lines)``.
         z: Z part of each Pauli, shape ``(N, num_lines)``.
@@ -91,8 +89,6 @@ class HeisenbergOps:
 
     """
 
-    num_lines: int
-    num_f: int
     kind: np.ndarray
     x: np.ndarray
     z: np.ndarray
@@ -106,6 +102,16 @@ class HeisenbergOps:
         return len(self.kind)
 
     @property
+    def num_lines(self) -> int:
+        """Return the number of qubit lines."""
+        return self.x.shape[1]
+
+    @property
+    def num_f(self) -> int:
+        """Return the number of component f-bits the signs depend on."""
+        return self.sign.shape[1] - 1
+
+    @property
     def num_outputs(self) -> int:
         """Return the number of recorded measurements."""
         return int(np.count_nonzero(self.slot >= 0))
@@ -116,16 +122,7 @@ class HeisenbergOps:
         The result describes the same distribution when ``order`` keeps every
         pair of anticommuting operations in their original order.
         """
-        return HeisenbergOps(
-            num_lines=self.num_lines,
-            num_f=self.num_f,
-            kind=self.kind[order],
-            x=self.x[order],
-            z=self.z[order],
-            angle=self.angle[order],
-            sign=self.sign[order],
-            slot=self.slot[order],
-        )
+        return HeisenbergOps(*(getattr(self, f.name)[order] for f in fields(self)))
 
 
 def heisenberg_ops(circuit: ExtractedCircuit, layout: ComponentLayout) -> HeisenbergOps:
@@ -142,9 +139,9 @@ def heisenberg_ops(circuit: ExtractedCircuit, layout: ComponentLayout) -> Heisen
 
     """
     _check_lines(circuit)
-    builder = _Builder(circuit.n_lines, len(layout.f_selection))
+    builder = _Builder(circuit.n_lines, layout)
     for gate in circuit.gates:
-        builder.gate(gate, layout.f_position)
+        builder.gate(gate)
     slot_of_port = {port: slot for slot, port in enumerate(layout.output_indices)}
     for line in range(circuit.n_lines):
         port = circuit.line_end[line]
@@ -169,18 +166,18 @@ def _check_lines(circuit: ExtractedCircuit) -> None:
 class _Builder:
     """Walks the gates with a stim simulator that holds the Clifford prefix U."""
 
-    def __init__(self, num_lines: int, num_f: int) -> None:
+    def __init__(self, num_lines: int, layout: ComponentLayout) -> None:
         """Start every line in ``|+⟩`` (``H`` on ``|0⟩``)."""
         self.num_lines = num_lines
-        self.num_f = num_f
+        self.num_f = len(layout.f_selection)
+        self.f_position = layout.f_position
         self.sim = stim.TableauSimulator()
         self.sim.set_num_qubits(num_lines)
         for line in range(num_lines):
             self.sim.h(line)
         self.inverse: stim.Tableau | None = None
-        self.time = 0
-        self.ops: list[tuple[int, np.ndarray, np.ndarray, bool, float, int, int]] = []
-        self.noise: list[tuple[np.ndarray, np.ndarray, frozenset[int], int]] = []
+        self.ops: list[tuple[int, np.ndarray, np.ndarray, bool, float, int]] = []
+        self.noise: list[tuple[np.ndarray, np.ndarray, np.ndarray, int]] = []
 
     def _mapped(self, line: int) -> tuple[np.ndarray, np.ndarray, bool]:
         """Return U†·Z_line·U as bit rows and a sign flag."""
@@ -194,22 +191,18 @@ class _Builder:
         getattr(self.sim, name)(*lines)
         self.inverse = None
 
-    def gate(self, gate: Gate, f_position: Mapping[int, int]) -> None:
+    def gate(self, gate: Gate) -> None:
         """Absorb a Clifford gate, or record a rotation, noise or measurement."""
-        if gate.kind == "H":
-            self._clifford("h", *gate.lines)
-        elif gate.kind == "CNOT":
-            self._clifford("cx", *gate.lines)
-        elif gate.kind == "CZ":
-            self._clifford("cz", *gate.lines)
+        if gate.kind in _CLIFFORD_GATES:
+            self._clifford(_CLIFFORD_GATES[gate.kind], *gate.lines)
         elif gate.kind == "Z":
-            self._phase(gate, f_position)
+            self._phase(gate)
         elif gate.kind in ("MEASURE", "DISCARD"):
             self.measure(gate.lines[0], -1)
         else:
             raise ValueError(f"unknown gate kind {gate.kind!r}")
 
-    def _phase(self, gate: Gate, f_position: Mapping[int, int]) -> None:
+    def _phase(self, gate: Gate) -> None:
         (line,) = gate.lines
         phase = gate.phase
         assert phase is not None
@@ -220,53 +213,36 @@ class _Builder:
             self._clifford(clifford, line)
         if remainder:
             x, z, negative = self._mapped(line)
-            self._op(ROTATION, x, z, negative, pi * float(remainder) / 2, -1)
+            self.ops.append((ROTATION, x, z, negative, pi * float(remainder) / 2, -1))
         if phase.parameters:
             x, z, _ = self._mapped(line)
-            positions = frozenset(f_position[p] for p in phase.parameters)
-            self.noise.append((x, z, positions, self.time))
-            self.time += 1
+            condition = np.zeros(self.num_f, dtype=bool)
+            condition[[self.f_position[p] for p in phase.parameters]] = True
+            self.noise.append((x, z, condition, len(self.ops)))
 
     def measure(self, line: int, slot: int) -> None:
         """Record a Z measurement of ``line`` (``slot`` -1 if forgotten)."""
         x, z, negative = self._mapped(line)
-        self._op(MEASUREMENT, x, z, negative, 0.0, slot)
-
-    def _op(
-        self,
-        kind: int,
-        x: np.ndarray,
-        z: np.ndarray,
-        negative: bool,
-        angle: float,
-        slot: int,
-    ) -> None:
-        self.ops.append((kind, x, z, negative, angle, slot, self.time))
-        self.time += 1
+        self.ops.append((MEASUREMENT, x, z, negative, 0.0, slot))
 
     def finish(self) -> HeisenbergOps:
-        """Return the ops, with every noise event folded into their sign rows."""
+        """Return the ops, with every noise event folded into their sign rows.
+
+        A noise event flips the sign of every later op it anticommutes with.
+        """
         num_ops, num_lines = len(self.ops), self.num_lines
         x = np.array([op[1] for op in self.ops], dtype=bool).reshape(num_ops, num_lines)
         z = np.array([op[2] for op in self.ops], dtype=bool).reshape(num_ops, num_lines)
         sign = np.zeros((num_ops, 1 + self.num_f), dtype=bool)
         sign[:, 0] = [op[3] for op in self.ops]
-        if self.noise and num_ops:
-            noise_x = np.array([e[0] for e in self.noise], dtype=np.float32)
-            noise_z = np.array([e[1] for e in self.noise], dtype=np.float32)
-            anti = (
-                noise_x @ z.T.astype(np.float32) + noise_z @ x.T.astype(np.float32)
-            ) % 2 == 1
-            noise_time = np.array([e[3] for e in self.noise])
-            op_time = np.array([op[6] for op in self.ops])
-            flips = anti & (noise_time[:, None] < op_time[None, :])
-            condition = np.zeros((len(self.noise), self.num_f), dtype=np.float32)
-            for e, (_, _, positions, _) in enumerate(self.noise):
-                condition[e, sorted(positions)] = 1
-            sign[:, 1:] = (flips.T.astype(np.float32) @ condition) % 2 == 1
+        if self.noise:
+            noise_x, noise_z, condition, start = map(
+                np.array, zip(*self.noise, strict=True)
+            )
+            later = start[:, None] <= np.arange(num_ops)[None, :]
+            flips = (anticommute(noise_x, noise_z, x, z) & later).astype(np.float32)
+            sign[:, 1:] = (flips.T @ condition.astype(np.float32)) % 2 == 1
         return HeisenbergOps(
-            num_lines=num_lines,
-            num_f=self.num_f,
             kind=np.array([op[0] for op in self.ops], dtype=np.uint8),
             x=x,
             z=z,
