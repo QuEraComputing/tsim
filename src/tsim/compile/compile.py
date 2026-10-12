@@ -4,8 +4,10 @@ import cmath
 import math
 from dataclasses import dataclass, field
 from fractions import Fraction
+from typing import Any
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import numpy as np
 from zxparam import Scalar
@@ -40,7 +42,11 @@ class CompiledScalarGraphs(eqx.Module):
     phase_pairs: PhasePairs
     float_terms: FloatTerms
     prefactor: ScalarPrefactor
-    has_float_terms: bool = eqx.field(static=True, default=False)
+
+    @property
+    def has_float_terms(self) -> bool:
+        """Whether any graph has a float term (a static shape, so safe under jit)."""
+        return self.float_terms.table.shape[1] > 0
 
 
 def _cis(alpha: Fraction | float) -> complex:
@@ -124,82 +130,19 @@ def _split_scalar(s: Scalar, column: dict[int, int], n_params: int) -> _SplitSca
     return split
 
 
-def _node_phase_family(split: list[_SplitScalar], n_params: int) -> NodePhases:
-    num_graphs = len(split)
-    width = max((len(s.nodes) for s in split), default=0)
-    phases = np.zeros((num_graphs, width), dtype=np.uint8)
-    params = np.zeros((num_graphs, width, n_params), dtype=np.uint8)
-    counts = np.zeros(num_graphs, dtype=np.int32)
-    for i, s in enumerate(split):
-        counts[i] = len(s.nodes)
-        for j, (k, bits) in enumerate(s.nodes):
-            phases[i, j] = k
-            params[i, j] = bits
-    return NodePhases(
-        phases=jnp.array(phases), params=jnp.array(params), counts=jnp.array(counts)
-    )
+def _padded(
+    rows: list[list[Any]], shape: tuple[int, ...], dtype: Any, fill: Any = 0
+) -> jax.Array:
+    """Stack per-graph rows into a ``(num_graphs, max_len, *shape)`` array.
 
-
-def _phase_term_family(split: list[_SplitScalar], n_params: int) -> PhaseTerms:
-    rows = [s.phases for s in split]
-    width = max((len(r) for r in rows), default=0)
-    coeffs = np.zeros((len(split), width), dtype=np.uint8)
-    params = np.zeros((len(split), width, n_params), dtype=np.uint8)
+    Short rows are padded with ``fill``.
+    """
+    width = max((len(row) for row in rows), default=0)
+    out = np.full((len(rows), width, *shape), fill, dtype=dtype)
     for i, row in enumerate(rows):
-        for j, (k, bits) in enumerate(row):
-            coeffs[i, j] = k
-            params[i, j] = bits
-    return PhaseTerms(coeffs=jnp.array(coeffs), params=jnp.array(params))
-
-
-def _pi_product_family(split: list[_SplitScalar], n_params: int) -> PiProducts:
-    width = max((len(s.pi_pairs) for s in split), default=0)
-    psi = np.zeros((len(split), width, n_params), dtype=np.uint8)
-    phi = np.zeros((len(split), width, n_params), dtype=np.uint8)
-    for i, s in enumerate(split):
-        for j, (a, b) in enumerate(s.pi_pairs):
-            psi[i, j] = a
-            phi[i, j] = b
-    return PiProducts(psi_params=jnp.array(psi), phi_params=jnp.array(phi))
-
-
-def _phase_pair_family(split: list[_SplitScalar], n_params: int) -> PhasePairs:
-    num_graphs = len(split)
-    width = max((len(s.phase_pairs) for s in split), default=0)
-    alpha = np.zeros((num_graphs, width), dtype=np.uint8)
-    beta = np.zeros((num_graphs, width), dtype=np.uint8)
-    alpha_params = np.zeros((num_graphs, width, n_params), dtype=np.uint8)
-    beta_params = np.zeros((num_graphs, width, n_params), dtype=np.uint8)
-    counts = np.zeros(num_graphs, dtype=np.int32)
-    for i, s in enumerate(split):
-        counts[i] = len(s.phase_pairs)
-        for j, (ka, kb, a, b) in enumerate(s.phase_pairs):
-            alpha[i, j], beta[i, j] = ka, kb
-            alpha_params[i, j], beta_params[i, j] = a, b
-    return PhasePairs(
-        alpha=jnp.array(alpha),
-        alpha_params=jnp.array(alpha_params),
-        beta=jnp.array(beta),
-        beta_params=jnp.array(beta_params),
-        counts=jnp.array(counts),
-    )
-
-
-def _float_term_family(split: list[_SplitScalar], n_params: int) -> FloatTerms:
-    num_graphs = len(split)
-    width = max((len(s.floats) for s in split), default=0)
-    table = np.ones((num_graphs, width, 4), dtype=np.complex64)
-    a_params = np.zeros((num_graphs, width, n_params), dtype=np.uint8)
-    b_params = np.zeros((num_graphs, width, n_params), dtype=np.uint8)
-    for i, s in enumerate(split):
-        for j, (values, a, b) in enumerate(s.floats):
-            table[i, j] = values
-            a_params[i, j], b_params[i, j] = a, b
-    return FloatTerms(
-        table=jnp.array(table),
-        a_params=jnp.array(a_params),
-        b_params=jnp.array(b_params),
-    )
+        if row:
+            out[i, : len(row)] = row
+    return jnp.array(out)
 
 
 def _scalar_prefactor(split: list[_SplitScalar]) -> ScalarPrefactor:
@@ -235,14 +178,47 @@ def compile_scalars(
     n_params = len(param_ids)
     simplified = [s.simplified() for s in scalars]
     split = [_split_scalar(s, column, n_params) for s in simplified if not s.is_zero]
+
+    def padded_field(
+        family: str,
+        index: int,
+        shape: tuple[int, ...] = (),
+        dtype: Any = np.uint8,
+        fill: Any = 0,
+    ) -> jax.Array:
+        rows = [[term[index] for term in getattr(s, family)] for s in split]
+        return _padded(rows, shape, dtype, fill)
+
+    def counts(family: str) -> jax.Array:
+        return jnp.array([len(getattr(s, family)) for s in split], dtype=jnp.int32)
+
+    mask = (n_params,)
     return CompiledScalarGraphs(
         num_graphs=len(split),
         n_params=n_params,
-        node_phases=_node_phase_family(split, n_params),
-        phase_terms=_phase_term_family(split, n_params),
-        pi_products=_pi_product_family(split, n_params),
-        phase_pairs=_phase_pair_family(split, n_params),
-        float_terms=_float_term_family(split, n_params),
+        node_phases=NodePhases(
+            phases=padded_field("nodes", 0),
+            params=padded_field("nodes", 1, mask),
+            counts=counts("nodes"),
+        ),
+        phase_terms=PhaseTerms(
+            coeffs=padded_field("phases", 0), params=padded_field("phases", 1, mask)
+        ),
+        pi_products=PiProducts(
+            psi_params=padded_field("pi_pairs", 0, mask),
+            phi_params=padded_field("pi_pairs", 1, mask),
+        ),
+        phase_pairs=PhasePairs(
+            alpha=padded_field("phase_pairs", 0),
+            alpha_params=padded_field("phase_pairs", 2, mask),
+            beta=padded_field("phase_pairs", 1),
+            beta_params=padded_field("phase_pairs", 3, mask),
+            counts=counts("phase_pairs"),
+        ),
+        float_terms=FloatTerms(
+            table=padded_field("floats", 0, (4,), np.complex64, fill=1),
+            a_params=padded_field("floats", 1, mask),
+            b_params=padded_field("floats", 2, mask),
+        ),
         prefactor=_scalar_prefactor(split),
-        has_float_terms=any(s.floats for s in split),
     )
