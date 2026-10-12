@@ -148,3 +148,10 @@ def test_power_of_two_is_merged_before_float_conversion():
     got = _compiled([s], [3])
     assert np.isfinite(got).all()
     _assert_matches([s], [3])
+
+
+def test_parameter_free_phase_pairs_with_other_angles_stay_approximate():
+    pair = PhasePair(Fraction(1, 3), Fraction(1, 5), frozenset(), frozenset())
+    s = Scalar(base=Dyadic.one(), phase_pairs=[pair])
+    assert compile_scalars([s], []).prefactor.has_approximate_floatfactors
+    _assert_matches([s], [])

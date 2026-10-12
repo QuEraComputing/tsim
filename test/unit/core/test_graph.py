@@ -1,5 +1,6 @@
 """Closing for sampling, the circuit graph and preparation on zxparam."""
 
+from fractions import Fraction
 from test.helpers.tensors import doubled
 
 import numpy as np
@@ -7,10 +8,15 @@ import pytest
 import stim
 import zxparam
 from zxparam import Domain, VertexType
-from zxparam.phase import Bit
+from zxparam.phase import Bit, Phase
 
 from tsim.circuit import Circuit
-from tsim.core.graph import build_sampling_graph, circuit_graph, prepare_graph
+from tsim.core.graph import (
+    build_sampling_graph,
+    circuit_graph,
+    prepare_graph,
+    transform_error_basis,
+)
 from tsim.core.parse import parse_stim_circuit
 
 H = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
@@ -270,3 +276,10 @@ def test_circuit_graph_positions_are_distinct(text: str):
 def test_sampling_graph_positions_are_distinct(sample_detectors: bool):
     c = Circuit("H 0\nM 0\nM 0\nMPP X0\nM 0\nDETECTOR rec[-1] rec[-3]")
     assert _positions_are_distinct(c.get_sampling_graph(sample_detectors))
+
+
+def test_transform_error_basis_rejects_a_parameter_that_is_not_an_error_bit():
+    g = zxparam.Graph()
+    g.add_vertex(VertexType.Z, Phase(Fraction(0), frozenset({3})))
+    with pytest.raises(ValueError, match="not an error bit"):
+        transform_error_basis(g, num_errors=2)

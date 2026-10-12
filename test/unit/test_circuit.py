@@ -1280,3 +1280,20 @@ def test_stim_circuit_repeat_block_expands_half_pi_parametric():
     assert block.repeat_count == 3
     body = block.body_copy()
     assert [instr.name for instr in body] == ["SQRT_X"]
+
+
+@pytest.mark.parametrize("type", ["zx", "zx-meas", "zx-dets"])
+def test_diagram_zx_names_parameters_by_kind_and_index(
+    type: Literal["zx", "zx-meas", "zx-dets"],
+):
+    c = Circuit("X_ERROR(0.1) 0 1\nCX 0 1\nM 0 1\nDETECTOR rec[-1]\nDETECTOR rec[-2]")
+    with patch("zxparam.draw") as mock_draw:
+        c.diagram(type=type)
+    g = mock_draw.call_args.args[0]
+    names = mock_draw.call_args.kwargs["param_names"]
+    assert g.parameters() and set(names) == set(g.parameters())
+    if type == "zx":
+        expected = {p: f"e{p}" for p in g.parameters()}
+    else:  # two error bits, so error-basis bit j has ID 2 + 2j
+        expected = {p: f"f{(p - 2) // 2}" for p in g.parameters()}
+    assert names == expected
