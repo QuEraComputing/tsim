@@ -8,7 +8,7 @@ import numpy as np
 import zxparam
 from zxparam import Domain, Graph, Phase, Scalar, Vertex, VertexType
 
-from tsim.core.instructions import GraphRepresentation
+from tsim.core.instructions import ANNOTATION_ROW, GraphRepresentation
 from tsim.core.params import ParamLayout
 from tsim.core.parse import parse_stim_circuit
 from tsim.core.types import SamplingGraph
@@ -48,8 +48,8 @@ def _attach_annotation_outputs(
     leg, its tensor is exactly the parity of its measurement records. The
     spider's ``det[i]`` / ``obs[k]`` label moves to its boundary.
     """
-    annotations = [(v, -2.0) for v in built.detectors]
-    annotations += [(v, -2.5) for v in built.observables]
+    annotations = [(v, ANNOTATION_ROW - 1) for v in built.detectors]
+    annotations += [(v, ANNOTATION_ROW - 1.5) for v in built.observables]
     for port, (v, row) in enumerate(annotations, start=first_port):
         # NOTE: an X spider with n legs is 2^(1 - n/2) times a parity check;
         # with its output leg, an annotation has degree + 1 legs.
@@ -124,10 +124,13 @@ def build_sampling_graph(
         return g
     for v in [*built.detectors, *built.observables]:
         g.remove_vertex(v)
-    col = max((g.col(v) for v in g.vertices()), default=0.0) + 1
     for port, v in enumerate(built.rec):
+        # NOTE: half a row below its record, where no wire vertex sits.
         b = g.add_vertex(
-            VertexType.BOUNDARY, col=col, row=g.row(v), domain=Domain.CLASSICAL
+            VertexType.BOUNDARY,
+            col=g.col(v),
+            row=g.row(v) + 0.5,
+            domain=Domain.CLASSICAL,
         )
         g.set_port(b, port)
         g.add_edge(v, b)

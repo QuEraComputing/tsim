@@ -7,6 +7,7 @@ import stim
 from numpy.testing import assert_allclose
 from zxparam import VertexType
 
+from tsim.core.instructions import HELPER_LANE
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 
 
@@ -332,9 +333,18 @@ class TestChannelBitLayoutMatchesGraph:
             ("MR(0.07) 5", {0: [(VertexType.X, 5), (VertexType.X, 5)]}),
             ("MRX(0.07) 5", {0: [(VertexType.X, 5), (VertexType.X, 5)]}),
             ("MRY(0.07) 5", {0: [(VertexType.X, 5), (VertexType.X, 5)]}),
-            ("MXX(0.07) 5 7", {0: [(VertexType.X, -2), (VertexType.X, -2)]}),
-            ("MPP(0.07) X5*Z7", {0: [(VertexType.X, -2), (VertexType.X, -2)]}),
-            ("MPAD(0.07) 1", {0: [(VertexType.X, -2), (VertexType.X, -2)]}),
+            (
+                "MXX(0.07) 5 7",
+                {0: [(VertexType.X, HELPER_LANE), (VertexType.X, HELPER_LANE)]},
+            ),
+            (
+                "MPP(0.07) X5*Z7",
+                {0: [(VertexType.X, HELPER_LANE), (VertexType.X, HELPER_LANE)]},
+            ),
+            (
+                "MPAD(0.07) 1",
+                {0: [(VertexType.X, HELPER_LANE), (VertexType.X, HELPER_LANE)]},
+            ),
         ],
     )
     def test_single_bit_channel_layout_matches_graph(self, program, expected_layout):
@@ -404,7 +414,7 @@ class TestChannelBitLayoutMatchesGraph:
         _assert_error_vertex_layout(
             b,
             {
-                0: [(VertexType.X, -2)],
+                0: [(VertexType.X, HELPER_LANE)],
                 1: [(VertexType.Z, 5)],
                 2: [(VertexType.X, 5)],
             },

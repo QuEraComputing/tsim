@@ -247,10 +247,26 @@ def test_sampling_graph_sums_to_one(text, sample_detectors):
         np.testing.assert_allclose(np.sum(g.to_tensor(bindings)), 1, atol=1e-9)
 
 
-@pytest.mark.parametrize(
-    "text", ["H 0\nT 0\nSWAP 0 1\nM 0 1", "H 0\nCX 0 1\nSWAP 1 2\nM 0 1 2"]
-)
-def test_swapping_wires_of_different_lengths_keeps_positions_distinct(text: str):
-    g = Circuit(text).get_graph()
+def _positions_are_distinct(g: zxparam.Graph) -> bool:
     positions = [(g.col(v), g.row(v)) for v in g.vertices()]
-    assert len(set(positions)) == len(positions)
+    return len(set(positions)) == len(positions)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "H 0\nT 0\nSWAP 0 1\nM 0 1",
+        "H 0\nCX 0 1\nSWAP 1 2\nM 0 1 2",
+        "MPP X0\nDETECTOR",
+        "MPP X0*Z1\nDETECTOR\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]",
+        "HERALDED_ERASE(0.1) 0\nMPAD 1\nM 0\nDETECTOR rec[-1] rec[-2]",
+    ],
+)
+def test_circuit_graph_positions_are_distinct(text: str):
+    assert _positions_are_distinct(Circuit(text).get_graph())
+
+
+@pytest.mark.parametrize("sample_detectors", [False, True])
+def test_sampling_graph_positions_are_distinct(sample_detectors: bool):
+    c = Circuit("H 0\nM 0\nM 0\nMPP X0\nM 0\nDETECTOR rec[-1] rec[-3]")
+    assert _positions_are_distinct(c.get_sampling_graph(sample_detectors))

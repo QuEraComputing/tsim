@@ -26,6 +26,12 @@ from tsim.noise.channels import (
     pauli_channel_2_probs,
 )
 
+HELPER_LANE = -1
+"""Qubit index, and row, of the helper wire used by MPP, MPAD and heralded channels."""
+
+ANNOTATION_ROW = -2.0
+"""Row of the detector and observable spiders, above the helper wire."""
+
 
 @dataclass
 class GraphRepresentation:
@@ -726,7 +732,7 @@ def heralded_pauli_channel_1(
     is applied. When it doesn't fire, the herald is 0 and nothing happens.
     """
     b.channel_probs.append(heralded_pauli_channel_1_probs(pi, px, py, pz))
-    aux = -2
+    aux = HELPER_LANE
     r(b, aux)
     _error(b, aux, VertexType.X, b.num_error_bits)  # herald bit flip
     m(b, aux)
@@ -858,7 +864,7 @@ def mpp(
         p: Measurement flip error probability.
 
     """
-    aux = -2
+    aux = HELPER_LANE
     r(b, aux)
     h(b, aux)
     _apply_pauli_controls(b, aux, paulis)
@@ -1008,7 +1014,7 @@ def mpad(b: GraphRepresentation, value: int, p: float = 0) -> None:
         p: Error probability for the recorded bit.
 
     """
-    aux = -2
+    aux = HELPER_LANE
     r(b, aux)
     if value == 1:
         x(b, aux)
@@ -1158,7 +1164,7 @@ def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
     v0 = b.graph.add_vertex(
         VertexType.X,
         col=_annotation_col(b, rec),
-        row=-1,
+        row=ANNOTATION_ROW,
         domain=Domain.CLASSICAL,
         label=f"det[{len(b.detectors)}]",
     )
@@ -1175,7 +1181,7 @@ def observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None
         v0 = b.graph.add_vertex(
             VertexType.X,
             col=_annotation_col(b, rec),
-            row=-1,
+            row=ANNOTATION_ROW,
             domain=Domain.CLASSICAL,
             label=f"obs[{idx}]",
         )
