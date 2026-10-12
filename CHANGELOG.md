@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Circuit.to_tensor()` needs quimb, which is not a Tsim runtime dependency: install `zxparam[quimb]`, otherwise it raises `ImportError`.
 - `Circuit.get_sampling_graph()` is no longer doubled: qubit wires are quantum and measurement records are classical spiders. Its `to_tensor()` raises on unbound error parameters (pyzx treated them as 0); bind them by error index. With all errors bound, the tensor is the joint distribution of the outputs.
 - The ZX diagram types are now `"zx"`, `"zx-dets"` and `"zx-meas"`. They return zxparam's HTML drawing object instead of a graph.
-- Internals renamed or moved: `tsim.utils.diagram.render_pyzx_d3` is now `render_zx_d3`; `classify_direct` moved from `tsim.core.graph` to `tsim.compile.pipeline`; `squash_graph` and `scale_horizontally` moved from `tsim.core.graph` to `tsim.utils.diagram`.
+- Internals moved or removed: `classify_direct` moved from `tsim.core.graph` to `tsim.compile.pipeline`; `tsim.utils.diagram.render_pyzx_d3`, `squash_graph` and `scale_horizontally` are gone, since ZX diagrams use zxparam's `draw` layout and scale options.
 
 ### Deprecated
 - The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types. They still work as aliases for `"zx"`, `"zx-dets"` and `"zx-meas"` but emit a `DeprecationWarning`.

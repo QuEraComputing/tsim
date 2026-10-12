@@ -27,7 +27,7 @@ from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.core.tags import encode_t_tag
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
-from tsim.utils.diagram import draw_zx, render_svg, render_zx_d3
+from tsim.utils.diagram import draw_zx, render_svg
 from tsim.utils.program_text import (
     controlled_gate_decomposition_lines,
     enriched_stim_error,
@@ -771,7 +771,8 @@ class Circuit:
                 zoomable=zoomable,
             )
         elif type == "zx":
-            return render_zx_d3(self._stim_circ, kwargs)
+            built = parse_stim_circuit(self._stim_circ)
+            return draw_zx(circuit_graph(built), built.num_error_bits, kwargs)
         elif type in ("zx-dets", "zx-meas"):
             built = parse_stim_circuit(self._stim_circ)
             g = build_sampling_graph(built, sample_detectors=type == "zx-dets")
