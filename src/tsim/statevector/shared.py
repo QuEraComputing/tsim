@@ -21,8 +21,8 @@ splits lanes the same way (p = 1/2) when its branch reaches a key sign; otherwis
 it is a fair coin drawn per shot at the end.
 
 Lanes live in growable arrays, and a Python loop runs the tape: each action calls
-a parallel numba kernel on the live lanes and on the ``2^extent`` amplitudes the
-action can touch. When the extent grows, the newly touched amplitudes are
+a numba kernel on the live lanes and on the ``2^extent`` amplitudes the action
+can touch. When the extent grows, the newly touched amplitudes are
 cleared, because a slot reused for another lane can hold stale values there.
 After the tape each shot's outputs are evaluated from its own f-bits, its lane's
 outcomes and its own dormant coins; a pruned shot's outputs that need a branch
@@ -384,11 +384,16 @@ def _shot_symbols(symbols, order, owner, entry_symbols, lane_branches, dormant, 
 
 
 class _Lanes:
-    """Live lanes in growable arrays: rows ``0 … size-1`` are live."""
+    """Live lanes in growable arrays: rows ``0 … size-1`` are live.
+
+    Every lane holds at least one shot, so the arrays never need more rows than
+    there are shots.
+    """
 
     def __init__(self, symbols, start, count, width: int, dtype: np.dtype):
         self.size = len(start)
-        capacity = max(16, 2 * self.size)
+        self.shots = max(1, int(np.sum(count)))
+        capacity = min(max(16, 2 * self.size), self.shots)
         self.amps = np.zeros((capacity, 1 << width), dtype=dtype)
         self.amps[: self.size, 0] = 1
         self.symbols = np.zeros((capacity, symbols.shape[1]), dtype=np.uint32)
@@ -409,7 +414,7 @@ class _Lanes:
         parents = np.flatnonzero((ones > 0) & ~outcome)
         new = size + len(parents)
         if new > len(self.count):
-            self._grow(new)
+            self._grow(new, span)
         self.amps[size:new, :span] = self.amps[parents, :span]
         self.symbols[size:new] = self.symbols[parents]
         self.count[size:new] = ones[parents]
@@ -431,9 +436,12 @@ class _Lanes:
         self.size = len(kept)
         return removed
 
-    def _grow(self, needed: int) -> None:
-        capacity = max(needed, 2 * len(self.count))
-        for name in ("amps", "symbols", "start", "count"):
+    def _grow(self, needed: int, span: int) -> None:
+        capacity = min(max(needed, 2 * len(self.count)), self.shots)
+        amps = np.zeros((capacity, self.amps.shape[1]), dtype=self.amps.dtype)
+        amps[: self.size, :span] = self.amps[: self.size, :span]
+        self.amps = amps
+        for name in ("symbols", "start", "count"):
             old = getattr(self, name)
             new = np.zeros((capacity, *old.shape[1:]), dtype=old.dtype)
             new[: self.size] = old[: self.size]
@@ -469,6 +477,8 @@ def _run(
     dead: list[tuple] = []
     deviation, peak, region = 0.0, lanes.size, 0
     for a, kind in enumerate(tape.kind):
+        if not lanes.size:
+            break
         extent = int(tape.extent[a])
         span = 1 << extent
         if extent > region:
@@ -494,7 +504,7 @@ def _run(
             w0 = w1 = np.full(size, 0.5)
         else:
             w0, w1 = _weights(work, lanes.amps, size, extent, x, z, i_power)
-            deviation = max(deviation, float(np.max(np.abs(w0 + w1 - 1))))
+            deviation = float(np.max(np.abs(w0 + w1 - 1), initial=deviation))
         seed = rng.integers(0, 2**64, dtype=np.uint64)
         ones = _draw_ones(lanes.count[:size], w0, w1, seed)
         outcome, source = lanes.split(ones, span)

@@ -115,7 +115,7 @@ def test_measurements_match_the_reference_kernel(monkeypatch, x, z, pivot):
     f_bits = jnp.array([[False], [False], [True]])
     component, state = _measuring(x, z, pivot, psi, f_bits)
     outcomes = jnp.array([False, True, True])
-    monkeypatch.setattr(execute, "choose_outcome", lambda p0, p1, count, key: outcomes)
+    monkeypatch.setattr(execute, "choose_outcome", lambda p0, p1, key: outcomes)
     out = run(component, state, jax.random.key(0), 0, 1)
     for lane, outcome in enumerate([0, 1, 1]):
         expected, _ = reference_measure(psi[lane], x, z, pivot, outcome)
@@ -131,7 +131,7 @@ def test_outputs_are_parities_of_the_symbols(monkeypatch):
         outputs=[AffineRow(True, frozenset({1})), AffineRow(False, frozenset({0, 1}))],
     )
     monkeypatch.setattr(
-        execute, "choose_outcome", lambda p0, p1, count, key: jnp.array([False, True])
+        execute, "choose_outcome", lambda p0, p1, key: jnp.array([False, True])
     )
     state = initial_state(component, jnp.array([[True], [True]]))
     out = run(component, state, jax.random.key(0), 0, 1)
@@ -153,7 +153,7 @@ def test_outputs_read_symbols_beyond_the_first_word(monkeypatch):
     )
     assert component.num_words == 2
     monkeypatch.setattr(
-        execute, "choose_outcome", lambda p0, p1, count, key: jnp.array([False, True])
+        execute, "choose_outcome", lambda p0, p1, key: jnp.array([False, True])
     )
     f_bits = np.zeros((2, 40), dtype=bool)
     f_bits[1, 3] = True
@@ -225,8 +225,7 @@ def _count_outcomes(p1, dtype, draws, chunk=2**22):
     def ones_in_chunk(key):
         p0s = jnp.full(chunk, 1 - p1, dtype=dtype)
         p1s = jnp.full(chunk, p1, dtype=dtype)
-        count = jnp.ones(chunk, dtype=jnp.int32)
-        return jnp.sum(execute.choose_outcome(p0s, p1s, count, key))
+        return jnp.sum(execute.choose_outcome(p0s, p1s, key))
 
     return sum(
         int(ones_in_chunk(jax.random.key(seed))) for seed in range(draws // chunk)
@@ -264,9 +263,9 @@ def _run_recording_probabilities(monkeypatch, component, state):
     recorded = []
     choose = execute.choose_outcome
 
-    def recording(p0, p1, count, key):
+    def recording(p0, p1, key):
         recorded.append((np.asarray(p0, np.float64), np.asarray(p1, np.float64)))
-        return choose(p0, p1, count, key)
+        return choose(p0, p1, key)
 
     monkeypatch.setattr(execute, "choose_outcome", recording)
     with jax.disable_jit():
@@ -323,7 +322,7 @@ def test_an_unlikely_outcome_leaves_a_normalized_state(
         x, z, pivot, np.sqrt(1 - p) * likely + np.sqrt(p) * rare
     )
     outcomes = jnp.full(lanes, bool(unlikely))
-    monkeypatch.setattr(execute, "choose_outcome", lambda p0, p1, count, key: outcomes)
+    monkeypatch.setattr(execute, "choose_outcome", lambda p0, p1, key: outcomes)
     out = run(component, state, jax.random.key(0), 0, 1)
     norms = np.linalg.norm(np.asarray(out.amps, dtype=np.complex128), axis=1) ** 2
     assert np.abs(norms - 1).max() < 1e-5

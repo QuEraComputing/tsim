@@ -5,8 +5,7 @@ step dispatches on the action's kind with ``lax.switch``. The loop carry is a
 ``LaneState``: one lane per shot, each with ``2^W`` amplitudes and its symbols
 (f-bits, then branch bits as they are sampled), from which ``outputs`` reads
 the output bits once the tape has run. All randomness goes through
-``choose_outcome``, and ``count`` holds the number of shots a lane stands for,
-so lanes can be shared between shots without changing the kernels.
+``choose_outcome``.
 """
 
 from __future__ import annotations
@@ -39,14 +38,12 @@ class LaneState(NamedTuple):
         amps: Amplitudes, shape ``(L, 2^W)``.
         symbols: f-bits, then branch bits, packed into uint32 words,
             shape ``(L, num_words)``.
-        count: Shots each lane stands for, shape ``(L,)``.
         max_norm_deviation: Largest ``|‖ψ‖² - 1|`` seen at a measurement.
 
     """
 
     amps: Array
     symbols: Array
-    count: Array  # pyright: ignore[reportIncompatibleMethodOverride]
     max_norm_deviation: Array
 
 
@@ -57,7 +54,7 @@ def lane_bytes(component: StatevectorComponent) -> int:
     return amplitudes + 4 * component.num_words + component.num_outputs
 
 
-def choose_outcome(p0: Array, p1: Array, count: Array, key: Array) -> Array:
+def choose_outcome(p0: Array, p1: Array, key: Array) -> Array:
     """Return each lane's outcome: True with probability ``p1 = 1 - p0``.
 
     The less likely outcome is drawn, so that both outcomes keep the relative
@@ -65,10 +62,8 @@ def choose_outcome(p0: Array, p1: Array, count: Array, key: Array) -> Array:
     ``p0`` is below about 6·10⁻⁸. Two uint32 draws per lane form a uniform 64-bit
     fraction, compared with ``p·2^32`` (an exact scaling) for the smaller ``p``,
     so the resolution is 2^-64 for any float dtype, and an outcome of
-    probability 0 is never drawn. ``count`` is unused while every lane is one
-    shot.
+    probability 0 is never drawn.
     """
-    del count
     high, low = jax.random.bits(key, (2, *p1.shape), dtype=jnp.uint32)
     one_is_rare = p1 <= p0
     scaled = jnp.clip(jnp.minimum(p0, p1), 0, 0.5) * _TWO_TO_32
@@ -97,7 +92,6 @@ def initial_state(component: StatevectorComponent, f_bits: Array) -> LaneState:
     return LaneState(
         amps=amps,
         symbols=pack_bits(f_bits, component.num_words),
-        count=jnp.ones(lanes, dtype=jnp.int32),
         max_norm_deviation=jnp.zeros((), dtype=jnp.finfo(dtype).dtype),
     )
 
@@ -185,7 +179,7 @@ def _sample_outcome(
     """
     total = jnp.maximum(weight_0 + weight_1, _TINY)
     key = jax.random.fold_in(key, a)
-    outcome = choose_outcome(weight_0 / total, weight_1 / total, state.count, key)
+    outcome = choose_outcome(weight_0 / total, weight_1 / total, key)
     return outcome, jnp.where(outcome, weight_1, weight_0)
 
 
@@ -244,8 +238,9 @@ def _measure_diag(
 def _measure_dormant(
     component: StatevectorComponent, state: LaneState, a: Array, key: Array
 ) -> LaneState:
-    half = jnp.full(state.count.shape, 0.5, dtype=state.max_norm_deviation.dtype)
-    outcome = choose_outcome(half, half, state.count, jax.random.fold_in(key, a))
+    lanes = state.symbols.shape[0]
+    half = jnp.full(lanes, 0.5, dtype=state.max_norm_deviation.dtype)
+    outcome = choose_outcome(half, half, jax.random.fold_in(key, a))
     return _set_branch(component, state, a, outcome)
 
 
