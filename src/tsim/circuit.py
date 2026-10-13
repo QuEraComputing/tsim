@@ -22,7 +22,7 @@ from zxparam.phase import Bit
 if TYPE_CHECKING:
     from tsim.sampler import CompiledDetectorSampler, CompiledMeasurementSampler
 
-from tsim.core.graph import build_sampling_graph, circuit_graph, transform_error_basis
+from tsim.core.graph import transform_error_basis
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.core.tags import encode_t_tag
 from tsim.noise.dem import get_detector_error_model
@@ -771,15 +771,17 @@ class Circuit:
                 zoomable=zoomable,
             )
         elif type == "zx":
-            built = parse_stim_circuit(self._stim_circ)
-            return draw_zx(circuit_graph(built), built.num_error_bits, kwargs)
+            builder = parse_stim_circuit(self._stim_circ)
+            g = builder.build(closed=False, outputs="detectors")
+            return draw_zx(g, builder.num_error_bits, kwargs)
         elif type in ("zx-dets", "zx-meas"):
-            built = parse_stim_circuit(self._stim_circ)
-            g = build_sampling_graph(built, sample_detectors=type == "zx-dets")
+            builder = parse_stim_circuit(self._stim_circ)
+            outputs = "detectors" if type == "zx-dets" else "records"
+            g = builder.build(closed=True, outputs=outputs)
             zx.full_reduce(g)
-            g, _ = transform_error_basis(g, built.num_error_bits)
+            g, _ = transform_error_basis(g, builder.num_error_bits)
             g.to_rg()
-            return draw_zx(g, built.num_error_bits, kwargs, layout="outputs")
+            return draw_zx(g, builder.num_error_bits, kwargs, layout="outputs")
         elif type == "timeline-text":
             from stim_timeline_text import render_timeline_text
 
@@ -796,20 +798,21 @@ class Circuit:
         ``ValueError`` for any other key. Detector and observable annotations are
         left out. Needs ``zxparam[quimb]``.
         """
-        built = parse_stim_circuit(self._stim_circ)
-        values: dict[int, Bit] = {j: 0 for j in range(built.num_error_bits)}
+        builder = parse_stim_circuit(self._stim_circ)
+        values: dict[int, Bit] = {j: 0 for j in range(builder.num_error_bits)}
         for j, bit in (bindings or {}).items():
             if j not in values:
                 raise ValueError(
                     f"{j!r} is not an error index of this circuit, which has "
-                    f"{built.num_error_bits} error bit(s)"
+                    f"{builder.num_error_bits} error bit(s)"
                 )
             values[j] = 1 if bit else 0
-        return circuit_graph(built, annotations=False).to_tensor(values)
+        return builder.build(closed=False, outputs="none").to_tensor(values)
 
     def tcount(self) -> int:
         """Count the spiders whose angle is not a multiple of π/2."""
-        return zx.tcount(parse_stim_circuit(self._stim_circ).graph)
+        builder = parse_stim_circuit(self._stim_circ)
+        return zx.tcount(builder.build(closed=False, outputs="none"))
 
     def get_graph(self) -> Graph:
         """Construct the circuit's quantum/classical ZX graph, with qubit ports.
@@ -821,7 +824,8 @@ class Circuit:
         with the detector and observable bits. ``Circuit.to_tensor`` returns the
         channel alone.
         """
-        return circuit_graph(parse_stim_circuit(self._stim_circ))
+        builder = parse_stim_circuit(self._stim_circ)
+        return builder.build(closed=False, outputs="detectors")
 
     def get_sampling_graph(self, sample_detectors: bool = False) -> Graph:
         """Get a ZX graph that can be used to compute probabilities.
@@ -850,8 +854,10 @@ class Circuit:
             A ZX graph for sampling.
 
         """
-        built = parse_stim_circuit(self._stim_circ)
-        return build_sampling_graph(built, sample_detectors=sample_detectors)
+        builder = parse_stim_circuit(self._stim_circ)
+        return builder.build(
+            closed=True, outputs="detectors" if sample_detectors else "records"
+        )
 
     def compile_sampler(
         self,

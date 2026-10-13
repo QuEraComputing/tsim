@@ -41,7 +41,20 @@ class Channel:
     @property
     def num_bits(self) -> int:
         """Number of bits in the channel (k where probs has shape 2^k)."""
-        return int(np.log2(len(self.probs)))
+        return channel_num_bits(self.probs)
+
+
+def channel_num_bits(probs: np.ndarray) -> int:
+    """Return the number of bits ``k`` of a channel with ``2^k`` outcomes.
+
+    Raises:
+        ValueError: If the number of outcomes is not a power of two.
+
+    """
+    num_bits = len(probs).bit_length() - 1
+    if num_bits < 0 or len(probs) != 1 << num_bits:
+        raise ValueError(f"a channel has 2^k outcomes, but got {len(probs)}")
+    return num_bits
 
 
 def error_probs(p: float) -> np.ndarray:
@@ -560,7 +573,7 @@ class ChannelSampler:
         channels: list[Channel] = []
         e_offset = 0
         for probs in channel_probs:
-            num_bits = int(np.log2(len(probs)))
+            num_bits = channel_num_bits(probs)
             col_ids = tuple(int(inverse[e_offset + i]) for i in range(num_bits))
             channels.append(Channel(probs=probs, unique_col_ids=col_ids))
             e_offset += num_bits

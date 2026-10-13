@@ -15,8 +15,7 @@ from zxparam import Domain, VertexType
 
 from tsim.circuit import Circuit
 from tsim.core import instructions
-from tsim.core.graph import circuit_graph
-from tsim.core.instructions import GraphRepresentation
+from tsim.core.builder import GraphBuilder
 
 PLUS = (ZERO + ONE) / np.sqrt(2)
 MINUS = (ZERO - ONE) / np.sqrt(2)
@@ -24,11 +23,11 @@ PLUS_I = (ZERO + 1j * ONE) / np.sqrt(2)
 MINUS_I = (ZERO - 1j * ONE) / np.sqrt(2)
 
 
-def _tensor(*steps: Callable[[GraphRepresentation], object]) -> np.ndarray:
-    b = GraphRepresentation()
+def _tensor(*steps: Callable[[GraphBuilder], object]) -> np.ndarray:
+    builder = GraphBuilder()
     for step in steps:
-        step(b)
-    return circuit_graph(b).to_tensor()
+        step(builder)
+    return builder.build(closed=False, outputs="detectors").to_tensor()
 
 
 def _dephasing(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -72,7 +71,7 @@ def _reset_to(psi: np.ndarray) -> np.ndarray:
 )
 def test_single_qubit_instruction(gate_func, matrix: np.ndarray):
     np.testing.assert_allclose(
-        _tensor(lambda b: gate_func(b, 0)), doubled(matrix), atol=1e-9
+        _tensor(lambda builder: gate_func(builder, 0)), doubled(matrix), atol=1e-9
     )
 
 
@@ -81,7 +80,7 @@ def test_single_qubit_instruction(gate_func, matrix: np.ndarray):
 def test_rotation(name: str, frac: Fraction):
     gate = getattr(instructions, name.lower())
     np.testing.assert_allclose(
-        _tensor(lambda b: gate(b, 0, frac)),
+        _tensor(lambda builder: gate(builder, 0, frac)),
         doubled(ROT_GATE_MATRICES[name](frac)),
         atol=1e-9,
     )
@@ -92,7 +91,11 @@ def test_rotation(name: str, frac: Fraction):
 @pytest.mark.parametrize("frac_lambda", [Fraction(-1, 13), Fraction(1, 7)])
 def test_u3(frac_theta: Fraction, frac_phi: Fraction, frac_lambda: Fraction):
     np.testing.assert_allclose(
-        _tensor(lambda b: instructions.u3(b, 0, frac_theta, frac_phi, frac_lambda)),
+        _tensor(
+            lambda builder: instructions.u3(
+                builder, 0, frac_theta, frac_phi, frac_lambda
+            )
+        ),
         doubled(ROT_GATE_MATRICES["U3"](frac_theta, frac_phi, frac_lambda)),
         atol=1e-9,
     )
@@ -127,12 +130,12 @@ def test_u3(frac_theta: Fraction, frac_phi: Fraction, frac_lambda: Fraction):
 )
 def test_two_qubit_instruction(gate_func, matrix: np.ndarray):
     np.testing.assert_allclose(
-        _tensor(lambda b: gate_func(b, 0, 1)), doubled(matrix), atol=1e-9
+        _tensor(lambda builder: gate_func(builder, 0, 1)), doubled(matrix), atol=1e-9
     )
 
 
 def _on_qubit_0(*gates: Callable[..., None]) -> np.ndarray:
-    return _tensor(*[lambda b, gate=gate: gate(b, 0) for gate in gates])
+    return _tensor(*[lambda builder, gate=gate: gate(builder, 0) for gate in gates])
 
 
 def test_measurements_dephase():
@@ -168,25 +171,25 @@ def test_mr_matches_m_then_r(basis: str):
 
 
 def test_x_error_is_an_x_spider_with_its_error_bit():
-    b = GraphRepresentation()
-    instructions.x_error(b, 0, 0.1)
-    noisy = [v for v in b.graph.vertices() if b.graph.phase(v).parameters]
+    builder = GraphBuilder()
+    instructions.x_error(builder, 0, 0.1)
+    noisy = [v for v in builder.graph.vertices() if builder.graph.phase(v).parameters]
     assert len(noisy) == 1
-    assert b.graph.vertex_type(noisy[0]) == VertexType.X
-    assert b.graph.phase(noisy[0]).parameters == {0}
-    g = circuit_graph(b)
+    assert builder.graph.vertex_type(noisy[0]) == VertexType.X
+    assert builder.graph.phase(noisy[0]).parameters == {0}
+    g = builder.build(closed=False, outputs="detectors")
     np.testing.assert_allclose(g.to_tensor({0: 0}), doubled(np.eye(2)), atol=1e-9)
     x = SINGLE_QUBIT_GATE_MATRICES["X"]
     np.testing.assert_allclose(g.to_tensor({0: 1}), doubled(x), atol=1e-9)
 
 
 def test_records_and_detectors_are_classical_spiders():
-    b = GraphRepresentation()
-    instructions.m(b, 0)
-    instructions.detector(b, [0])
-    (rec,) = b.rec
-    (det,) = b.detectors
-    g = b.graph
+    builder = GraphBuilder()
+    instructions.m(builder, 0)
+    builder.add_detector([0])
+    (rec,) = builder.records
+    (det,) = builder.detectors
+    g = builder.graph
     assert (g.vertex_type(rec), g.vertex_domain(rec)) == (
         VertexType.Z,
         Domain.CLASSICAL,
@@ -205,10 +208,48 @@ def test_cz_between_two_measurement_records_does_nothing():
     np.testing.assert_allclose(with_cz.to_tensor(), without.to_tensor(), atol=1e-12)
 
 
+def test_pending_correlated_error_must_be_finalized():
+    builder = GraphBuilder()
+    builder.correlated_error([0], ["X"], 0.1)
+    reads = [
+        lambda: builder.channel_probs,
+        lambda: builder.num_error_bits,
+        lambda: builder.build(closed=True, outputs="records"),
+    ]
+    for read in reads:
+        with pytest.raises(RuntimeError, match="finalize_correlated_error"):
+            read()
+    builder.finalize_correlated_error()
+    assert builder.num_error_bits == 1
+    assert [p.shape for p in builder.channel_probs] == [(2,)]
+
+
+def test_correlated_error_with_mismatched_targets_changes_nothing():
+    builder = GraphBuilder()
+    with pytest.raises(ValueError):
+        builder.correlated_error([0, 1], ["X"], 0.1)
+    assert builder.graph.num_vertices() == 0
+    builder.correlated_error([0], ["Z"], 0.2)
+    builder.finalize_correlated_error()
+    g = builder.graph
+    noisy = [v for v in g.vertices() if g.phase(v).parameters]
+    assert [g.vertex_type(v) for v in noisy] == [VertexType.Z]
+
+
+def test_add_channel_rejects_non_power_of_two():
+    builder = GraphBuilder()
+    with pytest.raises(ValueError, match="2\\^k outcomes"):
+        builder.add_channel(np.full(3, 1 / 3))
+    assert builder.num_error_bits == 0
+    assert builder.channel_probs == []
+
+
 @pytest.mark.parametrize("gate", [instructions.cnot, instructions.cz, instructions.cy])
 def test_unset_classical_control_flags_give_the_quantum_gate(gate):
     np.testing.assert_allclose(
-        _tensor(lambda b: gate(b, 0, 1, classically_controlled=[False, False])),
-        _tensor(lambda b: gate(b, 0, 1)),
+        _tensor(
+            lambda builder: gate(builder, 0, 1, classically_controlled=[False, False])
+        ),
+        _tensor(lambda builder: gate(builder, 0, 1)),
         atol=1e-12,
     )

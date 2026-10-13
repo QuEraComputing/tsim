@@ -6,6 +6,7 @@ from tsim.noise.channels import (
     Channel,
     ChannelSampler,
     absorb_subset_channels,
+    channel_num_bits,
     correlated_error_probs,
     error_probs,
     expand_channel,
@@ -195,6 +196,15 @@ class TestChannelValidation:
         transform = np.array([[1, 0], [0, 1]], dtype=np.uint8)
         with pytest.raises(ValueError):
             ChannelSampler([bad_probs], transform, seed=42)
+
+    @pytest.mark.parametrize("size, num_bits", [(1, 0), (2, 1), (8, 3), (16, 4)])
+    def test_channel_num_bits(self, size: int, num_bits: int):
+        assert channel_num_bits(np.zeros(size)) == num_bits
+
+    @pytest.mark.parametrize("size", [0, 3, 6])
+    def test_channel_num_bits_rejects_non_power_of_two(self, size: int):
+        with pytest.raises(ValueError, match="2\\^k outcomes"):
+            channel_num_bits(np.zeros(size))
 
 
 def _sample_channels(channels, matrix, n_samples, seed=42):
