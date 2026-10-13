@@ -15,7 +15,6 @@ from zxparam import Domain, VertexType
 
 from tsim.circuit import Circuit
 from tsim.core import instructions
-from tsim.core.graph import circuit_graph
 from tsim.core.instructions import GraphBuilder
 
 PLUS = (ZERO + ONE) / np.sqrt(2)
@@ -28,7 +27,7 @@ def _tensor(*steps: Callable[[GraphBuilder], object]) -> np.ndarray:
     builder = GraphBuilder()
     for step in steps:
         step(builder)
-    return circuit_graph(builder).to_tensor()
+    return builder.build(closed=False, outputs="detectors").to_tensor()
 
 
 def _dephasing(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -178,7 +177,7 @@ def test_x_error_is_an_x_spider_with_its_error_bit():
     assert len(noisy) == 1
     assert builder.graph.vertex_type(noisy[0]) == VertexType.X
     assert builder.graph.phase(noisy[0]).parameters == {0}
-    g = circuit_graph(builder)
+    g = builder.build(closed=False, outputs="detectors")
     np.testing.assert_allclose(g.to_tensor({0: 0}), doubled(np.eye(2)), atol=1e-9)
     x = SINGLE_QUBIT_GATE_MATRICES["X"]
     np.testing.assert_allclose(g.to_tensor({0: 1}), doubled(x), atol=1e-9)

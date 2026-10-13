@@ -22,7 +22,7 @@ from zxparam.phase import Bit
 if TYPE_CHECKING:
     from tsim.sampler import CompiledDetectorSampler, CompiledMeasurementSampler
 
-from tsim.core.graph import build_sampling_graph, circuit_graph, transform_error_basis
+from tsim.core.graph import transform_error_basis
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.core.tags import encode_t_tag
 from tsim.noise.dem import get_detector_error_model
@@ -772,10 +772,12 @@ class Circuit:
             )
         elif type == "zx":
             builder = parse_stim_circuit(self._stim_circ)
-            return draw_zx(circuit_graph(builder), builder.num_error_bits, kwargs)
+            g = builder.build(closed=False, outputs="detectors")
+            return draw_zx(g, builder.num_error_bits, kwargs)
         elif type in ("zx-dets", "zx-meas"):
             builder = parse_stim_circuit(self._stim_circ)
-            g = build_sampling_graph(builder, sample_detectors=type == "zx-dets")
+            outputs = "detectors" if type == "zx-dets" else "records"
+            g = builder.build(closed=True, outputs=outputs)
             zx.full_reduce(g)
             g, _ = transform_error_basis(g, builder.num_error_bits)
             g.to_rg()
@@ -805,7 +807,7 @@ class Circuit:
                     f"{builder.num_error_bits} error bit(s)"
                 )
             values[j] = 1 if bit else 0
-        return circuit_graph(builder, annotations=False).to_tensor(values)
+        return builder.build(closed=False, outputs="none").to_tensor(values)
 
     def tcount(self) -> int:
         """Count the spiders whose angle is not a multiple of π/2."""
@@ -821,7 +823,8 @@ class Circuit:
         with the detector and observable bits. ``Circuit.to_tensor`` returns the
         channel alone.
         """
-        return circuit_graph(parse_stim_circuit(self._stim_circ))
+        builder = parse_stim_circuit(self._stim_circ)
+        return builder.build(closed=False, outputs="detectors")
 
     def get_sampling_graph(self, sample_detectors: bool = False) -> Graph:
         """Get a ZX graph that can be used to compute probabilities.
@@ -851,7 +854,9 @@ class Circuit:
 
         """
         builder = parse_stim_circuit(self._stim_circ)
-        return build_sampling_graph(builder, sample_detectors=sample_detectors)
+        return builder.build(
+            closed=True, outputs="detectors" if sample_detectors else "records"
+        )
 
     def compile_sampler(
         self,

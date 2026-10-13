@@ -39,10 +39,19 @@ HELPER_LANE = -1
 ANNOTATION_ROW = -2.0
 """Row of the detector and observable spiders, above the helper wire."""
 
+Outputs = Literal["detectors", "records", "none"]
+"""The classical outputs of a built graph (see ``GraphBuilder.build``)."""
+
 
 def _error_phase(error_bit: int) -> Phase:
     """Return the phase of a noise spider for error bit ``error_bit`` (ID = bit)."""
     return Phase(Fraction(0), frozenset({error_bit}))
+
+
+def _move_label(g: Graph, source: Vertex, target: Vertex) -> None:
+    """Move the display label of ``source`` to ``target``."""
+    g.set_vertex_label(target, g.vertex_label(source))
+    g.set_vertex_label(source, None)
 
 
 @dataclass
@@ -403,6 +412,116 @@ class GraphBuilder:
             self.graph.remove_edge(annotation, record)
         else:
             self.graph.add_edge(annotation, record)
+
+    # -------------------------------------------------------------------------
+    # Building the graph
+    # -------------------------------------------------------------------------
+
+    def build(self, *, closed: bool, outputs: Outputs) -> Graph:
+        """Return the circuit's graph with its wires closed or given ports.
+
+        With ``closed=False``, qubit ``q``'s wire start, if it is still a
+        boundary, gets input port ``-(q + 1)`` and its end gets output port
+        ``q``. With ``closed=True``, wire starts that are still boundaries become
+        ``|0⟩`` (a quantum X(0) spider) and wire ends are discarded. Helper lanes
+        (negative indices, used by MPP, MPAD and heralded channels) are always
+        discarded at the end.
+
+        ``outputs`` picks the classical output boundaries, whose ports follow the
+        qubit outputs (from 0 when closed):
+
+        - ``"detectors"``: one per detector, then one per observable; the
+          ``det[i]`` / ``obs[k]`` labels move to them.
+        - ``"records"``: one per measurement record; the ``rec[i]`` labels move
+          to them.
+        - ``"none"``: no classical outputs.
+
+        Detector and observable spiders are removed unless they are the outputs.
+        Open graphs keep the ``rec[i]`` / ``m[i]`` labels of the measurement
+        spiders; closed graphs are meant to be reduced, so only their output
+        boundaries carry labels, which survive reduction.
+
+        An open graph's tensor is the circuit's channel together with the output
+        bits; for bound error parameters, a closed graph's tensor is the joint
+        distribution of its outputs. The builder is unchanged, so it can build
+        again.
+        """
+        g = self.graph.copy()
+        self._align_wire_ends(g)
+        if closed:
+            for v in self.first_vertex.values():
+                if g.vertex_type(v) == VertexType.BOUNDARY:
+                    g.plug_basis(v)
+            for v in self.last_vertex.values():
+                g.discard(v)
+            first_port = 0
+        else:
+            for q, v in self.first_vertex.items():
+                if q >= 0 and g.vertex_type(v) == VertexType.BOUNDARY:
+                    g.set_port(v, -(q + 1))
+            for q, v in self.last_vertex.items():
+                if q >= 0:
+                    g.set_port(v, q)
+                else:
+                    g.discard(v)
+            first_port = max((q for q in self.last_vertex if q >= 0), default=-1) + 1
+        if outputs == "detectors":
+            self._attach_detector_outputs(g, first_port)
+        else:
+            for v in [*self.detectors, *self.observables]:
+                g.remove_vertex(v)
+            if outputs == "records":
+                self._attach_record_outputs(g, first_port)
+        if closed:
+            for v in [*self.rec, *self.silent_rec]:
+                g.set_vertex_label(v, None)
+        return g
+
+    def _align_wire_ends(self, g: Graph) -> None:
+        """Put every wire's last vertex in the same column (for drawing)."""
+        if self.last_vertex:
+            end = max(g.col(v) for v in self.last_vertex.values())
+            for v in self.last_vertex.values():
+                g.set_col(v, end)
+
+    def _attach_detector_outputs(self, g: Graph, first_port: int) -> None:
+        """Give every detector and observable spider a classical output boundary.
+
+        Ports are ``first_port, first_port + 1, …``: detectors first, then
+        observables in index order. Each spider is scaled so that, with its output
+        leg, its tensor is exactly the parity of its measurement records. The
+        spider's ``det[i]`` / ``obs[k]`` label moves to its boundary.
+        """
+        annotations = [(v, ANNOTATION_ROW - 1) for v in self.detectors]
+        annotations += [(v, ANNOTATION_ROW - 1.5) for v in self.observables]
+        for port, (v, row) in enumerate(annotations, start=first_port):
+            # NOTE: an X spider with n legs is 2^(1 - n/2) times a parity check;
+            # with its output leg, an annotation has degree + 1 legs.
+            g.mul_sqrt2(g.degree(v) - 1)
+            b = g.add_vertex(
+                VertexType.BOUNDARY, col=g.col(v), row=row, domain=Domain.CLASSICAL
+            )
+            g.set_port(b, port)
+            g.add_edge(v, b)
+            _move_label(g, v, b)
+
+    def _attach_record_outputs(self, g: Graph, first_port: int) -> None:
+        """Give every measurement record a classical output boundary.
+
+        Ports are ``first_port, first_port + 1, …`` in record order. The
+        record's ``rec[i]`` label moves to its boundary.
+        """
+        for port, v in enumerate(self.rec, start=first_port):
+            # NOTE: half a row below its record, where no wire vertex sits.
+            b = g.add_vertex(
+                VertexType.BOUNDARY,
+                col=g.col(v),
+                row=g.row(v) + 0.5,
+                domain=Domain.CLASSICAL,
+            )
+            g.set_port(b, port)
+            g.add_edge(v, b)
+            _move_label(g, v, b)
 
 
 # =============================================================================
