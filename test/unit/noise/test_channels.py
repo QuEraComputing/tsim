@@ -6,12 +6,12 @@ from tsim.noise.channels import (
     _BLOCK_SHOTS,
     Channel,
     ChannelSampler,
+    _fire_tables,
     absorb_subset_channels,
     channel_num_bits,
     correlated_error_probs,
     error_probs,
     expand_channel,
-    fire_tables,
     fold_duplicate_channel_bits,
     heralded_pauli_channel_1_probs,
     merge_identical_channels,
@@ -215,7 +215,7 @@ def _sample_channels(channels, matrix, n_samples, seed=42):
     sampler.channels = channels
     sampler.signature_matrix = np.asarray(matrix, dtype=np.uint8)
     sampler._rng = np.random.default_rng(seed)
-    sampler._tables = fire_tables(channels, sampler.signature_matrix)
+    sampler._tables = _fire_tables(channels, sampler.signature_matrix)
     return sampler.sample(n_samples)
 
 
@@ -1058,6 +1058,25 @@ class TestChannelSampler:
         counts = np.bincount(outcome, minlength=4)
         sigma = np.sqrt(num_samples * probs * (1 - probs))
         assert np.all(np.abs(counts - num_samples * probs) <= 5 * sigma)
+
+    def test_blocks_draw_independent_streams(self):
+        """Every block of shots has its own random stream."""
+        sampler = ChannelSampler(
+            [error_probs(0.5)], np.ones((1, 1), dtype=np.uint8), seed=1
+        )
+        blocks = sampler.sample(3 * _BLOCK_SHOTS).reshape(3, _BLOCK_SHOTS)
+        assert not np.array_equal(blocks[0], blocks[1])
+        assert not np.array_equal(blocks[1], blocks[2])
+
+    def test_identity_rounded_below_zero_still_fires_every_row(self):
+        """``1 - probs[0]`` above 1 by a rounding error means a certain error."""
+        probs = np.array([-1.25e-16, 0.33, 0.11, 0.56])
+        sampler = ChannelSampler([probs], np.eye(2, dtype=np.uint8), seed=2)
+        num_samples = 100_000
+        rates = sampler.sample(num_samples).mean(axis=0)
+        expected = np.array([0.33 + 0.56, 0.11 + 0.56])
+        sigma = np.sqrt(expected * (1 - expected) / num_samples)
+        assert np.all(np.abs(rates - expected) <= 5 * sigma)
 
     def test_certain_error_flips_every_row(self):
         """A channel that always fires reaches every row, last partial block too."""

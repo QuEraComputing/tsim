@@ -23,6 +23,7 @@ from tsim.statevector.execute import lane_bytes, sample_statevector_component
 from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
 from tsim.statevector.shared import Sharing, sample_shared_component, sharing_layout
 from tsim.utils.cuda_helpers import copy_d2h
+from tsim.utils.kernels import kernel
 
 if TYPE_CHECKING:
     from jax import Array as PRNGKey
@@ -195,7 +196,7 @@ def sample_program(
     return combined
 
 
-@numba.njit(parallel=True, cache=True)
+@kernel
 def _write_direct_detectors(f, f_indices, flips, columns, postselect, reference, out):
     """Write direct detector ``j`` of every row into ``out[row, columns[j]]``.
 
@@ -298,6 +299,10 @@ class _CompiledSamplerBase:
         self._direct_detector_mask = self._direct_output_mask[
             : self._num_detectors
         ].copy()
+        is_detector = self._direct_global_indices < self._num_detectors
+        self._direct_detector_f = self._direct_f_indices[is_detector]
+        self._direct_detector_flips = self._direct_flips[is_detector]
+        self._direct_detector_columns = self._direct_global_indices[is_detector]
 
         statevector = [
             c for c in self._program.components if isinstance(c, StatevectorComponent)
@@ -620,18 +625,12 @@ class _CompiledSamplerBase:
         was_discarded = np.zeros(shots, dtype=np.bool_)
         shot_idx = 0
 
-        detector = self._direct_global_indices < self._num_detectors
-        columns = self._direct_global_indices[detector]
-        direct = (
-            self._direct_f_indices[detector],
-            self._direct_flips[detector],
-            columns,
-            postselection_mask[columns],
-            (
-                reference[columns]
-                if xor_detector_ref and reference is not None
-                else np.zeros(len(columns), dtype=np.bool_)
-            ),
+        columns = self._direct_detector_columns
+        postselect = postselection_mask[columns]
+        reference_bits = (
+            reference[columns]
+            if xor_detector_ref and reference is not None
+            else np.zeros(len(columns), dtype=np.bool_)
         )
 
         sharing = self._sharing_arguments(
@@ -658,7 +657,14 @@ class _CompiledSamplerBase:
             chunk = min(batch_size, shots - shot_idx)
             f_params_np = self._channel_sampler.sample(chunk)
             discarded = _write_direct_detectors(
-                f_params_np, *direct, result[shot_idx : shot_idx + chunk]
+                chunk * len(columns),
+                f_params_np,
+                self._direct_detector_f,
+                self._direct_detector_flips,
+                columns,
+                postselect,
+                reference_bits,
+                result[shot_idx : shot_idx + chunk],
             )
             was_discarded[shot_idx : shot_idx + chunk] = discarded
 
