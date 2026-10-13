@@ -11,9 +11,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
+import stim
 
 import tsim.statevector.shared as shared
-from tsim.statevector.program import lower, plan_component
+import tsim.utils.kernels as kernels
+from tsim.statevector.program import MEASURE, MEASURE_DIAG, lower, plan_component
 from tsim.statevector.shared import sample_shared_component, sharing_layout
 
 NAMES = [
@@ -28,7 +30,11 @@ NAMES = [
 
 
 def _compiled(name):
-    components, layout = quantum_components(CIRCUITS[name], sample_detectors=True)
+    yield from _compiled_text(CIRCUITS[name])
+
+
+def _compiled_text(text):
+    components, layout = quantum_components(text, sample_detectors=True)
     for component in components:
         indices = output_indices(component)
         planned, component_layout = plan_component(component, indices, layout)
@@ -206,3 +212,110 @@ def test_a_lone_shot_sees_an_outcome_of_probability_below_float32_resolution():
     expected = 24 * lanes * q
     assert hits > 0
     assert abs(hits - expected) <= 5 * np.sqrt(expected) + 3
+
+
+def _coherent_surface_code(distance, rounds, angle=0.02):
+    """Return a surface-code memory with an R_Z over-rotation after every CX layer."""
+    base = stim.Circuit.generated(
+        "surface_code:rotated_memory_z",
+        distance=distance,
+        rounds=rounds,
+        after_clifford_depolarization=1e-3,
+    )
+    lines = []
+    for line in str(base.flattened()).splitlines():
+        lines.append(line)
+        if line.startswith("CX "):
+            qubits = sorted({int(t) for t in line.split()[1:]})
+            lines.append(f"R_Z({angle}) " + " ".join(map(str, qubits)))
+    return "\n".join(lines)
+
+
+@pytest.fixture(scope="module")
+def coherent():
+    """A component whose extent drops and later rises again."""
+    ((planned, component_layout, compiled),) = _compiled_text(
+        _coherent_surface_code(5, 3)
+    )
+    extent = np.asarray(compiled.extent)
+    first_drop = np.flatnonzero(np.diff(extent) < 0)[0]
+    assert np.any(np.diff(extent[first_drop:]) > 0)
+    return planned, component_layout, compiled
+
+
+class _PoisonedLanes(shared._Lanes):
+    """Lanes whose amplitudes outside the region the executor tracks are NaN."""
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.amps[:, 1:] = np.nan
+        self.amps[self.size :] = np.nan
+
+    def _grow(self, needed, span):
+        super()._grow(needed, span)
+        self.amps[: self.size, span:] = np.nan
+        self.amps[self.size :] = np.nan
+
+
+def test_extents_and_reused_slots_do_not_change_the_samples(coherent, monkeypatch):
+    planned, component_layout, compiled = coherent
+    layout = sharing_layout(compiled, np.ones(compiled.num_outputs, dtype=bool))
+    width = np.full_like(layout.tape.extent, compiled.width)
+    full = layout._replace(tape=layout.tape._replace(extent=width))
+    f_params = jnp.asarray(
+        _f_params(component_layout, f_patterns(planned.num_f, 7), 300)
+    )
+    key = jax.random.key(17)
+    reference, _, _, _ = sample_shared_component(compiled, full, f_params, key)
+    monkeypatch.setattr(shared, "_Lanes", _PoisonedLanes)
+    poisoned, _, _, stats = sample_shared_component(compiled, layout, f_params, key)
+    np.testing.assert_array_equal(poisoned, reference)
+    assert stats["dead"] > 0
+
+
+@pytest.mark.parametrize("name", [*NAMES, "coherent"])
+def test_parallel_kernels_give_the_serial_samples(name, coherent, monkeypatch):
+    compiled_components = [coherent] if name == "coherent" else _compiled(name)
+    for planned, component_layout, compiled in compiled_components:
+        postselected = np.zeros(compiled.num_outputs, dtype=bool)
+        postselected[0] = True
+        layout = sharing_layout(compiled, postselected)
+        f_params = jnp.asarray(
+            _f_params(component_layout, f_patterns(planned.num_f, 3), 1_000)
+        )
+        key = jax.random.key(19)
+        serial, _, _, _ = sample_shared_component(compiled, layout, f_params, key)
+        monkeypatch.setattr(kernels, "PARALLEL_WORK", 0)
+        parallel, _, _, _ = sample_shared_component(compiled, layout, f_params, key)
+        monkeypatch.undo()
+        np.testing.assert_array_equal(parallel, serial)
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_shots_whose_lanes_all_die_are_still_sampled(name):
+    for planned, component_layout, compiled in _compiled(name):
+        layout = sharing_layout(compiled, np.ones(compiled.num_outputs, dtype=bool))
+        f_params = jnp.asarray(
+            _f_params(component_layout, f_patterns(planned.num_f, 1)[:1], 1)
+        )
+        for seed in range(40):
+            samples, _, _, _ = sample_shared_component(
+                compiled, layout, f_params, jax.random.key(seed)
+            )
+            assert samples.shape == (1, compiled.num_outputs)
+        empty = f_params[:0]
+        samples, _, _, _ = sample_shared_component(
+            compiled, layout, empty, jax.random.key(0)
+        )
+        assert samples.shape == (0, compiled.num_outputs)
+
+
+@pytest.mark.parametrize("name", [*NAMES, "coherent"])
+def test_every_action_stays_within_its_extent(name, coherent):
+    compiled_components = [coherent] if name == "coherent" else _compiled(name)
+    for _, _, compiled in compiled_components:
+        reach = 1 << np.asarray(compiled.extent, dtype=np.int64)
+        support = np.asarray(compiled.x_mask) | np.asarray(compiled.z_mask)
+        assert np.all(support < reach)
+        measured = np.isin(np.asarray(compiled.kind), (MEASURE, MEASURE_DIAG))
+        assert np.all((1 << np.asarray(compiled.pivot))[measured] < reach[measured])

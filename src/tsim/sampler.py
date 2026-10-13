@@ -182,7 +182,8 @@ def sample_program(
                 "This is likely the result of an underflow error. Please report this "
                 "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
             )  # pragma: no cover
-        if max_norm_deviation > component.norm_warning_threshold:
+        # NOTE: written so that a NaN deviation also warns.
+        if not max_norm_deviation <= component.norm_warning_threshold:
             warnings.warn(
                 "A marginal probability was not normalized correctly "
                 f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
