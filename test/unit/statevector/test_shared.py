@@ -244,15 +244,31 @@ def coherent():
 
 
 class _PoisonedLanes(shared._Lanes):
-    """Lanes whose amplitudes outside the region the executor tracks are NaN."""
+    """Lanes that hold NaN wherever the executor must not read.
+
+    After every operation, that is every row from ``size`` up and every
+    amplitude of a live row from ``span`` up.
+    """
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.amps[:, 1:] = np.nan
-        self.amps[self.size :] = np.nan
+        self._poison(1)
+
+    def split(self, ones, span):
+        result = super().split(ones, span)
+        self._poison(span)
+        return result
+
+    def prune(self, dies, span):
+        removed = super().prune(dies, span)
+        self._poison(span)
+        return removed
 
     def _grow(self, needed, span):
         super()._grow(needed, span)
+        self._poison(span)
+
+    def _poison(self, span):
         self.amps[: self.size, span:] = np.nan
         self.amps[self.size :] = np.nan
 
@@ -260,17 +276,29 @@ class _PoisonedLanes(shared._Lanes):
 def test_extents_and_reused_slots_do_not_change_the_samples(coherent, monkeypatch):
     planned, component_layout, compiled = coherent
     layout = sharing_layout(compiled, np.ones(compiled.num_outputs, dtype=bool))
-    width = np.full_like(layout.tape.extent, compiled.width)
-    full = layout._replace(tape=layout.tape._replace(extent=width))
+    extent = layout.tape.extent
+
+    def with_extent(values):
+        return layout._replace(tape=layout.tape._replace(extent=values))
+
+    full = with_extent(np.full_like(extent, compiled.width))
+    # NOTE: an extent is an upper bound, so raising every fifth one keeps the
+    # samples and makes the extent drop and rise around splits and prunes.
+    every_fifth = np.arange(len(extent)) % 5 == 0
+    raised = with_extent(np.where(every_fifth, compiled.width, extent))
     f_params = jnp.asarray(
         _f_params(component_layout, f_patterns(planned.num_f, 7), 300)
     )
     key = jax.random.key(17)
-    reference, _, _, _ = sample_shared_component(compiled, full, f_params, key)
+    reference, _, deviation, _ = sample_shared_component(compiled, full, f_params, key)
     monkeypatch.setattr(shared, "_Lanes", _PoisonedLanes)
-    poisoned, _, _, stats = sample_shared_component(compiled, layout, f_params, key)
-    np.testing.assert_array_equal(poisoned, reference)
-    assert stats["dead"] > 0
+    for tape in (layout, raised):
+        samples, _, other, stats = sample_shared_component(
+            compiled, tape, f_params, key
+        )
+        np.testing.assert_array_equal(samples, reference)
+        assert other == deviation
+        assert stats["dead"] > 0
 
 
 @pytest.mark.parametrize("name", [*NAMES, "coherent"])
@@ -283,31 +311,36 @@ def test_parallel_kernels_give_the_serial_samples(name, coherent, monkeypatch):
         f_params = jnp.asarray(
             _f_params(component_layout, f_patterns(planned.num_f, 3), 1_000)
         )
-        key = jax.random.key(19)
-        serial, _, _, _ = sample_shared_component(compiled, layout, f_params, key)
-        monkeypatch.setattr(kernels, "PARALLEL_WORK", 0)
-        parallel, _, _, _ = sample_shared_component(compiled, layout, f_params, key)
-        monkeypatch.undo()
-        np.testing.assert_array_equal(parallel, serial)
+        samples = []
+        for threshold in (np.iinfo(np.int64).max, 0):
+            with monkeypatch.context() as patch:
+                patch.setattr(kernels, "PARALLEL_WORK", threshold)
+                rows, _, _, _ = sample_shared_component(
+                    compiled, layout, f_params, jax.random.key(19)
+                )
+            samples.append(rows)
+        np.testing.assert_array_equal(samples[1], samples[0])
 
 
-@pytest.mark.parametrize("name", NAMES)
-def test_shots_whose_lanes_all_die_are_still_sampled(name):
-    for planned, component_layout, compiled in _compiled(name):
-        layout = sharing_layout(compiled, np.ones(compiled.num_outputs, dtype=bool))
-        f_params = jnp.asarray(
-            _f_params(component_layout, f_patterns(planned.num_f, 1)[:1], 1)
-        )
-        for seed in range(40):
-            samples, _, _, _ = sample_shared_component(
-                compiled, layout, f_params, jax.random.key(seed)
+def test_shots_whose_lanes_all_die_are_still_sampled():
+    all_died = False
+    for name in NAMES:
+        for planned, component_layout, compiled in _compiled(name):
+            layout = sharing_layout(compiled, np.ones(compiled.num_outputs, dtype=bool))
+            f_params = jnp.asarray(
+                _f_params(component_layout, f_patterns(planned.num_f, 1)[:1], 1)
             )
-            assert samples.shape == (1, compiled.num_outputs)
-        empty = f_params[:0]
-        samples, _, _, _ = sample_shared_component(
-            compiled, layout, empty, jax.random.key(0)
-        )
-        assert samples.shape == (0, compiled.num_outputs)
+            for seed in range(40):
+                samples, _, _, stats = sample_shared_component(
+                    compiled, layout, f_params, jax.random.key(seed)
+                )
+                assert samples.shape == (1, compiled.num_outputs)
+                all_died |= stats["lanes"] == 0
+            samples, _, _, _ = sample_shared_component(
+                compiled, layout, f_params[:0], jax.random.key(0)
+            )
+            assert samples.shape == (0, compiled.num_outputs)
+    assert all_died
 
 
 @pytest.mark.parametrize("name", [*NAMES, "coherent"])

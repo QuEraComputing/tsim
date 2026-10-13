@@ -3,6 +3,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+import tsim.sampler as sampler_module
 from tsim.circuit import Circuit
 
 
@@ -509,3 +510,18 @@ def test_detector_sampler_out_of_order_observable_indices():
     assert not np.any(obs[:, 0])
     assert not np.any(obs[:, 1])
     assert np.all(obs[:, 2])
+
+
+def test_a_nan_normalization_deviation_warns(monkeypatch):
+    sampler = Circuit("R 0\nH 0\nT 0\nH 0\nM 0").compile_sampler(
+        strategy="statevector", seed=0
+    )
+    original = sampler_module.sample_component
+
+    def nan_deviation(component, f_params, key):
+        samples, key, _ = original(component, f_params, key)
+        return samples, key, float("nan")
+
+    monkeypatch.setattr(sampler_module, "sample_component", nan_deviation)
+    with pytest.warns(UserWarning, match="not normalized"):
+        sampler.sample(10)
