@@ -10,18 +10,13 @@ import stim
 from tsim.core.instructions import (
     GATE_TABLE,
     GraphBuilder,
-    correlated_error,
-    detector,
-    finalize_correlated_error,
     mpad,
     mpp,
-    observable_include,
     r_pauli,
     r_x,
     r_y,
     r_z,
     spp,
-    tick,
     tpp,
     u3,
 )
@@ -254,7 +249,7 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
                 continue
 
         if name == "TICK":
-            tick(builder)
+            builder.tick()
             continue
         if name == "MPP":
             args = instruction.gate_args_copy()
@@ -289,7 +284,7 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
             continue
         if name == "E" or name == "ELSE_CORRELATED_ERROR":
             if name == "E":
-                finalize_correlated_error(builder)
+                builder.finalize_correlated_error()
             targets = [t.value for t in instruction.targets_copy()]
             types: list[Literal["X", "Y", "Z"]] = []
             for t in instruction.targets_copy():
@@ -301,11 +296,11 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
                     types.append("Z")
                 else:
                     raise ValueError(f"Invalid target: {t}")
-            correlated_error(builder, targets, types, instruction.gate_args_copy()[0])
+            builder.correlated_error(targets, types, instruction.gate_args_copy()[0])
             continue
         if name == "DETECTOR":
             targets = [t.value for t in instruction.targets_copy()]
-            detector(builder, targets)
+            builder.add_detector(targets)
             continue
         if name == "OBSERVABLE_INCLUDE":
             targets_copy = instruction.targets_copy()
@@ -319,7 +314,7 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
                     )
             targets = [t.value for t in targets_copy]
             args = instruction.gate_args_copy()
-            observable_include(builder, targets, int(args[0]))
+            builder.include_observable(targets, int(args[0]))
             continue
 
         # instruction dispatch
@@ -348,14 +343,14 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
             else:
                 gate_func(builder, *chunk, *args)
 
-    finalize_correlated_error(builder)
+    builder.finalize_correlated_error()
 
     # Materialize every observable id from 0..num_observables-1 so missing
     # indices appear as deterministic-zero outputs and downstream iteration
     # is in sorted index order, matching Stim semantics.
     for i in range(stim_circuit.num_observables):
         if i not in builder.observables_dict:
-            observable_include(builder, [], i)
+            builder.include_observable([], i)
     builder.observables_dict = {
         i: builder.observables_dict[i] for i in sorted(builder.observables_dict)
     }

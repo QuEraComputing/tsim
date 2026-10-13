@@ -1,12 +1,15 @@
 """ZX graph representations of quantum gates and instructions.
 
-Qubit wires are quantum. Every wire vertex starts as a quantum boundary from
-``add_lane`` or ``add_quantum_boundary``, and gates turn a wire's trailing
-boundary into a spider in place (see ``_wire_spider``), so the spider stays
-quantum. Only measurements (``merge_mirror_copies`` in ``_m``) and detector and
-observable annotations create classical vertices. NOTE: zxparam's
-``Graph.add_vertex`` defaults to the classical domain, so do not call it directly
-for wire vertices.
+``GraphBuilder`` owns the graph and its bookkeeping: wire ends, measurement
+records, error bits and annotations. The gate library below builds on its
+methods and never adds vertices itself.
+
+Qubit wires are quantum. Every wire vertex starts as a quantum boundary, and
+gates turn a wire's trailing boundary into a spider in place (see
+``GraphBuilder.spider``), so the spider stays quantum. Only measurements
+(``merge_mirror_copies``) and detector and observable annotations create
+classical vertices. NOTE: zxparam's ``Graph.add_vertex`` defaults to the
+classical domain, so wire vertices are only ever added by ``GraphBuilder``.
 
 Gates are built up to a global phase: every graph is a doubled diagram (a
 channel, ``U ⊗ Ū`` for a unitary), where global phases cancel, so none are
@@ -37,9 +40,14 @@ ANNOTATION_ROW = -2.0
 """Row of the detector and observable spiders, above the helper wire."""
 
 
+def _error_phase(error_bit: int) -> Phase:
+    """Return the phase of a noise spider for error bit ``error_bit`` (ID = bit)."""
+    return Phase(Fraction(0), frozenset({error_bit}))
+
+
 @dataclass
 class GraphBuilder:
-    """ZX graph built from a stim circuit, with quantum wires and classical records.
+    """Builds the ZX graph of a stim circuit, with quantum wires and classical records.
 
     Qubit wires are quantum; measurement records, detectors and observables are
     classical spiders, found through the lists below (their labels are only for
@@ -64,75 +72,327 @@ class GraphBuilder:
         """Get list of observable vertices sorted by index."""
         return [self.observables_dict[i] for i in sorted(self.observables_dict)]
 
+    # -------------------------------------------------------------------------
+    # Wires
+    # -------------------------------------------------------------------------
 
-def _error_phase(error_bit: int) -> Phase:
-    """Return the phase of a noise spider for error bit ``error_bit`` (ID = bit)."""
-    return Phase(Fraction(0), frozenset({error_bit}))
+    def _last_col(self, qubit: int) -> float:
+        """Get the column of the last vertex for a qubit."""
+        return self.graph.col(self.last_vertex[qubit])
 
+    def _last_edge(self, qubit: int) -> tuple[Vertex, Vertex]:
+        """Get the last edge for a qubit."""
+        edges = self.graph.incident_edges(self.last_vertex[qubit])
+        assert len(edges) == 1
+        return edges[0]
 
-def last_col(builder: GraphBuilder, qubit: int) -> float:
-    """Get the column of the last vertex for a qubit."""
-    return builder.graph.col(builder.last_vertex[qubit])
+    def _add_quantum_boundary(self, qubit: int, col: float | None = None) -> Vertex:
+        """Add a dummy quantum boundary vertex at the end of a qubit's wire."""
+        if col is None:
+            col = self._last_col(qubit) + 1
+        v = self.graph.add_vertex(
+            VertexType.BOUNDARY, col=col, row=qubit, domain=Domain.QUANTUM
+        )
+        self.last_vertex[qubit] = v
+        return v
 
+    def _add_lane(self, qubit: int) -> Vertex:
+        """Initialize a qubit lane: two quantum boundaries joined by a wire."""
+        v1 = self.graph.add_vertex(
+            VertexType.BOUNDARY, col=0, row=qubit, domain=Domain.QUANTUM
+        )
+        self.first_vertex[qubit] = v1
+        self.graph.add_edge(v1, self._add_quantum_boundary(qubit, col=1))
+        return v1
 
-def last_edge(builder: GraphBuilder, qubit: int) -> tuple[Vertex, Vertex]:
-    """Get the last edge for a qubit."""
-    edges = builder.graph.incident_edges(builder.last_vertex[qubit])
-    assert len(edges) == 1
-    return edges[0]
+    def _ensure_lane(self, qubit: int) -> None:
+        """Ensure qubit lane exists."""
+        if qubit not in self.last_vertex:
+            self._add_lane(qubit)
 
+    def spider(
+        self,
+        qubit: int,
+        vertex_type: VertexType,
+        phase: Phase | Fraction | None = None,
+    ) -> Vertex:
+        """Turn the trailing boundary of a qubit's wire into a quantum spider.
 
-def add_quantum_boundary(
-    builder: GraphBuilder, qubit: int, col: float | None = None
-) -> Vertex:
-    """Add a dummy quantum boundary vertex at the end of a qubit's wire."""
-    if col is None:
-        col = last_col(builder, qubit) + 1
-    v = builder.graph.add_vertex(
-        VertexType.BOUNDARY, col=col, row=qubit, domain=Domain.QUANTUM
-    )
-    builder.last_vertex[qubit] = v
-    return v
+        The spider keeps the boundary's quantum domain, and a new quantum
+        boundary is appended after it. Returns the spider.
+        """
+        return self._spider(qubit, vertex_type, phase)
 
+    def _spider(
+        self,
+        qubit: int,
+        vertex_type: VertexType,
+        phase: Phase | Fraction | None = None,
+        col: float | None = None,
+    ) -> Vertex:
+        """Add a spider like ``spider``, moved to column ``col`` if given."""
+        self._ensure_lane(qubit)
+        v1 = self.last_vertex[qubit]
+        self.graph.set_vertex_type(v1, vertex_type)
+        if col is not None:
+            self.graph.set_col(v1, col)
+        if phase is not None:
+            self.graph.set_phase(v1, phase)
+        v2 = self._add_quantum_boundary(qubit)
+        self.graph.add_edge(v1, v2)
+        return v1
 
-def add_lane(builder: GraphBuilder, qubit: int) -> Vertex:
-    """Initialize a qubit lane: two quantum boundaries joined by a wire."""
-    v1 = builder.graph.add_vertex(
-        VertexType.BOUNDARY, col=0, row=qubit, domain=Domain.QUANTUM
-    )
-    builder.first_vertex[qubit] = v1
-    builder.graph.add_edge(v1, add_quantum_boundary(builder, qubit, col=1))
-    return v1
+    def hadamard(self, qubit: int) -> None:
+        """Apply a Hadamard gate by toggling the wire's trailing edge."""
+        self._ensure_lane(qubit)
+        self.graph.toggle_edge(*self._last_edge(qubit))
 
+    def advance(self, qubit: int) -> None:
+        """Move the wire's end one column (the identity gate)."""
+        self._ensure_lane(qubit)
+        v = self.last_vertex[qubit]
+        self.graph.set_col(v, self._last_col(qubit) + 1)
 
-def ensure_lane(builder: GraphBuilder, qubit: int) -> None:
-    """Ensure qubit lane exists."""
-    if qubit not in builder.last_vertex:
-        add_lane(builder, qubit)
+    def swap(self, qubit1: int, qubit2: int) -> None:
+        """Swap two wires by exchanging their ends (and rows)."""
+        self._ensure_lane(qubit1)
+        self._ensure_lane(qubit2)
 
+        v1 = self.last_vertex[qubit1]
+        v2 = self.last_vertex[qubit2]
+        self.last_vertex[qubit1] = v2
+        self.last_vertex[qubit2] = v1
 
-def _wire_spider(
-    builder: GraphBuilder,
-    qubit: int,
-    vertex_type: VertexType,
-    phase: Phase | Fraction | None = None,
-    col: float | None = None,
-) -> Vertex:
-    """Turn the trailing boundary of a qubit's wire into a quantum spider.
+        # NOTE: both wire ends move to the later column first, so neither lands on
+        # a position the other lane already uses.
+        col = max(self.graph.col(v1), self.graph.col(v2))
+        self.graph.set_col(v1, col)
+        self.graph.set_col(v2, col)
+        self.graph.set_row(v1, qubit2)
+        self.graph.set_row(v2, qubit1)
 
-    The spider keeps the boundary's quantum domain, moves to column ``col`` if
-    given, and a new quantum boundary is appended after it. Returns the spider.
-    """
-    ensure_lane(builder, qubit)
-    v1 = builder.last_vertex[qubit]
-    builder.graph.set_vertex_type(v1, vertex_type)
-    if col is not None:
-        builder.graph.set_col(v1, col)
-    if phase is not None:
-        builder.graph.set_phase(v1, phase)
-    v2 = add_quantum_boundary(builder, qubit)
-    builder.graph.add_edge(v1, v2)
-    return v1
+    def tick(self) -> None:
+        """Align all wire ends to the same column."""
+        if len(self.last_vertex) == 0:
+            return
+        col = max(self._last_col(q) for q in self.last_vertex)
+        for q in self.last_vertex:
+            self.graph.set_col(self.last_vertex[q], col)
+
+    def cx(
+        self,
+        control: int,
+        target: int,
+        classically_controlled: list[bool] | None = None,
+    ) -> None:
+        """Apply CNOT; ``classically_controlled`` marks record targets (``rec[-k]``)."""
+        self._cx_cz(True, control, target, classically_controlled)
+
+    def cz(
+        self,
+        control: int,
+        target: int,
+        classically_controlled: list[bool] | None = None,
+    ) -> None:
+        """Apply CZ; ``classically_controlled`` marks record targets (``rec[-k]``)."""
+        self._cx_cz(False, control, target, classically_controlled)
+
+    def _cx_cz(
+        self,
+        is_cx: bool,
+        control: int,
+        target: int,
+        classically_controlled: list[bool] | None,
+    ) -> None:
+        """Implement CNOT or CZ gate depending on is_cx flag."""
+        edge_type = EdgeType.SIMPLE if is_cx else EdgeType.HADAMARD
+        vertex_type = VertexType.X if is_cx else VertexType.Z
+
+        m_vertex: Vertex | None = None
+        if classically_controlled and any(classically_controlled):
+            assert len(classically_controlled) == 2
+            if all(classically_controlled) and not is_cx:
+                # NOTE: a CZ between two measurement records only phases classical
+                # bits, so it does nothing (as in Stim).
+                return
+            if classically_controlled[1] and not is_cx:
+                # Only control is allowed to be classically controlled, swap control and target for symmetric CZ gate
+                classically_controlled = classically_controlled[::-1]
+                control, target = target, control
+            if classically_controlled[1]:
+                raise ValueError("Measurement record editing is not supported.")
+            m_vertex = self.rec[control]
+            control = int(self.graph.row(m_vertex))
+        self._ensure_lane(control)
+        self._ensure_lane(target)
+
+        col = max(self._last_col(control), self._last_col(target))
+        v1 = self._spider(control, VertexType.Z, col=col)
+        if control == target:
+            col += 1
+        v2 = self._spider(target, vertex_type, col=col)
+        self.graph.add_edge(v1 if m_vertex is None else m_vertex, v2, edge_type)
+        self.graph.mul_sqrt2(1, Domain.QUANTUM)
+
+    # -------------------------------------------------------------------------
+    # Measurement and reset
+    # -------------------------------------------------------------------------
+
+    def measure(self, qubit: int) -> Vertex:
+        """Measure a qubit in the Z basis and record it as ``rec[i]``.
+
+        Returns the measurement's classical spider.
+        """
+        return self._measure(qubit, silent=False)
+
+    def _measure(self, qubit: int, silent: bool) -> Vertex:
+        """Measure a qubit; a silent measurement is labelled ``m[i]``, not recorded."""
+        self._ensure_lane(qubit)
+        v1 = self.last_vertex[qubit]
+        self.graph.set_vertex_type(v1, VertexType.Z)
+        self.graph.merge_mirror_copies(v1)
+        if not silent:
+            self.graph.set_vertex_label(v1, f"rec[{len(self.rec)}]")
+            self.rec.append(v1)
+        else:
+            self.graph.set_vertex_label(v1, f"m[{len(self.silent_rec)}]")
+            self.silent_rec.append(v1)
+        v2 = self._add_quantum_boundary(qubit)
+        self.graph.add_edge(v1, v2)
+        return v1
+
+    def reset(self, qubit: int) -> None:
+        """Reset a qubit to ``|0⟩``.
+
+        If the qubit does not yet have a lane, create one in the reset state.
+        Otherwise, silently measure the existing lane to trace out the previous
+        state before reconnecting the qubit in the reset state.
+        """
+        if qubit not in self.last_vertex:
+            self.graph.plug_basis(self._add_lane(qubit))
+            return
+        self._measure(qubit, silent=True)
+        col = self._last_col(qubit)
+        v1 = self.last_vertex[qubit]
+        (v2,) = self.graph.neighbors(v1)
+        self.graph.remove_edge(v1, v2)
+        self.graph.plug_basis(v1)
+        v3 = self._add_quantum_boundary(qubit, col + 1)
+        self.graph.add_edge(v1, v3)
+
+    # -------------------------------------------------------------------------
+    # Correlated noise
+    # -------------------------------------------------------------------------
+
+    def correlated_error(
+        self,
+        qubits: list[int],
+        types: list[Literal["X", "Y", "Z"]],
+        p: float,
+    ) -> None:
+        """Add a correlated error term affecting multiple qubits with given Pauli types.
+
+        Its noise spiders get their error bit in ``finalize_correlated_error``.
+        """
+        for qubit, type_ in zip(qubits, types, strict=True):
+            if type_ == "X" or type_ == "Y":
+                self.pending_correlated.append(
+                    (self.spider(qubit, VertexType.X), self.num_correlated_error_bits)
+                )
+            if type_ == "Z" or type_ == "Y":
+                self.pending_correlated.append(
+                    (self.spider(qubit, VertexType.Z), self.num_correlated_error_bits)
+                )
+
+        self.correlated_error_probs.append(p)
+        self.num_correlated_error_bits += 1
+
+    def finalize_correlated_error(self) -> None:
+        """Finalize the current correlated error channel.
+
+        1. Give each pending noise spider its error bit ``num_error_bits + i``
+        2. Compute and append the 2^k probability array to channel_probs
+        3. Increment num_error_bits by k
+        4. Reset num_correlated_error_bits to 0 and correlated_error_probs to []
+        """
+        k = self.num_correlated_error_bits
+        if k == 0:
+            return
+        for v, bit in self.pending_correlated:
+            self.graph.set_phase(v, _error_phase(self.num_error_bits + bit))
+        self.pending_correlated = []
+        self.channel_probs.append(correlated_error_probs(self.correlated_error_probs))
+        self.num_error_bits += k
+        self.num_correlated_error_bits = 0
+        self.correlated_error_probs = []
+
+    # -------------------------------------------------------------------------
+    # Detectors and observables
+    # -------------------------------------------------------------------------
+
+    def add_detector(self, rec: list[int]) -> None:
+        """Add a detector that XORs the given measurement records."""
+        v0 = self.graph.add_vertex(
+            VertexType.X,
+            col=self._annotation_col(rec),
+            row=ANNOTATION_ROW,
+            domain=Domain.CLASSICAL,
+            label=f"det[{len(self.detectors)}]",
+        )
+        for rec_ in rec:
+            self._xor_record(v0, rec_)
+        self.detectors.append(v0)
+
+    def include_observable(self, rec: list[int], index: int) -> None:
+        """XOR the given measurement records into observable ``index``.
+
+        The observable is created on first use, as in Stim's
+        ``OBSERVABLE_INCLUDE``; with no records, that is all this does.
+        """
+        index = int(index)
+
+        if index not in self.observables_dict:
+            v0 = self.graph.add_vertex(
+                VertexType.X,
+                col=self._annotation_col(rec),
+                row=ANNOTATION_ROW,
+                domain=Domain.CLASSICAL,
+                label=f"obs[{index}]",
+            )
+            self.observables_dict[index] = v0
+
+        v0 = self.observables_dict[index]
+        for rec_ in rec:
+            self._xor_record(v0, rec_)
+
+    def _annotation_col(self, rec: list[int]) -> float:
+        """Pick a fresh column for a detector/observable vertex.
+
+        Empty `rec` is valid Stim and represents a deterministic-zero annotation;
+        fall back to a column after existing annotations rather than `min()` on an
+        empty set.
+        """
+        d_cols = {self.graph.col(d) for d in self.detectors + self.observables}
+        if rec:
+            col: float = min(self.graph.col(self.rec[r]) for r in rec) - 0.5
+        else:
+            col = (max(d_cols) + 1) if d_cols else 0
+        while col in d_cols:
+            col += 1
+        return col
+
+    def _xor_record(self, annotation: Vertex, rec: int) -> None:
+        """Add measurement record ``rec`` to the parity of ``annotation``.
+
+        A record that is already in the parity cancels: its edge is removed rather
+        than Hopf-cancelled by ``add_edge``, which would leave a scalar of 1/2 behind
+        in graphs that drop the annotation.
+        """
+        record = self.rec[rec]
+        if self.graph.has_edge(annotation, record):
+            self.graph.remove_edge(annotation, record)
+        else:
+            self.graph.add_edge(annotation, record)
 
 
 # =============================================================================
@@ -152,12 +412,12 @@ def t_dag(builder: GraphBuilder, qubit: int) -> None:
 
 def r_z(builder: GraphBuilder, qubit: int, phase: Fraction) -> None:
     """Apply R_Z rotation gate with given phase (in units of π)."""
-    _wire_spider(builder, qubit, VertexType.Z, phase)
+    builder.spider(qubit, VertexType.Z, phase)
 
 
 def r_x(builder: GraphBuilder, qubit: int, phase: Fraction) -> None:
     """Apply R_X rotation gate with given phase (in units of π)."""
-    _wire_spider(builder, qubit, VertexType.X, phase)
+    builder.spider(qubit, VertexType.X, phase)
 
 
 def r_y(builder: GraphBuilder, qubit: int, phase: Fraction) -> None:
@@ -187,9 +447,7 @@ def u3(
 
 def i(builder: GraphBuilder, qubit: int, *_args: float) -> None:
     """Apply identity (advances the column)."""
-    ensure_lane(builder, qubit)
-    v = builder.last_vertex[qubit]
-    builder.graph.set_col(v, last_col(builder, qubit) + 1)
+    builder.advance(qubit)
 
 
 def ii(builder: GraphBuilder, qubit1: int, qubit2: int, *_args: float) -> None:
@@ -269,8 +527,7 @@ def c_zynx(builder: GraphBuilder, qubit: int) -> None:
 
 def h(builder: GraphBuilder, qubit: int) -> None:
     """Apply Hadamard gate."""
-    ensure_lane(builder, qubit)
-    builder.graph.toggle_edge(*last_edge(builder, qubit))
+    builder.hadamard(qubit)
 
 
 def h_xy(builder: GraphBuilder, qubit: int) -> None:
@@ -340,44 +597,6 @@ def s_dag(builder: GraphBuilder, qubit: int) -> None:
 # =============================================================================
 
 
-def _cx_cz(
-    builder: GraphBuilder,
-    is_cx: bool,
-    control: int,
-    target: int,
-    classically_controlled: list[bool] | None = None,
-) -> None:
-    """Implement CNOT or CZ gate depending on is_cx flag."""
-    edge_type = EdgeType.SIMPLE if is_cx else EdgeType.HADAMARD
-    vertex_type = VertexType.X if is_cx else VertexType.Z
-
-    m_vertex: Vertex | None = None
-    if classically_controlled and any(classically_controlled):
-        assert len(classically_controlled) == 2
-        if all(classically_controlled) and not is_cx:
-            # NOTE: a CZ between two measurement records only phases classical
-            # bits, so it does nothing (as in Stim).
-            return
-        if classically_controlled[1] and not is_cx:
-            # Only control is allowed to be classically controlled, swap control and target for symmetric CZ gate
-            classically_controlled = classically_controlled[::-1]
-            control, target = target, control
-        if classically_controlled[1]:
-            raise ValueError("Measurement record editing is not supported.")
-        m_vertex = builder.rec[control]
-        control = int(builder.graph.row(m_vertex))
-    ensure_lane(builder, control)
-    ensure_lane(builder, target)
-
-    col = max(last_col(builder, control), last_col(builder, target))
-    v1 = _wire_spider(builder, control, VertexType.Z, col=col)
-    if control == target:
-        col += 1
-    v2 = _wire_spider(builder, target, vertex_type, col=col)
-    builder.graph.add_edge(v1 if m_vertex is None else m_vertex, v2, edge_type)
-    builder.graph.mul_sqrt2(1, Domain.QUANTUM)
-
-
 def cnot(
     builder: GraphBuilder,
     control: int,
@@ -385,7 +604,7 @@ def cnot(
     classically_controlled: list[bool] | None = None,
 ) -> None:
     """Apply CNOT (controlled-X) gate."""
-    _cx_cz(builder, True, control, target, classically_controlled)
+    builder.cx(control, target, classically_controlled)
 
 
 def cy(
@@ -407,26 +626,12 @@ def cz(
     classically_controlled: list[bool] | None = None,
 ) -> None:
     """Apply controlled-Z gate."""
-    _cx_cz(builder, False, control, target, classically_controlled)
+    builder.cz(control, target, classically_controlled)
 
 
 def swap(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Apply SWAP gate."""
-    ensure_lane(builder, qubit1)
-    ensure_lane(builder, qubit2)
-
-    v1 = builder.last_vertex[qubit1]
-    v2 = builder.last_vertex[qubit2]
-    builder.last_vertex[qubit1] = v2
-    builder.last_vertex[qubit2] = v1
-
-    # NOTE: both wire ends move to the later column first, so neither lands on
-    # a position the other lane already uses.
-    col = max(builder.graph.col(v1), builder.graph.col(v2))
-    builder.graph.set_col(v1, col)
-    builder.graph.set_col(v2, col)
-    builder.graph.set_row(v1, qubit2)
-    builder.graph.set_row(v2, qubit1)
+    builder.swap(qubit1, qubit2)
 
 
 def cxswap(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
@@ -586,11 +791,10 @@ def _error(
     builder: GraphBuilder,
     qubit: int,
     vertex_type: VertexType,
-    error_bit: int | None,
+    error_bit: int,
 ) -> Vertex:
-    """Insert a noise spider; it carries ``error_bit`` (its ID) unless None."""
-    phase = None if error_bit is None else _error_phase(error_bit)
-    return _wire_spider(builder, qubit, vertex_type, phase)
+    """Insert a noise spider that carries ``error_bit`` (its ID)."""
+    return builder.spider(qubit, vertex_type, _error_phase(error_bit))
 
 
 def pauli_channel_1(
@@ -721,107 +925,24 @@ def heralded_erase(builder: GraphBuilder, qubit: int, p: float) -> None:
     heralded_pauli_channel_1(builder, qubit, p / 4, p / 4, p / 4, p / 4)
 
 
-def finalize_correlated_error(builder: GraphBuilder) -> None:
-    """Finalize the current correlated error channel.
-
-    1. Give each pending noise spider its error bit ``num_error_bits + i``
-    2. Compute and append the 2^k probability array to channel_probs
-    3. Increment num_error_bits by k
-    4. Reset num_correlated_error_bits to 0 and correlated_error_probs to []
-    """
-    k = builder.num_correlated_error_bits
-    if k == 0:
-        return
-    for v, bit in builder.pending_correlated:
-        builder.graph.set_phase(v, _error_phase(builder.num_error_bits + bit))
-    builder.pending_correlated = []
-    builder.channel_probs.append(correlated_error_probs(builder.correlated_error_probs))
-    builder.num_error_bits += k
-    builder.num_correlated_error_bits = 0
-    builder.correlated_error_probs = []
-
-
-def correlated_error(
-    builder: GraphBuilder,
-    qubits: list[int],
-    types: list[Literal["X", "Y", "Z"]],
-    p: float,
-) -> None:
-    """Add a correlated error term affecting multiple qubits with given Pauli types."""
-    for qubit, type_ in zip(qubits, types, strict=True):
-        if type_ == "X" or type_ == "Y":
-            builder.pending_correlated.append(
-                (
-                    _error(builder, qubit, VertexType.X, None),
-                    builder.num_correlated_error_bits,
-                )
-            )
-        if type_ == "Z" or type_ == "Y":
-            builder.pending_correlated.append(
-                (
-                    _error(builder, qubit, VertexType.Z, None),
-                    builder.num_correlated_error_bits,
-                )
-            )
-
-    builder.correlated_error_probs.append(p)
-    builder.num_correlated_error_bits += 1
-
-
 # =============================================================================
 # Collapsing gates
 # =============================================================================
-
-
-def _m(builder: GraphBuilder, qubit: int, p: float = 0, silent: bool = False) -> None:
-    """Perform measurement on qubit with optional error probability."""
-    error_bit = None
-    if p > 0:
-        builder.channel_probs.append(error_probs(p))
-        error_bit = builder.num_error_bits
-        _error(builder, qubit, VertexType.X, error_bit)
-        builder.num_error_bits += 1
-    ensure_lane(builder, qubit)
-    v1 = builder.last_vertex[qubit]
-    builder.graph.set_vertex_type(v1, VertexType.Z)
-    builder.graph.merge_mirror_copies(v1)
-    if not silent:
-        builder.graph.set_vertex_label(v1, f"rec[{len(builder.rec)}]")
-        builder.rec.append(v1)
-    else:
-        builder.graph.set_vertex_label(v1, f"m[{len(builder.silent_rec)}]")
-        builder.silent_rec.append(v1)
-    v2 = add_quantum_boundary(builder, qubit)
-    builder.graph.add_edge(v1, v2)
-    if error_bit is not None:
-        _error(builder, qubit, VertexType.X, error_bit)
-
-
-def _r(builder: GraphBuilder, qubit: int) -> None:
-    """Perform reset on qubit.
-
-    If the qubit does not yet have a lane, create one in the reset state.
-    Otherwise, silently measure the existing lane to trace out the previous
-    state before reconnecting the qubit in the reset state.
-    """
-    if qubit not in builder.last_vertex:
-        builder.graph.plug_basis(add_lane(builder, qubit))
-        return
-    _m(builder, qubit, silent=True)
-    col = last_col(builder, qubit)
-    v1 = builder.last_vertex[qubit]
-    (v2,) = builder.graph.neighbors(v1)
-    builder.graph.remove_edge(v1, v2)
-    builder.graph.plug_basis(v1)
-    v3 = add_quantum_boundary(builder, qubit, col + 1)
-    builder.graph.add_edge(v1, v3)
 
 
 def m(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None:
     """Measure qubit in Z basis with optional bit-flip error probability p."""
     if invert:
         x(builder, qubit)
-    _m(builder, qubit, p, silent=False)
+    error_bit = None
+    if p > 0:
+        builder.channel_probs.append(error_probs(p))
+        error_bit = builder.num_error_bits
+        _error(builder, qubit, VertexType.X, error_bit)
+        builder.num_error_bits += 1
+    builder.measure(qubit)
+    if error_bit is not None:
+        _error(builder, qubit, VertexType.X, error_bit)
     if invert:
         x(builder, qubit)
 
@@ -1005,7 +1126,7 @@ def mr(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) ->
     then resets to |0>.
     """
     m(builder, qubit, p=p, invert=invert)
-    _r(builder, qubit)
+    r(builder, qubit)
 
 
 def mrx(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None:
@@ -1016,7 +1137,7 @@ def mrx(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -
     """
     h(builder, qubit)
     m(builder, qubit, p=p, invert=invert)
-    _r(builder, qubit)
+    r(builder, qubit)
     h(builder, qubit)
 
 
@@ -1028,7 +1149,7 @@ def mry(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -
     """
     h_yz(builder, qubit)
     m(builder, qubit, p=p, invert=invert)
-    _r(builder, qubit)
+    r(builder, qubit)
     h_yz(builder, qubit)
 
 
@@ -1073,7 +1194,7 @@ def r(builder: GraphBuilder, qubit: int) -> None:
     Forces each target qubit into the |0> state by silently measuring it in the Z basis
     and applying an X gate if it ended up in the |1> state.
     """
-    _r(builder, qubit)
+    builder.reset(qubit)
 
 
 def rx(builder: GraphBuilder, qubit: int) -> None:
@@ -1094,84 +1215,6 @@ def ry(builder: GraphBuilder, qubit: int) -> None:
     """
     r(builder, qubit)
     h_yz(builder, qubit)
-
-
-# =============================================================================
-# Annotations
-# =============================================================================
-
-
-def _annotation_col(builder: GraphBuilder, rec: list[int]) -> float:
-    """Pick a fresh column for a detector/observable vertex.
-
-    Empty `rec` is valid Stim and represents a deterministic-zero annotation;
-    fall back to a column after existing annotations rather than `min()` on an
-    empty set.
-    """
-    d_cols = {builder.graph.col(d) for d in builder.detectors + builder.observables}
-    if rec:
-        col: float = min(builder.graph.col(builder.rec[r]) for r in rec) - 0.5
-    else:
-        col = (max(d_cols) + 1) if d_cols else 0
-    while col in d_cols:
-        col += 1
-    return col
-
-
-def _xor_record(builder: GraphBuilder, annotation: Vertex, rec: int) -> None:
-    """Add measurement record ``rec`` to the parity of ``annotation``.
-
-    A record that is already in the parity cancels: its edge is removed rather
-    than Hopf-cancelled by ``add_edge``, which would leave a scalar of 1/2 behind
-    in graphs that drop the annotation.
-    """
-    record = builder.rec[rec]
-    if builder.graph.has_edge(annotation, record):
-        builder.graph.remove_edge(annotation, record)
-    else:
-        builder.graph.add_edge(annotation, record)
-
-
-def detector(builder: GraphBuilder, rec: list[int], *args) -> None:
-    """Add detector annotation that XORs the given measurement record bits."""
-    v0 = builder.graph.add_vertex(
-        VertexType.X,
-        col=_annotation_col(builder, rec),
-        row=ANNOTATION_ROW,
-        domain=Domain.CLASSICAL,
-        label=f"det[{len(builder.detectors)}]",
-    )
-    for rec_ in rec:
-        _xor_record(builder, v0, rec_)
-    builder.detectors.append(v0)
-
-
-def observable_include(builder: GraphBuilder, rec: list[int], idx: int) -> None:
-    """Add observable annotation that XORs the given measurement record bits."""
-    idx = int(idx)
-
-    if idx not in builder.observables_dict:
-        v0 = builder.graph.add_vertex(
-            VertexType.X,
-            col=_annotation_col(builder, rec),
-            row=ANNOTATION_ROW,
-            domain=Domain.CLASSICAL,
-            label=f"obs[{idx}]",
-        )
-        builder.observables_dict[idx] = v0
-
-    v0 = builder.observables_dict[idx]
-    for rec_ in rec:
-        _xor_record(builder, v0, rec_)
-
-
-def tick(builder: GraphBuilder) -> None:
-    """Add a tick to the circuit (align all qubits to same column)."""
-    if len(builder.last_vertex) == 0:
-        return
-    col = max(last_col(builder, q) for q in builder.last_vertex)
-    for q in builder.last_vertex:
-        builder.graph.set_col(builder.last_vertex[q], col)
 
 
 # =============================================================================

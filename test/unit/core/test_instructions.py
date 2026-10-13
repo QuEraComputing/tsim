@@ -187,7 +187,7 @@ def test_x_error_is_an_x_spider_with_its_error_bit():
 def test_records_and_detectors_are_classical_spiders():
     builder = GraphBuilder()
     instructions.m(builder, 0)
-    instructions.detector(builder, [0])
+    builder.add_detector([0])
     (rec,) = builder.rec
     (det,) = builder.detectors
     g = builder.graph
