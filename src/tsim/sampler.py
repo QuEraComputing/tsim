@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal, overload
 
 import jax
 import jax.numpy as jnp
+import numba
 import numpy as np
 import psutil
 from zxparam import DecompositionStrategy
@@ -192,6 +193,23 @@ def sample_program(
     if program.output_reindex is not None:
         combined = combined[:, program.output_reindex]
     return combined
+
+
+@numba.njit(parallel=True, cache=True)
+def _write_direct_detectors(f, f_indices, flips, columns, postselect, reference, out):
+    """Write direct detector ``j`` of every row into ``out[row, columns[j]]``.
+
+    Detector ``j`` is ``f[row, f_indices[j]] ^ flips[j]``. Returns which rows
+    have a postselected detector that differs from its ``reference`` bit.
+    """
+    discarded = np.zeros(f.shape[0], dtype=np.bool_)
+    for row in numba.prange(f.shape[0]):
+        for j in range(len(f_indices)):
+            bit = (f[row, f_indices[j]] != 0) ^ flips[j]
+            out[row, columns[j]] = bit
+            if postselect[j] and bit != reference[j]:
+                discarded[row] = True
+    return discarded
 
 
 def _nbytes(tree: object) -> int:
@@ -578,8 +596,6 @@ class _CompiledSamplerBase:
                 return empty, np.zeros(num_outputs, dtype=np.bool_), empty_discarded
             return empty, None, empty_discarded
 
-        postselect_direct = postselection_mask & self._direct_detector_mask
-
         if not self._program.components:
             samples = self._sample_direct(shots)
             if compute_reference:
@@ -604,57 +620,60 @@ class _CompiledSamplerBase:
         was_discarded = np.zeros(shots, dtype=np.bool_)
         shot_idx = 0
 
+        detector = self._direct_global_indices < self._num_detectors
+        columns = self._direct_global_indices[detector]
+        direct = (
+            self._direct_f_indices[detector],
+            self._direct_flips[detector],
+            columns,
+            postselection_mask[columns],
+            (
+                reference[columns]
+                if xor_detector_ref and reference is not None
+                else np.zeros(len(columns), dtype=np.bool_)
+            ),
+        )
+
         sharing = self._sharing_arguments(
             postselection_mask, reference if xor_detector_ref else None
         )
 
-        # NOTE: a chunk adds at most batch_size survivors to fewer than batch_size
-        # pending ones, so two batches always hold the pending survivors.
         num_f = self._channel_sampler.signature_matrix.shape[1]
-        pending_f = np.empty((2 * batch_size, num_f), dtype=np.uint8)
-        pending_shot = np.empty(2 * batch_size, dtype=np.int64)
-        pending = 0
+        pending_f = np.empty((0, num_f), dtype=np.uint8)
+        pending_shot = np.empty(0, dtype=np.int64)
 
-        def dispatch(count: int) -> None:
-            """Sample the first ``count`` pending survivors in one full batch."""
-            nonlocal pending
-            pending_f[count:batch_size] = pending_f[0]
+        def dispatch(f_batch: np.ndarray, shot_batch: np.ndarray) -> None:
+            """Sample the shots ``shot_batch`` in one full batch, padded with row 0."""
+            count = len(shot_batch)
+            if count < batch_size:
+                padding = np.repeat(f_batch[:1], batch_size - count, axis=0)
+                f_batch = np.concatenate([f_batch, padding])
             self._key, subkey = jax.random.split(self._key)
             samples = sample_program(
-                self._program, jnp.asarray(pending_f[:batch_size]), subkey, **sharing
+                self._program, jnp.asarray(f_batch), subkey, **sharing
             )
-            result[pending_shot[:count]] = np.asarray(samples)[:count]
-            pending -= count
-            pending_f[:pending] = pending_f[count : count + pending]
-            pending_shot[:pending] = pending_shot[count : count + pending]
+            result[shot_batch] = np.asarray(samples)[:count]
 
         while shot_idx < shots:
             chunk = min(batch_size, shots - shot_idx)
             f_params_np = self._channel_sampler.sample(chunk)
-            direct_full = self._compute_direct_outputs(f_params_np)
-            det_cols = direct_full[:, : self._num_detectors]
-            if xor_detector_ref and reference is not None:
-                det_cols = det_cols ^ reference[: self._num_detectors]
-
-            discarded = (det_cols & postselect_direct).any(axis=1)
-
-            result[shot_idx : shot_idx + chunk, : self._num_detectors] = direct_full[
-                :, : self._num_detectors
-            ]
+            discarded = _write_direct_detectors(
+                f_params_np, *direct, result[shot_idx : shot_idx + chunk]
+            )
             was_discarded[shot_idx : shot_idx + chunk] = discarded
 
             survivors = np.flatnonzero(~discarded)
-            end = pending + len(survivors)
-            pending_f[pending:end] = f_params_np[survivors]
-            pending_shot[pending:end] = shot_idx + survivors
-            pending = end
+            pending_f = np.concatenate([pending_f, f_params_np[survivors]])
+            pending_shot = np.concatenate([pending_shot, shot_idx + survivors])
 
             shot_idx += chunk
-            if pending >= batch_size:
-                dispatch(batch_size)
+            if len(pending_shot) >= batch_size:
+                dispatch(pending_f[:batch_size], pending_shot[:batch_size])
+                pending_f = pending_f[batch_size:]
+                pending_shot = pending_shot[batch_size:]
 
-        if pending:
-            dispatch(pending)
+        if len(pending_shot):
+            dispatch(pending_f, pending_shot)
 
         if xor_detector_ref and reference is not None:
             det_ref = reference[: self._num_detectors]

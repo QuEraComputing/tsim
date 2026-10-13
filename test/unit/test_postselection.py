@@ -162,6 +162,48 @@ def test_postselection_discarded_and_surviving_rows():
     assert np.all(~samples[discarded, 1])
 
 
+# Detector 0 is postselected; direct detector 2 is not, so a survivor that is
+# sampled from another shot's f-params shows up in column 2.
+TWO_DIRECT_CIRCUIT = """
+X_ERROR(0.5) 0 2
+R 1
+H 1
+T 1
+H 1
+M 0 1 2
+DETECTOR rec[-3]
+DETECTOR rec[-2] rec[-3]
+DETECTOR rec[-1]
+"""
+
+
+@pytest.mark.parametrize("shots,batch_size", [(37, 4), (37, 1), (5, 8), (64, 7)])
+@pytest.mark.parametrize("reference", [False, True])
+def test_survivors_keep_their_own_direct_detectors(shots, batch_size, reference):
+    """Every row's direct detectors come from that shot's own f-params."""
+    sampler = _make(TWO_DIRECT_CIRCUIT, seed=11)
+    drawn: list[np.ndarray] = []
+    original = sampler._channel_sampler.sample
+
+    def capture(n: int) -> np.ndarray:
+        batch = original(n)
+        drawn.append(batch.copy())
+        return batch
+
+    mask = np.array([True, False, False])
+    with patch.object(sampler._channel_sampler, "sample", side_effect=capture):
+        samples = sampler.sample(
+            shots,
+            batch_size=batch_size,
+            postselection_mask=mask,
+            use_detector_reference_sample=reference,
+        )
+    expected = sampler._compute_direct_outputs(np.concatenate(drawn))
+    if reference:
+        expected[:, :3] ^= sampler._compute_reference_sample()[:3]
+    assert np.array_equal(samples[:, [0, 2]], expected[:, [0, 2]])
+
+
 def test_postselection_direct_cols_always_equal_numpy():
     """Direct detector columns match NumPy computation for every row."""
     sampler = _make(MIXED_DIRECT_CIRCUIT, seed=3)
