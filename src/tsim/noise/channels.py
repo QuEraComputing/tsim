@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from itertools import combinations
 from typing import NamedTuple
 
 import numba
@@ -469,6 +470,12 @@ def absorb_subset_channels(channels: list[Channel], max_bits: int = 4) -> list[C
     # Sort by number of bits (largest first) for efficient processing
     channels = sorted(channels, key=lambda c: -len(c.unique_col_ids))
 
+    # NOTE: a channel of at most max_bits signatures has few strict subsets, so
+    # they are looked up instead of compared with every other channel.
+    by_signatures: dict[frozenset[int], list[int]] = defaultdict(list)
+    for j, channel in enumerate(channels):
+        by_signatures[frozenset(channel.unique_col_ids)].append(j)
+
     result: list[Channel] = []
     absorbed: set[int] = set()
 
@@ -476,22 +483,25 @@ def absorb_subset_channels(channels: list[Channel], max_bits: int = 4) -> list[C
         if i in absorbed:
             continue
 
-        set_i = set(channel_i.unique_col_ids)
-
-        # Try to absorb smaller channels into this one
+        signatures = sorted(set(channel_i.unique_col_ids))
         current_probs = channel_i.probs.copy()
         current_col_ids = channel_i.unique_col_ids
 
-        for j, channel_j in enumerate(channels):
-            if j <= i or j in absorbed:
-                continue
-
-            set_j = set(channel_j.unique_col_ids)
-
-            # Check if j is a strict subset of i
-            if set_j < set_i and len(set_i) <= max_bits:
+        if len(signatures) <= max_bits:
+            subsets = (
+                frozenset(subset)
+                for size in range(len(signatures))
+                for subset in combinations(signatures, size)
+            )
+            subset_channels = sorted(
+                j
+                for subset in subsets
+                for j in by_signatures.get(subset, ())
+                if j > i and j not in absorbed
+            )
+            for j in subset_channels:
                 # Expand channel_j to match channel_i's signatures and convolve
-                expanded_j = expand_channel(channel_j, current_col_ids)
+                expanded_j = expand_channel(channels[j], current_col_ids)
                 current_probs = xor_convolve(current_probs, expanded_j.probs)
                 absorbed.add(j)
 
@@ -521,6 +531,36 @@ def simplify_channels(
     channels = merge_identical_channels(channels)
     channels = absorb_subset_channels(channels, max_bits)
     return channels
+
+
+def unique_columns(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``np.unique(matrix, axis=1, return_inverse=True)`` for a binary matrix.
+
+    ``np.unique`` sorts every column, comparing whole columns, which takes about a
+    minute for the 2,821 x 184,039 error transform of a d=5 end-to-end
+    cultivation circuit. Here a dict over the bit-packed columns finds the
+    distinct ones, and only those are sorted. Big-endian packing keeps the
+    lexicographic order of the columns, so the result is the same.
+
+    Args:
+        matrix: Binary matrix with entries 0 or 1.
+
+    Returns:
+        The distinct columns in lexicographic order, and the index of each
+        column of ``matrix`` among them.
+
+    """
+    packed = np.ascontiguousarray(np.packbits(matrix, axis=0).T)
+    ids: dict[bytes, int] = {}
+    seen = np.array(
+        [ids.setdefault(column.tobytes(), len(ids)) for column in packed],
+        dtype=np.int64,
+    )
+    _, first = np.unique(seen, return_index=True)
+    _, order = np.unique(packed[first], axis=0, return_index=True)
+    rank = np.empty_like(order)
+    rank[order] = np.arange(len(order))
+    return matrix[:, first[order]], rank[seen]
 
 
 class ChannelSampler:
@@ -570,7 +610,7 @@ class ChannelSampler:
             seed: Random seed for sampling. If None, a random seed is generated.
 
         """
-        unique_cols, inverse = np.unique(error_transform, axis=1, return_inverse=True)
+        unique_cols, inverse = unique_columns(error_transform)
 
         # Signature matrix: each row is a unique column signature
         signature_matrix = unique_cols.T  # shape (num_signatures, num_f)

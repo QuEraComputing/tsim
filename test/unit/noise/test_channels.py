@@ -20,6 +20,7 @@ from tsim.noise.channels import (
     pauli_channel_2_probs,
     reduce_null_bits,
     simplify_channels,
+    unique_columns,
     xor_convolve,
 )
 
@@ -749,6 +750,60 @@ class TestAbsorbSubsetChannels:
         assert len(absorbed) == 1
         assert absorbed[0].unique_col_ids == (0, 1)
         assert_allclose(absorbed[0].probs, [1.0, 0.0, 0.0, 0.0])
+
+
+def _absorb_by_comparing_every_pair(channels, max_bits=4):
+    """The original quadratic ``absorb_subset_channels``, as a reference."""
+    channels = sorted(channels, key=lambda c: -len(c.unique_col_ids))
+    result, absorbed = [], set()
+    for i, channel_i in enumerate(channels):
+        if i in absorbed:
+            continue
+        set_i = set(channel_i.unique_col_ids)
+        probs = channel_i.probs.copy()
+        for j, channel_j in enumerate(channels):
+            if j <= i or j in absorbed:
+                continue
+            if set(channel_j.unique_col_ids) < set_i and len(set_i) <= max_bits:
+                expanded = expand_channel(channel_j, channel_i.unique_col_ids)
+                probs = xor_convolve(probs, expanded.probs)
+                absorbed.add(j)
+        result.append(Channel(probs=probs, unique_col_ids=channel_i.unique_col_ids))
+    return result
+
+
+class TestAbsorbMatchesPairwiseComparison:
+    """The indexed absorption gives the pairwise algorithm's channels bitwise."""
+
+    @pytest.mark.parametrize("seed", range(5))
+    def test_random_channels(self, seed):
+        rng = np.random.default_rng(seed)
+        channels = []
+        for _ in range(60):
+            size = int(rng.integers(1, 6))
+            col_ids = tuple(sorted(rng.choice(7, size=size, replace=False).tolist()))
+            probs = rng.random(2**size)
+            channels.append(Channel(probs=probs / probs.sum(), unique_col_ids=col_ids))
+        got = absorb_subset_channels(channels)
+        expected = _absorb_by_comparing_every_pair(channels)
+        assert [c.unique_col_ids for c in got] == [c.unique_col_ids for c in expected]
+        for a, b in zip(got, expected, strict=True):
+            np.testing.assert_array_equal(a.probs, b.probs)
+
+
+class TestUniqueColumns:
+    """unique_columns returns exactly what np.unique(axis=1) returns."""
+
+    @pytest.mark.parametrize("rows", [0, 1, 7, 8, 9, 64, 100])
+    @pytest.mark.parametrize("cols", [0, 1, 5, 200])
+    def test_matches_numpy(self, rows, cols):
+        rng = np.random.default_rng(rows * 1000 + cols)
+        distinct = (rng.random((rows, max(1, cols // 3))) < 0.2).astype(np.uint8)
+        matrix = distinct[:, rng.integers(0, distinct.shape[1], cols)]
+        got_cols, got_inverse = unique_columns(matrix)
+        expected_cols, expected_inverse = np.unique(matrix, axis=1, return_inverse=True)
+        np.testing.assert_array_equal(got_cols, expected_cols)
+        np.testing.assert_array_equal(got_inverse, np.ravel(expected_inverse))
 
 
 class TestSimplifyChannels:
