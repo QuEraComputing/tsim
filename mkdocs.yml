@@ -16,6 +16,7 @@ nav:
   - Tutorials:
     - demos/encoding_demo.ipynb
     - demos/magic_state_distillation.ipynb
+    - demos/rotations_with_STAR.ipynb
     - demos/from_stim_to_tsim.ipynb
   - API Reference: reference/
 
@@ -93,6 +94,9 @@ plugins:
           - "tutorial.ipynb"
           - "*.py"
           - "draft/*"
+      remove_tag_config:
+          remove_input_tags:
+              - hide_code
 
 extra_css:
 
