@@ -1,5 +1,10 @@
 # Trajectory sharing for strategy="statevector": investigation
 
+> **Note (2026-10-13):** this write-up describes the JAX prototype. On branch
+> `tsim-perf` the shared executor was replaced by a numba executor (commit
+> `f012e25`); `scripts/trajectory/shared_breakdown.py` and the lane-capacity
+> tests mentioned below no longer exist.
+
 - **Date:** 2026-10-11
 - **Machine:** Apple M4 Pro, 14 cores (10 performance, 4 efficiency), JAX 0.9.2 CPU
 - **Branch:** `trajectory-sharing`, from `statevector-sampler` at `883b125`
