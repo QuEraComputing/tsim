@@ -9,6 +9,7 @@ from zxparam import VertexType
 
 from tsim.core.builder import HELPER_LANE, GraphBuilder
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
+from tsim.noise.channels import correlated_error_probs, error_probs
 
 
 def _qubits(builder: GraphBuilder) -> list[int | None]:
@@ -476,11 +477,11 @@ class TestParseWithRepeatBlocks:
         flat_circuit = stim.Circuit("H 0\nCNOT 0 1\nH 0\nCNOT 0 1\nH 0\nCNOT 0 1")
         repeat_circuit = stim.Circuit("REPEAT 3 {\n    H 0\n    CNOT 0 1\n}")
 
-        b_flat = parse_stim_circuit(flat_circuit)
-        b_repeat = parse_stim_circuit(repeat_circuit)
+        flat_builder = parse_stim_circuit(flat_circuit)
+        repeat_builder = parse_stim_circuit(repeat_circuit)
 
-        assert b_flat.graph.num_vertices() == b_repeat.graph.num_vertices()
-        assert list(b_flat.graph.edges()) == list(b_repeat.graph.edges())
+        assert flat_builder.graph.num_vertices() == repeat_builder.graph.num_vertices()
+        assert list(flat_builder.graph.edges()) == list(repeat_builder.graph.edges())
 
     def test_parse_repeat_block_with_measurements(self):
         """Repeat blocks containing measurements should parse correctly."""
@@ -493,14 +494,34 @@ class TestParseWithRepeatBlocks:
         circuit = stim.Circuit("REPEAT 2 {\n    REPEAT 3 {\n        H 0\n    }\n}")
         flat = stim.Circuit("H 0\nH 0\nH 0\nH 0\nH 0\nH 0")
 
-        b_nested = parse_stim_circuit(circuit)
-        b_flat = parse_stim_circuit(flat)
+        nested_builder = parse_stim_circuit(circuit)
+        flat_builder = parse_stim_circuit(flat)
 
-        assert b_nested.graph.num_vertices() == b_flat.graph.num_vertices()
+        assert nested_builder.graph.num_vertices() == flat_builder.graph.num_vertices()
 
 
 class TestCorrelatedErrorState:
     """Tests for correlated error state management."""
+
+    def test_noise_between_correlated_terms(self):
+        """Noise between E and ELSE gets its bit first; the chain's come at the end."""
+        circuit = stim.Circuit(
+            "E(0.1) X0 Z1\nX_ERROR(0.2) 1\nELSE_CORRELATED_ERROR(0.3) Y0"
+        )
+        builder = parse_stim_circuit(circuit)
+
+        probs = builder.channel_probs
+        assert [p.shape for p in probs] == [(2,), (4,)]
+        assert_allclose(probs[0], error_probs(0.2))
+        assert_allclose(probs[1], correlated_error_probs([0.1, 0.3]))
+        _assert_error_vertex_layout(
+            builder,
+            {
+                0: [(VertexType.X, 1)],
+                1: [(VertexType.X, 0), (VertexType.Z, 1)],
+                2: [(VertexType.X, 0), (VertexType.Z, 0)],
+            },
+        )
 
     def test_state_reset_after_finalization(self):
         """Verify state is reset after finalization."""

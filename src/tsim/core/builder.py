@@ -17,7 +17,7 @@ classical domain, so wire vertices are only ever added here.
 from __future__ import annotations
 
 from fractions import Fraction
-from typing import Literal
+from typing import Literal, get_args
 
 import numpy as np
 from zxparam import Domain, EdgeType, Graph, Phase, Vertex, VertexType
@@ -69,7 +69,10 @@ class GraphBuilder:
 
     @property
     def graph(self) -> Graph:
-        """The graph built so far, for inspection (``build`` copies it)."""
+        """The live graph built so far, for inspection; ``build`` returns copies.
+
+        Changing it directly bypasses the builder's bookkeeping.
+        """
         return self._graph
 
     @property
@@ -461,15 +464,19 @@ class GraphBuilder:
         - ``"none"``: no classical outputs.
 
         Detector and observable spiders are removed unless they are the outputs.
-        Open graphs keep the ``rec[i]`` / ``m[i]`` labels of the measurement
-        spiders; closed graphs are meant to be reduced, so only their output
-        boundaries carry labels, which survive reduction.
+        In open graphs, measurement spiders that are not outputs keep their
+        ``rec[i]`` / ``m[i]`` labels; closed graphs are meant to be reduced, so
+        only their output boundaries carry labels, which survive reduction.
 
         An open graph's tensor is the circuit's channel together with the output
         bits; for bound error parameters, a closed graph's tensor is the joint
         distribution of its outputs. The builder is unchanged, so it can build
         again.
         """
+        if outputs not in get_args(Outputs):
+            raise ValueError(
+                f"outputs must be one of {get_args(Outputs)}, got {outputs!r}"
+            )
         self._check_finalized()
         g = self._graph.copy()
         self._align_wire_ends(g)

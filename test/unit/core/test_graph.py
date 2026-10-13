@@ -3,6 +3,7 @@
 from fractions import Fraction
 from test.helpers.gate_matrices import CNOT, H
 from test.helpers.tensors import doubled
+from typing import Any
 
 import numpy as np
 import pytest
@@ -166,7 +167,7 @@ def test_open_graph_gives_detectors_classical_outputs():
         assert list(g.neighbors(b)) == [v]
 
 
-def _with_annotation_bits(terms: list[tuple[np.ndarray, list[int]]]) -> np.ndarray:
+def _with_output_bits(terms: list[tuple[np.ndarray, list[int]]]) -> np.ndarray:
     """Return Σ doubled(K) ⊗ |bits⟩, with the bit axes after the qubit outputs."""
     total = 0
     for kraus, bits in terms:
@@ -183,7 +184,7 @@ def test_open_graph_tensor_is_the_channel_with_detector_bits():
     builder = parse_stim_circuit(
         stim.Circuit("H 0\nM 0\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-1]")
     )
-    expected = _with_annotation_bits(
+    expected = _with_output_bits(
         [(np.outer(np.eye(2)[k], np.eye(2)[k]) @ H, [k, k]) for k in (0, 1)]
     )
     g = builder.build(closed=False, outputs="detectors")
@@ -203,7 +204,7 @@ def test_open_graph_tensor_xors_records_into_detectors():
         for k1 in (0, 1):
             e = np.eye(4)[2 * k0 + k1]
             terms.append((np.outer(e, e) @ u, [k0 ^ k1, k0]))
-    expected = _with_annotation_bits(terms)
+    expected = _with_output_bits(terms)
     g = builder.build(closed=False, outputs="detectors")
     np.testing.assert_allclose(g.to_tensor(), expected, atol=1e-9)
 
@@ -216,9 +217,64 @@ def test_open_graph_tensor_is_the_channel_with_record_bits():
             p0 = np.outer(np.eye(2)[k0], np.eye(2)[k0])
             p1 = np.outer(np.eye(2)[k1], np.eye(2)[k1])
             terms.append((p1 @ H @ p0 @ H, [k0, k1]))
-    expected = _with_annotation_bits(terms)
+    expected = _with_output_bits(terms)
     g = builder.build(closed=False, outputs="records")
     np.testing.assert_allclose(g.to_tensor(), expected, atol=1e-9)
+
+
+RECORD_CIRCUITS = {
+    "feedforward-cx": "H 0\nM 0\nCX rec[-1] 1\nM 1",
+    "feedforward-cz": "H 0 1\nM 0\nCZ rec[-1] 1\nH 1\nM 1",
+    "controls": "H 0 1\nM 0\nCY rec[-1] 1\nXCZ 1 rec[-1]\nYCZ 0 rec[-1]\nM 0 1",
+    "own-lane": "H 0\nM 0\nCX rec[-1] 0\nM 0",
+    "record-pair": "H 0 1\nM 0 1\nCZ rec[-1] rec[-2]\nM 0",
+    "mpp": "H 0\nT 0\nMPP X0*Z1 !Y0*Y1\nM 0 1",
+    "resets": "H 0\nMR 0\nRX 1\nT 1\nMRX(0.1) 1\nMRY 2\nR 0\nM 0",
+    "heralded": "H 0\nHERALDED_ERASE(0.2) 0\nCX rec[-1] 1\nM 0 1",
+    "mpad": "MPAD 1 0\nH 0\nM(0.1) 0 0",
+    "correlated": "H 0 1\nE(0.1) X0 Z1\nELSE_CORRELATED_ERROR(0.2) Y0\nM 0 1",
+}
+
+
+def _random_bindings(builder, seed: int = 0) -> dict[int, Bit]:
+    rng = np.random.default_rng(seed)
+    return {j: 1 if rng.integers(2) else 0 for j in range(builder.num_error_bits)}
+
+
+@pytest.mark.parametrize("text", RECORD_CIRCUITS.values(), ids=RECORD_CIRCUITS.keys())
+def test_open_graph_with_record_outputs_closes_to_the_sampling_graph(text: str):
+    """|0⟩ into the inputs and a trace over the qubit outputs give the closed graph."""
+    builder = parse_stim_circuit(Circuit(text).stim_circuit)
+    bindings = _random_bindings(builder)
+    g = builder.build(closed=False, outputs="records")
+    quantum = [v for v in g.outputs() if g.vertex_domain(v) == Domain.QUANTUM]
+    assert g.outputs()[: len(quantum)] == quantum
+    t = g.to_tensor(bindings)
+    for _ in g.inputs():
+        t = t[..., 0, 0]
+    for _ in quantum:
+        t = np.trace(t, axis1=0, axis2=1)
+    closed = builder.build(closed=True, outputs="records").to_tensor(bindings)
+    np.testing.assert_allclose(t, closed, atol=1e-9)
+
+
+@pytest.mark.parametrize("text", RECORD_CIRCUITS.values(), ids=RECORD_CIRCUITS.keys())
+def test_open_graph_record_bits_sum_to_the_channel(text: str):
+    builder = parse_stim_circuit(Circuit(text).stim_circuit)
+    bindings = _random_bindings(builder)
+    g = builder.build(closed=False, outputs="records")
+    num_quantum = sum(g.vertex_domain(v) == Domain.QUANTUM for v in g.outputs())
+    record_axes = range(2 * num_quantum, 2 * num_quantum + len(builder.records))
+    t = g.to_tensor(bindings).sum(axis=tuple(record_axes))
+    channel = builder.build(closed=False, outputs="none").to_tensor(bindings)
+    np.testing.assert_allclose(t, channel, atol=1e-9)
+
+
+def test_build_rejects_unknown_outputs():
+    builder = parse_stim_circuit(stim.Circuit("M 0\nDETECTOR rec[-1]"))
+    typo: Any = "detector"
+    with pytest.raises(ValueError, match="outputs"):
+        builder.build(closed=True, outputs=typo)
 
 
 def test_prepare_graph_maps_errors_to_basis_ids():
