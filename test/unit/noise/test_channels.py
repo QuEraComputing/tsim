@@ -752,7 +752,7 @@ class TestAbsorbSubsetChannels:
         assert_allclose(absorbed[0].probs, [1.0, 0.0, 0.0, 0.0])
 
 
-def _absorb_by_comparing_every_pair(channels, max_bits=4):
+def _absorb_by_comparing_every_pair(channels, max_bits):
     """The original quadratic ``absorb_subset_channels``, as a reference."""
     channels = sorted(channels, key=lambda c: -len(c.unique_col_ids))
     result, absorbed = [], set()
@@ -775,17 +775,18 @@ def _absorb_by_comparing_every_pair(channels, max_bits=4):
 class TestAbsorbMatchesPairwiseComparison:
     """The indexed absorption gives the pairwise algorithm's channels bitwise."""
 
+    @pytest.mark.parametrize("max_bits", [2, 4])
     @pytest.mark.parametrize("seed", range(5))
-    def test_random_channels(self, seed):
+    def test_random_channels(self, seed, max_bits):
         rng = np.random.default_rng(seed)
         channels = []
         for _ in range(60):
-            size = int(rng.integers(1, 6))
+            size = int(rng.integers(0, 6))
             col_ids = tuple(sorted(rng.choice(7, size=size, replace=False).tolist()))
             probs = rng.random(2**size)
             channels.append(Channel(probs=probs / probs.sum(), unique_col_ids=col_ids))
-        got = absorb_subset_channels(channels)
-        expected = _absorb_by_comparing_every_pair(channels)
+        got = absorb_subset_channels(channels, max_bits)
+        expected = _absorb_by_comparing_every_pair(channels, max_bits)
         assert [c.unique_col_ids for c in got] == [c.unique_col_ids for c in expected]
         for a, b in zip(got, expected, strict=True):
             np.testing.assert_array_equal(a.probs, b.probs)
