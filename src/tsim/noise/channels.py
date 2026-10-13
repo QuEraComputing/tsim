@@ -9,6 +9,9 @@ from typing import NamedTuple
 import numba
 import numpy as np
 
+from tsim.utils.kernels import jit, kernel
+from tsim.utils.rng import next_skip, next_uniform
+
 # NOTE: shots are sampled in blocks of this many rows, in parallel, each block
 # from its own random stream; a block's rows stay in cache while every channel
 # visits them.
@@ -591,7 +594,7 @@ class ChannelSampler:
         self._rng = np.random.default_rng(
             seed if seed is not None else np.random.default_rng().integers(0, 2**30)
         )
-        self._tables = fire_tables(self.channels, self.signature_matrix)
+        self._tables = _fire_tables(self.channels, self.signature_matrix)
 
     def sample(self, num_samples: int = 1) -> np.ndarray:
         """Sample from all error channels and transform to new error basis.
@@ -613,11 +616,12 @@ class ChannelSampler:
         result = np.zeros((num_samples, num_f), dtype=np.uint8)
         num_blocks = -(-num_samples // _BLOCK_SHOTS)
         seeds = self._rng.integers(0, 2**64, size=num_blocks, dtype=np.uint64)
-        _sample_blocks(result, seeds, *self._tables)
+        work = num_samples * len(self._tables.p_fire)
+        _sample_blocks(work, result, seeds, *self._tables)
         return result
 
 
-class FireTables(NamedTuple):
+class _FireTables(NamedTuple):
     """Geometric-skip sampling tables of the channels that can fire.
 
     Channel ``c`` fires with probability ``p_fire[c]``. Its non-identity
@@ -633,8 +637,12 @@ class FireTables(NamedTuple):
     flip_cols: np.ndarray
 
 
-def fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> FireTables:
+def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _FireTables:
     """Return the sampling tables of ``channels``.
+
+    A channel fires with the total probability of its non-identity outcomes,
+    clipped to [0, 1]: ``1 - probs[0]`` can exceed 1 by a rounding error, and it
+    loses precision for small probabilities.
 
     Args:
         channels: The noise channels.
@@ -648,11 +656,11 @@ def fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> FireTa
     outcome_start, flip_start = [0], [0]
     for channel in channels:
         probs = channel.probs.astype(np.float64)
-        fire = 1.0 - float(probs[0])
-        if fire <= 1e-15 or len(probs) <= 1:
+        conditional = np.cumsum(np.clip(probs[1:], 0, None))
+        fire = min(float(conditional[-1]), 1.0) if len(conditional) else 0.0
+        if fire <= 1e-15:
             continue
         p_fire.append(fire)
-        conditional = np.cumsum(probs[1:] / fire)
         cdf.extend(conditional / conditional[-1])
         outcome_start.append(len(cdf))
         col_ids = np.asarray(channel.unique_col_ids)
@@ -661,7 +669,7 @@ def fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> FireTa
         for flips in bits @ signature_matrix[col_ids] % 2:
             flip_cols.extend(np.flatnonzero(flips).tolist())
             flip_start.append(len(flip_cols))
-    return FireTables(
+    return _FireTables(
         p_fire=np.array(p_fire, dtype=np.float64),
         outcome_start=np.array(outcome_start, dtype=np.int64),
         cdf=np.array(cdf, dtype=np.float64),
@@ -670,35 +678,25 @@ def fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> FireTa
     )
 
 
-@numba.njit(cache=True)
-def _next_uniform(state: np.uint64) -> tuple[np.uint64, float]:
-    """Advance a SplitMix64 state; return it and a uniform float in [0, 1)."""
-    state += np.uint64(0x9E3779B97F4A7C15)
-    z = (state ^ (state >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
-    z = (z ^ (z >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
-    z ^= z >> np.uint64(31)
-    return state, (z >> np.uint64(11)) * 2.0**-53
-
-
-@numba.njit(cache=True)
+@jit
 def _sample_block(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols):
     """XOR every channel's outcomes into the rows of ``out`` it fires on."""
     for c in range(len(p_fire)):
         log_keep = np.log1p(-p_fire[c])
         first, last = outcome_start[c], outcome_start[c + 1]
-        row = -1
+        row = -1.0
         while True:
-            state, u = _next_uniform(state)
-            row += 1 + int(np.log1p(-u) / log_keep)
+            state, skip = next_skip(state, log_keep)
+            row += 1.0 + skip
             if row >= out.shape[0]:
                 break
-            state, u = _next_uniform(state)
+            state, u = next_uniform(state)
             k = first + np.searchsorted(cdf[first:last], u, side="right")
             for j in range(flip_start[k], flip_start[k + 1]):
-                out[row, flip_cols[j]] ^= 1
+                out[int(row), flip_cols[j]] ^= 1
 
 
-@numba.njit(parallel=True, cache=True)
+@kernel
 def _sample_blocks(out, seeds, p_fire, outcome_start, cdf, flip_start, flip_cols):
     """Sample block ``b`` of ``_BLOCK_SHOTS`` rows from the stream ``seeds[b]``."""
     for b in numba.prange(len(seeds)):
