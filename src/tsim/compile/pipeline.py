@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fractions import Fraction
+from functools import partial
 from typing import Literal
 
 import jax.numpy as jnp
@@ -23,7 +24,17 @@ from zxparam import (
 
 from tsim.compile.compile import CompiledScalarGraphs, compile_scalars
 from tsim.core.params import ParamLayout
-from tsim.core.types import CompiledComponent, CompiledProgram, SamplingGraph
+from tsim.core.types import (
+    CompiledComponent,
+    CompiledProgram,
+    SamplingGraph,
+    SamplingStrategy,
+)
+from tsim.statevector.program import (
+    STABILIZER_RANK_HINT,
+    StatevectorComponent,
+    compile_statevector_component,
+)
 
 DecompositionMode = Literal["sequential", "joint"]
 
@@ -32,30 +43,44 @@ def compile_program(
     prepared: SamplingGraph,
     *,
     mode: DecompositionMode,
-    strategy: DecompositionStrategy = "cat5",
+    strategy: SamplingStrategy = "cat5",
 ) -> CompiledProgram:
     """Compile a prepared graph into an executable sampling program.
 
     The graph is split into connected components. A component whose single
-    output equals one error-basis bit takes the direct path; every other
-    component has its outputs plugged (all prefixes in ``sequential`` mode, none
-    and all in ``joint`` mode), each plugged graph is decomposed into stabilizer
-    terms, and the terms are compiled into JAX arrays.
+    output equals one error-basis bit takes the direct path. With
+    ``strategy="statevector"`` every other component becomes an action tape for
+    the statevector executor. Otherwise its outputs are plugged (all prefixes
+    in ``sequential`` mode, none and all in ``joint`` mode), each plugged graph
+    is decomposed into stabilizer terms, and the terms are compiled into JAX
+    arrays.
 
     Args:
         prepared: The prepared graph from ``prepare_graph``.
         mode: ``"sequential"`` for sampling, ``"joint"`` for probabilities.
-        strategy: Stabilizer-rank decomposition strategy.
+        strategy: A stabilizer-rank decomposition strategy, or ``"statevector"``.
 
     Returns:
         A CompiledProgram ready for sampling.
 
+    Raises:
+        ValueError: If ``strategy="statevector"`` is combined with ``mode="joint"``.
+
     """
+    if strategy == "statevector":
+        if mode == "joint":
+            raise ValueError(
+                "strategy='statevector' samples outcomes and cannot compute "
+                f"probabilities. {STABILIZER_RANK_HINT}"
+            )
+        compile_component = compile_statevector_component
+    else:
+        compile_component = partial(_compile_component, mode=mode, strategy=strategy)
     graph = prepared.graph
     layout = prepared.layout
 
     direct_entries: list[tuple[int, int, bool]] = []
-    compiled_components: list[CompiledComponent] = []
+    compiled_components: list[CompiledComponent | StatevectorComponent] = []
     compiled_output_order: list[int] = []
 
     components = sorted(graph.connected_components(), key=lambda c: len(c.outputs()))
@@ -66,9 +91,7 @@ def compile_program(
             basis_index, flip = direct
             direct_entries.append((output_indices[0], basis_index, flip))
             continue
-        compiled_components.append(
-            _compile_component(component, output_indices, layout, mode, strategy)
-        )
+        compiled_components.append(compile_component(component, output_indices, layout))
         compiled_output_order.extend(output_indices)
 
     # Sort direct entries by output index so that — together with the output

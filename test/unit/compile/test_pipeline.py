@@ -14,6 +14,7 @@ from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import _plugged, classify_direct, compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.params import ParamLayout
+from tsim.core.types import CompiledComponent
 from tsim.sampler import CompiledStateProbs
 
 I2 = np.eye(2)
@@ -31,6 +32,7 @@ def test_sequential_plugged_graphs_are_consistent_marginals():
     )
     assert any(len(c.output_indices) > 1 for c in program.components)
     for component in program.components:
+        assert isinstance(component, CompiledComponent)
         graphs = component.compiled_scalar_graphs
         for k in range(len(graphs) - 1):
             for prefix in itertools.product((0, 1), repeat=k):

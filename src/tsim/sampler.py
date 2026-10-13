@@ -15,14 +15,21 @@ from zxparam import DecompositionStrategy
 from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
-from tsim.core.types import CompiledComponent, CompiledProgram
+from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
+from tsim.statevector.execute import lane_bytes, sample_statevector_component
+from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
 from tsim.utils.cuda_helpers import copy_d2h
 
 if TYPE_CHECKING:
     from jax import Array as PRNGKey
 
     from tsim.circuit import Circuit
+
+# NOTE: statevector batches beyond 2^16 lanes cost memory without being faster:
+# on CPU, 2^16 lanes sampled cultivation d3 1.7x faster than the memory-derived
+# batch, at a fifth of its peak memory.
+STATEVECTOR_MAX_BATCH_SIZE = 2**16
 
 
 def _sample_component(
@@ -92,11 +99,11 @@ def _sample_component_jit(
 
 
 def sample_component(
-    component: CompiledComponent,
+    component: CompiledComponent | StatevectorComponent,
     f_params: jax.Array,
     key: PRNGKey,
 ) -> tuple[jax.Array, PRNGKey, jax.Array]:
-    """Sample outputs from a single component using autoregressive sampling.
+    """Sample outputs from a single component.
 
     Args:
         component: The compiled component to sample from.
@@ -108,6 +115,8 @@ def sample_component(
         (batch_size, num_outputs_for_component).
 
     """
+    if isinstance(component, StatevectorComponent):
+        return sample_statevector_component(component, f_params, key)
     # Skip JIT for small components (overhead not worth it)
     if len(component.output_indices) <= 1:
         return _sample_component(component, f_params, key)
@@ -152,7 +161,7 @@ def sample_program(
                 "This is likely the result of an underflow error. Please report this "
                 "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
             )  # pragma: no cover
-        if max_norm_deviation > 1e-5:
+        if max_norm_deviation > component.norm_warning_threshold:
             warnings.warn(
                 "A marginal probability was not normalized correctly "
                 f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
@@ -167,6 +176,12 @@ def sample_program(
     return combined
 
 
+def _nbytes(tree: object) -> int:
+    return sum(
+        v.nbytes for v in jax.tree_util.tree_leaves(tree) if isinstance(v, jax.Array)
+    )
+
+
 class _CompiledSamplerBase:
     """Base class for compiled samplers with common initialization logic."""
 
@@ -176,7 +191,7 @@ class _CompiledSamplerBase:
         *,
         sample_detectors: bool,
         mode: Literal["sequential", "joint"],
-        strategy: DecompositionStrategy = "cat5",
+        strategy: SamplingStrategy = "cat5",
         seed: int | None = None,
     ):
         """Initialize the sampler by compiling the circuit.
@@ -185,8 +200,9 @@ class _CompiledSamplerBase:
             circuit: The quantum circuit to compile.
             sample_detectors: If True, sample detectors/observables instead of measurements.
             mode: Compilation mode - "sequential" for autoregressive, "joint" for probabilities.
-            strategy: Stabilizer rank decomposition strategy.
-                Must be one of "cat5", "bss", "cutting".
+            strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
+                "cutting"), or "statevector" to simulate each non-direct
+                component as an extracted circuit on a dense state vector.
             seed: Random seed. If None, a random seed is generated. Note that
                 deterministic results are only guaranteed for a fixed batch size
                 and fixed reference sample settings.
@@ -234,6 +250,20 @@ class _CompiledSamplerBase:
         self._direct_detector_mask = self._direct_output_mask[
             : self._num_detectors
         ].copy()
+
+        statevector = [
+            c for c in self._program.components if isinstance(c, StatevectorComponent)
+        ]
+        if statevector:
+            peak = self._peak_bytes_per_sample()
+            if peak > self._memory_budget():
+                widest = max(statevector, key=lambda c: c.width)
+                raise ValueError(
+                    f"strategy='statevector' needs {peak} bytes per shot for the "
+                    f"component with outputs {list(widest.output_indices)} (width "
+                    f"{widest.width}), more than half of the available memory. "
+                    f"{STABILIZER_RANK_HINT}"
+                )
 
     def _compute_direct_outputs(self, f_params_np: np.ndarray) -> np.ndarray:
         """Scatter direct output bits into a full (batch, num_outputs) bool array.
@@ -293,8 +323,14 @@ class _CompiledSamplerBase:
 
     def _peak_bytes_per_sample(self) -> int:
         """Estimate peak device memory per sample from compiled program structure."""
+        num_f = self._channel_sampler.signature_matrix.shape[1]
         peak = 0
         for component in self._program.components:
+            if isinstance(component, StatevectorComponent):
+                # NOTE: plus the f-params and the output records, on host and device.
+                lane = lane_bytes(component) + 2 * num_f + 2 * self._program.num_outputs
+                peak = max(peak, lane)
+                continue
             for circuit in component.compiled_scalar_graphs:
                 G = circuit.num_graphs
                 max_a = circuit.node_phases.phases.shape[1]
@@ -306,8 +342,8 @@ class _CompiledSamplerBase:
                 peak = max(peak, G * largest * 3)
         return max(peak, 1)
 
-    def _estimate_batch_size(self) -> int:
-        """Estimate the largest batch size that fits in available device memory."""
+    def _memory_budget(self) -> int:
+        """Return the memory one batch may use: half of the free device memory."""
         device = jax.devices()[0]
         if device.platform == "gpu":
             stats = device.memory_stats()
@@ -316,9 +352,18 @@ class _CompiledSamplerBase:
             )
         else:
             available = psutil.virtual_memory().available
+        return int(available * 0.5)  # conservative
 
-        half_of_available = int(available * 0.5)  # conservative estimate
-        return max(1, half_of_available // self._peak_bytes_per_sample())
+    def _estimate_batch_size(self) -> int:
+        """Estimate the largest batch size that fits in available device memory.
+
+        Programs with statevector components use at most
+        ``STATEVECTOR_MAX_BATCH_SIZE`` lanes per batch.
+        """
+        batch_size = max(1, self._memory_budget() // self._peak_bytes_per_sample())
+        if any(isinstance(c, StatevectorComponent) for c in self._program.components):
+            batch_size = min(batch_size, STATEVECTOR_MAX_BATCH_SIZE)
+        return batch_size
 
     @overload
     def _sample_batches(
@@ -568,8 +613,16 @@ class _CompiledSamplerBase:
         c_e_terms = []
         total_memory_bytes = 0
         num_outputs = []
+        statevector_widths: list[int] = []
+        statevector_actions = 0
 
         for component in self._program.components:
+            if isinstance(component, StatevectorComponent):
+                statevector_widths.append(component.width)
+                statevector_actions += component.num_actions
+                num_outputs.append(len(component.output_indices))
+                total_memory_bytes += _nbytes(component)
+                continue
             for circuit in component.compiled_scalar_graphs:
                 num_outputs.append(len(component.output_indices))
                 c_graphs.append(circuit.num_graphs)
@@ -588,11 +641,7 @@ class _CompiledSamplerBase:
                     * circuit.float_terms.table.shape[1]
                 )
 
-                total_memory_bytes += sum(
-                    v.nbytes
-                    for v in jax.tree_util.tree_leaves(circuit)
-                    if isinstance(v, jax.Array)
-                )
+                total_memory_bytes += _nbytes(circuit)
 
         def _format_bytes(n: int) -> str:
             if n < 1024:
@@ -606,8 +655,17 @@ class _CompiledSamplerBase:
             channel.num_bits for channel in self._channel_sampler.channels
         )
 
+        statevector = (
+            f"{len(statevector_widths)} statevector components "
+            f"(width ≤ {max(statevector_widths)}, "
+            f"{statevector_actions} actions), "
+            if statevector_widths
+            else ""
+        )
+
         return (
             f"{type(self).__name__}({n_direct} direct, "
+            f"{statevector}"
             f"{np.sum(c_graphs)} graphs, "
             f"{error_channel_bits} error channel bits, "
             f"{np.max(num_outputs) if num_outputs else 0} outputs for largest cc, "
@@ -631,15 +689,15 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         self,
         circuit: Circuit,
         *,
-        strategy: DecompositionStrategy = "cat5",
+        strategy: SamplingStrategy = "cat5",
         seed: int | None = None,
     ):
         """Create a measurement sampler.
 
         Args:
             circuit: The quantum circuit to compile.
-            strategy: Stabilizer rank decomposition strategy.
-                Must be one of "cat5", "bss", "cutting".
+            strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
+                "cutting"), or "statevector".
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -686,15 +744,15 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         self,
         circuit: Circuit,
         *,
-        strategy: DecompositionStrategy = "cat5",
+        strategy: SamplingStrategy = "cat5",
         seed: int | None = None,
     ):
         """Create a detector sampler.
 
         Args:
             circuit: The quantum circuit to compile.
-            strategy: Stabilizer rank decomposition strategy.
-                Must be one of "cat5", "bss", "cutting".
+            strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
+                "cutting"), or "statevector".
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size and
                 fixed reference sample settings. If deterministic samples are
@@ -945,6 +1003,7 @@ class CompiledStateProbs(_CompiledSamplerBase):
             p_joint = p_joint * (direct_bits == targets).all(axis=1)
 
         for component in self._program.components:
+            assert isinstance(component, CompiledComponent)
             assert len(component.compiled_scalar_graphs) == 2
 
             f_selected = f_samples[:, component.f_selection]
