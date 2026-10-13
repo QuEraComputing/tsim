@@ -54,6 +54,8 @@ class StatevectorComponent(eqx.Module):
         cos: cos θ of each rotation.
         sin: sin θ of each rotation.
         pivot: Axis an active measurement resets to ``|0⟩``.
+        extent: One plus the highest axis the action can touch: amplitudes at
+            ``2^extent`` and above are zero before and after it.
         branch: Symbol a measurement sets, -1 for a rotation.
         sign_const: Constant of each rotation's sign.
         sign_row: Symbol bits of each rotation's sign, shape ``(A, num_words)``.
@@ -72,6 +74,7 @@ class StatevectorComponent(eqx.Module):
     cos: Array
     sin: Array
     pivot: Array
+    extent: Array
     branch: Array
     sign_const: Array
     sign_row: Array
@@ -145,15 +148,18 @@ def lower(plan: Plan, layout: ComponentLayout, dtype: str) -> StatevectorCompone
     z_mask = np.zeros(num_actions, dtype=np.uint32)
     angle = np.zeros(num_actions, dtype=np.float64)
     pivot = np.zeros(num_actions, dtype=np.int32)
+    extent = np.zeros(num_actions, dtype=np.int32)
     branch = np.full(num_actions, -1, dtype=np.int32)
     sign_const = np.zeros(num_actions, dtype=bool)
     sign_row = np.zeros((num_actions, num_words), dtype=np.uint32)
+    active = 0
     for a, action in enumerate(plan.actions):
         if isinstance(action, Rotate):
             kind[a] = ROTATE if action.x else ROTATE_DIAG
             x_mask[a], z_mask[a], angle[a] = action.x, action.z, action.angle
             sign_const[a] = action.sign.constant
             sign_row[a] = _pack(action.sign.terms, num_words)
+            active |= action.x | action.z
         elif isinstance(action, MeasureActive):
             kind[a] = MEASURE if action.x else MEASURE_DIAG
             x_mask[a], z_mask[a] = action.x, action.z
@@ -161,6 +167,9 @@ def lower(plan: Plan, layout: ComponentLayout, dtype: str) -> StatevectorCompone
         else:
             kind[a] = MEASURE_DORMANT
             branch[a] = action.branch
+        extent[a] = active.bit_length()
+        if isinstance(action, MeasureActive):
+            active &= ~(1 << action.pivot)
     output_row = np.zeros((len(plan.outputs), num_words), dtype=np.uint32)
     for slot, output in enumerate(plan.outputs):
         output_row[slot] = _pack(output.terms, num_words)
@@ -176,6 +185,7 @@ def lower(plan: Plan, layout: ComponentLayout, dtype: str) -> StatevectorCompone
         cos=jnp.asarray(np.cos(angle).astype(real)),
         sin=jnp.asarray(np.sin(angle).astype(real)),
         pivot=jnp.asarray(pivot),
+        extent=jnp.asarray(extent),
         branch=jnp.asarray(branch),
         sign_const=jnp.asarray(sign_const),
         sign_row=jnp.asarray(sign_row),
