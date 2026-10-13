@@ -224,6 +224,26 @@ def test_pending_correlated_error_must_be_finalized():
     assert [p.shape for p in builder.channel_probs] == [(2,)]
 
 
+def test_correlated_error_with_mismatched_targets_changes_nothing():
+    builder = GraphBuilder()
+    with pytest.raises(ValueError):
+        builder.correlated_error([0, 1], ["X"], 0.1)
+    assert builder.graph.num_vertices() == 0
+    builder.correlated_error([0], ["Z"], 0.2)
+    builder.finalize_correlated_error()
+    g = builder.graph
+    noisy = [v for v in g.vertices() if g.phase(v).parameters]
+    assert [g.vertex_type(v) for v in noisy] == [VertexType.Z]
+
+
+def test_add_channel_rejects_non_power_of_two():
+    builder = GraphBuilder()
+    with pytest.raises(ValueError, match="2\\^k outcomes"):
+        builder.add_channel(np.full(3, 1 / 3))
+    assert builder.num_error_bits == 0
+    assert builder.channel_probs == []
+
+
 @pytest.mark.parametrize("gate", [instructions.cnot, instructions.cz, instructions.cy])
 def test_unset_classical_control_flags_give_the_quantum_gate(gate):
     np.testing.assert_allclose(

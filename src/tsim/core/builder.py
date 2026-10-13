@@ -22,7 +22,7 @@ from typing import Literal, get_args
 import numpy as np
 from zxparam import Domain, EdgeType, Graph, Phase, Vertex, VertexType
 
-from tsim.noise.channels import correlated_error_probs
+from tsim.noise.channels import channel_num_bits, correlated_error_probs
 
 HELPER_LANE = -1
 """Qubit index, and row, of the helper wire used by MPP, MPAD and heralded channels."""
@@ -69,9 +69,10 @@ class GraphBuilder:
 
     @property
     def graph(self) -> Graph:
-        """The live graph built so far, for inspection; ``build`` returns copies.
+        """The live graph built so far, for inspection in tests and debugging.
 
-        Changing it directly bypasses the builder's bookkeeping.
+        Changing it directly bypasses the builder's bookkeeping, so everything
+        else should use the copies that ``build`` returns.
         """
         return self._graph
 
@@ -152,22 +153,15 @@ class GraphBuilder:
         qubit: int,
         vertex_type: VertexType,
         phase: Phase | Fraction | None = None,
+        *,
+        col: float | None = None,
     ) -> Vertex:
         """Turn the trailing boundary of a qubit's wire into a quantum spider.
 
-        The spider keeps the boundary's quantum domain, and a new quantum
-        boundary is appended after it. Returns the spider.
+        The spider keeps the boundary's quantum domain, moves to column ``col``
+        if given, and a new quantum boundary is appended after it. Returns the
+        spider.
         """
-        return self._spider(qubit, vertex_type, phase)
-
-    def _spider(
-        self,
-        qubit: int,
-        vertex_type: VertexType,
-        phase: Phase | Fraction | None = None,
-        col: float | None = None,
-    ) -> Vertex:
-        """Add a spider like ``spider``, moved to column ``col`` if given."""
         self._ensure_lane(qubit)
         v1 = self._last_vertex[qubit]
         self._graph.set_vertex_type(v1, vertex_type)
@@ -223,7 +217,9 @@ class GraphBuilder:
         classically_controlled: list[bool] | None = None,
     ) -> None:
         """Apply CNOT; ``classically_controlled`` marks record targets (``rec[-k]``)."""
-        self._cx_cz(True, control, target, classically_controlled)
+        self._controlled(
+            VertexType.X, EdgeType.SIMPLE, control, target, classically_controlled
+        )
 
     def cz(
         self,
@@ -232,30 +228,34 @@ class GraphBuilder:
         classically_controlled: list[bool] | None = None,
     ) -> None:
         """Apply CZ; ``classically_controlled`` marks record targets (``rec[-k]``)."""
-        self._cx_cz(False, control, target, classically_controlled)
+        if classically_controlled and classically_controlled[1]:
+            if classically_controlled[0]:
+                # NOTE: a CZ between two measurement records only phases classical
+                # bits, so it does nothing (as in Stim).
+                return
+            # NOTE: CZ is symmetric, so the record becomes the control.
+            classically_controlled = classically_controlled[::-1]
+            control, target = target, control
+        self._controlled(
+            VertexType.Z, EdgeType.HADAMARD, control, target, classically_controlled
+        )
 
-    def _cx_cz(
+    def _controlled(
         self,
-        is_cx: bool,
+        vertex_type: VertexType,
+        edge_type: EdgeType,
         control: int,
         target: int,
         classically_controlled: list[bool] | None,
     ) -> None:
-        """Implement CNOT or CZ gate depending on is_cx flag."""
-        edge_type = EdgeType.SIMPLE if is_cx else EdgeType.HADAMARD
-        vertex_type = VertexType.X if is_cx else VertexType.Z
+        """Join a Z spider on the control to a ``vertex_type`` spider on the target.
 
+        A classical control is a measurement record, which is joined to the
+        target spider directly; only the control may be a record.
+        """
         m_vertex: Vertex | None = None
         if classically_controlled and any(classically_controlled):
             assert len(classically_controlled) == 2
-            if all(classically_controlled) and not is_cx:
-                # NOTE: a CZ between two measurement records only phases classical
-                # bits, so it does nothing (as in Stim).
-                return
-            if classically_controlled[1] and not is_cx:
-                # Only control is allowed to be classically controlled, swap control and target for symmetric CZ gate
-                classically_controlled = classically_controlled[::-1]
-                control, target = target, control
             if classically_controlled[1]:
                 raise ValueError("Measurement record editing is not supported.")
             m_vertex = self._records[control]
@@ -264,10 +264,10 @@ class GraphBuilder:
         self._ensure_lane(target)
 
         col = max(self._last_col(control), self._last_col(target))
-        v1 = self._spider(control, VertexType.Z, col=col)
+        v1 = self.spider(control, VertexType.Z, col=col)
         if control == target:
             col += 1
-        v2 = self._spider(target, vertex_type, col=col)
+        v2 = self.spider(target, vertex_type, col=col)
         self._graph.add_edge(v1 if m_vertex is None else m_vertex, v2, edge_type)
         self._graph.mul_sqrt2(1, Domain.QUANTUM)
 
@@ -275,15 +275,12 @@ class GraphBuilder:
     # Measurement and reset
     # -------------------------------------------------------------------------
 
-    def measure(self, qubit: int) -> Vertex:
+    def measure(self, qubit: int, *, silent: bool = False) -> Vertex:
         """Measure a qubit in the Z basis and record it as ``rec[i]``.
 
-        Returns the measurement's classical spider.
+        A silent measurement is not recorded; it is labelled ``m[i]``. Returns
+        the measurement's classical spider.
         """
-        return self._measure(qubit, silent=False)
-
-    def _measure(self, qubit: int, silent: bool) -> Vertex:
-        """Measure a qubit; a silent measurement is labelled ``m[i]``, not recorded."""
         self._ensure_lane(qubit)
         v1 = self._last_vertex[qubit]
         self._graph.set_vertex_type(v1, VertexType.Z)
@@ -308,7 +305,7 @@ class GraphBuilder:
         if qubit not in self._last_vertex:
             self._graph.plug_basis(self._add_lane(qubit))
             return
-        self._measure(qubit, silent=True)
+        self.measure(qubit, silent=True)
         col = self._last_col(qubit)
         v1 = self._last_vertex[qubit]
         (v2,) = self._graph.neighbors(v1)
@@ -326,10 +323,10 @@ class GraphBuilder:
 
         ``probs`` is the channel's distribution over its ``k`` error bits, so it
         has ``2^k`` entries. Returns the first bit; the channel owns bits
-        ``first … first + k − 1``.
+        ``first … first + k − 1``. Raises ``ValueError`` if the number of
+        entries is not a power of two.
         """
-        num_bits = len(probs).bit_length() - 1
-        assert len(probs) == 1 << num_bits, "a channel has 2^k outcomes"
+        num_bits = channel_num_bits(probs)
         first = self._num_error_bits
         self._channel_probs.append(probs)
         self._num_error_bits += num_bits
@@ -344,10 +341,12 @@ class GraphBuilder:
         """Add a correlated error term affecting multiple qubits with given Pauli types.
 
         Its noise spiders get their error bit in ``finalize_correlated_error``,
-        which must run before the graph is built.
+        which must run before the graph is built. Raises ``ValueError``, and
+        changes nothing, if ``qubits`` and ``types`` differ in length.
         """
+        targets = list(zip(qubits, types, strict=True))
         term = len(self._correlated_error_probs)
-        for qubit, type_ in zip(qubits, types, strict=True):
+        for qubit, type_ in targets:
             if type_ == "X" or type_ == "Y":
                 self._pending_correlated.append(
                     (self.spider(qubit, VertexType.X), term)
@@ -376,20 +375,20 @@ class GraphBuilder:
     # Detectors and observables
     # -------------------------------------------------------------------------
 
-    def add_detector(self, rec: list[int]) -> None:
+    def add_detector(self, record_indices: list[int]) -> None:
         """Add a detector that XORs the given measurement records."""
         v0 = self._graph.add_vertex(
             VertexType.X,
-            col=self._annotation_col(rec),
+            col=self._annotation_col(record_indices),
             row=ANNOTATION_ROW,
             domain=Domain.CLASSICAL,
             label=f"det[{len(self._detectors)}]",
         )
-        for rec_ in rec:
-            self._xor_record(v0, rec_)
+        for record_index in record_indices:
+            self._xor_record(v0, record_index)
         self._detectors.append(v0)
 
-    def include_observable(self, rec: list[int], index: int) -> None:
+    def include_observable(self, record_indices: list[int], index: int) -> None:
         """XOR the given measurement records into observable ``index``.
 
         The observable is created on first use, as in Stim's
@@ -400,7 +399,7 @@ class GraphBuilder:
         if index not in self._observables:
             v0 = self._graph.add_vertex(
                 VertexType.X,
-                col=self._annotation_col(rec),
+                col=self._annotation_col(record_indices),
                 row=ANNOTATION_ROW,
                 domain=Domain.CLASSICAL,
                 label=f"obs[{index}]",
@@ -408,33 +407,35 @@ class GraphBuilder:
             self._observables[index] = v0
 
         v0 = self._observables[index]
-        for rec_ in rec:
-            self._xor_record(v0, rec_)
+        for record_index in record_indices:
+            self._xor_record(v0, record_index)
 
-    def _annotation_col(self, rec: list[int]) -> float:
+    def _annotation_col(self, record_indices: list[int]) -> float:
         """Pick a fresh column for a detector/observable vertex.
 
-        Empty `rec` is valid Stim and represents a deterministic-zero annotation;
+        No records is valid Stim and represents a deterministic-zero annotation;
         fall back to a column after existing annotations rather than `min()` on an
         empty set.
         """
         d_cols = {self._graph.col(d) for d in self._detectors + self.observables}
-        if rec:
-            col: float = min(self._graph.col(self._records[r]) for r in rec) - 0.5
+        if record_indices:
+            col: float = (
+                min(self._graph.col(self._records[i]) for i in record_indices) - 0.5
+            )
         else:
             col = (max(d_cols) + 1) if d_cols else 0
         while col in d_cols:
             col += 1
         return col
 
-    def _xor_record(self, annotation: Vertex, rec: int) -> None:
-        """Add measurement record ``rec`` to the parity of ``annotation``.
+    def _xor_record(self, annotation: Vertex, record_index: int) -> None:
+        """Add measurement record ``record_index`` to the parity of ``annotation``.
 
         A record that is already in the parity cancels: its edge is removed rather
         than Hopf-cancelled by ``add_edge``, which would leave a scalar of 1/2 behind
         in graphs that drop the annotation.
         """
-        record = self._records[rec]
+        record = self._records[record_index]
         if self._graph.has_edge(annotation, record):
             self._graph.remove_edge(annotation, record)
         else:

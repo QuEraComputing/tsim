@@ -811,7 +811,8 @@ class Circuit:
 
     def tcount(self) -> int:
         """Count the spiders whose angle is not a multiple of π/2."""
-        return zx.tcount(parse_stim_circuit(self._stim_circ).graph)
+        builder = parse_stim_circuit(self._stim_circ)
+        return zx.tcount(builder.build(closed=False, outputs="none"))
 
     def get_graph(self) -> Graph:
         """Construct the circuit's quantum/classical ZX graph, with qubit ports.

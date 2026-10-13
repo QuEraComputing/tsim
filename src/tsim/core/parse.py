@@ -345,7 +345,7 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
 
     builder.finalize_correlated_error()
 
-    # Materialize every observable id from 0..num_observables-1 so missing
+    # NOTE: materialize every observable id from 0..num_observables-1 so missing
     # indices appear as deterministic-zero outputs, matching Stim semantics.
     # Including no records into an existing observable does nothing.
     for i in range(stim_circuit.num_observables):
