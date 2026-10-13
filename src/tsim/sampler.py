@@ -600,41 +600,31 @@ class _CompiledSamplerBase:
 
         result = np.zeros((shots, num_outputs), dtype=np.bool_)
         was_discarded = np.zeros(shots, dtype=np.bool_)
-        survivor_f_buf: list[np.ndarray] = []
-        survivor_idx_buf: list[int] = []
         shot_idx = 0
 
         sharing = self._sharing_arguments(
             postselection_mask, reference if xor_detector_ref else None
         )
 
-        def _dispatch(f_batch: np.ndarray, indices: list[int], n_valid: int) -> None:
+        # NOTE: a chunk adds at most batch_size survivors to fewer than batch_size
+        # pending ones, so two batches always hold the pending survivors.
+        num_f = self._channel_sampler.signature_matrix.shape[1]
+        pending_f = np.empty((2 * batch_size, num_f), dtype=np.uint8)
+        pending_shot = np.empty(2 * batch_size, dtype=np.int64)
+        pending = 0
+
+        def dispatch(count: int) -> None:
+            """Sample the first ``count`` pending survivors in one full batch."""
+            nonlocal pending
+            pending_f[count:batch_size] = pending_f[0]
             self._key, subkey = jax.random.split(self._key)
-            jax_out = np.asarray(
-                sample_program(self._program, jnp.asarray(f_batch), subkey, **sharing)
+            samples = sample_program(
+                self._program, jnp.asarray(pending_f[:batch_size]), subkey, **sharing
             )
-            result[indices[:n_valid]] = jax_out[:n_valid]
-
-        def _flush(*, final: bool = False) -> None:
-            nonlocal survivor_f_buf, survivor_idx_buf
-            while len(survivor_f_buf) >= batch_size:
-                _dispatch(
-                    np.stack(survivor_f_buf[:batch_size]),
-                    survivor_idx_buf[:batch_size],
-                    batch_size,
-                )
-                survivor_f_buf = survivor_f_buf[batch_size:]
-                survivor_idx_buf = survivor_idx_buf[batch_size:]
-
-            if final and survivor_f_buf:
-                n_valid = len(survivor_f_buf)
-                f_stack = np.stack(survivor_f_buf)
-                f_batch = np.empty((batch_size, f_stack.shape[1]), dtype=f_stack.dtype)
-                f_batch[:n_valid] = f_stack
-                f_batch[n_valid:] = f_stack[0]
-                _dispatch(f_batch, survivor_idx_buf, n_valid)
-                survivor_f_buf = []
-                survivor_idx_buf = []
+            result[pending_shot[:count]] = np.asarray(samples)[:count]
+            pending -= count
+            pending_f[:pending] = pending_f[count : count + pending]
+            pending_shot[:pending] = pending_shot[count : count + pending]
 
         while shot_idx < shots:
             chunk = min(batch_size, shots - shot_idx)
@@ -651,15 +641,18 @@ class _CompiledSamplerBase:
             ]
             was_discarded[shot_idx : shot_idx + chunk] = discarded
 
-            survivor_local = np.flatnonzero(~discarded)
-            if survivor_local.size:
-                survivor_f_buf.extend(f_params_np[survivor_local])
-                survivor_idx_buf.extend((shot_idx + survivor_local).tolist())
+            survivors = np.flatnonzero(~discarded)
+            end = pending + len(survivors)
+            pending_f[pending:end] = f_params_np[survivors]
+            pending_shot[pending:end] = shot_idx + survivors
+            pending = end
 
             shot_idx += chunk
-            _flush()
+            if pending >= batch_size:
+                dispatch(batch_size)
 
-        _flush(final=True)
+        if pending:
+            dispatch(pending)
 
         if xor_detector_ref and reference is not None:
             det_ref = reference[: self._num_detectors]
