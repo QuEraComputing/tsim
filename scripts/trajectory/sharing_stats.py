@@ -19,7 +19,7 @@ action by action on ``N`` lanes. After every action it counts
   different histories that reach the same state.
 
 Array work is counted as one unit per lane for every ``ROTATE*`` and
-``MEASURE*`` action (dormant measurements and records touch no amplitudes).
+``MEASURE*`` action (dormant measurements touch no amplitudes).
 The shared executor's work is the number of histories after each such action.
 
 ``--mode measurements`` samples raw measurement records instead of detectors
@@ -40,7 +40,7 @@ import jax.numpy as jnp
 import numpy as np
 
 import tsim
-from tsim.statevector.execute import _sign, initial_state, run
+from tsim.statevector.execute import _sign, initial_state, outputs, run
 from tsim.statevector.program import (
     MEASURE,
     MEASURE_DIAG,
@@ -48,6 +48,7 @@ from tsim.statevector.program import (
     ROTATE_DIAG,
     StatevectorComponent,
 )
+from tsim.statevector.shared import sharing_layout
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "statevector"))
 from benchmark import CIRCUITS, WORKLOADS
@@ -79,7 +80,7 @@ def _step(component, state, key, a):
 @jax.jit
 def _bits(component, before, after, a, f_words):
     """Return (full sign or outcome bit, f-part of the sign) of action ``a``."""
-    sign = _sign(component, before.symbols, a)
+    sign = _sign(component, before, a)
     ones = jnp.sum(
         jax.lax.population_count(before.symbols & component.sign_row[a] & f_words),
         axis=1,
@@ -125,13 +126,13 @@ def profile_component(
     """Step the executor action by action and count distinct lanes.
 
     ``postselected[s]`` says whether output slot ``s`` is postselected; a lane
-    whose postselected record is 1 is dead from that action on.
+    whose postselected output is 1 is dead from the action that decides it on.
     """
     lanes = f_bits.shape[0]
     state = initial_state(component, jnp.asarray(f_bits))
     key = jax.random.key(seed)
     kinds = np.asarray(component.kind)
-    slots = np.asarray(component.slot)
+    tested = np.asarray(sharing_layout(component, postselected).prune_outputs)
     alive = np.ones(lanes, dtype=bool)
     rng = np.random.default_rng(seed)
     weights = [
@@ -148,8 +149,8 @@ def profile_component(
         after = _step(component, state, key, a)
         bit, f_bit = (np.asarray(x) for x in _bits(component, state, after, a, f_words))
         state = after
-        if slots[a] >= 0 and postselected[slots[a]]:
-            alive &= ~np.asarray(state.records[:, slots[a]])
+        if tested[a].any():
+            alive &= ~np.asarray(outputs(component, state))[:, tested[a]].any(axis=1)
         if kinds[a] not in ARRAY_KINDS:
             continue
         histories = mix(histories, bit, 2 * a + 1)

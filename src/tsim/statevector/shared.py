@@ -1,11 +1,12 @@
 """Trajectory-sharing executor for statevector components (investigation prototype).
 
 Shots that agree on every symbol that reaches the amplitudes share one lane. The
-only per-shot input to the amplitudes is the sign of a rotation (a measurement's
-sign only flips its record), so a shot's grouping key is the f-bit part of every
-rotation sign. With postselection the key also holds the f-bit part of every
-postselected output's sign, so that a lane is pruned as a whole as soon as one
-of its postselected records is 1.
+only per-shot input to the amplitudes is the sign of a rotation (outputs are
+parities of the final symbols), so a shot's grouping key is the f-bit part of
+every rotation sign. With postselection the key also holds the f-bit part of
+every postselected output, so that a lane is pruned as a whole as soon as one of
+its postselected outputs is known to be 1: at the action that sets the output's
+last branch bit (the first measurement for an output of f-bits only).
 
 A lane holds amplitudes, the symbols of one of its shots (its f-bits agree with
 every member on the key, and its branch bits are the lane's outcomes), a shot
@@ -23,9 +24,9 @@ a fair coin drawn per shot at the end.
 Capacities are static. The dead table holds one entry per shot, so it never
 fills. When the lane table is full the loop stops before the action, the host
 doubles it and resumes; every lane slot draws from its own key, so the redone
-action draws the same numbers. After the tape each shot's records are evaluated
+action draws the same numbers. After the tape each shot's outputs are evaluated
 from its own f-bits, its lane's outcomes and its own dormant coins; a pruned
-shot's records after its pruning action are False.
+shot's outputs that need a branch bit set after its pruning action are False.
 """
 
 from __future__ import annotations
@@ -56,21 +57,24 @@ _MIN_CAPACITY = 16
 
 
 class SharingLayout(eqx.Module):
-    """Which symbols the shots of a lane must share, from the sign rows.
+    """Which symbols the shots of a lane must share, from the sign and output rows.
 
     Attributes:
         key_rows: f-bit masks whose parities form the grouping key, a basis of the
-            f-parts of every rotation sign and every postselected sign,
+            f-parts of every rotation sign and every postselected output,
             shape ``(K, num_words)``.
         lane_dormant: Dormant measurements that split lanes, shape ``(A,)``.
-        pruned: Actions whose record is postselected, shape ``(A,)``.
-        prune_flip: Reference bit XOR-ed into each pruned record before the
-            postselection test, shape ``(A,)``.
+        pruned: Actions after which some postselected output is tested,
+            shape ``(A,)``.
+        prune_outputs: The postselected outputs tested after each action,
+            shape ``(A, num_outputs)``.
+        prune_flip: Reference bit XOR-ed into each output before the
+            postselection test, shape ``(num_outputs,)``.
         lane_branches: Branch bits a lane carries, shape ``(num_words,)``.
         shot_dormant: Branch bits of the dormant measurements drawn per shot,
             shape ``(num_words,)``.
-        slot_action: The action that writes each output slot, shape
-            ``(num_outputs,)``.
+        ready: The action that sets each output's last branch bit, -1 for an
+            output of f-bits only, shape ``(num_outputs,)``.
         num_key_words: Number of uint32 words of a packed key.
 
     """
@@ -78,10 +82,11 @@ class SharingLayout(eqx.Module):
     key_rows: Array
     lane_dormant: Array
     pruned: Array
+    prune_outputs: Array
     prune_flip: Array
     lane_branches: Array
     shot_dormant: Array
-    slot_action: Array
+    ready: Array
     num_key_words: int = eqx.field(static=True)
 
 
@@ -123,21 +128,18 @@ def sharing_layout(
         component: The compiled component.
         postselected: Whether each output slot is postselected, shape
             ``(num_outputs,)``. ``None`` prunes nothing.
-        flipped: Reference bit of each output slot, XOR-ed into the record before
+        flipped: Reference bit of each output slot, XOR-ed into the output before
             the postselection test (``use_detector_reference_sample``), shape
             ``(num_outputs,)``. ``None`` flips nothing.
-
-    Raises:
-        ValueError: If a recorded measurement keeps no branch bit (its outcome
-            could not be recovered per shot).
 
     """
     num_words = component.num_words
     num_f = len(component.f_selection)
     kind = np.asarray(component.kind)
-    slot = np.asarray(component.slot)
     branch = np.asarray(component.branch)
-    bits = _unpack(np.asarray(component.sign_row), num_words)
+    num_actions = len(kind)
+    sign_bits = _unpack(np.asarray(component.sign_row), num_words)
+    output_bits = _unpack(np.asarray(component.output_row), num_words)
     num_outputs = component.num_outputs
     postselected = np.asarray(
         np.zeros(num_outputs) if postselected is None else postselected, dtype=bool
@@ -146,21 +148,29 @@ def sharing_layout(
         np.zeros(num_outputs) if flipped is None else flipped, dtype=bool
     )
 
-    measurement = np.isin(kind, (MEASURE_DIAG, MEASURE, MEASURE_DORMANT))
-    if np.any(measurement & (slot >= 0) & (branch < 0)):
-        raise ValueError("a recorded measurement has no branch bit")
-    pruned = (slot >= 0) & postselected[np.maximum(slot, 0)]
-    prune_flip = pruned & flipped[np.maximum(slot, 0)]
-    keyed = np.isin(kind, (ROTATE_DIAG, ROTATE)) | pruned
+    setter = np.full(32 * num_words, -1, dtype=np.int32)
+    setter[branch[branch >= 0]] = np.flatnonzero(branch >= 0)
+    ready = np.max(np.where(output_bits, setter[None, :], -1), axis=1, initial=-1)
+    measurements = np.flatnonzero(np.isin(kind, (MEASURE_DIAG, MEASURE)))
+    if len(measurements) == 0:
+        measurements = np.flatnonzero(kind == MEASURE_DORMANT)
+    first_measurement = measurements[0] if len(measurements) else -1
+    prune_at = np.where(ready >= 0, ready, first_measurement)
+    prune_outputs = np.zeros((num_actions, num_outputs), dtype=bool)
+    for o in np.flatnonzero(postselected & (prune_at >= 0)):
+        prune_outputs[prune_at[o], o] = True
+    pruned = prune_outputs.any(axis=1)
 
-    key_bits = bits[keyed][:, :num_f]
+    rotation = np.isin(kind, (ROTATE_DIAG, ROTATE))
+    keyed_bits = np.vstack([sign_bits[rotation], output_bits[postselected]])
+    key_bits = keyed_bits[:, :num_f]
     key_bits = key_bits[key_bits.any(axis=1)]
     if len(key_bits):
         key_bits, _ = find_basis(key_bits.astype(np.uint8))
         key_bits = np.asarray(key_bits, dtype=bool)
     num_key_words = max(1, -(-len(key_bits) // 32))
 
-    reaches_key = np.asarray(np.any(bits[keyed], axis=0), dtype=bool)
+    reaches_key = np.asarray(np.any(keyed_bits, axis=0), dtype=bool)
     dormant = kind == MEASURE_DORMANT
     lane_dormant = dormant & (pruned | ((branch >= 0) & reaches_key[branch]))
     active = np.isin(kind, (MEASURE_DIAG, MEASURE))
@@ -169,18 +179,15 @@ def sharing_layout(
     shot_bits = np.zeros(32 * num_words, dtype=bool)
     shot_bits[branch[dormant & ~lane_dormant & (branch >= 0)]] = True
 
-    slot_action = np.full(num_outputs, -1, dtype=np.int32)
-    for a in np.flatnonzero(slot >= 0):
-        slot_action[slot[a]] = a
-
     return SharingLayout(
         key_rows=jnp.asarray(_pack(key_bits, num_words).reshape(-1, num_words)),
         lane_dormant=jnp.asarray(lane_dormant),
         pruned=jnp.asarray(pruned),
-        prune_flip=jnp.asarray(prune_flip),
+        prune_outputs=jnp.asarray(prune_outputs),
+        prune_flip=jnp.asarray(flipped),
         lane_branches=jnp.asarray(_pack(lane_bits, num_words)),
         shot_dormant=jnp.asarray(_pack(shot_bits, num_words)),
-        slot_action=jnp.asarray(slot_action),
+        ready=jnp.asarray(ready.astype(np.int32)),
         num_key_words=num_key_words,
     )
 
@@ -295,7 +302,6 @@ def _lane_state(lanes: Lanes) -> LaneState:
     return LaneState(
         amps=lanes.amps,
         symbols=lanes.symbols,
-        records=jnp.zeros((lanes.count.shape[0], 1), dtype=jnp.bool_),
         count=lanes.count,
         max_norm_deviation=lanes.max_norm_deviation,
     )
@@ -392,18 +398,14 @@ def _set_branch(component: StatevectorComponent, symbols, a, outcome):
 
 
 def _prune(
-    component: StatevectorComponent,
-    layout: SharingLayout,
-    lanes: Lanes,
-    a: Array,
-    outcome: Array,
+    component: StatevectorComponent, layout: SharingLayout, lanes: Lanes, a: Array
 ) -> Lanes:
-    """Move live lanes that fail the postselection of action ``a`` to the dead table."""
+    """Move live lanes that fail the postselection after action ``a`` to the dead table."""
     capacity = lanes.count.shape[0]
     num_shots = lanes.dead_count.shape[0]
     live = jnp.arange(capacity) < lanes.used
-    sign = _parity(lanes.symbols & component.sign_row[a]) ^ component.sign_const[a]
-    dies = live & (outcome ^ sign ^ layout.prune_flip[a])
+    values = execute.outputs(component, _lane_state(lanes)) ^ layout.prune_flip
+    dies = live & jnp.any(values & layout.prune_outputs[a], axis=1)
     dead_slot = jnp.where(dies, lanes.dead_used + jnp.cumsum(dies) - 1, num_shots)
     keeps = live & ~dies
     kept_slot = jnp.where(keeps, jnp.cumsum(keeps) - 1, capacity)
@@ -428,17 +430,68 @@ def _prune(
     )
 
 
-def _finish(component, layout, lanes, split, a, outcome) -> Lanes:
+def _finish(component, layout, lanes, split, a) -> Lanes:
     """Prune ``split`` and advance, or flag ``lanes`` if the lane table is full."""
     pruned = jax.lax.cond(
         layout.pruned[a],
-        lambda: _prune(component, layout, split, a, outcome),
+        lambda: _prune(component, layout, split, a),
         lambda: split,
     )
     full = split.used > lanes.count.shape[0]
     advanced = pruned._replace(action=(a + 1).astype(jnp.int32))
     flagged = lanes._replace(full=jnp.asarray(True))
     return jax.tree.map(lambda old, new: jnp.where(full, old, new), flagged, advanced)
+
+
+def _measure_weights(
+    component: StatevectorComponent, amps: Array, a: Array
+) -> tuple[Array, Array]:
+    """Return each lane's outcome weights ``(w0, w1)`` of ``MEASURE`` action ``a``."""
+    paulied = execute._apply_pauli(
+        amps, execute._index(component), component.x_mask[a], component.z_mask[a]
+    )
+    weight_0 = jnp.sum(execute._squared(amps + paulied), axis=1) / 4
+    weight_1 = jnp.sum(execute._squared(amps - paulied), axis=1) / 4
+    return weight_0, weight_1
+
+
+def _measure_project(
+    component: StatevectorComponent, amps: Array, a: Array, outcome: Array, weight
+) -> Array:
+    """Return the amplitudes after ``MEASURE`` ``a`` gave ``outcome`` of ``weight``."""
+    index = execute._index(component)
+    paulied = execute._apply_pauli(
+        amps, index, component.x_mask[a], component.z_mask[a]
+    )
+    projected = jnp.where(outcome[:, None], amps - paulied, amps + paulied)
+    scale = jax.lax.rsqrt(jnp.maximum(2 * weight, execute._TINY))[:, None]
+    keep = ((index >> component.pivot[a].astype(jnp.uint32)) & 1) == 0
+    return jnp.where(keep[None, :], projected * scale, 0)
+
+
+def _measure_diag_weights(
+    component: StatevectorComponent, amps: Array, a: Array
+) -> tuple[Array, Array]:
+    """Return each lane's outcome weights ``(w0, w1)`` of ``MEASURE_DIAG`` ``a``."""
+    odd = execute._parity(execute._index(component) & component.z_mask[a])
+    weights = execute._squared(amps)
+    weight_0 = jnp.sum(jnp.where(odd[None, :], 0, weights), axis=1)
+    weight_1 = jnp.sum(jnp.where(odd[None, :], weights, 0), axis=1)
+    return weight_0, weight_1
+
+
+def _measure_diag_project(
+    component: StatevectorComponent, amps: Array, a: Array, outcome: Array, weight
+) -> Array:
+    """Return the amplitudes after ``MEASURE_DIAG`` ``a`` gave ``outcome``."""
+    index = execute._index(component)
+    odd = execute._parity(index & component.z_mask[a])
+    pivot = component.pivot[a].astype(jnp.uint32)
+    partner = jnp.take(amps, (index ^ (jnp.uint32(1) << pivot)).astype(jnp.int32), 1)
+    gathered = jnp.where(odd[None, :] == outcome[:, None], amps, partner)
+    scale = jax.lax.rsqrt(jnp.maximum(weight, execute._TINY))[:, None]
+    keep = ((index >> pivot) & 1) == 0
+    return jnp.where(keep[None, :], gathered * scale, 0)
 
 
 def _measure_kernel(weights, project):
@@ -458,7 +511,7 @@ def _measure_kernel(weights, project):
                 deviation.astype(lanes.max_norm_deviation.dtype),
             ),
         )
-        return _finish(component, layout, lanes, split, a, outcome)
+        return _finish(component, layout, lanes, split, a)
 
     return kernel
 
@@ -481,7 +534,7 @@ def _dormant(component, layout, lanes, a, key):
             amps=lanes.amps[source],
             symbols=_set_branch(component, split.symbols, a, outcome),
         )
-        return _finish(component, layout, lanes, split, a, outcome)
+        return _finish(component, layout, lanes, split, a)
 
     def skip(lanes):
         return lanes._replace(action=(a + 1).astype(jnp.int32))
@@ -489,20 +542,14 @@ def _dormant(component, layout, lanes, a, key):
     return jax.lax.cond(layout.lane_dormant[a], split_lanes, skip, lanes)
 
 
-def _record(component, layout, lanes, a, key):
-    del key
-    outcome = jnp.zeros(lanes.count.shape, dtype=jnp.bool_)
-    return _finish(component, layout, lanes, lanes, a, outcome)
-
-
-# NOTE: the order must match the kind codes ROTATE_DIAG … RECORD in program.py.
+# NOTE: the order must match the kind codes ROTATE_DIAG … MEASURE_DORMANT in
+# program.py.
 _KERNELS = (
     _rotate_kernel(execute._rotate_diag),
     _rotate_kernel(execute._rotate),
-    _measure_kernel(execute.measure_diag_weights, execute.measure_diag_project),
-    _measure_kernel(execute.measure_weights, execute.measure_project),
+    _measure_kernel(_measure_diag_weights, _measure_diag_project),
+    _measure_kernel(_measure_weights, _measure_project),
     _dormant,
-    _record,
 )
 
 
@@ -557,7 +604,7 @@ def reconstruct(
     f_packed: Array,
     key: Array,
 ) -> Array:
-    """Return every shot's records, in the original shot order."""
+    """Return every shot's outputs, in the original shot order."""
     num_shots = f_packed.shape[0]
     capacity = lanes.count.shape[0]
     live = jnp.concatenate(
@@ -587,24 +634,11 @@ def reconstruct(
         | (symbols[entry] & layout.lane_branches)
         | (coins & layout.shot_dormant)
     )
-    actions = jnp.maximum(layout.slot_action, 0)
-    ones = jnp.sum(
-        jax.lax.population_count(
-            shot_symbols[:, None, :] & component.sign_row[actions][None]
-        ),
-        axis=2,
+    values = execute._affine(
+        shot_symbols[:, None, :], component.output_row, component.output_const
     )
-    sign = ((ones & 1) == 1) ^ component.sign_const[actions]
-    branch = component.branch[actions]
-    words = jnp.take_along_axis(
-        shot_symbols, jnp.broadcast_to(jnp.maximum(branch, 0) // 32, sign.shape), axis=1
-    )
-    shift = (jnp.maximum(branch, 0) % 32).astype(jnp.uint32)
-    outcome = ((words >> shift) & 1).astype(jnp.bool_) & (branch >= 0)
-    written = (layout.slot_action >= 0)[None, :] & (
-        layout.slot_action[None, :] <= pruned_at[entry][:, None]
-    )
-    values = (sign ^ outcome) & written
+    written = layout.ready[None, :] <= pruned_at[entry][:, None]
+    values = values & written
     return jnp.zeros_like(values).at[order].set(values)
 
 

@@ -2,6 +2,7 @@ from test.helpers.statevector import (
     CIRCUITS,
     assert_matches_distribution,
     f_patterns,
+    output_indices,
     plan_distribution,
     quantum_components,
 )
@@ -33,7 +34,8 @@ NAMES = [
 def _compiled(name):
     components, layout = quantum_components(CIRCUITS[name], sample_detectors=True)
     for component in components:
-        planned, component_layout = plan_component(component, layout)
+        indices = output_indices(component)
+        planned, component_layout = plan_component(component, indices, layout)
         yield planned, component_layout, lower(planned, component_layout, "complex64")
 
 
@@ -145,10 +147,12 @@ def test_pruned_shots_report_false_after_their_pruning_action(name):
             compiled, sharing, jnp.asarray(f_params), jax.random.key(9)
         )
         rows = np.asarray(samples)
-        by_action = np.argsort(np.asarray(sharing.layout.slot_action))
-        ordered = rows[:, by_action]
-        fired = ordered.cumsum(axis=1)
-        assert not np.any(ordered & (fired > 1)), "a record after the pruning one is 1"
+        ready = np.asarray(sharing.layout.ready)
+        tested = np.asarray(sharing.layout.prune_outputs)
+        prune_at = np.where(tested.any(axis=0), tested.argmax(axis=0), ready)
+        pruning = np.min(np.where(rows, prune_at[None, :], np.inf), axis=1)
+        late = rows & (ready[None, :] > pruning[:, None])
+        assert not np.any(late), "an output set after the pruning action is 1"
 
 
 def test_full_tables_grow_and_resume(monkeypatch):

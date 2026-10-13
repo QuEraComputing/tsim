@@ -14,7 +14,7 @@ prints, per clifft-bench workload:
   components with their widths;
 - the widest component's tape: actions, rotations, active measurements, dormant
   measurements, and in detector mode where the postselected outputs fall (mean
-  position as a fraction of the tape, and the share written in its first half).
+  position as a fraction of the tape, and the share decided in its first half).
 """
 
 import argparse
@@ -68,14 +68,12 @@ def describe(name: str, detectors: bool) -> str:
         f"{int((kind == MEASURE_DORMANT).sum())} |"
     )
     if detectors:
-        slot = np.asarray(component.slot)
-        written = np.flatnonzero(slot >= 0)
-        postselected = [
-            a
-            for a in written
-            if component.output_indices[slot[a]] < circuit.num_detectors
-        ]
-        position = np.asarray(postselected) / max(component.num_actions - 1, 1)
+        detector = np.array(
+            [index < circuit.num_detectors for index in component.output_indices]
+        )
+        tested = np.asarray(sharing_layout(component, detector).prune_outputs)
+        postselected = tested.argmax(axis=0)[tested.any(axis=0)]
+        position = postselected / max(component.num_actions - 1, 1)
         if len(position):
             row += f" {position.mean():.2f} | {np.mean(position < 0.5):.0%} |"
         else:
