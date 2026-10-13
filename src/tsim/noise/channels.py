@@ -464,10 +464,12 @@ def absorb_subset_channels(channels: list[Channel], max_bits: int = 4) -> list[C
         max_bits: Maximum number of bits allowed per channel
 
     Returns:
-        List with no channel being a strict subset of another
+        List in which no channel is a strict subset of another of at most
+        ``max_bits`` signatures
 
     """
-    # Sort by number of bits (largest first) for efficient processing
+    # NOTE: largest first, so that every channel is absorbed into the first
+    # channel that contains it.
     channels = sorted(channels, key=lambda c: -len(c.unique_col_ids))
 
     # NOTE: a channel of at most max_bits signatures has few strict subsets, so
@@ -534,16 +536,15 @@ def simplify_channels(
 
 
 def unique_columns(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Return ``np.unique(matrix, axis=1, return_inverse=True)`` for a binary matrix.
+    """Return ``np.unique(matrix, axis=1, return_inverse=True)``, with a 1-D inverse.
 
-    ``np.unique`` sorts every column, comparing whole columns, which takes about a
-    minute for the 2,821 x 184,039 error transform of a d=5 end-to-end
-    cultivation circuit. Here a dict over the bit-packed columns finds the
+    ``np.unique`` sorts every column, comparing whole columns, which is slow for
+    a large sparse matrix. Here a dict over the bit-packed columns finds the
     distinct ones, and only those are sorted. Big-endian packing keeps the
     lexicographic order of the columns, so the result is the same.
 
     Args:
-        matrix: Binary matrix with entries 0 or 1.
+        matrix: Binary matrix with entries 0 or 1 (nonzero entries count as 1).
 
     Returns:
         The distinct columns in lexicographic order, and the index of each
@@ -552,15 +553,15 @@ def unique_columns(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     packed = np.ascontiguousarray(np.packbits(matrix, axis=0).T)
     ids: dict[bytes, int] = {}
-    seen = np.array(
+    column_ids = np.array(
         [ids.setdefault(column.tobytes(), len(ids)) for column in packed],
         dtype=np.int64,
     )
-    _, first = np.unique(seen, return_index=True)
+    _, first = np.unique(column_ids, return_index=True)
     _, order = np.unique(packed[first], axis=0, return_index=True)
     rank = np.empty_like(order)
     rank[order] = np.arange(len(order))
-    return matrix[:, first[order]], rank[seen]
+    return matrix[:, first[order]], rank[column_ids]
 
 
 class ChannelSampler:
@@ -578,9 +579,9 @@ class ChannelSampler:
     Channels are automatically simplified by:
     1. Removing bits e_i that do not affect any f-variable (i.e. all-zero columns in error_transform)
     2. Folding duplicate column IDs, i.e. channels whose column signatures contain duplicate IDs.
-    2. Merging channels with identical column signatures, i.e. channels whose corresponding
+    3. Merging channels with identical column signatures, i.e. channels whose corresponding
         columns in error_transform are identical.
-    3. Absorbing channels whose signatures are subsets of others, i.e. channels whose corresponding
+    4. Absorbing channels whose signatures are subsets of others, i.e. channels whose corresponding
         columns in error_transform are a strict subset of another channel's columns.
 
     Example:
