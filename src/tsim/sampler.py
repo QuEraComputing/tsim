@@ -20,7 +20,11 @@ from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.execute import lane_bytes, sample_statevector_component
 from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
-from tsim.statevector.shared import Sharing, sample_shared_component, sharing_layout
+from tsim.statevector.shared import (
+    SharingLayout,
+    sample_shared_component,
+    sharing_layout,
+)
 from tsim.utils.cuda_helpers import copy_d2h
 from tsim.utils.kernels import kernel
 
@@ -128,7 +132,7 @@ def sample_program(
     program: CompiledProgram,
     f_params: jax.Array,
     key: PRNGKey,
-    sharing: tuple[Sharing | None, ...] | None = None,
+    sharing: tuple[SharingLayout | None, ...] | None = None,
     sharing_stats: deque[dict] | None = None,
 ) -> jax.Array:
     """Sample all outputs from a compiled program.
@@ -137,7 +141,7 @@ def sample_program(
         program: The compiled program to sample from.
         f_params: Error parameters, shape (batch_size, num_f_params).
         key: JAX random key.
-        sharing: One sharing state per component, to sample statevector
+        sharing: One sharing layout per component, to sample statevector
             components with shared trajectories; ``None`` samples one lane per
             shot.
         sharing_stats: If given, the shared executor appends its lane counts.
@@ -147,7 +151,7 @@ def sample_program(
         match the original output indices.
 
     """
-    results: list[jax.Array] = []
+    results: list[jax.Array | np.ndarray] = []
 
     if program.num_outputs == 0:
         batch_size = f_params.shape[0]
@@ -257,7 +261,7 @@ class _CompiledSamplerBase:
 
         self._key = jax.random.key(seed)
         self._trajectory_sharing = trajectory_sharing
-        self._sharing: dict[bytes, tuple[Sharing | None, ...]] = {}
+        self._sharing: dict[bytes, tuple[SharingLayout | None, ...]] = {}
         self.sharing_stats: deque[dict] = deque(maxlen=10_000)
 
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
@@ -342,22 +346,20 @@ class _CompiledSamplerBase:
         if key not in self._sharing:
             self._sharing[key] = tuple(
                 (
-                    Sharing(
-                        sharing_layout(
-                            component,
-                            np.array(
-                                [
-                                    i < num_detectors and bool(mask[i])
-                                    for i in component.output_indices
-                                ]
-                            ),
-                            np.array(
-                                [
-                                    i < num_detectors and bool(flip[i])
-                                    for i in component.output_indices
-                                ]
-                            ),
-                        )
+                    sharing_layout(
+                        component,
+                        np.array(
+                            [
+                                i < num_detectors and bool(mask[i])
+                                for i in component.output_indices
+                            ]
+                        ),
+                        np.array(
+                            [
+                                i < num_detectors and bool(flip[i])
+                                for i in component.output_indices
+                            ]
+                        ),
                     )
                     if isinstance(component, StatevectorComponent)
                     else None
