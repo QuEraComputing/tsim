@@ -6,6 +6,7 @@
         * [pipeline](tsim/compile/pipeline.md)
         * [terms](tsim/compile/terms.md)
     * [core](tsim/core/index.md)
+        * [builder](tsim/core/builder.md)
         * [exact_scalar](tsim/core/exact_scalar.md)
         * [graph](tsim/core/graph.md)
         * [instructions](tsim/core/instructions.md)
