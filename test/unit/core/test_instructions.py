@@ -187,7 +187,7 @@ def test_records_and_detectors_are_classical_spiders():
     builder = GraphBuilder()
     instructions.m(builder, 0)
     builder.add_detector([0])
-    (rec,) = builder.rec
+    (rec,) = builder.records
     (det,) = builder.detectors
     g = builder.graph
     assert (g.vertex_type(rec), g.vertex_domain(rec)) == (
@@ -206,6 +206,22 @@ def test_cz_between_two_measurement_records_does_nothing():
     with_cz = Circuit("H 0 1\nM 0 1\nCZ rec[-1] rec[-2]\nH 0")
     without = Circuit("H 0 1\nM 0 1\nH 0")
     np.testing.assert_allclose(with_cz.to_tensor(), without.to_tensor(), atol=1e-12)
+
+
+def test_pending_correlated_error_must_be_finalized():
+    builder = GraphBuilder()
+    builder.correlated_error([0], ["X"], 0.1)
+    reads = [
+        lambda: builder.channel_probs,
+        lambda: builder.num_error_bits,
+        lambda: builder.build(closed=True, outputs="records"),
+    ]
+    for read in reads:
+        with pytest.raises(RuntimeError, match="finalize_correlated_error"):
+            read()
+    builder.finalize_correlated_error()
+    assert builder.num_error_bits == 1
+    assert [p.shape for p in builder.channel_probs] == [(2,)]
 
 
 @pytest.mark.parametrize("gate", [instructions.cnot, instructions.cz, instructions.cy])
