@@ -3,6 +3,7 @@ import pytest
 from numpy.testing import assert_allclose
 
 from tsim.noise.channels import (
+    _BLOCK_SHOTS,
     Channel,
     ChannelSampler,
     absorb_subset_channels,
@@ -10,6 +11,7 @@ from tsim.noise.channels import (
     correlated_error_probs,
     error_probs,
     expand_channel,
+    fire_tables,
     fold_duplicate_channel_bits,
     heralded_pauli_channel_1_probs,
     merge_identical_channels,
@@ -213,9 +215,7 @@ def _sample_channels(channels, matrix, n_samples, seed=42):
     sampler.channels = channels
     sampler.signature_matrix = np.asarray(matrix, dtype=np.uint8)
     sampler._rng = np.random.default_rng(seed)
-    sampler._sparse_data = ChannelSampler._precompute_sparse(
-        channels, sampler.signature_matrix
-    )
+    sampler._tables = fire_tables(channels, sampler.signature_matrix)
     return sampler.sample(n_samples)
 
 
@@ -1046,6 +1046,42 @@ class TestChannelSampler:
         # P(odd number of 1s) = 3*0.1*0.9^2 + 0.1^3 = 0.244
         expected = 3 * 0.1 * 0.9**2 + 0.1**3
         assert_allclose(freq, expected, rtol=0.05)
+
+    def test_two_bit_channel_joint_distribution_across_blocks(self):
+        """Every outcome of a 2-bit channel has its probability, in every block."""
+        probs = np.array([0.5, 0.2, 0.25, 0.05])
+        transform = np.eye(2, dtype=np.uint8)
+        sampler = ChannelSampler([probs], transform, seed=3)
+        num_samples = 5 * _BLOCK_SHOTS + 123
+        samples = sampler.sample(num_samples)
+        outcome = samples[:, 0] + 2 * samples[:, 1]
+        counts = np.bincount(outcome, minlength=4)
+        sigma = np.sqrt(num_samples * probs * (1 - probs))
+        assert np.all(np.abs(counts - num_samples * probs) <= 5 * sigma)
+
+    def test_certain_error_flips_every_row(self):
+        """A channel that always fires reaches every row, last partial block too."""
+        sampler = ChannelSampler(
+            [error_probs(1.0)], np.ones((1, 1), dtype=np.uint8), seed=0
+        )
+        assert np.all(sampler.sample(2 * _BLOCK_SHOTS + 7) == 1)
+
+    def test_seed_reproduces_samples(self):
+        """Equal seeds give equal samples; consecutive calls differ."""
+        probs = [error_probs(0.1), error_probs(0.2)]
+        transform = np.array([[1, 0], [1, 1]], dtype=np.uint8)
+        first = ChannelSampler(probs, transform, seed=5)
+        second = ChannelSampler(probs, transform, seed=5)
+        a, b = first.sample(10_000), second.sample(10_000)
+        assert np.array_equal(a, b)
+        assert not np.array_equal(first.sample(10_000), a)
+
+    def test_zero_samples(self):
+        """Sampling no shots returns an empty array with one column per f."""
+        sampler = ChannelSampler(
+            [error_probs(0.1)], np.ones((1, 1), dtype=np.uint8), seed=0
+        )
+        assert sampler.sample(0).shape == (0, 1)
 
     def test_empty_transform(self):
         """Test with no f-variables (empty transform)."""

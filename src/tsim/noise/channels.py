@@ -4,8 +4,15 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import NamedTuple
 
+import numba
 import numpy as np
+
+# NOTE: shots are sampled in blocks of this many rows, in parallel, each block
+# from its own random stream; a block's rows stay in cache while every channel
+# visits them.
+_BLOCK_SHOTS = 4096
 
 
 @dataclass
@@ -584,61 +591,15 @@ class ChannelSampler:
         self._rng = np.random.default_rng(
             seed if seed is not None else np.random.default_rng().integers(0, 2**30)
         )
-        self._sparse_data = self._precompute_sparse(
-            self.channels, self.signature_matrix
-        )
-
-    @staticmethod
-    def _precompute_sparse(
-        channels: list[Channel], signature_matrix: np.ndarray
-    ) -> list[tuple[float, np.ndarray, np.ndarray]]:
-        """Precompute per-channel data for geometric-skip sampling.
-
-        For each channel with non-trivial fire probability, computes:
-        - p_fire: probability of any non-identity outcome
-        - cond_cdf: conditional CDF over non-identity outcomes
-        - xor_patterns: precomputed XOR output patterns per outcome
-
-        Args:
-            channels: List of noise channels to precompute data for.
-            signature_matrix: Binary matrix of shape (num_e, num_f) mapping
-                error-variable columns to output f-variables.
-
-        Returns:
-            List of (p_fire, cond_cdf, xor_patterns) tuples, one per channel
-            with non-trivial fire probability. ``p_fire`` is a float,
-            ``cond_cdf`` is a float64 array of shape (n_outcomes - 1,), and
-            ``xor_patterns`` is a uint8 array of shape (n_outcomes - 1, num_f).
-
-        """
-        data: list[tuple[float, np.ndarray, np.ndarray]] = []
-        for ch in channels:
-            probs = ch.probs.astype(np.float64)
-            p_fire = 1.0 - float(probs[0])
-            n_outcomes = len(probs)
-
-            if p_fire <= 1e-15 or n_outcomes <= 1:
-                continue
-
-            cond_cdf = np.cumsum(probs[1:] / p_fire, dtype=np.float64)
-            cond_cdf /= cond_cdf[-1]
-
-            col_ids = np.asarray(ch.unique_col_ids)
-            num_bits = len(col_ids)
-            outcomes = np.arange(1, n_outcomes)
-            bits_mask = ((outcomes[:, None] >> np.arange(num_bits)) & 1).astype(
-                np.uint8
-            )
-            xor_patterns = (bits_mask @ signature_matrix[col_ids] % 2).astype(np.uint8)
-
-            data.append((p_fire, cond_cdf, xor_patterns))
-        return data
+        self._tables = fire_tables(self.channels, self.signature_matrix)
 
     def sample(self, num_samples: int = 1) -> np.ndarray:
         """Sample from all error channels and transform to new error basis.
 
         Uses geometric-skip sampling, optimized for low-noise regimes where
-        P(non-identity) << 1 per channel.
+        P(non-identity) << 1 per channel. Blocks of shots are sampled in
+        parallel, each from its own random stream, so the samples depend on the
+        seed and ``num_samples`` but not on the number of threads.
 
         Args:
             num_samples: Number of samples to draw.
@@ -648,24 +609,98 @@ class ChannelSampler:
             which f-variables are set for each sample.
 
         """
-        num_outputs = self.signature_matrix.shape[1]
-        result = np.zeros((num_samples, num_outputs), dtype=np.uint8)
-
-        for p_fire, cond_cdf, xor_pats in self._sparse_data:
-            expected = num_samples * p_fire
-            sigma = np.sqrt(expected * (1.0 - p_fire))
-            # At 7 sigma, we undersample in about 1 out of 1e12 cases
-            n_draws = int(expected + 7.0 * sigma) + 100
-
-            positions = np.cumsum(self._rng.geometric(p_fire, size=n_draws)) - 1
-            positions = positions[positions < num_samples]
-
-            if len(positions) == 0:
-                continue
-
-            outcome_idx = np.searchsorted(
-                cond_cdf, self._rng.uniform(size=len(positions))
-            )
-            result[positions] ^= xor_pats[outcome_idx]
-
+        num_f = self.signature_matrix.shape[1]
+        result = np.zeros((num_samples, num_f), dtype=np.uint8)
+        num_blocks = -(-num_samples // _BLOCK_SHOTS)
+        seeds = self._rng.integers(0, 2**64, size=num_blocks, dtype=np.uint64)
+        _sample_blocks(result, seeds, *self._tables)
         return result
+
+
+class FireTables(NamedTuple):
+    """Geometric-skip sampling tables of the channels that can fire.
+
+    Channel ``c`` fires with probability ``p_fire[c]``. Its non-identity
+    outcomes are ``outcome_start[c] … outcome_start[c+1] - 1``, picked by the
+    conditional CDF ``cdf`` over those indices, and outcome ``k`` flips the
+    f-variables ``flip_cols[flip_start[k] : flip_start[k+1]]``.
+    """
+
+    p_fire: np.ndarray
+    outcome_start: np.ndarray
+    cdf: np.ndarray
+    flip_start: np.ndarray
+    flip_cols: np.ndarray
+
+
+def fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> FireTables:
+    """Return the sampling tables of ``channels``.
+
+    Args:
+        channels: The noise channels.
+        signature_matrix: Binary matrix of shape (num_signatures, num_f) mapping
+            each column ID to the f-variables it flips.
+
+    """
+    p_fire: list[float] = []
+    cdf: list[float] = []
+    flip_cols: list[int] = []
+    outcome_start, flip_start = [0], [0]
+    for channel in channels:
+        probs = channel.probs.astype(np.float64)
+        fire = 1.0 - float(probs[0])
+        if fire <= 1e-15 or len(probs) <= 1:
+            continue
+        p_fire.append(fire)
+        conditional = np.cumsum(probs[1:] / fire)
+        cdf.extend(conditional / conditional[-1])
+        outcome_start.append(len(cdf))
+        col_ids = np.asarray(channel.unique_col_ids)
+        outcomes = np.arange(1, len(probs))
+        bits = (outcomes[:, None] >> np.arange(len(col_ids))) & 1
+        for flips in bits @ signature_matrix[col_ids] % 2:
+            flip_cols.extend(np.flatnonzero(flips).tolist())
+            flip_start.append(len(flip_cols))
+    return FireTables(
+        p_fire=np.array(p_fire, dtype=np.float64),
+        outcome_start=np.array(outcome_start, dtype=np.int64),
+        cdf=np.array(cdf, dtype=np.float64),
+        flip_start=np.array(flip_start, dtype=np.int64),
+        flip_cols=np.array(flip_cols, dtype=np.int64),
+    )
+
+
+@numba.njit(cache=True)
+def _next_uniform(state: np.uint64) -> tuple[np.uint64, float]:
+    """Advance a SplitMix64 state; return it and a uniform float in [0, 1)."""
+    state += np.uint64(0x9E3779B97F4A7C15)
+    z = (state ^ (state >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
+    z = (z ^ (z >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
+    z ^= z >> np.uint64(31)
+    return state, (z >> np.uint64(11)) * 2.0**-53
+
+
+@numba.njit(cache=True)
+def _sample_block(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols):
+    """XOR every channel's outcomes into the rows of ``out`` it fires on."""
+    for c in range(len(p_fire)):
+        log_keep = np.log1p(-p_fire[c])
+        first, last = outcome_start[c], outcome_start[c + 1]
+        row = -1
+        while True:
+            state, u = _next_uniform(state)
+            row += 1 + int(np.log1p(-u) / log_keep)
+            if row >= out.shape[0]:
+                break
+            state, u = _next_uniform(state)
+            k = first + np.searchsorted(cdf[first:last], u, side="right")
+            for j in range(flip_start[k], flip_start[k + 1]):
+                out[row, flip_cols[j]] ^= 1
+
+
+@numba.njit(parallel=True, cache=True)
+def _sample_blocks(out, seeds, p_fire, outcome_start, cdf, flip_start, flip_cols):
+    """Sample block ``b`` of ``_BLOCK_SHOTS`` rows from the stream ``seeds[b]``."""
+    for b in numba.prange(len(seeds)):
+        rows = out[b * _BLOCK_SHOTS : (b + 1) * _BLOCK_SHOTS]
+        _sample_block(rows, seeds[b], p_fire, outcome_start, cdf, flip_start, flip_cols)
