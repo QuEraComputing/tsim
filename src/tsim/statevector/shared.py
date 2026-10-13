@@ -22,11 +22,11 @@ it is a fair coin drawn per shot at the end.
 
 Lanes live in growable arrays, and a Python loop runs the tape: each action calls
 a numba kernel on the live lanes and on the ``2^extent`` amplitudes the action
-can touch. When the extent grows, the newly touched amplitudes are
-cleared, because a slot reused for another lane can hold stale values there.
-After the tape each shot's outputs are evaluated from its own f-bits, its lane's
-outcomes and its own dormant coins; a pruned shot's outputs that need a branch
-bit set after its pruning action are False.
+can touch. When the extent grows, the newly touched amplitudes are cleared,
+because a slot reused for another lane can hold stale values there. After the
+tape each shot's outputs are evaluated from its own f-bits, its lane's outcomes
+and its own dormant coins; a pruned shot's outputs that need a branch bit set
+after its pruning action are False.
 """
 
 from __future__ import annotations
@@ -392,7 +392,7 @@ class _Lanes:
 
     def __init__(self, symbols, start, count, width: int, dtype: np.dtype):
         self.size = len(start)
-        self.shots = max(1, int(np.sum(count)))
+        self.shots = int(np.sum(count))
         capacity = min(max(16, 2 * self.size), self.shots)
         self.amps = np.zeros((capacity, 1 << width), dtype=dtype)
         self.amps[: self.size, 0] = 1
