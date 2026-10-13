@@ -771,15 +771,15 @@ class Circuit:
                 zoomable=zoomable,
             )
         elif type == "zx":
-            built = parse_stim_circuit(self._stim_circ)
-            return draw_zx(circuit_graph(built), built.num_error_bits, kwargs)
+            builder = parse_stim_circuit(self._stim_circ)
+            return draw_zx(circuit_graph(builder), builder.num_error_bits, kwargs)
         elif type in ("zx-dets", "zx-meas"):
-            built = parse_stim_circuit(self._stim_circ)
-            g = build_sampling_graph(built, sample_detectors=type == "zx-dets")
+            builder = parse_stim_circuit(self._stim_circ)
+            g = build_sampling_graph(builder, sample_detectors=type == "zx-dets")
             zx.full_reduce(g)
-            g, _ = transform_error_basis(g, built.num_error_bits)
+            g, _ = transform_error_basis(g, builder.num_error_bits)
             g.to_rg()
-            return draw_zx(g, built.num_error_bits, kwargs, layout="outputs")
+            return draw_zx(g, builder.num_error_bits, kwargs, layout="outputs")
         elif type == "timeline-text":
             from stim_timeline_text import render_timeline_text
 
@@ -796,16 +796,16 @@ class Circuit:
         ``ValueError`` for any other key. Detector and observable annotations are
         left out. Needs ``zxparam[quimb]``.
         """
-        built = parse_stim_circuit(self._stim_circ)
-        values: dict[int, Bit] = {j: 0 for j in range(built.num_error_bits)}
+        builder = parse_stim_circuit(self._stim_circ)
+        values: dict[int, Bit] = {j: 0 for j in range(builder.num_error_bits)}
         for j, bit in (bindings or {}).items():
             if j not in values:
                 raise ValueError(
                     f"{j!r} is not an error index of this circuit, which has "
-                    f"{built.num_error_bits} error bit(s)"
+                    f"{builder.num_error_bits} error bit(s)"
                 )
             values[j] = 1 if bit else 0
-        return circuit_graph(built, annotations=False).to_tensor(values)
+        return circuit_graph(builder, annotations=False).to_tensor(values)
 
     def tcount(self) -> int:
         """Count the spiders whose angle is not a multiple of π/2."""
@@ -850,8 +850,8 @@ class Circuit:
             A ZX graph for sampling.
 
         """
-        built = parse_stim_circuit(self._stim_circ)
-        return build_sampling_graph(built, sample_detectors=sample_detectors)
+        builder = parse_stim_circuit(self._stim_circ)
+        return build_sampling_graph(builder, sample_detectors=sample_detectors)
 
     def compile_sampler(
         self,

@@ -9,7 +9,7 @@ import stim
 
 from tsim.core.instructions import (
     GATE_TABLE,
-    GraphRepresentation,
+    GraphBuilder,
     correlated_error,
     detector,
     finalize_correlated_error,
@@ -196,17 +196,17 @@ def _iter_pauli_products(
             invert = False
 
 
-def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphRepresentation:
-    """Parse a stim circuit into a GraphRepresentation.
+def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
+    """Parse a stim circuit into a GraphBuilder.
 
     Args:
         stim_circuit: The stim circuit to convert.
 
     Returns:
-        A GraphRepresentation containing the ZX graph and all auxiliary data.
+        A GraphBuilder containing the ZX graph and all auxiliary data.
 
     """
-    b = GraphRepresentation()
+    builder = GraphBuilder()
 
     for instruction in stim_circuit.flattened():
         assert not isinstance(instruction, stim.CircuitRepeatBlock)
@@ -236,30 +236,36 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphRepresentation:
                 targets = [t.value for t in instruction.targets_copy()]
                 for qubit in targets:
                     if gate_name == "R_Z":
-                        r_z(b, qubit, params["theta"])
+                        r_z(builder, qubit, params["theta"])
                     elif gate_name == "R_X":
-                        r_x(b, qubit, params["theta"])
+                        r_x(builder, qubit, params["theta"])
                     elif gate_name == "R_Y":
-                        r_y(b, qubit, params["theta"])
+                        r_y(builder, qubit, params["theta"])
                     elif gate_name == "U3":
-                        u3(b, qubit, params["theta"], params["phi"], params["lambda"])
+                        u3(
+                            builder,
+                            qubit,
+                            params["theta"],
+                            params["phi"],
+                            params["lambda"],
+                        )
                     else:
                         raise ValueError(f"Unknown parametric gate: {gate_name}")
                 continue
 
         if name == "TICK":
-            tick(b)
+            tick(builder)
             continue
         if name == "MPP":
             args = instruction.gate_args_copy()
             p = args[0] if args else 0
             for paulis, invert in _iter_pauli_products(instruction):
-                mpp(b, paulis, invert, p=p)
+                mpp(builder, paulis, invert, p=p)
             continue
         if name in ("SPP", "SPP_DAG") and is_t_tag(instruction.tag):
             is_dag = name == "SPP_DAG"
             for paulis, invert in _iter_pauli_products(instruction):
-                tpp(b, paulis, dagger=is_dag ^ invert)
+                tpp(builder, paulis, dagger=is_dag ^ invert)
             continue
         if name in ("SPP", "SPP_DAG") and instruction.tag:
             parsed = parse_parametric_tag(instruction)
@@ -268,22 +274,22 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphRepresentation:
                 _validate_r_pauli_targets(instruction)
                 is_dag = name == "SPP_DAG"
                 for paulis, invert in _iter_pauli_products(instruction):
-                    r_pauli(b, paulis, params["theta"], dagger=is_dag ^ invert)
+                    r_pauli(builder, paulis, params["theta"], dagger=is_dag ^ invert)
                 continue
         if name in ("SPP", "SPP_DAG"):
             is_dag = name == "SPP_DAG"
             for paulis, invert in _iter_pauli_products(instruction):
-                spp(b, paulis, dagger=is_dag ^ invert)
+                spp(builder, paulis, dagger=is_dag ^ invert)
             continue
         if name == "MPAD":
             args = instruction.gate_args_copy()
             p = args[0] if args else 0
             for target in instruction.targets_copy():
-                mpad(b, target.value, p=p)
+                mpad(builder, target.value, p=p)
             continue
         if name == "E" or name == "ELSE_CORRELATED_ERROR":
             if name == "E":
-                finalize_correlated_error(b)
+                finalize_correlated_error(builder)
             targets = [t.value for t in instruction.targets_copy()]
             types: list[Literal["X", "Y", "Z"]] = []
             for t in instruction.targets_copy():
@@ -295,11 +301,11 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphRepresentation:
                     types.append("Z")
                 else:
                     raise ValueError(f"Invalid target: {t}")
-            correlated_error(b, targets, types, instruction.gate_args_copy()[0])
+            correlated_error(builder, targets, types, instruction.gate_args_copy()[0])
             continue
         if name == "DETECTOR":
             targets = [t.value for t in instruction.targets_copy()]
-            detector(b, targets)
+            detector(builder, targets)
             continue
         if name == "OBSERVABLE_INCLUDE":
             targets_copy = instruction.targets_copy()
@@ -313,7 +319,7 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphRepresentation:
                     )
             targets = [t.value for t in targets_copy]
             args = instruction.gate_args_copy()
-            observable_include(b, targets, int(args[0]))
+            observable_include(builder, targets, int(args[0]))
             continue
 
         # instruction dispatch
@@ -336,20 +342,22 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphRepresentation:
                 chunk_inverted ^= invert[i_target + j]
             assert not (invert[i_target] and is_classically_controlled[i_target])
             if chunk_inverted:
-                gate_func(b, *chunk, *args, invert=True)
+                gate_func(builder, *chunk, *args, invert=True)
             elif any(cc_chunk):
-                gate_func(b, *chunk, *args, classically_controlled=cc_chunk)
+                gate_func(builder, *chunk, *args, classically_controlled=cc_chunk)
             else:
-                gate_func(b, *chunk, *args)
+                gate_func(builder, *chunk, *args)
 
-    finalize_correlated_error(b)
+    finalize_correlated_error(builder)
 
     # Materialize every observable id from 0..num_observables-1 so missing
     # indices appear as deterministic-zero outputs and downstream iteration
     # is in sorted index order, matching Stim semantics.
     for i in range(stim_circuit.num_observables):
-        if i not in b.observables_dict:
-            observable_include(b, [], i)
-    b.observables_dict = {i: b.observables_dict[i] for i in sorted(b.observables_dict)}
+        if i not in builder.observables_dict:
+            observable_include(builder, [], i)
+    builder.observables_dict = {
+        i: builder.observables_dict[i] for i in sorted(builder.observables_dict)
+    }
 
-    return b
+    return builder

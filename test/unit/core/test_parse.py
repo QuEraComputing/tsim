@@ -11,13 +11,13 @@ from tsim.core.instructions import HELPER_LANE
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 
 
-def _assert_error_vertex_layout(b, expected):
+def _assert_error_vertex_layout(builder, expected):
     """Assert which ZX error vertices are controlled by each error bit."""
     actual = {}
-    for v in b.graph.vertices():
-        for param in b.graph.phase(v).parameters:
+    for v in builder.graph.vertices():
+        for param in builder.graph.phase(v).parameters:
             actual.setdefault(param, Counter()).update(
-                [(b.graph.vertex_type(v), b.graph.row(v))]
+                [(builder.graph.vertex_type(v), builder.graph.row(v))]
             )
 
     expected_counters = {
@@ -32,12 +32,12 @@ class TestParseCorrelatedError:
     def test_parse_single_correlated_error(self):
         """Parse a single CORRELATED_ERROR instruction."""
         circuit = stim.Circuit("CORRELATED_ERROR(0.1) X0 Z1")
-        b = parse_stim_circuit(circuit)
+        builder = parse_stim_circuit(circuit)
 
-        assert b.num_error_bits == 1
-        assert len(b.channel_probs) == 1
-        assert b.channel_probs[0].shape == (2,)
-        assert_allclose(b.channel_probs[0], [0.9, 0.1])
+        assert builder.num_error_bits == 1
+        assert len(builder.channel_probs) == 1
+        assert builder.channel_probs[0].shape == (2,)
+        assert_allclose(builder.channel_probs[0], [0.9, 0.1])
 
     def test_parse_correlated_error_chain(self):
         """Parse a chain of CORRELATED_ERROR + ELSE_CORRELATED_ERROR."""
@@ -45,15 +45,15 @@ class TestParseCorrelatedError:
             CORRELATED_ERROR(0.1) X0 Z1
             ELSE_CORRELATED_ERROR(0.2) X0 Z2
             """)
-        b = parse_stim_circuit(circuit)
+        builder = parse_stim_circuit(circuit)
 
-        assert b.num_error_bits == 2
-        assert len(b.channel_probs) == 1
-        assert b.channel_probs[0].shape == (4,)
+        assert builder.num_error_bits == 2
+        assert len(builder.channel_probs) == 1
+        assert builder.channel_probs[0].shape == (4,)
         # P(00) = 0.9 * 0.8 = 0.72
         # P(01) = 0.1
         # P(10) = 0.9 * 0.2 = 0.18
-        assert_allclose(b.channel_probs[0], [0.72, 0.1, 0.18, 0.0])
+        assert_allclose(builder.channel_probs[0], [0.72, 0.1, 0.18, 0.0])
 
     def test_parse_two_separate_chains(self):
         """Parse two separate correlated error chains."""
@@ -62,22 +62,27 @@ class TestParseCorrelatedError:
             ELSE_CORRELATED_ERROR(0.2) Z0
             CORRELATED_ERROR(0.3) X1
             """)
-        b = parse_stim_circuit(circuit)
+        builder = parse_stim_circuit(circuit)
 
         # First chain: 2 bits, second chain: 1 bit
-        assert b.num_error_bits == 3
-        assert len(b.channel_probs) == 2
-        assert b.channel_probs[0].shape == (4,)
-        assert b.channel_probs[1].shape == (2,)
+        assert builder.num_error_bits == 3
+        assert len(builder.channel_probs) == 2
+        assert builder.channel_probs[0].shape == (4,)
+        assert builder.channel_probs[1].shape == (2,)
 
     def test_parse_y_error(self):
         """Parse a Y error (should create both X and Z vertices)."""
         circuit = stim.Circuit("CORRELATED_ERROR(0.1) Y0")
-        b = parse_stim_circuit(circuit)
+        builder = parse_stim_circuit(circuit)
 
-        assert b.num_error_bits == 1
+        assert builder.num_error_bits == 1
         # Y error should create 2 vertices (X and Z), both with same phase
-        assert sum(0 in b.graph.phase(v).parameters for v in b.graph.vertices()) == 2
+        assert (
+            sum(
+                0 in builder.graph.phase(v).parameters for v in builder.graph.vertices()
+            )
+            == 2
+        )
 
 
 class TestCorrelatedErrorGraph:
@@ -86,9 +91,11 @@ class TestCorrelatedErrorGraph:
     def test_error_vertices_have_e_phase(self):
         """Verify error vertices carry their error bit after finalization."""
         circuit = stim.Circuit("CORRELATED_ERROR(0.1) X0")
-        b = parse_stim_circuit(circuit)
+        builder = parse_stim_circuit(circuit)
 
-        assert any(0 in b.graph.phase(v).parameters for v in b.graph.vertices())
+        assert any(
+            0 in builder.graph.phase(v).parameters for v in builder.graph.vertices()
+        )
 
     def test_no_c_phases_after_finalization(self):
         """Verify no correlated-error bits are left pending after finalization."""
@@ -96,10 +103,10 @@ class TestCorrelatedErrorGraph:
             CORRELATED_ERROR(0.1) X0 Z1
             ELSE_CORRELATED_ERROR(0.2) Y0
         """)
-        b = parse_stim_circuit(circuit)
+        builder = parse_stim_circuit(circuit)
 
-        assert b.pending_correlated == []
-        assert max(b.graph.parameters()) < b.num_error_bits
+        assert builder.pending_correlated == []
+        assert max(builder.graph.parameters()) < builder.num_error_bits
 
     def test_chain_multiple_qubits(self):
         """Test a chain affecting multiple qubits."""
@@ -108,14 +115,14 @@ class TestCorrelatedErrorGraph:
             ELSE_CORRELATED_ERROR(0.25) Z2 Z3
             ELSE_CORRELATED_ERROR(0.33333333333) X1 Y2 Z3
             """)
-        b = parse_stim_circuit(circuit)
+        builder = parse_stim_circuit(circuit)
 
-        assert b.num_error_bits == 3
-        assert len(b.channel_probs) == 1
-        assert b.channel_probs[0].shape == (8,)
+        assert builder.num_error_bits == 3
+        assert len(builder.channel_probs) == 1
+        assert builder.channel_probs[0].shape == (8,)
 
         # Verify the probability distribution
-        probs = b.channel_probs[0]
+        probs = builder.channel_probs[0]
         assert_allclose(probs[0], 0.4, rtol=1e-5)  # No error
         assert_allclose(probs[1], 0.2, rtol=1e-5)  # First error
         assert_allclose(probs[2], 0.2, rtol=1e-5)  # Second error
@@ -128,29 +135,29 @@ class TestParseHeraldedChannels:
     def test_heralded_pauli_channel_1_structure(self):
         """HERALDED_PAULI_CHANNEL_1 should produce 1 rec entry and 3 error bits."""
         circuit = stim.Circuit("HERALDED_PAULI_CHANNEL_1(0.01, 0.02, 0.03, 0.04) 0")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 1
-        assert b.num_error_bits == 3
-        assert len(b.channel_probs) == 1
-        assert b.channel_probs[0].shape == (8,)
-        assert_allclose(b.channel_probs[0].sum(), 1.0)
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 1
+        assert builder.num_error_bits == 3
+        assert len(builder.channel_probs) == 1
+        assert builder.channel_probs[0].shape == (8,)
+        assert_allclose(builder.channel_probs[0].sum(), 1.0)
 
     def test_heralded_erase_structure(self):
         """HERALDED_ERASE should produce 1 rec entry and 3 error bits."""
         circuit = stim.Circuit("HERALDED_ERASE(0.04) 0")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 1
-        assert b.num_error_bits == 3
-        assert len(b.channel_probs) == 1
-        assert_allclose(b.channel_probs[0][[1, 3, 5, 7]], 0.01)
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 1
+        assert builder.num_error_bits == 3
+        assert len(builder.channel_probs) == 1
+        assert_allclose(builder.channel_probs[0][[1, 3, 5, 7]], 0.01)
 
     def test_heralded_erase_multiple_targets(self):
         """HERALDED_ERASE on multiple targets should produce independent channels."""
         circuit = stim.Circuit("HERALDED_ERASE(0.01) 0 1 2")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 3
-        assert b.num_error_bits == 9
-        assert len(b.channel_probs) == 3
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 3
+        assert builder.num_error_bits == 9
+        assert len(builder.channel_probs) == 3
 
 
 class TestProbabilityBearingInstructions:
@@ -180,21 +187,21 @@ class TestProbabilityBearingInstructions:
     )
     def test_single_bit_probability_channels(self, program):
         """Single-bit probability-bearing instructions should create one channel."""
-        b = parse_stim_circuit(stim.Circuit(program))
+        builder = parse_stim_circuit(stim.Circuit(program))
 
-        assert b.num_error_bits == 1
-        assert len(b.channel_probs) == 1
-        assert_allclose(b.channel_probs[0], [0.93, 0.07])
+        assert builder.num_error_bits == 1
+        assert len(builder.channel_probs) == 1
+        assert_allclose(builder.channel_probs[0], [0.93, 0.07])
 
     @pytest.mark.parametrize("program", ["MR(0.07) 0", "MRX(0.07) 0", "MRY(0.07) 0"])
     def test_mr_family_does_not_double_count_measurement_noise(self, program):
         """MR-family measurement noise is a result flip, not an extra Pauli error."""
-        b = parse_stim_circuit(stim.Circuit(program))
+        builder = parse_stim_circuit(stim.Circuit(program))
 
-        assert len(b.rec) == 1
-        assert b.num_error_bits == 1
-        assert len(b.channel_probs) == 1
-        assert_allclose(b.channel_probs[0], [0.93, 0.07])
+        assert len(builder.rec) == 1
+        assert builder.num_error_bits == 1
+        assert len(builder.channel_probs) == 1
+        assert_allclose(builder.channel_probs[0], [0.93, 0.07])
 
     @pytest.mark.parametrize(
         ("program", "expected"),
@@ -213,18 +220,18 @@ class TestProbabilityBearingInstructions:
     )
     def test_multi_bit_probability_channels(self, program, expected):
         """Multi-bit probability channels should use the documented outcome ordering."""
-        b = parse_stim_circuit(stim.Circuit(program))
+        builder = parse_stim_circuit(stim.Circuit(program))
 
-        assert len(b.channel_probs) == 1
-        assert_allclose(b.channel_probs[0], expected)
+        assert len(builder.channel_probs) == 1
+        assert_allclose(builder.channel_probs[0], expected)
 
     def test_depolarize2_probability_channel(self):
         """DEPOLARIZE2(p) should distribute p uniformly over non-identity outcomes."""
-        b = parse_stim_circuit(stim.Circuit("DEPOLARIZE2(0.15) 0 1"))
+        builder = parse_stim_circuit(stim.Circuit("DEPOLARIZE2(0.15) 0 1"))
 
-        assert b.num_error_bits == 4
-        assert len(b.channel_probs) == 1
-        assert_allclose(b.channel_probs[0], [0.85] + [0.01] * 15)
+        assert builder.num_error_bits == 4
+        assert len(builder.channel_probs) == 1
+        assert_allclose(builder.channel_probs[0], [0.85] + [0.01] * 15)
 
     def test_pauli_channel_2_probability_channel(self):
         """PAULI_CHANNEL_2 should preserve the expected packed Pauli outcome order."""
@@ -246,12 +253,12 @@ class TestProbabilityBearingInstructions:
             0.015,
         ]
         program = f"PAULI_CHANNEL_2({', '.join(map(str, args))}) 0 1"
-        b = parse_stim_circuit(stim.Circuit(program))
+        builder = parse_stim_circuit(stim.Circuit(program))
 
-        assert b.num_error_bits == 4
-        assert len(b.channel_probs) == 1
+        assert builder.num_error_bits == 4
+        assert len(builder.channel_probs) == 1
         assert_allclose(
-            b.channel_probs[0],
+            builder.channel_probs[0],
             [
                 0.88,
                 0.012,
@@ -289,20 +296,20 @@ class TestProbabilityBearingInstructions:
         self, program
     ):
         """Repeated targets/products should each get their own probability channel."""
-        b = parse_stim_circuit(stim.Circuit(program))
+        builder = parse_stim_circuit(stim.Circuit(program))
 
-        assert b.num_error_bits == 2
-        assert len(b.channel_probs) == 2
-        for probs in b.channel_probs:
+        assert builder.num_error_bits == 2
+        assert len(builder.channel_probs) == 2
+        for probs in builder.channel_probs:
             assert_allclose(probs, [0.93, 0.07])
 
     @pytest.mark.parametrize("program", ["I_ERROR(0.07) 0", "II_ERROR(0.07) 0 1"])
     def test_identity_error_instructions_do_not_create_channels(self, program):
         """Identity error instructions allocate lanes but do not affect noise state."""
-        b = parse_stim_circuit(stim.Circuit(program))
+        builder = parse_stim_circuit(stim.Circuit(program))
 
-        assert b.num_error_bits == 0
-        assert len(b.channel_probs) == 0
+        assert builder.num_error_bits == 0
+        assert len(builder.channel_probs) == 0
 
 
 class TestChannelBitLayoutMatchesGraph:
@@ -336,11 +343,11 @@ class TestChannelBitLayoutMatchesGraph:
     )
     def test_single_bit_channel_layout_matches_graph(self, program, expected_layout):
         """Single-bit channel index 1 (0b1) should control the expected vertex."""
-        b = parse_stim_circuit(stim.Circuit(program))
+        builder = parse_stim_circuit(stim.Circuit(program))
 
-        assert b.num_error_bits == 1
-        assert_allclose(b.channel_probs[0], [0.93, 0.07])
-        _assert_error_vertex_layout(b, expected_layout)
+        assert builder.num_error_bits == 1
+        assert_allclose(builder.channel_probs[0], [0.93, 0.07])
+        _assert_error_vertex_layout(builder, expected_layout)
 
     @pytest.mark.parametrize(
         "program",
@@ -348,11 +355,11 @@ class TestChannelBitLayoutMatchesGraph:
     )
     def test_pauli_channel_1_bit_layout_matches_graph(self, program):
         """Index bit 0 is Z and index bit 1 is X for one-qubit Pauli channels."""
-        b = parse_stim_circuit(stim.Circuit(program))
+        builder = parse_stim_circuit(stim.Circuit(program))
 
-        assert b.num_error_bits == 2
+        assert builder.num_error_bits == 2
         _assert_error_vertex_layout(
-            b,
+            builder,
             {
                 0: [(VertexType.Z, 5)],
                 1: [(VertexType.X, 5)],
@@ -372,11 +379,11 @@ class TestChannelBitLayoutMatchesGraph:
     )
     def test_pauli_channel_2_bit_layout_matches_graph(self, program):
         """Bits are Z_i, X_i, Z_j, X_j for two-qubit Pauli channels."""
-        b = parse_stim_circuit(stim.Circuit(program))
+        builder = parse_stim_circuit(stim.Circuit(program))
 
-        assert b.num_error_bits == 4
+        assert builder.num_error_bits == 4
         _assert_error_vertex_layout(
-            b,
+            builder,
             {
                 0: [(VertexType.Z, 5)],
                 1: [(VertexType.X, 5)],
@@ -394,12 +401,12 @@ class TestChannelBitLayoutMatchesGraph:
     )
     def test_heralded_channel_bit_layout_matches_graph(self, program):
         """Bits are herald, Z, X for heralded one-qubit Pauli channels."""
-        b = parse_stim_circuit(stim.Circuit(program))
+        builder = parse_stim_circuit(stim.Circuit(program))
 
-        assert len(b.rec) == 1
-        assert b.num_error_bits == 3
+        assert len(builder.rec) == 1
+        assert builder.num_error_bits == 3
         _assert_error_vertex_layout(
-            b,
+            builder,
             {
                 0: [(VertexType.X, HELPER_LANE)],
                 1: [(VertexType.Z, 5)],
@@ -413,12 +420,12 @@ class TestChannelBitLayoutMatchesGraph:
             CORRELATED_ERROR(0.1) X5 Y6 Z7
             ELSE_CORRELATED_ERROR(0.2) Z5
         """)
-        b = parse_stim_circuit(circuit)
+        builder = parse_stim_circuit(circuit)
 
-        assert b.num_error_bits == 2
-        assert_allclose(b.channel_probs[0], [0.72, 0.1, 0.18, 0.0])
+        assert builder.num_error_bits == 2
+        assert_allclose(builder.channel_probs[0], [0.72, 0.1, 0.18, 0.0])
         _assert_error_vertex_layout(
-            b,
+            builder,
             {
                 0: [
                     (VertexType.X, 5),
@@ -437,20 +444,20 @@ class TestParseIIError:
     def test_ii_error_with_probability(self):
         """II_ERROR(p) should parse without raising a TypeError."""
         circuit = stim.Circuit("II_ERROR(0.1) 0 1")
-        b = parse_stim_circuit(circuit)
-        assert set(b.last_vertex) == {0, 1}
+        builder = parse_stim_circuit(circuit)
+        assert set(builder.last_vertex) == {0, 1}
 
     def test_ii_error_without_probability(self):
         """II_ERROR without parens should also parse correctly."""
         circuit = stim.Circuit("II_ERROR 0 1")
-        b = parse_stim_circuit(circuit)
-        assert set(b.last_vertex) == {0, 1}
+        builder = parse_stim_circuit(circuit)
+        assert set(builder.last_vertex) == {0, 1}
 
     def test_ii_error_multiple_pairs(self):
         """II_ERROR(p) applied to multiple qubit pairs."""
         circuit = stim.Circuit("II_ERROR(0.05) 0 1 2 3")
-        b = parse_stim_circuit(circuit)
-        assert set(b.last_vertex) == {0, 1, 2, 3}
+        builder = parse_stim_circuit(circuit)
+        assert set(builder.last_vertex) == {0, 1, 2, 3}
 
 
 class TestParseWithRepeatBlocks:
@@ -470,8 +477,8 @@ class TestParseWithRepeatBlocks:
     def test_parse_repeat_block_with_measurements(self):
         """Repeat blocks containing measurements should parse correctly."""
         circuit = stim.Circuit("REPEAT 3 {\n    H 0\n    M 0\n}")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 3
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 3
 
     def test_parse_nested_repeat_blocks(self):
         """Nested repeat blocks should be fully flattened by the parser."""
@@ -490,19 +497,19 @@ class TestCorrelatedErrorState:
     def test_state_reset_after_finalization(self):
         """Verify state is reset after finalization."""
         circuit = stim.Circuit("CORRELATED_ERROR(0.1) X0")
-        b = parse_stim_circuit(circuit)
+        builder = parse_stim_circuit(circuit)
 
         # After parsing, state should be reset
-        assert b.num_correlated_error_bits == 0
-        assert b.correlated_error_probs == []
+        assert builder.num_correlated_error_bits == 0
+        assert builder.correlated_error_probs == []
 
     def test_empty_circuit(self):
         """Test parsing an empty circuit."""
         circuit = stim.Circuit("")
-        b = parse_stim_circuit(circuit)
+        builder = parse_stim_circuit(circuit)
 
-        assert b.num_error_bits == 0
-        assert len(b.channel_probs) == 0
+        assert builder.num_error_bits == 0
+        assert len(builder.channel_probs) == 0
 
     def test_mixed_errors(self):
         """Test correlated errors mixed with regular errors."""
@@ -511,11 +518,11 @@ class TestCorrelatedErrorState:
             CORRELATED_ERROR(0.1) X1 Z2
             Z_ERROR(0.03) 1
             """)
-        b = parse_stim_circuit(circuit)
+        builder = parse_stim_circuit(circuit)
 
         # X_ERROR: 1 bit, CORRELATED_ERROR: 1 bit, Z_ERROR: 1 bit
-        assert b.num_error_bits == 3
-        assert len(b.channel_probs) == 3
+        assert builder.num_error_bits == 3
+        assert len(builder.channel_probs) == 3
 
 
 class TestParseMPAD:
@@ -524,20 +531,20 @@ class TestParseMPAD:
     def test_mpad_single_zero(self):
         """MPAD 0 should add one measurement record entry."""
         circuit = stim.Circuit("MPAD 0")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 1
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 1
 
     def test_mpad_single_one(self):
         """MPAD 1 should add one measurement record entry."""
         circuit = stim.Circuit("MPAD 1")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 1
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 1
 
     def test_mpad_multiple_targets(self):
         """MPAD with multiple targets should add one record per target."""
         circuit = stim.Circuit("MPAD 0 1 0 1")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 4
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 4
 
     def test_mpad_mixed_with_measurements(self):
         """MPAD records should interleave correctly with regular measurements."""
@@ -546,14 +553,14 @@ class TestParseMPAD:
             MPAD 1
             M 1
         """)
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 3
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 3
 
     def test_mpad_in_repeat_block(self):
         """MPAD inside a repeat block should be expanded correctly."""
         circuit = stim.Circuit("REPEAT 3 {\n    MPAD 0 1\n}")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 6
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 6
 
 
 class TestParseMXXMYYMZZ:
@@ -562,26 +569,26 @@ class TestParseMXXMYYMZZ:
     def test_mxx_single_pair(self):
         """MXX on one pair should add one measurement record entry."""
         circuit = stim.Circuit("MXX 0 1")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 1
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 1
 
     def test_myy_single_pair(self):
         """MYY on one pair should add one measurement record entry."""
         circuit = stim.Circuit("MYY 0 1")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 1
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 1
 
     def test_mzz_single_pair(self):
         """MZZ on one pair should add one measurement record entry."""
         circuit = stim.Circuit("MZZ 0 1")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 1
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 1
 
     def test_mxx_multiple_pairs(self):
         """MXX with multiple pairs should add one record per pair."""
         circuit = stim.Circuit("MXX 0 1 2 3 4 5")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 3
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 3
 
     def test_mzz_mixed_with_measurements(self):
         """MZZ records should interleave correctly with regular measurements."""
@@ -590,8 +597,8 @@ class TestParseMXXMYYMZZ:
             MZZ 1 2
             M 1
         """)
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 3
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 3
 
 
 class TestParseMXXMYYMZZWithArgs:
@@ -600,29 +607,29 @@ class TestParseMXXMYYMZZWithArgs:
     def test_mxx_with_flip_probability(self):
         """MXX(p) should parse without misinterpreting p as invert."""
         circuit = stim.Circuit("MXX(0.01) 0 1")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 1
-        assert_allclose(b.channel_probs[0], [0.99, 0.01])
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 1
+        assert_allclose(builder.channel_probs[0], [0.99, 0.01])
 
     def test_myy_with_flip_probability(self):
         """MYY(p) should parse without misinterpreting p as invert."""
         circuit = stim.Circuit("MYY(0.01) 0 1")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 1
-        assert_allclose(b.channel_probs[0], [0.99, 0.01])
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 1
+        assert_allclose(builder.channel_probs[0], [0.99, 0.01])
 
     def test_mzz_with_flip_probability(self):
         """MZZ(p) should parse without misinterpreting p as invert."""
         circuit = stim.Circuit("MZZ(0.01) 0 1")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 1
-        assert_allclose(b.channel_probs[0], [0.99, 0.01])
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 1
+        assert_allclose(builder.channel_probs[0], [0.99, 0.01])
 
     def test_mxx_flip_prob_multiple_pairs(self):
         """MXX(p) with multiple pairs should work correctly."""
         circuit = stim.Circuit("MXX(0.05) 0 1 2 3")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 2
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 2
 
 
 class TestParseMPPWithArgs:
@@ -631,9 +638,9 @@ class TestParseMPPWithArgs:
     def test_mpp_with_flip_probability(self):
         """MPP(p) should parse and forward flip probability."""
         circuit = stim.Circuit("MPP(0.01) X0*Z1")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 1
-        assert_allclose(b.channel_probs[0], [0.99, 0.01])
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 1
+        assert_allclose(builder.channel_probs[0], [0.99, 0.01])
 
 
 class TestParseSPP:
@@ -642,20 +649,20 @@ class TestParseSPP:
     def test_spp_single_pauli(self):
         """SPP Z0 should parse without adding measurement records."""
         circuit = stim.Circuit("SPP Z0")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 0
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 0
 
     def test_spp_product(self):
         """SPP X0*Z1 should parse without adding measurement records."""
         circuit = stim.Circuit("SPP X0*Z1")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 0
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 0
 
     def test_spp_dag_single_pauli(self):
         """SPP_DAG Z0 should parse without adding measurement records."""
         circuit = stim.Circuit("SPP_DAG Z0")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 0
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 0
 
     def test_spp_repeated_pair_cancels(self):
         """SPP X0*X0 should forward empty Pauli list (no-op)."""
@@ -684,8 +691,8 @@ class TestParseSPP:
     def test_spp_multiple_products(self):
         """SPP with multiple products should parse correctly."""
         circuit = stim.Circuit("SPP X0 Y1*Z2")
-        b = parse_stim_circuit(circuit)
-        assert len(b.rec) == 0
+        builder = parse_stim_circuit(circuit)
+        assert len(builder.rec) == 0
 
 
 class TestParseEmptyAnnotations:
@@ -694,30 +701,30 @@ class TestParseEmptyAnnotations:
     and produce a single annotation vertex with no record edges."""
 
     def test_empty_detector_alone(self):
-        b = parse_stim_circuit(stim.Circuit("DETECTOR"))
-        assert len(b.detectors) == 1
-        v = b.detectors[0]
-        assert b.graph.vertex_type(v) == VertexType.X
-        assert list(b.graph.neighbors(v)) == []
+        builder = parse_stim_circuit(stim.Circuit("DETECTOR"))
+        assert len(builder.detectors) == 1
+        v = builder.detectors[0]
+        assert builder.graph.vertex_type(v) == VertexType.X
+        assert list(builder.graph.neighbors(v)) == []
 
     def test_empty_observable_alone(self):
-        b = parse_stim_circuit(stim.Circuit("OBSERVABLE_INCLUDE(0)"))
-        assert set(b.observables_dict) == {0}
-        v = b.observables_dict[0]
-        assert b.graph.vertex_type(v) == VertexType.X
-        assert list(b.graph.neighbors(v)) == []
+        builder = parse_stim_circuit(stim.Circuit("OBSERVABLE_INCLUDE(0)"))
+        assert set(builder.observables_dict) == {0}
+        v = builder.observables_dict[0]
+        assert builder.graph.vertex_type(v) == VertexType.X
+        assert list(builder.graph.neighbors(v)) == []
 
     def test_empty_detector_after_measurement(self):
-        b = parse_stim_circuit(stim.Circuit("M 0\nDETECTOR rec[-1]\nDETECTOR"))
-        assert len(b.detectors) == 2
+        builder = parse_stim_circuit(stim.Circuit("M 0\nDETECTOR rec[-1]\nDETECTOR"))
+        assert len(builder.detectors) == 2
         # First detector has the measurement edge, second has no edges.
-        assert len(list(b.graph.neighbors(b.detectors[0]))) == 1
-        assert list(b.graph.neighbors(b.detectors[1])) == []
+        assert len(list(builder.graph.neighbors(builder.detectors[0]))) == 1
+        assert list(builder.graph.neighbors(builder.detectors[1])) == []
 
     def test_empty_detector_with_args(self):
         """DETECTOR(coords...) with empty rec must also parse."""
-        b = parse_stim_circuit(stim.Circuit("DETECTOR(1, 2)"))
-        assert len(b.detectors) == 1
+        builder = parse_stim_circuit(stim.Circuit("DETECTOR(1, 2)"))
+        assert len(builder.detectors) == 1
 
 
 class TestParseObservableIncludePauliTargets:
@@ -907,24 +914,24 @@ class TestParseSparseObservables:
 
     def test_sparse_observable_index_pads_missing(self):
         circuit = stim.Circuit("M 0\nOBSERVABLE_INCLUDE(2) rec[-1]")
-        b = parse_stim_circuit(circuit)
-        assert set(b.observables_dict) == {0, 1, 2}
+        builder = parse_stim_circuit(circuit)
+        assert set(builder.observables_dict) == {0, 1, 2}
         # Missing ids 0 and 1 have no record edges (deterministic zero).
-        assert list(b.graph.neighbors(b.observables_dict[0])) == []
-        assert list(b.graph.neighbors(b.observables_dict[1])) == []
+        assert list(builder.graph.neighbors(builder.observables_dict[0])) == []
+        assert list(builder.graph.neighbors(builder.observables_dict[1])) == []
         # Index 2 has the measurement edge.
-        assert len(list(b.graph.neighbors(b.observables_dict[2]))) == 1
+        assert len(list(builder.graph.neighbors(builder.observables_dict[2]))) == 1
 
     def test_observables_dict_is_sorted_after_out_of_order(self):
         circuit = stim.Circuit(
             "M 0\nM 1\nOBSERVABLE_INCLUDE(2) rec[-2]\nOBSERVABLE_INCLUDE(0) rec[-1]"
         )
-        b = parse_stim_circuit(circuit)
-        assert list(b.observables_dict) == [0, 1, 2]
+        builder = parse_stim_circuit(circuit)
+        assert list(builder.observables_dict) == [0, 1, 2]
 
     def test_no_observables_remains_empty(self):
-        b = parse_stim_circuit(stim.Circuit("M 0"))
-        assert b.observables_dict == {}
+        builder = parse_stim_circuit(stim.Circuit("M 0"))
+        assert builder.observables_dict == {}
 
 
 def _instr(
