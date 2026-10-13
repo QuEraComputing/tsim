@@ -15,7 +15,7 @@ from zxparam import Domain, VertexType
 
 from tsim.circuit import Circuit
 from tsim.core import instructions
-from tsim.core.instructions import GraphBuilder
+from tsim.core.builder import GraphBuilder
 
 PLUS = (ZERO + ONE) / np.sqrt(2)
 MINUS = (ZERO - ONE) / np.sqrt(2)

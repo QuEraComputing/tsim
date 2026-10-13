@@ -7,7 +7,7 @@ import stim
 from numpy.testing import assert_allclose
 from zxparam import VertexType
 
-from tsim.core.instructions import HELPER_LANE, GraphBuilder
+from tsim.core.builder import HELPER_LANE, GraphBuilder
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 
 

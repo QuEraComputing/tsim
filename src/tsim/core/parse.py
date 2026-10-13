@@ -7,9 +7,9 @@ from typing import Literal
 
 import stim
 
+from tsim.core.builder import GraphBuilder
 from tsim.core.instructions import (
     GATE_TABLE,
-    GraphBuilder,
     mpad,
     mpp,
     r_pauli,
