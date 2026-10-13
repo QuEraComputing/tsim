@@ -162,9 +162,11 @@ def test_postselection_discarded_and_surviving_rows():
     assert np.all(~samples[discarded, 1])
 
 
-# Detector 0 is postselected; direct detector 2 is not, so a survivor that is
-# sampled from another shot's f-params shows up in column 2.
-TWO_DIRECT_CIRCUIT = """
+# Detector 0 is postselected; direct detector 2 and observable 0 are not, so a
+# survivor sampled from another shot's f-params shows up in their columns. The X
+# gates make the reference bits 1, and detectors 0 and 1 share an f-bit.
+DIRECT_CIRCUIT = """
+X 0 2
 X_ERROR(0.5) 0 2
 R 1
 H 1
@@ -174,14 +176,15 @@ M 0 1 2
 DETECTOR rec[-3]
 DETECTOR rec[-2] rec[-3]
 DETECTOR rec[-1]
+OBSERVABLE_INCLUDE(0) rec[-1]
 """
 
 
 @pytest.mark.parametrize("shots,batch_size", [(37, 4), (37, 1), (5, 8), (64, 7)])
 @pytest.mark.parametrize("reference", [False, True])
-def test_survivors_keep_their_own_direct_detectors(shots, batch_size, reference):
-    """Every row's direct detectors come from that shot's own f-params."""
-    sampler = _make(TWO_DIRECT_CIRCUIT, seed=11)
+def test_survivors_keep_their_own_direct_outputs(shots, batch_size, reference):
+    """Direct outputs come from each shot's own f-params, flips and reference."""
+    sampler = _make(DIRECT_CIRCUIT, seed=11)
     drawn: list[np.ndarray] = []
     original = sampler._channel_sampler.sample
 
@@ -196,12 +199,16 @@ def test_survivors_keep_their_own_direct_detectors(shots, batch_size, reference)
             shots,
             batch_size=batch_size,
             postselection_mask=mask,
+            append_observables=True,
             use_detector_reference_sample=reference,
         )
     expected = sampler._compute_direct_outputs(np.concatenate(drawn))
     if reference:
         expected[:, :3] ^= sampler._compute_reference_sample()[:3]
+    discarded = expected[:, 0]
     assert np.array_equal(samples[:, [0, 2]], expected[:, [0, 2]])
+    assert np.array_equal(samples[~discarded, 3], expected[~discarded, 3])
+    assert not samples[discarded][:, [1, 3]].any()
 
 
 def test_postselection_direct_cols_always_equal_numpy():
@@ -360,7 +367,8 @@ def test_postselection_detector_reference_xor_before_discard_check(monkeypatch):
         use_detector_reference_sample=True,
     )
 
-    assert sum(jax_with) > sum(jax_without)
+    # NOTE: the reference sample itself is one more row through sample_program.
+    assert sum(jax_with) - 1 > sum(jax_without)
 
 
 def test_postselection_observable_reference_on_jax_computed_discarded_rows():
@@ -611,30 +619,3 @@ def test_postselection_surface_code_caller_filter():
     survivors = _keep(samples[:, :num_det], mask)
     assert survivors.any()
     assert not np.any(samples[survivors] & mask)
-
-
-def test_postselection_discarded_rows_zero_direct_observable():
-    """Discarded rows keep direct detector cols but zero direct observable cols."""
-    circ = stim.Circuit.generated(
-        "surface_code:rotated_memory_x",
-        distance=3,
-        rounds=2,
-        after_clifford_depolarization=0.01,
-    )
-    c = Circuit.from_stim_program(circ)
-    sampler = c.compile_detector_sampler(seed=0)
-    assert sampler._direct_output_mask[
-        sampler._num_detectors :
-    ].any(), "expected a direct observable for this circuit"
-
-    mask = np.zeros(c.num_detectors, dtype=np.bool_)
-    mask[0] = True
-    dets, obs = sampler.sample(
-        64,
-        batch_size=16,
-        postselection_mask=mask,
-        separate_observables=True,
-    )
-    discarded = np.any(dets & mask, axis=1)
-    assert discarded.any() and (~discarded).any()
-    assert not np.any(obs[discarded])
