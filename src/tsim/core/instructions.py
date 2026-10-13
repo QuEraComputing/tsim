@@ -281,8 +281,22 @@ class GraphBuilder:
         self.graph.add_edge(v1, v3)
 
     # -------------------------------------------------------------------------
-    # Correlated noise
+    # Noise
     # -------------------------------------------------------------------------
+
+    def add_channel(self, probs: np.ndarray) -> int:
+        """Record a noise channel and allocate its error bits.
+
+        ``probs`` is the channel's distribution over its ``k`` error bits, so it
+        has ``2^k`` entries. Returns the first bit; the channel owns bits
+        ``first … first + k − 1``.
+        """
+        num_bits = len(probs).bit_length() - 1
+        assert len(probs) == 1 << num_bits, "a channel has 2^k outcomes"
+        first = self.num_error_bits
+        self.channel_probs.append(probs)
+        self.num_error_bits += num_bits
+        return first
 
     def correlated_error(
         self,
@@ -310,19 +324,15 @@ class GraphBuilder:
     def finalize_correlated_error(self) -> None:
         """Finalize the current correlated error channel.
 
-        1. Give each pending noise spider its error bit ``num_error_bits + i``
-        2. Compute and append the 2^k probability array to channel_probs
-        3. Increment num_error_bits by k
-        4. Reset num_correlated_error_bits to 0 and correlated_error_probs to []
+        Adds the channel (``2^k`` outcomes for its ``k`` terms), gives each
+        pending noise spider its term's error bit, and clears the pending state.
         """
-        k = self.num_correlated_error_bits
-        if k == 0:
+        if self.num_correlated_error_bits == 0:
             return
+        first = self.add_channel(correlated_error_probs(self.correlated_error_probs))
         for v, bit in self.pending_correlated:
-            self.graph.set_phase(v, _error_phase(self.num_error_bits + bit))
+            self.graph.set_phase(v, _error_phase(first + bit))
         self.pending_correlated = []
-        self.channel_probs.append(correlated_error_probs(self.correlated_error_probs))
-        self.num_error_bits += k
         self.num_correlated_error_bits = 0
         self.correlated_error_probs = []
 
@@ -787,24 +797,13 @@ def ycz(
 # =============================================================================
 
 
-def _error(
-    builder: GraphBuilder,
-    qubit: int,
-    vertex_type: VertexType,
-    error_bit: int,
-) -> Vertex:
-    """Insert a noise spider that carries ``error_bit`` (its ID)."""
-    return builder.spider(qubit, vertex_type, _error_phase(error_bit))
-
-
 def pauli_channel_1(
     builder: GraphBuilder, qubit: int, px: float, py: float, pz: float
 ) -> None:
     """Apply single-qubit Pauli channel with given X, Y, Z error probabilities."""
-    builder.channel_probs.append(pauli_channel_1_probs(px, py, pz))
-    _error(builder, qubit, VertexType.Z, builder.num_error_bits)
-    _error(builder, qubit, VertexType.X, builder.num_error_bits + 1)
-    builder.num_error_bits += 2
+    bit = builder.add_channel(pauli_channel_1_probs(px, py, pz))
+    builder.spider(qubit, VertexType.Z, _error_phase(bit))
+    builder.spider(qubit, VertexType.X, _error_phase(bit + 1))
 
 
 def pauli_channel_2(
@@ -828,16 +827,15 @@ def pauli_channel_2(
     pzz: float,
 ) -> None:
     """Apply two-qubit Pauli channel with given error probabilities for all 15 Pauli pairs."""
-    builder.channel_probs.append(
+    bit = builder.add_channel(
         pauli_channel_2_probs(
             pix, piy, piz, pxi, pxx, pxy, pxz, pyi, pyx, pyy, pyz, pzi, pzx, pzy, pzz
         )
     )
-    _error(builder, qubit_i, VertexType.Z, builder.num_error_bits)
-    _error(builder, qubit_i, VertexType.X, builder.num_error_bits + 1)
-    _error(builder, qubit_j, VertexType.Z, builder.num_error_bits + 2)
-    _error(builder, qubit_j, VertexType.X, builder.num_error_bits + 3)
-    builder.num_error_bits += 4
+    builder.spider(qubit_i, VertexType.Z, _error_phase(bit))
+    builder.spider(qubit_i, VertexType.X, _error_phase(bit + 1))
+    builder.spider(qubit_j, VertexType.Z, _error_phase(bit + 2))
+    builder.spider(qubit_j, VertexType.X, _error_phase(bit + 3))
 
 
 def depolarize1(builder: GraphBuilder, qubit: int, p: float) -> None:
@@ -871,25 +869,22 @@ def depolarize2(builder: GraphBuilder, qubit_i: int, qubit_j: int, p: float) -> 
 
 def x_error(builder: GraphBuilder, qubit: int, p: float) -> None:
     """Apply X error with probability p."""
-    builder.channel_probs.append(error_probs(p))
-    _error(builder, qubit, VertexType.X, builder.num_error_bits)
-    builder.num_error_bits += 1
+    bit = builder.add_channel(error_probs(p))
+    builder.spider(qubit, VertexType.X, _error_phase(bit))
 
 
 def y_error(builder: GraphBuilder, qubit: int, p: float) -> None:
     """Apply Y error with probability p."""
-    builder.channel_probs.append(error_probs(p))
+    bit = builder.add_channel(error_probs(p))
     # Y = X·Z, so both vertices use the same error bit
-    _error(builder, qubit, VertexType.Z, builder.num_error_bits)
-    _error(builder, qubit, VertexType.X, builder.num_error_bits)
-    builder.num_error_bits += 1
+    builder.spider(qubit, VertexType.Z, _error_phase(bit))
+    builder.spider(qubit, VertexType.X, _error_phase(bit))
 
 
 def z_error(builder: GraphBuilder, qubit: int, p: float) -> None:
     """Apply Z error with probability p."""
-    builder.channel_probs.append(error_probs(p))
-    _error(builder, qubit, VertexType.Z, builder.num_error_bits)
-    builder.num_error_bits += 1
+    bit = builder.add_channel(error_probs(p))
+    builder.spider(qubit, VertexType.Z, _error_phase(bit))
 
 
 def heralded_pauli_channel_1(
@@ -906,14 +901,13 @@ def heralded_pauli_channel_1(
     (with total probability pi+px+py+pz), the herald is 1 and one of I/X/Y/Z
     is applied. When it doesn't fire, the herald is 0 and nothing happens.
     """
-    builder.channel_probs.append(heralded_pauli_channel_1_probs(pi, px, py, pz))
+    bit = builder.add_channel(heralded_pauli_channel_1_probs(pi, px, py, pz))
     aux = HELPER_LANE
     r(builder, aux)
-    _error(builder, aux, VertexType.X, builder.num_error_bits)  # herald bit flip
+    builder.spider(aux, VertexType.X, _error_phase(bit))  # herald bit flip
     m(builder, aux)
-    _error(builder, qubit, VertexType.Z, builder.num_error_bits + 1)  # Z error bit
-    _error(builder, qubit, VertexType.X, builder.num_error_bits + 2)  # X error bit
-    builder.num_error_bits += 3
+    builder.spider(qubit, VertexType.Z, _error_phase(bit + 1))  # Z error bit
+    builder.spider(qubit, VertexType.X, _error_phase(bit + 2))  # X error bit
 
 
 def heralded_erase(builder: GraphBuilder, qubit: int, p: float) -> None:
@@ -934,15 +928,15 @@ def m(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> 
     """Measure qubit in Z basis with optional bit-flip error probability p."""
     if invert:
         x(builder, qubit)
-    error_bit = None
     if p > 0:
-        builder.channel_probs.append(error_probs(p))
-        error_bit = builder.num_error_bits
-        _error(builder, qubit, VertexType.X, error_bit)
-        builder.num_error_bits += 1
-    builder.measure(qubit)
-    if error_bit is not None:
-        _error(builder, qubit, VertexType.X, error_bit)
+        # NOTE: the same X error before and after the measurement flips the
+        # record but not the state.
+        flip = _error_phase(builder.add_channel(error_probs(p)))
+        builder.spider(qubit, VertexType.X, flip)
+        builder.measure(qubit)
+        builder.spider(qubit, VertexType.X, flip)
+    else:
+        builder.measure(qubit)
     if invert:
         x(builder, qubit)
 
