@@ -55,7 +55,8 @@ wait_for_idle "tsim, all threads"
 caffeinate -i uv run python "$HERE/run_tsim.py" --seconds "$SECONDS_PER" \
   --out "$OUT/tsim-all.jsonl" > "$OUT/tsim-all.log" 2>&1
 wait_for_idle "tsim, 1 thread"
-NPROC=1 caffeinate -i uv run python "$HERE/run_tsim.py" --seconds "$SECONDS_PER" \
+NPROC=1 NUMBA_NUM_THREADS=1 caffeinate -i uv run python "$HERE/run_tsim.py" \
+  --seconds "$SECONDS_PER" \
   --out "$OUT/tsim-1.jsonl" > "$OUT/tsim-1.log" 2>&1
 
 uv run python "$HERE/report.py" "$OUT" > "$OUT/report.md"

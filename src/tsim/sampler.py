@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal, overload
 
 import jax
 import jax.numpy as jnp
+import numba
 import numpy as np
 import psutil
 from zxparam import DecompositionStrategy
@@ -20,8 +21,13 @@ from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.execute import lane_bytes, sample_statevector_component
 from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
-from tsim.statevector.shared import Sharing, sample_shared_component, sharing_layout
+from tsim.statevector.shared import (
+    SharingLayout,
+    sample_shared_component,
+    sharing_layout,
+)
 from tsim.utils.cuda_helpers import copy_d2h
+from tsim.utils.kernels import kernel
 
 if TYPE_CHECKING:
     from jax import Array as PRNGKey
@@ -129,7 +135,7 @@ def sample_program(
     program: CompiledProgram,
     f_params: jax.Array,
     key: PRNGKey,
-    sharing: tuple[Sharing | None, ...] | None = None,
+    sharing: tuple[SharingLayout | None, ...] | None = None,
     sharing_stats: deque[dict] | None = None,
 ) -> jax.Array:
     """Sample all outputs from a compiled program.
@@ -138,7 +144,7 @@ def sample_program(
         program: The compiled program to sample from.
         f_params: Error parameters, shape (batch_size, num_f_params).
         key: JAX random key.
-        sharing: One sharing state per component, to sample statevector
+        sharing: One sharing layout per component, to sample statevector
             components with shared trajectories; ``None`` samples one lane per
             shot.
         sharing_stats: If given, the shared executor appends its lane counts.
@@ -148,7 +154,7 @@ def sample_program(
         match the original output indices.
 
     """
-    results: list[jax.Array] = []
+    results: list[jax.Array | np.ndarray] = []
 
     if program.num_outputs == 0:
         batch_size = f_params.shape[0]
@@ -179,7 +185,8 @@ def sample_program(
                 "This is likely the result of an underflow error. Please report this "
                 "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
             )  # pragma: no cover
-        if max_norm_deviation > component.norm_warning_threshold:
+        # NOTE: written so that a NaN deviation also warns.
+        if not max_norm_deviation <= component.norm_warning_threshold:
             warnings.warn(
                 "A marginal probability was not normalized correctly "
                 f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
@@ -192,6 +199,23 @@ def sample_program(
     if program.output_reindex is not None:
         combined = combined[:, program.output_reindex]
     return combined
+
+
+@kernel
+def _write_direct_detectors(f, f_indices, flips, columns, postselect, reference, out):
+    """Write direct detector ``j`` of every row into ``out[row, columns[j]]``.
+
+    Detector ``j`` is ``f[row, f_indices[j]] ^ flips[j]``. Returns which rows
+    have a postselected detector that differs from its ``reference`` bit.
+    """
+    discarded = np.zeros(f.shape[0], dtype=np.bool_)
+    for row in numba.prange(f.shape[0]):
+        for j in range(len(f_indices)):
+            bit = (f[row, f_indices[j]] != 0) ^ flips[j]
+            out[row, columns[j]] = bit
+            if postselect[j] and bit != reference[j]:
+                discarded[row] = True
+    return discarded
 
 
 def _nbytes(tree: object) -> int:
@@ -240,7 +264,7 @@ class _CompiledSamplerBase:
 
         self._key = jax.random.key(seed)
         self._trajectory_sharing = trajectory_sharing
-        self._sharing: dict[bytes, tuple[Sharing | None, ...]] = {}
+        self._sharing: dict[bytes, tuple[SharingLayout | None, ...]] = {}
         self.sharing_stats: deque[dict] = deque(maxlen=10_000)
 
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
@@ -280,6 +304,10 @@ class _CompiledSamplerBase:
         self._direct_detector_mask = self._direct_output_mask[
             : self._num_detectors
         ].copy()
+        is_detector = self._direct_global_indices < self._num_detectors
+        self._direct_detector_f = self._direct_f_indices[is_detector]
+        self._direct_detector_flips = self._direct_flips[is_detector]
+        self._direct_detector_columns = self._direct_global_indices[is_detector]
 
         statevector = [
             c for c in self._program.components if isinstance(c, StatevectorComponent)
@@ -321,22 +349,20 @@ class _CompiledSamplerBase:
         if key not in self._sharing:
             self._sharing[key] = tuple(
                 (
-                    Sharing(
-                        sharing_layout(
-                            component,
-                            np.array(
-                                [
-                                    i < num_detectors and bool(mask[i])
-                                    for i in component.output_indices
-                                ]
-                            ),
-                            np.array(
-                                [
-                                    i < num_detectors and bool(flip[i])
-                                    for i in component.output_indices
-                                ]
-                            ),
-                        )
+                    sharing_layout(
+                        component,
+                        np.array(
+                            [
+                                i < num_detectors and bool(mask[i])
+                                for i in component.output_indices
+                            ]
+                        ),
+                        np.array(
+                            [
+                                i < num_detectors and bool(flip[i])
+                                for i in component.output_indices
+                            ]
+                        ),
                     )
                     if isinstance(component, StatevectorComponent)
                     else None
@@ -578,8 +604,6 @@ class _CompiledSamplerBase:
                 return empty, np.zeros(num_outputs, dtype=np.bool_), empty_discarded
             return empty, None, empty_discarded
 
-        postselect_direct = postselection_mask & self._direct_detector_mask
-
         if not self._program.components:
             samples = self._sample_direct(shots)
             if compute_reference:
@@ -602,66 +626,63 @@ class _CompiledSamplerBase:
 
         result = np.zeros((shots, num_outputs), dtype=np.bool_)
         was_discarded = np.zeros(shots, dtype=np.bool_)
-        survivor_f_buf: list[np.ndarray] = []
-        survivor_idx_buf: list[int] = []
         shot_idx = 0
+
+        columns = self._direct_detector_columns
+        postselect = postselection_mask[columns]
+        reference_bits = (
+            reference[columns]
+            if xor_detector_ref and reference is not None
+            else np.zeros(len(columns), dtype=np.bool_)
+        )
 
         sharing = self._sharing_arguments(
             postselection_mask, reference if xor_detector_ref else None
         )
 
-        def _dispatch(f_batch: np.ndarray, indices: list[int], n_valid: int) -> None:
+        num_f = self._channel_sampler.signature_matrix.shape[1]
+        pending_f = np.empty((0, num_f), dtype=np.uint8)
+        pending_shot = np.empty(0, dtype=np.int64)
+
+        def dispatch(f_batch: np.ndarray, shot_batch: np.ndarray) -> None:
+            """Sample the shots ``shot_batch`` in one full batch, padded with row 0."""
+            count = len(shot_batch)
+            if count < batch_size:
+                padding = np.repeat(f_batch[:1], batch_size - count, axis=0)
+                f_batch = np.concatenate([f_batch, padding])
             self._key, subkey = jax.random.split(self._key)
-            jax_out = np.asarray(
-                sample_program(self._program, jnp.asarray(f_batch), subkey, **sharing)
+            samples = sample_program(
+                self._program, jnp.asarray(f_batch), subkey, **sharing
             )
-            result[indices[:n_valid]] = jax_out[:n_valid]
-
-        def _flush(*, final: bool = False) -> None:
-            nonlocal survivor_f_buf, survivor_idx_buf
-            while len(survivor_f_buf) >= batch_size:
-                _dispatch(
-                    np.stack(survivor_f_buf[:batch_size]),
-                    survivor_idx_buf[:batch_size],
-                    batch_size,
-                )
-                survivor_f_buf = survivor_f_buf[batch_size:]
-                survivor_idx_buf = survivor_idx_buf[batch_size:]
-
-            if final and survivor_f_buf:
-                n_valid = len(survivor_f_buf)
-                f_stack = np.stack(survivor_f_buf)
-                f_batch = np.empty((batch_size, f_stack.shape[1]), dtype=f_stack.dtype)
-                f_batch[:n_valid] = f_stack
-                f_batch[n_valid:] = f_stack[0]
-                _dispatch(f_batch, survivor_idx_buf, n_valid)
-                survivor_f_buf = []
-                survivor_idx_buf = []
+            result[shot_batch] = np.asarray(samples)[:count]
 
         while shot_idx < shots:
             chunk = min(batch_size, shots - shot_idx)
             f_params_np = self._channel_sampler.sample(chunk)
-            direct_full = self._compute_direct_outputs(f_params_np)
-            det_cols = direct_full[:, : self._num_detectors]
-            if xor_detector_ref and reference is not None:
-                det_cols = det_cols ^ reference[: self._num_detectors]
-
-            discarded = (det_cols & postselect_direct).any(axis=1)
-
-            result[shot_idx : shot_idx + chunk, : self._num_detectors] = direct_full[
-                :, : self._num_detectors
-            ]
+            discarded = _write_direct_detectors(
+                chunk * len(columns),
+                f_params_np,
+                self._direct_detector_f,
+                self._direct_detector_flips,
+                columns,
+                postselect,
+                reference_bits,
+                result[shot_idx : shot_idx + chunk],
+            )
             was_discarded[shot_idx : shot_idx + chunk] = discarded
 
-            survivor_local = np.flatnonzero(~discarded)
-            if survivor_local.size:
-                survivor_f_buf.extend(f_params_np[survivor_local])
-                survivor_idx_buf.extend((shot_idx + survivor_local).tolist())
+            survivors = np.flatnonzero(~discarded)
+            pending_f = np.concatenate([pending_f, f_params_np[survivors]])
+            pending_shot = np.concatenate([pending_shot, shot_idx + survivors])
 
             shot_idx += chunk
-            _flush()
+            if len(pending_shot) >= batch_size:
+                dispatch(pending_f[:batch_size], pending_shot[:batch_size])
+                pending_f = pending_f[batch_size:]
+                pending_shot = pending_shot[batch_size:]
 
-        _flush(final=True)
+        if len(pending_shot):
+            dispatch(pending_f, pending_shot)
 
         if xor_detector_ref and reference is not None:
             det_ref = reference[: self._num_detectors]

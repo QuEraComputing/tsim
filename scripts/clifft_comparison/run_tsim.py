@@ -3,15 +3,16 @@
 Run from the repository root, once per thread setting:
 
     uv run python scripts/clifft_comparison/run_tsim.py --out tsim.jsonl [NAME ...]
-    NPROC=1 uv run python scripts/clifft_comparison/run_tsim.py --out tsim-1.jsonl
+    NPROC=1 NUMBA_NUM_THREADS=1 uv run python scripts/clifft_comparison/run_tsim.py \
+        --out tsim-1.jsonl
 
-``NPROC=1`` pins JAX/XLA's CPU thread pools to one thread. Every workload is
-sampled with one lane per shot and with each of its trajectory-sharing
-configurations: compile, one untimed warmup call (JIT), then sample calls for at
-least ``--seconds`` (two warmup calls with sharing, whose lane table may grow
-and recompile on the second call). Counting follows clifft-bench: attempted shots, accepted
-shots (no postselected detector fired) and logical counts (observable 0 among
-accepted shots). Each configuration appends one JSON line to ``--out``. Every
+``NPROC=1`` pins JAX/XLA's CPU thread pools to one thread and
+``NUMBA_NUM_THREADS=1`` numba's (noise sampling, trajectory sharing). Every
+workload is sampled with one lane per shot and with each of its
+trajectory-sharing configurations: compile, one untimed warmup call (JIT), then
+sample calls for at least ``--seconds``. Counting follows clifft-bench:
+attempted shots, accepted shots (no postselected detector fired) and logical
+counts (observable 0 among accepted shots). Each configuration appends one JSON line to ``--out``. Every
 configuration and thread setting gets its own seed, so pooled counts are
 independent.
 """
@@ -54,10 +55,7 @@ def measure(name: str, label: str, sharing: bool, batch: int, shots: int, second
         c for c in sampler._program.components if isinstance(c, StatevectorComponent)
     ]
     start = time.perf_counter()
-    # NOTE: a shared sampler compiles again whenever a call needs a larger lane
-    # table, so it gets a second warmup call to settle its capacity.
-    for _ in range(2 if sharing else 1):
-        _sample(sampler, workload, shots, batch, circuit.num_detectors)
+    _sample(sampler, workload, shots, batch, circuit.num_detectors)
     warmup_seconds = time.perf_counter() - start
     sampler.sharing_stats.clear()
     attempted = accepted = ones = calls = 0

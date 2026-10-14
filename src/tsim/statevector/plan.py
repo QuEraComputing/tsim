@@ -215,11 +215,10 @@ class _Planner:
             raise RuntimeError(
                 f"the plan needs more active axes than the schedule's width {self.width}"
             )
-        in_array = [q for q in dormant_x if q < self.width]
-        if in_array:
-            axis = in_array[0]
-        else:
-            axis = free[0]
+        # NOTE: the lowest free axis keeps the active axes low, so the extent of
+        # the array that later actions touch tracks the active width.
+        axis = free[0]
+        if axis not in dormant_x:
             self._apply("SWAP", axis, dormant_x[0])
         x, _, _ = self._virtual(j)
         for q in np.flatnonzero(x):

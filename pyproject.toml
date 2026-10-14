@@ -37,6 +37,7 @@ dependencies = [
     "ipywidgets>=8.0.0",
     "jax>=0.4.38",
     "lxml>=5.0.0",
+    "numba>=0.61",
     "numpy>=1.25.0",
     "psutil>=5.9.0",
     "stim>=1.0.0",
