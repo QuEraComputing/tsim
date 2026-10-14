@@ -1,19 +1,12 @@
 """The clifft-bench workloads shared by ``benchmark.py`` and ``benchmark_clifft.py``.
 
-Circuits are read from the directory in ``CLIFFT_BENCH_CIRCUITS`` (default
-``workloads/circuits`` of a clifft-bench checkout next to this repository).
+The circuits are the copies in ``../circuits/clifft-bench``.
 """
 
 import math
-import os
 from pathlib import Path
 
-_SIBLING_CHECKOUT = Path(__file__).resolve().parents[3] / "clifft-bench"
-CIRCUITS = Path(
-    os.environ.get(
-        "CLIFFT_BENCH_CIRCUITS", _SIBLING_CHECKOUT / "workloads" / "circuits"
-    )
-)
+CIRCUITS = Path(__file__).resolve().parents[1] / "circuits" / "clifft-bench"
 
 # name: (file, Clifft 0.10.0 acceptance, shots per sample call, batch size)
 WORKLOADS = {

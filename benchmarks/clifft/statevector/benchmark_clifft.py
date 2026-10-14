@@ -3,8 +3,8 @@
 Clifft is not a tsim dependency. Install it into a separate environment and run
 this script with that interpreter, from the repository root:
 
-    uv venv /tmp/clifft-venv && uv pip install --python /tmp/clifft-venv clifft
-    /tmp/clifft-venv/bin/python scripts/statevector/benchmark_clifft.py [--seconds S] [NAME ...]
+    uv venv /tmp/clifft-venv && uv pip install --python /tmp/clifft-venv clifft==0.11.0
+    /tmp/clifft-venv/bin/python benchmarks/clifft/statevector/benchmark_clifft.py [--seconds S] [NAME ...]
 
 Every circuit is compiled as clifft-bench does: default HIR passes, every
 detector post-selected. Then, for one thread and for all threads

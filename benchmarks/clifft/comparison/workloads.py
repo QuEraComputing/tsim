@@ -1,38 +1,19 @@
 """Workloads of the Tsim/Clifft comparison: clifft-bench plus SymFT's d=7 circuit.
 
-The clifft-bench circuits are read from ``CLIFFT_BENCH_CIRCUITS`` (default
-``workloads/circuits`` of a clifft-bench checkout next to the main repository),
-SymFT's from ``SYMFT_TEST_CIRCUITS`` (default ``benchmark/circuit`` of a
-SymFT_Test checkout next to it, github.com/haoliri0/SymFT_Test). Every
-clifft-bench workload follows its manifest (``manifests/workloads.v1.json``):
-every detector is postselected except on Quantum Volume, and the logical count
-is observable 0 among accepted shots. SymFT benchmarks its d=7 circuit without
-postselection, so it runs both ways here.
+The circuits are copies in ``../circuits`` (see ``../README.md`` for their
+sources). Every clifft-bench workload follows its manifest
+(``manifests/workloads.v1.json``): every detector is postselected except on
+Quantum Volume, and the logical count is observable 0 among accepted shots.
+SymFT benchmarks its d=7 circuit without postselection, so it runs both ways
+here.
 """
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
-
-def _sibling(name: str) -> Path:
-    """Return the checkout ``name`` in the nearest ancestor that holds one."""
-    for parent in Path(__file__).resolve().parents:
-        if (parent / name).is_dir():
-            return parent / name
-    return Path(name)
-
-
-CLIFFT_BENCH = Path(
-    os.environ.get(
-        "CLIFFT_BENCH_CIRCUITS", _sibling("clifft-bench") / "workloads" / "circuits"
-    )
-)
-SYMFT_TEST = Path(
-    os.environ.get(
-        "SYMFT_TEST_CIRCUITS", _sibling("SymFT_Test") / "benchmark" / "circuit"
-    )
-)
+CIRCUITS = Path(__file__).resolve().parents[1] / "circuits"
+CLIFFT_BENCH = CIRCUITS / "clifft-bench"
+SYMFT_TEST = CIRCUITS / "symft"
 
 
 @dataclass(frozen=True)

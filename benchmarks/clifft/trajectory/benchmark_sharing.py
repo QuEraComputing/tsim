@@ -2,9 +2,9 @@
 
 Run from the repository root:
 
-    uv run python scripts/trajectory/benchmark_sharing.py [--seconds S] [NAME ...]
+    uv run python benchmarks/clifft/trajectory/benchmark_sharing.py [--seconds S] [NAME ...]
 
-Same counting as ``scripts/statevector/benchmark.py`` (postselection on every
+Same counting as ``benchmarks/clifft/statevector/benchmark.py`` (postselection on every
 detector, acceptance checked against Clifft 0.10.0 within 5 standard errors,
 logical errors = observable 0 among accepted shots), for three samplers per
 workload: one lane per shot (``trajectory_sharing=False``), shared trajectories

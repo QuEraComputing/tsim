@@ -2,16 +2,16 @@
 
 > **Note (2026-10-13):** this write-up describes the JAX prototype. On branch
 > `tsim-perf` the shared executor was replaced by a numba executor (commit
-> `f012e25`); `scripts/trajectory/shared_breakdown.py` and the lane-capacity
+> `f012e25`); `benchmarks/clifft/trajectory/shared_breakdown.py` and the lane-capacity
 > tests mentioned below no longer exist.
 
 - **Date:** 2026-10-11
 - **Machine:** Apple M4 Pro, 14 cores (10 performance, 4 efficiency), JAX 0.9.2 CPU
 - **Branch:** `trajectory-sharing`, from `statevector-sampler` at `883b125`
-- **Circuits:** the five clifft-bench workloads of `scripts/statevector/benchmark.py`,
+- **Circuits:** the five clifft-bench workloads of `benchmarks/clifft/statevector/benchmark.py`,
   postselected on every detector as clifft-bench does
 - **Code:** `src/tsim/statevector/shared.py` (the prototype, behind
-  `trajectory_sharing=True`), `scripts/trajectory/` (measurements)
+  `trajectory_sharing=True`), `benchmarks/clifft/trajectory/` (measurements)
 
 Shots whose quantum trajectories agree can share one state vector. The questions:
 
@@ -353,7 +353,7 @@ for every sampler. "shared" rows use the benchmark's batch size and a batch of
 | coherent_d5_r5 | 890 | 27,280 | 69,019 | 78× | 3,692 | 25,476 |
 
 Measured at commit `88c99cd`. Clifft's figures are the same-machine measurements
-in `scripts/statevector/results.md` of the main checkout (Clifft 0.11.0 from
+in `benchmarks/clifft/notes/statevector_results.md` (Clifft 0.11.0 from
 PyPI). Acceptances (shared): 0.0799, 0.6866, 0.3732, 0.1437 to 0.1441 and 0.0076
 to 0.0078, all "ok" against Clifft 0.10.0. Logical errors among accepted shots
 are 0 except on distillation (rate 0.4220, Clifft 0.422) and cultivation_d3 (15
@@ -396,14 +396,14 @@ shot.
 
 ## Reproduce
 
-From the worktree root (with the main checkout's environment):
+From the repository root:
 
-    uv run python scripts/trajectory/sharing_stats.py --lanes 4096 16384 65536 --max-amplitudes 67108864
-    uv run python scripts/trajectory/sharing_stats.py --all-shots --lanes 4096 16384 65536 --max-amplitudes 67108864
-    uv run python scripts/trajectory/sharing_stats.py --mode measurements --lanes 2048 16384 --max-amplitudes 67108864
-    uv run python scripts/trajectory/sharing_stats.py --all-shots --noiseless --lanes 16384 --max-amplitudes 67108864
-    uv run python scripts/trajectory/sharing_stats.py --mode measurements --noiseless --lanes 2048 16384 --max-amplitudes 67108864
-    uv run python scripts/trajectory/structure.py
-    uv run python scripts/trajectory/breakdown.py
-    uv run python scripts/trajectory/shared_breakdown.py
-    uv run python scripts/trajectory/benchmark_sharing.py --seconds 10
+    uv run python benchmarks/clifft/trajectory/sharing_stats.py --lanes 4096 16384 65536 --max-amplitudes 67108864
+    uv run python benchmarks/clifft/trajectory/sharing_stats.py --all-shots --lanes 4096 16384 65536 --max-amplitudes 67108864
+    uv run python benchmarks/clifft/trajectory/sharing_stats.py --mode measurements --lanes 2048 16384 --max-amplitudes 67108864
+    uv run python benchmarks/clifft/trajectory/sharing_stats.py --all-shots --noiseless --lanes 16384 --max-amplitudes 67108864
+    uv run python benchmarks/clifft/trajectory/sharing_stats.py --mode measurements --noiseless --lanes 2048 16384 --max-amplitudes 67108864
+    uv run python benchmarks/clifft/trajectory/structure.py
+    uv run python benchmarks/clifft/trajectory/breakdown.py
+    uv run python benchmarks/clifft/trajectory/shared_breakdown.py
+    uv run python benchmarks/clifft/trajectory/benchmark_sharing.py --seconds 10

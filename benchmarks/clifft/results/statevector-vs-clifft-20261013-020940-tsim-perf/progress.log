@@ -1,0 +1,13 @@
+2026-10-13 02:09:40 waiting for idle before clifft: cpu 96%, load 7.68, calm 1/3
+2026-10-13 02:10:40 waiting for idle before clifft: cpu 148%, load 7.59, calm 2/3
+2026-10-13 02:11:40 waiting for idle before clifft: cpu 74%, load 6.07, calm 3/3
+2026-10-13 02:11:40 start clifft (cpu 71%, load 6.07)
+2026-10-13 02:18:47 waiting for idle before tsim, all threads: cpu 77%, load 12.51, calm 1/3
+2026-10-13 02:19:48 waiting for idle before tsim, all threads: cpu 102%, load 6.79, calm 2/3
+2026-10-13 02:20:48 waiting for idle before tsim, all threads: cpu 102%, load 5.16, calm 3/3
+2026-10-13 02:20:48 start tsim, all threads (cpu 86%, load 5.16)
+2026-10-13 02:26:47 waiting for idle before tsim, 1 thread: cpu 113%, load 10.24, calm 1/3
+2026-10-13 02:27:47 waiting for idle before tsim, 1 thread: cpu 107%, load 5.94, calm 2/3
+2026-10-13 02:28:47 waiting for idle before tsim, 1 thread: cpu 96%, load 5.58, calm 3/3
+2026-10-13 02:28:47 start tsim, 1 thread (cpu 83%, load 5.58)
+2026-10-13 02:38:56 done
