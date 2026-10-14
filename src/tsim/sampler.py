@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from collections import deque
 from math import ceil
 from typing import TYPE_CHECKING, Literal, overload
 
@@ -19,6 +20,7 @@ from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.execute import lane_bytes, sample_statevector_component
 from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
+from tsim.statevector.shared import Sharing, sample_shared_component, sharing_layout
 from tsim.utils.cuda_helpers import copy_d2h
 
 if TYPE_CHECKING:
@@ -127,6 +129,8 @@ def sample_program(
     program: CompiledProgram,
     f_params: jax.Array,
     key: PRNGKey,
+    sharing: tuple[Sharing | None, ...] | None = None,
+    sharing_stats: deque[dict] | None = None,
 ) -> jax.Array:
     """Sample all outputs from a compiled program.
 
@@ -134,6 +138,10 @@ def sample_program(
         program: The compiled program to sample from.
         f_params: Error parameters, shape (batch_size, num_f_params).
         key: JAX random key.
+        sharing: One sharing state per component, to sample statevector
+            components with shared trajectories; ``None`` samples one lane per
+            shot.
+        sharing_stats: If given, the shared executor appends its lane counts.
 
     Returns:
         Samples array of shape (batch_size, num_outputs), reordered to
@@ -153,8 +161,18 @@ def sample_program(
         )
         results.append(direct_bits)
 
-    for component in program.components:
-        samples, key, max_norm_deviation = sample_component(component, f_params, key)
+    for index, component in enumerate(program.components):
+        shared = sharing[index] if sharing is not None else None
+        if isinstance(component, StatevectorComponent) and shared is not None:
+            samples, key, max_norm_deviation, stats = sample_shared_component(
+                component, shared, f_params, key
+            )
+            if sharing_stats is not None:
+                sharing_stats.append(stats)
+        else:
+            samples, key, max_norm_deviation = sample_component(
+                component, f_params, key
+            )
         if np.isclose(max_norm_deviation, 1):
             raise ValueError(
                 "A vanishing marginal probability distribution was encountered (normalization 0). "
@@ -193,6 +211,7 @@ class _CompiledSamplerBase:
         mode: Literal["sequential", "joint"],
         strategy: SamplingStrategy = "cat5",
         seed: int | None = None,
+        trajectory_sharing: bool = False,
     ):
         """Initialize the sampler by compiling the circuit.
 
@@ -206,12 +225,23 @@ class _CompiledSamplerBase:
             seed: Random seed. If None, a random seed is generated. Note that
                 deterministic results are only guaranteed for a fixed batch size
                 and fixed reference sample settings.
+            trajectory_sharing: With ``strategy="statevector"``, simulate shots
+                with equal histories on one lane (experimental).
+
+        Raises:
+            ValueError: If ``trajectory_sharing`` is combined with a
+                stabilizer-rank strategy.
 
         """
+        if trajectory_sharing and strategy != "statevector":
+            raise ValueError("trajectory_sharing needs strategy='statevector'")
         if seed is None:
             seed = int(np.random.default_rng().integers(0, 2**30))
 
         self._key = jax.random.key(seed)
+        self._trajectory_sharing = trajectory_sharing
+        self._sharing: dict[bytes, tuple[Sharing | None, ...]] = {}
+        self.sharing_stats: deque[dict] = deque(maxlen=10_000)
 
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
         self._program = compile_program(prepared, mode=mode, strategy=strategy)
@@ -264,6 +294,56 @@ class _CompiledSamplerBase:
                     f"{widest.width}), more than half of the available memory. "
                     f"{STABILIZER_RANK_HINT}"
                 )
+
+    def _sharing_arguments(
+        self,
+        postselection_mask: np.ndarray | None,
+        detector_reference: np.ndarray | None = None,
+    ) -> dict:
+        """Return the extra ``sample_program`` arguments: none without sharing.
+
+        Args:
+            postselection_mask: Postselected detectors, whose lanes are pruned.
+            detector_reference: Reference bits XOR-ed into the detectors before
+                the postselection test, if any.
+
+        """
+        if not self._trajectory_sharing:
+            return {}
+        num_detectors = self._num_detectors
+        mask = np.zeros(num_detectors, dtype=np.bool_)
+        if postselection_mask is not None:
+            mask = np.asarray(postselection_mask, dtype=np.bool_)
+        flip = np.zeros(num_detectors, dtype=np.bool_)
+        if detector_reference is not None:
+            flip = np.asarray(detector_reference[:num_detectors], dtype=np.bool_)
+        key = mask.tobytes() + flip.tobytes()
+        if key not in self._sharing:
+            self._sharing[key] = tuple(
+                (
+                    Sharing(
+                        sharing_layout(
+                            component,
+                            np.array(
+                                [
+                                    i < num_detectors and bool(mask[i])
+                                    for i in component.output_indices
+                                ]
+                            ),
+                            np.array(
+                                [
+                                    i < num_detectors and bool(flip[i])
+                                    for i in component.output_indices
+                                ]
+                            ),
+                        )
+                    )
+                    if isinstance(component, StatevectorComponent)
+                    else None
+                )
+                for component in self._program.components
+            )
+        return {"sharing": self._sharing[key], "sharing_stats": self.sharing_stats}
 
     def _compute_direct_outputs(self, f_params_np: np.ndarray) -> np.ndarray:
         """Scatter direct output bits into a full (batch, num_outputs) bool array.
@@ -443,7 +523,9 @@ class _CompiledSamplerBase:
 
             f_params = jnp.asarray(f_params_np)
             self._key, subkey = jax.random.split(self._key)
-            samples = sample_program(self._program, f_params, subkey)
+            samples = sample_program(
+                self._program, f_params, subkey, **self._sharing_arguments(None)
+            )
 
             if compute_reference and reference is None:
                 reference = np.asarray(samples[0])
@@ -524,10 +606,14 @@ class _CompiledSamplerBase:
         survivor_idx_buf: list[int] = []
         shot_idx = 0
 
+        sharing = self._sharing_arguments(
+            postselection_mask, reference if xor_detector_ref else None
+        )
+
         def _dispatch(f_batch: np.ndarray, indices: list[int], n_valid: int) -> None:
             self._key, subkey = jax.random.split(self._key)
             jax_out = np.asarray(
-                sample_program(self._program, jnp.asarray(f_batch), subkey)
+                sample_program(self._program, jnp.asarray(f_batch), subkey, **sharing)
             )
             result[indices[:n_valid]] = jax_out[:n_valid]
 
@@ -691,6 +777,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         *,
         strategy: SamplingStrategy = "cat5",
         seed: int | None = None,
+        trajectory_sharing: bool = False,
     ):
         """Create a measurement sampler.
 
@@ -698,6 +785,8 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
                 "cutting"), or "statevector".
+            trajectory_sharing: With ``strategy="statevector"``, simulate shots
+                with equal histories on one lane (experimental).
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -710,6 +799,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             mode="sequential",
             seed=seed,
             strategy=strategy,
+            trajectory_sharing=trajectory_sharing,
         )
 
     def sample(self, shots: int, *, batch_size: int | None = None) -> np.ndarray:
@@ -746,6 +836,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         *,
         strategy: SamplingStrategy = "cat5",
         seed: int | None = None,
+        trajectory_sharing: bool = False,
     ):
         """Create a detector sampler.
 
@@ -753,6 +844,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
                 "cutting"), or "statevector".
+            trajectory_sharing: With ``strategy="statevector"``, simulate shots
+                with equal histories on one lane (experimental).
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size and
                 fixed reference sample settings. If deterministic samples are
@@ -765,6 +858,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             mode="sequential",
             seed=seed,
             strategy=strategy,
+            trajectory_sharing=trajectory_sharing,
         )
 
     @overload
