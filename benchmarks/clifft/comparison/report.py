@@ -2,7 +2,7 @@
 
 Run with any Python 3 from the repository root:
 
-    uv run python scripts/clifft_comparison/report.py RUN_DIR
+    uv run python benchmarks/clifft/comparison/report.py RUN_DIR
 
 ``RUN_DIR`` holds ``tsim-all.jsonl``, ``tsim-1.jsonl`` and ``clifft.jsonl``. The
 speed table takes each simulator's fastest configuration per thread setting.

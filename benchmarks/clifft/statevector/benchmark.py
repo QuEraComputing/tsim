@@ -2,7 +2,7 @@
 
 Run from the repository root:
 
-    uv run python scripts/statevector/benchmark.py [--seconds S] [--seed N] [NAME ...]
+    uv run python benchmarks/clifft/statevector/benchmark.py [--seconds S] [--seed N] [NAME ...]
 
 Prefix the command with ``NPROC=1`` to run JAX on one thread: XLA sizes its CPU
 thread pools from ``NPROC``.

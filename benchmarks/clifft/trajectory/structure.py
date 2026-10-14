@@ -2,7 +2,7 @@
 
 Run from the repository root:
 
-    uv run python scripts/trajectory/structure.py [NAME ...]
+    uv run python benchmarks/clifft/trajectory/structure.py [NAME ...]
 
 For detector sampling (the benchmark) and for raw measurement records this
 prints, per clifft-bench workload:

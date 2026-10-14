@@ -1,0 +1,3 @@
+# NOTE: the repository ignores *.stim and *.log; keep the circuits and run logs here.
+!*.stim
+!*.log

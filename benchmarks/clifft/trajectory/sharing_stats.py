@@ -2,7 +2,7 @@
 
 Run from the repository root:
 
-    uv run python scripts/trajectory/sharing_stats.py [--lanes N ...] [--all-shots]
+    uv run python benchmarks/clifft/trajectory/sharing_stats.py [--lanes N ...] [--all-shots]
         [--mode detectors|measurements] [--noiseless] [NAME ...]
 
 For every workload this samples f-bits, keeps the shots that survive

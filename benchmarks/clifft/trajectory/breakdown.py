@@ -2,7 +2,7 @@
 
 Run from the repository root:
 
-    uv run python scripts/trajectory/breakdown.py [NAME ...]
+    uv run python benchmarks/clifft/trajectory/breakdown.py [NAME ...]
 
 For every clifft-bench workload this times, per ``shots`` attempted shots (the
 benchmark's shots per call and batch size):

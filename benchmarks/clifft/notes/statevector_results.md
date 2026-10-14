@@ -14,9 +14,9 @@
 Commands, from the repository root (`benchmark_clifft.py` describes how to
 install Clifft):
 
-    uv run python scripts/statevector/benchmark.py --seconds 10
-    NPROC=1 uv run python scripts/statevector/benchmark.py --seconds 10
-    /tmp/clifft-venv/bin/python scripts/statevector/benchmark_clifft.py --seconds 10
+    uv run python benchmarks/clifft/statevector/benchmark.py --seconds 10
+    NPROC=1 uv run python benchmarks/clifft/statevector/benchmark.py --seconds 10
+    /tmp/clifft-venv/bin/python benchmarks/clifft/statevector/benchmark_clifft.py --seconds 10
 
 See the docstrings of both scripts for what is timed and counted. Both
 postselect on every detector, as clifft-bench does. Tsim's "warmup s" is the
@@ -124,9 +124,9 @@ different machine.
 
 Tsim's counts pool the benchmark's run (seed 0) with independent runs:
 
-    uv run python scripts/statevector/benchmark.py --seconds 120 --seed 1 cultivation_d3
-    uv run python scripts/statevector/benchmark.py --seconds 45 --seed 1 distillation
-    uv run python scripts/statevector/benchmark.py --seconds 45 --seed 2 distillation
+    uv run python benchmarks/clifft/statevector/benchmark.py --seconds 120 --seed 1 cultivation_d3
+    uv run python benchmarks/clifft/statevector/benchmark.py --seconds 45 --seed 1 distillation
+    uv run python benchmarks/clifft/statevector/benchmark.py --seconds 45 --seed 2 distillation
 
 which gave 78 / 89470166, 4242388 / 10057137 and 4275565 / 10138745 (errors /
 accepted). The references are Clifft 0.11.0 on this machine (both thread

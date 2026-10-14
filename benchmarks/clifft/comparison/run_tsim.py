@@ -2,8 +2,8 @@
 
 Run from the repository root, once per thread setting:
 
-    uv run python scripts/clifft_comparison/run_tsim.py --out tsim.jsonl [NAME ...]
-    NPROC=1 NUMBA_NUM_THREADS=1 uv run python scripts/clifft_comparison/run_tsim.py \
+    uv run python benchmarks/clifft/comparison/run_tsim.py --out tsim.jsonl [NAME ...]
+    NPROC=1 NUMBA_NUM_THREADS=1 uv run python benchmarks/clifft/comparison/run_tsim.py \
         --out tsim-1.jsonl
 
 ``NPROC=1`` pins JAX/XLA's CPU thread pools to one thread and
