@@ -26,7 +26,7 @@ from tsim.statevector.shared import (
     sharing_layout,
 )
 from tsim.utils.cuda_helpers import copy_d2h
-from tsim.utils.kernels import kernel
+from tsim.utils.kernels import kernel, run_tasks
 
 if TYPE_CHECKING:
     from jax import Array as PRNGKey
@@ -35,6 +35,12 @@ if TYPE_CHECKING:
 
 # NOTE: beyond 2^16 lanes, statevector batches cost memory without being faster.
 STATEVECTOR_MAX_BATCH_SIZE = 2**16
+
+# NOTE: postselection screens shots for direct discards in chunks of at most
+# this many, several chunks per thread at a time, so that calls of a few batches
+# still keep every thread busy and slow cores take fewer chunks.
+SCREEN_SHOTS = 2**14
+SCREEN_CHUNKS_PER_THREAD = 2
 
 
 def _sample_component(
@@ -248,7 +254,9 @@ class _CompiledSamplerBase:
                 deterministic results are only guaranteed for a fixed batch size
                 and fixed reference sample settings.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane (experimental).
+                with equal histories on one lane, and sample up to
+                ``numba.get_num_threads()`` batches at once, each with its own
+                memory (experimental).
 
         Raises:
             ValueError: If ``trajectory_sharing`` is combined with a
@@ -458,6 +466,14 @@ class _CompiledSamplerBase:
             available = psutil.virtual_memory().available
         return int(available * 0.5)  # conservative
 
+    def _threads(self) -> int:
+        """Return how many batches run at once.
+
+        With trajectory sharing every numba thread samples its own batches; the
+        JAX executors sample one batch at a time.
+        """
+        return numba.get_num_threads() if self._trajectory_sharing else 1
+
     def _estimate_batch_size(self) -> int:
         """Estimate the largest batch size that fits in available device memory.
 
@@ -536,26 +552,27 @@ class _CompiledSamplerBase:
             # within existing batches (keeps shapes uniform for JIT).
             batch_size += 1
 
-        batches: list[jax.Array] = []
-        reference: np.ndarray | None = None
-
-        for _ in range(num_batches):
-            f_params_np = self._channel_sampler.sample(batch_size)
-
-            if compute_reference and reference is None:
-                f_params_np[0] = 0
-
-            f_params = jnp.asarray(f_params_np)
+        sharing = self._sharing_arguments(None)
+        tasks = []
+        for index in range(num_batches):
+            seeds = self._channel_sampler.block_seeds(batch_size)
             self._key, subkey = jax.random.split(self._key)
-            samples = sample_program(
-                self._program, f_params, subkey, **self._sharing_arguments(None)
+            tasks.append((index, seeds, subkey))
+
+        def sample_batch(task: tuple[int, np.ndarray, PRNGKey]) -> jax.Array:
+            index, seeds, key = task
+            f_params_np = self._channel_sampler.sample(batch_size, seeds)
+            if compute_reference and index == 0:
+                f_params_np[0] = 0
+            return sample_program(
+                self._program, jnp.asarray(f_params_np), key, **sharing
             )
 
-            if compute_reference and reference is None:
-                reference = np.asarray(samples[0])
-                samples = samples[1:]
-
-            batches.append(samples)
+        batches = run_tasks(sample_batch, tasks, self._threads())
+        reference: np.ndarray | None = None
+        if compute_reference:
+            reference = np.asarray(batches[0][0])
+            batches[0] = batches[0][1:]
 
         # Concatenate on device, then a single d2h. The prior
         # np.concatenate(batches) triggered per-batch __array__ (one d2h each)
@@ -588,6 +605,8 @@ class _CompiledSamplerBase:
         ``batch_size`` is ready, then dispatched to ``sample_program`` in one
         call.  The final partial batch is padded to keep the JAX batch size
         fixed (avoiding recompilation) and the padding rows are discarded.
+        Chunks of shots, and then the batches of their survivors, run on
+        ``_threads()`` threads at once.
         """
         if shots < 0:
             raise ValueError(f"shots must be non-negative, got {shots}")
@@ -624,7 +643,6 @@ class _CompiledSamplerBase:
 
         result = np.zeros((shots, num_outputs), dtype=np.bool_)
         was_discarded = np.zeros(shots, dtype=np.bool_)
-        shot_idx = 0
 
         columns = self._direct_detector_columns
         postselect = postselection_mask[columns]
@@ -638,49 +656,82 @@ class _CompiledSamplerBase:
             postselection_mask, reference if xor_detector_ref else None
         )
 
-        num_f = self._channel_sampler.signature_matrix.shape[1]
-        pending_f = np.empty((0, num_f), dtype=np.uint8)
-        pending_shot = np.empty(0, dtype=np.int64)
+        chunk = min(batch_size, SCREEN_SHOTS)
 
-        def dispatch(f_batch: np.ndarray, shot_batch: np.ndarray) -> None:
-            """Sample the shots ``shot_batch`` in one full batch, padded with row 0."""
-            count = len(shot_batch)
-            if count < batch_size:
-                padding = np.repeat(f_batch[:1], batch_size - count, axis=0)
-                f_batch = np.concatenate([f_batch, padding])
-            self._key, subkey = jax.random.split(self._key)
-            samples = sample_program(
-                self._program, jnp.asarray(f_batch), subkey, **sharing
-            )
-            result[shot_batch] = np.asarray(samples)[:count]
+        def screen(task: tuple[int, np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+            """Sample the chunk of shots at ``start``; return its survivors.
 
-        while shot_idx < shots:
-            chunk = min(batch_size, shots - shot_idx)
-            f_params_np = self._channel_sampler.sample(chunk)
+            Writes the chunk's direct detectors and which of its shots a direct
+            detector discards; returns the survivors' f-params and shot indices.
+            """
+            start, seeds = task
+            stop = min(start + chunk, shots)
+            f_params_np = self._channel_sampler.sample(stop - start, seeds)
             discarded = _write_direct_detectors(
-                chunk * len(columns),
+                (stop - start) * len(columns),
                 f_params_np,
                 self._direct_detector_f,
                 self._direct_detector_flips,
                 columns,
                 postselect,
                 reference_bits,
-                result[shot_idx : shot_idx + chunk],
+                result[start:stop],
             )
-            was_discarded[shot_idx : shot_idx + chunk] = discarded
-
+            was_discarded[start:stop] = discarded
             survivors = np.flatnonzero(~discarded)
-            pending_f = np.concatenate([pending_f, f_params_np[survivors]])
-            pending_shot = np.concatenate([pending_shot, shot_idx + survivors])
+            return f_params_np[survivors], start + survivors
 
-            shot_idx += chunk
-            if len(pending_shot) >= batch_size:
-                dispatch(pending_f[:batch_size], pending_shot[:batch_size])
-                pending_f = pending_f[batch_size:]
-                pending_shot = pending_shot[batch_size:]
+        def dispatch(task: tuple[np.ndarray, np.ndarray, PRNGKey]) -> None:
+            """Sample the shots ``shot_batch`` in one full batch, padded with row 0."""
+            f_batch, shot_batch, key = task
+            count = len(shot_batch)
+            if count < batch_size:
+                padding = np.repeat(f_batch[:1], batch_size - count, axis=0)
+                f_batch = np.concatenate([f_batch, padding])
+            samples = sample_program(
+                self._program, jnp.asarray(f_batch), key, **sharing
+            )
+            result[shot_batch] = np.asarray(samples)[:count]
 
-        if len(pending_shot):
-            dispatch(pending_f, pending_shot)
+        threads = self._threads()
+        num_f = self._channel_sampler.signature_matrix.shape[1]
+        pending_f = [np.empty((0, num_f), dtype=np.uint8)]
+        pending_shot = [np.empty(0, dtype=np.int64)]
+        pending = 0
+        starts = range(0, shots, chunk)
+        screened_chunks = 0
+        # NOTE: chunks are screened until every thread has a full batch of
+        # survivors. Batches still start every batch_size survivors and seeds and
+        # keys are drawn in order, so the thread count doesn't change the samples.
+        while screened_chunks < len(starts) or pending:
+            while screened_chunks < len(starts) and pending < threads * batch_size:
+                tasks = [
+                    (
+                        start,
+                        self._channel_sampler.block_seeds(min(chunk, shots - start)),
+                    )
+                    for start in starts[
+                        screened_chunks : screened_chunks
+                        + SCREEN_CHUNKS_PER_THREAD * threads
+                    ]
+                ]
+                screened_chunks += len(tasks)
+                for f_survivors, shot_survivors in run_tasks(screen, tasks, threads):
+                    pending_f.append(f_survivors)
+                    pending_shot.append(shot_survivors)
+                    pending += len(shot_survivors)
+            ready = pending
+            if screened_chunks < len(starts):
+                ready -= ready % (threads * batch_size)
+            all_f, all_shot = np.concatenate(pending_f), np.concatenate(pending_shot)
+            batches = []
+            for start in range(0, ready, batch_size):
+                self._key, subkey = jax.random.split(self._key)
+                stop = start + batch_size
+                batches.append((all_f[start:stop], all_shot[start:stop], subkey))
+            run_tasks(dispatch, batches, threads)
+            pending_f, pending_shot = [all_f[ready:]], [all_shot[ready:]]
+            pending -= ready
 
         if xor_detector_ref and reference is not None:
             det_ref = reference[: self._num_detectors]
@@ -805,7 +856,9 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane (experimental).
+                with equal histories on one lane, and sample up to
+                ``numba.get_num_threads()`` batches at once, each with its own
+                memory (experimental).
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -864,7 +917,9 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane (experimental).
+                with equal histories on one lane, and sample up to
+                ``numba.get_num_threads()`` batches at once, each with its own
+                memory (experimental).
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size and
                 fixed reference sample settings. If deterministic samples are

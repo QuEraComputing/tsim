@@ -6,6 +6,8 @@ from test.helpers.statevector import CIRCUITS, assert_counts_match
 import numpy as np
 import pytest
 
+import tsim.sampler as sampler_module
+import tsim.utils.kernels as kernels
 from tsim.circuit import Circuit
 
 # NOTE: t_ghz plus a direct detector: postselection only takes the pruning path
@@ -144,3 +146,53 @@ def test_trajectory_sharing_needs_the_statevector_strategy():
         Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
             strategy="cat5", trajectory_sharing=True
         )
+
+
+@pytest.mark.parametrize("screen_shots", [None, 64])
+@pytest.mark.parametrize("postselect", [False, True])
+@pytest.mark.parametrize("reference", [False, True])
+def test_shared_samples_do_not_depend_on_the_thread_count(
+    postselect, reference, screen_shots, monkeypatch
+):
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    mask = np.ones(circuit.num_detectors, dtype=bool) if postselect else None
+    if screen_shots is not None:
+        monkeypatch.setattr(sampler_module, "SCREEN_SHOTS", screen_shots)
+
+    def sample(threads):
+        sampler = circuit.compile_detector_sampler(
+            strategy="active_statevector", seed=3, trajectory_sharing=True
+        )
+        sampler._threads = lambda: threads
+        return [
+            sampler.sample(
+                5_003,
+                batch_size=300,
+                append_observables=True,
+                postselection_mask=mask,
+                use_detector_reference_sample=reference,
+            )
+            for _ in range(2)
+        ]
+
+    # NOTE: the serial baseline runs numba's parallel kernels, which the worker
+    # threads replace by serial ones.
+    with monkeypatch.context() as patch:
+        patch.setattr(kernels, "PARALLEL_WORK", 0)
+        expected = sample(1)
+    for threads in (2, 5):
+        for got, want in zip(sample(threads), expected, strict=True):
+            np.testing.assert_array_equal(got, want)
+
+
+def test_shared_measurement_samples_do_not_depend_on_the_thread_count():
+    circuit = Circuit(CIRCUITS["midcircuit_feedforward"])
+
+    def sample(threads):
+        sampler = circuit.compile_sampler(
+            strategy="active_statevector", seed=4, trajectory_sharing=True
+        )
+        sampler._threads = lambda: threads
+        return sampler.sample(2_001, batch_size=250)
+
+    np.testing.assert_array_equal(sample(4), sample(1))

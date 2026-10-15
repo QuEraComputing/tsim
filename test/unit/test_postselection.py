@@ -188,8 +188,8 @@ def test_survivors_keep_their_own_direct_outputs(shots, batch_size, reference):
     drawn: list[np.ndarray] = []
     original = sampler._channel_sampler.sample
 
-    def capture(n: int) -> np.ndarray:
-        batch = original(n)
+    def capture(n: int, seeds: np.ndarray | None = None) -> np.ndarray:
+        batch = original(n, seeds)
         drawn.append(batch.copy())
         return batch
 
@@ -218,8 +218,8 @@ def test_postselection_direct_cols_always_equal_numpy():
     drawn: list[np.ndarray] = []
     original = sampler._channel_sampler.sample
 
-    def capture(n: int) -> np.ndarray:
-        batch = original(n)
+    def capture(n: int, seeds: np.ndarray | None = None) -> np.ndarray:
+        batch = original(n, seeds)
         drawn.append(batch.copy())
         return batch
 
@@ -502,9 +502,9 @@ def test_postselection_reference_does_not_advance_channel_rng():
     original = sampler._channel_sampler.sample
     calls: list[int] = []
 
-    def spy(n: int) -> np.ndarray:
+    def spy(n: int, seeds: np.ndarray | None = None) -> np.ndarray:
         calls.append(n)
-        return original(n)
+        return original(n, seeds)
 
     with patch.object(sampler._channel_sampler, "sample", side_effect=spy):
         sampler._compute_reference_sample()

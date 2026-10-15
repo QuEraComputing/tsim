@@ -875,7 +875,9 @@ class Circuit:
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting").
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane (experimental).
+                with equal histories on one lane, and sample up to
+                ``numba.get_num_threads()`` batches at once, each with its own
+                memory (experimental).
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -911,7 +913,9 @@ class Circuit:
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting").
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane (experimental).
+                with equal histories on one lane, and sample up to
+                ``numba.get_num_threads()`` batches at once, each with its own
+                memory (experimental).
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
