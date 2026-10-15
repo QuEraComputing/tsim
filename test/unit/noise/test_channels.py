@@ -1167,3 +1167,28 @@ class TestChannelSampler:
         samples = sampler.sample(100)
 
         assert samples.shape == (100, 0)
+
+    def test_drawn_block_seeds_reproduce_samples(self):
+        """sample(n) equals sample(n, block_seeds(n)), and seed draws split freely."""
+        probs = [error_probs(0.1), error_probs(0.2)]
+        transform = np.array([[1, 0], [1, 1]], dtype=np.uint8)
+        num_samples = 3 * _BLOCK_SHOTS + 5
+        expected = ChannelSampler(probs, transform, seed=8).sample(num_samples)
+        drawn = ChannelSampler(probs, transform, seed=8)
+        seeds = drawn.block_seeds(num_samples)
+        assert np.array_equal(drawn.sample(num_samples, seeds), expected)
+
+        whole = ChannelSampler(probs, transform, seed=9).block_seeds(5 * _BLOCK_SHOTS)
+        split = ChannelSampler(probs, transform, seed=9)
+        parts = [
+            split.block_seeds(2 * _BLOCK_SHOTS),
+            split.block_seeds(3 * _BLOCK_SHOTS),
+        ]
+        assert np.array_equal(np.concatenate(parts), whole)
+
+    def test_wrong_number_of_block_seeds_raises(self):
+        sampler = ChannelSampler(
+            [error_probs(0.1)], np.ones((1, 1), dtype=np.uint8), seed=0
+        )
+        with pytest.raises(ValueError, match="block seeds"):
+            sampler.sample(_BLOCK_SHOTS + 1, sampler.block_seeds(_BLOCK_SHOTS))

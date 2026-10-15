@@ -637,7 +637,14 @@ class ChannelSampler:
         )
         self._tables = _fire_tables(self.channels, self.signature_matrix)
 
-    def sample(self, num_samples: int = 1) -> np.ndarray:
+    def block_seeds(self, num_samples: int) -> np.ndarray:
+        """Draw the seeds of the blocks of the next ``num_samples`` samples."""
+        num_blocks = -(-num_samples // _BLOCK_SHOTS)
+        return self._rng.integers(0, 2**64, size=num_blocks, dtype=np.uint64)
+
+    def sample(
+        self, num_samples: int = 1, seeds: np.ndarray | None = None
+    ) -> np.ndarray:
         """Sample from all error channels and transform to new error basis.
 
         Uses geometric-skip sampling, optimized for low-noise regimes where
@@ -647,6 +654,8 @@ class ChannelSampler:
 
         Args:
             num_samples: Number of samples to draw.
+            seeds: The blocks' seeds from ``block_seeds(num_samples)``; drawn
+                here if ``None``.
 
         Returns:
             NumPy array of shape (num_samples, num_f) with uint8 values indicating
@@ -655,8 +664,14 @@ class ChannelSampler:
         """
         num_f = self.signature_matrix.shape[1]
         result = np.zeros((num_samples, num_f), dtype=np.uint8)
+        if seeds is None:
+            seeds = self.block_seeds(num_samples)
         num_blocks = -(-num_samples // _BLOCK_SHOTS)
-        seeds = self._rng.integers(0, 2**64, size=num_blocks, dtype=np.uint64)
+        if len(seeds) != num_blocks:
+            raise ValueError(
+                f"{num_samples} samples need {num_blocks} block seeds, "
+                f"got {len(seeds)}"
+            )
         work = num_samples * len(self._tables.p_fire)
         _sample_blocks(work, result, seeds, *self._tables)
         return result
