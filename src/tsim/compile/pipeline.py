@@ -37,10 +37,11 @@ def compile_program(
     """Compile a prepared graph into an executable sampling program.
 
     The graph is split into connected components. A component whose single
-    output equals one error-basis bit takes the direct path; every other
-    component has its outputs plugged (all prefixes in ``sequential`` mode, none
-    and all in ``joint`` mode), each plugged graph is decomposed into stabilizer
-    terms, and the terms are compiled into JAX arrays.
+    output equals one error-basis bit takes the direct path, and one whose single
+    output is a constant bit takes the constant path; every other component has
+    its outputs plugged (all prefixes in ``sequential`` mode, none and all in
+    ``joint`` mode), each plugged graph is decomposed into stabilizer terms, and
+    the terms are compiled into JAX arrays.
 
     Args:
         prepared: The prepared graph from ``prepare_graph``.
@@ -55,6 +56,7 @@ def compile_program(
     layout = prepared.layout
 
     direct_entries: list[tuple[int, int, bool]] = []
+    constant_entries: list[tuple[int, bool]] = []
     compiled_components: list[CompiledComponent] = []
     compiled_output_order: list[int] = []
 
@@ -66,6 +68,10 @@ def compile_program(
             basis_index, flip = direct
             direct_entries.append((output_indices[0], basis_index, flip))
             continue
+        constant = classify_constant(component)
+        if constant is not None:
+            constant_entries.append((output_indices[0], constant))
+            continue
         compiled_components.append(
             _compile_component(component, output_indices, layout, mode, strategy)
         )
@@ -75,8 +81,12 @@ def compile_program(
     # prioritisation in transform_error_basis — the concatenated layout often
     # matches the original output order, sparing a reindex at sample time.
     direct_entries.sort()
+    constant_entries.sort()
     output_order = np.array(
-        [e[0] for e in direct_entries] + compiled_output_order, dtype=np.int32
+        [e[0] for e in direct_entries]
+        + [e[0] for e in constant_entries]
+        + compiled_output_order,
+        dtype=np.int32,
     )
     reindex = np.argsort(output_order)
     is_identity = np.array_equal(reindex, np.arange(len(output_order)))
@@ -85,6 +95,7 @@ def compile_program(
         components=tuple(compiled_components),
         direct_f_indices=jnp.array([e[1] for e in direct_entries], dtype=jnp.int32),
         direct_flips=jnp.array([e[2] for e in direct_entries], dtype=jnp.bool_),
+        constant_bits=jnp.array([e[1] for e in constant_entries], dtype=jnp.bool_),
         output_order=jnp.asarray(output_order),
         output_reindex=None if is_identity else jnp.asarray(reindex),
         num_outputs=prepared.num_outputs,
@@ -98,6 +109,36 @@ def classify_direct(component: Graph, layout: ParamLayout) -> tuple[int, bool] |
     That is the case when the component is a classical output boundary joined by
     a Hadamard edge to a classical Z spider whose phase is 0 or π plus one
     error-basis parameter.
+    """
+    phase = _output_bit_phase(component)
+    if phase is None or len(phase.parameters) != 1:
+        return None
+    (param,) = phase.parameters
+    kind, basis_index = layout.kind(param)
+    if kind != "f":
+        return None
+    return basis_index, phase.value == 1
+
+
+def classify_constant(component: Graph) -> bool | None:
+    """Return the output bit if the component's only output is a constant bit.
+
+    That is the case when the component is a classical output boundary joined by
+    a Hadamard edge to a classical Z spider whose phase is 0 or π, with no
+    parameters (e.g. a deterministic detector of a noiseless circuit).
+    """
+    phase = _output_bit_phase(component)
+    if phase is None or phase.parameters:
+        return None
+    return phase.value == 1
+
+
+def _output_bit_phase(component: Graph) -> Phase | None:
+    """Return the phase that sets the bit of a single-output, single-spider component.
+
+    The component must be a classical output boundary joined by a Hadamard edge
+    to a classical Z spider whose phase is 0 or π plus any parameters; the output
+    bit is then the parity of the phase's value (in units of π) and parameters.
     """
     outputs = component.outputs()
     if len(outputs) != 1 or component.num_vertices() != 2:
@@ -113,13 +154,9 @@ def classify_direct(component: Graph, layout: ParamLayout) -> tuple[int, bool] |
     if component.edge_type(out, spider) != EdgeType.HADAMARD:
         return None
     phase = component.phase(spider)
-    if len(phase.parameters) != 1 or phase.value not in (0, 1):
+    if phase.value not in (0, 1):
         return None
-    (param,) = phase.parameters
-    kind, basis_index = layout.kind(param)
-    if kind != "f":
-        return None
-    return basis_index, phase.value == 1
+    return phase
 
 
 def _port(g: Graph, v: Vertex) -> int:

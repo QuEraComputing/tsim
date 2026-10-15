@@ -115,7 +115,9 @@ survivors = samples[keep]
 ```
 
 `sample` always returns exactly `shots` rows. Shots discarded by a **direct**
-postselected detector skip the expensive JAX autoregressive loop; their direct
+postselected detector (one that is a single error bit or a constant, such as a
+deterministic detector of a noiseless circuit) skip the expensive JAX
+autoregressive loop; their direct
 detector columns are still correct, and all other columns are filled with
 `False`. Re-apply the mask to the detector columns (as above) to recover the
 surviving shots. Detectors that live inside a JAX component cannot be evaluated
