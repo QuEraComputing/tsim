@@ -52,6 +52,16 @@ DETECTOR rec[-1] rec[-2]
 OBSERVABLE_INCLUDE(0) rec[-1]
 """
 
+# Detector 0 is constant 1 (no noise); detector 1 is a random compiled component.
+CONSTANT_AND_COMPONENT_CIRCUIT = """
+R 0 1
+X 0
+H 1
+M 0 1
+DETECTOR rec[-2]
+DETECTOR rec[-1]
+"""
+
 # Circuit with detectors and an observable for output-layout tests.
 DET_OBS_CIRCUIT = """
 R 0 1 2
@@ -285,6 +295,88 @@ def test_postselection_jax_never_called_for_all_direct_discards(monkeypatch):
     _record_rows(monkeypatch, calls)
     sampler.sample(10, batch_size=4, postselection_mask=mask)
     assert calls == []
+
+
+@pytest.mark.parametrize("use_reference", [False, True])
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+def test_postselection_on_a_constant_detector(monkeypatch, use_reference, strategy):
+    sampler = Circuit(CONSTANT_AND_COMPONENT_CIRCUIT).compile_detector_sampler(
+        strategy=strategy, seed=0
+    )
+    assert sampler._direct_detector_mask.tolist() == [True, False]
+    mask = np.array([True, False])
+    calls: list[int] = []
+
+    _record_rows(monkeypatch, calls)
+    samples = sampler.sample(
+        16,
+        batch_size=4,
+        postselection_mask=mask,
+        use_detector_reference_sample=use_reference,
+    )
+    if use_reference:
+        assert sum(calls) >= 16
+        assert not samples[:, 0].any()
+        assert samples[:, 1].any()
+    else:
+        assert calls == []
+        assert samples[:, 0].all()
+        assert not samples[:, 1].any()
+
+
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize("constant,use_reference", [(0, False), (0, True), (1, True)])
+def test_nonrejecting_constant_postselection_uses_normal_batches(
+    monkeypatch, strategy, constant, use_reference
+):
+    circuit = CONSTANT_AND_COMPONENT_CIRCUIT
+    if not constant:
+        circuit = circuit.replace("X 0", "")
+    sampler = Circuit(circuit).compile_detector_sampler(strategy=strategy, seed=0)
+
+    def fail(*args, **kwargs):
+        raise AssertionError("A nonrejecting constant must not buffer survivors")
+
+    monkeypatch.setattr(sampler, "_sample_batches_with_postselection", fail)
+    mask = np.array([True, False])
+    samples = sampler.sample(
+        19,
+        batch_size=5,
+        postselection_mask=mask,
+        use_detector_reference_sample=use_reference,
+    )
+    assert not samples[:, 0].any()
+    assert mask.tolist() == [True, False]
+
+
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize("use_reference", [False, True])
+def test_constant_outputs_with_component_postselection(strategy, use_reference):
+    circuit = Circuit("""
+        X 0
+        H 1
+        T 1
+        H 1
+        X_ERROR(0.2) 2
+        M 0 1 2
+        DETECTOR rec[-1]
+        DETECTOR rec[-2]
+        DETECTOR rec[-3]
+        OBSERVABLE_INCLUDE(0) rec[-3]
+        """)
+    sampler = circuit.compile_detector_sampler(strategy=strategy, seed=0)
+    mask = np.array([True, True, False])
+    detectors, observables = sampler.sample(
+        128,
+        batch_size=17,
+        postselection_mask=mask,
+        separate_observables=True,
+        use_observable_reference_sample=use_reference,
+    )
+    survivors = ~detectors[:, :2].any(axis=1)
+    assert survivors.any()
+    assert detectors[survivors, 2].all()
+    assert (observables[survivors, 0] == (not use_reference)).all()
 
 
 def test_postselection_jax_rows_less_than_shots():
