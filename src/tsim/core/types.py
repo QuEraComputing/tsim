@@ -92,9 +92,12 @@ class CompiledProgram:
         components: The compiled components, sorted by number of outputs.
         direct_f_indices: Precomputed f-parameter indices for direct components.
         direct_flips: Precomputed flip flags for direct components.
+        constant_bits: Output bits of constant components (single-output
+            components without parameters, e.g. deterministic detectors).
         output_order: Maps concatenated position to original output index.
             The first ``len(direct_f_indices)`` entries correspond to direct
-            components; the remainder to compiled components.
+            components, the next ``len(constant_bits)`` to constant components,
+            and the remainder to compiled components.
         output_reindex: Precomputed ``argsort(output_order)`` permutation,
             or ``None`` when the outputs are already in order.
         num_outputs: Total number of outputs across all components.
@@ -105,6 +108,7 @@ class CompiledProgram:
     components: tuple[CompiledComponent, ...]
     direct_f_indices: Array
     direct_flips: Array
+    constant_bits: Array
     output_order: Array
     output_reindex: Array | None
     num_outputs: int

@@ -892,9 +892,9 @@ class Circuit:
         """Compile circuit into a detector sampler.
 
         Connected components whose single output is deterministically given by
-        one f-variable are handled via a fast direct path (no compilation or
-        autoregressive sampling).  Remaining components go through the full
-        compilation pipeline.
+        one f-variable, or is a constant, are handled via a fast direct path (no
+        compilation or autoregressive sampling).  Remaining components go
+        through the full compilation pipeline.
 
         Args:
             strategy: Stabilizer rank decomposition strategy.

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `stim-timeline-text` package. (#171)
 
 ### Changed
+- Single-output components whose output is a constant (for example the deterministic detectors of a noiseless circuit) are no longer compiled: like single error bits, they are read off directly, without JAX. Postselection treats them as direct detectors, and the sampler `repr` reports their count. Samples for a fixed seed can differ from earlier versions.
 - Tsim now uses zxparam instead of pyzx-param. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zxparam.
 - `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`.
 - In `Circuit.get_graph()` (and the `"zx"` diagram), every detector and observable has a classical output boundary, with ports after the qubit outputs, so the graph's tensor is the circuit's channel together with the detector and observable bits.

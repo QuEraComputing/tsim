@@ -50,6 +50,16 @@ DETECTOR rec[-1] rec[-2]
 OBSERVABLE_INCLUDE(0) rec[-1]
 """
 
+# Detector 0 is constant 1 (no noise); detector 1 is a random compiled component.
+CONSTANT_AND_COMPONENT_CIRCUIT = """
+R 0 1
+X 0
+H 1
+M 0 1
+DETECTOR rec[-2]
+DETECTOR rec[-1]
+"""
+
 # Circuit with detectors and an observable for output-layout tests.
 DET_OBS_CIRCUIT = """
 R 0 1 2
@@ -204,6 +214,38 @@ def test_postselection_jax_never_called_for_all_direct_discards(monkeypatch):
     monkeypatch.setattr(sampler_module, "sample_program", spy)
     sampler.sample(10, batch_size=4, postselection_mask=mask)
     assert calls == []
+
+
+@pytest.mark.parametrize("use_reference", [False, True])
+def test_postselection_on_a_constant_detector(monkeypatch, use_reference):
+    """A constant detector counts as direct: it fires on every shot (all discarded,
+    no JAX) unless the reference sample cancels it (no discards)."""
+    sampler = _make(CONSTANT_AND_COMPONENT_CIRCUIT, seed=0)
+    assert sampler._direct_detector_mask.tolist() == [True, False]
+    mask = np.array([True, False])
+    calls: list[int] = []
+
+    original = sampler_module.sample_program
+
+    def spy(program, f_params, key):
+        calls.append(f_params.shape[0])
+        return original(program, f_params, key)
+
+    monkeypatch.setattr(sampler_module, "sample_program", spy)
+    samples = sampler.sample(
+        16,
+        batch_size=4,
+        postselection_mask=mask,
+        use_detector_reference_sample=use_reference,
+    )
+    if use_reference:
+        assert sum(calls) >= 16
+        assert not samples[:, 0].any()
+        assert samples[:, 1].any()
+    else:
+        assert calls == []
+        assert samples[:, 0].all()
+        assert not samples[:, 1].any()
 
 
 def test_postselection_jax_rows_less_than_shots():

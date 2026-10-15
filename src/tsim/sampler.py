@@ -132,9 +132,9 @@ def sample_program(
 
     """
     results: list[jax.Array] = []
+    batch_size = f_params.shape[0]
 
     if program.num_outputs == 0:
-        batch_size = f_params.shape[0]
         return jnp.zeros((batch_size, 0), dtype=jnp.bool_)
 
     if len(program.direct_f_indices) > 0:
@@ -143,6 +143,12 @@ def sample_program(
             ^ program.direct_flips
         )
         results.append(direct_bits)
+
+    n_constant = len(program.constant_bits)
+    if n_constant > 0:
+        results.append(
+            jnp.broadcast_to(program.constant_bits, (batch_size, n_constant))
+        )
 
     for component in program.components:
         samples, key, max_norm_deviation = sample_component(component, f_params, key)
@@ -228,36 +234,43 @@ class _CompiledSamplerBase:
         self._direct_global_indices = np.asarray(
             prog.output_order[:n_direct], dtype=np.int32
         )
+        self._constant_bits = np.asarray(prog.constant_bits, dtype=np.bool_)
+        self._constant_global_indices = np.asarray(
+            prog.output_order[n_direct : n_direct + len(self._constant_bits)],
+            dtype=np.int32,
+        )
+        # Outputs known without JAX: direct and constant ones. Postselection
+        # treats both as "direct".
         self._direct_output_mask = np.zeros(prog.num_outputs, dtype=np.bool_)
-        if n_direct > 0:
-            self._direct_output_mask[self._direct_global_indices] = True
+        self._direct_output_mask[self._direct_global_indices] = True
+        self._direct_output_mask[self._constant_global_indices] = True
         self._direct_detector_mask = self._direct_output_mask[
             : self._num_detectors
         ].copy()
 
     def _compute_direct_outputs(self, f_params_np: np.ndarray) -> np.ndarray:
-        """Scatter direct output bits into a full (batch, num_outputs) bool array.
+        """Scatter direct and constant output bits into a (batch, num_outputs) array.
 
-        Non-direct columns are zero.  The zero-copy fast path applies when
-        direct indices are 0..n-1, there are no flips, and no reindex —
+        Compiled-component columns are zero.  The zero-copy fast path applies
+        when direct indices are 0..n-1, there are no flips, and no reindex —
         i.e. the common surface-code case.
         """
         batch = f_params_np.shape[0]
         num_outputs = self._program.num_outputs
         n_direct = len(self._direct_f_indices)
-        if n_direct == 0:
-            return np.zeros((batch, num_outputs), dtype=np.bool_)
         if self._direct_zero_copy and n_direct == num_outputs:
             return f_params_np[:, :n_direct].view(np.bool_).copy()
-        raw = (
-            f_params_np[:, :n_direct].view(np.bool_)
-            if self._direct_zero_copy
-            else (f_params_np[:, self._direct_f_indices] ^ self._direct_flips).view(
-                np.bool_
-            )
-        )
         out = np.zeros((batch, num_outputs), dtype=np.bool_)
-        out[:, self._direct_global_indices] = raw
+        if n_direct > 0:
+            raw = (
+                f_params_np[:, :n_direct].view(np.bool_)
+                if self._direct_zero_copy
+                else (f_params_np[:, self._direct_f_indices] ^ self._direct_flips).view(
+                    np.bool_
+                )
+            )
+            out[:, self._direct_global_indices] = raw
+        out[:, self._constant_global_indices] = self._constant_bits
         return out
 
     def _compute_reference_sample(self) -> np.ndarray:
@@ -546,8 +559,10 @@ class _CompiledSamplerBase:
         return result, None, was_discarded
 
     def _sample_direct(self, shots: int) -> np.ndarray:
-        """Fast path when all components are direct (pure numpy, no JAX)."""
+        """Fast path when all components are direct or constant (pure numpy, no JAX)."""
         f_params = self._channel_sampler.sample(shots)
+        if len(self._constant_bits) > 0:
+            return self._compute_direct_outputs(f_params)
         if self._direct_zero_copy:
             return f_params[:, : len(self._direct_f_indices)].view(np.bool_)
         result = f_params[:, self._direct_f_indices] ^ self._direct_flips
@@ -558,6 +573,7 @@ class _CompiledSamplerBase:
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""
         n_direct = len(self._program.direct_f_indices)
+        n_constant = len(self._program.constant_bits)
 
         c_graphs = []
         c_params = []
@@ -607,7 +623,7 @@ class _CompiledSamplerBase:
         )
 
         return (
-            f"{type(self).__name__}({n_direct} direct, "
+            f"{type(self).__name__}({n_direct} direct, {n_constant} constant, "
             f"{np.sum(c_graphs)} graphs, "
             f"{error_channel_bits} error channel bits, "
             f"{np.max(num_outputs) if num_outputs else 0} outputs for largest cc, "
@@ -784,11 +800,12 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 only be used when observables are deterministic. Otherwise, it can
                 unpredictably change the results.
             postselection_mask: Optional boolean array of length ``num_detectors``.
-                When set, shots where any masked direct detector fires skip the JAX
-                sampling loop. All ``shots`` rows are still returned: survivors contain
-                the full sample, while discarded rows retain direct detector columns
-                and fill component columns with ``False``. Re-apply the mask to the
-                returned detector columns to recover surviving shots.
+                When set, shots where any masked direct detector (a single error bit
+                or a constant) fires skip the JAX sampling loop. All ``shots`` rows
+                are still returned: survivors contain the full sample, while
+                discarded rows retain direct detector columns and fill component
+                columns with ``False``. Re-apply the mask to the returned detector
+                columns to recover surviving shots.
 
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.
@@ -943,6 +960,10 @@ class CompiledStateProbs(_CompiledSamplerBase):
             n_direct = len(self._program.direct_f_indices)
             targets = state[self._program.output_order[:n_direct]]
             p_joint = p_joint * (direct_bits == targets).all(axis=1)
+
+        if len(self._constant_bits) > 0:
+            targets = state[self._constant_global_indices]
+            p_joint = p_joint * np.array_equal(self._constant_bits, targets)
 
         for component in self._program.components:
             assert len(component.compiled_scalar_graphs) == 2
