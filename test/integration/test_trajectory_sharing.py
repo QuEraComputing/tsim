@@ -1,5 +1,6 @@
 """trajectory_sharing=True end to end, against one lane per shot."""
 
+import warnings
 from test.helpers.gen import gen_stim_circuit
 from test.helpers.statevector import CIRCUITS, assert_counts_match
 
@@ -180,11 +181,12 @@ def test_trajectory_sharing_needs_the_statevector_strategy():
         )
 
 
+@pytest.mark.parametrize("sharing", [False, True])
 @pytest.mark.parametrize("screen_shots", [None, 64])
 @pytest.mark.parametrize("postselect", [False, True])
 @pytest.mark.parametrize("reference", [False, True])
-def test_shared_samples_do_not_depend_on_the_thread_count(
-    postselect, reference, screen_shots, monkeypatch
+def test_samples_do_not_depend_on_the_thread_count(
+    postselect, reference, screen_shots, sharing, monkeypatch
 ):
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
     mask = np.ones(circuit.num_detectors, dtype=bool) if postselect else None
@@ -193,9 +195,9 @@ def test_shared_samples_do_not_depend_on_the_thread_count(
 
     def sample(threads):
         sampler = circuit.compile_detector_sampler(
-            strategy="active_statevector", seed=3, trajectory_sharing=True
+            strategy="active_statevector", seed=3, trajectory_sharing=sharing
         )
-        sampler._threads = lambda: threads
+        sampler._threads = lambda batch_size: threads
         return [
             sampler.sample(
                 5_003,
@@ -224,7 +226,7 @@ def test_shared_measurement_samples_do_not_depend_on_the_thread_count():
         sampler = circuit.compile_sampler(
             strategy="active_statevector", seed=4, trajectory_sharing=True
         )
-        sampler._threads = lambda: threads
+        sampler._threads = lambda batch_size: threads
         return sampler.sample(2_001, batch_size=250)
 
     np.testing.assert_array_equal(sample(4), sample(1))
@@ -235,7 +237,7 @@ def test_shared_postselection_samples_the_survivors_without_padding(monkeypatch)
     sampler = circuit.compile_detector_sampler(
         strategy="active_statevector", seed=5, trajectory_sharing=True
     )
-    sampler._threads = lambda: 1
+    sampler._threads = lambda batch_size: 1
     rows = []
     original = sampler_module.sample_program
 
@@ -275,3 +277,19 @@ def test_host_outputs_equal_the_jax_outputs(name, rows):
     )
     assert isinstance(on_host, np.ndarray)
     np.testing.assert_array_equal(on_host, np.asarray(on_device))
+
+
+@pytest.mark.parametrize("sharing", [False, True])
+def test_workers_sample_in_the_callers_64_bit_mode(sharing):
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+
+    def sample(threads):
+        sampler = circuit.compile_detector_sampler(
+            strategy="active_statevector", seed=6, trajectory_sharing=sharing
+        )
+        sampler._threads = lambda batch_size: threads
+        return sampler.sample(2_001, batch_size=250, append_observables=True)
+
+    with jax.enable_x64(True), warnings.catch_warnings():
+        warnings.simplefilter("error")
+        np.testing.assert_array_equal(sample(3), sample(1))

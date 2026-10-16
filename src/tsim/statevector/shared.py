@@ -31,6 +31,7 @@ after its pruning action are False.
 
 from __future__ import annotations
 
+import itertools
 from typing import NamedTuple
 
 import jax
@@ -91,6 +92,11 @@ class SharingLayout(NamedTuple):
             shape ``(num_words,)``.
         ready: The action that sets each output's last branch bit, -1 for an
             output of f-bits only, shape ``(num_outputs,)``.
+        i_power: ``i^|x∧z|`` of each action's Pauli ``X^x Z^z``, shape ``(A,)``.
+        factor: Each action's diagonal rotation factors ``cos θ ∓ i sin θ``,
+            shape ``(A, 2)``.
+        coupling: Each action's rotation coupling ``-i sin θ i^|x∧z|``, shape
+            ``(A,)``.
 
     """
 
@@ -103,6 +109,9 @@ class SharingLayout(NamedTuple):
     lane_branches: np.ndarray
     shot_dormant: np.ndarray
     ready: np.ndarray
+    i_power: np.ndarray
+    factor: np.ndarray
+    coupling: np.ndarray
 
 
 def _unpack(words: np.ndarray, num_words: int) -> np.ndarray:
@@ -180,6 +189,14 @@ def sharing_layout(
     shot_bits = np.zeros(32 * num_words, dtype=bool)
     shot_bits[branch[dormant & ~lane_dormant & (branch >= 0)]] = True
 
+    dtype = np.dtype(component.dtype)
+    quarter_turns = [
+        int(x & z).bit_count() & 3
+        for x, z in zip(tape.x_mask, tape.z_mask, strict=True)
+    ]
+    i_power = np.array([_I_POWERS[q] for q in quarter_turns], dtype=dtype)
+    cos, sin = tape.cos, tape.sin
+
     return SharingLayout(
         tape=tape,
         key_rows=_pack(key_bits, num_words).reshape(-1, num_words),
@@ -190,6 +207,9 @@ def sharing_layout(
         lane_branches=_pack(lane_bits, num_words),
         shot_dormant=_pack(shot_bits, num_words),
         ready=ready.astype(np.int64),
+        i_power=i_power,
+        factor=np.stack([cos - 1j * sin, cos + 1j * sin], axis=1).astype(dtype),
+        coupling=(-1j * sin * i_power).astype(dtype),
     )
 
 
@@ -256,32 +276,37 @@ def _signs(symbols, lanes, row, const):
 
 
 @kernel
-def _rotate_diag(amps, lanes, extent, z, symbols, sign_row, sign_const, factor):
-    """Multiply amplitude i of lane l by ``factor[sign(l) ^ parity(i & z)]``."""
-    flip = _signs(symbols, lanes, sign_row, sign_const)
-    span = 1 << extent
-    for t in numba.prange(lanes * span):
-        lane, i = t >> extent, t & (span - 1)
-        amps[lane, i] *= factor[flip[lane] ^ _parity(i & z)]
+def _rotate(amps, lanes, symbols, start, stop, rotations):
+    """Apply the rotations ``start … stop-1`` of the tape to every lane.
 
-
-@kernel
-def _rotate_pair(
-    amps, lanes, extent, x, z, symbols, sign_row, sign_const, cos, coupling
-):
-    """Rotate about ``X^x Z^z``: mix amplitudes i and ``i ^ x`` of every lane."""
-    flip = _signs(symbols, lanes, sign_row, sign_const)
-    span = 1 << extent
-    low = x & -x
-    for t in numba.prange(lanes * span):
-        lane, i = t >> extent, t & (span - 1)
-        if i & low:
-            continue
-        j = i ^ x
-        c = -coupling if flip[lane] else coupling
-        a, b = amps[lane, i], amps[lane, j]
-        amps[lane, i] = cos * a + c * (-b if _parity(j & z) else b)
-        amps[lane, j] = cos * b + c * (-a if _parity(i & z) else a)
+    ``rotations`` holds the tape's kinds, Pauli masks, extents, signs and cosines
+    and the layout's factors and couplings. Rotation ``a`` is about ``X^x Z^z``
+    with a sign per lane: a diagonal one multiplies amplitude i by
+    ``factor[a, sign ^ parity(i & z)]``, the others mix amplitudes i and
+    ``i ^ x`` with ``cos[a]`` and ``±coupling[a]``.
+    """
+    kind, x_mask, z_mask, extent, sign_row, sign_const, cos, factor, coupling = (
+        rotations
+    )
+    for a in range(start, stop):
+        flip = _signs(symbols, lanes, sign_row[a], np.int64(sign_const[a]))
+        x, z, shift = np.int64(x_mask[a]), np.int64(z_mask[a]), extent[a]
+        span = 1 << shift
+        if kind[a] == ROTATE_DIAG:
+            for t in numba.prange(lanes * span):
+                lane, i = t >> shift, t & (span - 1)
+                amps[lane, i] *= factor[a, flip[lane] ^ _parity(i & z)]
+        else:
+            low = x & -x
+            for t in numba.prange(lanes * span):
+                lane, i = t >> shift, t & (span - 1)
+                if i & low:
+                    continue
+                j = i ^ x
+                c = -coupling[a] if flip[lane] else coupling[a]
+                p, q = amps[lane, i], amps[lane, j]
+                amps[lane, i] = cos[a] * p + c * (-q if _parity(j & z) else q)
+                amps[lane, j] = cos[a] * q + c * (-p if _parity(i & z) else p)
 
 
 @kernel
@@ -471,33 +496,38 @@ def group_on_host(
 def _run(
     layout: SharingLayout, lanes: _Lanes, rng: np.random.Generator
 ) -> tuple[float, list[tuple], int]:
-    """Run the tape on ``lanes``; return the norm deviation, dead lanes and peak."""
+    """Run the tape on ``lanes``; return the norm deviation, dead lanes and peak.
+
+    Every stretch of consecutive rotations runs in one kernel call, the other
+    actions one by one. A stretch clears the amplitudes up to its largest extent at
+    once; the amplitudes below ``2^region`` are the lanes' own.
+    """
     tape = layout.tape
-    dtype = lanes.amps.dtype
+    rotations = (
+        *(tape.kind, tape.x_mask, tape.z_mask, tape.extent),
+        *(tape.sign_row, tape.sign_const, tape.cos, layout.factor, layout.coupling),
+    )
+    rotation = np.isin(tape.kind, (ROTATE_DIAG, ROTATE))
+    others = np.flatnonzero(~rotation)
+    edges = sorted({0, len(rotation), *others, *(others + 1)})
     dead: list[tuple] = []
     deviation, peak, region = 0.0, lanes.size, 0
-    for a, kind in enumerate(tape.kind):
+    for a, stop in itertools.pairwise(edges):
         if not lanes.size:
             break
-        extent = int(tape.extent[a])
+        extent = int(tape.extent[a:stop].max())
         span = 1 << extent
         if extent > region:
             lanes.amps[: lanes.size, 1 << region : span] = 0
         region = extent
-        x, z = int(tape.x_mask[a]), int(tape.z_mask[a])
-        i_power = dtype.type(_I_POWERS[(x & z).bit_count() & 3])
         size = lanes.size
         work = size * span
-        if kind in (ROTATE_DIAG, ROTATE):
-            sign = (lanes.symbols, tape.sign_row[a], int(tape.sign_const[a]))
-            cos, sin = tape.cos[a], tape.sin[a]
-            if kind == ROTATE_DIAG:
-                factor = np.array([cos - 1j * sin, cos + 1j * sin], dtype=dtype)
-                _rotate_diag(work, lanes.amps, size, extent, z, *sign, factor)
-            else:
-                coupling = dtype.type(-1j * sin * i_power)
-                _rotate_pair(work, lanes.amps, size, extent, x, z, *sign, cos, coupling)
+        if rotation[a]:
+            _rotate(work, lanes.amps, size, lanes.symbols, a, stop, rotations)
             continue
+        kind = tape.kind[a]
+        x, z = int(tape.x_mask[a]), int(tape.z_mask[a])
+        i_power = layout.i_power[a]
         if kind == MEASURE_DORMANT:
             if not layout.lane_dormant[a]:
                 continue

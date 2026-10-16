@@ -2,6 +2,7 @@ import subprocess
 import sys
 import textwrap
 import threading
+import time
 
 import numba
 import numpy as np
@@ -80,14 +81,18 @@ def test_run_tasks_with_one_thread_runs_in_the_calling_thread():
     assert run_tasks(lambda n: n, [], 4) == []
 
 
-def test_run_tasks_raises_the_error_of_a_task():
+def test_run_tasks_raises_the_error_of_a_task_once_every_task_is_done():
+    finished = []
+
     def task(n):
         if n == 2:
             raise ValueError("task 2")
-        return n
+        time.sleep(0.05)
+        finished.append(n)
 
     with pytest.raises(ValueError, match="task 2"):
         run_tasks(task, range(4), threads=3)
+    assert sorted(finished) == [0, 1, 3]
 
 
 def test_the_calling_thread_keeps_parallel_kernels_after_run_tasks():
@@ -97,3 +102,12 @@ def test_the_calling_thread_keeps_parallel_kernels_after_run_tasks():
     ids = np.full(1 << 12, -1)
     _thread_ids(PARALLEL_WORK, ids)
     assert len(np.unique(ids)) > 1
+
+
+def test_run_tasks_inside_a_task_runs_in_the_task():
+    def task(n):
+        return run_tasks(lambda m: (m, threading.get_ident()), range(3), 4)
+
+    for inner in run_tasks(task, range(8), 4):
+        assert [m for m, _ in inner] == [0, 1, 2]
+        assert len({ident for _, ident in inner}) == 1

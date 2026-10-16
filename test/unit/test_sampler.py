@@ -525,3 +525,54 @@ def test_a_nan_normalization_deviation_warns(monkeypatch):
     monkeypatch.setattr(sampler_module, "sample_component", nan_deviation)
     with pytest.warns(UserWarning, match="not normalized"):
         sampler.sample(10)
+
+
+def test_direct_detectors_overwrite_every_column_of_their_rows():
+    f = np.array([[1, 0], [0, 1], [1, 1]], dtype=np.uint8)
+    out = np.ones((3, 4), dtype=np.bool_)
+    discarded = sampler_module._write_direct_detectors(
+        0,
+        f,
+        np.array([1, 0]),
+        np.array([False, True]),
+        np.array([3, 0]),
+        np.array([True, False]),
+        np.array([False, False]),
+        out,
+    )
+    expected = np.zeros((3, 4), dtype=np.bool_)
+    expected[:, 3] = f[:, 1] != 0
+    expected[:, 0] = (f[:, 0] != 0) ^ True
+    assert np.array_equal(out, expected)
+    assert np.array_equal(discarded, f[:, 1] != 0)
+
+
+T_CIRCUIT = """
+H 0
+T 0
+H 0
+M 0
+DETECTOR rec[-1]
+"""
+
+
+@pytest.mark.parametrize(
+    ("strategy", "sharing", "backend", "batch_size", "expected"),
+    [
+        ("cat5", False, "cpu", 10, 1),
+        ("active_statevector", True, "cpu", 10, 6),
+        ("active_statevector", True, "gpu", 10, 6),
+        ("active_statevector", False, "cpu", 10, 6),
+        ("active_statevector", False, "gpu", 10, 1),
+        ("active_statevector", False, "cpu", 10**12, 1),
+    ],
+)
+def test_batches_running_at_once(
+    strategy, sharing, backend, batch_size, expected, monkeypatch
+):
+    sampler = Circuit(T_CIRCUIT).compile_detector_sampler(
+        strategy=strategy, trajectory_sharing=sharing
+    )
+    monkeypatch.setattr(sampler_module.numba, "get_num_threads", lambda: 6)
+    monkeypatch.setattr(sampler_module.jax, "default_backend", lambda: backend)
+    assert sampler._threads(batch_size) == expected

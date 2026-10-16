@@ -873,11 +873,11 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting").
+                "bss", "cutting"). On the CPU, "active_statevector" samples up
+                to ``numba.get_num_threads()`` batches at once, each with its
+                own memory.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane, and sample up to
-                ``numba.get_num_threads()`` batches at once, each with its own
-                memory (experimental).
+                with equal histories on one lane (experimental).
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -911,11 +911,11 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting").
+                "bss", "cutting"). On the CPU, "active_statevector" samples up
+                to ``numba.get_num_threads()`` batches at once, each with its
+                own memory.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane, and sample up to
-                ``numba.get_num_threads()`` batches at once, each with its own
-                memory (experimental).
+                with equal histories on one lane (experimental).
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set

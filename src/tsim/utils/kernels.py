@@ -1,9 +1,11 @@
 """Numba kernels that run in parallel only when the work pays for it."""
 
+import functools
+import os
 import threading
 import types
 from collections.abc import Callable, Iterable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from typing import TypeVar
 
 import numba
@@ -75,6 +77,26 @@ def kernel(function: Callable) -> Callable:
     return run
 
 
+def _mark_task_thread() -> None:
+    _TASK_THREAD.active = True
+
+
+@functools.cache
+def _pool(threads: int) -> ThreadPoolExecutor:
+    return ThreadPoolExecutor(threads, initializer=_mark_task_thread)
+
+
+def _after_fork_in_child() -> None:
+    """Start over in a forked child: the parent's threads do not exist there."""
+    global _LOCK
+    _LOCK = threading.Lock()
+    _pool.cache_clear()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_after_fork_in_child)
+
+
 def run_tasks(
     function: Callable[[_Task], _Result], tasks: Iterable[_Task], threads: int
 ) -> list[_Result]:
@@ -82,17 +104,14 @@ def run_tasks(
 
     With more than one thread the tasks run on worker threads, and every kernel
     in them runs serially: the tasks keep the cores busy, and independent tasks
-    scale far better than numba's threads inside each kernel. Otherwise the
-    tasks run in the calling thread.
+    scale far better than numba's threads inside each kernel. Otherwise, and in
+    a task, the tasks run in the calling thread. Every task finishes before the
+    first error, if any, is raised.
     """
     tasks = list(tasks)
-    threads = min(threads, len(tasks))
-    if threads <= 1:
+    if min(threads, len(tasks)) <= 1 or getattr(_TASK_THREAD, "active", False):
         return [function(task) for task in tasks]
-
-    def run(task: _Task) -> _Result:
-        _TASK_THREAD.active = True
-        return function(task)
-
-    with ThreadPoolExecutor(threads) as pool:
-        return list(pool.map(run, tasks))
+    pool = _pool(threads)
+    futures = [pool.submit(function, task) for task in tasks]
+    wait(futures)
+    return [future.result() for future in futures]

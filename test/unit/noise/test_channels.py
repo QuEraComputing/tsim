@@ -7,6 +7,7 @@ from tsim.noise.channels import (
     Channel,
     ChannelSampler,
     _fire_tables,
+    _sample_blocks,
     absorb_subset_channels,
     channel_num_bits,
     correlated_error_probs,
@@ -1192,3 +1193,15 @@ class TestChannelSampler:
         )
         with pytest.raises(ValueError, match="block seeds"):
             sampler.sample(_BLOCK_SHOTS + 1, sampler.block_seeds(_BLOCK_SHOTS))
+
+    def test_sampled_blocks_clear_their_rows(self):
+        """Sampling overwrites whatever the output array held before."""
+        probs = [error_probs(0.1), error_probs(0.2)]
+        transform = np.array([[1, 0], [1, 1]], dtype=np.uint8)
+        num_samples = 2 * _BLOCK_SHOTS + 9
+        sampler = ChannelSampler(probs, transform, seed=4)
+        seeds = sampler.block_seeds(num_samples)
+        expected = sampler.sample(num_samples, seeds)
+        out = np.ones_like(expected)
+        _sample_blocks(0, out, seeds, *sampler._tables)
+        assert np.array_equal(out, expected)
