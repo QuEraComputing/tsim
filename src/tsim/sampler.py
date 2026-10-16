@@ -136,12 +136,15 @@ def sample_component(
 
 def sample_program(
     program: CompiledProgram,
-    f_params: jax.Array,
+    f_params: jax.Array | np.ndarray,
     key: PRNGKey,
     sharing: tuple[SharingLayout | None, ...] | None = None,
     sharing_stats: deque[dict] | None = None,
-) -> jax.Array:
+) -> jax.Array | np.ndarray:
     """Sample all outputs from a compiled program.
+
+    NumPy ``f_params`` give NumPy samples, put together by a numba kernel (the
+    shared executor works on the host); JAX ``f_params`` give JAX samples.
 
     Args:
         program: The compiled program to sample from.
@@ -159,11 +162,14 @@ def sample_program(
     """
     results: list[jax.Array | np.ndarray] = []
 
+    on_host = isinstance(f_params, np.ndarray)
     if program.num_outputs == 0:
         batch_size = f_params.shape[0]
+        if on_host:
+            return np.zeros((batch_size, 0), dtype=np.bool_)
         return jnp.zeros((batch_size, 0), dtype=jnp.bool_)
 
-    if len(program.direct_f_indices) > 0:
+    if len(program.direct_f_indices) > 0 and not on_host:
         direct_bits = (
             f_params[:, program.direct_f_indices].astype(jnp.bool_)
             ^ program.direct_flips
@@ -180,7 +186,7 @@ def sample_program(
                 sharing_stats.append(stats)
         else:
             samples, key, max_norm_deviation = sample_component(
-                component, f_params, key
+                component, jnp.asarray(f_params), key
             )
         if np.isclose(max_norm_deviation, 1):
             raise ValueError(
@@ -198,6 +204,25 @@ def sample_program(
             )
         results.append(samples)
 
+    if on_host:
+        assert isinstance(f_params, np.ndarray)
+        rows = f_params.shape[0]
+        component_bits = (
+            np.concatenate(results, axis=1)
+            if results
+            else np.zeros((rows, 0), dtype=np.bool_)
+        )
+        out = np.empty((rows, program.num_outputs), dtype=np.bool_)
+        _gather_outputs(
+            out.size,
+            f_params,
+            np.asarray(program.direct_f_indices),
+            np.asarray(program.direct_flips),
+            component_bits,
+            np.asarray(program.output_order),
+            out,
+        )
+        return out
     combined = jnp.concatenate(results, axis=1)
     if program.output_reindex is not None:
         combined = combined[:, program.output_reindex]
@@ -219,6 +244,21 @@ def _write_direct_detectors(f, f_indices, flips, columns, postselect, reference,
             if postselect[j] and bit != reference[j]:
                 discarded[row] = True
     return discarded
+
+
+@kernel
+def _gather_outputs(f, f_indices, flips, component_bits, order, out):
+    """Write every row's outputs into ``out`` in their original order.
+
+    Output ``k`` of the concatenation goes to column ``order[k]``: first the
+    direct outputs ``f[row, f_indices[j]] ^ flips[j]``, then ``component_bits``.
+    """
+    num_direct = len(f_indices)
+    for row in numba.prange(f.shape[0]):
+        for j in range(num_direct):
+            out[row, order[j]] = (f[row, f_indices[j]] != 0) ^ flips[j]
+        for j in range(component_bits.shape[1]):
+            out[row, order[num_direct + j]] = component_bits[row, j]
 
 
 def _nbytes(tree: object) -> int:
@@ -287,6 +327,10 @@ class _CompiledSamplerBase:
         self._num_detectors = prepared.num_detectors
 
         prog = self._program
+        # NOTE: _gather_outputs writes column output_order[k] without bounds checks.
+        assert np.array_equal(
+            np.sort(np.asarray(prog.output_order)), np.arange(prog.num_outputs)
+        )
         self._direct_f_indices = np.asarray(prog.direct_f_indices)
         self._direct_flips = np.asarray(prog.direct_flips, dtype=np.bool_)
         self._direct_reindex = (
@@ -559,29 +603,35 @@ class _CompiledSamplerBase:
             self._key, subkey = jax.random.split(self._key)
             tasks.append((index, seeds, subkey))
 
-        def sample_batch(task: tuple[int, np.ndarray, PRNGKey]) -> jax.Array:
+        def sample_batch(
+            task: tuple[int, np.ndarray, PRNGKey],
+        ) -> jax.Array | np.ndarray:
             index, seeds, key = task
             f_params_np = self._channel_sampler.sample(batch_size, seeds)
             if compute_reference and index == 0:
                 f_params_np[0] = 0
-            return sample_program(
-                self._program, jnp.asarray(f_params_np), key, **sharing
-            )
+            f_params = f_params_np if sharing else jnp.asarray(f_params_np)
+            return sample_program(self._program, f_params, key, **sharing)
 
         batches = run_tasks(sample_batch, tasks, self._threads())
         reference: np.ndarray | None = None
         if compute_reference:
             reference = np.asarray(batches[0][0])
             batches[0] = batches[0][1:]
-
-        # Concatenate on device, then a single d2h. The prior
-        # np.concatenate(batches) triggered per-batch __array__ (one d2h each)
-        # plus a host-side memcpy into a fresh numpy buffer for the concat
-        # output. For big bool tensors (e.g. 500k shots × 528 detector bits)
-        # the host memcpy alone was ~1 s on top of the PCIe transfer.
-        combined = batches[0] if len(batches) == 1 else jnp.concatenate(batches, axis=0)
-        jax.block_until_ready(combined)
-        result = copy_d2h(combined)[:shots]
+        if sharing:
+            result = np.concatenate(batches)[:shots]
+        else:
+            # Concatenate on device, then a single d2h. The prior
+            # np.concatenate(batches) triggered per-batch __array__ (one d2h
+            # each) plus a host-side memcpy into a fresh numpy buffer for the
+            # concat output. For big bool tensors (e.g. 500k shots × 528
+            # detector bits) the host memcpy alone was ~1 s on top of the PCIe
+            # transfer.
+            combined = (
+                batches[0] if len(batches) == 1 else jnp.concatenate(batches, axis=0)
+            )
+            jax.block_until_ready(combined)
+            result = copy_d2h(combined)[:shots]
 
         if compute_reference:
             assert reference is not None
@@ -603,8 +653,9 @@ class _CompiledSamplerBase:
         direct detector columns and ``False`` elsewhere; JAX is never called for
         those shots.  Survivors are buffered until a full batch of
         ``batch_size`` is ready, then dispatched to ``sample_program`` in one
-        call.  The final partial batch is padded to keep the JAX batch size
-        fixed (avoiding recompilation) and the padding rows are discarded.
+        call.  For JAX the final partial batch is padded to keep the batch size
+        fixed (avoiding recompilation) and the padding rows are discarded; the
+        shared executor samples it as it is.
         Chunks of shots, and then the batches of their survivors, run on
         ``_threads()`` threads at once.
         """
@@ -682,15 +733,20 @@ class _CompiledSamplerBase:
             return f_params_np[survivors], start + survivors
 
         def dispatch(task: tuple[np.ndarray, np.ndarray, PRNGKey]) -> None:
-            """Sample the shots ``shot_batch`` in one full batch, padded with row 0."""
+            """Sample the shots ``shot_batch`` in one batch.
+
+            JAX batches are padded with row 0 to ``batch_size`` rows; the shared
+            executor takes any number of rows.
+            """
             f_batch, shot_batch, key = task
             count = len(shot_batch)
-            if count < batch_size:
-                padding = np.repeat(f_batch[:1], batch_size - count, axis=0)
-                f_batch = np.concatenate([f_batch, padding])
-            samples = sample_program(
-                self._program, jnp.asarray(f_batch), key, **sharing
-            )
+            if sharing:
+                samples = sample_program(self._program, f_batch, key, **sharing)
+            else:
+                if count < batch_size:
+                    padding = np.repeat(f_batch[:1], batch_size - count, axis=0)
+                    f_batch = np.concatenate([f_batch, padding])
+                samples = sample_program(self._program, jnp.asarray(f_batch), key)
             result[shot_batch] = np.asarray(samples)[:count]
 
         threads = self._threads()

@@ -3,6 +3,8 @@
 from test.helpers.gen import gen_stim_circuit
 from test.helpers.statevector import CIRCUITS, assert_counts_match
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -31,6 +33,36 @@ OBSERVABLE_INCLUDE(0) rec[-1]
 X_ERROR(0.2) 3
 M 3
 DETECTOR rec[-1]
+"""
+
+
+# NOTE: flipped direct detectors and observables, unflipped ones, and two T
+# components, so that the outputs are reordered.
+DIRECT_FLIPS = """
+R 0 1 2 3 4 5
+H 0
+T 0
+H 0
+X_ERROR(0.3) 1
+X 2
+X_ERROR(0.2) 2
+M 2
+DETECTOR rec[-1]
+M 0 1
+DETECTOR rec[-2]
+DETECTOR rec[-1]
+X 3
+X_ERROR(0.1) 3
+M 3
+OBSERVABLE_INCLUDE(0) rec[-1]
+X_ERROR(0.4) 4
+M 4
+OBSERVABLE_INCLUDE(1) rec[-1]
+H 5
+T 5
+H 5
+M 5
+OBSERVABLE_INCLUDE(2) rec[-1]
 """
 
 
@@ -196,3 +228,50 @@ def test_shared_measurement_samples_do_not_depend_on_the_thread_count():
         return sampler.sample(2_001, batch_size=250)
 
     np.testing.assert_array_equal(sample(4), sample(1))
+
+
+def test_shared_postselection_samples_the_survivors_without_padding(monkeypatch):
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    sampler = circuit.compile_detector_sampler(
+        strategy="active_statevector", seed=5, trajectory_sharing=True
+    )
+    sampler._threads = lambda: 1
+    rows = []
+    original = sampler_module.sample_program
+
+    def spy(program, f_params, key, **kwargs):
+        rows.append((type(f_params), f_params.shape[0]))
+        return original(program, f_params, key, **kwargs)
+
+    monkeypatch.setattr(sampler_module, "sample_program", spy)
+    mask = np.ones(circuit.num_detectors, dtype=bool)
+    detectors = sampler.sample(5_003, batch_size=300, postselection_mask=mask)
+
+    counts = [count for _, count in rows]
+    assert all(kind is np.ndarray for kind, _ in rows)
+    assert counts[:-1] == [300] * (len(counts) - 1)
+    assert 0 < counts[-1] < 300
+    # NOTE: detector 2 is the circuit's only direct detector.
+    assert sum(counts) == int((~detectors[:, 2]).sum())
+
+
+@pytest.mark.parametrize("rows", [1, 300, 70_000])
+@pytest.mark.parametrize("name", [*sorted(CIRCUITS), "direct_flips"])
+def test_host_outputs_equal_the_jax_outputs(name, rows):
+    text = DIRECT_FLIPS if name == "direct_flips" else CIRCUITS[name]
+    sampler = Circuit(text).compile_detector_sampler(
+        strategy="active_statevector", seed=1, trajectory_sharing=True
+    )
+    if name == "direct_flips":
+        assert sampler._direct_flips.any()
+        assert sampler._program.output_reindex is not None
+    f_params = sampler._channel_sampler.sample(rows)
+    key = jax.random.key(2)
+    sharing = sampler._sharing_arguments(None)
+    program = sampler._program
+    on_host = sampler_module.sample_program(program, f_params, key, **sharing)
+    on_device = sampler_module.sample_program(
+        program, jnp.asarray(f_params), key, **sharing
+    )
+    assert isinstance(on_host, np.ndarray)
+    np.testing.assert_array_equal(on_host, np.asarray(on_device))
