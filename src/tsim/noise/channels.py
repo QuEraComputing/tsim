@@ -663,7 +663,7 @@ class ChannelSampler:
 
         """
         num_f = self.signature_matrix.shape[1]
-        result = np.zeros((num_samples, num_f), dtype=np.uint8)
+        result = np.empty((num_samples, num_f), dtype=np.uint8)
         if seeds is None:
             seeds = self.block_seeds(num_samples)
         num_blocks = -(-num_samples // _BLOCK_SHOTS)
@@ -736,7 +736,8 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _Fire
 
 @jit
 def _sample_block(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols):
-    """XOR every channel's outcomes into the rows of ``out`` it fires on."""
+    """Clear the rows of ``out``, then XOR in every channel's outcomes."""
+    out[:] = 0
     for c in range(len(p_fire)):
         log_keep = np.log1p(-p_fire[c])
         first, last = outcome_start[c], outcome_start[c + 1]

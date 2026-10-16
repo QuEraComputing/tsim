@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections import deque
+from collections.abc import Callable
 from math import ceil
 from typing import TYPE_CHECKING, Literal, overload
 
@@ -231,13 +232,14 @@ def sample_program(
 
 @kernel
 def _write_direct_detectors(f, f_indices, flips, columns, postselect, reference, out):
-    """Write direct detector ``j`` of every row into ``out[row, columns[j]]``.
+    """Clear every row of ``out`` and write its direct detector ``j`` at ``columns[j]``.
 
     Detector ``j`` is ``f[row, f_indices[j]] ^ flips[j]``. Returns which rows
     have a postselected detector that differs from its ``reference`` bit.
     """
     discarded = np.zeros(f.shape[0], dtype=np.bool_)
     for row in numba.prange(f.shape[0]):
+        out[row] = False
         for j in range(len(f_indices)):
             bit = (f[row, f_indices[j]] != 0) ^ flips[j]
             out[row, columns[j]] = bit
@@ -259,6 +261,20 @@ def _gather_outputs(f, f_indices, flips, component_bits, order, out):
             out[row, order[j]] = (f[row, f_indices[j]] != 0) ^ flips[j]
         for j in range(component_bits.shape[1]):
             out[row, order[num_direct + j]] = component_bits[row, j]
+
+
+def _with_x64_of_caller(function: Callable) -> Callable:
+    """Return ``function`` run with the calling thread's JAX 64-bit mode.
+
+    ``jax.enable_x64`` only reaches the thread that enters it, not the workers.
+    """
+    x64 = jax.config.read("jax_enable_x64")
+
+    def run(task):
+        with jax.enable_x64(x64):
+            return function(task)
+
+    return run
 
 
 def _nbytes(tree: object) -> int:
@@ -289,14 +305,11 @@ class _CompiledSamplerBase:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting").
-            seed: Random seed. If None, a random seed is generated. Note that
-                deterministic results are only guaranteed for a fixed batch size
-                and fixed reference sample settings.
+                "bss", "cutting"). On the CPU, "active_statevector" samples up
+                to ``numba.get_num_threads()`` batches at once, each with its
+                own memory.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane, and sample up to
-                ``numba.get_num_threads()`` batches at once, each with its own
-                memory (experimental).
+                with equal histories on one lane (experimental).
 
         Raises:
             ValueError: If ``trajectory_sharing`` is combined with a
@@ -362,6 +375,7 @@ class _CompiledSamplerBase:
         statevector = [
             c for c in self._program.components if isinstance(c, StatevectorComponent)
         ]
+        self._has_statevector = bool(statevector)
         if statevector:
             peak = self._peak_bytes_per_sample()
             if peak > self._memory_budget():
@@ -510,21 +524,35 @@ class _CompiledSamplerBase:
             available = psutil.virtual_memory().available
         return int(available * 0.5)  # conservative
 
-    def _threads(self) -> int:
-        """Return how many batches run at once.
+    def _threads(self, batch_size: int) -> int:
+        """Return how many batches of ``batch_size`` shots run at once.
 
-        With trajectory sharing every numba thread samples its own batches; the
-        JAX executors sample one batch at a time.
+        Statevector components sample one batch per numba thread on the CPU: in
+        the shared executor, or in JAX on a CPU backend as long as the batches
+        fit in the memory budget. The other executors sample one batch at a time.
         """
-        return numba.get_num_threads() if self._trajectory_sharing else 1
+        if not self._has_statevector:
+            return 1
+        threads = numba.get_num_threads()
+        if self._trajectory_sharing:
+            return threads
+        if jax.default_backend() != "cpu":
+            return 1
+        fits = self._memory_budget() // (self._peak_bytes_per_sample() * batch_size)
+        return max(1, min(threads, fits))
 
     def _estimate_batch_size(self) -> int:
         """Estimate the largest batch size that fits in available device memory.
 
-        Programs with statevector components use at most
-        ``STATEVECTOR_MAX_BATCH_SIZE`` lanes per batch.
+        JAX allocates a lane per shot in every batch that runs at once. The shared
+        executor allocates lanes as its trajectories split, so its estimate leaves
+        room for a lane per shot in one batch only. Programs with statevector
+        components use at most ``STATEVECTOR_MAX_BATCH_SIZE`` lanes per batch.
         """
-        batch_size = max(1, self._memory_budget() // self._peak_bytes_per_sample())
+        peak = self._peak_bytes_per_sample()
+        if not self._trajectory_sharing:
+            peak *= self._threads(1)
+        batch_size = max(1, self._memory_budget() // peak)
         if any(isinstance(c, StatevectorComponent) for c in self._program.components):
             batch_size = min(batch_size, STATEVECTOR_MAX_BATCH_SIZE)
         return batch_size
@@ -613,7 +641,9 @@ class _CompiledSamplerBase:
             f_params = f_params_np if sharing else jnp.asarray(f_params_np)
             return sample_program(self._program, f_params, key, **sharing)
 
-        batches = run_tasks(sample_batch, tasks, self._threads())
+        batches = run_tasks(
+            _with_x64_of_caller(sample_batch), tasks, self._threads(batch_size)
+        )
         reference: np.ndarray | None = None
         if compute_reference:
             reference = np.asarray(batches[0][0])
@@ -692,8 +722,8 @@ class _CompiledSamplerBase:
         if compute_reference:
             reference = self._compute_reference_sample()
 
-        result = np.zeros((shots, num_outputs), dtype=np.bool_)
-        was_discarded = np.zeros(shots, dtype=np.bool_)
+        result = np.empty((shots, num_outputs), dtype=np.bool_)
+        was_discarded = np.empty(shots, dtype=np.bool_)
 
         columns = self._direct_detector_columns
         postselect = postselection_mask[columns]
@@ -749,7 +779,7 @@ class _CompiledSamplerBase:
                 samples = sample_program(self._program, jnp.asarray(f_batch), key)
             result[shot_batch] = np.asarray(samples)[:count]
 
-        threads = self._threads()
+        threads = self._threads(batch_size)
         num_f = self._channel_sampler.signature_matrix.shape[1]
         pending_f = [np.empty((0, num_f), dtype=np.uint8)]
         pending_shot = [np.empty(0, dtype=np.int64)]
@@ -785,7 +815,7 @@ class _CompiledSamplerBase:
                 self._key, subkey = jax.random.split(self._key)
                 stop = start + batch_size
                 batches.append((all_f[start:stop], all_shot[start:stop], subkey))
-            run_tasks(dispatch, batches, threads)
+            run_tasks(_with_x64_of_caller(dispatch), batches, threads)
             pending_f, pending_shot = [all_f[ready:]], [all_shot[ready:]]
             pending -= ready
 
@@ -912,9 +942,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane, and sample up to
-                ``numba.get_num_threads()`` batches at once, each with its own
-                memory (experimental).
+                with equal histories on one lane (experimental).
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -938,8 +966,10 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             batch_size: The number of samples to process in each batch. Defaults to
                 None, which automatically chooses a batch size based on available
                 memory. When using a GPU, setting this explicitly can help fully
-                utilize VRAM for maximum performance. NOTE: Changing the batch size
-                will affect reproducibility even with a fixed seed.
+                utilize VRAM for maximum performance. With ``strategy="active_statevector"``
+                on the CPU, up to ``numba.get_num_threads()`` batches run at once.
+                NOTE: Changing the batch size will affect reproducibility even with
+                a fixed seed.
 
         Returns:
             A numpy array containing the measurement samples.
@@ -973,9 +1003,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane, and sample up to
-                ``numba.get_num_threads()`` batches at once, each with its own
-                memory (experimental).
+                with equal histories on one lane (experimental).
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size and
                 fixed reference sample settings. If deterministic samples are
@@ -1045,8 +1073,10 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             batch_size: The number of samples to process in each batch. Defaults to
                 None, which automatically chooses a batch size based on available
                 memory. When using a GPU, setting this explicitly can help fully
-                utilize VRAM for maximum performance. NOTE: Changing the batch size
-                will affect reproducibility even with a fixed seed.
+                utilize VRAM for maximum performance. With ``strategy="active_statevector"``
+                on the CPU, up to ``numba.get_num_threads()`` batches run at once.
+                NOTE: Changing the batch size will affect reproducibility even with
+                a fixed seed.
             separate_observables: Defaults to False. When set to True, the return value
                 is a (detection_events, observable_flips) tuple instead of a flat
                 detection_events array.
