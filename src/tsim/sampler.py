@@ -201,8 +201,8 @@ class _CompiledSamplerBase:
             sample_detectors: If True, sample detectors/observables instead of measurements.
             mode: Compilation mode - "sequential" for autoregressive, "joint" for probabilities.
             strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
-                "cutting"), or "statevector" to simulate each non-direct
-                component as an extracted circuit on a dense state vector.
+                "cutting"), or "active_statevector" to simulate each non-direct
+                component on a dense state vector over its active qubits.
             seed: Random seed. If None, a random seed is generated. Note that
                 deterministic results are only guaranteed for a fixed batch size
                 and fixed reference sample settings.
@@ -259,7 +259,7 @@ class _CompiledSamplerBase:
             if peak > self._memory_budget():
                 widest = max(statevector, key=lambda c: c.width)
                 raise ValueError(
-                    f"strategy='statevector' needs {peak} bytes per shot for the "
+                    f"strategy='active_statevector' needs {peak} bytes per shot for the "
                     f"component with outputs {list(widest.output_indices)} (width "
                     f"{widest.width}), more than half of the available memory. "
                     f"{STABILIZER_RANK_HINT}"
@@ -697,7 +697,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         Args:
             circuit: The quantum circuit to compile.
             strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
-                "cutting"), or "statevector".
+                "cutting"), or "active_statevector".
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -752,7 +752,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         Args:
             circuit: The quantum circuit to compile.
             strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
-                "cutting"), or "statevector".
+                "cutting"), or "active_statevector".
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size and
                 fixed reference sample settings. If deterministic samples are

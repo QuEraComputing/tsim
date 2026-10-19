@@ -1,4 +1,4 @@
-"""Compilation of one component for ``strategy="statevector"``.
+"""Compilation of one component for ``strategy="active_statevector"``.
 
 ``plan_component`` reads the Heisenberg ops off the component, schedules and
 plans them; ``lower`` turns the plan into the arrays of a ``StatevectorComponent``:
@@ -42,7 +42,7 @@ STABILIZER_RANK_HINT = (
 
 
 class StatevectorComponent(eqx.Module):
-    """A component compiled for ``strategy="statevector"``: an action tape.
+    """A component compiled for ``strategy="active_statevector"``: an action tape.
 
     Attributes:
         output_indices: Global output index of each output slot.
@@ -116,13 +116,13 @@ def plan_component(
         ops = heisenberg_ops(component, component_layout)
     except ValueError as error:
         raise ValueError(
-            "strategy='statevector' could not read the component with outputs "
+            "strategy='active_statevector' could not read the component with outputs "
             f"{outputs}: {error}. {STABILIZER_RANK_HINT}"
         ) from error
     scheduled = schedule(ops)
     if scheduled.width > MAX_WIDTH:
         raise ValueError(
-            f"strategy='statevector' needs {scheduled.width} active qubits for the "
+            f"strategy='active_statevector' needs {scheduled.width} active qubits for the "
             f"component with outputs {outputs}, more than {MAX_WIDTH}. "
             f"{STABILIZER_RANK_HINT}"
         )
@@ -188,7 +188,7 @@ def lower(plan: Plan, layout: ComponentLayout, dtype: str) -> StatevectorCompone
 def compile_statevector_component(
     component: Graph, output_indices: Sequence[int], layout: ParamLayout
 ) -> StatevectorComponent:
-    """Compile one non-direct component for ``strategy="statevector"``.
+    """Compile one non-direct component for ``strategy="active_statevector"``.
 
     Amplitudes are complex128 when JAX has 64-bit types enabled, else complex64.
 

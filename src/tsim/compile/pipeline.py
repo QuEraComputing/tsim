@@ -49,7 +49,7 @@ def compile_program(
 
     The graph is split into connected components. A component whose single
     output equals one error-basis bit takes the direct path. With
-    ``strategy="statevector"`` every other component becomes an action tape for
+    ``strategy="active_statevector"`` every other component becomes an action tape for
     the statevector executor. Otherwise its outputs are plugged (all prefixes
     in ``sequential`` mode, none and all in ``joint`` mode), each plugged graph
     is decomposed into stabilizer terms, and the terms are compiled into JAX
@@ -58,19 +58,19 @@ def compile_program(
     Args:
         prepared: The prepared graph from ``prepare_graph``.
         mode: ``"sequential"`` for sampling, ``"joint"`` for probabilities.
-        strategy: A stabilizer-rank decomposition strategy, or ``"statevector"``.
+        strategy: A stabilizer-rank decomposition strategy, or ``"active_statevector"``.
 
     Returns:
         A CompiledProgram ready for sampling.
 
     Raises:
-        ValueError: If ``strategy="statevector"`` is combined with ``mode="joint"``.
+        ValueError: If ``strategy="active_statevector"`` is combined with ``mode="joint"``.
 
     """
-    if strategy == "statevector":
+    if strategy == "active_statevector":
         if mode == "joint":
             raise ValueError(
-                "strategy='statevector' samples outcomes and cannot compute "
+                "strategy='active_statevector' samples outcomes and cannot compute "
                 f"probabilities. {STABILIZER_RANK_HINT}"
             )
         compile_component = compile_statevector_component

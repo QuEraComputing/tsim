@@ -870,8 +870,8 @@ class Circuit:
 
         Args:
             strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
-                "cutting"), or "statevector" to simulate each non-direct
-                component as an extracted circuit on a dense state vector.
+                "cutting"), or "active_statevector" to simulate each non-direct
+                component on a dense state vector over its active qubits.
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -900,8 +900,8 @@ class Circuit:
 
         Args:
             strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
-                "cutting"), or "statevector" to simulate each non-direct
-                component as an extracted circuit on a dense state vector.
+                "cutting"), or "active_statevector" to simulate each non-direct
+                component on a dense state vector over its active qubits.
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set

@@ -1,4 +1,4 @@
-"""Statevector sampling of Tsim's quantum components (``strategy="statevector"``).
+"""Statevector sampling of Tsim's quantum components (``strategy="active_statevector"``).
 
 A non-direct component of the reduced sampling graph is read, without circuit
 extraction, as rotations and measurements in the frame of the initial

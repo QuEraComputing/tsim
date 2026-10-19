@@ -25,8 +25,8 @@ if TYPE_CHECKING:
     from tsim.core.params import ParamLayout
     from tsim.statevector.program import StatevectorComponent
 
-SamplingStrategy = DecompositionStrategy | Literal["statevector"]
-"""A stabilizer-rank decomposition strategy, or ``"statevector"``."""
+SamplingStrategy = DecompositionStrategy | Literal["active_statevector"]
+"""A stabilizer-rank decomposition strategy, or ``"active_statevector"``."""
 
 
 @dataclass(frozen=True)

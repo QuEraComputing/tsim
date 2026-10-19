@@ -1,4 +1,4 @@
-"""Dense reference simulations for testing ``strategy="statevector"``.
+"""Dense reference simulations for testing ``strategy="active_statevector"``.
 
 Bit ``q`` of a basis-state index is qubit ``q`` (a line, or an array axis).
 """

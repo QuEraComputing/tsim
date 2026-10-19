@@ -1,4 +1,4 @@
-"""strategy="statevector" end to end, against stabilizer rank and VecSampler."""
+"""strategy="active_statevector" end to end, against stabilizer rank and VecSampler."""
 
 import warnings
 from test.helpers.gen import gen_stim_circuit
@@ -26,9 +26,9 @@ def test_detector_sampling_matches_stabilizer_rank(name):
     expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
         shots, append_observables=True
     )
-    got = circuit.compile_detector_sampler(strategy="statevector", seed=2).sample(
-        shots, batch_size=5_000, append_observables=True
-    )
+    got = circuit.compile_detector_sampler(
+        strategy="active_statevector", seed=2
+    ).sample(shots, batch_size=5_000, append_observables=True)
     assert_counts_match(got, expected)
 
 
@@ -37,7 +37,7 @@ def test_measurement_sampling_matches_stabilizer_rank(name):
     circuit = Circuit(CIRCUITS[name])
     shots = 20_000
     expected = circuit.compile_sampler(strategy="cat5", seed=1).sample(shots)
-    got = circuit.compile_sampler(strategy="statevector", seed=2).sample(
+    got = circuit.compile_sampler(strategy="active_statevector", seed=2).sample(
         shots, batch_size=5_000
     )
     assert_counts_match(got, expected)
@@ -49,14 +49,14 @@ def test_measurement_sampling_matches_vec_sampler(seed):
     shots = 512
     expected, _, _ = VecSampler(stim_circuit).sample(shots)
     sampler = Circuit.from_stim_program(stim_circuit).compile_sampler(
-        strategy="statevector", seed=seed
+        strategy="active_statevector", seed=seed
     )
     assert_counts_match(sampler.sample(shots, batch_size=shots), expected)
 
 
 def test_statevector_samplers_hold_statevector_components():
     sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
-        strategy="statevector"
+        strategy="active_statevector"
     )
     components = sampler._program.components
     assert components
@@ -69,7 +69,10 @@ def test_postselection_and_partial_batches():
     mask = np.ones(circuit.num_detectors, dtype=bool)
     shots = 30_000
     rates = []
-    cases: tuple[tuple[SamplingStrategy, int], ...] = (("cat5", 1), ("statevector", 2))
+    cases: tuple[tuple[SamplingStrategy, int], ...] = (
+        ("cat5", 1),
+        ("active_statevector", 2),
+    )
     for strategy, seed in cases:
         sampler = circuit.compile_detector_sampler(strategy=strategy, seed=seed)
         detectors, observables = sampler.sample(
@@ -88,7 +91,7 @@ def test_postselection_and_partial_batches():
 
 def test_reference_samples_work_with_statevector():
     circuit = Circuit(CIRCUITS["injection_check"])
-    sampler = circuit.compile_detector_sampler(strategy="statevector", seed=0)
+    sampler = circuit.compile_detector_sampler(strategy="active_statevector", seed=0)
     samples = sampler.sample(
         1_000, use_detector_reference_sample=True, use_observable_reference_sample=True
     )
@@ -97,8 +100,8 @@ def test_reference_samples_work_with_statevector():
 
 def test_probabilities_reject_statevector():
     prepared = prepare_graph(Circuit(CIRCUITS["t_ghz"]), sample_detectors=False)
-    with pytest.raises(ValueError, match="statevector"):
-        compile_program(prepared, mode="joint", strategy="statevector")
+    with pytest.raises(ValueError, match="active_statevector"):
+        compile_program(prepared, mode="joint", strategy="active_statevector")
 
 
 def test_complex128_sampling_matches_stabilizer_rank():
@@ -107,7 +110,9 @@ def test_complex128_sampling_matches_stabilizer_rank():
         10_000, append_observables=True
     )
     with jax.enable_x64(True):
-        sampler = circuit.compile_detector_sampler(strategy="statevector", seed=2)
+        sampler = circuit.compile_detector_sampler(
+            strategy="active_statevector", seed=2
+        )
         assert all(
             isinstance(c, StatevectorComponent) and c.dtype == "complex128"
             for c in sampler._program.components
@@ -146,7 +151,7 @@ def _norm_warnings(monkeypatch, strategy, deviation, *, x64=False):
 def test_statevector_norm_warnings_depend_on_the_amplitude_dtype(
     monkeypatch, x64, deviation, warns
 ):
-    caught = _norm_warnings(monkeypatch, "statevector", deviation, x64=x64)
+    caught = _norm_warnings(monkeypatch, "active_statevector", deviation, x64=x64)
     assert bool(caught) == warns
 
 
@@ -159,7 +164,7 @@ def test_stabilizer_rank_norm_warnings_keep_their_threshold(
 
 def test_a_vanishing_statevector_norm_raises(monkeypatch):
     with pytest.raises(ValueError, match="vanishing"):
-        _norm_warnings(monkeypatch, "statevector", 1.0)
+        _norm_warnings(monkeypatch, "active_statevector", 1.0)
 
 
 def test_the_automatic_batch_size_of_a_statevector_sampler_is_capped(monkeypatch):
@@ -167,7 +172,7 @@ def test_the_automatic_batch_size_of_a_statevector_sampler_is_capped(monkeypatch
         sampler_module._CompiledSamplerBase, "_memory_budget", lambda self: 2**49
     )
     circuit = Circuit(CIRCUITS["t_ghz"])
-    sampler = circuit.compile_detector_sampler(strategy="statevector", seed=0)
+    sampler = circuit.compile_detector_sampler(strategy="active_statevector", seed=0)
     assert sampler._estimate_batch_size() == 2**16
     assert sampler._resolve_batch_size(10**7, None, compute_reference=False) <= 2**16
     lanes = []
@@ -189,7 +194,7 @@ def test_the_automatic_batch_size_of_a_statevector_sampler_is_capped(monkeypatch
 
 def test_the_per_shot_estimate_counts_f_params_and_records():
     sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
-        strategy="statevector"
+        strategy="active_statevector"
     )
     lane = max(
         lane_bytes(c)
@@ -204,11 +209,11 @@ def test_the_per_shot_estimate_counts_f_params_and_records():
 def test_a_lane_must_fit_in_half_of_the_available_memory(monkeypatch):
     circuit = Circuit(CIRCUITS["t_ghz"])
     peak = circuit.compile_detector_sampler(
-        strategy="statevector"
+        strategy="active_statevector"
     )._peak_bytes_per_sample()
     base = sampler_module._CompiledSamplerBase
     monkeypatch.setattr(base, "_memory_budget", lambda self: peak - 1)
     with pytest.raises(ValueError, match="cat5"):
-        circuit.compile_detector_sampler(strategy="statevector")
+        circuit.compile_detector_sampler(strategy="active_statevector")
     monkeypatch.setattr(base, "_memory_budget", lambda self: peak)
-    circuit.compile_detector_sampler(strategy="statevector")
+    circuit.compile_detector_sampler(strategy="active_statevector")

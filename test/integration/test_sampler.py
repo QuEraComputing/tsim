@@ -63,7 +63,7 @@ def assert_samples_match(samples1: np.ndarray, samples2: np.ndarray):
         "color_code:memory_xyz",
     ],
 )
-@pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting", "statevector"])
+@pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting", "active_statevector"])
 def test_quantum_memory_codes_without_noise(code_task: str, strategy: SamplingStrategy):
 
     circ = stim.Circuit.generated(
@@ -82,7 +82,7 @@ def test_quantum_memory_codes_without_noise(code_task: str, strategy: SamplingSt
 
 
 @pytest.mark.parametrize("seed", [1, 2, 42])
-@pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting", "statevector"])
+@pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting", "active_statevector"])
 def test_sampler(seed, strategy):
     num_qubits = 3
     stim_circuit = gen_stim_circuit(
@@ -216,7 +216,7 @@ def test_memory_error_correction_and_compare_to_stim(code_task: str):
         "before_round_data_depolarization",
     ],
 )
-@pytest.mark.parametrize("strategy", ["cat5", "statevector"])
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
 def test_rotated_surface_code_single_noise_channel_matches_stim(
     channel: str, strategy: SamplingStrategy
 ):
@@ -294,7 +294,7 @@ def test_rotated_surface_code_single_noise_channel_matches_stim(
         "two_correlated_errors_with_else",
     ],
 )
-@pytest.mark.parametrize("strategy", ["cat5", "statevector"])
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
 def test_correlated_error(stim_program: str, strategy: SamplingStrategy):
     n_samples = 10_000
     stim_samples = stim.Circuit(stim_program).compile_sampler(seed=0).sample(n_samples)
@@ -381,7 +381,7 @@ def test_correlated_error(stim_program: str, strategy: SamplingStrategy):
         "multiple_products",
     ],
 )
-@pytest.mark.parametrize("strategy", ["cat5", "statevector"])
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
 def test_mpp_inversion_parity(stim_program: str, strategy: SamplingStrategy):
     """Test that MPP correctly handles inversions on any Pauli (only parity matters)."""
     n_samples = 10_000

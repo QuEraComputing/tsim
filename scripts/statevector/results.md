@@ -1,4 +1,4 @@
-# strategy="statevector" on the clifft-bench circuits
+# strategy="active_statevector" on the clifft-bench circuits
 
 - **Date:** 2026-10-10
 - **Machine:** Apple M4 Pro, 14 cores (10 performance, 4 efficiency)
