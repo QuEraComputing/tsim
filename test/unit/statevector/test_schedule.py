@@ -53,6 +53,32 @@ def test_measurements_run_before_unrelated_expansions():
     assert scheduled.width == 1
 
 
+def _measurement_after_two_expansions_or_after_one(lower_first: bool):
+    # Rotate about X0, X1 and X2, then measure Z0 Z1 (peak 2) and Z2 (peak 1).
+    rotations = [[0, 0, 1], [1, 0, 0], [0, 1, 0]]
+    measurements = [[0, 0, 1], [1, 1, 0]]
+    if not lower_first:
+        rotations, measurements = rotations[1:] + rotations[:1], measurements[::-1]
+    zeros = [[0, 0, 0]] * 2
+    return PauliOps(
+        kind=np.array([ROTATION] * 3 + [MEASUREMENT] * 2, dtype=np.uint8),
+        x=_bits(*rotations, *zeros),
+        z=_bits(*[[0, 0, 0]] * 3, *measurements),
+        angle=np.array([0.3, 0.3, 0.3, 0.0, 0.0]),
+        sign=np.zeros((5, 1), dtype=bool),
+        slot=np.array([-1, -1, -1, 0, 1], dtype=np.int32),
+    )
+
+
+def test_widening_runs_the_measurement_with_the_lowest_peak_first():
+    lower_first = schedule(_measurement_after_two_expansions_or_after_one(True))
+    assert lower_first.order.tolist() == [0, 3, 1, 2, 4]
+    assert lower_first.width == 2
+    lower_second = schedule(_measurement_after_two_expansions_or_after_one(False))
+    assert lower_second.order.tolist() == [2, 4, 0, 1, 3]
+    assert lower_second.width == 2
+
+
 def test_schedules_keep_every_anticommuting_pair_in_order():
     for ops in component_ops():
         order = schedule(ops).order

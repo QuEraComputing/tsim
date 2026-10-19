@@ -145,12 +145,14 @@ def schedule(ops: PauliOps) -> Schedule:
         apply = stabilizers.measure if is_measurement[j] else stabilizers.rotate
         apply(ops.x[j], ops.z[j])
 
-    def peak(chain: np.ndarray) -> int:
+    def peak(chain: np.ndarray, bound: float) -> float:
         trial = group.copy()
         highest = trial.width
         for j in chain:
             advance(trial, int(j))
             highest = max(highest, trial.width)
+            if highest >= bound:
+                return float("inf")
         return highest
 
     def run(j: int) -> None:
@@ -178,7 +180,12 @@ def schedule(ops: PauliOps) -> Schedule:
                 run(int(j))
             break
         chains = [np.flatnonzero(ancestors[m] & ~done) for m in pending]
-        best = int(np.argmin([peak(chain) for chain in chains]))
+        # NOTE: a chain that reaches the best peak so far cannot win, as ties
+        # go to the earliest, so its simulation stops there.
+        best, lowest = 0, float("inf")
+        for k, chain in enumerate(chains):
+            if (highest := peak(chain, lowest)) < lowest:
+                best, lowest = k, highest
         for j in chains[best]:
             run(int(j))
         run(int(pending[best]))

@@ -52,7 +52,8 @@ class LaneState(NamedTuple):
 
 def lane_bytes(component: StatevectorComponent) -> int:
     """Return the peak device memory of one lane, temporary amplitudes included."""
-    amplitudes = 3 * 2**component.width * jnp.dtype(component.dtype).itemsize
+    # NOTE: XLA's memory analysis of the executor shows four amplitude arrays.
+    amplitudes = 4 * 2**component.width * jnp.dtype(component.dtype).itemsize
     return amplitudes + 4 * component.num_words + component.num_outputs
 
 

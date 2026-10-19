@@ -179,21 +179,24 @@ def read_pauli_ops(component: Graph, layout: ComponentLayout) -> PauliOps:
         paulis.append((axis * reading.stabilizer(t), 0, 0))
     paulis += [(reading.measured(y), coins, rhs) for y, coins, rhs in reading.outputs]
     images = [frame(pauli) for pauli, _, _ in paulis]
+    bits = [image.to_numpy() for image in images]
     flipped = np.zeros(n, dtype=bool)
-    for image in images:
-        flipped |= image.to_numpy()[0]
+    for image_x, _ in bits:
+        flipped |= image_x
     lines = np.flatnonzero(flipped)
     x = np.zeros((len(paulis), len(lines) + reading.num_coins), dtype=bool)
     z = np.zeros_like(x)
     sign = np.zeros((len(paulis), 1 + num_f), dtype=bool)
-    for j, ((_, coins, rhs), image) in enumerate(zip(paulis, images, strict=True)):
-        image_x, image_z = image.to_numpy()
+    for j, ((_, coins, rhs), image, (image_x, image_z)) in enumerate(
+        zip(paulis, images, bits, strict=True)
+    ):
         x[j, : len(lines)], z[j, : len(lines)] = image_x[lines], image_z[lines]
         x[j, len(lines) :] = _unmask(coins, reading.num_coins)
         sign[j] = _unmask(rhs, 1 + num_f)
         sign[j, 0] ^= image.sign == -1
-        # NOTE: postselection k sits on frame line k with the f-dependent target
-        # t_k, so that line starts in |t_k⟩: an op with a Z on it flips with t_k.
+        # NOTE: frame line i holds the i-th independent postselection of _frame,
+        # not postselection i, with the f-dependent target targets[i]. That line
+        # starts in |targets[i]⟩, so an op with a Z on it flips with targets[i].
         on_targets = np.flatnonzero(image_z[: len(targets)])
         sign[j, 1:] ^= targets[on_targets].sum(axis=0) % 2 == 1
     num_outputs = len(reading.outputs)
