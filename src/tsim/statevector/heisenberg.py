@@ -345,21 +345,28 @@ class _Relations:
                 probabilities.
 
         """
-        rows: list[tuple[int, int, int]] = []
-        for v in order:
-            bit = 1 << v
-            k = next((k for k, (m, _) in enumerate(self.equalities) if m & bit), None)
-            if k is None:
-                continue
-            mask, rhs = self.equalities.pop(k)
-            self.equalities = [
-                (m ^ mask, r ^ rhs) if m & bit else (m, r) for m, r in self.equalities
-            ]
-            rows = [
-                (p, m ^ mask, r ^ rhs) if m & bit else (p, m, r) for p, m, r in rows
-            ]
-            rows.append((v, mask, rhs))
-        self._drop_trivial()
+        # NOTE: the reduced echelon form is unique for a column priority, so map
+        # the first variable of ``order`` to the highest bit and eliminate by
+        # leading bits, then reduce each row by the pivot rows below it.
+        position = {v: len(order) - 1 - i for i, v in enumerate(order)}
+        echelon = _Basis()
+        for mask, rhs in self.equalities:
+            if echelon.insert(sum(1 << position[v] for v in _bits(mask)), rhs):
+                raise ValueError("the classical part of the component is inconsistent")
+        reduced: dict[int, tuple[int, int]] = {}
+        below = 0
+        for lead in sorted(echelon.rows):
+            mask, rhs = echelon.rows[lead]
+            for bit in _bits(mask & below):
+                mask, rhs = mask ^ reduced[bit][0], rhs ^ reduced[bit][1]
+            reduced[lead] = (mask, rhs)
+            below |= 1 << lead
+        variable = order[::-1]
+        rows = [
+            (variable[lead], sum(1 << variable[b] for b in _bits(mask)), rhs)
+            for lead, (mask, rhs) in sorted(reduced.items(), reverse=True)
+        ]
+        self.equalities = []
         for p, mask, rhs in rows:
             self._substitute(p, mask ^ 1 << p, rhs)
         if any(self.pairs) or any(self.lin):
