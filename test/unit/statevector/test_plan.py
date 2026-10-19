@@ -1,11 +1,8 @@
-from fractions import Fraction
 from math import pi
 from test.helpers.statevector import (
-    ONE_LINE_LAYOUT,
     assert_distributions_close,
     component_ops,
     f_patterns,
-    one_line,
     ops_distribution,
     plan_distribution,
 )
@@ -13,15 +10,8 @@ from test.helpers.statevector import (
 import numpy as np
 import pytest
 import stim
-from zxparam import Phase
-from zxparam.extract import Gate
 
-from tsim.statevector.heisenberg import (
-    MEASUREMENT,
-    ROTATION,
-    HeisenbergOps,
-    heisenberg_ops,
-)
+from tsim.statevector.heisenberg import MEASUREMENT, ROTATION, HeisenbergOps
 from tsim.statevector.plan import (
     AffineRow,
     MeasureActive,
@@ -36,8 +26,7 @@ from tsim.statevector.schedule import Schedule, schedule
 def _t_then_h():
     # |+⟩, T, H, measure Z: in the |0⟩ frame a rotation about X, then a
     # measurement of Z, which anticommute.
-    gates = [Gate("Z", (0,), Phase(Fraction(1, 4))), Gate("H", (0,))]
-    return heisenberg_ops(one_line(gates), ONE_LINE_LAYOUT)
+    return _ops([("X", pi / 8, False, -1), ("Z", None, False, 0)])
 
 
 def test_t_then_h_promotes_one_axis_and_measures_it():

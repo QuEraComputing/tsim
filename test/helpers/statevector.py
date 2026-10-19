@@ -6,15 +6,13 @@ Bit ``q`` of a basis-state index is qubit ``q`` (a line, or an array axis).
 from __future__ import annotations
 
 import itertools
-from collections.abc import Mapping, Sequence
-from fractions import Fraction
+from collections.abc import Sequence
 from functools import cache
-from math import cos, pi, sin
+from math import cos, sin
 
 import jax.numpy as jnp
 import numpy as np
-from zxparam import Graph, Phase, Scalar
-from zxparam.extract import ExtractedCircuit, Gate, extract_circuit
+from zxparam import Graph
 
 from tsim.circuit import Circuit
 from tsim.compile.evaluate import evaluate
@@ -152,6 +150,23 @@ CIRCUITS: dict[str, str] = {
         DETECTOR rec[-2]
         DETECTOR rec[-1] rec[-2]
     """,
+    "classical_wiring": """
+        R 0 1 2
+        H 0 1
+        T 0 1
+        CNOT 0 2
+        M 0
+        M 0
+        X_ERROR(0.2) 0
+        M 0
+        CZ 1 2
+        MPP X1*Z2
+        CX rec[-1] 2
+        M 1 2
+        DETECTOR rec[-6] rec[-5]
+        DETECTOR rec[-4]
+        OBSERVABLE_INCLUDE(0) rec[-3] rec[-1]
+    """,
 }
 
 
@@ -175,72 +190,10 @@ def output_indices(component: Graph) -> list[int]:
     ]
 
 
-ONE_LINE_LAYOUT = ComponentLayout(
-    f_selection=(0,), f_position={7: 0}, output_indices=(0,)
-)
-
-
-def one_line(gates: list[Gate], *, line_start: int | None = None) -> ExtractedCircuit:
-    """Return a one-line circuit that ends at output 0; phase parameter 7 is f-bit 0."""
-    return ExtractedCircuit(
-        gates=gates,
-        n_lines=1,
-        line_start={0: line_start},
-        line_end={0: 0},
-        scalar=Scalar.one(),
-        classical_ports=frozenset({0}),
-    )
-
-
-def hand_built_circuits() -> list[tuple[ExtractedCircuit, ComponentLayout]]:
-    """Return small extracted circuits with a DISCARD and a reused MEASURE line."""
-    t = Phase(Fraction(1, 4))
-    noise = Phase(Fraction(0), frozenset({7}))
-    discard = ExtractedCircuit(
-        gates=[
-            Gate("Z", (0,), t),
-            Gate("CZ", (0, 1)),
-            Gate("Z", (1,), Phase(Fraction(1, 4), frozenset({7}))),
-            Gate("H", (1,)),
-            Gate("DISCARD", (1,)),
-            Gate("H", (0,)),
-            Gate("Z", (0,), Phase(Fraction(3, 4))),
-        ],
-        n_lines=2,
-        line_start={0: None, 1: None},
-        line_end={0: 0, 1: None},
-        scalar=Scalar.one(),
-        classical_ports=frozenset({0}),
-    )
-    measure = ExtractedCircuit(
-        gates=[
-            Gate("Z", (0,), t),
-            Gate("CNOT", (0, 1)),
-            Gate("Z", (1,), noise),
-            Gate("H", (1,)),
-            Gate("Z", (1,), Phase(Fraction(1, 8))),
-            Gate("MEASURE", (1,)),
-            Gate("CNOT", (1, 0)),
-            Gate("H", (0,)),
-            Gate("Z", (0,), Phase(Fraction(7, 4))),
-            Gate("H", (0,)),
-        ],
-        n_lines=2,
-        line_start={0: None, 1: None},
-        line_end={0: 0, 1: 1},
-        scalar=Scalar.one(),
-        classical_ports=frozenset({0, 1}),
-    )
-    return [
-        (discard, ONE_LINE_LAYOUT),
-        (measure, ComponentLayout((0,), {7: 0}, (0, 1))),
-    ]
-
-
 @cache
-def extracted_circuits() -> tuple[tuple[ExtractedCircuit, ComponentLayout], ...]:
-    """Return every test component's circuit (both modes), then the hand-built ones."""
-    extracted = []
+def component_ops() -> tuple[HeisenbergOps, ...]:
+    """Return the ops of every non-direct component of the test circuits, both modes."""
+    ops = []
     for name in sorted(CIRCUITS):
         for sample_detectors in (True, False):
             components, layout = quantum_components(
@@ -249,13 +202,8 @@ def extracted_circuits() -> tuple[tuple[ExtractedCircuit, ComponentLayout], ...]
             for component in components:
                 indices = output_indices(component)
                 component_layout = ComponentLayout.of(component, indices, layout)
-                extracted.append((extract_circuit(component), component_layout))
-    return (*extracted, *hand_built_circuits())
-
-
-def component_ops() -> list[HeisenbergOps]:
-    """Return the ops of every circuit in ``extracted_circuits``."""
-    return [heisenberg_ops(circuit, layout) for circuit, layout in extracted_circuits()]
+                ops.append(heisenberg_ops(component, component_layout))
+    return tuple(ops)
 
 
 def f_patterns(num_f: int, limit: int = 32) -> list[tuple[int, ...]]:
@@ -298,71 +246,6 @@ def apply_pauli(psi: np.ndarray, x: int, z: int) -> np.ndarray:
     i_power = (1, 1j, -1, -1j)[bin(x & z).count("1") % 4]
     signs = np.where(parity(flipped & z), -1, 1)
     return i_power * signs * psi[flipped]
-
-
-_H = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
-
-
-def _single_qubit(psi: np.ndarray, num_qubits: int, qubit: int, matrix: np.ndarray):
-    tensor = psi.reshape([2] * num_qubits)
-    axis = num_qubits - 1 - qubit
-    tensor = np.moveaxis(np.tensordot(matrix, tensor, axes=([1], [axis])), 0, axis)
-    return tensor.reshape(-1)
-
-
-def _extracted_gate(
-    psi: np.ndarray, num_lines: int, gate: Gate, bindings: Mapping[int, int]
-) -> list[np.ndarray]:
-    index = np.arange(len(psi))
-    if gate.kind == "H":
-        return [_single_qubit(psi, num_lines, gate.lines[0], _H)]
-    if gate.kind == "CNOT":
-        control, target = gate.lines
-        return [psi[index ^ (((index >> control) & 1) << target)]]
-    if gate.kind == "CZ":
-        a, b = gate.lines
-        both = ((index >> a) & (index >> b) & 1) == 1
-        return [psi * np.where(both, -1, 1)]
-    (line,) = gate.lines
-    bit = (index >> line) & 1
-    if gate.kind == "Z":
-        assert gate.phase is not None
-        flips = sum(bindings[p] for p in gate.phase.parameters)
-        value = float(gate.phase.value) + flips
-        return [psi * np.where(bit == 1, np.exp(1j * pi * value), 1)]
-    assert gate.kind in ("MEASURE", "DISCARD")
-    return [psi * (bit == 0), psi * (bit == 1)]
-
-
-def extracted_distribution(
-    circuit: ExtractedCircuit, layout: ComponentLayout, bindings: Mapping[int, int]
-) -> Distribution:
-    """Return the exact output distribution of an extracted circuit.
-
-    Lines start in |+⟩. MEASURE and DISCARD dephase their line in the Z basis
-    (each outcome becomes a branch). Output lines are read in the Z basis at
-    the end, in slot order. ``bindings`` gives each phase parameter ID its bit.
-    """
-    num_lines = circuit.n_lines
-    branches = [np.full(2**num_lines, 2 ** (-num_lines / 2), dtype=complex)]
-    for gate in circuit.gates:
-        branches = [
-            new
-            for psi in branches
-            for new in _extracted_gate(psi, num_lines, gate, bindings)
-        ]
-    slot_of_port = {port: slot for slot, port in enumerate(layout.output_indices)}
-    lines = [0] * len(layout.output_indices)
-    for line, port in circuit.line_end.items():
-        if port is not None:
-            lines[slot_of_port[port]] = line
-    result: Distribution = {}
-    for psi in branches:
-        probabilities = np.abs(psi) ** 2
-        for i in np.flatnonzero(probabilities > 1e-15):
-            key = tuple(int((i >> line) & 1) for line in lines)
-            result[key] = result.get(key, 0.0) + float(probabilities[i])
-    return result
 
 
 def ops_distribution(ops: HeisenbergOps, f: Sequence[int]) -> Distribution:

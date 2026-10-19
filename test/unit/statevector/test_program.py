@@ -113,11 +113,11 @@ def test_too_wide_components_are_rejected(monkeypatch):
         plan_component(component, output_indices(component), layout)
 
 
-def test_extraction_failures_are_value_errors(monkeypatch):
-    def fail(_):
-        raise RuntimeError("no gflow")
+def test_reading_failures_are_value_errors(monkeypatch):
+    def fail(*_):
+        raise ValueError("no gflow")
 
-    monkeypatch.setattr(program, "extract_circuit", fail)
+    monkeypatch.setattr(program, "heisenberg_ops", fail)
     (component,), layout = quantum_components(CIRCUITS["t_ghz"], sample_detectors=True)
     with pytest.raises(ValueError, match="no gflow"):
         plan_component(component, output_indices(component), layout)

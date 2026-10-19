@@ -1,33 +1,43 @@
-"""Heisenberg-frame operations of an extracted circuit.
+"""Heisenberg-frame operations read off a reduced ZX component.
 
-``heisenberg_ops`` rewrites an ``ExtractedCircuit`` as rotations and
-measurements whose Paulis are written in the frame of the initial ``|0…0⟩``
-state. The parameter part of a Z phase is noise: a Z applied when a parity of
-f-bits is 1. Moving it past every later operation to the end of the circuit,
-where it changes no outcome, flips the sign of each operation it anticommutes
-with. So every operation carries a fixed GF(2) sign row, and operations that
-commute can be reordered without touching their signs.
+A component of the reduced sampling graph is a graph state of its quantum
+spiders followed by one rotation and one single-qubit measurement per spider.
+The phase ``π/2·q + 2θ`` of spider ``v`` rotates its qubit by ``exp(-iθ Z_v)``
+and then measures ``m_v = S^-q X S^q`` (a signed X or Y), with outcome bit
+``y_v``. The classical spiders and the outputs only relate the bits ``y`` to
+the output bits. Eliminating them over GF(2) (``_Relations``) leaves each output
+as a parity of bits ``y``, f-bits and fair coins, and a set of parities of the
+bits ``y`` that the diagram postselects.
+
+A sampler cannot postselect, so the postselections are moved to the start,
+where they act on the graph state, a stabilizer state. For that, every rotation
+must commute with them. Rotating about ``Z_v`` equals rotating about
+``Z_v K_T`` for a product ``K_T`` of graph-state stabilizers that still
+stabilizes the state, that is, when ``T`` holds no spider rotated before ``v``
+(the product rotation lemma). ``_rotation_axes`` finds these sets with a
+backward greedy search, as for gflows.
+
+A Clifford frame then maps the postselected graph state to ``|0…0⟩``.
+Noise-dependent postselection targets become f-dependent signs, lines that no
+operation flips are dropped, and Paulis that commute with every operation are
+measured first: they change no outcome and keep the active width small.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, fields
 from fractions import Fraction
 from math import pi
 
 import numpy as np
 import stim
-from zxparam import Graph
-from zxparam.extract import ExtractedCircuit, Gate
+from zxparam import Domain, EdgeType, Graph, Phase, VertexType
 
 from tsim.core.params import ParamLayout
 
 ROTATION = 0
 MEASUREMENT = 1
-
-_CLIFFORD_GATES = {"H": "h", "CNOT": "cx", "CZ": "cz"}
-_CLIFFORD_QUARTERS = {1: "s", 2: "z", 3: "s_dag"}
 
 
 @dataclass(frozen=True)
@@ -125,128 +135,453 @@ class HeisenbergOps:
         return HeisenbergOps(*(getattr(self, f.name)[order] for f in fields(self)))
 
 
-def heisenberg_ops(circuit: ExtractedCircuit, layout: ComponentLayout) -> HeisenbergOps:
-    """Return the operations of ``circuit`` in the ``|0…0⟩`` frame, in time order.
+def heisenberg_ops(component: Graph, layout: ComponentLayout) -> HeisenbergOps:
+    """Return the operations of a component of the reduced sampling graph.
 
-    Args:
-        circuit: A circuit extracted from a closed sampling graph: every line
-            starts with a ``|+⟩`` preparation and every output is classical.
-        layout: The component's f-bits and output slots.
+    Forgotten measurements of the program's commutant come first, then the
+    rotations, in an order for which the product rotation lemma holds, then one
+    measurement per output slot.
 
     Raises:
-        ValueError: If a line starts at an input port, ends at a quantum
-            output, or a gate kind is unknown.
+        ValueError: If the component is not a graph-like diagram of Z spiders
+            with classical outputs, its classical part does not describe
+            probabilities, or no rotation order exists.
 
     """
-    _check_lines(circuit)
-    builder = _Builder(circuit.n_lines, layout)
-    for gate in circuit.gates:
-        builder.gate(gate)
-    slot_of_port = {port: slot for slot, port in enumerate(layout.output_indices)}
-    for line in range(circuit.n_lines):
-        port = circuit.line_end[line]
-        if port is not None:
-            builder.measure(line, slot_of_port[port])
-    return builder.finish()
+    reading = _Reading(component, layout)
+    n, num_f = reading.num_spiders, len(layout.f_selection)
+    stabilizers = [
+        stim.PauliString.from_numpy(xs=one_hot, zs=row)
+        for one_hot, row in zip(np.eye(n, dtype=bool), reading.adjacency, strict=True)
+    ]
+    patterns = _patterns(reading)
+    axes = _rotation_axes(reading, patterns)
+    frame, targets = _frame(reading, patterns[0], stabilizers, num_f)
+    paulis = []
+    for v, t in axes:
+        axis = stim.PauliString(n)
+        axis[v] = "Z"
+        for u in _bits(t):
+            axis *= stabilizers[u]
+        paulis.append((axis, 0, 0))
+    paulis += [(reading.measured(y), coins, rhs) for y, coins, rhs in reading.outputs]
+    x = np.zeros((len(paulis), n + reading.num_coins), dtype=bool)
+    z = np.zeros_like(x)
+    sign = np.zeros((len(paulis), 1 + num_f), dtype=bool)
+    for j, (pauli, coins, rhs) in enumerate(paulis):
+        image = frame(pauli)
+        x[j, :n], z[j, :n] = image.to_numpy()
+        x[j, n:] = _unmask(coins, reading.num_coins)
+        sign[j] = _unmask(rhs, 1 + num_f)
+        sign[j, 0] ^= image.sign == -1
+    # NOTE: postselection k sits on frame line k with the f-dependent target
+    # t_k, so that line starts in |t_k⟩: every op with a Z on it flips with t_k.
+    sign[:, 1:] ^= (z[:, : len(targets)].astype(np.uint8) @ targets) % 2 == 1
+    num_outputs, keep = len(reading.outputs), x.any(axis=0)
+    ops = HeisenbergOps(
+        kind=np.array([ROTATION] * len(axes) + [MEASUREMENT] * num_outputs, np.uint8),
+        x=x[:, keep],
+        z=z[:, keep],
+        angle=np.array([reading.angle[v] for v, _ in axes] + [0.0] * num_outputs),
+        sign=sign,
+        slot=np.array([-1] * len(axes) + list(range(num_outputs)), dtype=np.int32),
+    )
+    return _with_commutant_measurements(ops)
 
 
-def _check_lines(circuit: ExtractedCircuit) -> None:
-    for line in range(circuit.n_lines):
-        start = circuit.line_start[line]
-        if start is not None:
-            raise ValueError(
-                f"line {line} starts at input port {start}; "
-                "sampling graphs have no inputs"
-            )
-        port = circuit.line_end[line]
-        if port is not None and port not in circuit.classical_ports:
-            raise ValueError(f"line {line} ends at the quantum output port {port}")
+class _Reading:
+    """A component as a graph state, rotations, postselections and outputs.
+
+    Quantum spider ``v`` is graph-state qubit ``v``, in the order of vertex IDs.
+
+    Attributes:
+        num_spiders: Number of quantum spiders.
+        adjacency: Graph-state adjacency matrix, shape ``(n, n)``.
+        neighbours: Graph-state neighbours of each spider, as a bit mask.
+        letter: ``"X"`` or ``"Y"``, the axis of each spider's ``m_v``.
+        negative: Mask of the spiders whose ``m_v`` is negated.
+        angle: θ of each rotated spider.
+        posts: ``(mask, rhs)`` per postselection: the parity of the bits ``y``
+            in ``mask`` must be ``rhs`` (bit 0 a constant, bit ``k + 1`` f-bit
+            ``k``).
+        outputs: ``(mask, coins, rhs)`` per output slot: the output is the parity
+            of the bits ``y`` in ``mask``, of the fair coins in ``coins`` and of
+            ``rhs``.
+        num_coins: Number of fair coins.
+
+    """
+
+    def __init__(self, component: Graph, layout: ComponentLayout) -> None:
+        """Read ``component`` and eliminate its classical spiders."""
+        quantum, classical, boundaries = [], [], 0
+        for v in component.vertices():
+            kind, domain = component.vertex_type(v), component.vertex_domain(v)
+            if kind == VertexType.BOUNDARY and domain == Domain.CLASSICAL:
+                boundaries += 1
+            elif kind != VertexType.Z:
+                raise ValueError(
+                    f"vertex {v} is neither a Z spider nor a classical output"
+                )
+            else:
+                (quantum if domain == Domain.QUANTUM else classical).append(v)
+        outputs = list(component.outputs())
+        if len(outputs) != boundaries:
+            raise ValueError("the component has an input")
+        n, c = len(quantum), len(classical)
+        index = {
+            v: i for i, v in enumerate([*sorted(quantum), *sorted(classical), *outputs])
+        }
+
+        def noise(phase: Phase) -> int:
+            return sum(2 << layout.f_position[p] for p in phase.parameters)
+
+        self.num_spiders = n
+        self.adjacency = np.zeros((n, n), dtype=bool)
+        self.neighbours = [0] * n
+        self.letter = ["X"] * n
+        self.negative = 0
+        self.angle: dict[int, float] = {}
+        relations = _Relations(n + c + len(outputs))
+        y_masks, y_rhs = [1 << v for v in range(n)], [0] * n
+        for vertex in quantum:
+            v, phase = index[vertex], component.phase(vertex)
+            quarters = round(2 * phase.value)
+            if rest := phase.value - Fraction(quarters, 2):
+                self.angle[v] = pi * float(rest) / 2
+            self.letter[v] = "XY"[quarters % 2]
+            self.negative |= (quarters % 4 in (1, 2)) << v
+            y_rhs[v] = noise(phase)
+        for vertex in classical:
+            phase = component.phase(vertex)
+            if phase.value not in (0, 1):
+                raise ValueError(f"classical spider {vertex} has phase {phase}")
+            relations.lin[index[vertex]] = noise(phase) | (phase.value == 1)
+        for u, w in component.edges():
+            a, b = sorted((index[u], index[w]))
+            hadamard = component.edge_type(u, w) == EdgeType.HADAMARD
+            if a < n and not hadamard:
+                raise ValueError(f"the edge {u}-{w} at a quantum spider is plain")
+            if b < n:
+                self.adjacency[a, b] = self.adjacency[b, a] = True
+                self.neighbours[a] |= 1 << b
+                self.neighbours[b] |= 1 << a
+            elif a < n:
+                if b >= n + c:
+                    raise ValueError(f"the output {w} touches a quantum spider")
+                y_masks[a] ^= 1 << b
+            elif hadamard:
+                relations.add_sign(a, b)
+            else:
+                relations.equalities.append((1 << a | 1 << b, 0))
+        relations.equalities += zip(y_masks, y_rhs, strict=True)
+        for x in range(n, n + c):
+            relations.eliminate(x)
+        output_bits = range(n + c, n + c + len(outputs))
+        rows = relations.reduce([*output_bits, *range(n)])
+        pivots = {p for p, _, _ in rows}
+        coin = {b: k for k, b in enumerate(b for b in output_bits if b not in pivots)}
+        self.num_coins = len(coin)
+        self.posts = [(mask, rhs) for p, mask, rhs in rows if p < n]
+        outputs_by_bit = {b: (0, 1 << k, 0) for b, k in coin.items()}
+        for p, mask, rhs in rows:
+            if p >= n:
+                others = _bits(mask >> (n + c) << (n + c) & ~(1 << p))
+                coins = sum(1 << coin[b] for b in others)
+                outputs_by_bit[p] = (mask & ((1 << n) - 1), coins, rhs)
+        self.outputs = [outputs_by_bit[b] for b in output_bits]
+
+    def measured(self, mask: int) -> stim.PauliString:
+        """Return the product of ``m_v`` over the spiders in ``mask``."""
+        pauli = stim.PauliString(self.num_spiders)
+        for v in _bits(mask):
+            pauli[v] = self.letter[v]
+        return -pauli if (mask & self.negative).bit_count() % 2 else pauli
 
 
-class _Builder:
-    """Walks the gates with a stim simulator that holds the Clifford prefix U."""
+class _Relations:
+    """Equalities and a sign over GF(2) variables, the bits of int masks.
 
-    def __init__(self, num_lines: int, layout: ComponentLayout) -> None:
-        """Start every line in ``|+⟩`` (``H`` on ``|0⟩``)."""
-        self.num_lines = num_lines
-        self.num_f = len(layout.f_selection)
-        self.f_position = layout.f_position
-        self.sim = stim.TableauSimulator()
-        self.sim.set_num_qubits(num_lines)
-        for line in range(num_lines):
-            self.sim.h(line)
-        self.inverse: stim.Tableau | None = None
-        self.ops: list[tuple[int, np.ndarray, np.ndarray, bool, float, int]] = []
-        self.noise: list[tuple[np.ndarray, np.ndarray, np.ndarray, int]] = []
+    An equality ``(mask, rhs)`` says that the parity of the variables in ``mask``
+    is the affine form ``rhs`` of ``(1, f_0, f_1, …)``. The sign is ``(-1)^Φ``,
+    with ``Φ = Σ v_i·v_j`` over the pairs in ``pairs`` plus ``Σ v_i·lin[i]``.
+    """
 
-    def _mapped(self, line: int) -> tuple[np.ndarray, np.ndarray, bool]:
-        """Return U†·Z_line·U as bit rows and a sign flag."""
-        if self.inverse is None:
-            self.inverse = self.sim.current_inverse_tableau()
-        image = self.inverse.z_output(line)
-        x, z = image.to_numpy()
-        return x, z, bool(image.sign == -1)
+    def __init__(self, num_vars: int) -> None:
+        """Start with no equality and the sign +1."""
+        self.equalities: list[tuple[int, int]] = []
+        self.pairs = [0] * num_vars
+        self.lin = [0] * num_vars
 
-    def _clifford(self, name: str, *lines: int) -> None:
-        getattr(self.sim, name)(*lines)
-        self.inverse = None
-
-    def gate(self, gate: Gate) -> None:
-        """Absorb a Clifford gate, or record a rotation, noise or measurement."""
-        if gate.kind in _CLIFFORD_GATES:
-            self._clifford(_CLIFFORD_GATES[gate.kind], *gate.lines)
-        elif gate.kind == "Z":
-            self._phase(gate)
-        elif gate.kind in ("MEASURE", "DISCARD"):
-            self.measure(gate.lines[0], -1)
+    def add_sign(self, i: int, j: int) -> None:
+        """Multiply the sign by ``(-1)^(v_i·v_j)``."""
+        if i == j:
+            self.lin[i] ^= 1
         else:
-            raise ValueError(f"unknown gate kind {gate.kind!r}")
+            self.pairs[i] ^= 1 << j
+            self.pairs[j] ^= 1 << i
 
-    def _phase(self, gate: Gate) -> None:
-        (line,) = gate.lines
-        phase = gate.phase
-        assert phase is not None
-        quarters = round(2 * phase.value)
-        remainder = phase.value - Fraction(quarters, 2)
-        clifford = _CLIFFORD_QUARTERS.get(quarters % 4)
-        if clifford is not None:
-            self._clifford(clifford, line)
-        if remainder:
-            x, z, negative = self._mapped(line)
-            self.ops.append((ROTATION, x, z, negative, pi * float(remainder) / 2, -1))
-        if phase.parameters:
-            x, z, _ = self._mapped(line)
-            condition = np.zeros(self.num_f, dtype=bool)
-            condition[[self.f_position[p] for p in phase.parameters]] = True
-            self.noise.append((x, z, condition, len(self.ops)))
+    def eliminate(self, v: int) -> None:
+        """Remove ``v``: solve an equality for it, or sum the sign over it.
 
-    def measure(self, line: int, slot: int) -> None:
-        """Record a Z measurement of ``line`` (``slot`` -1 if forgotten)."""
-        x, z, negative = self._mapped(line)
-        self.ops.append((MEASUREMENT, x, z, negative, 0.0, slot))
-
-    def finish(self) -> HeisenbergOps:
-        """Return the ops, with every noise event folded into their sign rows.
-
-        A noise event flips the sign of every later op it anticommutes with.
+        Summing over ``v`` turns its factor ``(-1)^(v·ℓ)`` into the equality
+        ``ℓ = 0`` and leaves the sign at ``v = 0``.
         """
-        num_ops, num_lines = len(self.ops), self.num_lines
-        x = np.array([op[1] for op in self.ops], dtype=bool).reshape(num_ops, num_lines)
-        z = np.array([op[2] for op in self.ops], dtype=bool).reshape(num_ops, num_lines)
-        sign = np.zeros((num_ops, 1 + self.num_f), dtype=bool)
-        sign[:, 0] = [op[3] for op in self.ops]
-        if self.noise:
-            noise_x, noise_z, condition, start = map(
-                np.array, zip(*self.noise, strict=True)
-            )
-            later = start[:, None] <= np.arange(num_ops)[None, :]
-            flips = (anticommute(noise_x, noise_z, x, z) & later).astype(np.float32)
-            sign[:, 1:] = (flips.T @ condition.astype(np.float32)) % 2 == 1
-        return HeisenbergOps(
-            kind=np.array([op[0] for op in self.ops], dtype=np.uint8),
-            x=x,
-            z=z,
-            angle=np.array([op[4] for op in self.ops], dtype=np.float64),
-            sign=sign,
-            slot=np.array([op[5] for op in self.ops], dtype=np.int32),
+        bit = 1 << v
+        for k, (mask, rhs) in enumerate(self.equalities):
+            if mask & bit:
+                del self.equalities[k]
+                self._substitute(v, mask ^ bit, rhs)
+                return
+        self.equalities.append((self.pairs[v], self.lin[v]))
+        self._substitute(v, 0, 0)
+
+    def reduce(self, order: Sequence[int]) -> list[tuple[int, int, int]]:
+        """Return the equalities in reduced echelon form, as ``(pivot, mask, rhs)``.
+
+        Pivots are taken in ``order``, then substituted into the sign.
+
+        Raises:
+            ValueError: If a sign is left, so the component does not describe
+                probabilities.
+
+        """
+        rows: list[tuple[int, int, int]] = []
+        for v in order:
+            bit = 1 << v
+            k = next((k for k, (m, _) in enumerate(self.equalities) if m & bit), None)
+            if k is None:
+                continue
+            mask, rhs = self.equalities.pop(k)
+            self.equalities = [
+                (m ^ mask, r ^ rhs) if m & bit else (m, r) for m, r in self.equalities
+            ]
+            rows = [
+                (p, m ^ mask, r ^ rhs) if m & bit else (p, m, r) for p, m, r in rows
+            ]
+            rows.append((v, mask, rhs))
+        self._drop_trivial()
+        for p, mask, rhs in rows:
+            self._substitute(p, mask ^ 1 << p, rhs)
+        if any(self.pairs) or any(self.lin):
+            raise ValueError("the classical part of the component is not stochastic")
+        return rows
+
+    def _substitute(self, v: int, mask: int, rhs: int) -> None:
+        """Replace ``v`` everywhere by the parity of ``mask`` plus ``rhs``."""
+        bit = 1 << v
+        for u in _bits(self.pairs[v]):
+            self.pairs[u] ^= bit
+            self.lin[u] ^= rhs
+            for w in _bits(mask):
+                self.add_sign(w, u)
+        # NOTE: v·lin[v] also leaves rhs·lin[v], a sign of the f-bits alone,
+        # which the normalization of each f-bit pattern absorbs.
+        for w in _bits(mask):
+            self.lin[w] ^= self.lin[v]
+        self.pairs[v] = self.lin[v] = 0
+        self.equalities = [
+            (m ^ bit ^ mask, r ^ rhs) if m & bit else (m, r) for m, r in self.equalities
+        ]
+        self._drop_trivial()
+
+    def _drop_trivial(self) -> None:
+        if any(r for m, r in self.equalities if not m):
+            raise ValueError("the classical part of the component is inconsistent")
+        self.equalities = [(m, r) for m, r in self.equalities if m]
+
+
+def _patterns(reading: _Reading) -> tuple[list[int], list[int]]:
+    """Return, as masks, the postselections that anticommute with each ``K_u`` and ``Z_v``.
+
+    ``K_u = X_u Z_N(u)`` anticommutes with ``m_w`` when ``w`` is a neighbour of
+    ``u``, or when ``w = u`` and ``m_w`` is a Y; ``Z_v`` anticommutes with ``m_v``.
+    """
+    n = reading.num_spiders
+    k_pattern, z_pattern = [0] * n, [0] * n
+    for k, (mask, _) in enumerate(reading.posts):
+        for w in _bits(mask):
+            z_pattern[w] |= 1 << k
+            for u in _bits(reading.neighbours[w]):
+                k_pattern[u] ^= 1 << k
+            if reading.letter[w] == "Y":
+                k_pattern[w] ^= 1 << k
+    return k_pattern, z_pattern
+
+
+def _rotation_axes(
+    reading: _Reading, patterns: tuple[list[int], list[int]]
+) -> list[tuple[int, int]]:
+    """Return ``(v, T)`` per rotated spider, in an order valid for the product rotation lemma.
+
+    ``Z_v K_T`` commutes with every postselection, and ``T`` holds no spider
+    rotated at or before ``v``. The order is built from the back: a spider
+    placed just before the placed ones may use them and the unrotated spiders
+    in ``T``. That set only grows, so a spider that can be placed stays
+    placeable, and the greedy fails only if no order exists.
+
+    Raises:
+        ValueError: If no order exists.
+
+    """
+    k_pattern, z_pattern = patterns
+    unplaced = sorted(reading.angle, reverse=True)
+    allowed = sum(1 << u for u in range(reading.num_spiders) if u not in reading.angle)
+    basis = _Basis()
+    for u in _bits(allowed):
+        basis.insert(k_pattern[u], 1 << u)
+
+    def witness(v: int) -> int | None:
+        # NOTE: a single neighbour, a phase gadget's root typically, comes first.
+        if not z_pattern[v]:
+            return 0
+        for u in _bits(reading.neighbours[v] & allowed):
+            if k_pattern[u] == z_pattern[v]:
+                return 1 << u
+        return basis.solve(z_pattern[v])
+
+    placed = []
+    while unplaced:
+        found = next(
+            ((k, t) for k, v in enumerate(unplaced) if (t := witness(v)) is not None),
+            None,
         )
+        if found is None:
+            raise ValueError(
+                "no rotation order makes every postselection commute "
+                "(the component has no flow)"
+            )
+        k, t = found
+        v = unplaced.pop(k)
+        placed.append((v, t))
+        basis.insert(k_pattern[v], 1 << v)
+        allowed |= 1 << v
+    return placed[::-1]
+
+
+def _frame(
+    reading: _Reading,
+    k_pattern: list[int],
+    stabilizers: list[stim.PauliString],
+    num_f: int,
+) -> tuple[stim.Tableau, np.ndarray]:
+    """Return the frame of the postselected graph state and the targets of its lines.
+
+    The state is stabilized by a maximal independent set of the postselections,
+    on frame lines ``0, 1, …``, and by the graph-state stabilizers that commute
+    with every postselection, on the other lines. Every other postselection is
+    a product of those and must hold for every f-bit pattern.
+
+    Raises:
+        ValueError: If a postselection has probability 0.
+
+    """
+    independent, kernel = _Basis(), []
+    for u in range(reading.num_spiders):
+        if zero := independent.insert(k_pattern[u], 1 << u):
+            kernel.append(zero)
+    lines = sorted(independent.rows)
+    posts = [reading.measured(mask) * (-1) ** (rhs & 1) for mask, rhs in reading.posts]
+    generators = [posts[k] for k in lines]
+    for t in kernel:
+        generator = stim.PauliString(reading.num_spiders)
+        for u in _bits(t):
+            generator *= stabilizers[u]
+        generators.append(generator)
+    frame = stim.Tableau.from_stabilizers(generators).inverse()
+    targets = np.array(
+        [_unmask(reading.posts[k][1] >> 1, num_f) for k in lines], dtype=np.uint8
+    ).reshape(len(lines), num_f)
+    for k, (_, rhs) in enumerate(reading.posts):
+        if k in independent.rows:
+            continue
+        image = frame(posts[k])
+        x, z = image.to_numpy()
+        target = (z[: len(lines)].astype(np.uint8) @ targets) % 2
+        if image.sign == -1 or x.any() or (target != _unmask(rhs >> 1, num_f)).any():
+            raise ValueError("the component postselects an event of probability 0")
+    return frame, targets
+
+
+class _Basis:
+    """GF(2) vectors with distinct leading bits, each with the combination it came from."""
+
+    def __init__(self) -> None:
+        """Start empty."""
+        self.rows: dict[int, tuple[int, int]] = {}
+
+    def insert(self, vector: int, combination: int) -> int:
+        """Insert a vector; return the combination that reduces it to zero, or 0."""
+        vector, combination = self._reduce(vector, combination)
+        if vector:
+            self.rows[vector.bit_length() - 1] = (vector, combination)
+            return 0
+        return combination
+
+    def solve(self, vector: int) -> int | None:
+        """Return a combination of the inserted vectors that equals ``vector``, if any."""
+        rest, combination = self._reduce(vector, 0)
+        return None if rest else combination
+
+    def _reduce(self, vector: int, combination: int) -> tuple[int, int]:
+        while vector and (row := self.rows.get(vector.bit_length() - 1)):
+            vector ^= row[0]
+            combination ^= row[1]
+        return vector, combination
+
+
+def _with_commutant_measurements(ops: HeisenbergOps) -> HeisenbergOps:
+    """Prepend forgotten measurements of Paulis that commute with every op.
+
+    Such a measurement changes no outcome, and its Pauli then stays in every
+    trajectory's stabilizer group, which can only lower the active width. The
+    Paulis are chosen greedily, pairwise commuting, with X parts independent of
+    the ones already chosen: a Pauli whose X part is in their span measures
+    deterministically.
+    """
+    num_lines = ops.num_lines
+    # NOTE: X_l anticommutes with the ops that have a Z on line l, and Z_l with
+    # those that have an X, so the Paulis commuting with every op are the zero
+    # combinations of these columns.
+    columns, commutant = _Basis(), []
+    for bit, column in enumerate([*ops.z.T, *ops.x.T]):
+        if zero := columns.insert(_mask(column), 1 << bit):
+            commutant.append(zero)
+    chosen, x_parts = [], _Basis()
+    for q in sorted(commutant, key=int.bit_count):
+        x_part = q & ((1 << num_lines) - 1)
+        if any(_symplectic(q, c, num_lines) for c in chosen):
+            continue
+        if not x_parts.insert(x_part, 1):
+            chosen.append(q)
+    k = len(chosen)
+    return HeisenbergOps(
+        kind=np.concatenate([np.full(k, MEASUREMENT, dtype=np.uint8), ops.kind]),
+        x=np.vstack([*(_unmask(q, num_lines) for q in chosen), ops.x]),
+        z=np.vstack([*(_unmask(q >> num_lines, num_lines) for q in chosen), ops.z]),
+        angle=np.concatenate([np.zeros(k), ops.angle]),
+        sign=np.vstack([np.zeros((k, ops.sign.shape[1]), dtype=bool), ops.sign]),
+        slot=np.concatenate([np.full(k, -1, dtype=np.int32), ops.slot]),
+    )
+
+
+def _symplectic(a: int, b: int, num_lines: int) -> int:
+    full = (1 << num_lines) - 1
+    return (
+        (a & full & b >> num_lines).bit_count()
+        + (a >> num_lines & b & full).bit_count()
+    ) % 2
+
+
+def _mask(bits: np.ndarray) -> int:
+    return sum(1 << int(i) for i in np.flatnonzero(bits))
+
+
+def _unmask(mask: int, length: int) -> np.ndarray:
+    return np.array([mask >> i & 1 for i in range(length)], dtype=bool)
+
+
+def _bits(mask: int) -> Iterator[int]:
+    while mask:
+        low = mask & -mask
+        yield low.bit_length() - 1
+        mask ^= low

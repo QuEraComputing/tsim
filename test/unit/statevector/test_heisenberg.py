@@ -2,70 +2,84 @@ from fractions import Fraction
 from math import pi
 from test.helpers.statevector import (
     CIRCUITS,
-    ONE_LINE_LAYOUT,
     assert_distributions_close,
-    extracted_circuits,
-    extracted_distribution,
+    component_ops,
     f_patterns,
-    one_line,
     ops_distribution,
     output_indices,
     quantum_components,
+    stabilizer_rank_distribution,
 )
 
+import numpy as np
 import pytest
-from zxparam import Phase
-from zxparam.extract import Gate
+from zxparam import Domain, Phase, VertexType
 
+from tsim.circuit import Circuit
+from tsim.compile.pipeline import classify_direct, compile_program
+from tsim.core.graph import prepare_graph
+from tsim.core.types import CompiledComponent
 from tsim.statevector.heisenberg import (
     MEASUREMENT,
     ROTATION,
     ComponentLayout,
+    anticommute,
     heisenberg_ops,
 )
 
 
-def test_t_on_plus_is_a_rotation_about_x():
-    ops = heisenberg_ops(
-        one_line([Gate("Z", (0,), Phase(Fraction(1, 4)))]), ONE_LINE_LAYOUT
+@pytest.mark.parametrize("name", sorted(CIRCUITS))
+@pytest.mark.parametrize("sample_detectors", [True, False])
+def test_ops_match_stabilizer_rank(name, sample_detectors):
+    prepared = prepare_graph(Circuit(CIRCUITS[name]), sample_detectors=sample_detectors)
+    joint = compile_program(prepared, mode="joint").components
+    by_outputs = {c.output_indices: c for c in joint}
+    for component in prepared.graph.connected_components():
+        if classify_direct(component, prepared.layout) is not None:
+            continue
+        indices = output_indices(component)
+        layout = ComponentLayout.of(component, indices, prepared.layout)
+        ops = heisenberg_ops(component, layout)
+        reference = by_outputs[tuple(indices)]
+        assert isinstance(reference, CompiledComponent)
+        for f in f_patterns(ops.num_f):
+            assert_distributions_close(
+                ops_distribution(ops, f),
+                stabilizer_rank_distribution(reference, f),
+                atol=2e-5,
+            )
+
+
+def test_a_t_gate_becomes_one_rotation_by_pi_over_8():
+    (component,), layout = quantum_components(
+        "R 0\nH 0\nT 0\nH 0\nM 0", sample_detectors=False
     )
-    assert ops.kind.tolist() == [ROTATION, MEASUREMENT]
-    assert ops.x.tolist() == [[True], [True]]
-    assert ops.z.tolist() == [[False], [False]]
-    assert ops.angle[0] == pytest.approx(pi / 8)
-    assert ops.sign.tolist() == [[False, False], [False, False]]
-    assert ops.slot.tolist() == [-1, 0]
-    assert ops.num_outputs == 1
+    ops = heisenberg_ops(component, ComponentLayout.of(component, [0], layout))
+    assert ops.kind.tolist().count(ROTATION) == 1
+    assert abs(ops.angle[ops.kind == ROTATION][0]) == pytest.approx(pi / 8)
+    assert ops.slot.tolist().count(0) == 1
 
 
-def test_clifford_part_of_a_phase_goes_into_the_frame():
-    # 3π/4 = π (a Z, into the frame) − π/4 (a rotation by −π/8).
-    ops = heisenberg_ops(
-        one_line([Gate("Z", (0,), Phase(Fraction(3, 4)))]), ONE_LINE_LAYOUT
-    )
-    assert ops.kind.tolist() == [ROTATION, MEASUREMENT]
-    assert ops.angle[0] == pytest.approx(-pi / 8)
-    assert ops.sign[:, 0].tolist() == [False, False]
+def test_ops_are_forgotten_measurements_then_rotations_then_outputs():
+    for ops in component_ops():
+        head = ops.num_ops - ops.num_outputs
+        assert ops.slot[head:].tolist() == list(range(ops.num_outputs))
+        assert (ops.kind[head:] == MEASUREMENT).all()
+        assert (ops.slot[:head] == -1).all()
+        rotations = np.flatnonzero(ops.kind[:head] == ROTATION)
+        assert (ops.kind[rotations.min(initial=head) : head] == ROTATION).all()
 
 
-def test_noise_flips_the_ops_it_anticommutes_with():
-    # |+⟩, Z^f, H, T, measure Z: in the |0⟩ frame the noise is X while the T
-    # and the measurement are about Z, so both signs depend on f.
-    gates = [
-        Gate("Z", (0,), Phase(Fraction(0), frozenset({7}))),
-        Gate("H", (0,)),
-        Gate("Z", (0,), Phase(Fraction(1, 4))),
-    ]
-    ops = heisenberg_ops(one_line(gates), ONE_LINE_LAYOUT)
-    assert ops.kind.tolist() == [ROTATION, MEASUREMENT]
-    assert ops.x.tolist() == [[False], [False]]
-    assert ops.z.tolist() == [[True], [True]]
-    assert ops.sign.tolist() == [[False, True], [False, True]]
+def test_commutant_measurements_commute_with_every_op():
+    for ops in component_ops():
+        forgotten = (ops.kind == MEASUREMENT) & (ops.slot < 0)
+        anti = anticommute(ops.x[forgotten], ops.z[forgotten], ops.x, ops.z)
+        assert not anti.any()
 
 
-def test_a_line_from_an_input_is_rejected():
-    with pytest.raises(ValueError, match="input port"):
-        heisenberg_ops(one_line([], line_start=3), ONE_LINE_LAYOUT)
+def test_every_line_is_flipped_by_some_op():
+    for ops in component_ops():
+        assert ops.x.any(axis=0).all()
 
 
 def test_component_layout_reads_f_bits_and_ports():
@@ -77,12 +91,29 @@ def test_component_layout_reads_f_bits_and_ports():
     assert sorted(component_layout.f_position.values()) == [0, 1, 2]
 
 
-def test_ops_reproduce_the_extracted_circuits():
-    for circuit, component_layout in extracted_circuits():
-        ops = heisenberg_ops(circuit, component_layout)
-        for f in f_patterns(ops.num_f):
-            bindings = {p: f[i] for p, i in component_layout.f_position.items()}
-            assert_distributions_close(
-                ops_distribution(ops, f),
-                extracted_distribution(circuit, component_layout, bindings),
-            )
+def _t_ghz():
+    (component,), layout = quantum_components(CIRCUITS["t_ghz"], sample_detectors=True)
+    return component, ComponentLayout.of(component, output_indices(component), layout)
+
+
+def test_an_x_spider_is_rejected():
+    component, layout = _t_ghz()
+    spider = next(
+        v for v in component.vertices() if component.vertex_type(v) == VertexType.Z
+    )
+    component.set_vertex_type(spider, VertexType.X)
+    with pytest.raises(ValueError, match="Z spider"):
+        heisenberg_ops(component, layout)
+
+
+def test_a_classical_spider_with_a_non_pauli_phase_is_rejected():
+    component, layout = _t_ghz()
+    spider = next(
+        v
+        for v in component.vertices()
+        if component.vertex_type(v) == VertexType.Z
+        and component.vertex_domain(v) == Domain.CLASSICAL
+    )
+    component.set_phase(spider, Phase(Fraction(1, 2)))
+    with pytest.raises(ValueError, match="phase"):
+        heisenberg_ops(component, layout)

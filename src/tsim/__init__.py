@@ -10,7 +10,7 @@ The package is organized as follows:
 - `sampler.py`: Orchestrates compilation and evaluation to sample measurements or detectors.
 - `core/`: Builds quantum/classical ZX graphs with zxparam; parsing and data types.
 - `compile/`: Compiles zxparam's stabilizer-rank decompositions to JAX.
-- `statevector/`: Samples non-direct components as extracted circuits on a dense state vector (`strategy="statevector"`).
+- `statevector/`: Samples non-direct components as Pauli rotations and measurements on a dense state vector (`strategy="statevector"`).
 - `noise/`: Pauli noise channels and detector error models.
 - `utils/`: Utility functions for visualization and linear algebra.
 """

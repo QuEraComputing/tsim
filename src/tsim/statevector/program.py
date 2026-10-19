@@ -1,7 +1,7 @@
 """Compilation of one component for ``strategy="statevector"``.
 
-``plan_component`` runs extraction, the Heisenberg rewrite, scheduling and
-planning; ``lower`` turns the plan into the arrays of a ``StatevectorComponent``:
+``plan_component`` reads the Heisenberg ops off the component, schedules and
+plans them; ``lower`` turns the plan into the arrays of a ``StatevectorComponent``:
 an action tape that ``execute.run`` interprets, and the outputs as parities of
 the symbols the tape leaves behind.
 """
@@ -17,7 +17,6 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 from zxparam import Graph
-from zxparam.extract import extract_circuit
 
 from tsim.core.params import ParamLayout
 from tsim.statevector.heisenberg import ComponentLayout, heisenberg_ops
@@ -104,23 +103,22 @@ class StatevectorComponent(eqx.Module):
 def plan_component(
     component: Graph, output_indices: Sequence[int], layout: ParamLayout
 ) -> tuple[Plan, ComponentLayout]:
-    """Extract, rewrite, schedule and plan one non-direct component.
+    """Read the Heisenberg ops of one non-direct component, schedule and plan them.
 
     Raises:
-        ValueError: If extraction fails or the plan needs more than
-            ``MAX_WIDTH`` array axes.
+        ValueError: If the component cannot be read as Heisenberg ops or the
+            plan needs more than ``MAX_WIDTH`` array axes.
 
     """
     component_layout = ComponentLayout.of(component, output_indices, layout)
     outputs = list(output_indices)
     try:
-        circuit = extract_circuit(component)
-    except (RuntimeError, ValueError) as error:
+        ops = heisenberg_ops(component, component_layout)
+    except ValueError as error:
         raise ValueError(
-            "strategy='statevector' could not extract a circuit from the component "
-            f"with outputs {outputs}: {error}. {STABILIZER_RANK_HINT}"
+            "strategy='statevector' could not read the component with outputs "
+            f"{outputs}: {error}. {STABILIZER_RANK_HINT}"
         ) from error
-    ops = heisenberg_ops(circuit, component_layout)
     scheduled = schedule(ops)
     if scheduled.width > MAX_WIDTH:
         raise ValueError(
