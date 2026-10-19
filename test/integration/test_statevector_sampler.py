@@ -15,8 +15,8 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import SamplingStrategy
 from tsim.external.vec_sim.vec_sampler import VecSampler
-from tsim.statevector.shared import lane_bytes
 from tsim.statevector.program import StatevectorComponent
+from tsim.statevector.shared import lane_bytes
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
