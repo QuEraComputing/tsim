@@ -20,11 +20,11 @@ from tsim.compile.pipeline import classify_direct
 from tsim.core.graph import prepare_graph
 from tsim.core.params import ParamLayout
 from tsim.core.types import CompiledComponent
-from tsim.statevector.heisenberg import (
+from tsim.statevector.pbc import (
     ROTATION,
     ComponentLayout,
-    HeisenbergOps,
-    heisenberg_ops,
+    PauliOps,
+    read_pauli_ops,
 )
 from tsim.statevector.plan import MeasureActive, Plan, Rotate
 
@@ -191,7 +191,7 @@ def output_indices(component: Graph) -> list[int]:
 
 
 @cache
-def component_ops() -> tuple[HeisenbergOps, ...]:
+def component_ops() -> tuple[PauliOps, ...]:
     """Return the ops of every non-direct component of the test circuits, both modes."""
     ops = []
     for name in sorted(CIRCUITS):
@@ -202,7 +202,7 @@ def component_ops() -> tuple[HeisenbergOps, ...]:
             for component in components:
                 indices = output_indices(component)
                 component_layout = ComponentLayout.of(component, indices, layout)
-                ops.append(heisenberg_ops(component, component_layout))
+                ops.append(read_pauli_ops(component, component_layout))
     return tuple(ops)
 
 
@@ -248,7 +248,7 @@ def apply_pauli(psi: np.ndarray, x: int, z: int) -> np.ndarray:
     return i_power * signs * psi[flipped]
 
 
-def ops_distribution(ops: HeisenbergOps, f: Sequence[int]) -> Distribution:
+def ops_distribution(ops: PauliOps, f: Sequence[int]) -> Distribution:
     """Return the exact distribution of the recorded outcomes of ``ops``.
 
     The state starts in |0…0⟩. A measurement records the eigenvalue bit of its

@@ -23,7 +23,7 @@ from tsim.statevector.execute import (
     run,
     sample_statevector_component,
 )
-from tsim.statevector.heisenberg import ComponentLayout
+from tsim.statevector.pbc import ComponentLayout
 from tsim.statevector.plan import AffineRow, MeasureActive, MeasureDormant, Plan, Rotate
 from tsim.statevector.program import (
     MEASURE,

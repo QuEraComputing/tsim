@@ -1,6 +1,6 @@
 """Compilation of one component for ``strategy="active_statevector"``.
 
-``plan_component`` reads the Heisenberg ops off the component, schedules and
+``plan_component`` reads the Pauli ops off the component, schedules and
 plans them; ``lower`` turns the plan into the arrays of a ``StatevectorComponent``:
 an action tape that ``execute.run`` interprets, and the outputs as parities of
 the symbols the tape leaves behind.
@@ -19,7 +19,7 @@ from jax import Array
 from zxparam import Graph
 
 from tsim.core.params import ParamLayout
-from tsim.statevector.heisenberg import ComponentLayout, heisenberg_ops
+from tsim.statevector.pbc import ComponentLayout, read_pauli_ops
 from tsim.statevector.plan import MeasureActive, Plan, Rotate, plan
 from tsim.statevector.schedule import schedule
 
@@ -102,17 +102,17 @@ class StatevectorComponent(eqx.Module):
 def plan_component(
     component: Graph, output_indices: Sequence[int], layout: ParamLayout
 ) -> tuple[Plan, ComponentLayout]:
-    """Read the Heisenberg ops of one non-direct component, schedule and plan them.
+    """Read the Pauli ops of one non-direct component, schedule and plan them.
 
     Raises:
-        ValueError: If the component cannot be read as Heisenberg ops or the
+        ValueError: If the component cannot be read as Pauli ops or the
             plan needs more than ``MAX_WIDTH`` array axes.
 
     """
     component_layout = ComponentLayout.of(component, output_indices, layout)
     outputs = list(output_indices)
     try:
-        ops = heisenberg_ops(component, component_layout)
+        ops = read_pauli_ops(component, component_layout)
     except ValueError as error:
         raise ValueError(
             "strategy='active_statevector' could not read the component with outputs "

@@ -1,6 +1,10 @@
-"""Heisenberg-frame operations read off a reduced ZX component.
+"""Pauli-based computation (PBC) read off a reduced ZX component.
 
-The quantum part of a reduced component is graph-like [1]: a graph state [2] of
+Here a PBC is a sequence of Pauli product rotations and Pauli product
+measurements on ``|0…0⟩`` [1], held in ``PauliOps``. Unlike the PBC of [2], it
+keeps the rotations instead of consuming magic states.
+
+The quantum part of a reduced component is graph-like [3]: a graph state [4] of
 its quantum spiders, followed by one rotation and one single-qubit measurement
 per spider. The phase ``π/2·q + 2θ`` of spider ``v`` rotates its qubit by
 ``exp(-iθ Z_v)`` and then measures ``m_v = S^-q X S^q`` (a signed X or Y), with
@@ -17,7 +21,7 @@ them. Let ``K_T`` be the product of the graph-state stabilizers
 like ``exp(-iθ Z_v K_T)``. Both hold when no spider in ``T`` is rotated at or
 before ``v``. ``_rotation_axes`` finds sets ``T`` that make every rotation
 commute with every postselection, with a backward greedy search like the gflow
-search of [3].
+search of [5].
 
 A Clifford frame then maps the postselected graph state to ``|0…0⟩``.
 Noise-dependent postselection targets become f-dependent signs, lines that no
@@ -25,12 +29,16 @@ operation flips are dropped, and Paulis that commute with every operation are
 measured first: they change no outcome and keep the active width small.
 
 References:
-    [1] R. Duncan, A. Kissinger, S. Perdrix, J. van de Wetering, "Graph-theoretic
+    [1] D. Litinski, "A Game of Surface Codes: Large-Scale Quantum Computing with
+        Lattice Surgery", Quantum 3, 128 (2019).
+    [2] S. Bravyi, G. Smith, J. A. Smolin, "Trading classical and quantum
+        computational resources", Phys. Rev. X 6, 021043 (2016).
+    [3] R. Duncan, A. Kissinger, S. Perdrix, J. van de Wetering, "Graph-theoretic
         simplification of quantum circuits with the ZX-calculus", Quantum 4, 279
         (2020).
-    [2] M. Hein, J. Eisert, H. J. Briegel, "Multiparty entanglement in graph
+    [4] M. Hein, J. Eisert, H. J. Briegel, "Multiparty entanglement in graph
         states", Phys. Rev. A 69, 062311 (2004).
-    [3] M. Mhalla, S. Perdrix, "Finding optimal flows efficiently", ICALP 2008,
+    [5] M. Mhalla, S. Perdrix, "Finding optimal flows efficiently", ICALP 2008,
         LNCS 5125.
 
 """
@@ -92,7 +100,7 @@ def anticommute(
 
 
 @dataclass(frozen=True)
-class HeisenbergOps:
+class PauliOps:
     """Rotations and measurements in the frame of the initial ``|0…0⟩`` state.
 
     Op ``j`` is the rotation ``exp(-iθ (-1)^s P)`` or the measurement of
@@ -138,16 +146,16 @@ class HeisenbergOps:
         """Return the number of recorded measurements."""
         return int(np.count_nonzero(self.slot >= 0))
 
-    def take(self, order: np.ndarray) -> HeisenbergOps:
+    def take(self, order: np.ndarray) -> PauliOps:
         """Return the operations in the given order.
 
         The result describes the same distribution when ``order`` keeps every
         pair of anticommuting operations in their original order.
         """
-        return HeisenbergOps(*(getattr(self, f.name)[order] for f in fields(self)))
+        return PauliOps(*(getattr(self, f.name)[order] for f in fields(self)))
 
 
-def heisenberg_ops(component: Graph, layout: ComponentLayout) -> HeisenbergOps:
+def read_pauli_ops(component: Graph, layout: ComponentLayout) -> PauliOps:
     """Return the operations of a component of the reduced sampling graph.
 
     Forgotten measurements of Paulis that commute with every op come first,
@@ -189,7 +197,7 @@ def heisenberg_ops(component: Graph, layout: ComponentLayout) -> HeisenbergOps:
         on_targets = np.flatnonzero(image_z[: len(targets)])
         sign[j, 1:] ^= targets[on_targets].sum(axis=0) % 2 == 1
     num_outputs = len(reading.outputs)
-    ops = HeisenbergOps(
+    ops = PauliOps(
         kind=np.array([ROTATION] * len(axes) + [MEASUREMENT] * num_outputs, np.uint8),
         x=x,
         z=z,
@@ -549,7 +557,7 @@ class _Basis:
         return vector, combination
 
 
-def _with_commutant_measurements(ops: HeisenbergOps) -> HeisenbergOps:
+def _with_commutant_measurements(ops: PauliOps) -> PauliOps:
     """Prepend forgotten measurements of Paulis that commute with every op.
 
     Such a measurement changes no outcome, and its Pauli then stays in every
@@ -574,7 +582,7 @@ def _with_commutant_measurements(ops: HeisenbergOps) -> HeisenbergOps:
         if not x_parts.insert(x_part, 1):
             chosen.append(q)
     k = len(chosen)
-    return HeisenbergOps(
+    return PauliOps(
         kind=np.concatenate([np.full(k, MEASUREMENT, dtype=np.uint8), ops.kind]),
         x=np.vstack([*(_unmask(q, num_lines) for q in chosen), ops.x]),
         z=np.vstack([*(_unmask(q >> num_lines, num_lines) for q in chosen), ops.z]),

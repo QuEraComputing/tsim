@@ -16,7 +16,7 @@ from tsim.circuit import Circuit
 from tsim.compile.pipeline import classify_direct, compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent
-from tsim.statevector.heisenberg import ComponentLayout
+from tsim.statevector.pbc import ComponentLayout
 from tsim.statevector.plan import AffineRow, MeasureActive, MeasureDormant, Plan, Rotate
 from tsim.statevector.program import (
     MEASURE,
@@ -117,7 +117,7 @@ def test_reading_failures_are_value_errors(monkeypatch):
     def fail(*_):
         raise ValueError("no gflow")
 
-    monkeypatch.setattr(program, "heisenberg_ops", fail)
+    monkeypatch.setattr(program, "read_pauli_ops", fail)
     (component,), layout = quantum_components(CIRCUITS["t_ghz"], sample_detectors=True)
     with pytest.raises(ValueError, match="no gflow"):
         plan_component(component, output_indices(component), layout)

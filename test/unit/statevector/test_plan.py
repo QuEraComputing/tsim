@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 import stim
 
-from tsim.statevector.heisenberg import MEASUREMENT, ROTATION, HeisenbergOps
+from tsim.statevector.pbc import MEASUREMENT, ROTATION, PauliOps
 from tsim.statevector.plan import (
     AffineRow,
     MeasureActive,
@@ -94,7 +94,7 @@ def test_plans_are_well_formed():
 def _ops(entries):
     """Return ops from (Pauli, angle or None for a measurement, f-sign, slot)."""
     paulis = [stim.PauliString(pauli).to_numpy() for pauli, _, _, _ in entries]
-    return HeisenbergOps(
+    return PauliOps(
         kind=np.array(
             [MEASUREMENT if angle is None else ROTATION for _, angle, _, _ in entries],
             dtype=np.uint8,

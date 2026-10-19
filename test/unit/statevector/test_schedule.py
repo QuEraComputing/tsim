@@ -7,7 +7,7 @@ from test.helpers.statevector import (
 
 import numpy as np
 
-from tsim.statevector.heisenberg import MEASUREMENT, ROTATION, HeisenbergOps
+from tsim.statevector.pbc import MEASUREMENT, ROTATION, PauliOps
 from tsim.statevector.schedule import StabilizerGroup, anticommutation, schedule
 
 
@@ -17,7 +17,7 @@ def _bits(*rows):
 
 def _two_expansions_then_two_measurements():
     # Rotate about X0, rotate about X1, measure Z0, measure Z1.
-    return HeisenbergOps(
+    return PauliOps(
         kind=np.array([ROTATION, ROTATION, MEASUREMENT, MEASUREMENT], dtype=np.uint8),
         x=_bits([1, 0], [0, 1], [0, 0], [0, 0]),
         z=_bits([0, 0], [0, 0], [1, 0], [0, 1]),

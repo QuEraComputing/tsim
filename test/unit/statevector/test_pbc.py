@@ -19,12 +19,12 @@ from tsim.circuit import Circuit
 from tsim.compile.pipeline import classify_direct, compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent
-from tsim.statevector.heisenberg import (
+from tsim.statevector.pbc import (
     MEASUREMENT,
     ROTATION,
     ComponentLayout,
     anticommute,
-    heisenberg_ops,
+    read_pauli_ops,
 )
 
 
@@ -39,7 +39,7 @@ def test_ops_match_stabilizer_rank(name, sample_detectors):
             continue
         indices = output_indices(component)
         layout = ComponentLayout.of(component, indices, prepared.layout)
-        ops = heisenberg_ops(component, layout)
+        ops = read_pauli_ops(component, layout)
         reference = by_outputs[tuple(indices)]
         assert isinstance(reference, CompiledComponent)
         for f in f_patterns(ops.num_f):
@@ -54,7 +54,7 @@ def test_a_t_gate_becomes_one_rotation_by_pi_over_8():
     (component,), layout = quantum_components(
         "R 0\nH 0\nT 0\nH 0\nM 0", sample_detectors=False
     )
-    ops = heisenberg_ops(component, ComponentLayout.of(component, [0], layout))
+    ops = read_pauli_ops(component, ComponentLayout.of(component, [0], layout))
     assert ops.kind.tolist().count(ROTATION) == 1
     assert abs(ops.angle[ops.kind == ROTATION][0]) == pytest.approx(pi / 8)
     assert ops.slot.tolist().count(0) == 1
@@ -103,7 +103,7 @@ def test_an_x_spider_is_rejected():
     )
     component.set_vertex_type(spider, VertexType.X)
     with pytest.raises(ValueError, match="Z spider"):
-        heisenberg_ops(component, layout)
+        read_pauli_ops(component, layout)
 
 
 def test_a_classical_spider_with_a_non_pauli_phase_is_rejected():
@@ -116,7 +116,7 @@ def test_a_classical_spider_with_a_non_pauli_phase_is_rejected():
     )
     component.set_phase(spider, Phase(Fraction(1, 2)))
     with pytest.raises(ValueError, match="phase"):
-        heisenberg_ops(component, layout)
+        read_pauli_ops(component, layout)
 
 
 def test_a_plain_edge_at_a_quantum_spider_is_rejected():
@@ -130,4 +130,4 @@ def test_a_plain_edge_at_a_quantum_spider_is_rejected():
     component.remove_edge(u, w)
     component.add_edge(u, w)
     with pytest.raises(ValueError, match="plain"):
-        heisenberg_ops(component, layout)
+        read_pauli_ops(component, layout)

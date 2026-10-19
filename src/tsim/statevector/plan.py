@@ -1,6 +1,6 @@
 """Fixed-width sampling plans.
 
-``plan`` walks scheduled Heisenberg ops with a Clifford frame ``F``: a
+``plan`` walks scheduled Pauli ops with a Clifford frame ``F``: a
 ``stim.Tableau`` that maps Paulis of the ``|0…0⟩`` frame to virtual
 coordinates. Virtual coordinates ``0 … W-1`` are the axes of a dense array of
 ``2^W`` amplitudes, each active or free (in ``|0⟩``); coordinates ``W … n-1``
@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import numpy as np
 import stim
 
-from tsim.statevector.heisenberg import ROTATION, HeisenbergOps, anticommute
+from tsim.statevector.pbc import ROTATION, PauliOps, anticommute
 from tsim.statevector.schedule import Schedule
 
 
@@ -102,7 +102,7 @@ class Plan:
         return self.num_f + self.num_branches
 
 
-def plan(ops: HeisenbergOps, schedule: Schedule) -> Plan:
+def plan(ops: PauliOps, schedule: Schedule) -> Plan:
     """Return the fixed-width plan of ``ops`` in schedule order.
 
     Raises:
@@ -130,7 +130,7 @@ _CONTROLLED_PAULI = {(True, False): "CX", (False, True): "CZ", (True, True): "CY
 class _Planner:
     """The frame, the active axes and the branch corrections during planning."""
 
-    def __init__(self, ops: HeisenbergOps, width: int) -> None:
+    def __init__(self, ops: PauliOps, width: int) -> None:
         """Start with the identity frame and every coordinate dormant."""
         self.ops = ops
         self.width = width

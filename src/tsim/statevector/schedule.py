@@ -1,4 +1,4 @@
-"""Reordering of Heisenberg-frame operations to keep the dense array small.
+"""Reordering of Pauli operations to keep the dense array small.
 
 Two operations must keep their relative order exactly when they anticommute;
 every order that respects these pairs gives the same distribution. The active
@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from tsim.statevector.heisenberg import MEASUREMENT, HeisenbergOps, anticommute
+from tsim.statevector.pbc import MEASUREMENT, PauliOps, anticommute
 
 
 class StabilizerGroup:
@@ -97,7 +97,7 @@ def _rank(matrix: np.ndarray) -> int:
     return rank
 
 
-def anticommutation(ops: HeisenbergOps) -> np.ndarray:
+def anticommutation(ops: PauliOps) -> np.ndarray:
     """Return the symmetric matrix of which pairs of operations anticommute."""
     return anticommute(ops.x, ops.z, ops.x, ops.z)
 
@@ -119,7 +119,7 @@ class Schedule:
     """An order of the operations and the largest active width it reaches.
 
     Attributes:
-        order: Indices into the ``HeisenbergOps``, in execution order.
+        order: Indices into the ``PauliOps``, in execution order.
         width: The largest structural active width along ``order`` (W).
 
     """
@@ -128,7 +128,7 @@ class Schedule:
     width: int
 
 
-def schedule(ops: HeisenbergOps) -> Schedule:
+def schedule(ops: PauliOps) -> Schedule:
     """Return an order of ``ops`` that keeps the active width small."""
     num_ops = ops.num_ops
     before = np.triu(anticommutation(ops), 1)
