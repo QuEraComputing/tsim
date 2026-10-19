@@ -582,7 +582,7 @@ def _with_commutant_measurements(ops: PauliOps) -> PauliOps:
         x_part = q & ((1 << num_lines) - 1)
         if any(_symplectic(q, c, num_lines) for c in chosen):
             continue
-        if not x_parts.insert(x_part, 1):
+        if not x_parts.insert(x_part, 1 << len(chosen)):
             chosen.append(q)
     k = len(chosen)
     return PauliOps(

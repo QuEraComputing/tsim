@@ -197,7 +197,7 @@ class _Planner:
             return
         output = self._sign(j, negative)
         if dormant_x:
-            branch = self._measure_dormant(j, dormant_x, negative)
+            branch = self._measure_dormant(j, x, z, dormant_x[0], negative)
         elif on_active:
             branch = self._measure_active(j, x, z, negative)
         else:
@@ -228,19 +228,17 @@ class _Planner:
         self.active.add(axis)
 
     def _measure_dormant(
-        self, j: int, dormant_x: list[int], negative: bool
+        self, j: int, x: np.ndarray, z: np.ndarray, d: int, negative: bool
     ) -> int | None:
         """Turn the measured Pauli into ``±X_d`` without touching the state, then H.
 
+        One pass of Paulis controlled by ``d`` clears the other factors: each
+        clears its target's factor and keeps the rest, and ``d`` is in ``|0⟩``.
+
         Return the branch symbol, or None when no output or later op needs it.
         """
-        d = dormant_x[0]
-        for q in dormant_x[1:]:
-            self._apply("CX", d, q)
-        _, z, _ = self._virtual(j)
         if z[d]:
             self._apply("S_DAG", d)
-        x, z, _ = self._virtual(j)
         for q in range(self.ops.num_lines):
             if q != d and (x[q] or z[q]):
                 self._apply(_CONTROLLED_PAULI[(bool(x[q]), bool(z[q]))], d, q)
@@ -271,7 +269,7 @@ class _Planner:
             for q in axes:
                 if q != pivot and z_now[q]:
                     self._apply("CZ", pivot, q)
-            _, z_now, _ = self._virtual(j)
+            # NOTE: only the pivot has an X now, so the CZs leave its Z bit.
             if z_now[pivot]:
                 self._apply("S_DAG", pivot)
             self._apply("H", pivot)

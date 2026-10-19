@@ -57,22 +57,26 @@ def lane_bytes(component: StatevectorComponent) -> int:
     return amplitudes + 4 * component.num_words + component.num_outputs
 
 
-def choose_outcome(p1: Array, count: Array, key: Array) -> Array:
-    """Return each lane's outcome: True with probability ``p1``.
+def choose_outcome(p0: Array, p1: Array, count: Array, key: Array) -> Array:
+    """Return each lane's outcome: True with probability ``p1 = 1 - p0``.
 
-    Two uint32 draws per lane form a uniform 64-bit fraction, compared with
-    ``p1·2^32`` (an exact scaling), so the resolution is 2^-64 for any float
-    dtype. ``p1 = 0`` never gives True and ``p1 = 1`` always does. ``count`` is
-    unused while every lane is one shot.
+    The less likely outcome is drawn, so that both outcomes keep the relative
+    precision of their probability: in float32, ``p1`` alone rounds to 1 once
+    ``p0`` is below about 6·10⁻⁸. Two uint32 draws per lane form a uniform 64-bit
+    fraction, compared with ``p·2^32`` (an exact scaling) for the smaller ``p``,
+    so the resolution is 2^-64 for any float dtype, and an outcome of
+    probability 0 is never drawn. ``count`` is unused while every lane is one
+    shot.
     """
     del count
     high, low = jax.random.bits(key, (2, *p1.shape), dtype=jnp.uint32)
-    scaled = jnp.clip(p1, 0, 1) * _TWO_TO_32
+    one_is_rare = p1 <= p0
+    scaled = jnp.clip(jnp.minimum(p0, p1), 0, 0.5) * _TWO_TO_32
     whole = jnp.floor(scaled)
     high_bound = whole.astype(jnp.uint32)
     low_bound = jnp.floor((scaled - whole) * _TWO_TO_32).astype(jnp.uint32)
-    below = (high < high_bound) | ((high == high_bound) & (low < low_bound))
-    return (p1 >= 1) | ((p1 > 0) & below)
+    rare = (high < high_bound) | ((high == high_bound) & (low < low_bound))
+    return rare == one_is_rare
 
 
 def pack_bits(bits: Array, num_words: int) -> Array:
@@ -174,9 +178,14 @@ def _set_branch(
 def _sample_outcome(
     state: LaneState, a: Array, key: Array, weight_0: Array, weight_1: Array
 ) -> tuple[Array, Array]:
-    """Return each lane's outcome and its weight, without cancellation in ``p1``."""
-    p1 = jnp.clip(weight_1 / jnp.maximum(weight_0 + weight_1, _TINY), 0, 1)
-    outcome = choose_outcome(p1, state.count, jax.random.fold_in(key, a))
+    """Return each lane's outcome and its weight.
+
+    Each outcome's probability is its own weight over the total, so neither is
+    computed as one minus the other.
+    """
+    total = jnp.maximum(weight_0 + weight_1, _TINY)
+    key = jax.random.fold_in(key, a)
+    outcome = choose_outcome(weight_0 / total, weight_1 / total, state.count, key)
     return outcome, jnp.where(outcome, weight_1, weight_0)
 
 
@@ -236,7 +245,7 @@ def _measure_dormant(
     component: StatevectorComponent, state: LaneState, a: Array, key: Array
 ) -> LaneState:
     half = jnp.full(state.count.shape, 0.5, dtype=state.max_norm_deviation.dtype)
-    outcome = choose_outcome(half, state.count, jax.random.fold_in(key, a))
+    outcome = choose_outcome(half, half, state.count, jax.random.fold_in(key, a))
     return _set_branch(component, state, a, outcome)
 
 

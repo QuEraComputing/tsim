@@ -23,6 +23,8 @@ from tsim.statevector.pbc import (
     MEASUREMENT,
     ROTATION,
     ComponentLayout,
+    PauliOps,
+    _with_commutant_measurements,
     anticommute,
     read_pauli_ops,
 )
@@ -75,6 +77,22 @@ def test_commutant_measurements_commute_with_every_op():
         forgotten = (ops.kind == MEASUREMENT) & (ops.slot < 0)
         anti = anticommute(ops.x[forgotten], ops.z[forgotten], ops.x, ops.z)
         assert not anti.any()
+
+
+def test_commutant_measurements_have_independent_x_parts():
+    # NOTE: Y⊗X and X⊗Y commute with rotations about X⊗Y and Y⊗X and share their
+    # X part, so X⊗Y measures deterministically once Y⊗X has been measured.
+    ops = PauliOps(
+        kind=np.array([ROTATION, ROTATION], dtype=np.uint8),
+        x=np.array([[1, 1], [1, 1]], dtype=bool),
+        z=np.array([[0, 1], [1, 0]], dtype=bool),
+        angle=np.array([0.3, 0.3]),
+        sign=np.zeros((2, 1), dtype=bool),
+        slot=np.array([-1, -1], dtype=np.int32),
+    )
+    measured = _with_commutant_measurements(ops)
+    assert measured.num_ops == ops.num_ops + 1
+    assert measured.kind[0] == MEASUREMENT and measured.slot[0] == -1
 
 
 def test_every_line_is_flipped_by_some_op():
