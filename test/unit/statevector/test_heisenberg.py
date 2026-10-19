@@ -117,3 +117,17 @@ def test_a_classical_spider_with_a_non_pauli_phase_is_rejected():
     component.set_phase(spider, Phase(Fraction(1, 2)))
     with pytest.raises(ValueError, match="phase"):
         heisenberg_ops(component, layout)
+
+
+def test_a_plain_edge_at_a_quantum_spider_is_rejected():
+    component, layout = _t_ghz()
+    u, w = next(
+        (u, w)
+        for u, w in component.edges()
+        if component.vertex_domain(u) == Domain.QUANTUM
+        and component.vertex_domain(w) == Domain.QUANTUM
+    )
+    component.remove_edge(u, w)
+    component.add_edge(u, w)
+    with pytest.raises(ValueError, match="plain"):
+        heisenberg_ops(component, layout)

@@ -150,38 +150,38 @@ def heisenberg_ops(component: Graph, layout: ComponentLayout) -> HeisenbergOps:
     """
     reading = _Reading(component, layout)
     n, num_f = reading.num_spiders, len(layout.f_selection)
-    stabilizers = [
-        stim.PauliString.from_numpy(xs=one_hot, zs=row)
-        for one_hot, row in zip(np.eye(n, dtype=bool), reading.adjacency, strict=True)
-    ]
     patterns = _patterns(reading)
     axes = _rotation_axes(reading, patterns)
-    frame, targets = _frame(reading, patterns[0], stabilizers, num_f)
+    frame, targets = _frame(reading, patterns[0], num_f)
     paulis = []
     for v, t in axes:
         axis = stim.PauliString(n)
         axis[v] = "Z"
-        for u in _bits(t):
-            axis *= stabilizers[u]
-        paulis.append((axis, 0, 0))
+        paulis.append((axis * reading.stabilizer(t), 0, 0))
     paulis += [(reading.measured(y), coins, rhs) for y, coins, rhs in reading.outputs]
-    x = np.zeros((len(paulis), n + reading.num_coins), dtype=bool)
+    images = [frame(pauli) for pauli, _, _ in paulis]
+    flipped = np.zeros(n, dtype=bool)
+    for image in images:
+        flipped |= image.to_numpy()[0]
+    lines = np.flatnonzero(flipped)
+    x = np.zeros((len(paulis), len(lines) + reading.num_coins), dtype=bool)
     z = np.zeros_like(x)
     sign = np.zeros((len(paulis), 1 + num_f), dtype=bool)
-    for j, (pauli, coins, rhs) in enumerate(paulis):
-        image = frame(pauli)
-        x[j, :n], z[j, :n] = image.to_numpy()
-        x[j, n:] = _unmask(coins, reading.num_coins)
+    for j, ((_, coins, rhs), image) in enumerate(zip(paulis, images, strict=True)):
+        image_x, image_z = image.to_numpy()
+        x[j, : len(lines)], z[j, : len(lines)] = image_x[lines], image_z[lines]
+        x[j, len(lines) :] = _unmask(coins, reading.num_coins)
         sign[j] = _unmask(rhs, 1 + num_f)
         sign[j, 0] ^= image.sign == -1
-    # NOTE: postselection k sits on frame line k with the f-dependent target
-    # t_k, so that line starts in |t_k⟩: every op with a Z on it flips with t_k.
-    sign[:, 1:] ^= (z[:, : len(targets)].astype(np.uint8) @ targets) % 2 == 1
-    num_outputs, keep = len(reading.outputs), x.any(axis=0)
+        # NOTE: postselection k sits on frame line k with the f-dependent target
+        # t_k, so that line starts in |t_k⟩: an op with a Z on it flips with t_k.
+        on_targets = np.flatnonzero(image_z[: len(targets)])
+        sign[j, 1:] ^= targets[on_targets].sum(axis=0) % 2 == 1
+    num_outputs = len(reading.outputs)
     ops = HeisenbergOps(
         kind=np.array([ROTATION] * len(axes) + [MEASUREMENT] * num_outputs, np.uint8),
-        x=x[:, keep],
-        z=z[:, keep],
+        x=x,
+        z=z,
         angle=np.array([reading.angle[v] for v, _ in axes] + [0.0] * num_outputs),
         sign=sign,
         slot=np.array([-1] * len(axes) + list(range(num_outputs)), dtype=np.int32),
@@ -196,7 +196,6 @@ class _Reading:
 
     Attributes:
         num_spiders: Number of quantum spiders.
-        adjacency: Graph-state adjacency matrix, shape ``(n, n)``.
         neighbours: Graph-state neighbours of each spider, as a bit mask.
         letter: ``"X"`` or ``"Y"``, the axis of each spider's ``m_v``.
         negative: Mask of the spiders whose ``m_v`` is negated.
@@ -236,7 +235,6 @@ class _Reading:
             return sum(2 << layout.f_position[p] for p in phase.parameters)
 
         self.num_spiders = n
-        self.adjacency = np.zeros((n, n), dtype=bool)
         self.neighbours = [0] * n
         self.letter = ["X"] * n
         self.negative = 0
@@ -262,7 +260,6 @@ class _Reading:
             if a < n and not hadamard:
                 raise ValueError(f"the edge {u}-{w} at a quantum spider is plain")
             if b < n:
-                self.adjacency[a, b] = self.adjacency[b, a] = True
                 self.neighbours[a] |= 1 << b
                 self.neighbours[b] |= 1 << a
             elif a < n:
@@ -289,6 +286,20 @@ class _Reading:
                 coins = sum(1 << coin[b] for b in others)
                 outputs_by_bit[p] = (mask & ((1 << n) - 1), coins, rhs)
         self.outputs = [outputs_by_bit[b] for b in output_bits]
+        self._stabilizers: dict[int, stim.PauliString] = {}
+
+    def stabilizer(self, t: int) -> stim.PauliString:
+        """Return ``K_T``, the product of ``K_u = X_u Z_N(u)`` over the spiders in ``t``."""
+        product = stim.PauliString(self.num_spiders)
+        for u in _bits(t):
+            if u not in self._stabilizers:
+                k_u = stim.PauliString(self.num_spiders)
+                k_u[u] = "X"
+                for w in _bits(self.neighbours[u]):
+                    k_u[w] = "Z"
+                self._stabilizers[u] = k_u
+            product *= self._stabilizers[u]
+        return product
 
     def measured(self, mask: int) -> stim.PauliString:
         """Return the product of ``m_v`` over the spiders in ``mask``."""
@@ -466,10 +477,7 @@ def _rotation_axes(
 
 
 def _frame(
-    reading: _Reading,
-    k_pattern: list[int],
-    stabilizers: list[stim.PauliString],
-    num_f: int,
+    reading: _Reading, k_pattern: list[int], num_f: int
 ) -> tuple[stim.Tableau, np.ndarray]:
     """Return the frame of the postselected graph state and the targets of its lines.
 
@@ -488,12 +496,7 @@ def _frame(
             kernel.append(zero)
     lines = sorted(independent.rows)
     posts = [reading.measured(mask) * (-1) ** (rhs & 1) for mask, rhs in reading.posts]
-    generators = [posts[k] for k in lines]
-    for t in kernel:
-        generator = stim.PauliString(reading.num_spiders)
-        for u in _bits(t):
-            generator *= stabilizers[u]
-        generators.append(generator)
+    generators = [posts[k] for k in lines] + [reading.stabilizer(t) for t in kernel]
     frame = stim.Tableau.from_stabilizers(generators).inverse()
     targets = np.array(
         [_unmask(reading.posts[k][1] >> 1, num_f) for k in lines], dtype=np.uint8
