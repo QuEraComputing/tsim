@@ -20,7 +20,7 @@
     * [sampler](tsim/sampler.md)
     * [statevector](tsim/statevector/index.md)
         * [execute](tsim/statevector/execute.md)
-        * [heisenberg](tsim/statevector/heisenberg.md)
+        * [pbc](tsim/statevector/pbc.md)
         * [plan](tsim/statevector/plan.md)
         * [program](tsim/statevector/program.md)
         * [schedule](tsim/statevector/schedule.md)
