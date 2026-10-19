@@ -27,6 +27,7 @@ from tsim.statevector.shared import (
 )
 from tsim.utils.cuda_helpers import copy_d2h
 from tsim.utils.kernels import kernel, run_tasks
+from tsim.utils.rng import GOLDEN
 
 if TYPE_CHECKING:
     from jax import Array as PRNGKey
@@ -47,8 +48,6 @@ MIN_THREAD_BATCH = 2**12
 # still keep every thread busy and slow cores take fewer chunks.
 SCREEN_SHOTS = 2**14
 SCREEN_CHUNKS_PER_THREAD = 2
-
-_GOLDEN = 0x9E3779B97F4A7C15
 
 
 def _sample_component(
@@ -224,7 +223,7 @@ def sample_statevector_program(
         zip(program.components, layouts, strict=True)
     ):
         assert isinstance(component, StatevectorComponent)
-        component_seed = (seed + index * _GOLDEN) % 2**64
+        component_seed = (seed + index * int(GOLDEN)) % 2**64
         samples, max_norm_deviation, stats = sample_shared_component(
             component, layout, f_params, component_seed, share
         )
@@ -303,7 +302,7 @@ class _CompiledSamplerBase:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). On the CPU, "active_statevector" samples up
+                "bss", "cutting"). "active_statevector" samples on the CPU, up
                 to ``numba.get_num_threads()`` batches at once, each with its
                 own memory.
             seed: Random seed. If None, a random seed is generated. Note that
@@ -531,7 +530,7 @@ class _CompiledSamplerBase:
         peak = 0
         for component in self._program.components:
             if isinstance(component, StatevectorComponent):
-                # NOTE: plus the f-params and the output records, on host and device.
+                # NOTE: plus the f-params and the output records, twice over.
                 lane = lane_bytes(component) + 2 * num_f + 2 * self._program.num_outputs
                 peak = max(peak, lane)
                 continue
@@ -571,8 +570,7 @@ class _CompiledSamplerBase:
         if not self._has_statevector:
             return 1
         threads = numba.get_num_threads()
-        if self._trajectory_sharing:
-            return threads
+        # NOTE: with sharing a batch may still hold a lane per shot.
         fits = self._memory_budget() // (self._peak_bytes_per_sample() * batch_size)
         return max(1, min(threads, fits))
 
@@ -667,13 +665,13 @@ class _CompiledSamplerBase:
                 tasks.append((index, seeds, subkey))
 
         def sample_batch(task: tuple) -> jax.Array | np.ndarray:
-            index, seeds, key = task
+            index, seeds, seed_or_key = task
             f_params_np = self._channel_sampler.sample(batch_size, seeds)
             if compute_reference and index == 0:
                 f_params_np[0] = 0
             if statevector:
-                return self._sample_statevector(f_params_np, key, layouts)
-            return sample_program(self._program, jnp.asarray(f_params_np), key)
+                return self._sample_statevector(f_params_np, seed_or_key, layouts)
+            return sample_program(self._program, jnp.asarray(f_params_np), seed_or_key)
 
         batches = run_tasks(sample_batch, tasks, self._threads(batch_size))
         reference: np.ndarray | None = None
@@ -709,15 +707,17 @@ class _CompiledSamplerBase:
         compute_reference: bool = False,
         xor_detector_ref: bool = False,
     ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray]:
-        """Sample with postselection, skipping JAX for direct discarded shots.
+        """Sample with postselection, skipping the components for direct discards.
 
         Shots discarded by a direct masked detector are filled with their
-        direct detector columns and ``False`` elsewhere; JAX is never called for
-        those shots.  Survivors are buffered until a full batch of
-        ``batch_size`` is ready, then dispatched to ``sample_program`` in one
-        call.  For JAX the final partial batch is padded to keep the batch size
-        fixed (avoiding recompilation) and the padding rows are discarded; the
-        shared executor samples it as it is.
+        direct detector columns and ``False`` elsewhere; no component samples
+        them.  Survivors are buffered until a full batch of ``batch_size`` is
+        ready, then sampled in one call.  For JAX (the stabilizer-rank
+        strategies) the final partial batch is padded to keep the batch size
+        fixed (avoiding recompilation) and the padding rows are discarded;
+        statevector batches are sampled as they are, and their shots discarded
+        by a masked component detector read ``False`` from the action that
+        discards them on.
         Chunks of shots, and then the batches of their survivors, run on
         ``_threads()`` threads at once. Without a ``batch_size``, batches are as
         large as memory allows, and the survivors left after the last chunk are
@@ -805,15 +805,17 @@ class _CompiledSamplerBase:
             JAX batches are padded with row 0 to ``rows`` rows; statevector
             batches take any number of rows.
             """
-            f_batch, shot_batch, key, rows = task
+            f_batch, shot_batch, seed_or_key, rows = task
             count = len(shot_batch)
             if statevector:
-                samples = self._sample_statevector(f_batch, key, layouts)
+                samples = self._sample_statevector(f_batch, seed_or_key, layouts)
             else:
                 if count < rows:
                     padding = np.repeat(f_batch[:1], rows - count, axis=0)
                     f_batch = np.concatenate([f_batch, padding])
-                samples = sample_program(self._program, jnp.asarray(f_batch), key)
+                samples = sample_program(
+                    self._program, jnp.asarray(f_batch), seed_or_key
+                )
             result[shot_batch] = np.asarray(samples)[:count]
 
         threads = self._threads(batch_size)
@@ -825,7 +827,8 @@ class _CompiledSamplerBase:
         screened_chunks = 0
         # NOTE: chunks are screened until every thread has a full batch of
         # survivors. Batches still start every batch_size survivors and seeds and
-        # keys are drawn in order, so the thread count doesn't change the samples.
+        # seeds and keys are drawn in order, so the thread count doesn't change
+        # the samples.
         while screened_chunks < len(starts) or pending:
             while screened_chunks < len(starts) and pending < threads * batch_size:
                 tasks = [
@@ -855,11 +858,12 @@ class _CompiledSamplerBase:
             batches = []
             for start in range(0, ready, size):
                 if statevector:
-                    key = self._next_seed()
+                    seed_or_key = self._next_seed()
                 else:
-                    self._key, key = jax.random.split(self._key)
+                    self._key, seed_or_key = jax.random.split(self._key)
                 stop = start + size
-                batches.append((all_f[start:stop], all_shot[start:stop], key, rows))
+                batch = (all_f[start:stop], all_shot[start:stop], seed_or_key, rows)
+                batches.append(batch)
             run_tasks(dispatch, batches, threads)
             pending_f, pending_shot = [all_f[ready:]], [all_shot[ready:]]
             pending -= ready
@@ -1011,9 +1015,10 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             shots: The number of times to sample every measurement in the circuit.
             batch_size: The number of samples to process in each batch. Defaults to
                 None, which automatically chooses a batch size based on available
-                memory. When using a GPU, setting this explicitly can help fully
-                utilize VRAM for maximum performance. With ``strategy="active_statevector"``
-                on the CPU, up to ``numba.get_num_threads()`` batches run at once.
+                memory. With ``strategy="active_statevector"`` a call is split
+                into a batch per numba thread when each gets at least 4096 shots.
+                With a stabilizer-rank strategy on a GPU, setting this explicitly
+                can help fully utilize VRAM.
                 NOTE: Changing the batch size will affect reproducibility even with
                 a fixed seed.
 
@@ -1119,9 +1124,10 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             shots: The number of times to sample every detector in the circuit.
             batch_size: The number of samples to process in each batch. Defaults to
                 None, which automatically chooses a batch size based on available
-                memory. When using a GPU, setting this explicitly can help fully
-                utilize VRAM for maximum performance. With ``strategy="active_statevector"``
-                on the CPU, up to ``numba.get_num_threads()`` batches run at once.
+                memory. With ``strategy="active_statevector"`` a call is split
+                into a batch per numba thread when each gets at least 4096 shots.
+                With a stabilizer-rank strategy on a GPU, setting this explicitly
+                can help fully utilize VRAM.
                 NOTE: Changing the batch size will affect reproducibility even with
                 a fixed seed.
             separate_observables: Defaults to False. When set to True, the return value
@@ -1143,11 +1149,14 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 only be used when observables are deterministic. Otherwise, it can
                 unpredictably change the results.
             postselection_mask: Optional boolean array of length ``num_detectors``.
-                When set, shots where any masked direct detector fires skip the JAX
-                sampling loop. All ``shots`` rows are still returned: survivors contain
-                the full sample, while discarded rows retain direct detector columns
-                and fill component columns with ``False``. Re-apply the mask to the
-                returned detector columns to recover surviving shots.
+                When set, shots where any masked direct detector fires are not
+                sampled further. All ``shots`` rows are still returned: survivors
+                contain the full sample, while discarded rows retain direct detector
+                columns and fill component columns with ``False``; with
+                ``strategy="active_statevector"``, a shot discarded by a masked
+                component detector also reads ``False`` in the outputs set after
+                it. Re-apply the mask to the returned detector columns to recover
+                surviving shots.
 
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.

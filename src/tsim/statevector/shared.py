@@ -506,20 +506,26 @@ def _execute(
     ) = layout
     shots, num_words = f.shape[0], lane_branches.shape[0]
     num_actions = kind.shape[0]
-    state = np.uint64(seed)
+    # NOTE: SplitMix64 counts up from its state, so seeds that differ by a few
+    # GOLDEN steps would share outputs; their mixed output starts a fresh stream.
+    _, state = splitmix64(np.uint64(seed))
 
     symbols = np.zeros((shots, num_words), dtype=np.uint32)
-    keys = np.zeros((shots, (key_rows.shape[0] + 31) >> 5), dtype=np.uint32)
-    chunks = _chunks(shots * (len(selection) + key_rows.size), parallel_work, threads)
+    num_key_words = (key_rows.shape[0] + 31) >> 5 if share else 0
+    keys = np.zeros((shots, num_key_words), dtype=np.uint32)
+    key_work = key_rows.size if share else 0
+    chunks = _chunks(shots * (len(selection) + key_work), parallel_work, threads)
     if chunks == 1:
         lo, hi = 0, shots
         _pack_range(f, selection, symbols, lo, hi)
-        _key_range(symbols, key_rows, keys, lo, hi)
+        if share:
+            _key_range(symbols, key_rows, keys, lo, hi)
     else:
         for c in numba.prange(chunks):
             lo, hi = shots * c // chunks, shots * (c + 1) // chunks
             _pack_range(f, selection, symbols, lo, hi)
-            _key_range(symbols, key_rows, keys, lo, hi)
+            if share:
+                _key_range(symbols, key_rows, keys, lo, hi)
     if share:
         order, start, count, state = _group(keys, state)
     else:
@@ -779,7 +785,7 @@ def lane_bytes(component: StatevectorComponent) -> int:
     grow) and the per-shot symbols, ranges and outputs.
     """
     amplitudes = 3 * 2**component.width * np.dtype(component.dtype).itemsize
-    return amplitudes + 20 * component.num_words + 88 + component.num_outputs
+    return amplitudes + 24 * component.num_words + 128 + component.num_outputs
 
 
 def sample_shared_component(

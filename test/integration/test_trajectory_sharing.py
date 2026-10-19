@@ -1,4 +1,4 @@
-"""trajectory_sharing=True end to end, against one lane per shot."""
+"""trajectory_sharing=True end to end, against the stabilizer-rank strategy."""
 
 import warnings
 from test.helpers.gen import gen_stim_circuit
@@ -91,8 +91,11 @@ def test_pruning_through_the_sampler_keeps_the_accepted_distribution(reference):
             )
             if sampler._compute_reference_sample()[:2].any():
                 break
+    # NOTE: the baseline needs this sampler's reference bits, so it only stops sharing.
     rate, expected = _accepted(
-        circuit.compile_detector_sampler(strategy="active_statevector", seed=seed),
+        circuit.compile_detector_sampler(
+            strategy="active_statevector", seed=seed, trajectory_sharing=False
+        ),
         shots,
         mask,
         reference=reference,
@@ -108,12 +111,12 @@ def test_pruning_through_the_sampler_keeps_the_accepted_distribution(reference):
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_shared_detector_sampling_matches_one_lane_per_shot(name):
+def test_shared_detector_sampling_matches_stabilizer_rank(name):
     circuit = Circuit(CIRCUITS[name])
     shots = 20_000
-    expected = circuit.compile_detector_sampler(
-        strategy="active_statevector", seed=1
-    ).sample(shots, batch_size=5_000, append_observables=True)
+    expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
+        shots, batch_size=5_000, append_observables=True
+    )
     sampler = circuit.compile_detector_sampler(
         strategy="active_statevector", seed=2, trajectory_sharing=True
     )
@@ -122,10 +125,10 @@ def test_shared_detector_sampling_matches_one_lane_per_shot(name):
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_shared_measurement_sampling_matches_one_lane_per_shot(name):
+def test_shared_measurement_sampling_matches_stabilizer_rank(name):
     circuit = Circuit(CIRCUITS[name])
     shots = 20_000
-    expected = circuit.compile_sampler(strategy="active_statevector", seed=1).sample(
+    expected = circuit.compile_sampler(strategy="cat5", seed=1).sample(
         shots, batch_size=5_000
     )
     sampler = circuit.compile_sampler(
@@ -142,9 +145,7 @@ def test_pruned_postselection_keeps_the_accepted_distribution(name):
     shots = 20_000
     mask = np.ones(circuit.num_detectors, dtype=bool)
     rate, expected = _accepted(
-        circuit.compile_detector_sampler(strategy="active_statevector", seed=1),
-        shots,
-        mask,
+        circuit.compile_detector_sampler(strategy="cat5", seed=1), shots, mask
     )
     shared_rate, got = _accepted(
         circuit.compile_detector_sampler(
@@ -164,13 +165,54 @@ def test_shared_sampling_of_random_noisy_circuits(seed):
     stim_circuit = gen_stim_circuit(3, 60, p_t=3, p_x_error=0.5, p_r_z=0.5, seed=seed)
     circuit = Circuit.from_stim_program(stim_circuit)
     shots = 4_096
-    expected = circuit.compile_sampler(strategy="active_statevector", seed=seed).sample(
+    expected = circuit.compile_sampler(strategy="cat5", seed=seed).sample(
         shots, batch_size=shots
     )
     sampler = circuit.compile_sampler(
         strategy="active_statevector", seed=seed + 10, trajectory_sharing=True
     )
     assert_counts_match(sampler.sample(shots, batch_size=shots), expected)
+
+
+# NOTE: two identical, disconnected components, each with two measurements.
+TWO_COMPONENTS = """
+H 0
+T 0
+H 0
+M 0
+H 0
+T 0
+H 0
+M 0
+H 1
+T 1
+H 1
+M 1
+H 1
+T 1
+H 1
+M 1
+"""
+
+
+@pytest.mark.parametrize("sharing", [False, True])
+def test_components_draw_independent_random_numbers(sharing):
+    batch, batches = 64, 1_500
+    sampler = Circuit(TWO_COMPONENTS).compile_sampler(
+        strategy="active_statevector", seed=3, trajectory_sharing=sharing
+    )
+    assert len(sampler._program.components) == 2
+    m = sampler.sample(batch * batches, batch_size=batch).astype(int)
+    first, second = m[:, :2], m[:, 2:]
+    shots = len(m)
+    for i in range(2):
+        for j in range(2):
+            correlation = np.corrcoef(first[:, i], second[:, j])[0, 1]
+            assert abs(correlation) < 5 / np.sqrt(shots)
+    # NOTE: shots in one batch must not share draws across components either.
+    per_batch = m.reshape(batches, batch, 4).sum(axis=1)
+    correlation = np.corrcoef(per_batch[:, :2].sum(1), per_batch[:, 2:].sum(1))[0, 1]
+    assert abs(correlation) < 5 / np.sqrt(batches)
 
 
 def test_trajectory_sharing_is_the_statevector_default():

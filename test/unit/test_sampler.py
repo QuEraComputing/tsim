@@ -566,6 +566,7 @@ DETECTOR rec[-1]
         # NOTE: statevector programs sample on the host whatever JAX's backend.
         ("active_statevector", False, "gpu", 10, 6),
         ("active_statevector", False, "cpu", 10**12, 1),
+        ("active_statevector", True, "cpu", 10**12, 1),
     ],
 )
 def test_batches_running_at_once(
