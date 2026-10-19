@@ -5,7 +5,6 @@ from test.helpers.gen import gen_stim_circuit
 from test.helpers.statevector import CIRCUITS, assert_counts_match
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -174,6 +173,13 @@ def test_shared_sampling_of_random_noisy_circuits(seed):
     assert_counts_match(sampler.sample(shots, batch_size=shots), expected)
 
 
+def test_trajectory_sharing_is_the_statevector_default():
+    circuit = Circuit(CIRCUITS["t_ghz"])
+    assert circuit.compile_detector_sampler()._trajectory_sharing
+    assert circuit.compile_sampler()._trajectory_sharing
+    assert not circuit.compile_detector_sampler(strategy="cat5")._trajectory_sharing
+
+
 def test_trajectory_sharing_needs_the_statevector_strategy():
     with pytest.raises(ValueError, match="trajectory_sharing"):
         Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
@@ -232,41 +238,33 @@ def test_shared_measurement_samples_do_not_depend_on_the_thread_count():
     np.testing.assert_array_equal(sample(4), sample(1))
 
 
+def _recording_rows(sampler, monkeypatch) -> list[int]:
+    rows = []
+    original = sampler_module.sample_statevector_program
+
+    def spy(program, f_params, *args, **kwargs):
+        assert isinstance(f_params, np.ndarray)
+        rows.append(f_params.shape[0])
+        return original(program, f_params, *args, **kwargs)
+
+    monkeypatch.setattr(sampler_module, "sample_statevector_program", spy)
+    return rows
+
+
 def test_shared_postselection_samples_the_survivors_without_padding(monkeypatch):
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
     sampler = circuit.compile_detector_sampler(
         strategy="active_statevector", seed=5, trajectory_sharing=True
     )
     sampler._threads = lambda batch_size: 1
-    rows = []
-    original = sampler_module.sample_program
-
-    def spy(program, f_params, key, **kwargs):
-        rows.append((type(f_params), f_params.shape[0]))
-        return original(program, f_params, key, **kwargs)
-
-    monkeypatch.setattr(sampler_module, "sample_program", spy)
+    counts = _recording_rows(sampler, monkeypatch)
     mask = np.ones(circuit.num_detectors, dtype=bool)
     detectors = sampler.sample(5_003, batch_size=300, postselection_mask=mask)
 
-    counts = [count for _, count in rows]
-    assert all(kind is np.ndarray for kind, _ in rows)
     assert counts[:-1] == [300] * (len(counts) - 1)
     assert 0 < counts[-1] < 300
     # NOTE: detector 2 is the circuit's only direct detector.
     assert sum(counts) == int((~detectors[:, 2]).sum())
-
-
-def _recording_rows(sampler, monkeypatch) -> list[int]:
-    rows = []
-    original = sampler_module.sample_program
-
-    def spy(program, f_params, key, **kwargs):
-        rows.append(f_params.shape[0])
-        return original(program, f_params, key, **kwargs)
-
-    monkeypatch.setattr(sampler_module, "sample_program", spy)
-    return rows
 
 
 @pytest.mark.parametrize("sharing", [False, True])
@@ -299,37 +297,28 @@ def test_default_postselection_splits_the_survivors_over_the_threads(
     survivors = int((~detectors[:, 2]).sum())
     size = -(-survivors // 4)
     assert len(rows) == 4
-    if sharing:
-        assert sum(rows) == survivors and max(rows) == size
-    else:
-        # NOTE: JAX pads every batch to a power of two.
-        assert rows == [1 << (size - 1).bit_length()] * 4
+    assert sum(rows) == survivors and max(rows) == size
 
 
 @pytest.mark.parametrize("rows", [1, 300, 70_000])
 @pytest.mark.parametrize("name", [*sorted(CIRCUITS), "direct_flips"])
-def test_host_outputs_equal_the_jax_outputs(name, rows):
+def test_direct_outputs_land_in_their_columns(name, rows):
     text = DIRECT_FLIPS if name == "direct_flips" else CIRCUITS[name]
     sampler = Circuit(text).compile_detector_sampler(
-        strategy="active_statevector", seed=1, trajectory_sharing=True
+        strategy="active_statevector", seed=1
     )
     if name == "direct_flips":
         assert sampler._direct_flips.any()
         assert sampler._program.output_reindex is not None
     f_params = sampler._channel_sampler.sample(rows)
-    key = jax.random.key(2)
-    sharing = sampler._sharing_arguments(None)
-    program = sampler._program
-    on_host = sampler_module.sample_program(program, f_params, key, **sharing)
-    on_device = sampler_module.sample_program(
-        program, jnp.asarray(f_params), key, **sharing
-    )
-    assert isinstance(on_host, np.ndarray)
-    np.testing.assert_array_equal(on_host, np.asarray(on_device))
+    samples = sampler._sample_statevector(f_params, 2, sampler._layouts(None))
+    columns = sampler._direct_global_indices
+    expected = (f_params[:, sampler._direct_f_indices] != 0) ^ sampler._direct_flips
+    np.testing.assert_array_equal(samples[:, columns], expected)
 
 
 @pytest.mark.parametrize("sharing", [False, True])
-def test_workers_sample_in_the_callers_64_bit_mode(sharing):
+def test_complex128_samples_do_not_depend_on_the_thread_count(sharing):
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
 
     def sample(threads):

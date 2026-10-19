@@ -7,8 +7,6 @@ from test.helpers.statevector import (
     quantum_components,
 )
 
-import jax
-import jax.numpy as jnp
 import numpy as np
 import pytest
 import stim
@@ -79,15 +77,16 @@ def _assert_counts(rows, discarded, expected):
         )
 
 
+@pytest.mark.parametrize("share", [True, False])
 @pytest.mark.parametrize("name", NAMES)
-def test_shared_sampling_matches_the_plan_distribution(name):
+def test_sampling_matches_the_plan_distribution(name, share):
     shots = 20_000
     for planned, component_layout, compiled in _compiled(name):
         layout = sharing_layout(compiled)
         for f in f_patterns(planned.num_f, limit=2):
             f_params = _f_params(component_layout, [f], shots)
-            samples, _, deviation, _ = sample_shared_component(
-                compiled, layout, jnp.asarray(f_params), jax.random.key(7)
+            samples, deviation, _ = sample_shared_component(
+                compiled, layout, np.asarray(f_params), 7, share
             )
             assert float(deviation) < 1e-4
             assert_matches_distribution(
@@ -102,11 +101,11 @@ def test_mixed_noise_patterns_share_one_batch(name):
         patterns = f_patterns(planned.num_f, limit=3)
         f_params = _f_params(component_layout, patterns, shots_each)
         permutation = np.random.default_rng(1).permutation(len(f_params))
-        samples, _, _, _ = sample_shared_component(
+        samples, _, _ = sample_shared_component(
             compiled,
             sharing_layout(compiled),
-            jnp.asarray(f_params[permutation]),
-            jax.random.key(3),
+            np.asarray(f_params[permutation]),
+            3,
         )
         samples = np.asarray(samples)[np.argsort(permutation)]
         for i, f in enumerate(patterns):
@@ -114,9 +113,10 @@ def test_mixed_noise_patterns_share_one_batch(name):
             assert_matches_distribution(rows, plan_distribution(planned, f))
 
 
+@pytest.mark.parametrize("share", [True, False])
 @pytest.mark.parametrize("flip", [False, True])
 @pytest.mark.parametrize("name", NAMES)
-def test_pruning_discards_exactly_the_postselected_failures(name, flip):
+def test_pruning_discards_exactly_the_postselected_failures(name, flip, share):
     shots_each = 8_000
     for planned, component_layout, compiled in _compiled(name):
         postselected = np.ones(compiled.num_outputs, dtype=bool)
@@ -126,8 +126,8 @@ def test_pruning_discards_exactly_the_postselected_failures(name, flip):
         layout = sharing_layout(compiled, postselected, flipped)
         patterns = f_patterns(planned.num_f, limit=3)
         f_params = _f_params(component_layout, patterns, shots_each)
-        samples, _, _, _ = sample_shared_component(
-            compiled, layout, jnp.asarray(f_params), jax.random.key(5)
+        samples, _, _ = sample_shared_component(
+            compiled, layout, np.asarray(f_params), 5, share
         )
         samples = np.asarray(samples)
         for i, f in enumerate(patterns):
@@ -145,8 +145,8 @@ def test_pruned_shots_report_false_after_their_pruning_action(name):
         postselected = np.ones(compiled.num_outputs, dtype=bool)
         layout = sharing_layout(compiled, postselected)
         f_params = _f_params(component_layout, f_patterns(planned.num_f, 3), 4_000)
-        samples, _, _, _ = sample_shared_component(
-            compiled, layout, jnp.asarray(f_params), jax.random.key(9)
+        samples, _, _ = sample_shared_component(
+            compiled, layout, np.asarray(f_params), 9
         )
         rows = np.asarray(samples)
         ready = layout.ready
@@ -163,16 +163,12 @@ def test_equal_keys_give_equal_samples(name):
         postselected = np.zeros(compiled.num_outputs, dtype=bool)
         postselected[0] = True
         layout = sharing_layout(compiled, postselected)
-        f_params = jnp.asarray(
+        f_params = np.asarray(
             _f_params(component_layout, f_patterns(planned.num_f, 3), 3_000)
         )
-        first, next_key, _, _ = sample_shared_component(
-            compiled, layout, f_params, jax.random.key(13)
-        )
-        second, _, _, _ = sample_shared_component(
-            compiled, layout, f_params, jax.random.key(13)
-        )
-        third, _, _, _ = sample_shared_component(compiled, layout, f_params, next_key)
+        first, _, _ = sample_shared_component(compiled, layout, f_params, 13)
+        second, _, _ = sample_shared_component(compiled, layout, f_params, 13)
+        third, _, _ = sample_shared_component(compiled, layout, f_params, 14)
         np.testing.assert_array_equal(first, second)
         assert not np.array_equal(first, third)
 
@@ -256,17 +252,15 @@ def test_extents_and_reused_slots_do_not_change_the_samples(coherent, monkeypatc
     # samples and makes the extent drop and rise around splits and prunes.
     every_fifth = np.arange(len(extent)) % 5 == 0
     raised = with_extent(np.where(every_fifth, compiled.width, extent))
-    f_params = jnp.asarray(
+    f_params = np.asarray(
         _f_params(component_layout, f_patterns(planned.num_f, 7), 300)
     )
-    key = jax.random.key(17)
-    reference, _, deviation, _ = sample_shared_component(compiled, full, f_params, key)
+    key = 17
+    reference, deviation, _ = sample_shared_component(compiled, full, f_params, key)
     # NOTE: NaN fills every amplitude the executor must not read.
     monkeypatch.setattr(shared, "_POISON", True)
     for tape in (layout, raised):
-        samples, _, other, stats = sample_shared_component(
-            compiled, tape, f_params, key
-        )
+        samples, other, stats = sample_shared_component(compiled, tape, f_params, key)
         np.testing.assert_array_equal(samples, reference)
         assert other == deviation
         assert stats["dead"] > 0
@@ -279,16 +273,14 @@ def test_parallel_kernels_give_the_serial_samples(name, coherent, monkeypatch):
         postselected = np.zeros(compiled.num_outputs, dtype=bool)
         postselected[0] = True
         layout = sharing_layout(compiled, postselected)
-        f_params = jnp.asarray(
+        f_params = np.asarray(
             _f_params(component_layout, f_patterns(planned.num_f, 3), 1_000)
         )
         samples = []
         for threshold in (np.iinfo(np.int64).max, 0):
             with monkeypatch.context() as patch:
                 patch.setattr(kernels, "PARALLEL_WORK", threshold)
-                rows, _, _, _ = sample_shared_component(
-                    compiled, layout, f_params, jax.random.key(19)
-                )
+                rows, _, _ = sample_shared_component(compiled, layout, f_params, 19)
             samples.append(rows)
         np.testing.assert_array_equal(samples[1], samples[0])
 
@@ -298,18 +290,16 @@ def test_shots_whose_lanes_all_die_are_still_sampled():
     for name in NAMES:
         for planned, component_layout, compiled in _compiled(name):
             layout = sharing_layout(compiled, np.ones(compiled.num_outputs, dtype=bool))
-            f_params = jnp.asarray(
+            f_params = np.asarray(
                 _f_params(component_layout, f_patterns(planned.num_f, 1)[:1], 1)
             )
             for seed in range(40):
-                samples, _, _, stats = sample_shared_component(
-                    compiled, layout, f_params, jax.random.key(seed)
+                samples, _, stats = sample_shared_component(
+                    compiled, layout, f_params, seed
                 )
                 assert samples.shape == (1, compiled.num_outputs)
                 all_died |= stats["lanes"] == 0
-            samples, _, _, _ = sample_shared_component(
-                compiled, layout, f_params[:0], jax.random.key(0)
-            )
+            samples, _, _ = sample_shared_component(compiled, layout, f_params[:0], 0)
             assert samples.shape == (0, compiled.num_outputs)
     assert all_died
 

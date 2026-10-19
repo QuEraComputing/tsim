@@ -253,19 +253,25 @@ def test_postselection_direct_cols_always_equal_numpy():
 # ────────────────────────── JAX-skip behaviour ───────────────────────────────
 
 
+def _record_rows(monkeypatch, store: list[int]) -> None:
+    """Append the rows of every call to the program samplers to ``store``."""
+    for name in ("sample_program", "sample_statevector_program"):
+        original = getattr(sampler_module, name)
+
+        def spy(program, f_params, *args, _original=original, **kwargs):
+            store.append(f_params.shape[0])
+            return _original(program, f_params, *args, **kwargs)
+
+        monkeypatch.setattr(sampler_module, name, spy)
+
+
 def test_postselection_jax_never_called_for_all_direct_discards(monkeypatch):
     """When every shot is discarded by a direct detector, sample_program is never called."""
     sampler = _make(ALWAYS_DISCARD_CIRCUIT, seed=0)
     mask = np.array([True, False])
     calls: list[int] = []
 
-    original = sampler_module.sample_program
-
-    def spy(program, f_params, key):
-        calls.append(f_params.shape[0])
-        return original(program, f_params, key)
-
-    monkeypatch.setattr(sampler_module, "sample_program", spy)
+    _record_rows(monkeypatch, calls)
     sampler.sample(10, batch_size=4, postselection_mask=mask)
     assert calls == []
 
@@ -276,13 +282,8 @@ def test_postselection_jax_rows_less_than_shots():
     mask = np.array([True, False])
     jax_rows: list[int] = []
 
-    original = sampler_module.sample_program
-
-    def spy(program, f_params, key):
-        jax_rows.append(f_params.shape[0])
-        return original(program, f_params, key)
-
-    with patch.object(sampler_module, "sample_program", side_effect=spy):
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        _record_rows(monkeypatch, jax_rows)
         samples = sampler.sample(32, batch_size=8, postselection_mask=mask)
 
     discarded = np.any(samples[:, : sampler._num_detectors] & mask, axis=1)
@@ -292,17 +293,13 @@ def test_postselection_jax_rows_less_than_shots():
 
 def test_postselection_jax_batch_size_fixed(monkeypatch):
     """Every JAX call uses the same batch_size (no recompilation)."""
-    sampler = _make(MIXED_DIRECT_CIRCUIT, seed=4)
+    sampler = Circuit(MIXED_DIRECT_CIRCUIT).compile_detector_sampler(
+        strategy="cat5", seed=4
+    )
     mask = np.array([True, False])
     seen: list[int] = []
 
-    original = sampler_module.sample_program
-
-    def spy(program, f_params, key):
-        seen.append(f_params.shape[0])
-        return original(program, f_params, key)
-
-    monkeypatch.setattr(sampler_module, "sample_program", spy)
+    _record_rows(monkeypatch, seen)
     sampler.sample(10, batch_size=4, postselection_mask=mask)
 
     assert seen, "expected at least one JAX call for surviving shots"
@@ -315,13 +312,7 @@ def test_postselection_non_direct_mask_runs_jax_for_all(monkeypatch):
     mask = np.array([False, True])  # det1 is a component
     jax_rows: list[int] = []
 
-    original = sampler_module.sample_program
-
-    def spy(program, f_params, key):
-        jax_rows.append(f_params.shape[0])
-        return original(program, f_params, key)
-
-    monkeypatch.setattr(sampler_module, "sample_program", spy)
+    _record_rows(monkeypatch, jax_rows)
     sampler.sample(16, batch_size=8, postselection_mask=mask)
     assert sum(jax_rows) == 16
 
@@ -332,13 +323,7 @@ def test_postselection_mixed_mask_skips_jax_only_on_direct_discard(monkeypatch):
     mask = np.array([True, True])
     jax_rows: list[int] = []
 
-    original = sampler_module.sample_program
-
-    def spy(program, f_params, key):
-        jax_rows.append(f_params.shape[0])
-        return original(program, f_params, key)
-
-    monkeypatch.setattr(sampler_module, "sample_program", spy)
+    _record_rows(monkeypatch, jax_rows)
     samples = sampler.sample(32, batch_size=8, postselection_mask=mask)
     direct_discarded = samples[:, 0] & mask[0]
     assert direct_discarded.any()
@@ -360,21 +345,13 @@ def test_postselection_detector_reference_xor_before_discard_check(monkeypatch):
     mask = np.array([True, False])
     jax_without: list[int] = []
     jax_with: list[int] = []
-    original = sampler_module.sample_program
-
-    def make_spy(store: list[int]):
-        def spy(program, f_params, key):
-            store.append(f_params.shape[0])
-            return original(program, f_params, key)
-
-        return spy
-
     s1 = _make(circuit, seed=0)
-    monkeypatch.setattr(sampler_module, "sample_program", make_spy(jax_without))
-    s1.sample(32, batch_size=8, postselection_mask=mask)
+    with monkeypatch.context() as patch_rows:
+        _record_rows(patch_rows, jax_without)
+        s1.sample(32, batch_size=8, postselection_mask=mask)
 
     s2 = _make(circuit, seed=0)
-    monkeypatch.setattr(sampler_module, "sample_program", make_spy(jax_with))
+    _record_rows(monkeypatch, jax_with)
     s2.sample(
         32,
         batch_size=8,
@@ -440,13 +417,8 @@ def test_postselection_fully_direct_no_jax(monkeypatch):
     """Fully-direct circuits never call sample_program."""
     sampler = _make(FULLY_DIRECT_CIRCUIT, seed=0)
     mask = np.array([True])
-    spy = []
-
-    def counting_sp(program, f_params, key):
-        spy.append(1)
-        return sampler_module.sample_program(program, f_params, key)
-
-    monkeypatch.setattr(sampler_module, "sample_program", counting_sp)
+    spy: list[int] = []
+    _record_rows(monkeypatch, spy)
     result = sampler.sample(10, postselection_mask=mask)
     assert result.shape == (10, 1)
     assert spy == []
