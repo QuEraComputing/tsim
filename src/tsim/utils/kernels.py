@@ -36,6 +36,16 @@ def _renamed(function: Callable, suffix: str) -> Callable:
     return renamed
 
 
+def _prange_only() -> dict[str, bool]:
+    """Return numba's parallel options for explicit ``prange`` loops only.
+
+    Numba would also run array expressions such as ``np.zeros`` or slice fills
+    in parallel loops, each a thread launch, even inside a serial stretch.
+    """
+    options = ("comprehension", "reduction", "inplace_binop", "setitem", "numpy")
+    return {**dict.fromkeys(options, False), "stencil": False, "fusion": False}
+
+
 def jit(function: Callable, *, parallel: bool = False) -> Callable:
     """Compile ``function`` with numba, cached on disk where numba can write.
 
@@ -49,9 +59,11 @@ def jit(function: Callable, *, parallel: bool = False) -> Callable:
     # would keep holding the GIL.
     function = _renamed(function, "_nogil")
     try:
-        return numba.njit(cache=True, parallel=parallel, nogil=True)(function)
+        options = _prange_only() if parallel else False
+        return numba.njit(cache=True, parallel=options, nogil=True)(function)
     except RuntimeError:
-        return numba.njit(parallel=parallel, nogil=True)(function)
+        options = _prange_only() if parallel else False
+        return numba.njit(parallel=options, nogil=True)(function)
 
 
 def kernel(function: Callable) -> Callable:
@@ -65,7 +77,7 @@ def kernel(function: Callable) -> Callable:
     serial = jit(function)
     # NOTE: numba names its cache files after the function, so the parallel
     # compilation needs another name to keep its own cache entry.
-    parallel = jit(_renamed(function, "_parallel"), parallel=True)
+    parallel = jit(_renamed(function, "_prange"), parallel=True)
 
     def run(work: int, *args):
         if work < PARALLEL_WORK or getattr(_TASK_THREAD, "active", False):
