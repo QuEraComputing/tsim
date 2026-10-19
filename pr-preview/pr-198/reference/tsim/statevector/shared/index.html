@@ -199,8 +199,7 @@
     <span class=n>f_packed</span><span class=p>:</span> <span class=n>Array</span><span class=p>,</span>
     <span class=n>key</span><span class=p>:</span> <span class=n>Array</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Array</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return every shot's outputs, in the original shot order.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shared.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>598</span>
-<span class=normal>599</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return every shot's outputs, in the original shot order.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shared.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>599</span>
 <span class=normal>600</span>
 <span class=normal>601</span>
 <span class=normal>602</span>
@@ -243,7 +242,8 @@
 <span class=normal>639</span>
 <span class=normal>640</span>
 <span class=normal>641</span>
-<span class=normal>642</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@jax</span><span class=o>.</span><span class=n>jit</span>
+<span class=normal>642</span>
+<span class=normal>643</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@jax</span><span class=o>.</span><span class=n>jit</span>
 <span class=k>def</span><span class=w> </span><span class=nf>reconstruct</span><span class=p>(</span>
     <span class=n>component</span><span class=p>:</span> <span class=n>StatevectorComponent</span><span class=p>,</span>
     <span class=n>layout</span><span class=p>:</span> <span class=n>SharingLayout</span><span class=p>,</span>
@@ -289,8 +289,7 @@
     <span class=n>values</span> <span class=o>=</span> <span class=n>values</span> <span class=o>&amp;</span> <span class=n>written</span>
     <span class=k>return</span> <span class=n>jnp</span><span class=o>.</span><span class=n>zeros_like</span><span class=p>(</span><span class=n>values</span><span class=p>)</span><span class=o>.</span><span class=n>at</span><span class=p>[</span><span class=n>order</span><span class=p>]</span><span class=o>.</span><span class=n>set</span><span class=p>(</span><span class=n>values</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.statevector.shared.resize class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">resize</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>resize</span><span class=p>(</span><span class=n>lanes</span><span class=p>:</span> <span class=n>Lanes</span><span class=p>,</span> <span class=n>capacity</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Lanes</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return <code>lanes</code> with a new lane-table capacity (the live lanes must fit).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shared.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>577</span>
-<span class=normal>578</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return <code>lanes</code> with a new lane-table capacity (the live lanes must fit).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shared.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>578</span>
 <span class=normal>579</span>
 <span class=normal>580</span>
 <span class=normal>581</span>
@@ -307,7 +306,8 @@
 <span class=normal>592</span>
 <span class=normal>593</span>
 <span class=normal>594</span>
-<span class=normal>595</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@partial</span><span class=p>(</span><span class=n>jax</span><span class=o>.</span><span class=n>jit</span><span class=p>,</span> <span class=n>static_argnames</span><span class=o>=</span><span class=p>(</span><span class=s2>&quot;capacity&quot;</span><span class=p>,))</span>
+<span class=normal>595</span>
+<span class=normal>596</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@partial</span><span class=p>(</span><span class=n>jax</span><span class=o>.</span><span class=n>jit</span><span class=p>,</span> <span class=n>static_argnames</span><span class=o>=</span><span class=p>(</span><span class=s2>&quot;capacity&quot;</span><span class=p>,))</span>
 <span class=k>def</span><span class=w> </span><span class=nf>resize</span><span class=p>(</span><span class=n>lanes</span><span class=p>:</span> <span class=n>Lanes</span><span class=p>,</span> <span class=n>capacity</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Lanes</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return ``lanes`` with a new lane-table capacity (the live lanes must fit).&quot;&quot;&quot;</span>
 
@@ -333,8 +333,7 @@
     <span class=n>key</span><span class=p>:</span> <span class=n>Array</span><span class=p>,</span>
     <span class=n>stop</span><span class=p>:</span> <span class=n>Array</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Lanes</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Run actions <code>lanes.action … stop-1</code>, or until the lane table is full.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shared.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>556</span>
-<span class=normal>557</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Run actions <code>lanes.action … stop-1</code>, or until the lane table is full.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shared.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>557</span>
 <span class=normal>558</span>
 <span class=normal>559</span>
 <span class=normal>560</span>
@@ -351,7 +350,8 @@
 <span class=normal>571</span>
 <span class=normal>572</span>
 <span class=normal>573</span>
-<span class=normal>574</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@jax</span><span class=o>.</span><span class=n>jit</span>
+<span class=normal>574</span>
+<span class=normal>575</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@jax</span><span class=o>.</span><span class=n>jit</span>
 <span class=k>def</span><span class=w> </span><span class=nf>run_lanes</span><span class=p>(</span>
     <span class=n>component</span><span class=p>:</span> <span class=n>StatevectorComponent</span><span class=p>,</span>
     <span class=n>layout</span><span class=p>:</span> <span class=n>SharingLayout</span><span class=p>,</span>
@@ -383,8 +383,7 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span> (<code>tsim.statevector.shared.Sharing</code>)' href=#tsim.statevector.shared.Sharing>Sharing</a></code> </td> <td> <div class=doc-md-description> <p>Its sharing layout and capacity hint (updated in place).</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>f_params</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Error-basis bits of every shot, shape <code>(B, num_f_global)</code>.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>key</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>JAX random key.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>segment</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Actions between host checks that shrink the lane table to the live lanes. Defaults to 32 for <code>W ≥ 8</code> and to the whole tape below, where shrinking saves less array work than its compilations cost.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p><code>(samples, next_key, max_norm_deviation, stats)</code>, where <code>samples</code> has</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>shape <code>(B, num_outputs)</code> and <code>stats</code> counts groups and lanes.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shared.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>654</span>
-<span class=normal>655</span>
+  </span> (<code>tsim.statevector.shared.Sharing</code>)' href=#tsim.statevector.shared.Sharing>Sharing</a></code> </td> <td> <div class=doc-md-description> <p>Its sharing layout and capacity hint (updated in place).</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>f_params</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Error-basis bits of every shot, shape <code>(B, num_f_global)</code>.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>key</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>JAX random key.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>segment</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Actions between host checks that shrink the lane table to the live lanes. Defaults to 32 for <code>W ≥ 8</code> and to the whole tape below, where shrinking saves less array work than its compilations cost.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p><code>(samples, next_key, max_norm_deviation, stats)</code>, where <code>samples</code> has</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>shape <code>(B, num_outputs)</code> and <code>stats</code> counts groups and lanes.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shared.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>655</span>
 <span class=normal>656</span>
 <span class=normal>657</span>
 <span class=normal>658</span>
@@ -464,7 +463,8 @@
 <span class=normal>732</span>
 <span class=normal>733</span>
 <span class=normal>734</span>
-<span class=normal>735</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample_shared_component</span><span class=p>(</span>
+<span class=normal>735</span>
+<span class=normal>736</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample_shared_component</span><span class=p>(</span>
     <span class=n>component</span><span class=p>:</span> <span class=n>StatevectorComponent</span><span class=p>,</span>
     <span class=n>sharing</span><span class=p>:</span> <span class=n>Sharing</span><span class=p>,</span>
     <span class=n>f_params</span><span class=p>:</span> <span class=n>Array</span><span class=p>,</span>
