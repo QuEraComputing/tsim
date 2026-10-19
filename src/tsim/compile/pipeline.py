@@ -43,7 +43,7 @@ def compile_program(
     prepared: SamplingGraph,
     *,
     mode: DecompositionMode,
-    strategy: SamplingStrategy = "cat5",
+    strategy: SamplingStrategy,
 ) -> CompiledProgram:
     """Compile a prepared graph into an executable sampling program.
 
@@ -58,7 +58,8 @@ def compile_program(
     Args:
         prepared: The prepared graph from ``prepare_graph``.
         mode: ``"sequential"`` for sampling, ``"joint"`` for probabilities.
-        strategy: A stabilizer-rank decomposition strategy, or ``"active_statevector"``.
+        strategy: ``"active_statevector"``, or a stabilizer-rank decomposition
+            strategy.
 
     Returns:
         A CompiledProgram ready for sampling.

@@ -863,15 +863,16 @@ class Circuit:
     def compile_sampler(
         self,
         *,
-        strategy: SamplingStrategy = "cat5",
+        strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
     ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
         Args:
-            strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
-                "cutting"), or "active_statevector" to simulate each non-direct
-                component on a dense state vector over its active qubits.
+            strategy: "active_statevector" (the default) to simulate each
+                non-direct component on a dense state vector over its active
+                qubits, or a stabilizer rank decomposition strategy ("cat5",
+                "bss", "cutting").
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -888,7 +889,7 @@ class Circuit:
     def compile_detector_sampler(
         self,
         *,
-        strategy: SamplingStrategy = "cat5",
+        strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
     ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
@@ -899,9 +900,10 @@ class Circuit:
         compilation pipeline.
 
         Args:
-            strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
-                "cutting"), or "active_statevector" to simulate each non-direct
-                component on a dense state vector over its active qubits.
+            strategy: "active_statevector" (the default) to simulate each
+                non-direct component on a dense state vector over its active
+                qubits, or a stabilizer rank decomposition strategy ("cat5",
+                "bss", "cutting").
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set

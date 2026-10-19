@@ -10,7 +10,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import psutil
-from zxparam import DecompositionStrategy
 
 from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import compile_program
@@ -189,7 +188,7 @@ class _CompiledSamplerBase:
         *,
         sample_detectors: bool,
         mode: Literal["sequential", "joint"],
-        strategy: SamplingStrategy = "cat5",
+        strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
     ):
         """Initialize the sampler by compiling the circuit.
@@ -198,9 +197,10 @@ class _CompiledSamplerBase:
             circuit: The quantum circuit to compile.
             sample_detectors: If True, sample detectors/observables instead of measurements.
             mode: Compilation mode - "sequential" for autoregressive, "joint" for probabilities.
-            strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
-                "cutting"), or "active_statevector" to simulate each non-direct
-                component on a dense state vector over its active qubits.
+            strategy: "active_statevector" (the default) to simulate each
+                non-direct component on a dense state vector over its active
+                qubits, or a stabilizer rank decomposition strategy ("cat5",
+                "bss", "cutting").
             seed: Random seed. If None, a random seed is generated. Note that
                 deterministic results are only guaranteed for a fixed batch size
                 and fixed reference sample settings.
@@ -687,15 +687,15 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         self,
         circuit: Circuit,
         *,
-        strategy: SamplingStrategy = "cat5",
+        strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
     ):
         """Create a measurement sampler.
 
         Args:
             circuit: The quantum circuit to compile.
-            strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
-                "cutting"), or "active_statevector".
+            strategy: "active_statevector" (the default), or a stabilizer rank
+                decomposition strategy ("cat5", "bss", "cutting").
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -742,15 +742,15 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         self,
         circuit: Circuit,
         *,
-        strategy: SamplingStrategy = "cat5",
+        strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
     ):
         """Create a detector sampler.
 
         Args:
             circuit: The quantum circuit to compile.
-            strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
-                "cutting"), or "active_statevector".
+            strategy: "active_statevector" (the default), or a stabilizer rank
+                decomposition strategy ("cat5", "bss", "cutting").
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size and
                 fixed reference sample settings. If deterministic samples are
@@ -947,7 +947,7 @@ class CompiledStateProbs(_CompiledSamplerBase):
         circuit: Circuit,
         *,
         sample_detectors: bool = False,
-        strategy: DecompositionStrategy = "cat5",
+        strategy: SamplingStrategy = "cat5",
         seed: int | None = None,
     ):
         """Create a probability estimator.
@@ -955,8 +955,8 @@ class CompiledStateProbs(_CompiledSamplerBase):
         Args:
             circuit: The quantum circuit to compile.
             sample_detectors: If True, compute detector/observable probabilities.
-            strategy: Stabilizer rank decomposition strategy.
-                Must be one of "cat5", "bss", "cutting".
+            strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
+                "cutting"); "active_statevector" cannot compute probabilities.
             seed: Random seed. If None, a random seed is generated. Note that
                 deterministic results are only guaranteed for a fixed batch size.
 

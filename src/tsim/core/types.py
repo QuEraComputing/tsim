@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, ClassVar, Literal
 import equinox as eqx
 import numpy as np
 from jax import Array
-from zxparam import DecompositionStrategy
 
 if TYPE_CHECKING:
     from zxparam import Graph
@@ -25,8 +24,8 @@ if TYPE_CHECKING:
     from tsim.core.params import ParamLayout
     from tsim.statevector.program import StatevectorComponent
 
-SamplingStrategy = DecompositionStrategy | Literal["active_statevector"]
-"""A stabilizer-rank decomposition strategy, or ``"active_statevector"``."""
+SamplingStrategy = Literal["active_statevector", "cat5", "bss", "cutting"]
+"""``"active_statevector"``, or a stabilizer-rank decomposition strategy."""
 
 
 @dataclass(frozen=True)

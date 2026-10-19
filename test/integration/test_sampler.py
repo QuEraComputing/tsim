@@ -7,7 +7,6 @@ import pymatching
 import pytest
 import stim
 from tqdm import tqdm
-from zxparam import DecompositionStrategy
 from zxparam.stabrank import is_u3_spider
 
 import tsim.sampler as sampler_module
@@ -438,7 +437,7 @@ def simulate_with_vec_sampler(stim_circuit: stim.Circuit) -> np.ndarray:
 
 
 def simulate_with_tsim(
-    stim_circuit: stim.Circuit, strategy: DecompositionStrategy = "cat5"
+    stim_circuit: stim.Circuit, strategy: SamplingStrategy = "cat5"
 ) -> np.ndarray:
     """Compute state probabilities using tsim's CompiledStateProbs.
 

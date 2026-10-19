@@ -32,7 +32,7 @@ from tsim.statevector.pbc import (
 @pytest.mark.parametrize("sample_detectors", [True, False])
 def test_ops_match_stabilizer_rank(name, sample_detectors):
     prepared = prepare_graph(Circuit(CIRCUITS[name]), sample_detectors=sample_detectors)
-    joint = compile_program(prepared, mode="joint").components
+    joint = compile_program(prepared, mode="joint", strategy="cat5").components
     by_outputs = {c.output_indices: c for c in joint}
     for component in prepared.graph.connected_components():
         if classify_direct(component, prepared.layout) is not None:

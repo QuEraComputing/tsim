@@ -28,7 +28,9 @@ def _abs_value(compiled, bits: list[int]) -> float:
 def test_sequential_plugged_graphs_are_consistent_marginals():
     circuit = Circuit("R 0 1\nH 0\nT 0\nH 0\nCNOT 0 1\nM 0 1")
     program = compile_program(
-        prepare_graph(circuit, sample_detectors=False), mode="sequential"
+        prepare_graph(circuit, sample_detectors=False),
+        mode="sequential",
+        strategy="cat5",
     )
     assert any(len(c.output_indices) > 1 for c in program.components)
     for component in program.components:
@@ -44,7 +46,7 @@ def test_sequential_plugged_graphs_are_consistent_marginals():
 def test_joint_probabilities_match_the_state_vector():
     circuit = Circuit("R 0 1\nH 0\nT 0\nH 0\nCNOT 0 1\nM 0 1")
     program = compile_program(
-        prepare_graph(circuit, sample_detectors=False), mode="joint"
+        prepare_graph(circuit, sample_detectors=False), mode="joint", strategy="cat5"
     )
     assert any(len(c.output_indices) > 1 for c in program.components)
     psi = np.zeros(4, dtype=complex)
@@ -96,7 +98,9 @@ def test_single_error_detectors_take_the_direct_path():
         "R 0 1\nX_ERROR(0.1) 0 1\nM 0 1\nDETECTOR rec[-2]\nDETECTOR rec[-1]"
     )
     program = compile_program(
-        prepare_graph(circuit, sample_detectors=True), mode="sequential"
+        prepare_graph(circuit, sample_detectors=True),
+        mode="sequential",
+        strategy="cat5",
     )
     assert program.components == ()
     assert sorted(np.asarray(program.direct_f_indices).tolist()) == [0, 1]
