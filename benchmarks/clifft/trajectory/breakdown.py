@@ -48,7 +48,7 @@ def breakdown(name: str) -> str:
     """Return one Markdown row with the stage times of workload ``name``."""
     file, _, shots, batch_size = WORKLOADS[name]
     circuit = tsim.Circuit.from_file(str(CIRCUITS / file))
-    sampler = circuit.compile_detector_sampler(strategy="statevector", seed=0)
+    sampler = circuit.compile_detector_sampler(strategy="active_statevector", seed=0)
     num_detectors = circuit.num_detectors
     mask = sampler._direct_detector_mask
     components = [

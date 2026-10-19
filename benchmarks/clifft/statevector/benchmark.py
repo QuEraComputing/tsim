@@ -1,4 +1,4 @@
-"""Benchmark strategy="statevector" on the clifft-bench circuits.
+"""Benchmark strategy="active_statevector" on the clifft-bench circuits.
 
 Run from the repository root:
 
@@ -8,7 +8,7 @@ Prefix the command with ``NPROC=1`` to run JAX on one thread: XLA sizes its CPU
 thread pools from ``NPROC``.
 
 The workloads are defined in ``workloads.py``. For every circuit this compiles
-a detector sampler with ``strategy="statevector"``, makes one untimed warmup
+a detector sampler with ``strategy="active_statevector"``, makes one untimed warmup
 call (JIT), then samples for at least ``--seconds`` with postselection on every
 detector, counting as clifft-bench does: attempted shots, accepted shots (no
 detector fired) and logical errors (observable 0 among accepted shots).
@@ -55,7 +55,7 @@ def main() -> None:
         circuit = tsim.Circuit.from_file(str(CIRCUITS / file))
         start = time.perf_counter()
         sampler = circuit.compile_detector_sampler(
-            strategy="statevector", seed=args.seed
+            strategy="active_statevector", seed=args.seed
         )
         compile_seconds = time.perf_counter() - start
         start = time.perf_counter()

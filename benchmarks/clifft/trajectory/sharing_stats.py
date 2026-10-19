@@ -225,7 +225,7 @@ def main() -> None:
         compile_ = (
             circuit.compile_detector_sampler if detectors else circuit.compile_sampler
         )
-        sampler = compile_(strategy="statevector", seed=0)
+        sampler = compile_(strategy="active_statevector", seed=0)
         components = [
             c
             for c in sampler._program.components

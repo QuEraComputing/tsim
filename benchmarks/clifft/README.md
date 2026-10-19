@@ -1,6 +1,6 @@
 # Tsim vs Clifft on the clifft-bench circuits
 
-Everything needed to benchmark Tsim's `strategy="statevector"` sampler (one lane
+Everything needed to benchmark Tsim's `strategy="active_statevector"` sampler (one lane
 per shot and with trajectory sharing) against [Clifft](https://github.com/unitaryfoundation/clifft)
 on the same machine: the circuits, the harness, the last full run and the notes
 of the investigations behind it. All commands run from the repository root.
@@ -145,7 +145,7 @@ path = "benchmarks/clifft/circuits/clifft-paper/msc_d5_end2end_p1e-3"
 circuit = tsim.Circuit.from_file(f"{path}.stim")
 mask = np.load(f"{path}.postselection.npy")
 start = time.perf_counter()
-sampler = circuit.compile_detector_sampler(strategy="statevector", seed=0)
+sampler = circuit.compile_detector_sampler(strategy="active_statevector", seed=0)
 print(f"compile {time.perf_counter() - start:.1f} s")  # 26 s at e394e84
 detectors, observables = sampler.sample(
     65_536, batch_size=16_384, separate_observables=True, postselection_mask=mask

@@ -48,7 +48,7 @@ def measure(name: str, label: str, sharing: bool, batch: int, shots: int, second
     seed = zlib.crc32(f"{name}|{label}|{batch}|{shots}|{threads}".encode()) % 2**30
     start = time.perf_counter()
     sampler = circuit.compile_detector_sampler(
-        strategy="statevector", seed=seed, trajectory_sharing=sharing
+        strategy="active_statevector", seed=seed, trajectory_sharing=sharing
     )
     compile_seconds = time.perf_counter() - start
     components = [

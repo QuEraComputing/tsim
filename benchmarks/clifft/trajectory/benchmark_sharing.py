@@ -61,7 +61,7 @@ def main() -> None:
         ]
         for label, sharing, batch, per_call in configurations:
             sampler = circuit.compile_detector_sampler(
-                strategy="statevector", seed=0, trajectory_sharing=sharing
+                strategy="active_statevector", seed=0, trajectory_sharing=sharing
             )
             start = time.perf_counter()
             count(sampler, per_call, batch, circuit.num_detectors)
