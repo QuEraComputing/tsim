@@ -26,9 +26,7 @@ if TYPE_CHECKING:
 
     from tsim.circuit import Circuit
 
-# NOTE: statevector batches beyond 2^16 lanes cost memory without being faster:
-# on CPU, 2^16 lanes sampled cultivation d3 1.7x faster than the memory-derived
-# batch, at a fifth of its peak memory.
+# NOTE: beyond 2^16 lanes, statevector batches cost memory without being faster.
 STATEVECTOR_MAX_BATCH_SIZE = 2**16
 
 

@@ -31,9 +31,8 @@ MEASURE_DORMANT = 4
 
 MAX_WIDTH = 30
 
-# NOTE: every outcome probability is normalized by the measured weights, so norm
-# drift is harmless until it exceeds what rounding can explain: each rotation
-# adds ~1e-7 relative drift under complex64.
+# NOTE: outcome probabilities are normalized by the measured weights, so only
+# drift beyond rounding (~1e-7 per rotation in complex64) warns.
 _NORM_WARNING_THRESHOLDS = {"complex64": 1e-3, "complex128": 1e-9}
 
 STABILIZER_RANK_HINT = (

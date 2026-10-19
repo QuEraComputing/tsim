@@ -2,11 +2,11 @@
 
 Two operations must keep their relative order exactly when they anticommute;
 every order that respects these pairs gives the same distribution. The active
-width k = n − dim S is tracked with the Pauli group S that stabilizes every
-trajectory up to sign. ``schedule`` runs measurements as early as possible and
-widening rotations as late as possible: when nothing else can run, it runs the
-pending measurement whose unrun ancestors reach the smallest width, the earliest
-one on a tie.
+width k = n − dim S, as in Clifft (arXiv:2604.27058), is tracked with the Pauli
+group S that stabilizes every trajectory up to sign. ``schedule`` runs
+measurements as early as possible and widening rotations as late as possible:
+when nothing else can run, it runs the pending measurement whose unrun
+ancestors reach the smallest width, the earliest one on a tie.
 """
 
 from __future__ import annotations

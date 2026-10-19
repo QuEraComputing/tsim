@@ -1,26 +1,38 @@
 """Heisenberg-frame operations read off a reduced ZX component.
 
-A component of the reduced sampling graph is a graph state of its quantum
-spiders followed by one rotation and one single-qubit measurement per spider.
-The phase ``π/2·q + 2θ`` of spider ``v`` rotates its qubit by ``exp(-iθ Z_v)``
-and then measures ``m_v = S^-q X S^q`` (a signed X or Y), with outcome bit
-``y_v``. The classical spiders and the outputs only relate the bits ``y`` to
-the output bits. Eliminating them over GF(2) (``_Relations``) leaves each output
-as a parity of bits ``y``, f-bits and fair coins, and a set of parities of the
-bits ``y`` that the diagram postselects.
+The quantum part of a reduced component is graph-like [1]: a graph state [2] of
+its quantum spiders, followed by one rotation and one single-qubit measurement
+per spider. The phase ``π/2·q + 2θ`` of spider ``v`` rotates its qubit by
+``exp(-iθ Z_v)`` and then measures ``m_v = S^-q X S^q`` (a signed X or Y), with
+outcome bit ``y_v``. The classical spiders only relate the bits ``y`` to the
+outputs. Eliminating them over GF(2) (``_Relations``) leaves each output as a
+parity of bits ``y``, f-bits and fair coins, plus parities of the bits ``y``
+that the diagram postselects.
 
 A sampler cannot postselect, so the postselections are moved to the start,
-where they act on the graph state, a stabilizer state. For that, every rotation
-must commute with them. Rotating about ``Z_v`` equals rotating about
-``Z_v K_T`` for a product ``K_T`` of graph-state stabilizers that still
-stabilizes the state, that is, when ``T`` holds no spider rotated before ``v``
-(the product rotation lemma). ``_rotation_axes`` finds these sets with a
-backward greedy search, as for gflows.
+where they act on the graph state. For that, every rotation must commute with
+them. Let ``K_T`` be the product of the graph-state stabilizers
+``K_u = X_u Z_N(u)`` over the spiders ``u`` in ``T``. If ``K_T`` commutes with
+``Z_v`` and stabilizes the current state, ``exp(-iθ Z_v)`` acts on that state
+like ``exp(-iθ Z_v K_T)``. Both hold when no spider in ``T`` is rotated at or
+before ``v``. ``_rotation_axes`` finds sets ``T`` that make every rotation
+commute with every postselection, with a backward greedy search like the gflow
+search of [3].
 
 A Clifford frame then maps the postselected graph state to ``|0…0⟩``.
 Noise-dependent postselection targets become f-dependent signs, lines that no
 operation flips are dropped, and Paulis that commute with every operation are
 measured first: they change no outcome and keep the active width small.
+
+References:
+    [1] R. Duncan, A. Kissinger, S. Perdrix, J. van de Wetering, "Graph-theoretic
+        simplification of quantum circuits with the ZX-calculus", Quantum 4, 279
+        (2020).
+    [2] M. Hein, J. Eisert, H. J. Briegel, "Multiparty entanglement in graph
+        states", Phys. Rev. A 69, 062311 (2004).
+    [3] M. Mhalla, S. Perdrix, "Finding optimal flows efficiently", ICALP 2008,
+        LNCS 5125.
+
 """
 
 from __future__ import annotations
@@ -138,9 +150,8 @@ class HeisenbergOps:
 def heisenberg_ops(component: Graph, layout: ComponentLayout) -> HeisenbergOps:
     """Return the operations of a component of the reduced sampling graph.
 
-    Forgotten measurements of the program's commutant come first, then the
-    rotations, in an order for which the product rotation lemma holds, then one
-    measurement per output slot.
+    Forgotten measurements of Paulis that commute with every op come first,
+    then the rotations, then one measurement per output slot.
 
     Raises:
         ValueError: If the component is not a graph-like diagram of Z spiders
@@ -356,9 +367,8 @@ class _Relations:
                 probabilities.
 
         """
-        # NOTE: the reduced echelon form is unique for a column priority, so map
-        # the first variable of ``order`` to the highest bit and eliminate by
-        # leading bits, then reduce each row by the pivot rows below it.
+        # NOTE: the reduced echelon form is unique, so eliminate by leading bits,
+        # with the first variable of ``order`` as the highest, then back-substitute.
         position = {v: len(order) - 1 - i for i, v in enumerate(order)}
         echelon = _Basis()
         for mask, rhs in self.equalities:
@@ -429,7 +439,7 @@ def _patterns(reading: _Reading) -> tuple[list[int], list[int]]:
 def _rotation_axes(
     reading: _Reading, patterns: tuple[list[int], list[int]]
 ) -> list[tuple[int, int]]:
-    """Return ``(v, T)`` per rotated spider, in an order valid for the product rotation lemma.
+    """Return ``(v, T)`` per rotated spider, in rotation order.
 
     ``Z_v K_T`` commutes with every postselection, and ``T`` holds no spider
     rotated at or before ``v``. The order is built from the back: a spider
@@ -449,7 +459,7 @@ def _rotation_axes(
         basis.insert(k_pattern[u], 1 << u)
 
     def witness(v: int) -> int | None:
-        # NOTE: a single neighbour, a phase gadget's root typically, comes first.
+        # NOTE: try single neighbours first, typically a phase gadget's root.
         if not z_pattern[v]:
             return 0
         for u in _bits(reading.neighbours[v] & allowed):

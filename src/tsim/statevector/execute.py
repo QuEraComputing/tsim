@@ -5,9 +5,8 @@ step dispatches on the action's kind with ``lax.switch``. The loop carry is a
 ``LaneState``: one lane per shot, each with ``2^W`` amplitudes and its symbols
 (f-bits, then branch bits as they are sampled), from which ``outputs`` reads
 the output bits once the tape has run. All randomness goes through
-``choose_outcome``, and ``count`` holds the number of shots a lane stands for
-(always 1 for now), so that trajectory sharing can later split lanes without
-touching the kernels.
+``choose_outcome``, and ``count`` holds the number of shots a lane stands for,
+so lanes can be shared between shots without changing the kernels.
 """
 
 from __future__ import annotations
@@ -60,11 +59,10 @@ def lane_bytes(component: StatevectorComponent) -> int:
 def choose_outcome(p1: Array, count: Array, key: Array) -> Array:
     """Return each lane's outcome: True with probability ``p1``.
 
-    Two uint32 draws per lane form a uniform 64-bit fraction ``high + low·2^-32``
-    (in units of 2^-32), compared with ``t = p1·2^32`` (an exact scaling), so the
-    resolution is 2^-64 for any float dtype of ``p1``. ``p1 = 0`` never and
-    ``p1 = 1`` always gives True. ``count`` is unused for now; trajectory sharing
-    will split it binomially.
+    Two uint32 draws per lane form a uniform 64-bit fraction, compared with
+    ``p1·2^32`` (an exact scaling), so the resolution is 2^-64 for any float
+    dtype. ``p1 = 0`` never gives True and ``p1 = 1`` always does. ``count`` is
+    unused while every lane is one shot.
     """
     del count
     high, low = jax.random.bits(key, (2, *p1.shape), dtype=jnp.uint32)
