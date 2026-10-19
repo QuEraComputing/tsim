@@ -62,7 +62,7 @@
     <span class=n>mode</span><span class=p>:</span> <span class=n>DecompositionMode</span><span class=p>,</span>
     <span class=n>strategy</span><span class=p>:</span> <span class=n>SamplingStrategy</span> <span class=o>=</span> <span class=s2>&quot;cat5&quot;</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>CompiledProgram</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Compile a prepared graph into an executable sampling program.</p> <p>The graph is split into connected components. A component whose single output equals one error-basis bit takes the direct path. With <code>strategy="statevector"</code> every other component becomes an action tape for the statevector executor. Otherwise its outputs are plugged (all prefixes in <code>sequential</code> mode, none and all in <code>joint</code> mode), each plugged graph is decomposed into stabilizer terms, and the terms are compiled into JAX arrays.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>prepared</code> </td> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">SamplingGraph</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Compile a prepared graph into an executable sampling program.</p> <p>The graph is split into connected components. A component whose single output equals one error-basis bit takes the direct path. With <code>strategy="active_statevector"</code> every other component becomes an action tape for the statevector executor. Otherwise its outputs are plugged (all prefixes in <code>sequential</code> mode, none and all in <code>joint</code> mode), each plugged graph is decomposed into stabilizer terms, and the terms are compiled into JAX arrays.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>prepared</code> </td> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">SamplingGraph</span>
 
 
   <span class="doc doc-labels">
@@ -72,12 +72,12 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-module-attribute"><code>module-attribute</code></small>
-  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>A stabilizer-rank decomposition strategy, or <code>"statevector"</code>.</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">CompiledProgram</span>
+  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>A stabilizer-rank decomposition strategy, or <code>"active_statevector"</code>.</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">CompiledProgram</span>
 
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span> (<code>tsim.core.types.CompiledProgram</code>)' href=../../core/types/#tsim.core.types.CompiledProgram>CompiledProgram</a></code> </td> <td> <div class=doc-md-description> <p>A CompiledProgram ready for sampling.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=ValueError>ValueError</span></code> </td> <td> <div class=doc-md-description> <p>If <code>strategy="statevector"</code> is combined with <code>mode="joint"</code>.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/compile/pipeline.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 42</span>
+  </span> (<code>tsim.core.types.CompiledProgram</code>)' href=../../core/types/#tsim.core.types.CompiledProgram>CompiledProgram</a></code> </td> <td> <div class=doc-md-description> <p>A CompiledProgram ready for sampling.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=ValueError>ValueError</span></code> </td> <td> <div class=doc-md-description> <p>If <code>strategy="active_statevector"</code> is combined with <code>mode="joint"</code>.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/compile/pipeline.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 42</span>
 <span class=normal> 43</span>
 <span class=normal> 44</span>
 <span class=normal> 45</span>
@@ -160,7 +160,7 @@
 
 <span class=sd>    The graph is split into connected components. A component whose single</span>
 <span class=sd>    output equals one error-basis bit takes the direct path. With</span>
-<span class=sd>    ``strategy=&quot;statevector&quot;`` every other component becomes an action tape for</span>
+<span class=sd>    ``strategy=&quot;active_statevector&quot;`` every other component becomes an action tape for</span>
 <span class=sd>    the statevector executor. Otherwise its outputs are plugged (all prefixes</span>
 <span class=sd>    in ``sequential`` mode, none and all in ``joint`` mode), each plugged graph</span>
 <span class=sd>    is decomposed into stabilizer terms, and the terms are compiled into JAX</span>
@@ -169,19 +169,19 @@
 <span class=sd>    Args:</span>
 <span class=sd>        prepared: The prepared graph from ``prepare_graph``.</span>
 <span class=sd>        mode: ``&quot;sequential&quot;`` for sampling, ``&quot;joint&quot;`` for probabilities.</span>
-<span class=sd>        strategy: A stabilizer-rank decomposition strategy, or ``&quot;statevector&quot;``.</span>
+<span class=sd>        strategy: A stabilizer-rank decomposition strategy, or ``&quot;active_statevector&quot;``.</span>
 
 <span class=sd>    Returns:</span>
 <span class=sd>        A CompiledProgram ready for sampling.</span>
 
 <span class=sd>    Raises:</span>
-<span class=sd>        ValueError: If ``strategy=&quot;statevector&quot;`` is combined with ``mode=&quot;joint&quot;``.</span>
+<span class=sd>        ValueError: If ``strategy=&quot;active_statevector&quot;`` is combined with ``mode=&quot;joint&quot;``.</span>
 
 <span class=sd>    &quot;&quot;&quot;</span>
-    <span class=k>if</span> <span class=n>strategy</span> <span class=o>==</span> <span class=s2>&quot;statevector&quot;</span><span class=p>:</span>
+    <span class=k>if</span> <span class=n>strategy</span> <span class=o>==</span> <span class=s2>&quot;active_statevector&quot;</span><span class=p>:</span>
         <span class=k>if</span> <span class=n>mode</span> <span class=o>==</span> <span class=s2>&quot;joint&quot;</span><span class=p>:</span>
             <span class=k>raise</span> <span class=ne>ValueError</span><span class=p>(</span>
-                <span class=s2>&quot;strategy=&#39;statevector&#39; samples outcomes and cannot compute &quot;</span>
+                <span class=s2>&quot;strategy=&#39;active_statevector&#39; samples outcomes and cannot compute &quot;</span>
                 <span class=sa>f</span><span class=s2>&quot;probabilities. </span><span class=si>{</span><span class=n>STABILIZER_RANK_HINT</span><span class=si>}</span><span class=s2>&quot;</span>
             <span class=p>)</span>
         <span class=n>compile_component</span> <span class=o>=</span> <span class=n>compile_statevector_component</span>

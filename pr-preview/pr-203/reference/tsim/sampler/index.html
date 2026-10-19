@@ -30,7 +30,7 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-module-attribute"><code>module-attribute</code></small>
-  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy ("cat5", "bss", "cutting"), or "statevector".</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size and fixed reference sample settings. If deterministic samples are needed, the batch size should be set manually.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>743</span>
+  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy ("cat5", "bss", "cutting"), or "active_statevector".</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size and fixed reference sample settings. If deterministic samples are needed, the batch size should be set manually.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>743</span>
 <span class=normal>744</span>
 <span class=normal>745</span>
 <span class=normal>746</span>
@@ -67,7 +67,7 @@
 <span class=sd>    Args:</span>
 <span class=sd>        circuit: The quantum circuit to compile.</span>
 <span class=sd>        strategy: Stabilizer rank decomposition strategy (&quot;cat5&quot;, &quot;bss&quot;,</span>
-<span class=sd>            &quot;cutting&quot;), or &quot;statevector&quot;.</span>
+<span class=sd>            &quot;cutting&quot;), or &quot;active_statevector&quot;.</span>
 <span class=sd>        seed: Random seed for the sampler. IMPORTANT: Currently, the sampler</span>
 <span class=sd>            will only produce deterministic samples for fixed batch size and</span>
 <span class=sd>            fixed reference sample settings. If deterministic samples are</span>
@@ -422,7 +422,7 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-module-attribute"><code>module-attribute</code></small>
-  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy ("cat5", "bss", "cutting"), or "statevector".</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size. If deterministic samples are needed, the batch size should be set manually.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>688</span>
+  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy ("cat5", "bss", "cutting"), or "active_statevector".</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size. If deterministic samples are needed, the batch size should be set manually.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>688</span>
 <span class=normal>689</span>
 <span class=normal>690</span>
 <span class=normal>691</span>
@@ -459,7 +459,7 @@
 <span class=sd>    Args:</span>
 <span class=sd>        circuit: The quantum circuit to compile.</span>
 <span class=sd>        strategy: Stabilizer rank decomposition strategy (&quot;cat5&quot;, &quot;bss&quot;,</span>
-<span class=sd>            &quot;cutting&quot;), or &quot;statevector&quot;.</span>
+<span class=sd>            &quot;cutting&quot;), or &quot;active_statevector&quot;.</span>
 <span class=sd>        seed: Random seed for the sampler. IMPORTANT: Currently, the sampler</span>
 <span class=sd>            will only produce deterministic samples for fixed batch size. If</span>
 <span class=sd>            deterministic samples are needed, the batch size should be set</span>
