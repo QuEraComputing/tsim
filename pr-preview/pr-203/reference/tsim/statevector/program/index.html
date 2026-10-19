@@ -29,7 +29,8 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span> (<code>tsim.core.params.ParamLayout</code>)' href=../../core/params/#tsim.core.params.ParamLayout>ParamLayout</a></code> </td> <td> <div class=doc-md-description> <p>The prepared graph's parameter layout.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/program.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>188</span>
+  </span> (<code>tsim.core.params.ParamLayout</code>)' href=../../core/params/#tsim.core.params.ParamLayout>ParamLayout</a></code> </td> <td> <div class=doc-md-description> <p>The prepared graph's parameter layout.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/program.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>187</span>
+<span class=normal>188</span>
 <span class=normal>189</span>
 <span class=normal>190</span>
 <span class=normal>191</span>
@@ -43,8 +44,7 @@
 <span class=normal>199</span>
 <span class=normal>200</span>
 <span class=normal>201</span>
-<span class=normal>202</span>
-<span class=normal>203</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_statevector_component</span><span class=p>(</span>
+<span class=normal>202</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>compile_statevector_component</span><span class=p>(</span>
     <span class=n>component</span><span class=p>:</span> <span class=n>Graph</span><span class=p>,</span> <span class=n>output_indices</span><span class=p>:</span> <span class=n>Sequence</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=n>layout</span><span class=p>:</span> <span class=n>ParamLayout</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>StatevectorComponent</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Compile one non-direct component for ``strategy=&quot;active_statevector&quot;``.</span>
@@ -63,7 +63,8 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.statevector.program.lower class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">lower</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>lower</span><span class=p>(</span>
     <span class=n>plan</span><span class=p>:</span> <span class=n>Plan</span><span class=p>,</span> <span class=n>layout</span><span class=p>:</span> <span class=n>ComponentLayout</span><span class=p>,</span> <span class=n>dtype</span><span class=p>:</span> <span class=nb>str</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>StatevectorComponent</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return the action tape of <code>plan</code>.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/program.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>140</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return the action tape of <code>plan</code>.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/program.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>139</span>
+<span class=normal>140</span>
 <span class=normal>141</span>
 <span class=normal>142</span>
 <span class=normal>143</span>
@@ -107,8 +108,7 @@
 <span class=normal>181</span>
 <span class=normal>182</span>
 <span class=normal>183</span>
-<span class=normal>184</span>
-<span class=normal>185</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>lower</span><span class=p>(</span><span class=n>plan</span><span class=p>:</span> <span class=n>Plan</span><span class=p>,</span> <span class=n>layout</span><span class=p>:</span> <span class=n>ComponentLayout</span><span class=p>,</span> <span class=n>dtype</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>StatevectorComponent</span><span class=p>:</span>
+<span class=normal>184</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>lower</span><span class=p>(</span><span class=n>plan</span><span class=p>:</span> <span class=n>Plan</span><span class=p>,</span> <span class=n>layout</span><span class=p>:</span> <span class=n>ComponentLayout</span><span class=p>,</span> <span class=n>dtype</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>StatevectorComponent</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return the action tape of ``plan``.&quot;&quot;&quot;</span>
     <span class=n>num_actions</span> <span class=o>=</span> <span class=nb>len</span><span class=p>(</span><span class=n>plan</span><span class=o>.</span><span class=n>actions</span><span class=p>)</span>
     <span class=n>num_words</span> <span class=o>=</span> <span class=nb>max</span><span class=p>(</span><span class=mi>1</span><span class=p>,</span> <span class=n>ceil</span><span class=p>(</span><span class=n>plan</span><span class=o>.</span><span class=n>num_symbols</span> <span class=o>/</span> <span class=mi>32</span><span class=p>))</span>
@@ -159,7 +159,8 @@
     <span class=n>output_indices</span><span class=p>:</span> <span class=n>Sequence</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span>
     <span class=n>layout</span><span class=p>:</span> <span class=n>ParamLayout</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>Plan</span><span class=p>,</span> <span class=n>ComponentLayout</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Read the Heisenberg ops of one non-direct component, schedule and plan them.</p> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=ValueError>ValueError</span></code> </td> <td> <div class=doc-md-description> <p>If the component cannot be read as Heisenberg ops or the plan needs more than <code>MAX_WIDTH</code> array axes.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/program.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>103</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Read the Heisenberg ops of one non-direct component, schedule and plan them.</p> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=ValueError>ValueError</span></code> </td> <td> <div class=doc-md-description> <p>If the component cannot be read as Heisenberg ops or the plan needs more than <code>MAX_WIDTH</code> array axes.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/program.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>102</span>
+<span class=normal>103</span>
 <span class=normal>104</span>
 <span class=normal>105</span>
 <span class=normal>106</span>
@@ -184,8 +185,7 @@
 <span class=normal>125</span>
 <span class=normal>126</span>
 <span class=normal>127</span>
-<span class=normal>128</span>
-<span class=normal>129</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>plan_component</span><span class=p>(</span>
+<span class=normal>128</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>plan_component</span><span class=p>(</span>
     <span class=n>component</span><span class=p>:</span> <span class=n>Graph</span><span class=p>,</span> <span class=n>output_indices</span><span class=p>:</span> <span class=n>Sequence</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=n>layout</span><span class=p>:</span> <span class=n>ParamLayout</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>Plan</span><span class=p>,</span> <span class=n>ComponentLayout</span><span class=p>]:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Read the Heisenberg ops of one non-direct component, schedule and plan them.</span>
