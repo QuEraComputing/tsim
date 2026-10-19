@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import numpy as np
@@ -68,6 +70,36 @@ def _make(circuit_str: str, seed: int = 0):
 def _keep(samples: np.ndarray, mask: np.ndarray) -> np.ndarray:
     """Boolean row mask of shots not discarded by postselection."""
     return ~np.any(samples & mask, axis=1)
+
+
+@contextmanager
+def _record_noise(sampler) -> Iterator[Callable[[], np.ndarray]]:
+    """Record the noise ``sampler`` draws; yield a function returning it in shot order.
+
+    Chunks of shots are sampled on several threads, so their draws are put back
+    into shot order by the order in which their seeds were drawn.
+    """
+    channel_sampler = sampler._channel_sampler
+    order: list[bytes] = []
+    drawn: dict[bytes, np.ndarray] = {}
+    block_seeds, sample = channel_sampler.block_seeds, channel_sampler.sample
+
+    def record_seeds(n: int) -> np.ndarray:
+        seeds = block_seeds(n)
+        order.append(seeds.tobytes())
+        return seeds
+
+    def record_sample(n: int, seeds: np.ndarray | None = None) -> np.ndarray:
+        assert seeds is not None
+        batch = sample(n, seeds)
+        drawn[seeds.tobytes()] = batch.copy()
+        return batch
+
+    with (
+        patch.object(channel_sampler, "block_seeds", side_effect=record_seeds),
+        patch.object(channel_sampler, "sample", side_effect=record_sample),
+    ):
+        yield lambda: np.concatenate([drawn[seeds] for seeds in order])
 
 
 # ────────────────────────── validation ───────────────────────────────────────
@@ -185,16 +217,8 @@ OBSERVABLE_INCLUDE(0) rec[-1]
 def test_survivors_keep_their_own_direct_outputs(shots, batch_size, reference):
     """Direct outputs come from each shot's own f-params, flips and reference."""
     sampler = _make(DIRECT_CIRCUIT, seed=11)
-    drawn: list[np.ndarray] = []
-    original = sampler._channel_sampler.sample
-
-    def capture(n: int, seeds: np.ndarray | None = None) -> np.ndarray:
-        batch = original(n, seeds)
-        drawn.append(batch.copy())
-        return batch
-
     mask = np.array([True, False, False])
-    with patch.object(sampler._channel_sampler, "sample", side_effect=capture):
+    with _record_noise(sampler) as drawn:
         samples = sampler.sample(
             shots,
             batch_size=batch_size,
@@ -202,7 +226,7 @@ def test_survivors_keep_their_own_direct_outputs(shots, batch_size, reference):
             append_observables=True,
             use_detector_reference_sample=reference,
         )
-    expected = sampler._compute_direct_outputs(np.concatenate(drawn))
+    expected = sampler._compute_direct_outputs(drawn())
     if reference:
         expected[:, :3] ^= sampler._compute_reference_sample()[:3]
     discarded = expected[:, 0]
@@ -215,19 +239,10 @@ def test_postselection_direct_cols_always_equal_numpy():
     """Direct detector columns match NumPy computation for every row."""
     sampler = _make(MIXED_DIRECT_CIRCUIT, seed=3)
     mask = np.array([True, False])
-    drawn: list[np.ndarray] = []
-    original = sampler._channel_sampler.sample
-
-    def capture(n: int, seeds: np.ndarray | None = None) -> np.ndarray:
-        batch = original(n, seeds)
-        drawn.append(batch.copy())
-        return batch
-
-    with patch.object(sampler._channel_sampler, "sample", side_effect=capture):
+    with _record_noise(sampler) as drawn:
         samples = sampler.sample(8, batch_size=4, postselection_mask=mask)
 
-    f_all = np.concatenate(drawn)
-    expected_direct = sampler._compute_direct_outputs(f_all)
+    expected_direct = sampler._compute_direct_outputs(drawn())
     direct_det = sampler._direct_detector_mask
     assert np.array_equal(
         samples[:, : sampler._num_detectors] & direct_det,

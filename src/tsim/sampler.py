@@ -308,6 +308,9 @@ class _CompiledSamplerBase:
                 "bss", "cutting"). On the CPU, "active_statevector" samples up
                 to ``numba.get_num_threads()`` batches at once, each with its
                 own memory.
+            seed: Random seed. If None, a random seed is generated. Note that
+                deterministic results are only guaranteed for a fixed batch size
+                and fixed reference sample settings.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
                 with equal histories on one lane (experimental).
 
