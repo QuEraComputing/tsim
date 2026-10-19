@@ -27,16 +27,16 @@ NAMES = [
 ]
 
 
-def _compiled(name):
-    yield from _compiled_text(CIRCUITS[name])
+def _compiled(name, dtype="complex64"):
+    yield from _compiled_text(CIRCUITS[name], dtype)
 
 
-def _compiled_text(text):
+def _compiled_text(text, dtype="complex64"):
     components, layout = quantum_components(text, sample_detectors=True)
     for component in components:
         indices = output_indices(component)
         planned, component_layout = plan_component(component, indices, layout)
-        yield planned, component_layout, lower(planned, component_layout, "complex64")
+        yield planned, component_layout, lower(planned, component_layout, dtype)
 
 
 def _f_params(component_layout, patterns, shots_each):
@@ -77,11 +77,12 @@ def _assert_counts(rows, discarded, expected):
         )
 
 
+@pytest.mark.parametrize("dtype", ["complex64", "complex128"])
 @pytest.mark.parametrize("share", [True, False])
 @pytest.mark.parametrize("name", NAMES)
-def test_sampling_matches_the_plan_distribution(name, share):
+def test_sampling_matches_the_plan_distribution(name, share, dtype):
     shots = 20_000
-    for planned, component_layout, compiled in _compiled(name):
+    for planned, component_layout, compiled in _compiled(name, dtype):
         layout = sharing_layout(compiled)
         for f in f_patterns(planned.num_f, limit=2):
             f_params = _f_params(component_layout, [f], shots)
@@ -89,9 +90,11 @@ def test_sampling_matches_the_plan_distribution(name, share):
                 compiled, layout, np.asarray(f_params), 7, share
             )
             assert float(deviation) < 1e-4
-            assert_matches_distribution(
-                np.asarray(samples), plan_distribution(planned, f)
-            )
+            distribution = plan_distribution(planned, f)
+            assert_matches_distribution(np.asarray(samples), distribution)
+            # NOTE: an outcome of probability 0 is never drawn, not even rarely.
+            seen = {tuple(row) for row in np.asarray(samples).astype(int).tolist()}
+            assert all(distribution.get(key, 0.0) > 1e-12 for key in seen)
 
 
 @pytest.mark.parametrize("name", NAMES)
