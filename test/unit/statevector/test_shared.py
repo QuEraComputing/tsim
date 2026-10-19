@@ -243,36 +243,6 @@ def coherent():
     return planned, component_layout, compiled
 
 
-class _PoisonedLanes(shared._Lanes):
-    """Lanes that hold NaN wherever the executor must not read.
-
-    After every operation, that is every row from ``size`` up and every
-    amplitude of a live row from ``span`` up.
-    """
-
-    def __init__(self, *args):
-        super().__init__(*args)
-        self._poison(1)
-
-    def split(self, ones, span):
-        result = super().split(ones, span)
-        self._poison(span)
-        return result
-
-    def prune(self, dies, span):
-        removed = super().prune(dies, span)
-        self._poison(span)
-        return removed
-
-    def _grow(self, needed, span):
-        super()._grow(needed, span)
-        self._poison(span)
-
-    def _poison(self, span):
-        self.amps[: self.size, span:] = np.nan
-        self.amps[self.size :] = np.nan
-
-
 def test_extents_and_reused_slots_do_not_change_the_samples(coherent, monkeypatch):
     planned, component_layout, compiled = coherent
     layout = sharing_layout(compiled, np.ones(compiled.num_outputs, dtype=bool))
@@ -291,7 +261,8 @@ def test_extents_and_reused_slots_do_not_change_the_samples(coherent, monkeypatc
     )
     key = jax.random.key(17)
     reference, _, deviation, _ = sample_shared_component(compiled, full, f_params, key)
-    monkeypatch.setattr(shared, "_Lanes", _PoisonedLanes)
+    # NOTE: NaN fills every amplitude the executor must not read.
+    monkeypatch.setattr(shared, "_POISON", True)
     for tape in (layout, raised):
         samples, _, other, stats = sample_shared_component(
             compiled, tape, f_params, key
