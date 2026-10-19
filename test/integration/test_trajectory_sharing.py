@@ -269,7 +269,8 @@ def test_shared_postselection_samples_the_survivors_without_padding(monkeypatch)
 
 @pytest.mark.parametrize("sharing", [False, True])
 @pytest.mark.parametrize(
-    ("shots", "expected"), [(40_000, [10_000] * 4), (6_000, [6_000])]
+    ("shots", "expected"),
+    [(40_000, [10_000] * 4), (12_000, [12_000]), (6_000, [6_000])],
 )
 def test_default_batches_give_every_thread_one(sharing, shots, expected, monkeypatch):
     sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(

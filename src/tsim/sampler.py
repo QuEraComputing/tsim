@@ -36,8 +36,10 @@ if TYPE_CHECKING:
 # NOTE: beyond 2^16 lanes, statevector batches cost memory without being faster.
 STATEVECTOR_MAX_BATCH_SIZE = 2**16
 
-# NOTE: without a given batch size, a call is split into a batch per thread, but
-# into batches of no fewer shots than this, whose fixed costs would dominate.
+# NOTE: without a given batch size, a call is split into a batch per thread when
+# every batch gets at least this many shots, whose fixed costs would dominate
+# otherwise. A call too small for that stays one batch, which the parallel
+# kernels spread over the threads instead.
 MIN_THREAD_BATCH = 2**12
 
 # NOTE: postselection screens shots for direct discards in chunks of at most
@@ -504,8 +506,8 @@ class _CompiledSamplerBase:
         """Choose a uniform batch size for ``shots`` samples.
 
         Without a ``batch_size``, batches are as large as memory allows, but split
-        into at least one batch per thread (``_threads``) of no fewer than
-        ``MIN_THREAD_BATCH`` shots each, so that every thread has work.
+        into a batch per thread (``_threads``) when each gets at least
+        ``MIN_THREAD_BATCH`` shots, so that every thread has work.
         """
         if batch_size is None:
             batch_size = self._auto_batch_size(shots)
@@ -516,8 +518,12 @@ class _CompiledSamplerBase:
     def _auto_batch_size(self, shots: int) -> int:
         """Return the size of equal batches of ``shots``, one or more per thread."""
         num_batches = max(1, ceil(shots / self._estimate_batch_size()))
-        per_thread = min(self._threads(1), shots // MIN_THREAD_BATCH)
-        return ceil(shots / max(num_batches, per_thread))
+        return ceil(shots / max(num_batches, self._per_thread(shots)))
+
+    def _per_thread(self, shots: int) -> int:
+        """Return the thread count if ``shots`` fill a batch per thread, else 1."""
+        threads = self._threads(1)
+        return threads if shots >= threads * MIN_THREAD_BATCH else 1
 
     def _peak_bytes_per_sample(self) -> int:
         """Estimate peak device memory per sample from compiled program structure."""
@@ -842,7 +848,7 @@ class _CompiledSamplerBase:
             if screened_chunks < len(starts):
                 ready -= ready % (threads * batch_size)
             elif split_last and ready:
-                per_thread = min(threads, ready // MIN_THREAD_BATCH)
+                per_thread = self._per_thread(ready)
                 size = ceil(ready / max(1, ceil(ready / batch_size), per_thread))
                 rows = min(batch_size, 1 << (size - 1).bit_length())
             all_f, all_shot = np.concatenate(pending_f), np.concatenate(pending_shot)
