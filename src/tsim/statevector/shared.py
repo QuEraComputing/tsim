@@ -36,6 +36,7 @@ from typing import NamedTuple
 import numba
 import numpy as np
 
+import tsim.utils.kernels as kernels
 from tsim.statevector.program import (
     MEASURE,
     MEASURE_DIAG,
@@ -44,7 +45,6 @@ from tsim.statevector.program import (
     ROTATE_DIAG,
     StatevectorComponent,
 )
-import tsim.utils.kernels as kernels
 from tsim.utils.kernels import jit, kernel
 from tsim.utils.linalg import find_basis
 from tsim.utils.rng import GOLDEN, next_skip, splitmix64
