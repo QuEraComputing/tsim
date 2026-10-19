@@ -7,7 +7,8 @@ this script with that interpreter, from the repository root:
     /tmp/clifft-venv/bin/python benchmarks/clifft/comparison/run_clifft.py --out clifft.jsonl
 
 Every circuit is compiled as clifft-bench does (default HIR passes, every
-detector postselected unless the workload says otherwise). For one thread and
+detector postselected unless the workload says otherwise); ``--passes all``
+adds the opt-in ``ActiveWidthSchedulePass``, which lowers the peak active width. For one thread and
 for all threads (``threads="auto"``) it samples with ``sample_survivors`` for at
 least ``--seconds`` after one untimed call, with scalar execution and with
 packed lanes of 2048 shots (unless Clifft rejects that batch as too large).
@@ -24,6 +25,17 @@ import clifft
 from workloads import WORKLOADS
 
 BATCH_SIZES = (1, 2048)
+
+
+def pass_manager(passes: str):
+    """Return the default HIR passes, or those plus ``ActiveWidthSchedulePass``."""
+    if passes == "default":
+        return clifft.default_hir_pass_manager()
+    manager = clifft.HirPassManager()
+    manager.add(clifft.PeepholeFusionPass())
+    manager.add(clifft.StatevectorSqueezePass())
+    manager.add(clifft.ActiveWidthSchedulePass())
+    return manager
 
 
 def measure(
@@ -62,13 +74,14 @@ def main() -> None:
     parser.add_argument("names", nargs="*", default=list(WORKLOADS))
     parser.add_argument("--seconds", type=float, default=10.0)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--passes", choices=("default", "all"), default="default")
     args = parser.parse_args()
     for name in args.names:
         workload = WORKLOADS[name]
         text = workload.path.read_text()
         start = time.perf_counter()
         hir = clifft.trace(clifft.parse(text))
-        clifft.default_hir_pass_manager().run(hir)
+        pass_manager(args.passes).run(hir)
         mask = [int(workload.postselect)] * int(hir.num_detectors)
         program = clifft.lower(hir, postselection_mask=mask)
         compile_seconds = time.perf_counter() - start
@@ -95,6 +108,7 @@ def main() -> None:
                     compile_seconds=compile_seconds,
                     postselect=workload.postselect,
                     width=int(program.peak_active_width),
+                    passes=args.passes,
                 )
                 with open(args.out, "a") as out:
                     out.write(json.dumps(record) + "\n")
