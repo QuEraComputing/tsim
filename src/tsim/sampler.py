@@ -37,6 +37,10 @@ if TYPE_CHECKING:
 # NOTE: beyond 2^16 lanes, statevector batches cost memory without being faster.
 STATEVECTOR_MAX_BATCH_SIZE = 2**16
 
+# NOTE: without a given batch size, a call is split into a batch per thread, but
+# into batches of no fewer shots than this, whose fixed costs would dominate.
+MIN_THREAD_BATCH = 2**12
+
 # NOTE: postselection screens shots for direct discards in chunks of at most
 # this many, several chunks per thread at a time, so that calls of a few batches
 # still keep every thread busy and slow cores take fewer chunks.
@@ -485,14 +489,23 @@ class _CompiledSamplerBase:
         *,
         compute_reference: bool,
     ) -> int:
-        """Choose a uniform JAX batch size for ``shots`` samples."""
+        """Choose a uniform batch size for ``shots`` samples.
+
+        Without a ``batch_size``, batches are as large as memory allows, but split
+        into at least one batch per thread (``_threads``) of no fewer than
+        ``MIN_THREAD_BATCH`` shots each, so that every thread has work.
+        """
         if batch_size is None:
-            max_batch_size = self._estimate_batch_size()
-            num_batches = max(1, ceil(shots / max_batch_size))
-            batch_size = ceil(shots / num_batches)
+            batch_size = self._auto_batch_size(shots)
         if compute_reference and batch_size * ceil(shots / batch_size) == shots:
             batch_size += 1
         return batch_size
+
+    def _auto_batch_size(self, shots: int) -> int:
+        """Return the size of equal batches of ``shots``, one or more per thread."""
+        num_batches = max(1, ceil(shots / self._estimate_batch_size()))
+        per_thread = min(self._threads(1), shots // MIN_THREAD_BATCH)
+        return ceil(shots / max(num_batches, per_thread))
 
     def _peak_bytes_per_sample(self) -> int:
         """Estimate peak device memory per sample from compiled program structure."""
@@ -615,17 +628,13 @@ class _CompiledSamplerBase:
                 return samples, reference
             return samples
 
-        if batch_size is None:
-            max_batch_size = self._estimate_batch_size()
-            num_batches = max(1, ceil(shots / max_batch_size))
-            batch_size = ceil(shots / num_batches)
-        else:
-            num_batches = ceil(shots / batch_size)
-
-        if compute_reference and batch_size * num_batches == shots:
-            # Bump batch_size so the first batch's reference sample fits
-            # within existing batches (keeps shapes uniform for JIT).
-            batch_size += 1
+        # NOTE: with a reference sample the batch size grows by one when the
+        # batches would hold exactly ``shots``, so that the first batch's
+        # reference sample fits without another batch shape for JIT.
+        batch_size = self._resolve_batch_size(
+            shots, batch_size, compute_reference=compute_reference
+        )
+        num_batches = ceil((shots + compute_reference) / batch_size)
 
         sharing = self._sharing_arguments(None)
         tasks = []
@@ -690,7 +699,10 @@ class _CompiledSamplerBase:
         fixed (avoiding recompilation) and the padding rows are discarded; the
         shared executor samples it as it is.
         Chunks of shots, and then the batches of their survivors, run on
-        ``_threads()`` threads at once.
+        ``_threads()`` threads at once. Without a ``batch_size``, batches are as
+        large as memory allows, and the survivors left after the last chunk are
+        split into a batch per thread (as in ``_resolve_batch_size``); JAX pads
+        each to a power of two, so that few batch shapes are compiled.
         """
         if shots < 0:
             raise ValueError(f"shots must be non-negative, got {shots}")
@@ -716,10 +728,9 @@ class _CompiledSamplerBase:
                 return samples, reference, np.zeros(shots, dtype=np.bool_)
             return samples, None, np.zeros(shots, dtype=np.bool_)
 
+        split_last = batch_size is None
         if batch_size is None:
-            batch_size = self._resolve_batch_size(
-                shots, batch_size, compute_reference=False
-            )
+            batch_size = self._estimate_batch_size()
 
         reference: np.ndarray | None = None
         if compute_reference:
@@ -765,19 +776,19 @@ class _CompiledSamplerBase:
             survivors = np.flatnonzero(~discarded)
             return f_params_np[survivors], start + survivors
 
-        def dispatch(task: tuple[np.ndarray, np.ndarray, PRNGKey]) -> None:
+        def dispatch(task: tuple[np.ndarray, np.ndarray, PRNGKey, int]) -> None:
             """Sample the shots ``shot_batch`` in one batch.
 
-            JAX batches are padded with row 0 to ``batch_size`` rows; the shared
+            JAX batches are padded with row 0 to ``rows`` rows; the shared
             executor takes any number of rows.
             """
-            f_batch, shot_batch, key = task
+            f_batch, shot_batch, key, rows = task
             count = len(shot_batch)
             if sharing:
                 samples = sample_program(self._program, f_batch, key, **sharing)
             else:
-                if count < batch_size:
-                    padding = np.repeat(f_batch[:1], batch_size - count, axis=0)
+                if count < rows:
+                    padding = np.repeat(f_batch[:1], rows - count, axis=0)
                     f_batch = np.concatenate([f_batch, padding])
                 samples = sample_program(self._program, jnp.asarray(f_batch), key)
             result[shot_batch] = np.asarray(samples)[:count]
@@ -810,14 +821,20 @@ class _CompiledSamplerBase:
                     pending_shot.append(shot_survivors)
                     pending += len(shot_survivors)
             ready = pending
+            size, rows = batch_size, batch_size
             if screened_chunks < len(starts):
                 ready -= ready % (threads * batch_size)
+            elif split_last and ready:
+                per_thread = min(threads, ready // MIN_THREAD_BATCH)
+                size = ceil(ready / max(1, ceil(ready / batch_size), per_thread))
+                rows = min(batch_size, 1 << (size - 1).bit_length())
             all_f, all_shot = np.concatenate(pending_f), np.concatenate(pending_shot)
             batches = []
-            for start in range(0, ready, batch_size):
+            for start in range(0, ready, size):
                 self._key, subkey = jax.random.split(self._key)
-                stop = start + batch_size
-                batches.append((all_f[start:stop], all_shot[start:stop], subkey))
+                stop = start + size
+                batch = (all_f[start:stop], all_shot[start:stop], subkey, rows)
+                batches.append(batch)
             run_tasks(_with_x64_of_caller(dispatch), batches, threads)
             pending_f, pending_shot = [all_f[ready:]], [all_shot[ready:]]
             pending -= ready

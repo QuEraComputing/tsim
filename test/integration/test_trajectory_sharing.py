@@ -257,6 +257,55 @@ def test_shared_postselection_samples_the_survivors_without_padding(monkeypatch)
     assert sum(counts) == int((~detectors[:, 2]).sum())
 
 
+def _recording_rows(sampler, monkeypatch) -> list[int]:
+    rows = []
+    original = sampler_module.sample_program
+
+    def spy(program, f_params, key, **kwargs):
+        rows.append(f_params.shape[0])
+        return original(program, f_params, key, **kwargs)
+
+    monkeypatch.setattr(sampler_module, "sample_program", spy)
+    return rows
+
+
+@pytest.mark.parametrize("sharing", [False, True])
+@pytest.mark.parametrize(
+    ("shots", "expected"), [(40_000, [10_000] * 4), (6_000, [6_000])]
+)
+def test_default_batches_give_every_thread_one(sharing, shots, expected, monkeypatch):
+    sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(
+        strategy="active_statevector", seed=7, trajectory_sharing=sharing
+    )
+    sampler._threads = lambda batch_size: 4
+    rows = _recording_rows(sampler, monkeypatch)
+    assert sampler.sample(shots).shape[0] == shots
+    assert sorted(rows) == expected
+
+
+@pytest.mark.parametrize("sharing", [False, True])
+def test_default_postselection_splits_the_survivors_over_the_threads(
+    sharing, monkeypatch
+):
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    sampler = circuit.compile_detector_sampler(
+        strategy="active_statevector", seed=8, trajectory_sharing=sharing
+    )
+    sampler._threads = lambda batch_size: 4
+    rows = _recording_rows(sampler, monkeypatch)
+    mask = np.ones(circuit.num_detectors, dtype=bool)
+    detectors = sampler.sample(40_000, postselection_mask=mask)
+
+    survivors = int((~detectors[:, 2]).sum())
+    size = -(-survivors // 4)
+    assert len(rows) == 4
+    if sharing:
+        assert sum(rows) == survivors and max(rows) == size
+    else:
+        # NOTE: JAX pads every batch to a power of two.
+        assert rows == [1 << (size - 1).bit_length()] * 4
+
+
 @pytest.mark.parametrize("rows", [1, 300, 70_000])
 @pytest.mark.parametrize("name", [*sorted(CIRCUITS), "direct_flips"])
 def test_host_outputs_equal_the_jax_outputs(name, rows):
