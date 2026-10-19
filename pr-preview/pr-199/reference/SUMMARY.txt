@@ -19,7 +19,6 @@
         * [dem](tsim/noise/dem.md)
     * [sampler](tsim/sampler.md)
     * [statevector](tsim/statevector/index.md)
-        * [execute](tsim/statevector/execute.md)
         * [pbc](tsim/statevector/pbc.md)
         * [plan](tsim/statevector/plan.md)
         * [program](tsim/statevector/program.md)
