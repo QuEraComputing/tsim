@@ -5,7 +5,8 @@ every order that respects these pairs gives the same distribution. The active
 width k = n − dim S is tracked with the Pauli group S that stabilizes every
 trajectory up to sign. ``schedule`` runs measurements as early as possible and
 widening rotations as late as possible: when nothing else can run, it runs the
-pending measurement with the fewest unrun rotations among its ancestors.
+pending measurement whose unrun ancestors reach the smallest width, the earliest
+one on a tie.
 """
 
 from __future__ import annotations
@@ -29,6 +30,12 @@ class StabilizerGroup:
     def width(self) -> int:
         """Return the active width: qubits minus independent generators."""
         return self.x.shape[1] - self.x.shape[0]
+
+    def copy(self) -> StabilizerGroup:
+        """Return an independent copy of the group."""
+        group = StabilizerGroup(0)
+        group.x, group.z = self.x.copy(), self.z.copy()
+        return group
 
     def anticommuting(self, x: np.ndarray, z: np.ndarray) -> np.ndarray:
         """Return which generators anticommute with the Pauli ``(x, z)``."""
@@ -134,12 +141,21 @@ def schedule(ops: HeisenbergOps) -> Schedule:
     order: list[int] = []
     width = 0
 
+    def advance(stabilizers: StabilizerGroup, j: int) -> None:
+        apply = stabilizers.measure if is_measurement[j] else stabilizers.rotate
+        apply(ops.x[j], ops.z[j])
+
+    def peak(chain: np.ndarray) -> int:
+        trial = group.copy()
+        highest = trial.width
+        for j in chain:
+            advance(trial, int(j))
+            highest = max(highest, trial.width)
+        return highest
+
     def run(j: int) -> None:
         nonlocal width
-        if is_measurement[j]:
-            group.measure(ops.x[j], ops.z[j])
-        else:
-            group.rotate(ops.x[j], ops.z[j])
+        advance(group, j)
         done[j] = True
         order.append(j)
         width = max(width, group.width)
@@ -161,10 +177,9 @@ def schedule(ops: HeisenbergOps) -> Schedule:
             for j in np.flatnonzero(~done):
                 run(int(j))
             break
-        unrun_rotations = ~done & ~is_measurement
-        costs = (ancestors[pending] & unrun_rotations).sum(axis=1)
-        target = int(pending[np.argmin(costs)])
-        for j in np.flatnonzero(ancestors[target] & ~done):
+        chains = [np.flatnonzero(ancestors[m] & ~done) for m in pending]
+        best = int(np.argmin([peak(chain) for chain in chains]))
+        for j in chains[best]:
             run(int(j))
-        run(target)
+        run(int(pending[best]))
     return Schedule(order=np.asarray(order, dtype=np.int32), width=width)
