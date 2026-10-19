@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import warnings
 from collections import deque
-from collections.abc import Callable
 from math import ceil
 from typing import TYPE_CHECKING, Literal, overload
 
@@ -19,10 +18,10 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
-from tsim.statevector.execute import lane_bytes, sample_statevector_component
 from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
 from tsim.statevector.shared import (
     SharingLayout,
+    lane_bytes,
     sample_shared_component,
     sharing_layout,
 )
@@ -46,6 +45,8 @@ MIN_THREAD_BATCH = 2**12
 # still keep every thread busy and slow cores take fewer chunks.
 SCREEN_SHOTS = 2**14
 SCREEN_CHUNKS_PER_THREAD = 2
+
+_GOLDEN = 0x9E3779B97F4A7C15
 
 
 def _sample_component(
@@ -115,7 +116,7 @@ def _sample_component_jit(
 
 
 def sample_component(
-    component: CompiledComponent | StatevectorComponent,
+    component: CompiledComponent,
     f_params: jax.Array,
     key: PRNGKey,
 ) -> tuple[jax.Array, PRNGKey, jax.Array]:
@@ -131,107 +132,110 @@ def sample_component(
         (batch_size, num_outputs_for_component).
 
     """
-    if isinstance(component, StatevectorComponent):
-        return sample_statevector_component(component, f_params, key)
     # Skip JIT for small components (overhead not worth it)
     if len(component.output_indices) <= 1:
         return _sample_component(component, f_params, key)
     return _sample_component_jit(component, f_params, key)
 
 
-def sample_program(
-    program: CompiledProgram,
-    f_params: jax.Array | np.ndarray,
-    key: PRNGKey,
-    sharing: tuple[SharingLayout | None, ...] | None = None,
-    sharing_stats: deque[dict] | None = None,
-) -> jax.Array | np.ndarray:
-    """Sample all outputs from a compiled program.
+def _check_norm(max_norm_deviation: float | jax.Array, threshold: float) -> None:
+    """Raise on a vanishing normalization; warn when it drifts beyond ``threshold``."""
+    if np.isclose(max_norm_deviation, 1):
+        raise ValueError(
+            "A vanishing marginal probability distribution was encountered (normalization 0). "
+            "This is likely the result of an underflow error. Please report this "
+            "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
+        )  # pragma: no cover
+    # NOTE: written so that a NaN deviation also warns.
+    if not max_norm_deviation <= threshold:
+        warnings.warn(
+            "A marginal probability was not normalized correctly "
+            f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
+            "This is likely a floating point precision issue.",
+            stacklevel=3,
+        )
 
-    NumPy ``f_params`` give NumPy samples, put together by a numba kernel (the
-    shared executor works on the host); JAX ``f_params`` give JAX samples.
+
+def sample_program(
+    program: CompiledProgram, f_params: jax.Array, key: PRNGKey
+) -> jax.Array:
+    """Sample all outputs of a program of stabilizer-rank components with JAX.
 
     Args:
         program: The compiled program to sample from.
         f_params: Error parameters, shape (batch_size, num_f_params).
         key: JAX random key.
-        sharing: One sharing layout per component, to sample statevector
-            components with shared trajectories; ``None`` samples one lane per
-            shot.
-        sharing_stats: If given, the shared executor appends its lane counts.
 
     Returns:
         Samples array of shape (batch_size, num_outputs), reordered to
         match the original output indices.
 
     """
-    results: list[jax.Array | np.ndarray] = []
-
-    on_host = isinstance(f_params, np.ndarray)
     if program.num_outputs == 0:
-        batch_size = f_params.shape[0]
-        if on_host:
-            return np.zeros((batch_size, 0), dtype=np.bool_)
-        return jnp.zeros((batch_size, 0), dtype=jnp.bool_)
-
-    if len(program.direct_f_indices) > 0 and not on_host:
+        return jnp.zeros((f_params.shape[0], 0), dtype=jnp.bool_)
+    results = []
+    if len(program.direct_f_indices) > 0:
         direct_bits = (
             f_params[:, program.direct_f_indices].astype(jnp.bool_)
             ^ program.direct_flips
         )
         results.append(direct_bits)
-
-    for index, component in enumerate(program.components):
-        shared = sharing[index] if sharing is not None else None
-        if isinstance(component, StatevectorComponent) and shared is not None:
-            samples, key, max_norm_deviation, stats = sample_shared_component(
-                component, shared, f_params, key
-            )
-            if sharing_stats is not None:
-                sharing_stats.append(stats)
-        else:
-            samples, key, max_norm_deviation = sample_component(
-                component, jnp.asarray(f_params), key
-            )
-        if np.isclose(max_norm_deviation, 1):
-            raise ValueError(
-                "A vanishing marginal probability distribution was encountered (normalization 0). "
-                "This is likely the result of an underflow error. Please report this "
-                "as a bug at https://github.com/QuEraComputing/tsim/issues/new."
-            )  # pragma: no cover
-        # NOTE: written so that a NaN deviation also warns.
-        if not max_norm_deviation <= component.norm_warning_threshold:
-            warnings.warn(
-                "A marginal probability was not normalized correctly "
-                f"(normalization deviated from 1 by {max_norm_deviation:.1e}). "
-                "This is likely a floating point precision issue.",
-                stacklevel=2,
-            )
+    for component in program.components:
+        assert isinstance(component, CompiledComponent)
+        samples, key, max_norm_deviation = sample_component(component, f_params, key)
+        _check_norm(max_norm_deviation, component.norm_warning_threshold)
         results.append(samples)
-
-    if on_host:
-        assert isinstance(f_params, np.ndarray)
-        rows = f_params.shape[0]
-        component_bits = (
-            np.concatenate(results, axis=1)
-            if results
-            else np.zeros((rows, 0), dtype=np.bool_)
-        )
-        out = np.empty((rows, program.num_outputs), dtype=np.bool_)
-        _gather_outputs(
-            out.size,
-            f_params,
-            np.asarray(program.direct_f_indices),
-            np.asarray(program.direct_flips),
-            component_bits,
-            np.asarray(program.output_order),
-            out,
-        )
-        return out
     combined = jnp.concatenate(results, axis=1)
     if program.output_reindex is not None:
         combined = combined[:, program.output_reindex]
     return combined
+
+
+def sample_statevector_program(
+    program: CompiledProgram,
+    f_params: np.ndarray,
+    seed: int,
+    layouts: tuple[SharingLayout, ...],
+    *,
+    share: bool,
+    direct: tuple[np.ndarray, np.ndarray, np.ndarray],
+    sharing_stats: deque[dict] | None = None,
+) -> np.ndarray:
+    """Sample all outputs of a program of statevector components, without JAX.
+
+    Args:
+        program: The compiled program to sample from.
+        f_params: Error parameters, shape (batch_size, num_f_params).
+        seed: Seed of the batch's random numbers, below 2^64.
+        layouts: The sharing layout of each component.
+        share: Whether shots with equal histories share a lane.
+        direct: The program's direct f-indices, direct flips and output order.
+        sharing_stats: If given, the executor appends its lane counts.
+
+    Returns:
+        Samples array of shape (batch_size, num_outputs) in the original order.
+
+    """
+    rows = f_params.shape[0]
+    results = []
+    for index, (component, layout) in enumerate(
+        zip(program.components, layouts, strict=True)
+    ):
+        assert isinstance(component, StatevectorComponent)
+        component_seed = (seed + index * _GOLDEN) % 2**64
+        samples, max_norm_deviation, stats = sample_shared_component(
+            component, layout, f_params, component_seed, share
+        )
+        if sharing_stats is not None:
+            sharing_stats.append(stats)
+        _check_norm(max_norm_deviation, component.norm_warning_threshold)
+        results.append(samples)
+    component_bits = (
+        np.concatenate(results, axis=1) if results else np.zeros((rows, 0), np.bool_)
+    )
+    out = np.empty((rows, program.num_outputs), dtype=np.bool_)
+    _gather_outputs(out.size, f_params, *direct[:2], component_bits, direct[2], out)
+    return out
 
 
 @kernel
@@ -267,21 +271,9 @@ def _gather_outputs(f, f_indices, flips, component_bits, order, out):
             out[row, order[num_direct + j]] = component_bits[row, j]
 
 
-def _with_x64_of_caller(function: Callable) -> Callable:
-    """Return ``function`` run with the calling thread's JAX 64-bit mode.
-
-    ``jax.enable_x64`` only reaches the thread that enters it, not the workers.
-    """
-    x64 = jax.config.read("jax_enable_x64")
-
-    def run(task):
-        with jax.enable_x64(x64):
-            return function(task)
-
-    return run
-
-
 def _nbytes(tree: object) -> int:
+    if isinstance(tree, StatevectorComponent):
+        return sum(v.nbytes for v in vars(tree).values() if isinstance(v, np.ndarray))
     return sum(
         v.nbytes for v in jax.tree_util.tree_leaves(tree) if isinstance(v, jax.Array)
     )
@@ -298,7 +290,7 @@ class _CompiledSamplerBase:
         mode: Literal["sequential", "joint"],
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        trajectory_sharing: bool = False,
+        trajectory_sharing: bool | None = None,
     ):
         """Initialize the sampler by compiling the circuit.
 
@@ -316,21 +308,26 @@ class _CompiledSamplerBase:
                 deterministic results are only guaranteed for a fixed batch size
                 and fixed reference sample settings.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane (experimental).
+                with equal histories on one lane. Defaults to True for
+                ``"active_statevector"`` and False otherwise.
 
         Raises:
             ValueError: If ``trajectory_sharing`` is combined with a
                 stabilizer-rank strategy.
 
         """
+        if trajectory_sharing is None:
+            trajectory_sharing = strategy == "active_statevector"
         if trajectory_sharing and strategy != "active_statevector":
             raise ValueError("trajectory_sharing needs strategy='active_statevector'")
         if seed is None:
             seed = int(np.random.default_rng().integers(0, 2**30))
 
         self._key = jax.random.key(seed)
+        # NOTE: statevector batches draw their seeds here instead of from the key.
+        self._batch_seeds = np.random.default_rng([seed, 1])
         self._trajectory_sharing = trajectory_sharing
-        self._sharing: dict[bytes, tuple[SharingLayout | None, ...]] = {}
+        self._layouts_by_key: dict[bytes, tuple[SharingLayout, ...]] = {}
         self.sharing_stats: deque[dict] = deque(maxlen=10_000)
 
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
@@ -368,6 +365,11 @@ class _CompiledSamplerBase:
         self._direct_global_indices = np.asarray(
             prog.output_order[:n_direct], dtype=np.int32
         )
+        self._direct = (
+            self._direct_f_indices,
+            self._direct_flips,
+            np.asarray(prog.output_order),
+        )
         self._direct_output_mask = np.zeros(prog.num_outputs, dtype=np.bool_)
         if n_direct > 0:
             self._direct_output_mask[self._direct_global_indices] = True
@@ -394,12 +396,12 @@ class _CompiledSamplerBase:
                     f"{STABILIZER_RANK_HINT}"
                 )
 
-    def _sharing_arguments(
+    def _layouts(
         self,
         postselection_mask: np.ndarray | None,
         detector_reference: np.ndarray | None = None,
-    ) -> dict:
-        """Return the extra ``sample_program`` arguments: none without sharing.
+    ) -> tuple[SharingLayout, ...]:
+        """Return the sharing layout of every statevector component.
 
         Args:
             postselection_mask: Postselected detectors, whose lanes are pruned.
@@ -407,8 +409,6 @@ class _CompiledSamplerBase:
                 the postselection test, if any.
 
         """
-        if not self._trajectory_sharing:
-            return {}
         num_detectors = self._num_detectors
         mask = np.zeros(num_detectors, dtype=np.bool_)
         if postselection_mask is not None:
@@ -417,30 +417,39 @@ class _CompiledSamplerBase:
         if detector_reference is not None:
             flip = np.asarray(detector_reference[:num_detectors], dtype=np.bool_)
         key = mask.tobytes() + flip.tobytes()
-        if key not in self._sharing:
-            self._sharing[key] = tuple(
-                (
+        if key not in self._layouts_by_key:
+            layouts = []
+            for component in self._program.components:
+                assert isinstance(component, StatevectorComponent)
+                detector = np.asarray(component.output_indices) < num_detectors
+                indices = np.minimum(component.output_indices, num_detectors - 1)
+                layouts.append(
                     sharing_layout(
                         component,
-                        np.array(
-                            [
-                                i < num_detectors and bool(mask[i])
-                                for i in component.output_indices
-                            ]
-                        ),
-                        np.array(
-                            [
-                                i < num_detectors and bool(flip[i])
-                                for i in component.output_indices
-                            ]
-                        ),
+                        detector & mask[indices] if num_detectors else detector,
+                        detector & flip[indices] if num_detectors else detector,
                     )
-                    if isinstance(component, StatevectorComponent)
-                    else None
                 )
-                for component in self._program.components
-            )
-        return {"sharing": self._sharing[key], "sharing_stats": self.sharing_stats}
+            self._layouts_by_key[key] = tuple(layouts)
+        return self._layouts_by_key[key]
+
+    def _sample_statevector(
+        self, f_params: np.ndarray, seed: int, layouts: tuple[SharingLayout, ...]
+    ) -> np.ndarray:
+        """Sample one batch of a statevector program."""
+        return sample_statevector_program(
+            self._program,
+            f_params,
+            seed,
+            layouts,
+            share=self._trajectory_sharing,
+            direct=self._direct,
+            sharing_stats=self.sharing_stats,
+        )
+
+    def _next_seed(self) -> int:
+        """Return the next statevector batch seed."""
+        return int(self._batch_seeds.integers(0, 2**64, dtype=np.uint64))
 
     def _compute_direct_outputs(self, f_params_np: np.ndarray) -> np.ndarray:
         """Scatter direct output bits into a full (batch, num_outputs) bool array.
@@ -476,6 +485,9 @@ class _CompiledSamplerBase:
         f_ref = np.zeros((1, num_f), dtype=np.uint8)
         if not self._program.components:
             return self._compute_direct_outputs(f_ref)[0]
+        if self._has_statevector:
+            seed = self._next_seed()
+            return self._sample_statevector(f_ref, seed, self._layouts(None))[0]
         self._key, subkey = jax.random.split(self._key)
         return np.asarray(
             sample_program(self._program, jnp.asarray(f_ref), subkey)[0],
@@ -529,9 +541,12 @@ class _CompiledSamplerBase:
         return max(peak, 1)
 
     def _memory_budget(self) -> int:
-        """Return the memory one batch may use: half of the free device memory."""
+        """Return the memory one batch may use: half of the free device memory.
+
+        Statevector programs sample on the host, so their device is the host.
+        """
         device = jax.devices()[0]
-        if device.platform == "gpu":
+        if device.platform == "gpu" and not self._has_statevector:
             stats = device.memory_stats()
             available = stats.get("bytes_limit", 8 * 1024**3) - stats.get(
                 "bytes_in_use", 0
@@ -543,26 +558,24 @@ class _CompiledSamplerBase:
     def _threads(self, batch_size: int) -> int:
         """Return how many batches of ``batch_size`` shots run at once.
 
-        Statevector components sample one batch per numba thread on the CPU: in
-        the shared executor, or in JAX on a CPU backend as long as the batches
-        fit in the memory budget. The other executors sample one batch at a time.
+        Statevector programs sample one batch per numba thread, as long as the
+        batches fit in the memory budget; the stabilizer-rank programs sample
+        one batch at a time.
         """
         if not self._has_statevector:
             return 1
         threads = numba.get_num_threads()
         if self._trajectory_sharing:
             return threads
-        if jax.default_backend() != "cpu":
-            return 1
         fits = self._memory_budget() // (self._peak_bytes_per_sample() * batch_size)
         return max(1, min(threads, fits))
 
     def _estimate_batch_size(self) -> int:
         """Estimate the largest batch size that fits in available device memory.
 
-        JAX allocates a lane per shot in every batch that runs at once. The shared
-        executor allocates lanes as its trajectories split, so its estimate leaves
-        room for a lane per shot in one batch only. Programs with statevector
+        Without sharing, every batch that runs at once holds a lane per shot. With
+        sharing, lanes are allocated as trajectories split, so the estimate
+        leaves room for a lane per shot in one batch only. Programs with statevector
         components use at most ``STATEVECTOR_MAX_BATCH_SIZE`` lanes per batch.
         """
         peak = self._peak_bytes_per_sample()
@@ -636,31 +649,32 @@ class _CompiledSamplerBase:
         )
         num_batches = ceil((shots + compute_reference) / batch_size)
 
-        sharing = self._sharing_arguments(None)
+        statevector = self._has_statevector
+        layouts = self._layouts(None) if statevector else ()
         tasks = []
         for index in range(num_batches):
             seeds = self._channel_sampler.block_seeds(batch_size)
-            self._key, subkey = jax.random.split(self._key)
-            tasks.append((index, seeds, subkey))
+            if statevector:
+                tasks.append((index, seeds, self._next_seed()))
+            else:
+                self._key, subkey = jax.random.split(self._key)
+                tasks.append((index, seeds, subkey))
 
-        def sample_batch(
-            task: tuple[int, np.ndarray, PRNGKey],
-        ) -> jax.Array | np.ndarray:
+        def sample_batch(task: tuple) -> jax.Array | np.ndarray:
             index, seeds, key = task
             f_params_np = self._channel_sampler.sample(batch_size, seeds)
             if compute_reference and index == 0:
                 f_params_np[0] = 0
-            f_params = f_params_np if sharing else jnp.asarray(f_params_np)
-            return sample_program(self._program, f_params, key, **sharing)
+            if statevector:
+                return self._sample_statevector(f_params_np, key, layouts)
+            return sample_program(self._program, jnp.asarray(f_params_np), key)
 
-        batches = run_tasks(
-            _with_x64_of_caller(sample_batch), tasks, self._threads(batch_size)
-        )
+        batches = run_tasks(sample_batch, tasks, self._threads(batch_size))
         reference: np.ndarray | None = None
         if compute_reference:
             reference = np.asarray(batches[0][0])
             batches[0] = batches[0][1:]
-        if sharing:
+        if statevector:
             result = np.concatenate(batches)[:shots]
         else:
             # Concatenate on device, then a single d2h. The prior
@@ -747,8 +761,11 @@ class _CompiledSamplerBase:
             else np.zeros(len(columns), dtype=np.bool_)
         )
 
-        sharing = self._sharing_arguments(
-            postselection_mask, reference if xor_detector_ref else None
+        statevector = self._has_statevector
+        layouts = (
+            self._layouts(postselection_mask, reference if xor_detector_ref else None)
+            if statevector
+            else ()
         )
 
         chunk = min(batch_size, SCREEN_SHOTS)
@@ -776,16 +793,16 @@ class _CompiledSamplerBase:
             survivors = np.flatnonzero(~discarded)
             return f_params_np[survivors], start + survivors
 
-        def dispatch(task: tuple[np.ndarray, np.ndarray, PRNGKey, int]) -> None:
+        def dispatch(task: tuple) -> None:
             """Sample the shots ``shot_batch`` in one batch.
 
-            JAX batches are padded with row 0 to ``rows`` rows; the shared
-            executor takes any number of rows.
+            JAX batches are padded with row 0 to ``rows`` rows; statevector
+            batches take any number of rows.
             """
             f_batch, shot_batch, key, rows = task
             count = len(shot_batch)
-            if sharing:
-                samples = sample_program(self._program, f_batch, key, **sharing)
+            if statevector:
+                samples = self._sample_statevector(f_batch, key, layouts)
             else:
                 if count < rows:
                     padding = np.repeat(f_batch[:1], rows - count, axis=0)
@@ -831,11 +848,13 @@ class _CompiledSamplerBase:
             all_f, all_shot = np.concatenate(pending_f), np.concatenate(pending_shot)
             batches = []
             for start in range(0, ready, size):
-                self._key, subkey = jax.random.split(self._key)
+                if statevector:
+                    key = self._next_seed()
+                else:
+                    self._key, key = jax.random.split(self._key)
                 stop = start + size
-                batch = (all_f[start:stop], all_shot[start:stop], subkey, rows)
-                batches.append(batch)
-            run_tasks(_with_x64_of_caller(dispatch), batches, threads)
+                batches.append((all_f[start:stop], all_shot[start:stop], key, rows))
+            run_tasks(dispatch, batches, threads)
             pending_f, pending_shot = [all_f[ready:]], [all_shot[ready:]]
             pending -= ready
 
@@ -953,7 +972,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        trajectory_sharing: bool = False,
+        trajectory_sharing: bool | None = None,
     ):
         """Create a measurement sampler.
 
@@ -962,7 +981,8 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane (experimental).
+                with equal histories on one lane. Defaults to True for
+                ``"active_statevector"`` and False otherwise.
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -1014,7 +1034,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        trajectory_sharing: bool = False,
+        trajectory_sharing: bool | None = None,
     ):
         """Create a detector sampler.
 
@@ -1023,7 +1043,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane (experimental).
+                with equal histories on one lane. Defaults to True for
+                ``"active_statevector"`` and False otherwise.
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size and
                 fixed reference sample settings. If deterministic samples are

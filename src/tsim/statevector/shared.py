@@ -33,7 +33,6 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-import jax
 import numba
 import numpy as np
 
@@ -398,10 +397,11 @@ def _group(keys, state):
     shots of a group appear in uniformly random order.
     """
     num_shots = keys.shape[0]
-    noise = np.empty(num_shots, dtype=np.uint64)
-    for s in range(num_shots):
-        state, noise[s] = splitmix64(state)
-    order = np.argsort(noise)
+    order = np.arange(num_shots)
+    for i in range(num_shots - 1, 0, -1):
+        state, z = splitmix64(state)
+        j = z % np.uint64(i + 1)
+        order[i], order[j] = order[j], order[i]
     for column in range(keys.shape[1]):
         order = order[np.argsort(keys[order, column], kind="mergesort")]
     start = np.empty(num_shots, dtype=np.int64)
@@ -463,7 +463,9 @@ def _output_range(
 
 
 @kernel
-def _execute(f, tape, layout, width, prototype, seed, parallel_work, threads, poison):
+def _execute(
+    f, tape, layout, width, prototype, seed, share, parallel_work, threads, poison
+):
     """Sample one batch of shots with shared trajectories.
 
     ``tape`` and ``layout`` hold the arrays of ``Tape`` and ``SharingLayout``.
@@ -509,16 +511,27 @@ def _execute(f, tape, layout, width, prototype, seed, parallel_work, threads, po
     symbols = np.zeros((shots, num_words), dtype=np.uint32)
     keys = np.zeros((shots, (key_rows.shape[0] + 31) >> 5), dtype=np.uint32)
     chunks = _chunks(shots * (len(selection) + key_rows.size), parallel_work, threads)
-    for c in numba.prange(chunks):
-        lo, hi = shots * c // chunks, shots * (c + 1) // chunks
+    if chunks == 1:
+        lo, hi = 0, shots
         _pack_range(f, selection, symbols, lo, hi)
         _key_range(symbols, key_rows, keys, lo, hi)
-    order, start, count, state = _group(keys, state)
+    else:
+        for c in numba.prange(chunks):
+            lo, hi = shots * c // chunks, shots * (c + 1) // chunks
+            _pack_range(f, selection, symbols, lo, hi)
+            _key_range(symbols, key_rows, keys, lo, hi)
+    if share:
+        order, start, count, state = _group(keys, state)
+    else:
+        order = np.arange(shots)
+        start = np.arange(shots)
+        count = np.ones(shots, dtype=np.int64)
     groups = len(start)
 
-    lane_symbols = np.zeros((shots, num_words), dtype=np.uint32)
-    lane_start = np.zeros(shots, dtype=np.int64)
-    lane_count = np.zeros(shots, dtype=np.int64)
+    # NOTE: lane and dead-lane rows are written before they are read.
+    lane_symbols = np.empty((shots, num_words), dtype=np.uint32)
+    lane_start = np.empty(shots, dtype=np.int64)
+    lane_count = np.empty(shots, dtype=np.int64)
     amps = np.zeros(
         (min(max(16, 2 * groups), shots), 1 << width), dtype=prototype.dtype
     )
@@ -526,10 +539,10 @@ def _execute(f, tape, layout, width, prototype, seed, parallel_work, threads, po
         lane_symbols[g] = symbols[order[start[g]]]
         lane_start[g], lane_count[g] = start[g], count[g]
         amps[g, 0] = 1
-    dead_symbols = np.zeros((shots, num_words), dtype=np.uint32)
-    dead_start = np.zeros(shots, dtype=np.int64)
-    dead_count = np.zeros(shots, dtype=np.int64)
-    dead_action = np.zeros(shots, dtype=np.int64)
+    dead_symbols = np.empty((shots, num_words), dtype=np.uint32)
+    dead_start = np.empty(shots, dtype=np.int64)
+    dead_count = np.empty(shots, dtype=np.int64)
+    dead_action = np.empty(shots, dtype=np.int64)
     size, dead, peak, region, deviation = groups, 0, groups, 0, 0.0
     if poison:
         _poison(amps, size, 1)
@@ -547,8 +560,8 @@ def _execute(f, tape, layout, width, prototype, seed, parallel_work, threads, po
             flip = _signs(lane_symbols, size, sign_row[a], np.int64(sign_const[a]))
             work = size * span
             chunks = _chunks(work, parallel_work, threads)
-            for c in numba.prange(chunks):
-                lo, hi = work * c // chunks, work * (c + 1) // chunks
+            if chunks == 1:
+                lo, hi = 0, work
                 _rotate_range(
                     amps,
                     lo,
@@ -562,6 +575,22 @@ def _execute(f, tape, layout, width, prototype, seed, parallel_work, threads, po
                     factor[a],
                     coupling[a],
                 )
+            else:
+                for c in numba.prange(chunks):
+                    lo, hi = work * c // chunks, work * (c + 1) // chunks
+                    _rotate_range(
+                        amps,
+                        lo,
+                        hi,
+                        shift,
+                        flip,
+                        kind[a] == ROTATE_DIAG,
+                        x,
+                        z,
+                        cos[a],
+                        factor[a],
+                        coupling[a],
+                    )
             continue
         dormant = kind[a] == MEASURE_DORMANT
         if dormant and not lane_dormant[a]:
@@ -571,9 +600,13 @@ def _execute(f, tape, layout, width, prototype, seed, parallel_work, threads, po
         w1 = np.full(size, half)
         if not dormant:
             chunks = _chunks(size * span, parallel_work, threads)
-            for c in numba.prange(chunks):
-                lo, hi = size * c // chunks, size * (c + 1) // chunks
+            if chunks == 1:
+                lo, hi = 0, size
                 _weights_range(amps, lo, hi, span, x, z, i_power[a], w0, w1)
+            else:
+                for c in numba.prange(chunks):
+                    lo, hi = size * c // chunks, size * (c + 1) // chunks
+                    _weights_range(amps, lo, hi, span, x, z, i_power[a], w0, w1)
             for lane in range(size):
                 d = abs(w0[lane] + w1[lane] - 1)
                 # NOTE: written so that a NaN deviation sticks.
@@ -610,11 +643,17 @@ def _execute(f, tape, layout, width, prototype, seed, parallel_work, threads, po
             _poison(amps, size, span)
         if not dormant:
             chunks = _chunks(size * span, parallel_work, threads)
-            for c in numba.prange(chunks):
-                lo, hi = size * c // chunks, size * (c + 1) // chunks
+            if chunks == 1:
+                lo, hi = 0, size
                 _project_range(
                     amps, lo, hi, span, x, z, pivot[a], i_power[a], outcome, weight
                 )
+            else:
+                for c in numba.prange(chunks):
+                    lo, hi = size * c // chunks, size * (c + 1) // chunks
+                    _project_range(
+                        amps, lo, hi, span, x, z, pivot[a], i_power[a], outcome, weight
+                    )
         bit = branch[a]
         if bit >= 0:
             for lane in range(size):
@@ -679,8 +718,8 @@ def _execute(f, tape, layout, width, prototype, seed, parallel_work, threads, po
     shot_symbols = np.empty_like(symbols)
     samples = np.zeros((shots, output_row.shape[0]), dtype=np.bool_)
     chunks = _chunks(shots * (num_words + output_row.size), parallel_work, threads)
-    for c in numba.prange(chunks):
-        lo, hi = shots * c // chunks, shots * (c + 1) // chunks
+    if chunks == 1:
+        lo, hi = 0, shots
         _shot_range(
             symbols,
             order,
@@ -693,11 +732,39 @@ def _execute(f, tape, layout, width, prototype, seed, parallel_work, threads, po
             lo,
             hi,
         )
-    for c in numba.prange(chunks):
-        lo, hi = shots * c // chunks, shots * (c + 1) // chunks
+    else:
+        for c in numba.prange(chunks):
+            lo, hi = shots * c // chunks, shots * (c + 1) // chunks
+            _shot_range(
+                symbols,
+                order,
+                owner,
+                entry_symbols,
+                lane_branches,
+                shot_dormant,
+                coins,
+                shot_symbols,
+                lo,
+                hi,
+            )
+    if chunks == 1:
+        lo, hi = 0, shots
         _output_range(
             shot_symbols, output_row, output_const, ready, pruned_at, samples, lo, hi
         )
+    else:
+        for c in numba.prange(chunks):
+            lo, hi = shots * c // chunks, shots * (c + 1) // chunks
+            _output_range(
+                shot_symbols,
+                output_row,
+                output_const,
+                ready,
+                pruned_at,
+                samples,
+                lo,
+                hi,
+            )
     return samples, deviation, groups, peak, size, dead
 
 
@@ -705,29 +772,39 @@ def _execute(f, tape, layout, width, prototype, seed, parallel_work, threads, po
 _POISON = False
 
 
+def lane_bytes(component: StatevectorComponent) -> int:
+    """Return the peak memory of one lane of ``sample_shared_component``.
+
+    That is three rows of amplitudes (the old and the new array while lanes
+    grow) and the per-shot symbols, ranges and outputs.
+    """
+    amplitudes = 3 * 2**component.width * np.dtype(component.dtype).itemsize
+    return amplitudes + 20 * component.num_words + 88 + component.num_outputs
+
+
 def sample_shared_component(
     component: StatevectorComponent,
     layout: SharingLayout,
-    f_params: jax.Array | np.ndarray,
-    key: jax.Array,
-) -> tuple[np.ndarray, jax.Array, float, dict]:
-    """Sample one component's outputs with shared trajectories.
+    f_params: np.ndarray,
+    seed: int,
+    share: bool = True,
+) -> tuple[np.ndarray, float, dict]:
+    """Sample one component's outputs, with shared trajectories if ``share``.
 
     Args:
         component: The compiled component.
         layout: Its sharing layout.
         f_params: Error-basis bits of every shot, shape ``(B, num_f_global)``.
-        key: JAX random key.
+        seed: Seed of the batch's random numbers, below 2^64.
+        share: Whether shots with equal keys share a lane; otherwise every shot
+            has its own.
 
     Returns:
-        ``(samples, next_key, max_norm_deviation, stats)``, where ``samples`` has
-        shape ``(B, num_outputs)`` and ``stats`` counts groups and lanes.
+        ``(samples, max_norm_deviation, stats)``, where ``samples`` has shape
+        ``(B, num_outputs)`` and ``stats`` counts groups and lanes.
 
     """
     tape = layout.tape
-    key, subkey = jax.random.split(key)
-    high, low = np.asarray(jax.random.bits(subkey, (2,), dtype=np.uint32))
-    seed = (np.uint64(high) << np.uint64(32)) | np.uint64(low)
     f = np.asarray(f_params)
     tape_arrays = (
         *(tape.kind, tape.x_mask, tape.z_mask, tape.cos, tape.pivot, tape.extent),
@@ -746,10 +823,11 @@ def sample_shared_component(
         layout_arrays,
         component.width,
         np.zeros(0, dtype=component.dtype),
-        seed,
+        np.uint64(seed),
+        share,
         kernels.PARALLEL_WORK,
         numba.get_num_threads(),
         _POISON,
     )
     stats = {"groups": groups, "peak lanes": peak, "lanes": lanes, "dead": dead}
-    return samples, key, float(deviation), stats
+    return samples, float(deviation), stats

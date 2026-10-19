@@ -1,21 +1,19 @@
 """Compilation of one component for ``strategy="active_statevector"``.
 
 ``plan_component`` reads the Pauli ops off the component, schedules and
-plans them; ``lower`` turns the plan into the arrays of a ``StatevectorComponent``:
-an action tape that ``execute.run`` interprets, and the outputs as parities of
-the symbols the tape leaves behind.
+plans them; ``lower`` turns the plan into the NumPy arrays of a
+``StatevectorComponent``: an action tape that ``shared.sample_shared_component``
+runs, and the outputs as parities of the symbols the tape leaves behind.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from math import ceil
 
-import equinox as eqx
 import jax
-import jax.numpy as jnp
 import numpy as np
-from jax import Array
 from zxparam import Graph
 
 from tsim.core.params import ParamLayout
@@ -40,7 +38,8 @@ STABILIZER_RANK_HINT = (
 )
 
 
-class StatevectorComponent(eqx.Module):
+@dataclass(frozen=True, eq=False)
+class StatevectorComponent:
     """A component compiled for ``strategy="active_statevector"``: an action tape.
 
     Attributes:
@@ -64,22 +63,22 @@ class StatevectorComponent(eqx.Module):
 
     """
 
-    output_indices: tuple[int, ...] = eqx.field(static=True)
-    width: int = eqx.field(static=True)
-    dtype: str = eqx.field(static=True)
-    f_selection: Array
-    kind: Array
-    x_mask: Array
-    z_mask: Array
-    cos: Array
-    sin: Array
-    pivot: Array
-    extent: Array
-    branch: Array
-    sign_const: Array
-    sign_row: Array
-    output_const: Array
-    output_row: Array
+    output_indices: tuple[int, ...]
+    width: int
+    dtype: str
+    f_selection: np.ndarray
+    kind: np.ndarray
+    x_mask: np.ndarray
+    z_mask: np.ndarray
+    cos: np.ndarray
+    sin: np.ndarray
+    pivot: np.ndarray
+    extent: np.ndarray
+    branch: np.ndarray
+    sign_const: np.ndarray
+    sign_row: np.ndarray
+    output_const: np.ndarray
+    output_row: np.ndarray
 
     @property
     def num_actions(self) -> int:
@@ -178,19 +177,19 @@ def lower(plan: Plan, layout: ComponentLayout, dtype: str) -> StatevectorCompone
         output_indices=layout.output_indices,
         width=plan.width,
         dtype=dtype,
-        f_selection=jnp.asarray(np.array(layout.f_selection, dtype=np.int32)),
-        kind=jnp.asarray(kind),
-        x_mask=jnp.asarray(x_mask),
-        z_mask=jnp.asarray(z_mask),
-        cos=jnp.asarray(np.cos(angle).astype(real)),
-        sin=jnp.asarray(np.sin(angle).astype(real)),
-        pivot=jnp.asarray(pivot),
-        extent=jnp.asarray(extent),
-        branch=jnp.asarray(branch),
-        sign_const=jnp.asarray(sign_const),
-        sign_row=jnp.asarray(sign_row),
-        output_const=jnp.asarray([output.constant for output in plan.outputs], bool),
-        output_row=jnp.asarray(output_row),
+        f_selection=np.array(layout.f_selection, dtype=np.int32),
+        kind=kind,
+        x_mask=x_mask,
+        z_mask=z_mask,
+        cos=np.cos(angle).astype(real),
+        sin=np.sin(angle).astype(real),
+        pivot=pivot,
+        extent=extent,
+        branch=branch,
+        sign_const=sign_const,
+        sign_row=sign_row,
+        output_const=np.array([output.constant for output in plan.outputs], bool),
+        output_row=output_row,
     )
 
 
@@ -208,5 +207,5 @@ def compile_statevector_component(
 
     """
     planned, component_layout = plan_component(component, output_indices, layout)
-    dtype = jax.dtypes.canonicalize_dtype(np.complex128).name
+    dtype = "complex128" if jax.config.read("jax_enable_x64") else "complex64"
     return lower(planned, component_layout, dtype)

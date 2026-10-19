@@ -516,13 +516,13 @@ def test_a_nan_normalization_deviation_warns(monkeypatch):
     sampler = Circuit("R 0\nH 0\nT 0\nH 0\nM 0").compile_sampler(
         strategy="active_statevector", seed=0
     )
-    original = sampler_module.sample_component
+    original = sampler_module.sample_shared_component
 
-    def nan_deviation(component, f_params, key):
-        samples, key, _ = original(component, f_params, key)
-        return samples, key, float("nan")
+    def nan_deviation(*args):
+        samples, _, stats = original(*args)
+        return samples, float("nan"), stats
 
-    monkeypatch.setattr(sampler_module, "sample_component", nan_deviation)
+    monkeypatch.setattr(sampler_module, "sample_shared_component", nan_deviation)
     with pytest.warns(UserWarning, match="not normalized"):
         sampler.sample(10)
 
@@ -563,7 +563,8 @@ DETECTOR rec[-1]
         ("active_statevector", True, "cpu", 10, 6),
         ("active_statevector", True, "gpu", 10, 6),
         ("active_statevector", False, "cpu", 10, 6),
-        ("active_statevector", False, "gpu", 10, 1),
+        # NOTE: statevector programs sample on the host whatever JAX's backend.
+        ("active_statevector", False, "gpu", 10, 6),
         ("active_statevector", False, "cpu", 10**12, 1),
     ],
 )
