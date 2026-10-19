@@ -1,0 +1,1 @@
+SIZES = {'distillation': 2621440, 'cultivation_d3': 2621440, 'coherent_d3_r3': 2621440, 'cultivation_d5': 655360, 'coherent_d5_r5': 163840, 'qv_q10': 655360, 'symft_msc_d7': 163840, 'symft_msc_d7_postselected': 163840}

@@ -1,0 +1,12 @@
+distillation               batch     1 shots/call  2,621,440     10,240,441 shots/s cores 11.7
+distillation               batch  2048 shots/call  2,621,440     37,087,402 shots/s cores 12.3
+cultivation_d3             batch     1 shots/call  2,621,440     15,707,021 shots/s cores 12.0
+cultivation_d3             batch  2048 shots/call  2,621,440     46,253,958 shots/s cores 11.8
+coherent_d3_r3             batch     1 shots/call  2,621,440     15,237,387 shots/s cores 12.3
+coherent_d3_r3             batch  2048 shots/call  2,621,440     46,733,993 shots/s cores 11.9
+cultivation_d5             batch     1 shots/call    655,360      1,550,038 shots/s cores 12.2
+cultivation_d5             batch  2048 shots/call    655,360        357,706 shots/s cores 11.7
+coherent_d5_r5             batch     1 shots/call    163,840         88,316 shots/s cores 12.7
+coherent_d5_r5 batch=2048: explicit batch_size exceeds the 64 MiB packed-state limit; request a smaller batch_size
+qv_q10                     batch     1 shots/call    655,360        170,141 shots/s cores 12.7
+qv_q10                     batch  2048 shots/call    655,360         98,534 shots/s cores 11.2

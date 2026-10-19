@@ -1,0 +1,24 @@
+surface_d7_r7              one lane per shot  batch  65,536     30,716,175 shots/s accept 0.0879 width 0
+coherent_d3_r1             one lane per shot  batch  65,536    103,046,246 shots/s accept 0.9743 width 0
+coherent_d5_r1             one lane per shot  batch  65,536     90,465,380 shots/s accept 0.9287 width 0
+distillation               one lane per shot  batch  65,536     16,913,801 shots/s accept 0.0797 width 3
+distillation               shared             batch  65,536     25,389,373 shots/s accept 0.0798 width 3
+cultivation_d3             one lane per shot  batch  65,536      4,134,873 shots/s accept 0.6867 width 4
+cultivation_d3             shared             batch  65,536     19,069,684 shots/s accept 0.6867 width 4
+coherent_d3_r3             one lane per shot  batch  65,536      3,750,320 shots/s accept 0.3733 width 4
+coherent_d3_r3             shared             batch  65,536     16,153,347 shots/s accept 0.3732 width 4
+cultivation_d5             one lane per shot  batch  16,384      1,808,941 shots/s accept 0.1440 width 6
+cultivation_d5             shared             batch  16,384      8,069,793 shots/s accept 0.1440 width 6
+cultivation_d5             shared             batch  65,536     12,012,725 shots/s accept 0.1440 width 6
+coherent_d5_r5             one lane per shot  batch   4,096         63,335 shots/s accept 0.0077 width 11
+coherent_d5_r5             shared             batch   4,096         67,537 shots/s accept 0.0077 width 11
+coherent_d5_r5             shared             batch  65,536         63,591 shots/s accept 0.0079 width 11
+qv_q10                     one lane per shot  batch  16,384          5,660 shots/s accept 1.0000 width 10
+qv_q10                     shared             batch  16,384     47,664,173 shots/s accept 1.0000 width 10
+qv_q20                     one lane per shot  batch       8              2 shots/s accept 1.0000 width 20
+qv_q20                     shared             batch     128            154 shots/s accept 1.0000 width 20
+symft_msc_d7               one lane per shot  batch   4,096        196,464 shots/s accept 1.0000 width 8
+symft_msc_d7               shared             batch   4,096        204,361 shots/s accept 1.0000 width 8
+symft_msc_d7_postselected  one lane per shot  batch   4,096      1,563,061 shots/s accept 0.0056 width 8
+symft_msc_d7_postselected  shared             batch   4,096      2,907,251 shots/s accept 0.0056 width 8
+symft_msc_d7_postselected  shared             batch  65,536      6,990,263 shots/s accept 0.0056 width 8

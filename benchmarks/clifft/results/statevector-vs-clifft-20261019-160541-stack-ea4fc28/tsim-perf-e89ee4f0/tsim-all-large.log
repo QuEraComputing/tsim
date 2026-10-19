@@ -1,0 +1,16 @@
+distillation               one lane per shot  batch  65,536 shots/call  2,621,440     26,312,988 shots/s cores 6.1
+distillation               shared             batch  65,536 shots/call  2,621,440     32,925,353 shots/s cores 6.8
+cultivation_d3             one lane per shot  batch  65,536 shots/call  2,621,440     10,081,727 shots/s cores 8.0
+cultivation_d3             shared             batch  65,536 shots/call  2,621,440     30,479,930 shots/s cores 5.0
+coherent_d3_r3             one lane per shot  batch  65,536 shots/call  2,621,440      7,107,520 shots/s cores 8.5
+coherent_d3_r3             shared             batch  65,536 shots/call  2,621,440     21,332,694 shots/s cores 4.9
+cultivation_d5             one lane per shot  batch  16,384 shots/call    655,360      4,475,092 shots/s cores 6.0
+cultivation_d5             shared             batch  16,384 shots/call    655,360     15,974,758 shots/s cores 5.5
+coherent_d5_r5             one lane per shot  batch   4,096 shots/call    163,840        151,467 shots/s cores 10.9
+coherent_d5_r5             shared             batch   4,096 shots/call    163,840        155,438 shots/s cores 10.9
+qv_q10                     one lane per shot  batch  16,384 shots/call    655,360         13,728 shots/s cores 12.7
+qv_q10                     shared             batch  16,384 shots/call    655,360     92,995,736 shots/s cores 7.0
+symft_msc_d7               one lane per shot  batch   4,096 shots/call    163,840        450,453 shots/s cores 12.0
+symft_msc_d7               shared             batch   4,096 shots/call    163,840        474,630 shots/s cores 12.1
+symft_msc_d7_postselected  one lane per shot  batch   4,096 shots/call    163,840      2,973,041 shots/s cores 3.6
+symft_msc_d7_postselected  shared             batch   4,096 shots/call    163,840      6,312,808 shots/s cores 5.7

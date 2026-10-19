@@ -1,0 +1,48 @@
+surface_d7_r7              threads   1 batch     1        795,236 shots/s accept 0.0878 k_max 0
+surface_d7_r7              threads   1 batch  2048      6,176,824 shots/s accept 0.0879 k_max 0
+surface_d7_r7              threads all batch     1      7,701,373 shots/s accept 0.0878 k_max 0
+surface_d7_r7              threads all batch  2048     37,849,366 shots/s accept 0.0879 k_max 0
+coherent_d3_r1             threads   1 batch     1      6,224,652 shots/s accept 0.9743 k_max 0
+coherent_d3_r1             threads   1 batch  2048    681,616,497 shots/s accept 0.9743 k_max 0
+coherent_d3_r1             threads all batch     1     51,156,392 shots/s accept 0.9743 k_max 0
+coherent_d3_r1             threads all batch  2048    682,371,795 shots/s accept 0.9743 k_max 0
+coherent_d5_r1             threads   1 batch     1      2,388,180 shots/s accept 0.9287 k_max 0
+coherent_d5_r1             threads   1 batch  2048    275,451,422 shots/s accept 0.9287 k_max 0
+coherent_d5_r1             threads all batch     1     23,847,044 shots/s accept 0.9287 k_max 0
+coherent_d5_r1             threads all batch  2048    446,637,932 shots/s accept 0.9287 k_max 0
+distillation               threads   1 batch     1      1,085,903 shots/s accept 0.0798 k_max 3
+distillation               threads   1 batch  2048      3,445,531 shots/s accept 0.0797 k_max 3
+distillation               threads all batch     1     10,672,816 shots/s accept 0.0798 k_max 3
+distillation               threads all batch  2048     31,416,765 shots/s accept 0.0797 k_max 3
+cultivation_d3             threads   1 batch     1      1,790,540 shots/s accept 0.6868 k_max 4
+cultivation_d3             threads   1 batch  2048      4,984,081 shots/s accept 0.6868 k_max 4
+cultivation_d3             threads all batch     1     16,515,726 shots/s accept 0.6867 k_max 4
+cultivation_d3             threads all batch  2048     40,283,613 shots/s accept 0.6868 k_max 4
+coherent_d3_r3             threads   1 batch     1      1,679,015 shots/s accept 0.3732 k_max 4
+coherent_d3_r3             threads   1 batch  2048      5,105,352 shots/s accept 0.3733 k_max 4
+coherent_d3_r3             threads all batch     1     15,948,100 shots/s accept 0.3732 k_max 4
+coherent_d3_r3             threads all batch  2048     42,146,543 shots/s accept 0.3732 k_max 4
+cultivation_d5             threads   1 batch     1        172,209 shots/s accept 0.1442 k_max 10
+cultivation_d5             threads   1 batch  2048         88,896 shots/s accept 0.1437 k_max 10
+cultivation_d5             threads all batch     1      1,651,913 shots/s accept 0.1439 k_max 10
+cultivation_d5             threads all batch  2048        330,742 shots/s accept 0.1436 k_max 10
+coherent_d5_r5             threads   1 batch     1          9,551 shots/s accept 0.0076 k_max 13
+coherent_d5_r5 threads=1 batch=2048: explicit batch_size exceeds the 64 MiB packed-state limit; request a smaller batch_size
+coherent_d5_r5             threads all batch     1         88,468 shots/s accept 0.0078 k_max 13
+coherent_d5_r5 threads=auto batch=2048: explicit batch_size exceeds the 64 MiB packed-state limit; request a smaller batch_size
+qv_q10                     threads   1 batch     1         19,032 shots/s accept 1.0000 k_max 10
+qv_q10                     threads   1 batch  2048         25,743 shots/s accept 1.0000 k_max 10
+qv_q10                     threads all batch     1        173,835 shots/s accept 1.0000 k_max 10
+qv_q10                     threads all batch  2048        100,767 shots/s accept 1.0000 k_max 10
+qv_q20                     threads   1 batch     1              4 shots/s accept 1.0000 k_max 20
+qv_q20 threads=1 batch=2048: explicit batch_size exceeds the 64 MiB packed-state limit; request a smaller batch_size
+qv_q20                     threads all batch     1             17 shots/s accept 1.0000 k_max 20
+qv_q20 threads=auto batch=2048: packed batch_size is incompatible with intra-shot workers
+symft_msc_d7               threads   1 batch     1            200 shots/s accept 1.0000 k_max 19
+symft_msc_d7 threads=1 batch=2048: explicit batch_size exceeds the 64 MiB packed-state limit; request a smaller batch_size
+symft_msc_d7               threads all batch     1          1,381 shots/s accept 1.0000 k_max 19
+symft_msc_d7 threads=auto batch=2048: explicit batch_size exceeds the 64 MiB packed-state limit; request a smaller batch_size
+symft_msc_d7_postselected  threads   1 batch     1          7,180 shots/s accept 0.0054 k_max 19
+symft_msc_d7_postselected threads=1 batch=2048: explicit batch_size exceeds the 64 MiB packed-state limit; request a smaller batch_size
+symft_msc_d7_postselected  threads all batch     1         38,671 shots/s accept 0.0054 k_max 19
+symft_msc_d7_postselected threads=auto batch=2048: explicit batch_size exceeds the 64 MiB packed-state limit; request a smaller batch_size
