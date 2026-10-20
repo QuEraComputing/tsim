@@ -157,6 +157,16 @@ def _check_norm(max_norm_deviation: float | jax.Array, threshold: float) -> None
         )
 
 
+def _direct_bits(program: CompiledProgram, f_params: jax.Array) -> jax.Array:
+    """Evaluate direct outputs, including constants with f-index -1."""
+    indices = program.direct_f_indices
+    has_f = indices >= 0
+    bits = jnp.broadcast_to(program.direct_flips, (f_params.shape[0], len(indices)))
+    return bits.at[:, has_f].set(
+        bits[:, has_f] ^ f_params[:, indices[has_f]].astype(jnp.bool_)
+    )
+
+
 def sample_program(
     program: CompiledProgram, f_params: jax.Array, key: PRNGKey
 ) -> jax.Array:
@@ -176,17 +186,7 @@ def sample_program(
         return jnp.zeros((f_params.shape[0], 0), dtype=jnp.bool_)
     results = []
     if len(program.direct_f_indices) > 0:
-        direct_bits = (
-            f_params[:, program.direct_f_indices].astype(jnp.bool_)
-            ^ program.direct_flips
-        )
-        results.append(direct_bits)
-    if len(program.constant_bits) > 0:
-        results.append(
-            jnp.broadcast_to(
-                program.constant_bits, (f_params.shape[0], len(program.constant_bits))
-            )
-        )
+        results.append(_direct_bits(program, f_params))
     for component in program.components:
         assert isinstance(component, CompiledComponent)
         samples, key, max_norm_deviation = sample_component(component, f_params, key)
@@ -204,7 +204,6 @@ def sample_statevector_program(
     seed: int,
     layouts: tuple[SharingLayout, ...],
     direct_flips: np.ndarray,
-    constant_bits: np.ndarray,
     *,
     share: bool,
     sharing_stats: deque[dict] | None = None,
@@ -217,7 +216,6 @@ def sample_statevector_program(
         seed: Seed of the batch's random numbers, below 2^64.
         layouts: The sharing layout of each component.
         direct_flips: The flip of each direct output, with its reference bit.
-        constant_bits: The constant outputs, with their reference bits.
         share: Whether shots with equal histories share a lane.
         sharing_stats: If given, the executor appends its lane counts.
 
@@ -248,7 +246,6 @@ def sample_statevector_program(
         f_params,
         program.direct_f_indices,
         direct_flips,
-        constant_bits,
         component_bits,
         program.output_order,
         out,
@@ -277,22 +274,22 @@ def _write_direct_detectors(f, f_indices, flips, columns, postselect, out):
 
 
 @kernel
-def _gather_outputs(f, f_indices, flips, constant_bits, component_bits, order, out):
+def _gather_outputs(f, f_indices, flips, component_bits, order, out):
     """Write every row's outputs into ``out`` in their original order.
 
     Output ``k`` of the concatenation goes to column ``order[k]``: first the
-    direct outputs ``f[row, f_indices[j]] ^ flips[j]``, then the constant bits,
-    then ``component_bits``.
+    direct outputs (just ``flips[j]`` when ``f_indices[j]`` is -1), then
+    ``component_bits``.
     """
     num_direct = len(f_indices)
-    num_constant = len(constant_bits)
     for row in numba.prange(f.shape[0]):
         for j in range(num_direct):
-            out[row, order[j]] = (f[row, f_indices[j]] != 0) ^ flips[j]
-        for j in range(num_constant):
-            out[row, order[num_direct + j]] = constant_bits[j]
+            bit = flips[j]
+            if f_indices[j] >= 0:
+                bit ^= f[row, f_indices[j]] != 0
+            out[row, order[j]] = bit
         for j in range(component_bits.shape[1]):
-            out[row, order[num_direct + num_constant + j]] = component_bits[row, j]
+            out[row, order[num_direct + j]] = component_bits[row, j]
 
 
 def _nbytes(tree: object) -> int:
@@ -438,9 +435,7 @@ class _StatevectorBackend:
         self._num_detectors = num_detectors
         self._share = share
         self._seeds = np.random.default_rng([seed, 1])
-        self._layouts: dict[
-            bytes, tuple[tuple[SharingLayout, ...], np.ndarray, np.ndarray]
-        ] = {}
+        self._layouts: dict[bytes, tuple[tuple[SharingLayout, ...], np.ndarray]] = {}
         self.sharing_stats: deque[dict] = deque(maxlen=10_000)
 
     def max_threads(self) -> int:
@@ -474,22 +469,21 @@ class _StatevectorBackend:
         pad_to: int | None = None,
     ) -> np.ndarray:
         """Sample the batch; shots that a ``mask`` detector discards are pruned."""
-        layouts, direct_flips, constant_bits = self.layouts(mask, flip)
+        layouts, direct_flips = self.layouts(mask, flip)
         return sample_statevector_program(
             self._program,
             f_params,
             seed,
             layouts,
             direct_flips,
-            constant_bits,
             share=self._share,
             sharing_stats=self.sharing_stats,
         )
 
     def layouts(
         self, mask: np.ndarray | None, flip: np.ndarray | None
-    ) -> tuple[tuple[SharingLayout, ...], np.ndarray, np.ndarray]:
-        """Return sharing layouts and the referenced direct and constant bits."""
+    ) -> tuple[tuple[SharingLayout, ...], np.ndarray]:
+        """Return the components' sharing layouts and the direct outputs' flips."""
         program = self._program
         postselected = np.zeros(program.num_outputs, dtype=np.bool_)
         if mask is not None:
@@ -505,16 +499,8 @@ class _StatevectorBackend:
                 layouts.append(
                     sharing_layout(component, postselected[outputs], flip[outputs])
                 )
-            num_direct = len(program.direct_f_indices)
-            direct = program.output_order[:num_direct]
-            constant = program.output_order[
-                num_direct : num_direct + len(program.constant_bits)
-            ]
-            self._layouts[key] = (
-                tuple(layouts),
-                program.direct_flips ^ flip[direct],
-                program.constant_bits ^ flip[constant],
-            )
+            direct = program.output_order[: len(program.direct_f_indices)]
+            self._layouts[key] = (tuple(layouts), program.direct_flips ^ flip[direct])
         return self._layouts[key]
 
     def concatenate(self, batches: list) -> np.ndarray:
@@ -598,21 +584,11 @@ class _CompiledSamplerBase:
         assert np.array_equal(
             np.sort(program.output_order), np.arange(program.num_outputs)
         )
-        num_direct = len(program.direct_f_indices)
-        self._constant_bits = program.constant_bits
-        self._constant_global_indices = program.output_order[
-            num_direct : num_direct + len(program.constant_bits)
-        ]
-        columns = program.output_order[: num_direct + len(program.constant_bits)]
+        columns = program.output_order[: len(program.direct_f_indices)]
         is_detector = columns < self._num_detectors
         self._direct_detectors = (
-            np.concatenate(
-                [
-                    program.direct_f_indices,
-                    np.full(len(program.constant_bits), -1, dtype=np.int32),
-                ]
-            )[is_detector],
-            np.concatenate([program.direct_flips, program.constant_bits])[is_detector],
+            program.direct_f_indices[is_detector],
+            program.direct_flips[is_detector],
             columns[is_detector],
         )
         self._direct_detector_mask = np.zeros(self._num_detectors, dtype=np.bool_)
@@ -643,7 +619,6 @@ class _CompiledSamplerBase:
             reference[program.output_order[: len(program.direct_f_indices)]] = (
                 program.direct_flips
             )
-            reference[self._constant_global_indices] = self._constant_bits
             return reference
         num_f = self._channel_sampler.signature_matrix.shape[1]
         f_ref = np.zeros((1, num_f), dtype=np.uint8)
@@ -918,14 +893,13 @@ class _CompiledSamplerBase:
         return result
 
     def _sample_direct(self, shots: int) -> np.ndarray:
-        """Sample a program whose outputs are all direct or constant."""
+        """Sample a program without components, whose outputs are all direct."""
         program = self._program
         f_params = self._channel_sampler.sample(shots)
         num_direct = len(program.direct_f_indices)
         # NOTE: typical surface-code detector circuits need no copy.
         if (
             program.output_reindex is None
-            and len(program.constant_bits) == 0
             and not program.direct_flips.any()
             and np.array_equal(program.direct_f_indices, np.arange(num_direct))
         ):
@@ -936,7 +910,6 @@ class _CompiledSamplerBase:
             f_params,
             program.direct_f_indices,
             program.direct_flips,
-            program.constant_bits,
             np.zeros((shots, 0), dtype=np.bool_),
             program.output_order,
             out,
@@ -946,7 +919,6 @@ class _CompiledSamplerBase:
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""
         n_direct = len(self._program.direct_f_indices)
-        n_constant = len(self._program.constant_bits)
 
         c_graphs = []
         c_params = []
@@ -1008,7 +980,7 @@ class _CompiledSamplerBase:
         )
 
         return (
-            f"{type(self).__name__}({n_direct} direct, {n_constant} constant, "
+            f"{type(self).__name__}({n_direct} direct, "
             f"{statevector}"
             f"{np.sum(c_graphs)} graphs, "
             f"{error_channel_bits} error channel bits, "
@@ -1243,10 +1215,9 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 skips = mask & self._direct_detector_mask
             else:
                 skips = mask.copy()
-            constant_detectors = self._constant_global_indices < num_detectors
-            skips[
-                self._constant_global_indices[constant_detectors]
-            ] &= self._constant_bits[constant_detectors] & (
+            indices, flips, columns = self._direct_detectors
+            constant = indices < 0
+            skips[columns[constant]] &= flips[constant] & (
                 not use_detector_reference_sample
             )
             postselection_mask = (
@@ -1357,17 +1328,10 @@ class CompiledStateProbs(_CompiledSamplerBase):
         p_joint = jnp.ones(batch_size)
 
         if len(self._program.direct_f_indices) > 0:
-            direct_bits = (
-                f_samples[:, self._program.direct_f_indices].astype(jnp.bool_)
-                ^ self._program.direct_flips
-            )
+            direct_bits = _direct_bits(self._program, f_samples)
             n_direct = len(self._program.direct_f_indices)
             targets = state[self._program.output_order[:n_direct]]
             p_joint = p_joint * (direct_bits == targets).all(axis=1)
-
-        if len(self._constant_bits) > 0:
-            targets = state[self._constant_global_indices]
-            p_joint = p_joint * np.array_equal(self._constant_bits, targets)
 
         for component in self._program.components:
             assert isinstance(component, CompiledComponent)

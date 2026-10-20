@@ -1,4 +1,4 @@
-"""compile_program on zxparam: plugging normalization, the direct and constant paths."""
+"""compile_program on zxparam: plugging normalization and direct outputs."""
 
 import itertools
 from fractions import Fraction
@@ -14,7 +14,6 @@ from tsim.circuit import Circuit
 from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import (
     _plugged,
-    classify_constant,
     classify_direct,
     compile_program,
 )
@@ -135,7 +134,7 @@ DETECTOR rec[-1]
 
 
 @pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
-def test_deterministic_detectors_of_a_noiseless_circuit_take_the_constant_path(
+def test_deterministic_detectors_of_a_noiseless_circuit_take_the_direct_path(
     strategy,
 ):
     circuit = Circuit(NOISELESS_DETERMINISTIC_DETECTORS)
@@ -146,8 +145,8 @@ def test_deterministic_detectors_of_a_noiseless_circuit_take_the_constant_path(
     )
     assert len(program.components) == 1
     assert program.components[0].output_indices == (0,)
-    assert len(program.direct_f_indices) == 0
-    assert np.asarray(program.constant_bits).tolist() == [False, True, True]
+    assert program.direct_f_indices.tolist() == [-1, -1, -1]
+    assert program.direct_flips.tolist() == [False, True, True]
     assert np.asarray(program.output_order).tolist() == [1, 2, 3, 0]
     assert program.output_reindex is not None
 
@@ -190,9 +189,6 @@ def test_all_constant_detectors_skip_jax(monkeypatch, strategy):
 def test_direct_and_constant_detectors_are_reassembled_in_order(
     strategy, with_component
 ):
-    # Detector 0 is constant 1, detector 1 a direct error bit and detector 2
-    # constant 0, so the direct output comes first in the concatenated layout;
-    # detector 3 (if present) is a compiled component.
     text = (
         "R 0 1 2 3\nX 0\nX_ERROR(0.5) 1\nM 0 1 2\n"
         "DETECTOR rec[-3]\nDETECTOR rec[-2]\nDETECTOR rec[-1]"
@@ -202,9 +198,9 @@ def test_direct_and_constant_detectors_are_reassembled_in_order(
     sampler = Circuit(text).compile_detector_sampler(strategy=strategy, seed=0)
     program = sampler._program
     assert len(program.components) == int(with_component)
-    assert len(program.direct_f_indices) == 1
-    assert np.asarray(program.constant_bits).tolist() == [True, False]
-    assert program.output_reindex is not None
+    assert program.direct_f_indices.tolist() == [-1, 0, -1]
+    assert program.direct_flips.tolist() == [True, False, False]
+    assert program.output_reindex is None
 
     samples = sampler.sample(200, batch_size=50)
     assert samples[:, 0].all() and not samples[:, 2].any()
@@ -216,7 +212,7 @@ def test_constant_outputs_condition_the_joint_probability():
     # Measurement 0 is random (H T H |0>); measurements 1 and 2 are constant.
     circuit = Circuit("R 0 1 2\nH 0\nT 0\nH 0\nX 2\nM 0 1 2")
     probs = CompiledStateProbs(circuit, seed=0)
-    assert len(probs._program.constant_bits) == 2
+    assert probs._program.direct_f_indices.tolist() == [-1, -1]
     p_one = np.sin(np.pi / 8) ** 2
     for m0, p in ((False, 1 - p_one), (True, p_one)):
         got = probs.probability_of(np.array([m0, False, True]), batch_size=1)[0]
@@ -245,9 +241,10 @@ def _direct_candidate(
 
 
 @pytest.mark.parametrize("value, flip", [(0, False), (1, True)])
-@pytest.mark.parametrize("basis_index", [1, 5])
+@pytest.mark.parametrize("basis_index", [-1, 1, 5])
 def test_classify_direct_reads_the_basis_index_and_flip(value, flip, basis_index):
-    component = _direct_candidate(value=value, params=(LAYOUT.basis(basis_index),))
+    params = () if basis_index == -1 else (LAYOUT.basis(basis_index),)
+    component = _direct_candidate(value=value, params=params)
     assert classify_direct(component, LAYOUT) == (basis_index, flip)
 
 
@@ -260,8 +257,9 @@ def test_classify_direct_reads_the_basis_index_and_flip(value, flip, basis_index
             _direct_candidate(params=(LAYOUT.basis(0), LAYOUT.basis(1))),
             id="two-params",
         ),
-        pytest.param(_direct_candidate(params=()), id="no-param"),
-        pytest.param(_direct_candidate(value=1, params=()), id="no-param-flip"),
+        pytest.param(
+            _direct_candidate(value=Fraction(1, 2), params=()), id="non-pauli-phase"
+        ),
         pytest.param(_direct_candidate(edge_type=EdgeType.SIMPLE), id="simple-edge"),
         pytest.param(_direct_candidate(spider_type=VertexType.X), id="x-spider"),
         pytest.param(
@@ -272,35 +270,6 @@ def test_classify_direct_reads_the_basis_index_and_flip(value, flip, basis_index
 )
 def test_classify_direct_rejects_other_components(candidate):
     assert classify_direct(candidate, LAYOUT) is None
-
-
-@pytest.mark.parametrize("value, bit", [(0, False), (1, True)])
-def test_classify_constant_reads_the_bit(value, bit):
-    assert classify_constant(_direct_candidate(value=value, params=())) is bit
-
-
-@pytest.mark.parametrize(
-    "candidate",
-    [
-        pytest.param(_direct_candidate(), id="basis-param"),
-        pytest.param(_direct_candidate(params=(LAYOUT.error(0),)), id="error-param"),
-        pytest.param(
-            _direct_candidate(params=(), edge_type=EdgeType.SIMPLE), id="simple-edge"
-        ),
-        pytest.param(
-            _direct_candidate(params=(), spider_type=VertexType.X), id="x-spider"
-        ),
-        pytest.param(
-            _direct_candidate(params=(), output_domain=Domain.QUANTUM),
-            id="quantum-output",
-        ),
-        pytest.param(
-            _direct_candidate(value=Fraction(1, 2), params=()), id="non-pauli-phase"
-        ),
-    ],
-)
-def test_classify_constant_rejects_other_components(candidate):
-    assert classify_constant(candidate) is None
 
 
 @pytest.mark.parametrize("output_domain", [Domain.CLASSICAL, Domain.QUANTUM])

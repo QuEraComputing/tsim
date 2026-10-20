@@ -13,7 +13,7 @@ import pytest
 
 import tsim.statevector.program as program
 from tsim.circuit import Circuit
-from tsim.compile.pipeline import classify_constant, classify_direct, compile_program
+from tsim.compile.pipeline import classify_direct, compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent
 from tsim.statevector.pbc import ComponentLayout
@@ -36,10 +36,7 @@ def test_plans_match_stabilizer_rank(name, sample_detectors):
     joint = compile_program(prepared, mode="joint", strategy="cat5").components
     by_outputs = {c.output_indices: c for c in joint}
     for component in prepared.graph.connected_components():
-        if (
-            classify_direct(component, prepared.layout) is not None
-            or classify_constant(component) is not None
-        ):
+        if classify_direct(component, prepared.layout) is not None:
             continue
         indices = output_indices(component)
         planned, component_layout = plan_component(component, indices, prepared.layout)

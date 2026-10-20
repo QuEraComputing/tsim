@@ -82,9 +82,9 @@ def _direct_outputs(sampler, f_params: np.ndarray) -> np.ndarray:
     program = sampler._program
     columns = program.output_order[: len(program.direct_f_indices)]
     out = np.zeros((len(f_params), program.num_outputs), dtype=np.bool_)
-    out[:, columns] = (
-        f_params[:, program.direct_f_indices] != 0
-    ) ^ program.direct_flips
+    out[:, columns] = program.direct_flips
+    has_f = program.direct_f_indices >= 0
+    out[:, columns[has_f]] ^= f_params[:, program.direct_f_indices[has_f]] != 0
     return out
 
 
