@@ -514,7 +514,7 @@
     <span class=n>seed</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
     <span class=n>trajectory_sharing</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>CompiledDetectorSampler</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Compile circuit into a detector sampler.</p> <p>Connected components whose single output is deterministically given by one f-variable are handled via a fast direct path (no compilation or autoregressive sampling). Remaining components go through the full compilation pipeline.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>strategy</code> </td> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">SamplingStrategy</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Compile circuit into a detector sampler.</p> <p>Connected components whose single output is deterministically given by one f-variable, or is a constant, are handled via a fast direct path (no compilation or autoregressive sampling). Remaining components go through the full compilation pipeline.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>strategy</code> </td> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">SamplingStrategy</span>
 
 
   <span class="doc doc-labels">
@@ -566,9 +566,9 @@
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Compile circuit into a detector sampler.</span>
 
 <span class=sd>    Connected components whose single output is deterministically given by</span>
-<span class=sd>    one f-variable are handled via a fast direct path (no compilation or</span>
-<span class=sd>    autoregressive sampling).  Remaining components go through the full</span>
-<span class=sd>    compilation pipeline.</span>
+<span class=sd>    one f-variable, or is a constant, are handled via a fast direct path (no</span>
+<span class=sd>    compilation or autoregressive sampling).  Remaining components go</span>
+<span class=sd>    through the full compilation pipeline.</span>
 
 <span class=sd>    Args:</span>
 <span class=sd>        strategy: &quot;active_statevector&quot; (the default) to simulate each</span>
