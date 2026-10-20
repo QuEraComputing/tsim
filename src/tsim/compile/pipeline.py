@@ -107,10 +107,10 @@ def compile_program(
 
     return CompiledProgram(
         components=tuple(compiled_components),
-        direct_f_indices=jnp.array([e[1] for e in direct_entries], dtype=jnp.int32),
-        direct_flips=jnp.array([e[2] for e in direct_entries], dtype=jnp.bool_),
-        output_order=jnp.asarray(output_order),
-        output_reindex=None if is_identity else jnp.asarray(reindex),
+        direct_f_indices=np.array([e[1] for e in direct_entries], dtype=np.int32),
+        direct_flips=np.array([e[2] for e in direct_entries], dtype=np.bool_),
+        output_order=output_order,
+        output_reindex=None if is_identity else reindex,
         num_outputs=prepared.num_outputs,
         num_detectors=prepared.num_detectors,
     )

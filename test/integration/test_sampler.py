@@ -117,9 +117,9 @@ def test_sample_program_raises_on_component_norm_deviation(monkeypatch):
     )
     program = CompiledProgram(
         components=components,
-        direct_f_indices=jnp.array([], dtype=jnp.int32),
-        direct_flips=jnp.array([], dtype=jnp.bool_),
-        output_order=jnp.array([0, 1]),
+        direct_f_indices=np.array([], dtype=np.int32),
+        direct_flips=np.array([], dtype=np.bool_),
+        output_order=np.array([0, 1]),
         output_reindex=None,
         num_outputs=2,
         num_detectors=0,

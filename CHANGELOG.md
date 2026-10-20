@@ -31,6 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The samplers now default to `strategy="active_statevector"`; pass
   `strategy="cat5"` for the previous stabilizer-rank default.
   `CompiledStateProbs` keeps `"cat5"`. (#203)
+- `strategy="active_statevector"` no longer uses JAX: it samples on the CPU
+  with numba kernels, also when JAX has a GPU, and trajectory sharing is on
+  by default (`trajectory_sharing=None` means True for this strategy and
+  False for the others). Amplitudes are complex128. Postselected
+  detectors of a component prune its shots with sharing off as well, and also
+  when no direct detector is postselected. (#199)
+- Without a `batch_size`, a statevector call is split into one batch per
+  numba thread whenever each batch gets at least 4096 shots, and smaller
+  calls run as one batch on the parallel kernels. An explicit `batch_size`
+  keeps samples independent of the thread count. (#199)
+- Noise sampling runs in numba kernels, so the samples for a given seed
+  differ from earlier versions; `numba>=0.61` is now a dependency. (#199)
 - Tsim now uses zxparam instead of pyzx-param. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zxparam.
 - `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`.
 - In `Circuit.get_graph()` (and the `"zx"` diagram), every detector and observable has a classical output boundary, with ports after the qubit outputs, so the graph's tensor is the circuit's channel together with the detector and observable bits.

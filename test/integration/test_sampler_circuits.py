@@ -33,8 +33,9 @@ def test_detector_sampler_bell_state_with_measurement_error():
         """)
     sampler = c.compile_detector_sampler(seed=1)
 
-    d = sampler.sample(10)
-    assert np.count_nonzero(d) == 4
+    shots = 100_000
+    d = sampler.sample(shots)
+    assert abs(np.count_nonzero(d) / shots - 0.3) < 5 * np.sqrt(0.3 * 0.7 / shots)
 
 
 def test_t_gate():

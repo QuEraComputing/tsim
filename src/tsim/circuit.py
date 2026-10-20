@@ -865,7 +865,7 @@ class Circuit:
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        trajectory_sharing: bool = False,
+        trajectory_sharing: bool | None = None,
     ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
@@ -873,9 +873,12 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting").
+                "bss", "cutting"). "active_statevector" samples on the CPU, up
+                to ``numba.get_num_threads()`` batches at once, each with its
+                own memory.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane (experimental).
+                with equal histories on one lane. Defaults to True for
+                ``"active_statevector"`` and False otherwise.
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set
@@ -896,7 +899,7 @@ class Circuit:
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        trajectory_sharing: bool = False,
+        trajectory_sharing: bool | None = None,
     ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
 
@@ -909,9 +912,12 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting").
+                "bss", "cutting"). "active_statevector" samples on the CPU, up
+                to ``numba.get_num_threads()`` batches at once, each with its
+                own memory.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane (experimental).
+                with equal histories on one lane. Defaults to True for
+                ``"active_statevector"`` and False otherwise.
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
                 deterministic samples are needed, the batch size should be set

@@ -1,21 +1,19 @@
 """Compilation of one component for ``strategy="active_statevector"``.
 
 ``plan_component`` reads the Pauli ops off the component, schedules and
-plans them; ``lower`` turns the plan into the arrays of a ``StatevectorComponent``:
-an action tape that ``execute.run`` interprets, and the outputs as parities of
-the symbols the tape leaves behind.
+plans them; ``lower`` turns the plan into the NumPy arrays of a
+``StatevectorComponent``: an action tape that ``shared.sample_shared_component``
+runs, and the outputs as parities of the symbols the tape leaves behind.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from math import ceil
+from typing import ClassVar, NamedTuple
 
-import equinox as eqx
-import jax
-import jax.numpy as jnp
 import numpy as np
-from jax import Array
 from zxparam import Graph
 
 from tsim.core.params import ParamLayout
@@ -31,22 +29,15 @@ MEASURE_DORMANT = 4
 
 MAX_WIDTH = 30
 
-# NOTE: outcome probabilities are normalized by the measured weights, so only
-# drift beyond rounding (~1e-7 per rotation in complex64) warns.
-_NORM_WARNING_THRESHOLDS = {"complex64": 1e-3, "complex128": 1e-9}
-
 STABILIZER_RANK_HINT = (
     "Use a stabilizer-rank strategy such as strategy='cat5' for this circuit."
 )
 
 
-class StatevectorComponent(eqx.Module):
-    """A component compiled for ``strategy="active_statevector"``: an action tape.
+class Tape(NamedTuple):
+    """A component's actions and outputs as NumPy arrays, one row per action.
 
     Attributes:
-        output_indices: Global output index of each output slot.
-        width: Number of array axes W; lanes hold ``2^W`` amplitudes.
-        dtype: ``"complex64"`` or ``"complex128"``.
         f_selection: Global f-bit index of each component f-bit.
         kind: Kernel of each action (``ROTATE_DIAG`` … ``MEASURE_DORMANT``).
         x_mask: X mask of the action's Pauli on the array axes.
@@ -54,6 +45,8 @@ class StatevectorComponent(eqx.Module):
         cos: cos θ of each rotation.
         sin: sin θ of each rotation.
         pivot: Axis an active measurement resets to ``|0⟩``.
+        extent: One plus the highest axis the action can touch: amplitudes at
+            ``2^extent`` and above are zero before and after it.
         branch: Symbol a measurement sets, -1 for a rotation.
         sign_const: Constant of each rotation's sign.
         sign_row: Symbol bits of each rotation's sign, shape ``(A, num_words)``.
@@ -62,41 +55,57 @@ class StatevectorComponent(eqx.Module):
 
     """
 
-    output_indices: tuple[int, ...] = eqx.field(static=True)
-    width: int = eqx.field(static=True)
-    dtype: str = eqx.field(static=True)
-    f_selection: Array
-    kind: Array
-    x_mask: Array
-    z_mask: Array
-    cos: Array
-    sin: Array
-    pivot: Array
-    branch: Array
-    sign_const: Array
-    sign_row: Array
-    output_const: Array
-    output_row: Array
+    f_selection: np.ndarray
+    kind: np.ndarray
+    x_mask: np.ndarray
+    z_mask: np.ndarray
+    cos: np.ndarray
+    sin: np.ndarray
+    pivot: np.ndarray
+    extent: np.ndarray
+    branch: np.ndarray
+    sign_const: np.ndarray
+    sign_row: np.ndarray
+    output_const: np.ndarray
+    output_row: np.ndarray
+
+
+@dataclass(frozen=True, eq=False)
+class StatevectorComponent:
+    """A component compiled for ``strategy="active_statevector"``.
+
+    Its lanes hold ``2^width`` complex128 amplitudes.
+
+    Attributes:
+        output_indices: Global output index of each output slot.
+        width: Number of array axes W.
+        tape: The actions and outputs.
+
+    """
+
+    output_indices: tuple[int, ...]
+    width: int
+    tape: Tape
+
+    # NOTE: outcome probabilities are normalized by the measured weights, so
+    # only drift beyond rounding warns.
+    norm_warning_threshold: ClassVar[float] = 1e-9
+    """Largest normalization deviation that sampling tolerates without a warning."""
 
     @property
     def num_actions(self) -> int:
         """Return the number of actions on the tape."""
-        return int(self.kind.shape[0])
+        return int(self.tape.kind.shape[0])
 
     @property
     def num_words(self) -> int:
         """Return the number of uint32 words that hold a lane's symbols."""
-        return int(self.sign_row.shape[1])
+        return int(self.tape.sign_row.shape[1])
 
     @property
     def num_outputs(self) -> int:
         """Return the number of output slots."""
         return len(self.output_indices)
-
-    @property
-    def norm_warning_threshold(self) -> float:
-        """Return the largest normalization deviation that passes without a warning."""
-        return _NORM_WARNING_THRESHOLDS[self.dtype]
 
 
 def plan_component(
@@ -136,7 +145,7 @@ def _pack(terms: Iterable[int], num_words: int) -> np.ndarray:
     return row
 
 
-def lower(plan: Plan, layout: ComponentLayout, dtype: str) -> StatevectorComponent:
+def lower(plan: Plan, layout: ComponentLayout) -> StatevectorComponent:
     """Return the action tape of ``plan``."""
     num_actions = len(plan.actions)
     num_words = max(1, ceil(plan.num_symbols / 32))
@@ -145,15 +154,18 @@ def lower(plan: Plan, layout: ComponentLayout, dtype: str) -> StatevectorCompone
     z_mask = np.zeros(num_actions, dtype=np.uint32)
     angle = np.zeros(num_actions, dtype=np.float64)
     pivot = np.zeros(num_actions, dtype=np.int32)
+    extent = np.zeros(num_actions, dtype=np.int32)
     branch = np.full(num_actions, -1, dtype=np.int32)
     sign_const = np.zeros(num_actions, dtype=bool)
     sign_row = np.zeros((num_actions, num_words), dtype=np.uint32)
+    active = 0
     for a, action in enumerate(plan.actions):
         if isinstance(action, Rotate):
             kind[a] = ROTATE if action.x else ROTATE_DIAG
             x_mask[a], z_mask[a], angle[a] = action.x, action.z, action.angle
             sign_const[a] = action.sign.constant
             sign_row[a] = _pack(action.sign.terms, num_words)
+            active |= action.x | action.z
         elif isinstance(action, MeasureActive):
             kind[a] = MEASURE if action.x else MEASURE_DIAG
             x_mask[a], z_mask[a] = action.x, action.z
@@ -161,35 +173,34 @@ def lower(plan: Plan, layout: ComponentLayout, dtype: str) -> StatevectorCompone
         else:
             kind[a] = MEASURE_DORMANT
             branch[a] = action.branch
+        extent[a] = active.bit_length()
+        if isinstance(action, MeasureActive):
+            active &= ~(1 << action.pivot)
     output_row = np.zeros((len(plan.outputs), num_words), dtype=np.uint32)
     for slot, output in enumerate(plan.outputs):
         output_row[slot] = _pack(output.terms, num_words)
-    real = np.finfo(dtype).dtype
-    return StatevectorComponent(
-        output_indices=layout.output_indices,
-        width=plan.width,
-        dtype=dtype,
-        f_selection=jnp.asarray(np.array(layout.f_selection, dtype=np.int32)),
-        kind=jnp.asarray(kind),
-        x_mask=jnp.asarray(x_mask),
-        z_mask=jnp.asarray(z_mask),
-        cos=jnp.asarray(np.cos(angle).astype(real)),
-        sin=jnp.asarray(np.sin(angle).astype(real)),
-        pivot=jnp.asarray(pivot),
-        branch=jnp.asarray(branch),
-        sign_const=jnp.asarray(sign_const),
-        sign_row=jnp.asarray(sign_row),
-        output_const=jnp.asarray([output.constant for output in plan.outputs], bool),
-        output_row=jnp.asarray(output_row),
+    tape = Tape(
+        f_selection=np.array(layout.f_selection, dtype=np.int32),
+        kind=kind,
+        x_mask=x_mask,
+        z_mask=z_mask,
+        cos=np.cos(angle),
+        sin=np.sin(angle),
+        pivot=pivot,
+        extent=extent,
+        branch=branch,
+        sign_const=sign_const,
+        sign_row=sign_row,
+        output_const=np.array([output.constant for output in plan.outputs], bool),
+        output_row=output_row,
     )
+    return StatevectorComponent(layout.output_indices, plan.width, tape)
 
 
 def compile_statevector_component(
     component: Graph, output_indices: Sequence[int], layout: ParamLayout
 ) -> StatevectorComponent:
     """Compile one non-direct component for ``strategy="active_statevector"``.
-
-    Amplitudes are complex128 when JAX has 64-bit types enabled, else complex64.
 
     Args:
         component: A connected component of the prepared sampling graph.
@@ -198,5 +209,4 @@ def compile_statevector_component(
 
     """
     planned, component_layout = plan_component(component, output_indices, layout)
-    dtype = jax.dtypes.canonicalize_dtype(np.complex128).name
-    return lower(planned, component_layout, dtype)
+    return lower(planned, component_layout)

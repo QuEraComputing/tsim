@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import numpy as np
@@ -65,9 +67,50 @@ def _make(circuit_str: str, seed: int = 0):
     return Circuit(circuit_str).compile_detector_sampler(seed=seed)
 
 
+def _direct_outputs(sampler, f_params: np.ndarray) -> np.ndarray:
+    """Return the direct outputs of ``f_params`` in their columns, False elsewhere."""
+    program = sampler._program
+    columns = program.output_order[: len(program.direct_f_indices)]
+    out = np.zeros((len(f_params), program.num_outputs), dtype=np.bool_)
+    out[:, columns] = (
+        f_params[:, program.direct_f_indices] != 0
+    ) ^ program.direct_flips
+    return out
+
+
 def _keep(samples: np.ndarray, mask: np.ndarray) -> np.ndarray:
     """Boolean row mask of shots not discarded by postselection."""
     return ~np.any(samples & mask, axis=1)
+
+
+@contextmanager
+def _record_noise(sampler) -> Iterator[Callable[[], np.ndarray]]:
+    """Record the noise ``sampler`` draws; yield a function returning it in shot order.
+
+    Chunks of shots are sampled on several threads, so their draws are put back
+    into shot order by the order in which their seeds were drawn.
+    """
+    channel_sampler = sampler._channel_sampler
+    order: list[bytes] = []
+    drawn: dict[bytes, np.ndarray] = {}
+    block_seeds, sample = channel_sampler.block_seeds, channel_sampler.sample
+
+    def record_seeds(n: int) -> np.ndarray:
+        seeds = block_seeds(n)
+        order.append(seeds.tobytes())
+        return seeds
+
+    def record_sample(n: int, seeds: np.ndarray | None = None) -> np.ndarray:
+        assert seeds is not None
+        batch = sample(n, seeds)
+        drawn[seeds.tobytes()] = batch.copy()
+        return batch
+
+    with (
+        patch.object(channel_sampler, "block_seeds", side_effect=record_seeds),
+        patch.object(channel_sampler, "sample", side_effect=record_sample),
+    ):
+        yield lambda: np.concatenate([drawn[seeds] for seeds in order])
 
 
 # ────────────────────────── validation ───────────────────────────────────────
@@ -162,23 +205,55 @@ def test_postselection_discarded_and_surviving_rows():
     assert np.all(~samples[discarded, 1])
 
 
+# Detector 0 is postselected; direct detector 2 and observable 0 are not, so a
+# survivor sampled from another shot's f-params shows up in their columns. The X
+# gates make the reference bits 1, and detectors 0 and 1 share an f-bit.
+DIRECT_CIRCUIT = """
+X 0 2
+X_ERROR(0.5) 0 2
+R 1
+H 1
+T 1
+H 1
+M 0 1 2
+DETECTOR rec[-3]
+DETECTOR rec[-2] rec[-3]
+DETECTOR rec[-1]
+OBSERVABLE_INCLUDE(0) rec[-1]
+"""
+
+
+@pytest.mark.parametrize("shots,batch_size", [(37, 4), (37, 1), (5, 8), (64, 7)])
+@pytest.mark.parametrize("reference", [False, True])
+def test_survivors_keep_their_own_direct_outputs(shots, batch_size, reference):
+    """Direct outputs come from each shot's own f-params, flips and reference."""
+    sampler = _make(DIRECT_CIRCUIT, seed=11)
+    mask = np.array([True, False, False])
+    with _record_noise(sampler) as drawn:
+        samples = sampler.sample(
+            shots,
+            batch_size=batch_size,
+            postselection_mask=mask,
+            append_observables=True,
+            use_detector_reference_sample=reference,
+        )
+    expected = _direct_outputs(sampler, drawn())
+    if reference:
+        expected[:, :3] ^= sampler._compute_reference_sample()[:3]
+    discarded = expected[:, 0]
+    assert np.array_equal(samples[:, [0, 2]], expected[:, [0, 2]])
+    assert np.array_equal(samples[~discarded, 3], expected[~discarded, 3])
+    assert not samples[discarded][:, [1, 3]].any()
+
+
 def test_postselection_direct_cols_always_equal_numpy():
     """Direct detector columns match NumPy computation for every row."""
     sampler = _make(MIXED_DIRECT_CIRCUIT, seed=3)
     mask = np.array([True, False])
-    drawn: list[np.ndarray] = []
-    original = sampler._channel_sampler.sample
-
-    def capture(n: int) -> np.ndarray:
-        batch = original(n)
-        drawn.append(batch.copy())
-        return batch
-
-    with patch.object(sampler._channel_sampler, "sample", side_effect=capture):
+    with _record_noise(sampler) as drawn:
         samples = sampler.sample(8, batch_size=4, postselection_mask=mask)
 
-    f_all = np.concatenate(drawn)
-    expected_direct = sampler._compute_direct_outputs(f_all)
+    expected_direct = _direct_outputs(sampler, drawn())
     direct_det = sampler._direct_detector_mask
     assert np.array_equal(
         samples[:, : sampler._num_detectors] & direct_det,
@@ -189,19 +264,25 @@ def test_postselection_direct_cols_always_equal_numpy():
 # ────────────────────────── JAX-skip behaviour ───────────────────────────────
 
 
+def _record_rows(monkeypatch, store: list[int]) -> None:
+    """Append the rows of every call to the program samplers to ``store``."""
+    for name in ("sample_program", "sample_statevector_program"):
+        original = getattr(sampler_module, name)
+
+        def spy(program, f_params, *args, _original=original, **kwargs):
+            store.append(f_params.shape[0])
+            return _original(program, f_params, *args, **kwargs)
+
+        monkeypatch.setattr(sampler_module, name, spy)
+
+
 def test_postselection_jax_never_called_for_all_direct_discards(monkeypatch):
     """When every shot is discarded by a direct detector, sample_program is never called."""
     sampler = _make(ALWAYS_DISCARD_CIRCUIT, seed=0)
     mask = np.array([True, False])
     calls: list[int] = []
 
-    original = sampler_module.sample_program
-
-    def spy(program, f_params, key):
-        calls.append(f_params.shape[0])
-        return original(program, f_params, key)
-
-    monkeypatch.setattr(sampler_module, "sample_program", spy)
+    _record_rows(monkeypatch, calls)
     sampler.sample(10, batch_size=4, postselection_mask=mask)
     assert calls == []
 
@@ -212,13 +293,8 @@ def test_postselection_jax_rows_less_than_shots():
     mask = np.array([True, False])
     jax_rows: list[int] = []
 
-    original = sampler_module.sample_program
-
-    def spy(program, f_params, key):
-        jax_rows.append(f_params.shape[0])
-        return original(program, f_params, key)
-
-    with patch.object(sampler_module, "sample_program", side_effect=spy):
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        _record_rows(monkeypatch, jax_rows)
         samples = sampler.sample(32, batch_size=8, postselection_mask=mask)
 
     discarded = np.any(samples[:, : sampler._num_detectors] & mask, axis=1)
@@ -228,17 +304,13 @@ def test_postselection_jax_rows_less_than_shots():
 
 def test_postselection_jax_batch_size_fixed(monkeypatch):
     """Every JAX call uses the same batch_size (no recompilation)."""
-    sampler = _make(MIXED_DIRECT_CIRCUIT, seed=4)
+    sampler = Circuit(MIXED_DIRECT_CIRCUIT).compile_detector_sampler(
+        strategy="cat5", seed=4
+    )
     mask = np.array([True, False])
     seen: list[int] = []
 
-    original = sampler_module.sample_program
-
-    def spy(program, f_params, key):
-        seen.append(f_params.shape[0])
-        return original(program, f_params, key)
-
-    monkeypatch.setattr(sampler_module, "sample_program", spy)
+    _record_rows(monkeypatch, seen)
     sampler.sample(10, batch_size=4, postselection_mask=mask)
 
     assert seen, "expected at least one JAX call for surviving shots"
@@ -251,13 +323,7 @@ def test_postselection_non_direct_mask_runs_jax_for_all(monkeypatch):
     mask = np.array([False, True])  # det1 is a component
     jax_rows: list[int] = []
 
-    original = sampler_module.sample_program
-
-    def spy(program, f_params, key):
-        jax_rows.append(f_params.shape[0])
-        return original(program, f_params, key)
-
-    monkeypatch.setattr(sampler_module, "sample_program", spy)
+    _record_rows(monkeypatch, jax_rows)
     sampler.sample(16, batch_size=8, postselection_mask=mask)
     assert sum(jax_rows) == 16
 
@@ -268,13 +334,7 @@ def test_postselection_mixed_mask_skips_jax_only_on_direct_discard(monkeypatch):
     mask = np.array([True, True])
     jax_rows: list[int] = []
 
-    original = sampler_module.sample_program
-
-    def spy(program, f_params, key):
-        jax_rows.append(f_params.shape[0])
-        return original(program, f_params, key)
-
-    monkeypatch.setattr(sampler_module, "sample_program", spy)
+    _record_rows(monkeypatch, jax_rows)
     samples = sampler.sample(32, batch_size=8, postselection_mask=mask)
     direct_discarded = samples[:, 0] & mask[0]
     assert direct_discarded.any()
@@ -296,21 +356,13 @@ def test_postselection_detector_reference_xor_before_discard_check(monkeypatch):
     mask = np.array([True, False])
     jax_without: list[int] = []
     jax_with: list[int] = []
-    original = sampler_module.sample_program
-
-    def make_spy(store: list[int]):
-        def spy(program, f_params, key):
-            store.append(f_params.shape[0])
-            return original(program, f_params, key)
-
-        return spy
-
     s1 = _make(circuit, seed=0)
-    monkeypatch.setattr(sampler_module, "sample_program", make_spy(jax_without))
-    s1.sample(32, batch_size=8, postselection_mask=mask)
+    with monkeypatch.context() as patch_rows:
+        _record_rows(patch_rows, jax_without)
+        s1.sample(32, batch_size=8, postselection_mask=mask)
 
     s2 = _make(circuit, seed=0)
-    monkeypatch.setattr(sampler_module, "sample_program", make_spy(jax_with))
+    _record_rows(monkeypatch, jax_with)
     s2.sample(
         32,
         batch_size=8,
@@ -318,11 +370,15 @@ def test_postselection_detector_reference_xor_before_discard_check(monkeypatch):
         use_detector_reference_sample=True,
     )
 
-    assert sum(jax_with) > sum(jax_without)
+    # NOTE: the reference sample itself is one more row through sample_program.
+    assert sum(jax_with) - 1 > sum(jax_without)
 
 
-def test_postselection_observable_reference_on_jax_computed_discarded_rows():
-    """Observable ref XOR applies to every row that ran JAX, including caller discards."""
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+def test_postselection_observable_reference_flips_every_sampled_row(
+    strategy, monkeypatch
+):
+    """The observable reference flips every row that was sampled, but no direct discard."""
     circuit = """
     X 0
     X_ERROR(0.5) 0
@@ -333,39 +389,25 @@ def test_postselection_observable_reference_on_jax_computed_discarded_rows():
     DETECTOR rec[-1] rec[-2]
     OBSERVABLE_INCLUDE(0) rec[-1]
     """
-    mask = np.array([True, True])
-    kwargs = {
-        "batch_size": 8,
-        "use_observable_reference_sample": True,
-        "separate_observables": True,
-    }
-    # NOTE: under cat5, seed 2 samples a reference observable of 1.
-    sampler = Circuit(circuit).compile_detector_sampler(strategy="cat5", seed=2)
-    captured: dict[str, np.ndarray] = {}
-    original = sampler._sample_batches_with_postselection
+    mask = np.array([True, False])
 
-    def capture(*args, **kwargs):
-        samples, reference, direct_discarded = original(*args, **kwargs)
-        assert reference is not None
-        captured["raw_obs"] = samples[:, sampler._num_detectors :].copy()
-        captured["direct_discarded"] = direct_discarded.copy()
-        captured["obs_ref"] = reference[sampler._num_detectors :].copy()
-        return samples, reference, direct_discarded
+    def observables(reference: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        sampler = Circuit(circuit).compile_detector_sampler(strategy=strategy, seed=2)
+        monkeypatch.setattr(sampler, "_compute_reference_sample", lambda: reference)
+        return sampler.sample(
+            128,
+            batch_size=8,
+            postselection_mask=mask,
+            separate_observables=True,
+            use_observable_reference_sample=True,
+        )
 
-    sampler._sample_batches_with_postselection = capture
-    _dets, obs = sampler.sample(128, postselection_mask=mask, **kwargs)
-
-    raw_obs = captured["raw_obs"]
-    direct_discarded = captured["direct_discarded"]
-    obs_ref = captured["obs_ref"]
-    expected = raw_obs.copy()
-    expected[~direct_discarded] ^= obs_ref
-
-    assert np.all(obs_ref)
-    assert np.array_equal(obs, expected)
-    assert not np.any(obs[direct_discarded])
-    ran_jax = ~direct_discarded
-    assert np.any(obs[ran_jax] != raw_obs[ran_jax])
+    dets, raw = observables(np.zeros(3, dtype=np.bool_))
+    _, flipped = observables(np.array([False, False, True]))
+    direct_discarded = dets[:, 0]
+    assert direct_discarded.any() and (~direct_discarded).any()
+    np.testing.assert_array_equal(flipped[~direct_discarded], ~raw[~direct_discarded])
+    assert not flipped[direct_discarded].any() and not raw[direct_discarded].any()
 
 
 # ────────────────────────── fully-direct fast path ───────────────────────────
@@ -375,13 +417,8 @@ def test_postselection_fully_direct_no_jax(monkeypatch):
     """Fully-direct circuits never call sample_program."""
     sampler = _make(FULLY_DIRECT_CIRCUIT, seed=0)
     mask = np.array([True])
-    spy = []
-
-    def counting_sp(program, f_params, key):
-        spy.append(1)
-        return sampler_module.sample_program(program, f_params, key)
-
-    monkeypatch.setattr(sampler_module, "sample_program", counting_sp)
+    spy: list[int] = []
+    _record_rows(monkeypatch, spy)
     result = sampler.sample(10, postselection_mask=mask)
     assert result.shape == (10, 1)
     assert spy == []
@@ -452,9 +489,9 @@ def test_postselection_reference_does_not_advance_channel_rng():
     original = sampler._channel_sampler.sample
     calls: list[int] = []
 
-    def spy(n: int) -> np.ndarray:
+    def spy(n: int, seeds: np.ndarray | None = None) -> np.ndarray:
         calls.append(n)
-        return original(n)
+        return original(n, seeds)
 
     with patch.object(sampler._channel_sampler, "sample", side_effect=spy):
         sampler._compute_reference_sample()
@@ -569,30 +606,3 @@ def test_postselection_surface_code_caller_filter():
     survivors = _keep(samples[:, :num_det], mask)
     assert survivors.any()
     assert not np.any(samples[survivors] & mask)
-
-
-def test_postselection_discarded_rows_zero_direct_observable():
-    """Discarded rows keep direct detector cols but zero direct observable cols."""
-    circ = stim.Circuit.generated(
-        "surface_code:rotated_memory_x",
-        distance=3,
-        rounds=2,
-        after_clifford_depolarization=0.01,
-    )
-    c = Circuit.from_stim_program(circ)
-    sampler = c.compile_detector_sampler(seed=0)
-    assert sampler._direct_output_mask[
-        sampler._num_detectors :
-    ].any(), "expected a direct observable for this circuit"
-
-    mask = np.zeros(c.num_detectors, dtype=np.bool_)
-    mask[0] = True
-    dets, obs = sampler.sample(
-        64,
-        batch_size=16,
-        postselection_mask=mask,
-        separate_observables=True,
-    )
-    discarded = np.any(dets & mask, axis=1)
-    assert discarded.any() and (~discarded).any()
-    assert not np.any(obs[discarded])

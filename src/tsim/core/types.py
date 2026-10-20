@@ -111,9 +111,9 @@ class CompiledProgram:
     """
 
     components: tuple[CompiledComponent | StatevectorComponent, ...]
-    direct_f_indices: Array
-    direct_flips: Array
-    output_order: Array
-    output_reindex: Array | None
+    direct_f_indices: np.ndarray
+    direct_flips: np.ndarray
+    output_order: np.ndarray
+    output_reindex: np.ndarray | None
     num_outputs: int
     num_detectors: int

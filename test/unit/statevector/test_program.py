@@ -69,28 +69,29 @@ def test_lower_encodes_every_action():
         ),
     )
     layout = ComponentLayout(f_selection=(4,), f_position={}, output_indices=(2, 5))
-    compiled = lower(planned, layout, "complex64")
-    assert compiled.kind.tolist() == [
+    compiled = lower(planned, layout)
+    tape = compiled.tape
+    assert tape.kind.tolist() == [
         ROTATE_DIAG,
         ROTATE,
         MEASURE_DIAG,
         MEASURE,
         MEASURE_DORMANT,
     ]
-    assert compiled.x_mask.tolist() == [0, 1, 0, 1, 0]
-    assert compiled.z_mask.tolist() == [3, 2, 2, 0, 0]
-    np.testing.assert_allclose(compiled.cos[:2], np.cos([0.25, -0.5]), rtol=1e-6)
-    np.testing.assert_allclose(compiled.sin[:2], np.sin([0.25, -0.5]), rtol=1e-6)
-    assert compiled.pivot.tolist()[2:4] == [1, 0]
-    assert compiled.branch.tolist() == [-1, -1, 1, 2, 3]
-    assert compiled.sign_const.tolist()[:2] == [True, False]
-    assert compiled.sign_row[:2, 0].tolist() == [1, 0]
-    assert compiled.output_const.tolist() == [False, True]
-    assert compiled.output_row[:, 0].tolist() == [0b1010, 0b0101]
+    assert tape.x_mask.tolist() == [0, 1, 0, 1, 0]
+    assert tape.z_mask.tolist() == [3, 2, 2, 0, 0]
+    np.testing.assert_allclose(tape.cos[:2], np.cos([0.25, -0.5]))
+    np.testing.assert_allclose(tape.sin[:2], np.sin([0.25, -0.5]))
+    assert tape.pivot.tolist()[2:4] == [1, 0]
+    assert tape.branch.tolist() == [-1, -1, 1, 2, 3]
+    assert tape.sign_const.tolist()[:2] == [True, False]
+    assert tape.sign_row[:2, 0].tolist() == [1, 0]
+    assert tape.output_const.tolist() == [False, True]
+    assert tape.output_row[:, 0].tolist() == [0b1010, 0b0101]
     assert compiled.num_words == 1
-    assert compiled.f_selection.tolist() == [4]
+    assert tape.f_selection.tolist() == [4]
     assert compiled.output_indices == (2, 5)
-    assert (compiled.width, compiled.num_outputs, compiled.dtype) == (2, 2, "complex64")
+    assert (compiled.width, compiled.num_outputs) == (2, 2)
     assert compiled.num_actions == 5
 
 
@@ -101,9 +102,9 @@ def test_lower_packs_symbols_beyond_32_into_more_words():
         actions=(),
         outputs=(AffineRow(False, frozenset({0, 33, 39})),),
     )
-    compiled = lower(planned, ComponentLayout(tuple(range(40)), {}, (0,)), "complex64")
+    compiled = lower(planned, ComponentLayout(tuple(range(40)), {}, (0,)))
     assert compiled.num_words == 2
-    assert compiled.output_row.tolist() == [[1, (1 << 1) | (1 << 7)]]
+    assert compiled.tape.output_row.tolist() == [[1, (1 << 1) | (1 << 7)]]
 
 
 def test_too_wide_components_are_rejected(monkeypatch):

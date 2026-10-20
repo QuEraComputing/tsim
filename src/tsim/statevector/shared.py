@@ -1,4 +1,4 @@
-"""Trajectory-sharing executor for statevector components (investigation prototype).
+"""Trajectory-sharing executor for statevector components, on the CPU with numba.
 
 Shots that agree on every symbol that reaches the amplitudes share one lane. The
 only per-shot input to the amplitudes is the sign of a rotation (outputs are
@@ -6,43 +6,38 @@ parities of the final symbols), so a shot's grouping key is the f-bit part of
 every rotation sign. With postselection the key also holds the f-bit part of
 every postselected output, so that a lane is pruned as a whole as soon as one of
 its postselected outputs is known to be 1: at the action that sets the output's
-last branch bit (the first measurement for an output of f-bits only).
+last branch bit, or before the first action for an output of f-bits only.
 
 A lane holds amplitudes, the symbols of one of its shots (its f-bits agree with
 every member on the key, and its branch bits are the lane's outcomes), a shot
 count and a range in the key-sorted order of the shots. At a measurement the lane
-draws how many of its shots see the rarer outcome (``_rare_drawn``, which
-resolves the chance of at least one to 2^-64 like ``choose_outcome``) and
-splits: the child takes the last n shots of the range. Shots in a lane agree on
-the key, so they are exchangeable, and the sort breaks ties at random, so each
-range is in uniformly random order: this assignment gives every shot
-independent outputs. Pruned lanes move to a dead table that keeps their range,
-outcomes and the pruning action but no amplitudes. A dormant measurement splits
-lanes the same way (p = 1/2) when its branch reaches a key sign; otherwise it is
-a fair coin drawn per shot at the end.
+draws how many of its shots see the rarer outcome (a binomial whose chance of a
+first hit is resolved to 2^-64) and splits: the child takes the last n shots of
+the range. Shots in a lane agree on the key, so they are exchangeable, and the
+sort breaks ties at random, so each range is in uniformly random order: this
+assignment gives every shot independent outputs. Pruned lanes keep their range,
+outcomes and pruning action but drop their amplitudes. A dormant measurement
+splits lanes the same way (p = 1/2) when its branch reaches a key sign; otherwise
+it is a fair coin drawn per shot at the end.
 
-Capacities are static. The dead table holds one entry per shot, so it never
-fills. When the lane table is full the loop stops before the action, the host
-doubles it and resumes; every lane slot draws from its own key, so the redone
-action draws the same numbers. After the tape each shot's outputs are evaluated
-from its own f-bits, its lane's outcomes and its own dormant coins; a pruned
-shot's outputs that need a branch bit set after its pruning action are False.
+One numba function samples a batch without the GIL: it groups the shots, runs
+the tape on the live lanes and the ``2^extent`` amplitudes each action can
+touch, and evaluates the outputs. When the extent grows, the newly touched
+amplitudes are cleared, because a slot reused for another lane can hold stale
+values there. After the tape each shot's outputs are evaluated from its own
+f-bits, its lane's outcomes and its own dormant coins, XOR its reference bit; a
+pruned shot's outputs that need a branch bit set after its pruning action are
+False.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import partial
 from typing import NamedTuple
 
-import equinox as eqx
-import jax
-import jax.numpy as jnp
+import numba
 import numpy as np
-from jax import Array
 
-from tsim.statevector import execute
-from tsim.statevector.execute import LaneState, pack_bits
+import tsim.utils.kernels as kernels
 from tsim.statevector.program import (
     MEASURE,
     MEASURE_DIAG,
@@ -51,56 +46,55 @@ from tsim.statevector.program import (
     ROTATE_DIAG,
     StatevectorComponent,
 )
+from tsim.utils.kernels import jit, kernel
 from tsim.utils.linalg import find_basis
+from tsim.utils.rng import GOLDEN, next_skip, splitmix64
 
-_MIN_CAPACITY = 16
+_TINY = 1e-30
+_I_POWERS = (1, 1j, -1, -1j)
 
 
-class SharingLayout(eqx.Module):
-    """Which symbols the shots of a lane must share, from the sign and output rows.
+class SharingLayout(NamedTuple):
+    """Which symbols the shots of a lane must share, and which outputs prune them.
 
     Attributes:
         key_rows: f-bit masks whose parities form the grouping key, a basis of the
             f-parts of every rotation sign and every postselected output,
             shape ``(K, num_words)``.
         lane_dormant: Dormant measurements that split lanes, shape ``(A,)``.
+        prune_first: The postselected outputs of f-bits only, tested before the
+            first action, shape ``(num_outputs,)``.
         pruned: Actions after which some postselected output is tested,
             shape ``(A,)``.
         prune_outputs: The postselected outputs tested after each action,
             shape ``(A, num_outputs)``.
-        prune_flip: Reference bit XOR-ed into each output before the
-            postselection test, shape ``(num_outputs,)``.
+        output_const: Constant of each output XOR its reference bit, shape
+            ``(num_outputs,)``.
         lane_branches: Branch bits a lane carries, shape ``(num_words,)``.
         shot_dormant: Branch bits of the dormant measurements drawn per shot,
             shape ``(num_words,)``.
         ready: The action that sets each output's last branch bit, -1 for an
             output of f-bits only, shape ``(num_outputs,)``.
-        num_key_words: Number of uint32 words of a packed key.
+        i_power: ``i^|x∧z|`` of each action's Pauli ``X^x Z^z``, shape ``(A,)``.
+        factor: Each action's diagonal rotation factors ``cos θ ∓ i sin θ``,
+            shape ``(A, 2)``.
+        coupling: Each action's rotation coupling ``-i sin θ i^|x∧z|``, shape
+            ``(A,)``.
 
     """
 
-    key_rows: Array
-    lane_dormant: Array
-    pruned: Array
-    prune_outputs: Array
-    prune_flip: Array
-    lane_branches: Array
-    shot_dormant: Array
-    ready: Array
-    num_key_words: int = eqx.field(static=True)
-
-
-@dataclass
-class Sharing:
-    """A component's sharing layout and the largest lane table it has needed.
-
-    Every new capacity compiles the lane loop again (about a second), so narrow
-    components start each batch at ``lane_capacity`` and settle on one compiled
-    loop.
-    """
-
-    layout: SharingLayout
-    lane_capacity: int = 0
+    key_rows: np.ndarray
+    lane_dormant: np.ndarray
+    prune_first: np.ndarray
+    pruned: np.ndarray
+    prune_outputs: np.ndarray
+    output_const: np.ndarray
+    lane_branches: np.ndarray
+    shot_dormant: np.ndarray
+    ready: np.ndarray
+    i_power: np.ndarray
+    factor: np.ndarray
+    coupling: np.ndarray
 
 
 def _unpack(words: np.ndarray, num_words: int) -> np.ndarray:
@@ -129,37 +123,29 @@ def sharing_layout(
         postselected: Whether each output slot is postselected, shape
             ``(num_outputs,)``. ``None`` prunes nothing.
         flipped: Reference bit of each output slot, XOR-ed into the output before
-            the postselection test (``use_detector_reference_sample``), shape
-            ``(num_outputs,)``. ``None`` flips nothing.
+            the postselection test and before a pruned shot's later outputs are
+            cleared, shape ``(num_outputs,)``. ``None`` flips nothing.
 
     """
+    tape = component.tape
     num_words = component.num_words
-    num_f = len(component.f_selection)
-    kind = np.asarray(component.kind)
-    branch = np.asarray(component.branch)
-    num_actions = len(kind)
-    sign_bits = _unpack(np.asarray(component.sign_row), num_words)
-    output_bits = _unpack(np.asarray(component.output_row), num_words)
+    num_f = len(tape.f_selection)
+    kind, branch = tape.kind, tape.branch
     num_outputs = component.num_outputs
+    sign_bits = _unpack(tape.sign_row, num_words)
+    output_bits = _unpack(tape.output_row, num_words)
+    no_outputs = np.zeros(num_outputs, dtype=bool)
     postselected = np.asarray(
-        np.zeros(num_outputs) if postselected is None else postselected, dtype=bool
+        no_outputs if postselected is None else postselected, dtype=bool
     )
-    flipped = np.asarray(
-        np.zeros(num_outputs) if flipped is None else flipped, dtype=bool
-    )
+    flipped = np.asarray(no_outputs if flipped is None else flipped, dtype=bool)
 
     setter = np.full(32 * num_words, -1, dtype=np.int32)
     setter[branch[branch >= 0]] = np.flatnonzero(branch >= 0)
     ready = np.max(np.where(output_bits, setter[None, :], -1), axis=1, initial=-1)
-    measurements = np.flatnonzero(np.isin(kind, (MEASURE_DIAG, MEASURE)))
-    if len(measurements) == 0:
-        measurements = np.flatnonzero(kind == MEASURE_DORMANT)
-    first_measurement = measurements[0] if len(measurements) else -1
-    prune_at = np.where(ready >= 0, ready, first_measurement)
-    prune_outputs = np.zeros((num_actions, num_outputs), dtype=bool)
-    for o in np.flatnonzero(postselected & (prune_at >= 0)):
-        prune_outputs[prune_at[o], o] = True
-    pruned = prune_outputs.any(axis=1)
+    prune_outputs = np.zeros((len(kind), num_outputs), dtype=bool)
+    for o in np.flatnonzero(postselected & (ready >= 0)):
+        prune_outputs[ready[o], o] = True
 
     rotation = np.isin(kind, (ROTATE_DIAG, ROTATE))
     keyed_bits = np.vstack([sign_bits[rotation], output_bits[postselected]])
@@ -168,569 +154,636 @@ def sharing_layout(
     if len(key_bits):
         key_bits, _ = find_basis(key_bits.astype(np.uint8))
         key_bits = np.asarray(key_bits, dtype=bool)
-    num_key_words = max(1, -(-len(key_bits) // 32))
 
+    # NOTE: a pruning action sets a branch bit of a postselected output, so its
+    # branch reaches the key.
     reaches_key = np.asarray(np.any(keyed_bits, axis=0), dtype=bool)
     dormant = kind == MEASURE_DORMANT
-    lane_dormant = dormant & (pruned | ((branch >= 0) & reaches_key[branch]))
+    lane_dormant = dormant & reaches_key[branch]
     active = np.isin(kind, (MEASURE_DIAG, MEASURE))
     lane_bits = np.zeros(32 * num_words, dtype=bool)
-    lane_bits[branch[(active | lane_dormant) & (branch >= 0)]] = True
+    lane_bits[branch[active | lane_dormant]] = True
     shot_bits = np.zeros(32 * num_words, dtype=bool)
-    shot_bits[branch[dormant & ~lane_dormant & (branch >= 0)]] = True
+    shot_bits[branch[dormant & ~lane_dormant]] = True
+
+    quarter_turns = [
+        int(x & z).bit_count() & 3
+        for x, z in zip(tape.x_mask, tape.z_mask, strict=True)
+    ]
+    i_power = np.array([_I_POWERS[q] for q in quarter_turns], dtype=np.complex128)
+    cos, sin = tape.cos, tape.sin
 
     return SharingLayout(
-        key_rows=jnp.asarray(_pack(key_bits, num_words).reshape(-1, num_words)),
-        lane_dormant=jnp.asarray(lane_dormant),
-        pruned=jnp.asarray(pruned),
-        prune_outputs=jnp.asarray(prune_outputs),
-        prune_flip=jnp.asarray(flipped),
-        lane_branches=jnp.asarray(_pack(lane_bits, num_words)),
-        shot_dormant=jnp.asarray(_pack(shot_bits, num_words)),
-        ready=jnp.asarray(ready.astype(np.int32)),
-        num_key_words=num_key_words,
+        key_rows=_pack(key_bits, num_words).reshape(-1, num_words),
+        lane_dormant=lane_dormant,
+        prune_first=postselected & (ready < 0),
+        pruned=np.asarray(prune_outputs.any(axis=1)),
+        prune_outputs=prune_outputs,
+        output_const=tape.output_const ^ flipped,
+        lane_branches=_pack(lane_bits, num_words),
+        shot_dormant=_pack(shot_bits, num_words),
+        ready=ready.astype(np.int64),
+        i_power=i_power,
+        factor=np.stack([cos - 1j * sin, cos + 1j * sin], axis=1),
+        coupling=-1j * sin * i_power,
     )
 
 
-class Lanes(NamedTuple):
-    """Lane and dead tables of the shared executor.
+@jit
+def _parity(value):
+    """Return the parity of the bits of a non-negative integer below 2^32."""
+    value ^= value >> 16
+    value ^= value >> 8
+    value ^= value >> 4
+    value ^= value >> 2
+    value ^= value >> 1
+    return value & 1
 
-    Live lanes occupy slots ``0 … used-1`` of the lane table; dead lanes occupy
-    slots ``0 … dead_used-1`` of the dead table, which has one slot per shot.
+
+@jit
+def _chunks(work, parallel_work, threads):
+    """Return how many chunks a loop of ``work`` runs in: 1 below ``parallel_work``."""
+    if work < parallel_work:
+        return 1
+    return min(work, 4 * threads)
+
+
+@jit
+def _copy_lane(amps, target, source, span):
+    """Copy the first ``span`` amplitudes of lane ``source`` to lane ``target``."""
+    for i in range(span):
+        amps[target, i] = amps[source, i]
+
+
+@jit
+def _clear(amps, lanes, lo, hi):
+    """Set amplitudes ``lo … hi-1`` of the first ``lanes`` lanes to 0."""
+    for lane in range(lanes):
+        for i in range(lo, hi):
+            amps[lane, i] = 0
+
+
+@jit
+def _grown(amps, rows, lanes, span):
+    """Return ``amps`` with ``rows`` rows, keeping the lanes' first ``span``."""
+    out = np.zeros((rows, amps.shape[1]), dtype=amps.dtype)
+    for lane in range(lanes):
+        for i in range(span):
+            out[lane, i] = amps[lane, i]
+    return out
+
+
+@jit
+def _pack_range(f, selection, out, lo, hi):
+    """Pack the selected f-bits of shots ``lo … hi-1``: bit j is in word j // 32."""
+    for s in range(lo, hi):
+        for j in range(len(selection)):
+            if f[s, selection[j]]:
+                out[s, j >> 5] |= np.uint32(1) << np.uint32(j & 31)
+
+
+@jit
+def _key_range(symbols, key_rows, out, lo, hi):
+    """Pack the parities of shots ``lo … hi-1`` with the key rows into words."""
+    for s in range(lo, hi):
+        for k in range(key_rows.shape[0]):
+            acc = 0
+            for w in range(key_rows.shape[1]):
+                acc ^= symbols[s, w] & key_rows[k, w]
+            if _parity(acc):
+                out[s, k >> 5] |= np.uint32(1) << np.uint32(k & 31)
+
+
+@jit
+def _signs(symbols, lanes, row, const):
+    """Return each lane's sign bit: ``const ^ parity(symbols[l] & row)``."""
+    flip = np.zeros(lanes, dtype=np.int64)
+    for lane in range(lanes):
+        acc = 0
+        for w in range(len(row)):
+            acc ^= symbols[lane, w] & row[w]
+        flip[lane] = _parity(acc) ^ const
+    return flip
+
+
+@jit
+def _rotate_range(amps, lo, hi, shift, flip, diagonal, x, z, cos, factor, coupling):
+    """Apply one rotation to the entries ``lo … hi-1`` of ``lanes × 2^shift``.
+
+    A diagonal rotation multiplies amplitude i by ``factor[sign ^ parity(i & z)]``,
+    the others mix amplitudes i and ``i ^ x`` with ``cos`` and ``±coupling``.
     """
-
-    amps: Array
-    symbols: Array
-    count: Array  # pyright: ignore[reportIncompatibleMethodOverride]
-    start: Array
-    used: Array
-    dead_symbols: Array
-    dead_count: Array
-    dead_start: Array
-    dead_action: Array
-    dead_used: Array
-    action: Array
-    full: Array
-    max_norm_deviation: Array
-
-
-def _parity(values: Array) -> Array:
-    return (jnp.sum(jax.lax.population_count(values), axis=-1) & 1) == 1
+    span = 1 << shift
+    low = x & -x
+    for t in range(lo, hi):
+        lane, i = t >> shift, t & (span - 1)
+        if diagonal:
+            amps[lane, i] *= factor[flip[lane] ^ _parity(i & z)]
+            continue
+        if i & low:
+            continue
+        j = i ^ x
+        c = -coupling if flip[lane] else coupling
+        p, q = amps[lane, i], amps[lane, j]
+        amps[lane, i] = cos * p + c * (-q if _parity(j & z) else q)
+        amps[lane, j] = cos * q + c * (-p if _parity(i & z) else p)
 
 
-@jax.jit
-def key_words(layout: SharingLayout, f_packed: Array) -> Array:
-    """Return each shot's packed key, shape ``(B, num_key_words)``."""
-    num_shots = f_packed.shape[0]
-    if layout.key_rows.shape[0] == 0:
-        return jnp.zeros((num_shots, layout.num_key_words), dtype=jnp.uint32)
+@jit
+def _weights_range(amps, lo, hi, span, x, z, i_power, w0, w1):
+    """Write the outcome weights of measuring ``X^x Z^z`` for lanes ``lo … hi-1``."""
+    for lane in range(lo, hi):
+        for i in range(span):
+            a = amps[lane, i]
+            if x == 0:
+                if _parity(i & z):
+                    w1[lane] += a.real**2 + a.imag**2
+                else:
+                    w0[lane] += a.real**2 + a.imag**2
+            else:
+                j = i ^ x
+                b = i_power * amps[lane, j]
+                if _parity(j & z):
+                    b = -b
+                plus, minus = a + b, a - b
+                w0[lane] += (plus.real**2 + plus.imag**2) / 4
+                w1[lane] += (minus.real**2 + minus.imag**2) / 4
 
-    def key_bit(k, words):
-        bit = _parity(f_packed & layout.key_rows[k]).astype(jnp.uint32)
-        word = k // 32
-        shift = (k % 32).astype(jnp.uint32)
-        return words.at[:, word].set(words[:, word] | (bit << shift))
 
-    return jax.lax.fori_loop(
-        0,
-        layout.key_rows.shape[0],
-        key_bit,
-        jnp.zeros((num_shots, layout.num_key_words), dtype=jnp.uint32),
-    )
+@jit
+def _project_range(amps, lo, hi, span, x, z, pivot, i_power, outcome, weight):
+    """Project lanes ``lo … hi-1`` onto their outcome and free the pivot.
+
+    The pivot-1 half of the amplitudes becomes 0: the planner moved the measured
+    Pauli onto the pivot, so the pivot ends in ``|0⟩``.
+    """
+    bit = 1 << pivot
+    for lane in range(lo, hi):
+        if x == 0:
+            scale = 1 / np.sqrt(max(weight[lane], _TINY))
+        else:
+            scale = 1 / np.sqrt(max(2 * weight[lane], _TINY))
+        for i in range(span):
+            if i & bit:
+                continue
+            if x == 0:
+                j = i ^ bit
+                keep = _parity(i & z) == outcome[lane]
+                amps[lane, i] = (amps[lane, i] if keep else amps[lane, j]) * scale
+            else:
+                j = i ^ x
+                b = i_power * amps[lane, j]
+                if _parity(j & z):
+                    b = -b
+                if outcome[lane]:
+                    b = -b
+                amps[lane, i] = (amps[lane, i] + b) * scale
+            amps[lane, j] = 0
 
 
-def group_on_host(
-    words: np.ndarray, rng: np.random.Generator
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Sort shots by key and return ``(order, start, count)`` of each group.
+@jit
+def _draw_ones(count, w0, w1, state):
+    """Return how many of each lane's shots see outcome 1.
+
+    The rarer outcome's count is a Binomial(count, q) drawn by geometric skips,
+    so the chance of a first hit, 1 - (1 - q)^count, is exact to about 2^-64.
+    """
+    ones = np.zeros(len(count), dtype=np.int64)
+    for lane in range(len(count)):
+        total = w0[lane] + w1[lane]
+        q = min(w0[lane], w1[lane]) / total if total > _TINY else 0.0
+        hits = 0
+        if q > 0:
+            log_keep = np.log1p(-q)
+            position = -1.0
+            while True:
+                state, skip = next_skip(state, log_keep)
+                position += 1.0 + skip
+                if position >= count[lane]:
+                    break
+                hits += 1
+        ones[lane] = hits if w1[lane] <= w0[lane] else count[lane] - hits
+    return ones
+
+
+@jit
+def _group(keys, state):
+    """Sort shots by key; return ``(order, start, count, state)`` of the groups.
 
     Ties are broken at random (a random permutation, then stable sorts), so the
-    shots of a group appear in uniformly random order. numpy's radix sort is an
-    order of magnitude faster than XLA's sort on CPU; a GPU build would sort on
-    the device.
+    shots of a group appear in uniformly random order.
     """
-    num_shots = words.shape[0]
-    order = rng.permutation(num_shots)
-    for column in range(words.shape[1]):
-        order = order[np.argsort(words[order, column], kind="stable")]
-    ordered = words[order]
-    boundary = np.ones(num_shots, dtype=bool)
-    boundary[1:] = np.any(ordered[1:] != ordered[:-1], axis=1)
-    start = np.flatnonzero(boundary)
-    count = np.diff(np.append(start, num_shots))
-    return order.astype(np.int32), start.astype(np.int32), count.astype(np.int32)
+    num_shots = keys.shape[0]
+    order = np.arange(num_shots)
+    for i in range(num_shots - 1, 0, -1):
+        state, z = splitmix64(state)
+        j = z % np.uint64(i + 1)
+        order[i], order[j] = order[j], order[i]
+    for column in range(keys.shape[1]):
+        order = order[np.argsort(keys[order, column], kind="mergesort")]
+    start = np.empty(num_shots, dtype=np.int64)
+    groups = 0
+    for p in range(num_shots):
+        new = p == 0
+        for column in range(keys.shape[1]):
+            new |= keys[order[p], column] != keys[order[p - 1], column]
+        if new:
+            start[groups] = p
+            groups += 1
+    start = start[:groups]
+    count = np.empty(groups, dtype=np.int64)
+    for g in range(groups):
+        count[g] = (start[g + 1] if g + 1 < groups else num_shots) - start[g]
+    return order, start, count, state
 
 
-@partial(jax.jit, static_argnames=("capacity",))
-def initial_lanes(
-    component: StatevectorComponent,
-    f_packed: Array,
-    order: Array,
-    start: Array,
-    count: Array,
-    num_groups: Array,
-    capacity: int,
-) -> Lanes:
-    """Return one lane per group in ``|0…0⟩``, with an empty dead table."""
-    num_shots = f_packed.shape[0]
-    padding = max(0, capacity - start.shape[0])
-    start = jnp.pad(start, (0, padding), constant_values=num_shots)[:capacity]
-    count = jnp.pad(count, (0, padding))[:capacity]
-    dtype = jnp.dtype(component.dtype)
-    representative = order[jnp.minimum(start, num_shots - 1)]
-    symbols = jnp.where(
-        (jnp.arange(capacity) < num_groups)[:, None], f_packed[representative], 0
-    )
-    return Lanes(
-        amps=jnp.zeros((capacity, 2**component.width), dtype=dtype).at[:, 0].set(1),
-        symbols=symbols.astype(jnp.uint32),
-        count=count,
-        start=start,
-        used=jnp.asarray(num_groups, dtype=jnp.int32),
-        dead_symbols=jnp.zeros((num_shots, component.num_words), jnp.uint32),
-        dead_count=jnp.zeros(num_shots, dtype=jnp.int32),
-        dead_start=jnp.zeros(num_shots, dtype=jnp.int32),
-        dead_action=jnp.zeros(num_shots, dtype=jnp.int32),
-        dead_used=jnp.zeros((), dtype=jnp.int32),
-        action=jnp.zeros((), dtype=jnp.int32),
-        full=jnp.zeros((), dtype=jnp.bool_),
-        max_norm_deviation=jnp.zeros((), dtype=jnp.finfo(dtype).dtype),
-    )
+@jit
+def _prune(amps, span, size, dead, tests, output_row, output_const, lanes, graves, a):
+    """Move the lanes with a tested output of 1 to the dead lanes; return the counts.
 
-
-def _lane_state(lanes: Lanes) -> LaneState:
-    return LaneState(
-        amps=lanes.amps,
-        symbols=lanes.symbols,
-        count=lanes.count,
-        max_norm_deviation=lanes.max_norm_deviation,
-    )
-
-
-def _rare_drawn(key: Array, count: Array, q: Array) -> Array:
-    """Return a Binomial(count, q) draw per lane slot, for q ≤ 1/2.
-
-    Whether any shot sees the rare outcome is decided by ``choose_outcome``
-    (resolution 2^-64) with P(≥ 1) = 1 - (1 - q)^count; float32 binomial
-    samplers cut that chance to a 2^-23 grid. Given at least one, the first such
-    shot J follows a truncated geometric law and the remaining count - J shots
-    a binomial. Slot s draws from ``fold_in(key, s)``, so a lane's draw does not
-    depend on the table size.
+    ``tests`` marks the outputs to test, ``lanes`` holds the live lanes' symbols,
+    starts and counts, and ``graves`` the same and the pruning action of the dead
+    lanes. The live lanes keep their order in rows ``0 … kept-1``.
     """
-    slots = jnp.arange(count.shape[0])
-    keys = jax.vmap(lambda s: jax.random.split(jax.random.fold_in(key, s), 3))(slots)
-    trials = count.astype(q.dtype)
-    log_keep = jnp.log1p(-q)
-    p_any = -jnp.expm1(trials * log_keep)
-    p_none = jnp.exp(trials * log_keep)
-    once = jnp.ones(1, dtype=jnp.int32)
-    hit = jax.vmap(
-        lambda k, p0, p1: execute.choose_outcome(p0[None], p1[None], once, k)[0]
-    )(keys[:, 0], p_none, p_any)
-
-    def after_first_hit() -> Array:
-        uniform = jax.vmap(lambda k: jax.random.uniform(k, dtype=q.dtype))(keys[:, 1])
-        first = jnp.ceil(
-            jnp.log1p(-uniform * p_any) / jnp.where(log_keep < 0, log_keep, -1)
-        )
-        first = jnp.clip(first, 1, jnp.maximum(trials, 1))
-        rest = jax.vmap(jax.random.binomial)(keys[:, 2], trials - first, q)
-        return jnp.where(hit, 1 + jnp.round(rest), 0).astype(jnp.int32)
-
-    # NOTE: rare outcomes rarely happen, so most actions skip the binomials.
-    rare = jax.lax.cond(
-        jnp.any(hit), after_first_hit, lambda: jnp.zeros(count.shape, jnp.int32)
-    )
-    return jnp.clip(rare, 0, count)
-
-
-def _ones_drawn(key: Array, count: Array, weight_0: Array, weight_1: Array) -> Array:
-    """Return how many of each lane's shots see outcome 1, from the outcome weights."""
-    total = jnp.maximum(weight_0 + weight_1, execute._TINY)
-    rare_is_one = weight_1 <= weight_0
-    q = jnp.clip(jnp.minimum(weight_0, weight_1) / total, 0, 0.5)
-    rare = _rare_drawn(key, count, q)
-    return jnp.where(rare_is_one, rare, count - rare)
+    symbols, start, count = lanes
+    dead_symbols, dead_start, dead_count, dead_action = graves
+    kept = 0
+    for lane in range(size):
+        dies = False
+        for o in range(len(tests)):
+            if not tests[o]:
+                continue
+            acc = 0
+            for w in range(symbols.shape[1]):
+                acc ^= symbols[lane, w] & output_row[o, w]
+            if _parity(acc) ^ output_const[o]:
+                dies = True
+                break
+        if dies:
+            dead_symbols[dead] = symbols[lane]
+            dead_start[dead], dead_count[dead] = start[lane], count[lane]
+            dead_action[dead] = a
+            dead += 1
+            continue
+        if kept != lane:
+            _copy_lane(amps, kept, lane, span)
+            symbols[kept] = symbols[lane]
+            start[kept], count[kept] = start[lane], count[lane]
+        kept += 1
+    return kept, dead
 
 
-def _split(lanes: Lanes, ones: Array) -> tuple[Lanes, Array, Array]:
-    """Split every live lane whose shots see both outcomes.
+@jit
+def _poison(amps, size, span):
+    """Fill every amplitude the executor must not read with NaN (for tests)."""
+    amps[:size, span:] = np.nan
+    amps[size:] = np.nan
 
-    Returns the split lanes, each slot's outcome and the source slot of each
-    slot's amplitudes (its parent for a new child).
+
+@jit
+def _shot_range(
+    symbols, order, owner, entry_symbols, lane_branches, dormant, seed, out, lo, hi
+):
+    """Write the symbols of the shots at positions ``lo … hi-1``.
+
+    A shot's symbols are its f-bits, its lane's branches and its dormant coins.
     """
-    capacity = lanes.count.shape[0]
-    slots = jnp.arange(capacity)
-    live = slots < lanes.used
-    ones = jnp.where(live, ones, 0)
-    split = live & (ones > 0) & (ones < lanes.count)
-    child = lanes.used + jnp.cumsum(split) - 1
-    target = jnp.where(split, child, capacity)
-    source = slots.at[target].set(slots, mode="drop")
-    is_child = jnp.zeros(capacity, dtype=jnp.bool_).at[target].set(True, mode="drop")
-    outcome = is_child | (live & (ones == lanes.count) & (lanes.count > 0))
-    parent_count = lanes.count[source]
-    parent_ones = ones[source]
-    count = jnp.where(
-        is_child, parent_ones, jnp.where(split, lanes.count - ones, lanes.count)
+    num_words = symbols.shape[1]
+    for position in range(lo, hi):
+        shot, entry = order[position], owner[position]
+        for w in range(num_words):
+            word = symbols[shot, w] | (entry_symbols[entry, w] & lane_branches[w])
+            if dormant[w]:
+                n = np.uint64(position * num_words + w)
+                _, coin = splitmix64(seed + n * GOLDEN)
+                word |= np.uint32(coin & np.uint64(0xFFFFFFFF)) & dormant[w]
+            out[shot, w] = word
+
+
+@jit
+def _output_range(
+    shot_symbols, output_row, output_const, ready, pruned_at, out, lo, hi
+):
+    """Write the outputs of shots ``lo … hi-1``; outputs set after pruning are 0."""
+    for s in range(lo, hi):
+        for o in range(output_row.shape[0]):
+            acc = 0
+            for w in range(output_row.shape[1]):
+                acc ^= shot_symbols[s, w] & output_row[o, w]
+            out[s, o] = bool(_parity(acc) ^ output_const[o]) and (
+                ready[o] <= pruned_at[s]
+            )
+
+
+@kernel
+def _execute(f, tape, layout, width, seed, share, parallel_work, threads, poison):
+    """Sample one batch of shots with shared trajectories.
+
+    ``tape`` is a ``Tape`` and ``layout`` a ``SharingLayout``. Lanes are rows
+    ``0 … size-1`` of arrays with a row per shot (every lane holds a shot), but
+    the amplitudes grow as lanes split. Each loop runs in chunks across threads
+    once its work reaches ``parallel_work``.
+
+    Returns:
+        ``(samples, deviation, groups, peak, lanes, dead)``.
+
+    """
+    # NOTE: numba's parallel loops cannot read the fields of a named tuple.
+    selection, output_row = tape.f_selection, tape.output_row
+    output_const, ready = layout.output_const, layout.ready
+    key_rows, lane_branches, shot_dormant = (
+        layout.key_rows,
+        layout.lane_branches,
+        layout.shot_dormant,
     )
-    start = jnp.where(
-        is_child, lanes.start[source] + parent_count - parent_ones, lanes.start
+    shots, num_words = f.shape[0], lane_branches.shape[0]
+    num_actions = tape.kind.shape[0]
+    # NOTE: SplitMix64 counts up from its state, so seeds that differ by a few
+    # GOLDEN steps would share outputs; their mixed output starts a fresh stream.
+    _, state = splitmix64(np.uint64(seed))
+
+    symbols = np.zeros((shots, num_words), dtype=np.uint32)
+    num_key_words = (key_rows.shape[0] + 31) >> 5 if share else 0
+    keys = np.zeros((shots, num_key_words), dtype=np.uint32)
+    key_work = key_rows.size if share else 0
+    chunks = _chunks(shots * (len(selection) + key_work), parallel_work, threads)
+    if chunks == 1:
+        _pack_range(f, selection, symbols, 0, shots)
+        if share:
+            _key_range(symbols, key_rows, keys, 0, shots)
+    else:
+        for c in numba.prange(chunks):
+            lo, hi = shots * c // chunks, shots * (c + 1) // chunks
+            _pack_range(f, selection, symbols, lo, hi)
+            if share:
+                _key_range(symbols, key_rows, keys, lo, hi)
+    if share:
+        order, start, count, state = _group(keys, state)
+    else:
+        order = np.arange(shots)
+        start = np.arange(shots)
+        count = np.ones(shots, dtype=np.int64)
+    groups = len(start)
+
+    # NOTE: lane and dead-lane rows are written before they are read.
+    lane_symbols = np.empty((shots, num_words), dtype=np.uint32)
+    lane_start = np.empty(shots, dtype=np.int64)
+    lane_count = np.empty(shots, dtype=np.int64)
+    amps = np.zeros((min(max(16, 2 * groups), shots), 1 << width), dtype=np.complex128)
+    for g in range(groups):
+        lane_symbols[g] = symbols[order[start[g]]]
+        lane_start[g], lane_count[g] = start[g], count[g]
+        amps[g, 0] = 1
+    lanes = (lane_symbols, lane_start, lane_count)
+    graves = (
+        np.empty((shots, num_words), dtype=np.uint32),
+        np.empty(shots, dtype=np.int64),
+        np.empty(shots, dtype=np.int64),
+        np.empty(shots, dtype=np.int64),
     )
-    split_lanes = lanes._replace(
-        symbols=lanes.symbols[source],
-        count=count.astype(jnp.int32),
-        start=start.astype(jnp.int32),
-        used=(lanes.used + jnp.sum(split)).astype(jnp.int32),
+    size, dead = _prune(
+        amps,
+        1,
+        groups,
+        0,
+        layout.prune_first,
+        output_row,
+        output_const,
+        lanes,
+        graves,
+        -1,
     )
-    return split_lanes, outcome, source
+    peak, region, deviation = groups, 0, 0.0
 
+    for a in range(num_actions):
+        if size == 0:
+            break
+        if poison:
+            _poison(amps, size, 1 << region)
+        shift = tape.extent[a]
+        span = 1 << shift
+        if shift > region:
+            _clear(amps, size, 1 << region, span)
+        region = shift
+        kind = tape.kind[a]
+        x, z = np.int64(tape.x_mask[a]), np.int64(tape.z_mask[a])
+        if kind in (ROTATE_DIAG, ROTATE):
+            flip = _signs(
+                lane_symbols, size, tape.sign_row[a], np.int64(tape.sign_const[a])
+            )
+            diagonal = kind == ROTATE_DIAG
+            cos, factor, coupling = tape.cos[a], layout.factor[a], layout.coupling[a]
+            work = size * span
+            chunks = _chunks(work, parallel_work, threads)
+            if chunks == 1:
+                _rotate_range(
+                    amps, 0, work, shift, flip, diagonal, x, z, cos, factor, coupling
+                )
+            else:
+                for c in numba.prange(chunks):
+                    lo, hi = work * c // chunks, work * (c + 1) // chunks
+                    _rotate_range(
+                        amps, lo, hi, shift, flip, diagonal, x, z, cos, factor, coupling
+                    )
+            continue
+        dormant = kind == MEASURE_DORMANT
+        if dormant and not layout.lane_dormant[a]:
+            continue
+        half = 0.5 if dormant else 0.0
+        w0 = np.full(size, half)
+        w1 = np.full(size, half)
+        i_power, pivot = layout.i_power[a], tape.pivot[a]
+        if not dormant:
+            chunks = _chunks(size * span, parallel_work, threads)
+            if chunks == 1:
+                _weights_range(amps, 0, size, span, x, z, i_power, w0, w1)
+            else:
+                for c in numba.prange(chunks):
+                    lo, hi = size * c // chunks, size * (c + 1) // chunks
+                    _weights_range(amps, lo, hi, span, x, z, i_power, w0, w1)
+            for lane in range(size):
+                d = abs(w0[lane] + w1[lane] - 1)
+                # NOTE: written so that a NaN deviation sticks.
+                if d > deviation or d != d:
+                    deviation = d
+        state, draw = splitmix64(state)
+        ones = _draw_ones(lane_count[:size], w0, w1, draw)
 
-def _set_branch(component: StatevectorComponent, symbols, a, outcome):
-    branch = component.branch[a]
-    word = jnp.maximum(branch, 0) // 32
-    bit = jnp.where(
-        branch >= 0,
-        jnp.uint32(1) << (jnp.maximum(branch, 0) % 32).astype(jnp.uint32),
-        jnp.uint32(0),
-    )
-    flags = jnp.where(outcome, bit, jnp.uint32(0))
-    return symbols.at[:, word].set(symbols[:, word] | flags)
+        new = size
+        for lane in range(size):
+            if 0 < ones[lane] < lane_count[lane]:
+                new += 1
+        if new > amps.shape[0]:
+            rows = min(max(new, 2 * amps.shape[0]), shots)
+            amps = _grown(amps, rows, size, span)
+        outcome = np.zeros(new, dtype=np.bool_)
+        weight = np.zeros(new)
+        child = size
+        for lane in range(size):
+            n, total = ones[lane], lane_count[lane]
+            outcome[lane] = n == total
+            weight[lane] = w1[lane] if n == total else w0[lane]
+            if 0 < n < total:
+                _copy_lane(amps, child, lane, span)
+                lane_symbols[child] = lane_symbols[lane]
+                lane_count[child] = n
+                lane_start[child] = lane_start[lane] + total - n
+                lane_count[lane] = total - n
+                outcome[child] = True
+                weight[child] = w1[lane]
+                child += 1
+        size = new
+        if not dormant:
+            chunks = _chunks(size * span, parallel_work, threads)
+            if chunks == 1:
+                _project_range(
+                    amps, 0, size, span, x, z, pivot, i_power, outcome, weight
+                )
+            else:
+                for c in numba.prange(chunks):
+                    lo, hi = size * c // chunks, size * (c + 1) // chunks
+                    _project_range(
+                        amps, lo, hi, span, x, z, pivot, i_power, outcome, weight
+                    )
+        bit = tape.branch[a]
+        if bit >= 0:
+            for lane in range(size):
+                if outcome[lane]:
+                    lane_symbols[lane, bit >> 5] |= np.uint32(1) << np.uint32(bit & 31)
+        peak = max(peak, size)
+        if layout.pruned[a]:
+            tests = layout.prune_outputs[a]
+            size, dead = _prune(
+                amps,
+                span,
+                size,
+                dead,
+                tests,
+                output_row,
+                output_const,
+                lanes,
+                graves,
+                a,
+            )
 
-
-def _prune(
-    component: StatevectorComponent, layout: SharingLayout, lanes: Lanes, a: Array
-) -> Lanes:
-    """Move live lanes that fail the postselection after action ``a`` to the dead table."""
-    capacity = lanes.count.shape[0]
-    num_shots = lanes.dead_count.shape[0]
-    live = jnp.arange(capacity) < lanes.used
-    values = execute.outputs(component, _lane_state(lanes)) ^ layout.prune_flip
-    dies = live & jnp.any(values & layout.prune_outputs[a], axis=1)
-    dead_slot = jnp.where(dies, lanes.dead_used + jnp.cumsum(dies) - 1, num_shots)
-    keeps = live & ~dies
-    kept_slot = jnp.where(keeps, jnp.cumsum(keeps) - 1, capacity)
-
-    def compact(values):
-        return jnp.zeros_like(values).at[kept_slot].set(values, mode="drop")
-
-    def bury(dead, values):
-        return dead.at[dead_slot].set(values, mode="drop")
-
-    return lanes._replace(
-        amps=compact(lanes.amps),
-        symbols=compact(lanes.symbols),
-        count=compact(lanes.count),
-        start=compact(lanes.start),
-        used=jnp.sum(keeps).astype(jnp.int32),
-        dead_symbols=bury(lanes.dead_symbols, lanes.symbols),
-        dead_count=bury(lanes.dead_count, lanes.count),
-        dead_start=bury(lanes.dead_start, lanes.start),
-        dead_action=bury(lanes.dead_action, jnp.full(capacity, a, dtype=jnp.int32)),
-        dead_used=(lanes.dead_used + jnp.sum(dies)).astype(jnp.int32),
-    )
-
-
-def _finish(component, layout, lanes, split, a) -> Lanes:
-    """Prune ``split`` and advance, or flag ``lanes`` if the lane table is full."""
-    pruned = jax.lax.cond(
-        layout.pruned[a],
-        lambda: _prune(component, layout, split, a),
-        lambda: split,
-    )
-    full = split.used > lanes.count.shape[0]
-    advanced = pruned._replace(action=(a + 1).astype(jnp.int32))
-    flagged = lanes._replace(full=jnp.asarray(True))
-    return jax.tree.map(lambda old, new: jnp.where(full, old, new), flagged, advanced)
-
-
-def _measure_weights(
-    component: StatevectorComponent, amps: Array, a: Array
-) -> tuple[Array, Array]:
-    """Return each lane's outcome weights ``(w0, w1)`` of ``MEASURE`` action ``a``."""
-    paulied = execute._apply_pauli(
-        amps, execute._index(component), component.x_mask[a], component.z_mask[a]
-    )
-    weight_0 = jnp.sum(execute._squared(amps + paulied), axis=1) / 4
-    weight_1 = jnp.sum(execute._squared(amps - paulied), axis=1) / 4
-    return weight_0, weight_1
-
-
-def _measure_project(
-    component: StatevectorComponent, amps: Array, a: Array, outcome: Array, weight
-) -> Array:
-    """Return the amplitudes after ``MEASURE`` ``a`` gave ``outcome`` of ``weight``."""
-    index = execute._index(component)
-    paulied = execute._apply_pauli(
-        amps, index, component.x_mask[a], component.z_mask[a]
-    )
-    projected = jnp.where(outcome[:, None], amps - paulied, amps + paulied)
-    scale = jax.lax.rsqrt(jnp.maximum(2 * weight, execute._TINY))[:, None]
-    keep = ((index >> component.pivot[a].astype(jnp.uint32)) & 1) == 0
-    return jnp.where(keep[None, :], projected * scale, 0)
-
-
-def _measure_diag_weights(
-    component: StatevectorComponent, amps: Array, a: Array
-) -> tuple[Array, Array]:
-    """Return each lane's outcome weights ``(w0, w1)`` of ``MEASURE_DIAG`` ``a``."""
-    odd = execute._parity(execute._index(component) & component.z_mask[a])
-    weights = execute._squared(amps)
-    weight_0 = jnp.sum(jnp.where(odd[None, :], 0, weights), axis=1)
-    weight_1 = jnp.sum(jnp.where(odd[None, :], weights, 0), axis=1)
-    return weight_0, weight_1
-
-
-def _measure_diag_project(
-    component: StatevectorComponent, amps: Array, a: Array, outcome: Array, weight
-) -> Array:
-    """Return the amplitudes after ``MEASURE_DIAG`` ``a`` gave ``outcome``."""
-    index = execute._index(component)
-    odd = execute._parity(index & component.z_mask[a])
-    pivot = component.pivot[a].astype(jnp.uint32)
-    partner = jnp.take(amps, (index ^ (jnp.uint32(1) << pivot)).astype(jnp.int32), 1)
-    gathered = jnp.where(odd[None, :] == outcome[:, None], amps, partner)
-    scale = jax.lax.rsqrt(jnp.maximum(weight, execute._TINY))[:, None]
-    keep = ((index >> pivot) & 1) == 0
-    return jnp.where(keep[None, :], gathered * scale, 0)
-
-
-def _measure_kernel(weights, project):
-    def kernel(component, layout, lanes, a, key):
-        weight_0, weight_1 = weights(component, lanes.amps, a)
-        live = jnp.arange(lanes.count.shape[0]) < lanes.used
-        deviation = jnp.max(jnp.where(live, jnp.abs(weight_0 + weight_1 - 1), 0))
-        ones = _ones_drawn(jax.random.fold_in(key, a), lanes.count, weight_0, weight_1)
-        split, outcome, source = _split(lanes, ones)
-        amps = lanes.amps[source]
-        weight = jnp.where(outcome, weight_1[source], weight_0[source])
-        split = split._replace(
-            amps=project(component, amps, a, outcome, weight).astype(amps.dtype),
-            symbols=_set_branch(component, split.symbols, a, outcome),
-            max_norm_deviation=jnp.maximum(
-                lanes.max_norm_deviation,
-                deviation.astype(lanes.max_norm_deviation.dtype),
-            ),
+    # NOTE: the live and dead lanes' ranges tile the sorted positions.
+    dead_symbols, dead_start, dead_count, dead_action = graves
+    entry_symbols = np.zeros((size + dead, num_words), dtype=np.uint32)
+    entry_pruned = np.empty(size + dead, dtype=np.int64)
+    owner = np.empty(shots, dtype=np.int64)
+    for e in range(size + dead):
+        if e < size:
+            entry_symbols[e] = lane_symbols[e]
+            entry_pruned[e] = num_actions
+            first, last = lane_start[e], lane_start[e] + lane_count[e]
+        else:
+            entry_symbols[e] = dead_symbols[e - size]
+            entry_pruned[e] = dead_action[e - size]
+            first = dead_start[e - size]
+            last = first + dead_count[e - size]
+        for p in range(first, last):
+            owner[p] = e
+    pruned_at = np.empty(shots, dtype=np.int64)
+    for p in range(shots):
+        pruned_at[order[p]] = entry_pruned[owner[p]]
+    state, coins = splitmix64(state)
+    shot_symbols = np.empty_like(symbols)
+    samples = np.zeros((shots, output_row.shape[0]), dtype=np.bool_)
+    chunks = _chunks(shots * (num_words + output_row.size), parallel_work, threads)
+    if chunks == 1:
+        _shot_range(
+            symbols,
+            order,
+            owner,
+            entry_symbols,
+            lane_branches,
+            shot_dormant,
+            coins,
+            shot_symbols,
+            0,
+            shots,
         )
-        return _finish(component, layout, lanes, split, a)
-
-    return kernel
-
-
-def _rotate_kernel(kernel):
-    def apply(component, layout, lanes, a, key):
-        del layout
-        amps = kernel(component, _lane_state(lanes), a, key).amps
-        return lanes._replace(amps=amps, action=(a + 1).astype(jnp.int32))
-
-    return apply
-
-
-def _dormant(component, layout, lanes, a, key):
-    def split_lanes(lanes):
-        half = jnp.full(lanes.count.shape, 0.5, dtype=lanes.max_norm_deviation.dtype)
-        ones = _ones_drawn(jax.random.fold_in(key, a), lanes.count, half, half)
-        split, outcome, source = _split(lanes, ones)
-        split = split._replace(
-            amps=lanes.amps[source],
-            symbols=_set_branch(component, split.symbols, a, outcome),
+        _output_range(
+            shot_symbols, output_row, output_const, ready, pruned_at, samples, 0, shots
         )
-        return _finish(component, layout, lanes, split, a)
-
-    def skip(lanes):
-        return lanes._replace(action=(a + 1).astype(jnp.int32))
-
-    return jax.lax.cond(layout.lane_dormant[a], split_lanes, skip, lanes)
-
-
-# NOTE: the order must match the kind codes ROTATE_DIAG … MEASURE_DORMANT in
-# program.py.
-_KERNELS = (
-    _rotate_kernel(execute._rotate_diag),
-    _rotate_kernel(execute._rotate),
-    _measure_kernel(_measure_diag_weights, _measure_diag_project),
-    _measure_kernel(_measure_weights, _measure_project),
-    _dormant,
-)
-
-
-@jax.jit
-def run_lanes(
-    component: StatevectorComponent,
-    layout: SharingLayout,
-    lanes: Lanes,
-    key: Array,
-    stop: Array,
-) -> Lanes:
-    """Run actions ``lanes.action … stop-1``, or until the lane table is full."""
-    branches = [partial(kernel, component, layout) for kernel in _KERNELS]
-
-    def step(lanes: Lanes) -> Lanes:
-        a = lanes.action
-        return jax.lax.switch(component.kind[a], branches, lanes, a, key)
-
-    def going(lanes: Lanes) -> Array:
-        return (lanes.action < stop) & ~lanes.full
-
-    return jax.lax.while_loop(going, step, lanes)
+    else:
+        for c in numba.prange(chunks):
+            lo, hi = shots * c // chunks, shots * (c + 1) // chunks
+            _shot_range(
+                symbols,
+                order,
+                owner,
+                entry_symbols,
+                lane_branches,
+                shot_dormant,
+                coins,
+                shot_symbols,
+                lo,
+                hi,
+            )
+        for c in numba.prange(chunks):
+            lo, hi = shots * c // chunks, shots * (c + 1) // chunks
+            _output_range(
+                shot_symbols,
+                output_row,
+                output_const,
+                ready,
+                pruned_at,
+                samples,
+                lo,
+                hi,
+            )
+    return samples, deviation, groups, peak, size, dead
 
 
-@partial(jax.jit, static_argnames=("capacity",))
-def resize(lanes: Lanes, capacity: int) -> Lanes:
-    """Return ``lanes`` with a new lane-table capacity (the live lanes must fit)."""
-
-    def fit(values):
-        if capacity <= values.shape[0]:
-            return values[:capacity]
-        padding = jnp.zeros(
-            (capacity - values.shape[0], *values.shape[1:]), values.dtype
-        )
-        return jnp.concatenate([values, padding])
-
-    return lanes._replace(
-        amps=fit(lanes.amps),
-        symbols=fit(lanes.symbols),
-        count=fit(lanes.count),
-        start=fit(lanes.start),
-        full=jnp.zeros((), dtype=jnp.bool_),
-    )
+# NOTE: tests set this to fill every amplitude the executor must not read with NaN.
+_POISON = False
 
 
-@jax.jit
-def reconstruct(
-    component: StatevectorComponent,
-    layout: SharingLayout,
-    order: Array,
-    lanes: Lanes,
-    f_packed: Array,
-    key: Array,
-) -> Array:
-    """Return every shot's outputs, in the original shot order."""
-    num_shots = f_packed.shape[0]
-    capacity = lanes.count.shape[0]
-    live = jnp.concatenate(
-        [jnp.arange(capacity) < lanes.used, jnp.arange(num_shots) < lanes.dead_used]
-    )
-    count = jnp.concatenate([lanes.count, lanes.dead_count])
-    start = jnp.where(
-        live & (count > 0), jnp.concatenate([lanes.start, lanes.dead_start]), num_shots
-    )
-    symbols = jnp.concatenate([lanes.symbols, lanes.dead_symbols])
-    pruned_at = jnp.concatenate(
-        [jnp.full(capacity, component.num_actions, jnp.int32), lanes.dead_action]
-    )
-    # The ranges partition the positions, so each position's entry is the one
-    # starting at the latest range start at or before it.
-    position = jnp.arange(num_shots)
-    starting = (
-        jnp.full(num_shots, -1, jnp.int32)
-        .at[start]
-        .set(jnp.arange(start.shape[0], dtype=jnp.int32), mode="drop")
-    )
-    latest_start = jax.lax.cummax(jnp.where(starting >= 0, position, -1))
-    entry = starting[latest_start]
-    coins = jax.random.bits(key, (num_shots, component.num_words), dtype=jnp.uint32)
-    shot_symbols = (
-        f_packed[order]
-        | (symbols[entry] & layout.lane_branches)
-        | (coins & layout.shot_dormant)
-    )
-    values = execute._affine(
-        shot_symbols[:, None, :], component.output_row, component.output_const
-    )
-    written = layout.ready[None, :] <= pruned_at[entry][:, None]
-    values = values & written
-    return jnp.zeros_like(values).at[order].set(values)
+def lane_bytes(component: StatevectorComponent) -> int:
+    """Return the peak memory of one lane of ``sample_shared_component``.
 
-
-def _capacity(needed: int) -> int:
-    return max(_MIN_CAPACITY, 1 << int(np.ceil(np.log2(max(needed, 1)))))
-
-
-@partial(jax.jit, static_argnames=("num_words",))
-def _packed_f(f_params: Array, f_selection: Array, num_words: int) -> Array:
-    return pack_bits(f_params[:, f_selection].astype(jnp.bool_), num_words)
+    That is three rows of amplitudes (the old and the new array while lanes
+    grow) and the per-shot symbols, ranges and outputs.
+    """
+    amplitudes = 3 * 2**component.width * np.dtype(np.complex128).itemsize
+    return amplitudes + 24 * component.num_words + 128 + component.num_outputs
 
 
 def sample_shared_component(
     component: StatevectorComponent,
-    sharing: Sharing,
-    f_params: Array,
-    key: Array,
-    *,
-    segment: int | None = None,
-) -> tuple[Array, Array, Array, dict]:
-    """Sample one component's outputs with shared trajectories.
+    layout: SharingLayout,
+    f_params: np.ndarray,
+    seed: int,
+    share: bool = True,
+) -> tuple[np.ndarray, float, dict]:
+    """Sample one component's outputs, with shared trajectories if ``share``.
 
     Args:
         component: The compiled component.
-        sharing: Its sharing layout and capacity hint (updated in place).
+        layout: Its sharing layout.
         f_params: Error-basis bits of every shot, shape ``(B, num_f_global)``.
-        key: JAX random key.
-        segment: Actions between host checks that shrink the lane table to the
-            live lanes. Defaults to 32 for ``W ≥ 8`` and to the whole tape below,
-            where shrinking saves less array work than its compilations cost.
+        seed: Seed of the batch's random numbers, below 2^64.
+        share: Whether shots with equal keys share a lane; otherwise every shot
+            has its own.
 
     Returns:
-        ``(samples, next_key, max_norm_deviation, stats)``, where ``samples`` has
-        shape ``(B, num_outputs)`` and ``stats`` counts groups and lanes.
+        ``(samples, max_norm_deviation, stats)``, where ``samples`` has shape
+        ``(B, num_outputs)`` and ``stats`` counts groups and lanes.
 
     """
-    layout = sharing.layout
-    num_actions = component.num_actions
-    if segment is None:
-        segment = 32 if component.width >= 8 else max(num_actions, 1)
-    f_packed = _packed_f(f_params, component.f_selection, component.num_words)
-    num_shots = f_packed.shape[0]
-    key, order_key, lane_key, coin_key = jax.random.split(key, 4)
-    rng = np.random.default_rng(np.asarray(jax.random.bits(order_key, (4,))))
-    order_np, start_np, count_np = group_on_host(
-        np.asarray(key_words(layout, f_packed)), rng
+    f = np.asarray(f_params)
+    samples, deviation, groups, peak, lanes, dead = _execute(
+        f.shape[0] << component.width,
+        f,
+        component.tape,
+        layout,
+        component.width,
+        np.uint64(seed),
+        share,
+        kernels.PARALLEL_WORK,
+        numba.get_num_threads(),
+        _POISON,
     )
-    groups = len(start_np)
-    sticky = sharing.lane_capacity if segment >= num_actions else 0
-    capacity = max(_capacity(2 * groups), sticky)
-    start_padded = np.full(capacity, num_shots, dtype=np.int32)
-    count_padded = np.zeros(capacity, dtype=np.int32)
-    start_padded[:groups], count_padded[:groups] = start_np, count_np
-    order = jnp.asarray(order_np)
-    lanes = initial_lanes(
-        component,
-        f_packed,
-        order,
-        jnp.asarray(start_padded),
-        jnp.asarray(count_padded),
-        jnp.asarray(groups, dtype=jnp.int32),
-        capacity=capacity,
-    )
-    resumes = peak = dead_used = 0
-    largest = capacity
-    action, used = 0, groups
-    while action < num_actions:
-        stop = jnp.asarray(min(action + segment, num_actions), dtype=jnp.int32)
-        lanes = run_lanes(component, layout, lanes, lane_key, stop)
-        full, action, used, dead_used = (
-            int(value)
-            for value in jax.device_get(
-                (lanes.full, lanes.action, lanes.used, lanes.dead_used)
-            )
-        )
-        peak = max(peak, used)
-        capacity = lanes.count.shape[0]
-        if full:
-            resumes += 1
-            lanes = resize(lanes, capacity=2 * capacity)
-        elif action < num_actions and _capacity(2 * used) < capacity:
-            lanes = resize(lanes, capacity=_capacity(2 * used))
-        largest = max(largest, lanes.count.shape[0])
-    sharing.lane_capacity = max(sharing.lane_capacity, largest)
-    samples = reconstruct(component, layout, order, lanes, f_packed, coin_key)
-    stats = {
-        "groups": groups,
-        "peak lanes": peak,
-        "lanes": used,
-        "dead": dead_used,
-        "lane_capacity": lanes.count.shape[0],
-        "resumes": resumes,
-    }
-    return samples, key, lanes.max_norm_deviation, stats
+    stats = {"groups": groups, "peak lanes": peak, "lanes": lanes, "dead": dead}
+    return samples, float(deviation), stats
