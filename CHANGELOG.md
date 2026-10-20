@@ -14,8 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `R_X`, `R_Y`, `R_Z`, and `U3`. `R_XX`, `R_YY`, and `R_ZZ` share `R_PAULI`'s
   metadata tag and render as `R_PAULI(alpha)`. Rendering is provided by the
   `stim-timeline-text` package. (#171)
+- `strategy="active_statevector"` for `compile_sampler`, `compile_detector_sampler`
+  and the sampler classes. Each non-direct component is read off the reduced ZX
+  diagram, without circuit extraction, as Pauli rotations and measurements on
+  `|0…0⟩`, and simulated on a dense state vector over its active qubits, so the
+  cost grows as `2^W` in the active width `W`. It only samples: it cannot compute
+  probabilities, and it raises `ValueError` for components it cannot read, for
+  components wider than 30 active qubits, and when one shot needs more than half
+  of the available memory. Batches hold at most 2^16 shots. (#203)
 
 ### Changed
+- The samplers now default to `strategy="active_statevector"`; pass
+  `strategy="cat5"` for the previous stabilizer-rank default.
+  `CompiledStateProbs` keeps `"cat5"`. (#203)
 - Tsim now uses zxparam instead of pyzx-param. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zxparam.
 - `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`.
 - In `Circuit.get_graph()` (and the `"zx"` diagram), every detector and observable has a classical output boundary, with ports after the qubit outputs, so the graph's tensor is the circuit's channel together with the detector and observable bits.

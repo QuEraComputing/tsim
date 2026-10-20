@@ -7,12 +7,11 @@ import pymatching
 import pytest
 import stim
 from tqdm import tqdm
-from zxparam import DecompositionStrategy
 from zxparam.stabrank import is_u3_spider
 
 import tsim.sampler as sampler_module
 from tsim.circuit import Circuit
-from tsim.core.types import CompiledComponent, CompiledProgram
+from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.external.vec_sim.vec_sampler import VecSampler
 from tsim.sampler import CompiledStateProbs
 
@@ -63,10 +62,8 @@ def assert_samples_match(samples1: np.ndarray, samples2: np.ndarray):
         "color_code:memory_xyz",
     ],
 )
-@pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting"])
-def test_quantum_memory_codes_without_noise(
-    code_task: str, strategy: DecompositionStrategy
-):
+@pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting", "active_statevector"])
+def test_quantum_memory_codes_without_noise(code_task: str, strategy: SamplingStrategy):
 
     circ = stim.Circuit.generated(
         code_task,
@@ -84,7 +81,7 @@ def test_quantum_memory_codes_without_noise(
 
 
 @pytest.mark.parametrize("seed", [1, 2, 42])
-@pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting"])
+@pytest.mark.parametrize("strategy", ["cat5", "bss", "cutting", "active_statevector"])
 def test_sampler(seed, strategy):
     num_qubits = 3
     stim_circuit = gen_stim_circuit(
@@ -218,7 +215,10 @@ def test_memory_error_correction_and_compare_to_stim(code_task: str):
         "before_round_data_depolarization",
     ],
 )
-def test_rotated_surface_code_single_noise_channel_matches_stim(channel: str):
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+def test_rotated_surface_code_single_noise_channel_matches_stim(
+    channel: str, strategy: SamplingStrategy
+):
     """Regression test for single-channel detector sampling noise handling."""
     noise_kwargs = {
         "after_clifford_depolarization": 0.0,
@@ -241,7 +241,7 @@ def test_rotated_surface_code_single_noise_channel_matches_stim(channel: str):
     )
     tsim_dets = (
         Circuit.from_stim_program(circ)
-        .compile_detector_sampler(seed=42)
+        .compile_detector_sampler(seed=42, strategy=strategy)
         .sample(
             shots=shots,
             batch_size=shots // 10,
@@ -293,10 +293,15 @@ def test_rotated_surface_code_single_noise_channel_matches_stim(channel: str):
         "two_correlated_errors_with_else",
     ],
 )
-def test_correlated_error(stim_program: str):
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+def test_correlated_error(stim_program: str, strategy: SamplingStrategy):
     n_samples = 10_000
     stim_samples = stim.Circuit(stim_program).compile_sampler(seed=0).sample(n_samples)
-    tsim_samples = Circuit(stim_program).compile_sampler(seed=0).sample(n_samples)
+    tsim_samples = (
+        Circuit(stim_program)
+        .compile_sampler(seed=0, strategy=strategy)
+        .sample(n_samples)
+    )
     assert_samples_match(stim_samples, tsim_samples)
 
 
@@ -375,11 +380,16 @@ def test_correlated_error(stim_program: str):
         "multiple_products",
     ],
 )
-def test_mpp_inversion_parity(stim_program: str):
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+def test_mpp_inversion_parity(stim_program: str, strategy: SamplingStrategy):
     """Test that MPP correctly handles inversions on any Pauli (only parity matters)."""
     n_samples = 10_000
     stim_samples = stim.Circuit(stim_program).compile_sampler(seed=0).sample(n_samples)
-    tsim_samples = Circuit(stim_program).compile_sampler(seed=0).sample(n_samples)
+    tsim_samples = (
+        Circuit(stim_program)
+        .compile_sampler(seed=0, strategy=strategy)
+        .sample(n_samples)
+    )
     assert_samples_match(stim_samples, tsim_samples)
 
 
@@ -427,7 +437,7 @@ def simulate_with_vec_sampler(stim_circuit: stim.Circuit) -> np.ndarray:
 
 
 def simulate_with_tsim(
-    stim_circuit: stim.Circuit, strategy: DecompositionStrategy = "cat5"
+    stim_circuit: stim.Circuit, strategy: SamplingStrategy = "cat5"
 ) -> np.ndarray:
     """Compute state probabilities using tsim's CompiledStateProbs.
 

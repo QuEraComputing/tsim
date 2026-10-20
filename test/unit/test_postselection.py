@@ -339,7 +339,8 @@ def test_postselection_observable_reference_on_jax_computed_discarded_rows():
         "use_observable_reference_sample": True,
         "separate_observables": True,
     }
-    sampler = _make(circuit, seed=2)
+    # NOTE: under cat5, seed 2 samples a reference observable of 1.
+    sampler = Circuit(circuit).compile_detector_sampler(strategy="cat5", seed=2)
     captured: dict[str, np.ndarray] = {}
     original = sampler._sample_batches_with_postselection
 
