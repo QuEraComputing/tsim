@@ -48,7 +48,7 @@ def compile_program(
     """Compile a prepared graph into an executable sampling program.
 
     The graph is split into connected components. A component whose single
-    output equals one error-basis bit takes the direct path. With
+    output equals one error-basis bit or a constant takes the direct path. With
     ``strategy="active_statevector"`` every other component becomes an action tape for
     the statevector executor. Otherwise its outputs are plugged (all prefixes
     in ``sequential`` mode, none and all in ``joint`` mode), each plugged graph
@@ -117,11 +117,11 @@ def compile_program(
 
 
 def classify_direct(component: Graph, layout: ParamLayout) -> tuple[int, bool] | None:
-    """Return ``(basis index, flip)`` if the component's only output is one basis bit.
+    """Return ``(basis index, flip)`` for a direct output; index -1 means constant.
 
     That is the case when the component is a classical output boundary joined by
-    a Hadamard edge to a classical Z spider whose phase is 0 or π plus one
-    error-basis parameter.
+    a Hadamard edge to a classical Z spider whose phase is 0 or π plus at most
+    one error-basis parameter.
     """
     outputs = component.outputs()
     if len(outputs) != 1 or component.num_vertices() != 2:
@@ -137,8 +137,10 @@ def classify_direct(component: Graph, layout: ParamLayout) -> tuple[int, bool] |
     if component.edge_type(out, spider) != EdgeType.HADAMARD:
         return None
     phase = component.phase(spider)
-    if len(phase.parameters) != 1 or phase.value not in (0, 1):
+    if len(phase.parameters) > 1 or phase.value not in (0, 1):
         return None
+    if not phase.parameters:
+        return -1, phase.value == 1
     (param,) = phase.parameters
     kind, basis_index = layout.kind(param)
     if kind != "f":

@@ -98,7 +98,8 @@ class CompiledProgram:
     Attributes:
         components: The compiled components, sorted by number of outputs:
             stabilizer-rank ``CompiledComponent``s or ``StatevectorComponent``s.
-        direct_f_indices: Precomputed f-parameter indices for direct components.
+        direct_f_indices: Precomputed f-parameter indices for direct components;
+            -1 denotes a constant output whose value is its direct flip.
         direct_flips: Precomputed flip flags for direct components.
         output_order: Maps concatenated position to original output index.
             The first ``len(direct_f_indices)`` entries correspond to direct

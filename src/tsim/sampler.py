@@ -157,6 +157,16 @@ def _check_norm(max_norm_deviation: float | jax.Array, threshold: float) -> None
         )
 
 
+def _direct_bits(program: CompiledProgram, f_params: jax.Array) -> jax.Array:
+    """Evaluate direct outputs, including constants with f-index -1."""
+    indices = program.direct_f_indices
+    has_f = indices >= 0
+    bits = jnp.broadcast_to(program.direct_flips, (f_params.shape[0], len(indices)))
+    return bits.at[:, has_f].set(
+        bits[:, has_f] ^ f_params[:, indices[has_f]].astype(jnp.bool_)
+    )
+
+
 def sample_program(
     program: CompiledProgram, f_params: jax.Array, key: PRNGKey
 ) -> jax.Array:
@@ -176,11 +186,7 @@ def sample_program(
         return jnp.zeros((f_params.shape[0], 0), dtype=jnp.bool_)
     results = []
     if len(program.direct_f_indices) > 0:
-        direct_bits = (
-            f_params[:, program.direct_f_indices].astype(jnp.bool_)
-            ^ program.direct_flips
-        )
-        results.append(direct_bits)
+        results.append(_direct_bits(program, f_params))
     for component in program.components:
         assert isinstance(component, CompiledComponent)
         samples, key, max_norm_deviation = sample_component(component, f_params, key)
@@ -251,14 +257,16 @@ def sample_statevector_program(
 def _write_direct_detectors(f, f_indices, flips, columns, postselect, out):
     """Clear every row of ``out`` and write its direct detector ``j`` at ``columns[j]``.
 
-    Detector ``j`` is ``f[row, f_indices[j]] ^ flips[j]``. Returns which rows
-    have a postselected detector of 1.
+    Detector ``j`` is ``f[row, f_indices[j]] ^ flips[j]``, or just ``flips[j]``
+    when its index is -1. Returns which rows have a postselected detector of 1.
     """
     discarded = np.zeros(f.shape[0], dtype=np.bool_)
     for row in numba.prange(f.shape[0]):
         out[row] = False
         for j in range(len(f_indices)):
-            bit = (f[row, f_indices[j]] != 0) ^ flips[j]
+            bit = flips[j]
+            if f_indices[j] >= 0:
+                bit ^= f[row, f_indices[j]] != 0
             out[row, columns[j]] = bit
             if postselect[j] and bit:
                 discarded[row] = True
@@ -270,12 +278,16 @@ def _gather_outputs(f, f_indices, flips, component_bits, order, out):
     """Write every row's outputs into ``out`` in their original order.
 
     Output ``k`` of the concatenation goes to column ``order[k]``: first the
-    direct outputs ``f[row, f_indices[j]] ^ flips[j]``, then ``component_bits``.
+    direct outputs (just ``flips[j]`` when ``f_indices[j]`` is -1), then
+    ``component_bits``.
     """
     num_direct = len(f_indices)
     for row in numba.prange(f.shape[0]):
         for j in range(num_direct):
-            out[row, order[j]] = (f[row, f_indices[j]] != 0) ^ flips[j]
+            bit = flips[j]
+            if f_indices[j] >= 0:
+                bit ^= f[row, f_indices[j]] != 0
+            out[row, order[j]] = bit
         for j in range(component_bits.shape[1]):
             out[row, order[num_direct + j]] = component_bits[row, j]
 
@@ -1162,8 +1174,9 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 only be used when observables are deterministic. Otherwise, it can
                 unpredictably change the results.
             postselection_mask: Optional boolean array of length ``num_detectors``.
-                When set, shots where any masked direct detector fires are not
-                sampled further. All ``shots`` rows are still returned: survivors
+                When set, shots where any masked direct detector (an error bit
+                or a constant) fires are not sampled further. All ``shots`` rows
+                are still returned: survivors
                 contain the full sample, while discarded rows retain direct detector
                 columns and fill component columns with ``False``; with
                 ``strategy="active_statevector"``, a shot discarded by a masked
@@ -1201,7 +1214,12 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             if not self._backend.prunes:
                 skips = mask & self._direct_detector_mask
             else:
-                skips = mask
+                skips = mask.copy()
+            indices, flips, columns = self._direct_detectors
+            constant = indices < 0
+            skips[columns[constant]] &= flips[constant] & (
+                not use_detector_reference_sample
+            )
             postselection_mask = (
                 mask if skips.any() and self._program.components else None
             )
@@ -1310,10 +1328,7 @@ class CompiledStateProbs(_CompiledSamplerBase):
         p_joint = jnp.ones(batch_size)
 
         if len(self._program.direct_f_indices) > 0:
-            direct_bits = (
-                f_samples[:, self._program.direct_f_indices].astype(jnp.bool_)
-                ^ self._program.direct_flips
-            )
+            direct_bits = _direct_bits(self._program, f_samples)
             n_direct = len(self._program.direct_f_indices)
             targets = state[self._program.output_order[:n_direct]]
             p_joint = p_joint * (direct_bits == targets).all(axis=1)

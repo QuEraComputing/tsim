@@ -115,11 +115,14 @@ survivors = samples[keep]
 ```
 
 `sample` always returns exactly `shots` rows. Shots discarded by a **direct**
-postselected detector skip the expensive JAX autoregressive loop; their direct
-detector columns are still correct, and all other columns are filled with
-`False`. Re-apply the mask to the detector columns (as above) to recover the
-surviving shots. Detectors that live inside a JAX component cannot be evaluated
-without running JAX, so those shots are always computed in full.
+postselected detector (one that is a single error bit or a constant, such as a
+deterministic detector of a noiseless circuit) skip the remaining component
+sampling; their direct detector columns are still correct, and all other columns
+are filled with `False`. With `strategy="active_statevector"`, a shot discarded
+by a component detector also stops being simulated, and outputs set after that
+detector are filled with `False`. Re-apply the mask to the detector columns (as
+above) to recover the surviving shots. Stabilizer-rank components are always
+computed in full for shots that pass direct postselection.
 
 This is independent of `prepend_observables`, `append_observables`,
 `separate_observables`, and `bit_packed`. When combined with
@@ -127,8 +130,8 @@ This is independent of `prepend_observables`, `append_observables`,
 postselection discard check. On surviving rows it is applied to every detector
 column; on direct-discarded partial rows it is applied only to direct detector
 columns (component columns stay `False`). When combined with
-`use_observable_reference_sample`, the reference XOR is applied to every row
-that ran JAX; direct-discarded partial rows are left unchanged.
+`use_observable_reference_sample`, returned observable values include the
+reference XOR; outputs skipped by postselection remain `False`.
 
 ## Benchmarks
 

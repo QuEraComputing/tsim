@@ -360,7 +360,9 @@ def test_direct_outputs_land_in_their_columns(name, rows):
     f_params = sampler._channel_sampler.sample(rows)
     samples = sampler._backend.sample(f_params, 2)
     columns = program.output_order[: len(program.direct_f_indices)]
-    expected = (f_params[:, program.direct_f_indices] != 0) ^ program.direct_flips
+    expected = np.broadcast_to(program.direct_flips, (rows, len(columns))).copy()
+    has_f = program.direct_f_indices >= 0
+    expected[:, has_f] ^= f_params[:, program.direct_f_indices[has_f]] != 0
     np.testing.assert_array_equal(samples[:, columns], expected)
 
 
