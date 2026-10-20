@@ -8,6 +8,7 @@ import numba
 import numpy as np
 import pytest
 
+import tsim.utils.kernels as kernels
 from tsim.utils.kernels import PARALLEL_WORK, kernel, run_tasks
 
 
@@ -111,3 +112,24 @@ def test_run_tasks_inside_a_task_runs_in_the_task():
     for inner in run_tasks(task, range(8), 4):
         assert [m for m, _ in inner] == [0, 1, 2]
         assert len({ident for _, ident in inner}) == 1
+
+
+def test_run_tasks_runs_at_most_threads_tasks_at_once():
+    lock, running, peak = threading.Lock(), [0], [0]
+
+    def task(_):
+        with lock:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        time.sleep(0.01)
+        with lock:
+            running[0] -= 1
+
+    run_tasks(task, range(12), 3)
+    assert 1 < peak[0] <= 3
+
+
+def test_run_tasks_reuses_one_pool_for_every_thread_count():
+    for threads in range(2, 9):
+        run_tasks(lambda n: n, range(16), threads)
+    assert kernels._pool.cache_info().currsize == 1

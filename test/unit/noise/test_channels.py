@@ -807,6 +807,14 @@ class TestUniqueColumns:
         np.testing.assert_array_equal(got_cols, expected_cols)
         np.testing.assert_array_equal(got_inverse, np.ravel(expected_inverse))
 
+    def test_accepts_float_matrices(self):
+        matrix = np.array([[1.0, 0.0, 1.0], [0.0, 2.0, 0.0]])
+        got_cols, got_inverse = unique_columns(matrix)
+        np.testing.assert_array_equal(got_cols, [[0.0, 1.0], [2.0, 0.0]])
+        np.testing.assert_array_equal(got_inverse, [1, 0, 1])
+        sampler = ChannelSampler([error_probs(1)], np.eye(1))
+        np.testing.assert_array_equal(sampler.sample(3), np.ones((3, 1)))
+
 
 class TestSimplifyChannels:
     """Tests for the full simplify_channels function."""

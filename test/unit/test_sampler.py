@@ -537,7 +537,6 @@ def test_direct_detectors_overwrite_every_column_of_their_rows():
         np.array([False, True]),
         np.array([3, 0]),
         np.array([True, False]),
-        np.array([False, False]),
         out,
     )
     expected = np.zeros((3, 4), dtype=np.bool_)

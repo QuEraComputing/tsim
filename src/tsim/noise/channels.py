@@ -551,7 +551,7 @@ def unique_columns(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         column of ``matrix`` among them.
 
     """
-    packed = np.ascontiguousarray(np.packbits(matrix, axis=0).T)
+    packed = np.ascontiguousarray(np.packbits(np.asarray(matrix) != 0, axis=0).T)
     ids: dict[bytes, int] = {}
     column_ids = np.array(
         [ids.setdefault(column.tobytes(), len(ids)) for column in packed],

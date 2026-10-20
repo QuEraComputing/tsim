@@ -4,7 +4,6 @@ import warnings
 from test.helpers.gen import gen_stim_circuit
 from test.helpers.statevector import CIRCUITS, assert_counts_match
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -104,24 +103,7 @@ def test_probabilities_reject_statevector():
         compile_program(prepared, mode="joint", strategy="active_statevector")
 
 
-def test_complex128_sampling_matches_stabilizer_rank():
-    circuit = Circuit(CIRCUITS["t_ghz"])
-    expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
-        10_000, append_observables=True
-    )
-    with jax.enable_x64(True):
-        sampler = circuit.compile_detector_sampler(
-            strategy="active_statevector", seed=2
-        )
-        assert all(
-            isinstance(c, StatevectorComponent) and c.dtype == "complex128"
-            for c in sampler._program.components
-        )
-        got = sampler.sample(10_000, append_observables=True)
-    assert_counts_match(got, expected)
-
-
-def _norm_warnings(monkeypatch, strategy, deviation, *, x64=False):
+def _norm_warnings(monkeypatch, strategy, deviation):
     sample = sampler_module.sample_component
     sample_shared = sampler_module.sample_shared_component
 
@@ -135,29 +117,20 @@ def _norm_warnings(monkeypatch, strategy, deviation, *, x64=False):
 
     monkeypatch.setattr(sampler_module, "sample_component", drifting)
     monkeypatch.setattr(sampler_module, "sample_shared_component", drifting_shared)
-    with jax.enable_x64(x64):
-        sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
-            strategy=strategy, seed=0
-        )
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            sampler.sample(10)
+    sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
+        strategy=strategy, seed=0
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        sampler.sample(10)
     return [w for w in caught if "not normalized" in str(w.message)]
 
 
-@pytest.mark.parametrize(
-    "x64, deviation, warns",
-    [
-        (False, 5e-4, False),
-        (False, 2e-3, True),
-        (True, 1e-10, False),
-        (True, 1e-8, True),
-    ],
-)
-def test_statevector_norm_warnings_depend_on_the_amplitude_dtype(
-    monkeypatch, x64, deviation, warns
+@pytest.mark.parametrize("deviation, warns", [(1e-10, False), (1e-8, True)])
+def test_statevector_norm_warnings_have_a_complex128_threshold(
+    monkeypatch, deviation, warns
 ):
-    caught = _norm_warnings(monkeypatch, "active_statevector", deviation, x64=x64)
+    caught = _norm_warnings(monkeypatch, "active_statevector", deviation)
     assert bool(caught) == warns
 
 

@@ -58,11 +58,10 @@ def jit(function: Callable, *, parallel: bool = False) -> Callable:
     # it reads them, so the name carries the flag: an entry cached without nogil
     # would keep holding the GIL.
     function = _renamed(function, "_nogil")
+    options = _prange_only() if parallel else False
     try:
-        options = _prange_only() if parallel else False
         return numba.njit(cache=True, parallel=options, nogil=True)(function)
     except RuntimeError:
-        options = _prange_only() if parallel else False
         return numba.njit(parallel=options, nogil=True)(function)
 
 
@@ -94,8 +93,12 @@ def _mark_task_thread() -> None:
 
 
 @functools.cache
-def _pool(threads: int) -> ThreadPoolExecutor:
-    return ThreadPoolExecutor(threads, initializer=_mark_task_thread)
+def _pool() -> ThreadPoolExecutor:
+    # NOTE: one pool for every call, as large as numba's thread count can get.
+    return ThreadPoolExecutor(
+        numba.config.NUMBA_NUM_THREADS,  # pyright: ignore[reportAttributeAccessIssue]
+        initializer=_mark_task_thread,
+    )
 
 
 def _after_fork_in_child() -> None:
@@ -123,7 +126,12 @@ def run_tasks(
     tasks = list(tasks)
     if min(threads, len(tasks)) <= 1 or getattr(_TASK_THREAD, "active", False):
         return [function(task) for task in tasks]
-    pool = _pool(threads)
-    futures = [pool.submit(function, task) for task in tasks]
+    slots = threading.Semaphore(threads)
+
+    def run(task: _Task) -> _Result:
+        with slots:
+            return function(task)
+
+    futures = [_pool().submit(run, task) for task in tasks]
     wait(futures)
     return [future.result() for future in futures]

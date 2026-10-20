@@ -873,7 +873,7 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). On the CPU, "active_statevector" samples up
+                "bss", "cutting"). "active_statevector" samples on the CPU, up
                 to ``numba.get_num_threads()`` batches at once, each with its
                 own memory.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
@@ -912,7 +912,7 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). On the CPU, "active_statevector" samples up
+                "bss", "cutting"). "active_statevector" samples on the CPU, up
                 to ``numba.get_num_threads()`` batches at once, each with its
                 own memory.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots

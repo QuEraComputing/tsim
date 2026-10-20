@@ -6,7 +6,7 @@ parities of the final symbols), so a shot's grouping key is the f-bit part of
 every rotation sign. With postselection the key also holds the f-bit part of
 every postselected output, so that a lane is pruned as a whole as soon as one of
 its postselected outputs is known to be 1: at the action that sets the output's
-last branch bit (the first measurement for an output of f-bits only).
+last branch bit, or before the first action for an output of f-bits only.
 
 A lane holds amplitudes, the symbols of one of its shots (its f-bits agree with
 every member on the key, and its branch bits are the lane's outcomes), a shot
@@ -25,8 +25,9 @@ the tape on the live lanes and the ``2^extent`` amplitudes each action can
 touch, and evaluates the outputs. When the extent grows, the newly touched
 amplitudes are cleared, because a slot reused for another lane can hold stale
 values there. After the tape each shot's outputs are evaluated from its own
-f-bits, its lane's outcomes and its own dormant coins; a pruned shot's outputs
-that need a branch bit set after its pruning action are False.
+f-bits, its lane's outcomes and its own dormant coins, XOR its reference bit; a
+pruned shot's outputs that need a branch bit set after its pruning action are
+False.
 """
 
 from __future__ import annotations
@@ -53,39 +54,22 @@ _TINY = 1e-30
 _I_POWERS = (1, 1j, -1, -1j)
 
 
-class Tape(NamedTuple):
-    """A component's action tape as NumPy arrays (see ``StatevectorComponent``)."""
-
-    kind: np.ndarray
-    x_mask: np.ndarray
-    z_mask: np.ndarray
-    cos: np.ndarray
-    sin: np.ndarray
-    pivot: np.ndarray
-    extent: np.ndarray
-    branch: np.ndarray
-    sign_const: np.ndarray
-    sign_row: np.ndarray
-    output_const: np.ndarray
-    output_row: np.ndarray
-    f_selection: np.ndarray
-
-
 class SharingLayout(NamedTuple):
-    """Which symbols the shots of a lane must share, and the tape they run.
+    """Which symbols the shots of a lane must share, and which outputs prune them.
 
     Attributes:
-        tape: The component's actions and outputs.
         key_rows: f-bit masks whose parities form the grouping key, a basis of the
             f-parts of every rotation sign and every postselected output,
             shape ``(K, num_words)``.
         lane_dormant: Dormant measurements that split lanes, shape ``(A,)``.
+        prune_first: The postselected outputs of f-bits only, tested before the
+            first action, shape ``(num_outputs,)``.
         pruned: Actions after which some postselected output is tested,
             shape ``(A,)``.
         prune_outputs: The postselected outputs tested after each action,
             shape ``(A, num_outputs)``.
-        prune_flip: Reference bit XOR-ed into each output before the
-            postselection test, shape ``(num_outputs,)``.
+        output_const: Constant of each output XOR its reference bit, shape
+            ``(num_outputs,)``.
         lane_branches: Branch bits a lane carries, shape ``(num_words,)``.
         shot_dormant: Branch bits of the dormant measurements drawn per shot,
             shape ``(num_words,)``.
@@ -99,12 +83,12 @@ class SharingLayout(NamedTuple):
 
     """
 
-    tape: Tape
     key_rows: np.ndarray
     lane_dormant: np.ndarray
+    prune_first: np.ndarray
     pruned: np.ndarray
     prune_outputs: np.ndarray
-    prune_flip: np.ndarray
+    output_const: np.ndarray
     lane_branches: np.ndarray
     shot_dormant: np.ndarray
     ready: np.ndarray
@@ -139,37 +123,29 @@ def sharing_layout(
         postselected: Whether each output slot is postselected, shape
             ``(num_outputs,)``. ``None`` prunes nothing.
         flipped: Reference bit of each output slot, XOR-ed into the output before
-            the postselection test (``use_detector_reference_sample``), shape
-            ``(num_outputs,)``. ``None`` flips nothing.
+            the postselection test and before a pruned shot's later outputs are
+            cleared, shape ``(num_outputs,)``. ``None`` flips nothing.
 
     """
-    tape = Tape(*(np.array(getattr(component, field)) for field in Tape._fields))
+    tape = component.tape
     num_words = component.num_words
     num_f = len(tape.f_selection)
     kind, branch = tape.kind, tape.branch
-    num_actions = len(kind)
+    num_outputs = component.num_outputs
     sign_bits = _unpack(tape.sign_row, num_words)
     output_bits = _unpack(tape.output_row, num_words)
-    num_outputs = component.num_outputs
+    no_outputs = np.zeros(num_outputs, dtype=bool)
     postselected = np.asarray(
-        np.zeros(num_outputs) if postselected is None else postselected, dtype=bool
+        no_outputs if postselected is None else postselected, dtype=bool
     )
-    flipped = np.asarray(
-        np.zeros(num_outputs) if flipped is None else flipped, dtype=bool
-    )
+    flipped = np.asarray(no_outputs if flipped is None else flipped, dtype=bool)
 
     setter = np.full(32 * num_words, -1, dtype=np.int32)
     setter[branch[branch >= 0]] = np.flatnonzero(branch >= 0)
     ready = np.max(np.where(output_bits, setter[None, :], -1), axis=1, initial=-1)
-    measurements = np.flatnonzero(np.isin(kind, (MEASURE_DIAG, MEASURE)))
-    if len(measurements) == 0:
-        measurements = np.flatnonzero(kind == MEASURE_DORMANT)
-    first_measurement = measurements[0] if len(measurements) else -1
-    prune_at = np.where(ready >= 0, ready, first_measurement)
-    prune_outputs = np.zeros((num_actions, num_outputs), dtype=bool)
-    for o in np.flatnonzero(postselected & (prune_at >= 0)):
-        prune_outputs[prune_at[o], o] = True
-    pruned = np.asarray(prune_outputs.any(axis=1))
+    prune_outputs = np.zeros((len(kind), num_outputs), dtype=bool)
+    for o in np.flatnonzero(postselected & (ready >= 0)):
+        prune_outputs[ready[o], o] = True
 
     rotation = np.isin(kind, (ROTATE_DIAG, ROTATE))
     keyed_bits = np.vstack([sign_bits[rotation], output_bits[postselected]])
@@ -179,36 +155,37 @@ def sharing_layout(
         key_bits, _ = find_basis(key_bits.astype(np.uint8))
         key_bits = np.asarray(key_bits, dtype=bool)
 
+    # NOTE: a pruning action sets a branch bit of a postselected output, so its
+    # branch reaches the key.
     reaches_key = np.asarray(np.any(keyed_bits, axis=0), dtype=bool)
     dormant = kind == MEASURE_DORMANT
-    lane_dormant = dormant & (pruned | ((branch >= 0) & reaches_key[branch]))
+    lane_dormant = dormant & reaches_key[branch]
     active = np.isin(kind, (MEASURE_DIAG, MEASURE))
     lane_bits = np.zeros(32 * num_words, dtype=bool)
-    lane_bits[branch[(active | lane_dormant) & (branch >= 0)]] = True
+    lane_bits[branch[active | lane_dormant]] = True
     shot_bits = np.zeros(32 * num_words, dtype=bool)
-    shot_bits[branch[dormant & ~lane_dormant & (branch >= 0)]] = True
+    shot_bits[branch[dormant & ~lane_dormant]] = True
 
-    dtype = np.dtype(component.dtype)
     quarter_turns = [
         int(x & z).bit_count() & 3
         for x, z in zip(tape.x_mask, tape.z_mask, strict=True)
     ]
-    i_power = np.array([_I_POWERS[q] for q in quarter_turns], dtype=dtype)
+    i_power = np.array([_I_POWERS[q] for q in quarter_turns], dtype=np.complex128)
     cos, sin = tape.cos, tape.sin
 
     return SharingLayout(
-        tape=tape,
         key_rows=_pack(key_bits, num_words).reshape(-1, num_words),
         lane_dormant=lane_dormant,
-        pruned=pruned,
+        prune_first=postselected & (ready < 0),
+        pruned=np.asarray(prune_outputs.any(axis=1)),
         prune_outputs=prune_outputs,
-        prune_flip=flipped,
+        output_const=tape.output_const ^ flipped,
         lane_branches=_pack(lane_bits, num_words),
         shot_dormant=_pack(shot_bits, num_words),
         ready=ready.astype(np.int64),
         i_power=i_power,
-        factor=np.stack([cos - 1j * sin, cos + 1j * sin], axis=1).astype(dtype),
-        coupling=(-1j * sin * i_power).astype(dtype),
+        factor=np.stack([cos - 1j * sin, cos + 1j * sin], axis=1),
+        coupling=-1j * sin * i_power,
     )
 
 
@@ -317,7 +294,7 @@ def _weights_range(amps, lo, hi, span, x, z, i_power, w0, w1):
     """Write the outcome weights of measuring ``X^x Z^z`` for lanes ``lo … hi-1``."""
     for lane in range(lo, hi):
         for i in range(span):
-            a = np.complex128(amps[lane, i])
+            a = amps[lane, i]
             if x == 0:
                 if _parity(i & z):
                     w1[lane] += a.real**2 + a.imag**2
@@ -325,7 +302,7 @@ def _weights_range(amps, lo, hi, span, x, z, i_power, w0, w1):
                     w0[lane] += a.real**2 + a.imag**2
             else:
                 j = i ^ x
-                b = i_power * np.complex128(amps[lane, j])
+                b = i_power * amps[lane, j]
                 if _parity(j & z):
                     b = -b
                 plus, minus = a + b, a - b
@@ -421,6 +398,42 @@ def _group(keys, state):
 
 
 @jit
+def _prune(amps, span, size, dead, tests, output_row, output_const, lanes, graves, a):
+    """Move the lanes with a tested output of 1 to the dead lanes; return the counts.
+
+    ``tests`` marks the outputs to test, ``lanes`` holds the live lanes' symbols,
+    starts and counts, and ``graves`` the same and the pruning action of the dead
+    lanes. The live lanes keep their order in rows ``0 … kept-1``.
+    """
+    symbols, start, count = lanes
+    dead_symbols, dead_start, dead_count, dead_action = graves
+    kept = 0
+    for lane in range(size):
+        dies = False
+        for o in range(len(tests)):
+            if not tests[o]:
+                continue
+            acc = 0
+            for w in range(symbols.shape[1]):
+                acc ^= symbols[lane, w] & output_row[o, w]
+            if _parity(acc) ^ output_const[o]:
+                dies = True
+                break
+        if dies:
+            dead_symbols[dead] = symbols[lane]
+            dead_start[dead], dead_count[dead] = start[lane], count[lane]
+            dead_action[dead] = a
+            dead += 1
+            continue
+        if kept != lane:
+            _copy_lane(amps, kept, lane, span)
+            symbols[kept] = symbols[lane]
+            start[kept], count[kept] = start[lane], count[lane]
+        kept += 1
+    return kept, dead
+
+
+@jit
 def _poison(amps, size, span):
     """Fill every amplitude the executor must not read with NaN (for tests)."""
     amps[:size, span:] = np.nan
@@ -463,49 +476,28 @@ def _output_range(
 
 
 @kernel
-def _execute(
-    f, tape, layout, width, prototype, seed, share, parallel_work, threads, poison
-):
+def _execute(f, tape, layout, width, seed, share, parallel_work, threads, poison):
     """Sample one batch of shots with shared trajectories.
 
-    ``tape`` and ``layout`` hold the arrays of ``Tape`` and ``SharingLayout``.
-    Lanes are rows ``0 … size-1`` of arrays with a row per shot (every lane
-    holds a shot), but the amplitudes grow as lanes split. Each loop runs in
-    chunks across threads once its work reaches ``parallel_work``.
+    ``tape`` is a ``Tape`` and ``layout`` a ``SharingLayout``. Lanes are rows
+    ``0 … size-1`` of arrays with a row per shot (every lane holds a shot), but
+    the amplitudes grow as lanes split. Each loop runs in chunks across threads
+    once its work reaches ``parallel_work``.
 
     Returns:
         ``(samples, deviation, groups, peak, lanes, dead)``.
 
     """
-    (
-        kind,
-        x_mask,
-        z_mask,
-        cos,
-        pivot,
-        extent,
-        branch,
-        sign_const,
-        sign_row,
-        output_const,
-        output_row,
-        selection,
-    ) = tape
-    (
-        key_rows,
-        lane_dormant,
-        pruned,
-        prune_outputs,
-        prune_flip,
-        lane_branches,
-        shot_dormant,
-        ready,
-        i_power,
-        factor,
-        coupling,
-    ) = layout
+    # NOTE: numba's parallel loops cannot read the fields of a named tuple.
+    selection, output_row = tape.f_selection, tape.output_row
+    output_const, ready = layout.output_const, layout.ready
+    key_rows, lane_branches, shot_dormant = (
+        layout.key_rows,
+        layout.lane_branches,
+        layout.shot_dormant,
+    )
     shots, num_words = f.shape[0], lane_branches.shape[0]
-    num_actions = kind.shape[0]
+    num_actions = tape.kind.shape[0]
     # NOTE: SplitMix64 counts up from its state, so seeds that differ by a few
     # GOLDEN steps would share outputs; their mixed output starts a fresh stream.
     _, state = splitmix64(np.uint64(seed))
@@ -516,10 +508,9 @@ def _execute(
     key_work = key_rows.size if share else 0
     chunks = _chunks(shots * (len(selection) + key_work), parallel_work, threads)
     if chunks == 1:
-        lo, hi = 0, shots
-        _pack_range(f, selection, symbols, lo, hi)
+        _pack_range(f, selection, symbols, 0, shots)
         if share:
-            _key_range(symbols, key_rows, keys, lo, hi)
+            _key_range(symbols, key_rows, keys, 0, shots)
     else:
         for c in numba.prange(chunks):
             lo, hi = shots * c // chunks, shots * (c + 1) // chunks
@@ -538,81 +529,78 @@ def _execute(
     lane_symbols = np.empty((shots, num_words), dtype=np.uint32)
     lane_start = np.empty(shots, dtype=np.int64)
     lane_count = np.empty(shots, dtype=np.int64)
-    amps = np.zeros(
-        (min(max(16, 2 * groups), shots), 1 << width), dtype=prototype.dtype
-    )
+    amps = np.zeros((min(max(16, 2 * groups), shots), 1 << width), dtype=np.complex128)
     for g in range(groups):
         lane_symbols[g] = symbols[order[start[g]]]
         lane_start[g], lane_count[g] = start[g], count[g]
         amps[g, 0] = 1
-    dead_symbols = np.empty((shots, num_words), dtype=np.uint32)
-    dead_start = np.empty(shots, dtype=np.int64)
-    dead_count = np.empty(shots, dtype=np.int64)
-    dead_action = np.empty(shots, dtype=np.int64)
-    size, dead, peak, region, deviation = groups, 0, groups, 0, 0.0
-    if poison:
-        _poison(amps, size, 1)
+    lanes = (lane_symbols, lane_start, lane_count)
+    graves = (
+        np.empty((shots, num_words), dtype=np.uint32),
+        np.empty(shots, dtype=np.int64),
+        np.empty(shots, dtype=np.int64),
+        np.empty(shots, dtype=np.int64),
+    )
+    size, dead = _prune(
+        amps,
+        1,
+        groups,
+        0,
+        layout.prune_first,
+        output_row,
+        output_const,
+        lanes,
+        graves,
+        -1,
+    )
+    peak, region, deviation = groups, 0, 0.0
 
     for a in range(num_actions):
         if size == 0:
             break
-        shift = extent[a]
+        if poison:
+            _poison(amps, size, 1 << region)
+        shift = tape.extent[a]
         span = 1 << shift
         if shift > region:
             _clear(amps, size, 1 << region, span)
         region = shift
-        x, z = np.int64(x_mask[a]), np.int64(z_mask[a])
-        if kind[a] == ROTATE_DIAG or kind[a] == ROTATE:
-            flip = _signs(lane_symbols, size, sign_row[a], np.int64(sign_const[a]))
+        kind = tape.kind[a]
+        x, z = np.int64(tape.x_mask[a]), np.int64(tape.z_mask[a])
+        if kind in (ROTATE_DIAG, ROTATE):
+            flip = _signs(
+                lane_symbols, size, tape.sign_row[a], np.int64(tape.sign_const[a])
+            )
+            diagonal = kind == ROTATE_DIAG
+            cos, factor, coupling = tape.cos[a], layout.factor[a], layout.coupling[a]
             work = size * span
             chunks = _chunks(work, parallel_work, threads)
             if chunks == 1:
-                lo, hi = 0, work
                 _rotate_range(
-                    amps,
-                    lo,
-                    hi,
-                    shift,
-                    flip,
-                    kind[a] == ROTATE_DIAG,
-                    x,
-                    z,
-                    cos[a],
-                    factor[a],
-                    coupling[a],
+                    amps, 0, work, shift, flip, diagonal, x, z, cos, factor, coupling
                 )
             else:
                 for c in numba.prange(chunks):
                     lo, hi = work * c // chunks, work * (c + 1) // chunks
                     _rotate_range(
-                        amps,
-                        lo,
-                        hi,
-                        shift,
-                        flip,
-                        kind[a] == ROTATE_DIAG,
-                        x,
-                        z,
-                        cos[a],
-                        factor[a],
-                        coupling[a],
+                        amps, lo, hi, shift, flip, diagonal, x, z, cos, factor, coupling
                     )
             continue
-        dormant = kind[a] == MEASURE_DORMANT
-        if dormant and not lane_dormant[a]:
+        dormant = kind == MEASURE_DORMANT
+        if dormant and not layout.lane_dormant[a]:
             continue
         half = 0.5 if dormant else 0.0
         w0 = np.full(size, half)
         w1 = np.full(size, half)
+        i_power, pivot = layout.i_power[a], tape.pivot[a]
         if not dormant:
             chunks = _chunks(size * span, parallel_work, threads)
             if chunks == 1:
-                lo, hi = 0, size
-                _weights_range(amps, lo, hi, span, x, z, i_power[a], w0, w1)
+                _weights_range(amps, 0, size, span, x, z, i_power, w0, w1)
             else:
                 for c in numba.prange(chunks):
                     lo, hi = size * c // chunks, size * (c + 1) // chunks
-                    _weights_range(amps, lo, hi, span, x, z, i_power[a], w0, w1)
+                    _weights_range(amps, lo, hi, span, x, z, i_power, w0, w1)
             for lane in range(size):
                 d = abs(w0[lane] + w1[lane] - 1)
                 # NOTE: written so that a NaN deviation sticks.
@@ -645,63 +633,41 @@ def _execute(
                 weight[child] = w1[lane]
                 child += 1
         size = new
-        if poison:
-            _poison(amps, size, span)
         if not dormant:
             chunks = _chunks(size * span, parallel_work, threads)
             if chunks == 1:
-                lo, hi = 0, size
                 _project_range(
-                    amps, lo, hi, span, x, z, pivot[a], i_power[a], outcome, weight
+                    amps, 0, size, span, x, z, pivot, i_power, outcome, weight
                 )
             else:
                 for c in numba.prange(chunks):
                     lo, hi = size * c // chunks, size * (c + 1) // chunks
                     _project_range(
-                        amps, lo, hi, span, x, z, pivot[a], i_power[a], outcome, weight
+                        amps, lo, hi, span, x, z, pivot, i_power, outcome, weight
                     )
-        bit = branch[a]
+        bit = tape.branch[a]
         if bit >= 0:
             for lane in range(size):
                 if outcome[lane]:
                     lane_symbols[lane, bit >> 5] |= np.uint32(1) << np.uint32(bit & 31)
         peak = max(peak, size)
-
-        if pruned[a]:
-            kept = 0
-            for lane in range(size):
-                dies = False
-                for o in range(output_row.shape[0]):
-                    if not prune_outputs[a, o]:
-                        continue
-                    acc = 0
-                    for w in range(num_words):
-                        acc ^= lane_symbols[lane, w] & output_row[o, w]
-                    if _parity(acc) ^ output_const[o] ^ prune_flip[o]:
-                        dies = True
-                        break
-                if dies:
-                    dead_symbols[dead] = lane_symbols[lane]
-                    dead_start[dead], dead_count[dead] = (
-                        lane_start[lane],
-                        lane_count[lane],
-                    )
-                    dead_action[dead] = a
-                    dead += 1
-                    continue
-                if kept != lane:
-                    _copy_lane(amps, kept, lane, span)
-                    lane_symbols[kept] = lane_symbols[lane]
-                    lane_start[kept], lane_count[kept] = (
-                        lane_start[lane],
-                        lane_count[lane],
-                    )
-                kept += 1
-            size = kept
-            if poison:
-                _poison(amps, size, span)
+        if layout.pruned[a]:
+            tests = layout.prune_outputs[a]
+            size, dead = _prune(
+                amps,
+                span,
+                size,
+                dead,
+                tests,
+                output_row,
+                output_const,
+                lanes,
+                graves,
+                a,
+            )
 
     # NOTE: the live and dead lanes' ranges tile the sorted positions.
+    dead_symbols, dead_start, dead_count, dead_action = graves
     entry_symbols = np.zeros((size + dead, num_words), dtype=np.uint32)
     entry_pruned = np.empty(size + dead, dtype=np.int64)
     owner = np.empty(shots, dtype=np.int64)
@@ -725,7 +691,6 @@ def _execute(
     samples = np.zeros((shots, output_row.shape[0]), dtype=np.bool_)
     chunks = _chunks(shots * (num_words + output_row.size), parallel_work, threads)
     if chunks == 1:
-        lo, hi = 0, shots
         _shot_range(
             symbols,
             order,
@@ -735,8 +700,11 @@ def _execute(
             shot_dormant,
             coins,
             shot_symbols,
-            lo,
-            hi,
+            0,
+            shots,
+        )
+        _output_range(
+            shot_symbols, output_row, output_const, ready, pruned_at, samples, 0, shots
         )
     else:
         for c in numba.prange(chunks):
@@ -753,12 +721,6 @@ def _execute(
                 lo,
                 hi,
             )
-    if chunks == 1:
-        lo, hi = 0, shots
-        _output_range(
-            shot_symbols, output_row, output_const, ready, pruned_at, samples, lo, hi
-        )
-    else:
         for c in numba.prange(chunks):
             lo, hi = shots * c // chunks, shots * (c + 1) // chunks
             _output_range(
@@ -784,7 +746,7 @@ def lane_bytes(component: StatevectorComponent) -> int:
     That is three rows of amplitudes (the old and the new array while lanes
     grow) and the per-shot symbols, ranges and outputs.
     """
-    amplitudes = 3 * 2**component.width * np.dtype(component.dtype).itemsize
+    amplitudes = 3 * 2**component.width * np.dtype(np.complex128).itemsize
     return amplitudes + 24 * component.num_words + 128 + component.num_outputs
 
 
@@ -810,25 +772,13 @@ def sample_shared_component(
         ``(B, num_outputs)`` and ``stats`` counts groups and lanes.
 
     """
-    tape = layout.tape
     f = np.asarray(f_params)
-    tape_arrays = (
-        *(tape.kind, tape.x_mask, tape.z_mask, tape.cos, tape.pivot, tape.extent),
-        *(tape.branch, tape.sign_const, tape.sign_row, tape.output_const),
-        *(tape.output_row, tape.f_selection),
-    )
-    layout_arrays = (
-        *(layout.key_rows, layout.lane_dormant, layout.pruned, layout.prune_outputs),
-        *(layout.prune_flip, layout.lane_branches, layout.shot_dormant, layout.ready),
-        *(layout.i_power, layout.factor, layout.coupling),
-    )
     samples, deviation, groups, peak, lanes, dead = _execute(
         f.shape[0] << component.width,
         f,
-        tape_arrays,
-        layout_arrays,
+        component.tape,
+        layout,
         component.width,
-        np.zeros(0, dtype=component.dtype),
         np.uint64(seed),
         share,
         kernels.PARALLEL_WORK,

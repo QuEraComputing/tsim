@@ -34,8 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `strategy="active_statevector"` no longer uses JAX: it samples on the CPU
   with numba kernels, also when JAX has a GPU, and trajectory sharing is on
   by default (`trajectory_sharing=None` means True for this strategy and
-  False for the others). Precision still follows `jax_enable_x64`. Postselected
-  detectors of a component prune its shots with sharing off as well. (#199)
+  False for the others). Amplitudes are complex128. Postselected
+  detectors of a component prune its shots with sharing off as well, and also
+  when no direct detector is postselected. (#199)
 - Without a `batch_size`, a statevector call is split into one batch per
   numba thread whenever each batch gets at least 4096 shots, and smaller
   calls run as one batch on the parallel kernels. An explicit `batch_size`

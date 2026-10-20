@@ -11,8 +11,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from math import ceil
+from typing import ClassVar, NamedTuple
 
-import jax
 import numpy as np
 from zxparam import Graph
 
@@ -29,23 +29,15 @@ MEASURE_DORMANT = 4
 
 MAX_WIDTH = 30
 
-# NOTE: outcome probabilities are normalized by the measured weights, so only
-# drift beyond rounding (~1e-7 per rotation in complex64) warns.
-_NORM_WARNING_THRESHOLDS = {"complex64": 1e-3, "complex128": 1e-9}
-
 STABILIZER_RANK_HINT = (
     "Use a stabilizer-rank strategy such as strategy='cat5' for this circuit."
 )
 
 
-@dataclass(frozen=True, eq=False)
-class StatevectorComponent:
-    """A component compiled for ``strategy="active_statevector"``: an action tape.
+class Tape(NamedTuple):
+    """A component's actions and outputs as NumPy arrays, one row per action.
 
     Attributes:
-        output_indices: Global output index of each output slot.
-        width: Number of array axes W; lanes hold ``2^W`` amplitudes.
-        dtype: ``"complex64"`` or ``"complex128"``.
         f_selection: Global f-bit index of each component f-bit.
         kind: Kernel of each action (``ROTATE_DIAG`` … ``MEASURE_DORMANT``).
         x_mask: X mask of the action's Pauli on the array axes.
@@ -63,9 +55,6 @@ class StatevectorComponent:
 
     """
 
-    output_indices: tuple[int, ...]
-    width: int
-    dtype: str
     f_selection: np.ndarray
     kind: np.ndarray
     x_mask: np.ndarray
@@ -80,25 +69,43 @@ class StatevectorComponent:
     output_const: np.ndarray
     output_row: np.ndarray
 
+
+@dataclass(frozen=True, eq=False)
+class StatevectorComponent:
+    """A component compiled for ``strategy="active_statevector"``.
+
+    Its lanes hold ``2^width`` complex128 amplitudes.
+
+    Attributes:
+        output_indices: Global output index of each output slot.
+        width: Number of array axes W.
+        tape: The actions and outputs.
+
+    """
+
+    output_indices: tuple[int, ...]
+    width: int
+    tape: Tape
+
+    # NOTE: outcome probabilities are normalized by the measured weights, so
+    # only drift beyond rounding warns.
+    norm_warning_threshold: ClassVar[float] = 1e-9
+    """Largest normalization deviation that sampling tolerates without a warning."""
+
     @property
     def num_actions(self) -> int:
         """Return the number of actions on the tape."""
-        return int(self.kind.shape[0])
+        return int(self.tape.kind.shape[0])
 
     @property
     def num_words(self) -> int:
         """Return the number of uint32 words that hold a lane's symbols."""
-        return int(self.sign_row.shape[1])
+        return int(self.tape.sign_row.shape[1])
 
     @property
     def num_outputs(self) -> int:
         """Return the number of output slots."""
         return len(self.output_indices)
-
-    @property
-    def norm_warning_threshold(self) -> float:
-        """Return the largest normalization deviation that passes without a warning."""
-        return _NORM_WARNING_THRESHOLDS[self.dtype]
 
 
 def plan_component(
@@ -138,7 +145,7 @@ def _pack(terms: Iterable[int], num_words: int) -> np.ndarray:
     return row
 
 
-def lower(plan: Plan, layout: ComponentLayout, dtype: str) -> StatevectorComponent:
+def lower(plan: Plan, layout: ComponentLayout) -> StatevectorComponent:
     """Return the action tape of ``plan``."""
     num_actions = len(plan.actions)
     num_words = max(1, ceil(plan.num_symbols / 32))
@@ -172,17 +179,13 @@ def lower(plan: Plan, layout: ComponentLayout, dtype: str) -> StatevectorCompone
     output_row = np.zeros((len(plan.outputs), num_words), dtype=np.uint32)
     for slot, output in enumerate(plan.outputs):
         output_row[slot] = _pack(output.terms, num_words)
-    real = np.finfo(dtype).dtype
-    return StatevectorComponent(
-        output_indices=layout.output_indices,
-        width=plan.width,
-        dtype=dtype,
+    tape = Tape(
         f_selection=np.array(layout.f_selection, dtype=np.int32),
         kind=kind,
         x_mask=x_mask,
         z_mask=z_mask,
-        cos=np.cos(angle).astype(real),
-        sin=np.sin(angle).astype(real),
+        cos=np.cos(angle),
+        sin=np.sin(angle),
         pivot=pivot,
         extent=extent,
         branch=branch,
@@ -191,14 +194,13 @@ def lower(plan: Plan, layout: ComponentLayout, dtype: str) -> StatevectorCompone
         output_const=np.array([output.constant for output in plan.outputs], bool),
         output_row=output_row,
     )
+    return StatevectorComponent(layout.output_indices, plan.width, tape)
 
 
 def compile_statevector_component(
     component: Graph, output_indices: Sequence[int], layout: ParamLayout
 ) -> StatevectorComponent:
     """Compile one non-direct component for ``strategy="active_statevector"``.
-
-    Amplitudes are complex128 when JAX has 64-bit types enabled, else complex64.
 
     Args:
         component: A connected component of the prepared sampling graph.
@@ -207,5 +209,4 @@ def compile_statevector_component(
 
     """
     planned, component_layout = plan_component(component, output_indices, layout)
-    dtype = "complex128" if jax.config.read("jax_enable_x64") else "complex64"
-    return lower(planned, component_layout, dtype)
+    return lower(planned, component_layout)

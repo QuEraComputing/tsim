@@ -1,10 +1,8 @@
 """trajectory_sharing=True end to end, against the stabilizer-rank strategy."""
 
-import warnings
 from test.helpers.gen import gen_stim_circuit
 from test.helpers.statevector import CIRCUITS, assert_counts_match
 
-import jax
 import numpy as np
 import pytest
 
@@ -12,9 +10,8 @@ import tsim.sampler as sampler_module
 import tsim.utils.kernels as kernels
 from tsim.circuit import Circuit
 
-# NOTE: t_ghz plus a direct detector: postselection only takes the pruning path
-# when it masks a direct detector, and t_ghz's random detectors give reference
-# bits of 1 for some seeds.
+# NOTE: t_ghz plus a direct detector (detector 2); t_ghz's random detectors give
+# reference bits of 1 for some seeds.
 GHZ_WITH_DIRECT_DETECTOR = """
 R 0 1 2 3
 H 0
@@ -66,6 +63,12 @@ OBSERVABLE_INCLUDE(2) rec[-1]
 """
 
 
+def _sharing_stats(sampler):
+    backend = sampler._backend
+    assert isinstance(backend, sampler_module._StatevectorBackend)
+    return backend.sharing_stats
+
+
 def _accepted(sampler, shots, mask, *, reference=False):
     detectors, observables = sampler.sample(
         shots,
@@ -104,7 +107,7 @@ def test_pruning_through_the_sampler_keeps_the_accepted_distribution(reference):
         strategy="active_statevector", seed=seed, trajectory_sharing=True
     )
     shared_rate, got = _accepted(sampler, shots, mask, reference=reference)
-    assert any(stats["dead"] > 0 for stats in sampler.sharing_stats)
+    assert any(stats["dead"] > 0 for stats in _sharing_stats(sampler))
     sigma = np.sqrt(rate * (1 - rate) * 2 / shots)
     assert abs(shared_rate - rate) <= 5 * sigma + 3 / shots
     assert_counts_match(got, expected)
@@ -350,27 +353,48 @@ def test_direct_outputs_land_in_their_columns(name, rows):
     sampler = Circuit(text).compile_detector_sampler(
         strategy="active_statevector", seed=1
     )
+    program = sampler._program
     if name == "direct_flips":
-        assert sampler._direct_flips.any()
-        assert sampler._program.output_reindex is not None
+        assert program.direct_flips.any()
+        assert program.output_reindex is not None
     f_params = sampler._channel_sampler.sample(rows)
-    samples = sampler._sample_statevector(f_params, 2, sampler._layouts(None))
-    columns = sampler._direct_global_indices
-    expected = (f_params[:, sampler._direct_f_indices] != 0) ^ sampler._direct_flips
+    samples = sampler._backend.sample(f_params, 2)
+    columns = program.output_order[: len(program.direct_f_indices)]
+    expected = (f_params[:, program.direct_f_indices] != 0) ^ program.direct_flips
     np.testing.assert_array_equal(samples[:, columns], expected)
 
 
+def test_masks_of_component_detectors_alone_prune_lanes():
+    sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(
+        strategy="active_statevector", seed=1
+    )
+    sampler.sample(20_000, postselection_mask=np.array([True, True, False]))
+    assert any(stats["dead"] > 0 for stats in _sharing_stats(sampler))
+
+
 @pytest.mark.parametrize("sharing", [False, True])
-def test_complex128_samples_do_not_depend_on_the_thread_count(sharing):
+def test_reference_bits_leave_the_outputs_of_pruned_shots_false(sharing, monkeypatch):
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    mask = np.ones(circuit.num_detectors, dtype=bool)
 
-    def sample(threads):
+    def sample(reference):
         sampler = circuit.compile_detector_sampler(
-            strategy="active_statevector", seed=6, trajectory_sharing=sharing
+            strategy="active_statevector", seed=4, trajectory_sharing=sharing
         )
-        sampler._threads = lambda batch_size: threads
-        return sampler.sample(2_001, batch_size=250, append_observables=True)
+        monkeypatch.setattr(sampler, "_compute_reference_sample", lambda: reference)
+        return sampler.sample(
+            20_000,
+            postselection_mask=mask,
+            separate_observables=True,
+            use_observable_reference_sample=True,
+        )
 
-    with jax.enable_x64(True), warnings.catch_warnings():
-        warnings.simplefilter("error")
-        np.testing.assert_array_equal(sample(3), sample(1))
+    detectors, raw = sample(np.zeros(4, dtype=bool))
+    _, flipped = sample(np.array([False, False, False, True]))
+    raw, flipped = raw[:, 0], flipped[:, 0]
+    kept = ~detectors.any(axis=1)
+    np.testing.assert_array_equal(flipped[kept], ~raw[kept])
+    # NOTE: a shot pruned before the observable is set reads False either way.
+    cleared = ~raw & ~flipped
+    assert cleared.any() and not cleared[kept].any()
+    np.testing.assert_array_equal(cleared | (flipped == ~raw), np.ones_like(kept))

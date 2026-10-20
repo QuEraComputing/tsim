@@ -67,6 +67,17 @@ def _make(circuit_str: str, seed: int = 0):
     return Circuit(circuit_str).compile_detector_sampler(seed=seed)
 
 
+def _direct_outputs(sampler, f_params: np.ndarray) -> np.ndarray:
+    """Return the direct outputs of ``f_params`` in their columns, False elsewhere."""
+    program = sampler._program
+    columns = program.output_order[: len(program.direct_f_indices)]
+    out = np.zeros((len(f_params), program.num_outputs), dtype=np.bool_)
+    out[:, columns] = (
+        f_params[:, program.direct_f_indices] != 0
+    ) ^ program.direct_flips
+    return out
+
+
 def _keep(samples: np.ndarray, mask: np.ndarray) -> np.ndarray:
     """Boolean row mask of shots not discarded by postselection."""
     return ~np.any(samples & mask, axis=1)
@@ -226,7 +237,7 @@ def test_survivors_keep_their_own_direct_outputs(shots, batch_size, reference):
             append_observables=True,
             use_detector_reference_sample=reference,
         )
-    expected = sampler._compute_direct_outputs(drawn())
+    expected = _direct_outputs(sampler, drawn())
     if reference:
         expected[:, :3] ^= sampler._compute_reference_sample()[:3]
     discarded = expected[:, 0]
@@ -242,7 +253,7 @@ def test_postselection_direct_cols_always_equal_numpy():
     with _record_noise(sampler) as drawn:
         samples = sampler.sample(8, batch_size=4, postselection_mask=mask)
 
-    expected_direct = sampler._compute_direct_outputs(drawn())
+    expected_direct = _direct_outputs(sampler, drawn())
     direct_det = sampler._direct_detector_mask
     assert np.array_equal(
         samples[:, : sampler._num_detectors] & direct_det,
@@ -363,8 +374,11 @@ def test_postselection_detector_reference_xor_before_discard_check(monkeypatch):
     assert sum(jax_with) - 1 > sum(jax_without)
 
 
-def test_postselection_observable_reference_on_jax_computed_discarded_rows():
-    """Observable ref XOR applies to every row that ran JAX, including caller discards."""
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+def test_postselection_observable_reference_flips_every_sampled_row(
+    strategy, monkeypatch
+):
+    """The observable reference flips every row that was sampled, but no direct discard."""
     circuit = """
     X 0
     X_ERROR(0.5) 0
@@ -375,39 +389,25 @@ def test_postselection_observable_reference_on_jax_computed_discarded_rows():
     DETECTOR rec[-1] rec[-2]
     OBSERVABLE_INCLUDE(0) rec[-1]
     """
-    mask = np.array([True, True])
-    kwargs = {
-        "batch_size": 8,
-        "use_observable_reference_sample": True,
-        "separate_observables": True,
-    }
-    # NOTE: under cat5, seed 2 samples a reference observable of 1.
-    sampler = Circuit(circuit).compile_detector_sampler(strategy="cat5", seed=2)
-    captured: dict[str, np.ndarray] = {}
-    original = sampler._sample_batches_with_postselection
+    mask = np.array([True, False])
 
-    def capture(*args, **kwargs):
-        samples, reference, direct_discarded = original(*args, **kwargs)
-        assert reference is not None
-        captured["raw_obs"] = samples[:, sampler._num_detectors :].copy()
-        captured["direct_discarded"] = direct_discarded.copy()
-        captured["obs_ref"] = reference[sampler._num_detectors :].copy()
-        return samples, reference, direct_discarded
+    def observables(reference: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        sampler = Circuit(circuit).compile_detector_sampler(strategy=strategy, seed=2)
+        monkeypatch.setattr(sampler, "_compute_reference_sample", lambda: reference)
+        return sampler.sample(
+            128,
+            batch_size=8,
+            postselection_mask=mask,
+            separate_observables=True,
+            use_observable_reference_sample=True,
+        )
 
-    sampler._sample_batches_with_postselection = capture
-    _dets, obs = sampler.sample(128, postselection_mask=mask, **kwargs)
-
-    raw_obs = captured["raw_obs"]
-    direct_discarded = captured["direct_discarded"]
-    obs_ref = captured["obs_ref"]
-    expected = raw_obs.copy()
-    expected[~direct_discarded] ^= obs_ref
-
-    assert np.all(obs_ref)
-    assert np.array_equal(obs, expected)
-    assert not np.any(obs[direct_discarded])
-    ran_jax = ~direct_discarded
-    assert np.any(obs[ran_jax] != raw_obs[ran_jax])
+    dets, raw = observables(np.zeros(3, dtype=np.bool_))
+    _, flipped = observables(np.array([False, False, True]))
+    direct_discarded = dets[:, 0]
+    assert direct_discarded.any() and (~direct_discarded).any()
+    np.testing.assert_array_equal(flipped[~direct_discarded], ~raw[~direct_discarded])
+    assert not flipped[direct_discarded].any() and not raw[direct_discarded].any()
 
 
 # ────────────────────────── fully-direct fast path ───────────────────────────

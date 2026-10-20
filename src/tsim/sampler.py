@@ -5,7 +5,7 @@ from __future__ import annotations
 import warnings
 from collections import deque
 from math import ceil
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, Protocol, overload
 
 import jax
 import jax.numpy as jnp
@@ -197,9 +197,9 @@ def sample_statevector_program(
     f_params: np.ndarray,
     seed: int,
     layouts: tuple[SharingLayout, ...],
+    direct_flips: np.ndarray,
     *,
     share: bool,
-    direct: tuple[np.ndarray, np.ndarray, np.ndarray],
     sharing_stats: deque[dict] | None = None,
 ) -> np.ndarray:
     """Sample all outputs of a program of statevector components, without JAX.
@@ -209,8 +209,8 @@ def sample_statevector_program(
         f_params: Error parameters, shape (batch_size, num_f_params).
         seed: Seed of the batch's random numbers, below 2^64.
         layouts: The sharing layout of each component.
+        direct_flips: The flip of each direct output, with its reference bit.
         share: Whether shots with equal histories share a lane.
-        direct: The program's direct f-indices, direct flips and output order.
         sharing_stats: If given, the executor appends its lane counts.
 
     Returns:
@@ -235,16 +235,24 @@ def sample_statevector_program(
         np.concatenate(results, axis=1) if results else np.zeros((rows, 0), np.bool_)
     )
     out = np.empty((rows, program.num_outputs), dtype=np.bool_)
-    _gather_outputs(out.size, f_params, *direct[:2], component_bits, direct[2], out)
+    _gather_outputs(
+        out.size,
+        f_params,
+        program.direct_f_indices,
+        direct_flips,
+        component_bits,
+        program.output_order,
+        out,
+    )
     return out
 
 
 @kernel
-def _write_direct_detectors(f, f_indices, flips, columns, postselect, reference, out):
+def _write_direct_detectors(f, f_indices, flips, columns, postselect, out):
     """Clear every row of ``out`` and write its direct detector ``j`` at ``columns[j]``.
 
     Detector ``j`` is ``f[row, f_indices[j]] ^ flips[j]``. Returns which rows
-    have a postselected detector that differs from its ``reference`` bit.
+    have a postselected detector of 1.
     """
     discarded = np.zeros(f.shape[0], dtype=np.bool_)
     for row in numba.prange(f.shape[0]):
@@ -252,7 +260,7 @@ def _write_direct_detectors(f, f_indices, flips, columns, postselect, reference,
         for j in range(len(f_indices)):
             bit = (f[row, f_indices[j]] != 0) ^ flips[j]
             out[row, columns[j]] = bit
-            if postselect[j] and bit != reference[j]:
+            if postselect[j] and bit:
                 discarded[row] = True
     return discarded
 
@@ -274,10 +282,224 @@ def _gather_outputs(f, f_indices, flips, component_bits, order, out):
 
 def _nbytes(tree: object) -> int:
     if isinstance(tree, StatevectorComponent):
-        return sum(v.nbytes for v in vars(tree).values() if isinstance(v, np.ndarray))
+        return sum(array.nbytes for array in tree.tape)
     return sum(
         v.nbytes for v in jax.tree_util.tree_leaves(tree) if isinstance(v, jax.Array)
     )
+
+
+class _Backend(Protocol):
+    """Samples batches of a program's non-direct components.
+
+    Attributes:
+        prunes: Whether shots that a masked component detector discards stop
+            being simulated.
+        max_batch_size: The largest batch worth sampling at once, if any.
+
+    """
+
+    prunes: bool
+    max_batch_size: int | None
+
+    def max_threads(self) -> int:
+        """Return how many batches may run at once."""
+        ...
+
+    def next_seed(self) -> Any:
+        """Return the seed of the next batch, in the order of the batches."""
+        ...
+
+    def memory_available(self) -> int:
+        """Return the free memory of the device that holds the batches."""
+        ...
+
+    def peak_bytes_per_shot(self, num_f: int) -> int:
+        """Return the peak memory of one shot of a batch."""
+        ...
+
+    def sample(
+        self,
+        f_params: np.ndarray,
+        seed: Any,
+        *,
+        mask: np.ndarray | None = None,
+        flip: np.ndarray | None = None,
+        pad_to: int | None = None,
+    ) -> Any:
+        """Return the outputs of one batch, XOR ``flip`` (one bit per output).
+
+        ``mask`` marks the postselected detectors and ``pad_to`` the number of
+        rows the batch may be padded to.
+        """
+        ...
+
+    def concatenate(self, batches: list) -> np.ndarray:
+        """Return the batches' outputs as one host array."""
+        ...
+
+
+class _StabilizerRankBackend:
+    """Samples stabilizer-rank programs with JAX, one batch at a time."""
+
+    prunes: bool = False
+    max_batch_size: int | None = None
+
+    def __init__(self, program: CompiledProgram, seed: int) -> None:
+        self._program = program
+        self._key = jax.random.key(seed)
+
+    def max_threads(self) -> int:
+        return 1
+
+    def next_seed(self) -> PRNGKey:
+        self._key, key = jax.random.split(self._key)
+        return key
+
+    def memory_available(self) -> int:
+        device = jax.devices()[0]
+        if device.platform != "gpu":
+            return psutil.virtual_memory().available
+        stats = device.memory_stats()
+        return stats.get("bytes_limit", 8 * 1024**3) - stats.get("bytes_in_use", 0)
+
+    def peak_bytes_per_shot(self, num_f: int) -> int:
+        peak = 0
+        for component in self._program.components:
+            assert isinstance(component, CompiledComponent)
+            for circuit in component.compiled_scalar_graphs:
+                G = circuit.num_graphs
+                max_a = circuit.node_phases.phases.shape[1]
+                max_b = circuit.phase_terms.coeffs.shape[1]
+                max_c = circuit.pi_products.psi_params.shape[1]
+                max_d = circuit.phase_pairs.alpha.shape[1]
+                max_e = circuit.float_terms.table.shape[1]
+                largest = max(max_a * 16, max_b * 4, max_c * 4, max_d * 16, max_e * 16)
+                peak = max(peak, G * largest * 3)
+        return peak
+
+    def sample(
+        self,
+        f_params: np.ndarray,
+        seed: PRNGKey,
+        *,
+        mask: np.ndarray | None = None,
+        flip: np.ndarray | None = None,
+        pad_to: int | None = None,
+    ) -> jax.Array:
+        """Sample the batch, padded with its first row to ``pad_to`` rows.
+
+        Padding keeps the batch shapes, and so JAX's compilations, few.
+        """
+        count = len(f_params)
+        if pad_to is not None and count < pad_to:
+            padding = np.repeat(f_params[:1], pad_to - count, axis=0)
+            f_params = np.concatenate([f_params, padding])
+        samples = sample_program(self._program, jnp.asarray(f_params), seed)
+        if len(f_params) > count:
+            samples = samples[:count]
+        return samples if flip is None else samples ^ flip
+
+    def concatenate(self, batches: list) -> np.ndarray:
+        # NOTE: one device-to-host copy of the concatenation is much faster than
+        # one per batch for large outputs.
+        combined = batches[0] if len(batches) == 1 else jnp.concatenate(batches)
+        jax.block_until_ready(combined)
+        return copy_d2h(combined)
+
+
+class _StatevectorBackend:
+    """Samples statevector programs with numba kernels on the host.
+
+    Up to ``numba.get_num_threads()`` batches run at once.
+    """
+
+    prunes: bool = True
+    max_batch_size: int | None = STATEVECTOR_MAX_BATCH_SIZE
+
+    def __init__(
+        self, program: CompiledProgram, seed: int, num_detectors: int, share: bool
+    ) -> None:
+        self._program = program
+        self._num_detectors = num_detectors
+        self._share = share
+        self._seeds = np.random.default_rng([seed, 1])
+        self._layouts: dict[bytes, tuple[tuple[SharingLayout, ...], np.ndarray]] = {}
+        self.sharing_stats: deque[dict] = deque(maxlen=10_000)
+
+    def max_threads(self) -> int:
+        return numba.get_num_threads()
+
+    def next_seed(self) -> int:
+        return int(self._seeds.integers(0, 2**64, dtype=np.uint64))
+
+    def memory_available(self) -> int:
+        return psutil.virtual_memory().available
+
+    def peak_bytes_per_shot(self, num_f: int) -> int:
+        # NOTE: plus the f-params and the output records, twice over.
+        records = 2 * num_f + 2 * self._program.num_outputs
+        return max(
+            (
+                lane_bytes(component) + records
+                for component in self._program.components
+                if isinstance(component, StatevectorComponent)
+            ),
+            default=0,
+        )
+
+    def sample(
+        self,
+        f_params: np.ndarray,
+        seed: int,
+        *,
+        mask: np.ndarray | None = None,
+        flip: np.ndarray | None = None,
+        pad_to: int | None = None,
+    ) -> np.ndarray:
+        """Sample the batch; shots that a ``mask`` detector discards are pruned."""
+        layouts, direct_flips = self.layouts(mask, flip)
+        return sample_statevector_program(
+            self._program,
+            f_params,
+            seed,
+            layouts,
+            direct_flips,
+            share=self._share,
+            sharing_stats=self.sharing_stats,
+        )
+
+    def layouts(
+        self, mask: np.ndarray | None, flip: np.ndarray | None
+    ) -> tuple[tuple[SharingLayout, ...], np.ndarray]:
+        """Return the components' sharing layouts and the direct outputs' flips."""
+        program = self._program
+        postselected = np.zeros(program.num_outputs, dtype=np.bool_)
+        if mask is not None:
+            postselected[: self._num_detectors] = mask
+        if flip is None:
+            flip = np.zeros(program.num_outputs, dtype=np.bool_)
+        key = postselected.tobytes() + flip.tobytes()
+        if key not in self._layouts:
+            layouts = []
+            for component in program.components:
+                assert isinstance(component, StatevectorComponent)
+                outputs = list(component.output_indices)
+                layouts.append(
+                    sharing_layout(component, postselected[outputs], flip[outputs])
+                )
+            direct = program.output_order[: len(program.direct_f_indices)]
+            self._layouts[key] = (tuple(layouts), program.direct_flips ^ flip[direct])
+        return self._layouts[key]
+
+    def concatenate(self, batches: list) -> np.ndarray:
+        return np.concatenate(batches)
+
+
+def _check_sizes(shots: int, batch_size: int | None) -> None:
+    if shots < 0:
+        raise ValueError(f"shots must be non-negative, got {shots}")
+    if batch_size is not None and batch_size < 1:
+        raise ValueError(f"batch_size must be at least 1, got {batch_size}")
 
 
 class _CompiledSamplerBase:
@@ -323,13 +545,7 @@ class _CompiledSamplerBase:
             raise ValueError("trajectory_sharing needs strategy='active_statevector'")
         if seed is None:
             seed = int(np.random.default_rng().integers(0, 2**30))
-
-        self._key = jax.random.key(seed)
-        # NOTE: statevector batches draw their seeds here instead of from the key.
-        self._batch_seeds = np.random.default_rng([seed, 1])
         self._trajectory_sharing = trajectory_sharing
-        self._layouts_by_key: dict[bytes, tuple[SharingLayout, ...]] = {}
-        self.sharing_stats: deque[dict] = deque(maxlen=10_000)
 
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
         self._program = compile_program(prepared, mode=mode, strategy=strategy)
@@ -343,49 +559,32 @@ class _CompiledSamplerBase:
 
         self.circuit = circuit
         self._num_detectors = prepared.num_detectors
+        self._backend: _Backend = (
+            _StatevectorBackend(
+                self._program, seed, self._num_detectors, trajectory_sharing
+            )
+            if strategy == "active_statevector"
+            else _StabilizerRankBackend(self._program, seed)
+        )
 
-        prog = self._program
+        program = self._program
         # NOTE: _gather_outputs writes column output_order[k] without bounds checks.
         assert np.array_equal(
-            np.sort(np.asarray(prog.output_order)), np.arange(prog.num_outputs)
+            np.sort(program.output_order), np.arange(program.num_outputs)
         )
-        self._direct_f_indices = np.asarray(prog.direct_f_indices)
-        self._direct_flips = np.asarray(prog.direct_flips, dtype=np.bool_)
-        self._direct_reindex = (
-            np.asarray(prog.output_reindex) if prog.output_reindex is not None else None
+        columns = program.output_order[: len(program.direct_f_indices)]
+        is_detector = columns < self._num_detectors
+        self._direct_detectors = (
+            program.direct_f_indices[is_detector],
+            program.direct_flips[is_detector],
+            columns[is_detector],
         )
-        # Zero-copy fast path: f-indices are 0..n-1, no flips, no reindex.
-        # Hit by typical surface-code detector circuits at low noise.
-        n_direct = len(self._direct_f_indices)
-        self._direct_zero_copy = (
-            n_direct > 0
-            and self._direct_reindex is None
-            and not self._direct_flips.any()
-            and np.array_equal(self._direct_f_indices, np.arange(n_direct))
-        )
-        self._direct_global_indices = np.asarray(
-            prog.output_order[:n_direct], dtype=np.int32
-        )
-        self._direct = (
-            self._direct_f_indices,
-            self._direct_flips,
-            np.asarray(prog.output_order),
-        )
-        self._direct_output_mask = np.zeros(prog.num_outputs, dtype=np.bool_)
-        if n_direct > 0:
-            self._direct_output_mask[self._direct_global_indices] = True
-        self._direct_detector_mask = self._direct_output_mask[
-            : self._num_detectors
-        ].copy()
-        is_detector = self._direct_global_indices < self._num_detectors
-        self._direct_detector_f = self._direct_f_indices[is_detector]
-        self._direct_detector_flips = self._direct_flips[is_detector]
-        self._direct_detector_columns = self._direct_global_indices[is_detector]
+        self._direct_detector_mask = np.zeros(self._num_detectors, dtype=np.bool_)
+        self._direct_detector_mask[columns[is_detector]] = True
 
         statevector = [
-            c for c in self._program.components if isinstance(c, StatevectorComponent)
+            c for c in program.components if isinstance(c, StatevectorComponent)
         ]
-        self._has_statevector = bool(statevector)
         if statevector:
             peak = self._peak_bytes_per_sample()
             if peak > self._memory_budget():
@@ -397,103 +596,22 @@ class _CompiledSamplerBase:
                     f"{STABILIZER_RANK_HINT}"
                 )
 
-    def _layouts(
-        self,
-        postselection_mask: np.ndarray | None,
-        detector_reference: np.ndarray | None = None,
-    ) -> tuple[SharingLayout, ...]:
-        """Return the sharing layout of every statevector component.
-
-        Args:
-            postselection_mask: Postselected detectors, whose lanes are pruned.
-            detector_reference: Reference bits XOR-ed into the detectors before
-                the postselection test, if any.
-
-        """
-        num_detectors = self._num_detectors
-        mask = np.zeros(num_detectors, dtype=np.bool_)
-        if postselection_mask is not None:
-            mask = np.asarray(postselection_mask, dtype=np.bool_)
-        flip = np.zeros(num_detectors, dtype=np.bool_)
-        if detector_reference is not None:
-            flip = np.asarray(detector_reference[:num_detectors], dtype=np.bool_)
-        key = mask.tobytes() + flip.tobytes()
-        if key not in self._layouts_by_key:
-            layouts = []
-            for component in self._program.components:
-                assert isinstance(component, StatevectorComponent)
-                detector = np.asarray(component.output_indices) < num_detectors
-                indices = np.minimum(component.output_indices, num_detectors - 1)
-                layouts.append(
-                    sharing_layout(
-                        component,
-                        detector & mask[indices] if num_detectors else detector,
-                        detector & flip[indices] if num_detectors else detector,
-                    )
-                )
-            self._layouts_by_key[key] = tuple(layouts)
-        return self._layouts_by_key[key]
-
-    def _sample_statevector(
-        self, f_params: np.ndarray, seed: int, layouts: tuple[SharingLayout, ...]
-    ) -> np.ndarray:
-        """Sample one batch of a statevector program."""
-        return sample_statevector_program(
-            self._program,
-            f_params,
-            seed,
-            layouts,
-            share=self._trajectory_sharing,
-            direct=self._direct,
-            sharing_stats=self.sharing_stats,
-        )
-
-    def _next_seed(self) -> int:
-        """Return the next statevector batch seed."""
-        return int(self._batch_seeds.integers(0, 2**64, dtype=np.uint64))
-
-    def _compute_direct_outputs(self, f_params_np: np.ndarray) -> np.ndarray:
-        """Scatter direct output bits into a full (batch, num_outputs) bool array.
-
-        Non-direct columns are zero.  The zero-copy fast path applies when
-        direct indices are 0..n-1, there are no flips, and no reindex —
-        i.e. the common surface-code case.
-        """
-        batch = f_params_np.shape[0]
-        num_outputs = self._program.num_outputs
-        n_direct = len(self._direct_f_indices)
-        if n_direct == 0:
-            return np.zeros((batch, num_outputs), dtype=np.bool_)
-        if self._direct_zero_copy and n_direct == num_outputs:
-            return f_params_np[:, :n_direct].view(np.bool_).copy()
-        raw = (
-            f_params_np[:, :n_direct].view(np.bool_)
-            if self._direct_zero_copy
-            else (f_params_np[:, self._direct_f_indices] ^ self._direct_flips).view(
-                np.bool_
-            )
-        )
-        out = np.zeros((batch, num_outputs), dtype=np.bool_)
-        out[:, self._direct_global_indices] = raw
-        return out
-
     def _compute_reference_sample(self) -> np.ndarray:
         """Return the noiseless reference sample (all f_params = 0).
 
         Does not advance the channel sampler RNG.
         """
+        program = self._program
+        if not program.components:
+            reference = np.zeros(program.num_outputs, dtype=np.bool_)
+            reference[program.output_order[: len(program.direct_f_indices)]] = (
+                program.direct_flips
+            )
+            return reference
         num_f = self._channel_sampler.signature_matrix.shape[1]
         f_ref = np.zeros((1, num_f), dtype=np.uint8)
-        if not self._program.components:
-            return self._compute_direct_outputs(f_ref)[0]
-        if self._has_statevector:
-            seed = self._next_seed()
-            return self._sample_statevector(f_ref, seed, self._layouts(None))[0]
-        self._key, subkey = jax.random.split(self._key)
-        return np.asarray(
-            sample_program(self._program, jnp.asarray(f_ref), subkey)[0],
-            dtype=np.bool_,
-        )
+        samples = self._backend.sample(f_ref, self._backend.next_seed())
+        return np.asarray(samples[0], dtype=np.bool_)
 
     def _resolve_batch_size(
         self,
@@ -527,67 +645,36 @@ class _CompiledSamplerBase:
     def _peak_bytes_per_sample(self) -> int:
         """Estimate peak device memory per sample from compiled program structure."""
         num_f = self._channel_sampler.signature_matrix.shape[1]
-        peak = 0
-        for component in self._program.components:
-            if isinstance(component, StatevectorComponent):
-                # NOTE: plus the f-params and the output records, twice over.
-                lane = lane_bytes(component) + 2 * num_f + 2 * self._program.num_outputs
-                peak = max(peak, lane)
-                continue
-            for circuit in component.compiled_scalar_graphs:
-                G = circuit.num_graphs
-                max_a = circuit.node_phases.phases.shape[1]
-                max_b = circuit.phase_terms.coeffs.shape[1]
-                max_c = circuit.pi_products.psi_params.shape[1]
-                max_d = circuit.phase_pairs.alpha.shape[1]
-                max_e = circuit.float_terms.table.shape[1]
-                largest = max(max_a * 16, max_b * 4, max_c * 4, max_d * 16, max_e * 16)
-                peak = max(peak, G * largest * 3)
-        return max(peak, 1)
+        return max(self._backend.peak_bytes_per_shot(num_f), 1)
 
     def _memory_budget(self) -> int:
-        """Return the memory one batch may use: half of the free device memory.
-
-        Statevector programs sample on the host, so their device is the host.
-        """
-        device = jax.devices()[0]
-        if device.platform == "gpu" and not self._has_statevector:
-            stats = device.memory_stats()
-            available = stats.get("bytes_limit", 8 * 1024**3) - stats.get(
-                "bytes_in_use", 0
-            )
-        else:
-            available = psutil.virtual_memory().available
-        return int(available * 0.5)  # conservative
+        """Return the memory one batch may use: half of the free device memory."""
+        return int(self._backend.memory_available() * 0.5)  # conservative
 
     def _threads(self, batch_size: int) -> int:
         """Return how many batches of ``batch_size`` shots run at once.
 
-        Statevector programs sample one batch per numba thread, as long as the
-        batches fit in the memory budget; the stabilizer-rank programs sample
-        one batch at a time.
+        That is the backend's limit, as long as the batches fit in the memory
+        budget.
         """
-        if not self._has_statevector:
-            return 1
-        threads = numba.get_num_threads()
         # NOTE: with sharing a batch may still hold a lane per shot.
         fits = self._memory_budget() // (self._peak_bytes_per_sample() * batch_size)
-        return max(1, min(threads, fits))
+        return max(1, min(self._backend.max_threads(), fits))
 
     def _estimate_batch_size(self) -> int:
         """Estimate the largest batch size that fits in available device memory.
 
         Without sharing, every batch that runs at once holds a lane per shot. With
         sharing, lanes are allocated as trajectories split, so the estimate
-        leaves room for a lane per shot in one batch only. Programs with statevector
-        components use at most ``STATEVECTOR_MAX_BATCH_SIZE`` lanes per batch.
+        leaves room for a lane per shot in one batch only. The backend may cap
+        the batch size further.
         """
         peak = self._peak_bytes_per_sample()
         if not self._trajectory_sharing:
             peak *= self._threads(1)
         batch_size = max(1, self._memory_budget() // peak)
-        if any(isinstance(c, StatevectorComponent) for c in self._program.components):
-            batch_size = min(batch_size, STATEVECTOR_MAX_BATCH_SIZE)
+        if self._backend.max_batch_size is not None:
+            batch_size = min(batch_size, self._backend.max_batch_size)
         return batch_size
 
     @overload
@@ -627,11 +714,7 @@ class _CompiledSamplerBase:
             Samples array, or (samples, reference) tuple when compute_reference=True.
 
         """
-        if shots < 0:
-            raise ValueError(f"shots must be non-negative, got {shots}")
-        if batch_size is not None and batch_size < 1:
-            raise ValueError(f"batch_size must be at least 1, got {batch_size}")
-
+        _check_sizes(shots, batch_size)
         if shots == 0:
             empty = np.empty((0, self._program.num_outputs), dtype=np.bool_)
             if compute_reference:
@@ -652,46 +735,25 @@ class _CompiledSamplerBase:
             shots, batch_size, compute_reference=compute_reference
         )
         num_batches = ceil((shots + compute_reference) / batch_size)
-
-        statevector = self._has_statevector
-        layouts = self._layouts(None) if statevector else ()
-        tasks = []
-        for index in range(num_batches):
-            seeds = self._channel_sampler.block_seeds(batch_size)
-            if statevector:
-                tasks.append((index, seeds, self._next_seed()))
-            else:
-                self._key, subkey = jax.random.split(self._key)
-                tasks.append((index, seeds, subkey))
+        backend = self._backend
+        tasks = [
+            (index, self._channel_sampler.block_seeds(batch_size), backend.next_seed())
+            for index in range(num_batches)
+        ]
 
         def sample_batch(task: tuple) -> jax.Array | np.ndarray:
-            index, seeds, seed_or_key = task
-            f_params_np = self._channel_sampler.sample(batch_size, seeds)
+            index, block_seeds, seed = task
+            f_params = self._channel_sampler.sample(batch_size, block_seeds)
             if compute_reference and index == 0:
-                f_params_np[0] = 0
-            if statevector:
-                return self._sample_statevector(f_params_np, seed_or_key, layouts)
-            return sample_program(self._program, jnp.asarray(f_params_np), seed_or_key)
+                f_params[0] = 0
+            return backend.sample(f_params, seed)
 
         batches = run_tasks(sample_batch, tasks, self._threads(batch_size))
         reference: np.ndarray | None = None
         if compute_reference:
             reference = np.asarray(batches[0][0])
             batches[0] = batches[0][1:]
-        if statevector:
-            result = np.concatenate(batches)[:shots]
-        else:
-            # Concatenate on device, then a single d2h. The prior
-            # np.concatenate(batches) triggered per-batch __array__ (one d2h
-            # each) plus a host-side memcpy into a fresh numpy buffer for the
-            # concat output. For big bool tensors (e.g. 500k shots × 528
-            # detector bits) the host memcpy alone was ~1 s on top of the PCIe
-            # transfer.
-            combined = (
-                batches[0] if len(batches) == 1 else jnp.concatenate(batches, axis=0)
-            )
-            jax.block_until_ready(combined)
-            result = copy_d2h(combined)[:shots]
+        result = backend.concatenate(batches)[:shots]
 
         if compute_reference:
             assert reference is not None
@@ -704,119 +766,67 @@ class _CompiledSamplerBase:
         batch_size: int | None,
         *,
         postselection_mask: np.ndarray,
-        compute_reference: bool = False,
-        xor_detector_ref: bool = False,
-    ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray]:
+        referenced: np.ndarray | None = None,
+    ) -> np.ndarray:
         """Sample with postselection, skipping the components for direct discards.
 
-        Shots discarded by a direct masked detector are filled with their
-        direct detector columns and ``False`` elsewhere; no component samples
-        them.  Survivors are buffered until a full batch of ``batch_size`` is
-        ready, then sampled in one call.  For JAX (the stabilizer-rank
-        strategies) the final partial batch is padded to keep the batch size
-        fixed (avoiding recompilation) and the padding rows are discarded;
-        statevector batches are sampled as they are, and their shots discarded
-        by a masked component detector read ``False`` from the action that
-        discards them on.
-        Chunks of shots, and then the batches of their survivors, run on
-        ``_threads()`` threads at once. Without a ``batch_size``, batches are as
-        large as memory allows, and the survivors left after the last chunk are
-        split into a batch per thread (as in ``_resolve_batch_size``); JAX pads
-        each to a power of two, so that few batch shapes are compiled.
-        """
-        if shots < 0:
-            raise ValueError(f"shots must be non-negative, got {shots}")
-        if batch_size is not None and batch_size < 1:
-            raise ValueError(f"batch_size must be at least 1, got {batch_size}")
+        A shot that a masked direct detector discards keeps its direct detector
+        columns and reads ``False`` elsewhere. If the backend prunes, a shot that
+        a masked component detector discards also reads ``False`` in the outputs
+        set after that. The other shots are sampled in batches of ``batch_size``.
+        Without a ``batch_size``, batches are as large as memory allows, and the
+        last survivors are split into a batch per thread.
 
+        Args:
+            shots: Number of samples to draw.
+            batch_size: Survivors per batch. Auto-determined if None.
+            postselection_mask: The postselected detectors.
+            referenced: The outputs that a noiseless reference sample is XOR-ed
+                into, before the postselection test, if any.
+
+        """
+        _check_sizes(shots, batch_size)
         num_outputs = self._program.num_outputs
         if shots == 0:
-            empty = np.empty((0, num_outputs), dtype=np.bool_)
-            empty_discarded = np.empty(0, dtype=np.bool_)
-            if compute_reference:
-                return empty, np.zeros(num_outputs, dtype=np.bool_), empty_discarded
-            return empty, None, empty_discarded
-
-        if not self._program.components:
-            samples = self._sample_direct(shots)
-            if compute_reference:
-                reference = self._compute_reference_sample()
-                if xor_detector_ref:
-                    samples[:, : self._num_detectors] ^= reference[
-                        : self._num_detectors
-                    ]
-                return samples, reference, np.zeros(shots, dtype=np.bool_)
-            return samples, None, np.zeros(shots, dtype=np.bool_)
+            return np.empty((0, num_outputs), dtype=np.bool_)
 
         split_last = batch_size is None
         if batch_size is None:
             batch_size = self._estimate_batch_size()
-
-        reference: np.ndarray | None = None
-        if compute_reference:
-            reference = self._compute_reference_sample()
-
-        result = np.empty((shots, num_outputs), dtype=np.bool_)
-        was_discarded = np.empty(shots, dtype=np.bool_)
-
-        columns = self._direct_detector_columns
+        flip = None
+        if referenced is not None:
+            flip = self._compute_reference_sample() & referenced
+        f_indices, flips, columns = self._direct_detectors
+        if flip is not None:
+            flips = flips ^ flip[columns]
         postselect = postselection_mask[columns]
-        reference_bits = (
-            reference[columns]
-            if xor_detector_ref and reference is not None
-            else np.zeros(len(columns), dtype=np.bool_)
-        )
-
-        statevector = self._has_statevector
-        layouts = (
-            self._layouts(postselection_mask, reference if xor_detector_ref else None)
-            if statevector
-            else ()
-        )
-
+        result = np.empty((shots, num_outputs), dtype=np.bool_)
+        backend = self._backend
         chunk = min(batch_size, SCREEN_SHOTS)
 
         def screen(task: tuple[int, np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
-            """Sample the chunk of shots at ``start``; return its survivors.
-
-            Writes the chunk's direct detectors and which of its shots a direct
-            detector discards; returns the survivors' f-params and shot indices.
-            """
-            start, seeds = task
+            """Write the direct detectors of the chunk at ``start``; return its survivors."""
+            start, block_seeds = task
             stop = min(start + chunk, shots)
-            f_params_np = self._channel_sampler.sample(stop - start, seeds)
+            f_params = self._channel_sampler.sample(stop - start, block_seeds)
             discarded = _write_direct_detectors(
                 (stop - start) * len(columns),
-                f_params_np,
-                self._direct_detector_f,
-                self._direct_detector_flips,
+                f_params,
+                f_indices,
+                flips,
                 columns,
                 postselect,
-                reference_bits,
                 result[start:stop],
             )
-            was_discarded[start:stop] = discarded
             survivors = np.flatnonzero(~discarded)
-            return f_params_np[survivors], start + survivors
+            return f_params[survivors], start + survivors
 
         def dispatch(task: tuple) -> None:
-            """Sample the shots ``shot_batch`` in one batch.
-
-            JAX batches are padded with row 0 to ``rows`` rows; statevector
-            batches take any number of rows.
-            """
-            f_batch, shot_batch, seed_or_key, rows = task
-            count = len(shot_batch)
-            if statevector:
-                samples = self._sample_statevector(f_batch, seed_or_key, layouts)
-            else:
-                if count < rows:
-                    padding = np.repeat(f_batch[:1], rows - count, axis=0)
-                    f_batch = np.concatenate([f_batch, padding])
-                samples = sample_program(
-                    self._program, jnp.asarray(f_batch), seed_or_key
-                )
-            result[shot_batch] = np.asarray(samples)[:count]
+            f_batch, shot_batch, seed, rows = task
+            samples = backend.sample(
+                f_batch, seed, mask=postselection_mask, flip=flip, pad_to=rows
+            )
+            result[shot_batch] = np.asarray(samples)
 
         threads = self._threads(batch_size)
         num_f = self._channel_sampler.signature_matrix.shape[1]
@@ -826,9 +836,8 @@ class _CompiledSamplerBase:
         starts = range(0, shots, chunk)
         screened_chunks = 0
         # NOTE: chunks are screened until every thread has a full batch of
-        # survivors. Batches still start every batch_size survivors and seeds and
-        # seeds and keys are drawn in order, so the thread count doesn't change
-        # the samples.
+        # survivors. A batch starts every batch_size survivors, and all seeds
+        # are drawn in order, so the thread count doesn't change the samples.
         while screened_chunks < len(starts) or pending:
             while screened_chunks < len(starts) and pending < threads * batch_size:
                 tasks = [
@@ -851,45 +860,49 @@ class _CompiledSamplerBase:
             if screened_chunks < len(starts):
                 ready -= ready % (threads * batch_size)
             elif split_last and ready:
+                # NOTE: JAX pads these batches to a power of two, so that few
+                # batch shapes are compiled.
                 per_thread = self._per_thread(ready)
                 size = ceil(ready / max(1, ceil(ready / batch_size), per_thread))
                 rows = min(batch_size, 1 << (size - 1).bit_length())
             all_f, all_shot = np.concatenate(pending_f), np.concatenate(pending_shot)
-            batches = []
-            for start in range(0, ready, size):
-                if statevector:
-                    seed_or_key = self._next_seed()
-                else:
-                    self._key, seed_or_key = jax.random.split(self._key)
-                stop = start + size
-                batch = (all_f[start:stop], all_shot[start:stop], seed_or_key, rows)
-                batches.append(batch)
+            batches = [
+                (
+                    all_f[start : start + size],
+                    all_shot[start : start + size],
+                    backend.next_seed(),
+                    rows,
+                )
+                for start in range(0, ready, size)
+            ]
             run_tasks(dispatch, batches, threads)
             pending_f, pending_shot = [all_f[ready:]], [all_shot[ready:]]
             pending -= ready
-
-        if xor_detector_ref and reference is not None:
-            det_ref = reference[: self._num_detectors]
-            survivors = ~was_discarded
-            result[survivors, : self._num_detectors] ^= det_ref
-            result[was_discarded, : self._num_detectors] ^= (
-                det_ref & self._direct_detector_mask
-            )
-
-        if compute_reference:
-            assert reference is not None
-            return result, reference, was_discarded
-        return result, None, was_discarded
+        return result
 
     def _sample_direct(self, shots: int) -> np.ndarray:
-        """Fast path when all components are direct (pure numpy, no JAX)."""
+        """Sample a program without components, whose outputs are all direct."""
+        program = self._program
         f_params = self._channel_sampler.sample(shots)
-        if self._direct_zero_copy:
-            return f_params[:, : len(self._direct_f_indices)].view(np.bool_)
-        result = f_params[:, self._direct_f_indices] ^ self._direct_flips
-        if self._direct_reindex is not None:
-            result = result[:, self._direct_reindex]
-        return result.view(np.bool_)
+        num_direct = len(program.direct_f_indices)
+        # NOTE: typical surface-code detector circuits need no copy.
+        if (
+            program.output_reindex is None
+            and not program.direct_flips.any()
+            and np.array_equal(program.direct_f_indices, np.arange(num_direct))
+        ):
+            return f_params[:, :num_direct].view(np.bool_)
+        out = np.empty((shots, program.num_outputs), dtype=np.bool_)
+        _gather_outputs(
+            out.size,
+            f_params,
+            program.direct_f_indices,
+            program.direct_flips,
+            np.zeros((shots, 0), dtype=np.bool_),
+            program.output_order,
+            out,
+        )
+        return out
 
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""
@@ -1175,49 +1188,43 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         compute_reference = (
             use_detector_reference_sample or use_observable_reference_sample
         )
+        num_detectors = self._num_detectors
 
         if postselection_mask is not None:
             mask = np.asarray(postselection_mask, dtype=np.bool_)
-            if mask.shape != (self._num_detectors,):
+            if mask.shape != (num_detectors,):
                 raise ValueError(
-                    f"postselection_mask must have shape ({self._num_detectors},), "
+                    f"postselection_mask must have shape ({num_detectors},), "
                     f"got {mask.shape}"
                 )
-            if postselection_mask is not mask:
-                postselection_mask = mask
-            if (
-                not (postselection_mask & self._direct_detector_mask).any()
-                or not self._program.components
-            ):
-                postselection_mask = None
+            # NOTE: without pruning, only direct detectors can skip any work.
+            if not self._backend.prunes:
+                skips = mask & self._direct_detector_mask
+            else:
+                skips = mask
+            postselection_mask = (
+                mask if skips.any() and self._program.components else None
+            )
 
         if postselection_mask is not None:
+            referenced = None
             if compute_reference:
-                samples, reference, direct_discarded = (
-                    self._sample_batches_with_postselection(
-                        shots,
-                        batch_size,
-                        postselection_mask=postselection_mask,
-                        compute_reference=True,
-                        xor_detector_ref=use_detector_reference_sample,
-                    )
+                is_detector = np.arange(self._program.num_outputs) < num_detectors
+                referenced = np.where(
+                    is_detector,
+                    use_detector_reference_sample,
+                    use_observable_reference_sample,
                 )
-                assert reference is not None
-                num_detectors = self._num_detectors
-                if use_observable_reference_sample:
-                    obs_ref = reference[num_detectors:]
-                    samples[~direct_discarded, num_detectors:] ^= obs_ref
-            else:
-                samples, _, _ = self._sample_batches_with_postselection(
-                    shots,
-                    batch_size,
-                    postselection_mask=postselection_mask,
-                )
+            samples = self._sample_batches_with_postselection(
+                shots,
+                batch_size,
+                postselection_mask=postselection_mask,
+                referenced=referenced,
+            )
         elif compute_reference:
             samples, reference = self._sample_batches(
                 shots, batch_size, compute_reference=True
             )
-            num_detectors = self._num_detectors
             if use_detector_reference_sample:
                 samples[:, :num_detectors] ^= reference[:num_detectors]
             if use_observable_reference_sample:
@@ -1225,7 +1232,6 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         else:
             samples = self._sample_batches(shots, batch_size)
 
-        num_detectors = self._num_detectors
         det_samples = samples[:, :num_detectors]
         obs_samples = samples[:, num_detectors:]
 

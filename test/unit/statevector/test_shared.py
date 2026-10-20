@@ -1,3 +1,4 @@
+from dataclasses import replace
 from test.helpers.statevector import (
     CIRCUITS,
     assert_matches_distribution,
@@ -27,16 +28,16 @@ NAMES = [
 ]
 
 
-def _compiled(name, dtype="complex64"):
-    yield from _compiled_text(CIRCUITS[name], dtype)
+def _compiled(name):
+    yield from _compiled_text(CIRCUITS[name])
 
 
-def _compiled_text(text, dtype="complex64"):
+def _compiled_text(text):
     components, layout = quantum_components(text, sample_detectors=True)
     for component in components:
         indices = output_indices(component)
         planned, component_layout = plan_component(component, indices, layout)
-        yield planned, component_layout, lower(planned, component_layout, dtype)
+        yield planned, component_layout, lower(planned, component_layout)
 
 
 def _f_params(component_layout, patterns, shots_each):
@@ -77,12 +78,11 @@ def _assert_counts(rows, discarded, expected):
         )
 
 
-@pytest.mark.parametrize("dtype", ["complex64", "complex128"])
 @pytest.mark.parametrize("share", [True, False])
 @pytest.mark.parametrize("name", NAMES)
-def test_sampling_matches_the_plan_distribution(name, share, dtype):
+def test_sampling_matches_the_plan_distribution(name, share):
     shots = 20_000
-    for planned, component_layout, compiled in _compiled(name, dtype):
+    for planned, component_layout, compiled in _compiled(name):
         layout = sharing_layout(compiled)
         for f in f_patterns(planned.num_f, limit=2):
             f_params = _f_params(component_layout, [f], shots)
@@ -135,18 +135,20 @@ def test_pruning_discards_exactly_the_postselected_failures(name, flip, share):
         samples = np.asarray(samples)
         for i, f in enumerate(patterns):
             rows = samples[i * shots_each : (i + 1) * shots_each]
-            discarded = np.asarray(((rows ^ flipped) & postselected).any(axis=1))
+            discarded = np.asarray((rows & postselected).any(axis=1))
             expected = _postselected_distribution(
                 plan_distribution(planned, f), postselected, flipped
             )
-            _assert_counts(rows, discarded, expected)
+            _assert_counts(rows ^ flipped, discarded, expected)
 
 
+@pytest.mark.parametrize("flip", [False, True])
 @pytest.mark.parametrize("name", NAMES)
-def test_pruned_shots_report_false_after_their_pruning_action(name):
+def test_pruned_shots_report_false_after_their_pruning_action(name, flip):
     for planned, component_layout, compiled in _compiled(name):
         postselected = np.ones(compiled.num_outputs, dtype=bool)
-        layout = sharing_layout(compiled, postselected)
+        flipped = np.full(compiled.num_outputs, flip)
+        layout = sharing_layout(compiled, postselected, flipped)
         f_params = _f_params(component_layout, f_patterns(planned.num_f, 3), 4_000)
         samples, _, _ = sample_shared_component(
             compiled, layout, np.asarray(f_params), 9
@@ -236,7 +238,7 @@ def coherent():
     ((planned, component_layout, compiled),) = _compiled_text(
         _coherent_surface_code(5, 3)
     )
-    extent = np.asarray(compiled.extent)
+    extent = np.asarray(compiled.tape.extent)
     first_drop = np.flatnonzero(np.diff(extent) < 0)[0]
     assert np.any(np.diff(extent[first_drop:]) > 0)
     return planned, component_layout, compiled
@@ -245,10 +247,10 @@ def coherent():
 def test_extents_and_reused_slots_do_not_change_the_samples(coherent, monkeypatch):
     planned, component_layout, compiled = coherent
     layout = sharing_layout(compiled, np.ones(compiled.num_outputs, dtype=bool))
-    extent = layout.tape.extent
+    extent = compiled.tape.extent
 
     def with_extent(values):
-        return layout._replace(tape=layout.tape._replace(extent=values))
+        return replace(compiled, tape=compiled.tape._replace(extent=values))
 
     full = with_extent(np.full_like(extent, compiled.width))
     # NOTE: an extent is an upper bound, so raising every fifth one keeps the
@@ -259,11 +261,13 @@ def test_extents_and_reused_slots_do_not_change_the_samples(coherent, monkeypatc
         _f_params(component_layout, f_patterns(planned.num_f, 7), 300)
     )
     key = 17
-    reference, deviation, _ = sample_shared_component(compiled, full, f_params, key)
+    reference, deviation, _ = sample_shared_component(full, layout, f_params, key)
     # NOTE: NaN fills every amplitude the executor must not read.
     monkeypatch.setattr(shared, "_POISON", True)
-    for tape in (layout, raised):
-        samples, other, stats = sample_shared_component(compiled, tape, f_params, key)
+    for component in (compiled, raised):
+        samples, other, stats = sample_shared_component(
+            component, layout, f_params, key
+        )
         np.testing.assert_array_equal(samples, reference)
         assert other == deviation
         assert stats["dead"] > 0
@@ -311,8 +315,9 @@ def test_shots_whose_lanes_all_die_are_still_sampled():
 def test_every_action_stays_within_its_extent(name, coherent):
     compiled_components = [coherent] if name == "coherent" else _compiled(name)
     for _, _, compiled in compiled_components:
-        reach = 1 << np.asarray(compiled.extent, dtype=np.int64)
-        support = np.asarray(compiled.x_mask) | np.asarray(compiled.z_mask)
+        tape = compiled.tape
+        reach = 1 << np.asarray(tape.extent, dtype=np.int64)
+        support = np.asarray(tape.x_mask) | np.asarray(tape.z_mask)
         assert np.all(support < reach)
-        measured = np.isin(np.asarray(compiled.kind), (MEASURE, MEASURE_DIAG))
-        assert np.all((1 << np.asarray(compiled.pivot))[measured] < reach[measured])
+        measured = np.isin(np.asarray(tape.kind), (MEASURE, MEASURE_DIAG))
+        assert np.all((1 << np.asarray(tape.pivot))[measured] < reach[measured])
