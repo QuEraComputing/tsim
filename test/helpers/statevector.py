@@ -16,7 +16,7 @@ from zxparam import Graph
 
 from tsim.circuit import Circuit
 from tsim.compile.evaluate import evaluate
-from tsim.compile.pipeline import classify_direct
+from tsim.compile.pipeline import classify_constant, classify_direct
 from tsim.core.graph import prepare_graph
 from tsim.core.params import ParamLayout
 from tsim.core.types import CompiledComponent
@@ -173,12 +173,14 @@ CIRCUITS: dict[str, str] = {
 def quantum_components(
     text: str, *, sample_detectors: bool
 ) -> tuple[list[Graph], ParamLayout]:
-    """Return the non-direct components of a circuit's prepared sampling graph."""
+    """Return the components of a circuit's prepared sampling graph that are
+    compiled: neither direct nor constant."""
     prepared = prepare_graph(Circuit(text), sample_detectors=sample_detectors)
     components = [
         component
         for component in prepared.graph.connected_components()
         if classify_direct(component, prepared.layout) is None
+        and classify_constant(component) is None
     ]
     return components, prepared.layout
 
