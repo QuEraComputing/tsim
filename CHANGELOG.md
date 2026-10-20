@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   probabilities, and it raises `ValueError` for components it cannot read, for
   components wider than 30 active qubits, and when one shot needs more than half
   of the available memory. Batches hold at most 2^16 shots. (#203)
+- `trajectory_sharing=True` for `strategy="active_statevector"`: shots with
+  equal histories share one state vector, which splits at measurements, and
+  shots that a postselected component detector discards stop being simulated
+  there. (#198)
 
 ### Changed
 - The samplers now default to `strategy="active_statevector"`; pass
