@@ -39,12 +39,6 @@ jobs:
           version: "0.6.14"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
-      - name: Load the zxparam deploy key
-        uses: webfactory/ssh-agent@v0.10.0
-        with:
-          ssh-private-key: ${{ secrets.ZXPARAM_DEPLOY_KEY }}
-      - name: Fetch zxparam over SSH
-        run: git config --global url."git@github.com:QuEraComputing/zxparam".insteadOf "https://github.com/QuEraComputing/zxparam"
       - name: Install the project
         run: uv sync --all-extras --dev
       - run: echo "$PWD/.venv/bin" >> $GITHUB_PATH

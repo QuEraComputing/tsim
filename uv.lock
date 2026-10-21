@@ -253,7 +253,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=5.9.0" },
     { name = "stim", specifier = ">=1.0.0" },
     { name = "stim-timeline-text", specifier = ">=0.1.0" },
-    { name = "zxparam", git = "https://github.com/QuEraComputing/zxparam?branch=main" },
+    { name = "zxparam", specifier = ">=0.1.0" },
 ]
 provides-extras = ["cuda12", "cuda13"]
 
@@ -282,7 +282,7 @@ dev = [
     { name = "tesseract-decoder", specifier = ">=0.1.1.dev20251113222502" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "vulture", specifier = ">=2.16" },
-    { name = "zxparam", extras = ["quimb"], git = "https://github.com/QuEraComputing/zxparam?branch=main" },
+    { name = "zxparam", extras = ["quimb"] },
 ]
 doc = [
     { name = "griffe-inherited-docstrings", specifier = ">=1.1.1" },
@@ -4849,11 +4849,21 @@ wheels = [
 
 [[package]]
 name = "zxparam"
-version = "0.1.0.dev0"
-source = { git = "https://github.com/QuEraComputing/zxparam?branch=main#b8cedc1e48032ec2c407e6e0698a16da4be49393" }
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/22/93ec6ded213fd00e0b3dc090011f9b567b9ccd6bbae6cc147df674909538/zxparam-0.1.0.tar.gz", hash = "sha256:8cdbfb7fda197b88cfa2b69c5559bb122201974f18d6b355cefd39e5cb824b98", size = 156701, upload-time = "2026-10-21T20:12:12.93Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/83/5c1a5d9583b3ee833995a1e92b7571de41a8b6c6cdc43bcda83455d9cf31/zxparam-0.1.0-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:310033f5854ba1b9be6d4b9517d512a56232b75aaea74bc34fe4c428cfc782ed", size = 828006, upload-time = "2026-10-21T20:12:00.496Z" },
+    { url = "https://files.pythonhosted.org/packages/24/33/95459b8fb19d1a373a836f4833b698dc54ad4eeb73ecccde764e4b08b0f2/zxparam-0.1.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:0c93a9095348f1fbf0927193dfc96ee26be2772b74dbb499e6de7dbb2d162c98", size = 816963, upload-time = "2026-10-21T20:12:02.34Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/f9/b4a16e7f353b0cddae6c46678714a6093e03bf2287c4242fc505228a6fc0/zxparam-0.1.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ea59bdbcf563c075bb667c500b1f47491b0b0ca0c239d141acdeb075300c465a", size = 869876, upload-time = "2026-10-21T20:12:04.215Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/34/b2ee1edcb72b2a873374b9dbb699dc88eecca620ae8326d7d7b01a1a8322/zxparam-0.1.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:2a419bd5bfd09d9315fefb09a28d2239ffc76c61584f852ce1103e1919035df0", size = 877498, upload-time = "2026-10-21T20:12:06.119Z" },
+    { url = "https://files.pythonhosted.org/packages/3e/90/25829e10059fba430458272f423ca1c01c6f9e49acf4d1a08dfb9477e1d1/zxparam-0.1.0-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:b1a1f7f896e4f246e65d89af2f695ec221cbfde239ffa65865848ef7b91acf14", size = 1048273, upload-time = "2026-10-21T20:12:07.765Z" },
+    { url = "https://files.pythonhosted.org/packages/be/b1/91089f659816119633588da3b33c6910e12dfdaee2c14dbb1a30eacb0bba/zxparam-0.1.0-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:90d7589b1f5d7daa0b6ffd0fa56d3cc7ed6bd54940e2c1b5dd3a959d1b3bd080", size = 1098816, upload-time = "2026-10-21T20:12:09.718Z" },
+    { url = "https://files.pythonhosted.org/packages/36/93/ce792c925e197dacaf9c0fbe4bf2e678d0bd7bd2315ff1419795dfac2f5a/zxparam-0.1.0-cp310-abi3-win_amd64.whl", hash = "sha256:e86d83ee5c10fe3f826222685d08bda5c28bc881ea1cd672957e8e7c767a938a", size = 709449, upload-time = "2026-10-21T20:12:11.343Z" },
 ]
 
 [package.optional-dependencies]
