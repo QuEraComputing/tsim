@@ -43,7 +43,7 @@ dependencies = [
     "stim>=1.0.0",
     "stim-timeline-text>=0.1.0",
     "stim-timeline-text>=0.1.0",
-    "zxparam",
+    "zxparam>=0.1.0",
 ]
 
 [project.urls]
@@ -100,12 +100,6 @@ doc = [
     "mkdocstrings[python]>=0.27.0",
     "jupytext>=1.17.2",
 ]
-
-[tool.hatch.metadata]
-allow-direct-references = true
-
-[tool.uv.sources]
-zxparam = { git = "https://github.com/QuEraComputing/zxparam", branch = "main" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tsim"]
