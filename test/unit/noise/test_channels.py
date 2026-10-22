@@ -1101,6 +1101,42 @@ class TestReduceNullBits:
         assert_allclose(np.sum(result[0].probs), 1.0, rtol=1e-5)
 
 
+class TestFireTables:
+    """The sampling tables of channels, against dense products over GF(2)."""
+
+    @pytest.mark.parametrize("seed", range(6))
+    def test_flips_match_dense_products(self, seed):
+        rng = np.random.default_rng(seed)
+        num_signatures, num_f = int(rng.integers(1, 20)), int(rng.integers(0, 40))
+        density = rng.choice([0.05, 0.3, 0.8])
+        signature_matrix = (rng.random((num_signatures, num_f)) < density).astype(
+            np.uint8
+        )
+        channels = [Channel(probs=np.array([1.0, 0.0]), unique_col_ids=(0,))]
+        for _ in range(60):
+            num_bits = int(rng.integers(0, 6))
+            # NOTE: repeated column IDs are allowed and cancel in pairs.
+            col_ids = tuple(rng.integers(0, num_signatures, num_bits).tolist())
+            probs = rng.random(2**num_bits) * (rng.random(2**num_bits) < 0.6)
+            probs[0] += 1e-3
+            channels.append(Channel(probs=probs / probs.sum(), unique_col_ids=col_ids))
+        tables = _fire_tables(channels, signature_matrix)
+
+        flip_start, flip_cols = [0], []
+        for channel in channels:
+            if np.clip(channel.probs[1:], 0, None).sum() <= 1e-15:
+                continue
+            for outcome in range(1, len(channel.probs)):
+                bits = [(outcome >> i) & 1 for i in range(channel.num_bits)]
+                flips = np.array(bits) @ signature_matrix[list(channel.unique_col_ids)]
+                flip_cols.extend(np.flatnonzero(flips % 2).tolist())
+                flip_start.append(len(flip_cols))
+        np.testing.assert_array_equal(tables.flip_start, flip_start)
+        np.testing.assert_array_equal(tables.flip_cols, flip_cols)
+        assert len(tables.outcome_start) == len(tables.p_fire) + 1
+        assert tables.outcome_start[-1] == len(flip_start) - 1
+
+
 class TestChannelSampler:
     """Tests for ChannelSampler with simplification."""
 

@@ -714,6 +714,13 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _Fire
     cdf: list[float] = []
     flip_cols: list[int] = []
     outcome_start, flip_start = [0], [0]
+    # NOTE: signatures are sparse, so an outcome's flips are built as sets: those
+    # of its lowest bit XOR those of the outcome without that bit.
+    used = {col_id for channel in channels for col_id in channel.unique_col_ids}
+    supports = {
+        col_id: frozenset(np.flatnonzero(signature_matrix[col_id]).tolist())
+        for col_id in used
+    }
     for channel in channels:
         probs = channel.probs.astype(np.float64)
         conditional = np.cumsum(np.clip(probs[1:], 0, None))
@@ -723,11 +730,13 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _Fire
         p_fire.append(fire)
         cdf.extend(conditional / conditional[-1])
         outcome_start.append(len(cdf))
-        col_ids = np.asarray(channel.unique_col_ids)
-        outcomes = np.arange(1, len(probs))
-        bits = (outcomes[:, None] >> np.arange(len(col_ids))) & 1
-        for flips in bits @ signature_matrix[col_ids] % 2:
-            flip_cols.extend(np.flatnonzero(flips).tolist())
+        bit_supports = [supports[col_id] for col_id in channel.unique_col_ids]
+        flips: list[frozenset[int]] = [frozenset()]
+        for outcome in range(1, len(probs)):
+            lowest = outcome & -outcome
+            bit = lowest.bit_length() - 1
+            flips.append(flips[outcome ^ lowest] ^ bit_supports[bit])
+            flip_cols.extend(sorted(flips[outcome]))
             flip_start.append(len(flip_cols))
     return _FireTables(
         p_fire=np.array(p_fire, dtype=np.float64),
