@@ -5,6 +5,7 @@ import pytest
 
 import tsim.sampler as sampler_module
 from tsim.circuit import Circuit
+from tsim.utils.kernels import PARALLEL_WORK
 
 
 def test_detector_sampler_args():
@@ -544,6 +545,29 @@ def test_direct_detectors_overwrite_every_column_of_their_rows():
     expected[:, 0] = (f[:, 0] != 0) ^ True
     assert np.array_equal(out, expected)
     assert np.array_equal(discarded, f[:, 1] != 0)
+
+
+@pytest.mark.parametrize("work", [0, PARALLEL_WORK])
+def test_direct_detectors_match_a_reference(work):
+    rng = np.random.default_rng(3)
+    rows, num_f, num_outputs, num_direct = 500, 30, 50, 40
+    f = (rng.random((rows, num_f)) < 0.05).astype(np.uint8)
+    f_indices = rng.integers(-1, num_f, num_direct)
+    flips = rng.random(num_direct) < 0.1
+    f_indices[:2], flips[:2] = -1, [True, False]
+    columns = rng.permutation(num_outputs)[:num_direct]
+    # NOTE: postselected detectors are unflipped, so that only some rows go.
+    postselect = (rng.random(num_direct) < 0.3) & ~flips
+    out = np.ones((rows, num_outputs), dtype=np.bool_)
+    discarded = sampler_module._write_direct_detectors(
+        work, f, f_indices, flips, columns, postselect, out
+    )
+    bits = np.where(f_indices >= 0, f[:, f_indices] != 0, False) ^ flips
+    expected = np.zeros((rows, num_outputs), dtype=np.bool_)
+    expected[:, columns] = bits
+    np.testing.assert_array_equal(out, expected)
+    np.testing.assert_array_equal(discarded, (bits & postselect).any(axis=1))
+    assert 0 < discarded.sum() < rows
 
 
 T_CIRCUIT = """

@@ -260,16 +260,20 @@ def _write_direct_detectors(f, f_indices, flips, columns, postselect, out):
     Detector ``j`` is ``f[row, f_indices[j]] ^ flips[j]``, or just ``flips[j]``
     when its index is -1. Returns which rows have a postselected detector of 1.
     """
+    # NOTE: clearing a row element by element, and testing it for discards
+    # without a branch per detector, is several times faster.
     discarded = np.zeros(f.shape[0], dtype=np.bool_)
     for row in numba.prange(f.shape[0]):
-        out[row] = False
+        for column in range(out.shape[1]):
+            out[row, column] = False
+        discard = False
         for j in range(len(f_indices)):
             bit = flips[j]
             if f_indices[j] >= 0:
                 bit ^= f[row, f_indices[j]] != 0
             out[row, columns[j]] = bit
-            if postselect[j] and bit:
-                discarded[row] = True
+            discard |= postselect[j] & bit
+        discarded[row] = discard
     return discarded
 
 
