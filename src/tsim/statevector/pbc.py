@@ -308,20 +308,24 @@ class _Reading:
                 coins = sum(1 << coin[b] for b in others)
                 outputs_by_bit[p] = (mask & ((1 << n) - 1), coins, rhs)
         self.outputs = [outputs_by_bit[b] for b in output_bits]
-        self._stabilizers: dict[int, stim.PauliString] = {}
 
     def stabilizer(self, t: int) -> stim.PauliString:
-        """Return ``K_T``, the product of ``K_u = X_u Z_N(u)`` over the spiders in ``t``."""
-        product = stim.PauliString(self.num_spiders)
+        """Return ``K_T``, the product of ``K_u = X_u Z_N(u)`` over the spiders in ``t``.
+
+        Moving every X to the left passes one anticommuting pair per edge inside
+        ``t``, so ``K_T = (-1)^|E(t)| X_t Z_z``, with ``z`` the parity of the
+        neighbourhoods. ``XZ = -iY`` on the spiders in both ``t`` and ``z``: those
+        of ``t`` with an odd number of neighbours in ``t``, an even number.
+        """
+        z, twice_edges = 0, 0
         for u in _bits(t):
-            if u not in self._stabilizers:
-                k_u = stim.PauliString(self.num_spiders)
-                k_u[u] = "X"
-                for w in _bits(self.neighbours[u]):
-                    k_u[w] = "Z"
-                self._stabilizers[u] = k_u
-            product *= self._stabilizers[u]
-        return product
+            z ^= self.neighbours[u]
+            twice_edges += (self.neighbours[u] & t).bit_count()
+        sign = (-1) ** (twice_edges // 2 + (t & z).bit_count() // 2)
+        n = self.num_spiders
+        return stim.PauliString.from_numpy(
+            xs=_unmask(t, n), zs=_unmask(z, n), sign=sign
+        )
 
     def measured(self, mask: int) -> stim.PauliString:
         """Return the product of ``m_v`` over the spiders in ``mask``."""
@@ -608,7 +612,11 @@ def _mask(bits: np.ndarray) -> int:
 
 
 def _unmask(mask: int, length: int) -> np.ndarray:
-    return np.array([mask >> i & 1 for i in range(length)], dtype=bool)
+    # NOTE: np.unpackbits leaves the padding of an empty input uninitialized, so
+    # the bytes cover all ``length`` bits.
+    num_bytes = -(-max(length, mask.bit_length()) // 8)
+    data = np.frombuffer(mask.to_bytes(num_bytes, "little"), dtype=np.uint8)
+    return np.unpackbits(data, count=length, bitorder="little").astype(bool)
 
 
 def _bits(mask: int) -> Iterator[int]:
