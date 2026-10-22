@@ -88,6 +88,30 @@ def test_low_rank_random():
     verify_basis_decomposition(vectors)
 
 
+@pytest.mark.parametrize("seed", range(10))
+@pytest.mark.parametrize("density", [0.02, 0.3, 0.8])
+def test_basis_is_the_first_independent_vectors(seed, density):
+    """The basis is every vector not spanned by the ones before it.
+
+    Its vectors are independent, so they leave one transform, also pinned here.
+    """
+    rng = np.random.default_rng(seed)
+    num_vectors, dim = int(rng.integers(1, 40)), int(rng.integers(1, 200))
+    vectors = (rng.random((num_vectors, dim)) < density).astype(np.uint8)
+    if num_vectors > 3:
+        vectors[rng.integers(3, num_vectors)] = vectors[0] ^ vectors[1] ^ vectors[2]
+    basis, transform = find_basis(vectors)
+
+    first_independent, rank = [], 0
+    for i in range(num_vectors):
+        if (prefix_rank := np.linalg.matrix_rank(GF2(vectors[: i + 1]))) > rank:
+            first_independent.append(i)
+            rank = prefix_rank
+    np.testing.assert_array_equal(basis, vectors[first_independent])
+    assert transform.dtype == np.uint8 and transform.shape == (num_vectors, rank)
+    np.testing.assert_array_equal(transform.astype(np.int64) @ basis % 2, vectors)
+
+
 def test_matmul_gf2_matches_numpy_reference():
     np.random.seed(0)
     G, T, P, B = 3, 4, 17, 5
