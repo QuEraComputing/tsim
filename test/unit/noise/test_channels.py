@@ -838,11 +838,12 @@ class TestAbsorbMatchesPairwiseComparison:
 class TestUniqueColumns:
     """unique_columns returns exactly what np.unique(axis=1) returns."""
 
-    @pytest.mark.parametrize("rows", [0, 1, 7, 8, 9, 64, 100])
+    @pytest.mark.parametrize("rows", [0, 1, 7, 8, 9, 15, 17, 64, 100])
     @pytest.mark.parametrize("cols", [0, 1, 5, 200])
-    def test_matches_numpy(self, rows, cols):
+    @pytest.mark.parametrize("density", [0.2, 0.6])
+    def test_matches_numpy(self, rows, cols, density):
         rng = np.random.default_rng(rows * 1000 + cols)
-        distinct = (rng.random((rows, max(1, cols // 3))) < 0.2).astype(np.uint8)
+        distinct = (rng.random((rows, max(1, cols // 3))) < density).astype(np.uint8)
         matrix = distinct[:, rng.integers(0, distinct.shape[1], cols)]
         got_cols, got_inverse = unique_columns(matrix)
         expected_cols, expected_inverse = np.unique(matrix, axis=1, return_inverse=True)

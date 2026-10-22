@@ -544,8 +544,8 @@ def unique_columns(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     ``np.unique`` sorts every column, comparing whole columns, which is slow for
     a large sparse matrix. Here a dict over the bit-packed columns finds the
-    distinct ones, and only those are sorted. Big-endian packing keeps the
-    lexicographic order of the columns, so the result is the same.
+    distinct ones, and only those are sorted, as bytes. Big-endian packing keeps
+    the lexicographic order of the columns, so the result is the same.
 
     Args:
         matrix: Binary matrix with entries 0 or 1 (nonzero entries count as 1).
@@ -555,14 +555,22 @@ def unique_columns(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         column of ``matrix`` among them.
 
     """
-    packed = np.ascontiguousarray(np.packbits(np.asarray(matrix) != 0, axis=0).T)
+    nonzero = (np.asarray(matrix) != 0).view(np.uint8)
+    # NOTE: np.packbits along axis 0 reads the matrix column by column; OR-ing
+    # every eighth row into the bytes reads it row by row, which is faster.
+    packed = np.zeros((-(-nonzero.shape[0] // 8), nonzero.shape[1]), dtype=np.uint8)
+    for bit in range(8):
+        rows = nonzero[bit::8]
+        packed[: len(rows)] |= rows << np.uint8(7 - bit)
+    packed = np.ascontiguousarray(packed.T)
     ids: dict[bytes, int] = {}
     column_ids = np.array(
         [ids.setdefault(column.tobytes(), len(ids)) for column in packed],
         dtype=np.int64,
     )
     _, first = np.unique(column_ids, return_index=True)
-    _, order = np.unique(packed[first], axis=0, return_index=True)
+    keys = list(ids)
+    order = np.array(sorted(range(len(keys)), key=keys.__getitem__), dtype=np.int64)
     rank = np.empty_like(order)
     rank[order] = np.arange(len(order))
     return matrix[:, first[order]], rank[column_ids]
