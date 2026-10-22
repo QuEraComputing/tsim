@@ -15,7 +15,11 @@ import stim
 import tsim.statevector.shared as shared
 import tsim.utils.kernels as kernels
 from tsim.statevector.program import MEASURE, MEASURE_DIAG, lower, plan_component
-from tsim.statevector.shared import sample_shared_component, sharing_layout
+from tsim.statevector.shared import (
+    lane_bound,
+    sample_shared_component,
+    sharing_layout,
+)
 
 NAMES = [
     "t_ghz",
@@ -290,6 +294,22 @@ def test_parallel_kernels_give_the_serial_samples(name, coherent, monkeypatch):
                 rows, _, _ = sample_shared_component(compiled, layout, f_params, 19)
             samples.append(rows)
         np.testing.assert_array_equal(samples[1], samples[0])
+
+
+@pytest.mark.parametrize("postselect", [False, True])
+def test_lanes_stay_within_the_lane_bound(postselect):
+    reached = False
+    for name in NAMES:
+        for planned, component_layout, compiled in _compiled(name):
+            postselected = np.full(compiled.num_outputs, postselect)
+            layout = sharing_layout(compiled, postselected)
+            f_params = np.asarray(
+                _f_params(component_layout, f_patterns(planned.num_f), 500)
+            )
+            _, _, stats = sample_shared_component(compiled, layout, f_params, 3)
+            assert stats["peak lanes"] <= lane_bound(layout)
+            reached |= stats["peak lanes"] == lane_bound(layout) > 1
+    assert reached
 
 
 def test_shots_whose_lanes_all_die_are_still_sampled():

@@ -750,6 +750,16 @@ def lane_bytes(component: StatevectorComponent) -> int:
     return amplitudes + 24 * component.num_words + 128 + component.num_outputs
 
 
+def lane_bound(layout: SharingLayout) -> int:
+    """Return the most lanes a batch with sharing can need, however many shots.
+
+    The shots of a lane agree on the key, of ``len(key_rows)`` bits, and every
+    measurement that splits lanes, one per lane branch bit, at most doubles them.
+    """
+    splits = sum(int(word).bit_count() for word in layout.lane_branches)
+    return 2 ** (len(layout.key_rows) + splits)
+
+
 def sample_shared_component(
     component: StatevectorComponent,
     layout: SharingLayout,

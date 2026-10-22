@@ -312,10 +312,20 @@ def test_shared_postselection_samples_the_survivors_without_padding(monkeypatch)
     assert sum(counts) == int((~detectors[:, 2]).sum())
 
 
-@pytest.mark.parametrize("sharing", [False, True])
 @pytest.mark.parametrize(
-    ("shots", "expected"),
-    [(40_000, [10_000] * 4), (12_000, [12_000]), (6_000, [6_000])],
+    ("sharing", "shots", "expected"),
+    [
+        (False, 40_000, [10_000] * 4),
+        (True, 40_000, [10_000] * 4),
+        # NOTE: without sharing every shot needs a lane, so smaller calls split
+        # too, down to MIN_LANE_BATCH shots per thread.
+        (False, 12_000, [3_000] * 4),
+        (False, 1_024, [256] * 4),
+        (False, 1_000, [1_000]),
+        # NOTE: the GHZ circuit needs at most 8 lanes however many shots it has.
+        (True, 12_000, [12_000]),
+        (True, 6_000, [6_000]),
+    ],
 )
 def test_default_batches_give_every_thread_one(sharing, shots, expected, monkeypatch):
     sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(
@@ -324,6 +334,33 @@ def test_default_batches_give_every_thread_one(sharing, shots, expected, monkeyp
     sampler._threads = lambda batch_size: 4
     rows = _recording_rows(sampler, monkeypatch)
     assert sampler.sample(shots).shape[0] == shots
+    assert sorted(rows) == expected
+
+
+@pytest.mark.parametrize("sharing", [False, True])
+def test_one_thread_samples_a_call_as_one_batch(sharing, monkeypatch):
+    sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(
+        strategy="active_statevector", seed=7, trajectory_sharing=sharing
+    )
+    sampler._threads = lambda batch_size: 1
+    rows = _recording_rows(sampler, monkeypatch)
+    sampler.sample(12_000)
+    assert rows == [12_000]
+
+
+@pytest.mark.parametrize(
+    ("max_lanes", "expected"), [(1_499, [6_000]), (1_500, [1_500] * 4)]
+)
+def test_shared_calls_split_when_a_batch_may_need_a_lane_per_shot(
+    max_lanes, expected, monkeypatch
+):
+    sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(
+        strategy="active_statevector", seed=7, trajectory_sharing=True
+    )
+    sampler._threads = lambda batch_size: 4
+    monkeypatch.setattr(sampler._backend, "max_lanes", lambda mask: max_lanes)
+    rows = _recording_rows(sampler, monkeypatch)
+    sampler.sample(6_000)
     assert sorted(rows) == expected
 
 
@@ -344,6 +381,33 @@ def test_default_postselection_splits_the_survivors_over_the_threads(
     size = -(-survivors // 4)
     assert len(rows) == 4
     assert sum(rows) == survivors and max(rows) == size
+
+
+@pytest.mark.parametrize("sharing", [False, True])
+def test_small_postselected_calls_split_unless_sharing_bounds_the_lanes(
+    sharing, monkeypatch
+):
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    sampler = circuit.compile_detector_sampler(
+        strategy="active_statevector", seed=8, trajectory_sharing=sharing
+    )
+    sampler._threads = lambda batch_size: 4
+    rows = _recording_rows(sampler, monkeypatch)
+    masks = []
+    max_lanes = sampler._backend.max_lanes
+
+    def spy(mask):
+        masks.append(mask)
+        return max_lanes(mask)
+
+    monkeypatch.setattr(sampler._backend, "max_lanes", spy)
+    mask = np.ones(circuit.num_detectors, dtype=bool)
+    detectors = sampler.sample(6_000, postselection_mask=mask)
+
+    assert sum(rows) == int((~detectors[:, 2]).sum())
+    # NOTE: with this mask, sharing keeps the GHZ circuit on at most 32 lanes.
+    assert len(rows) == (1 if sharing else 4)
+    assert masks and all(np.array_equal(m, mask) for m in masks)
 
 
 def test_split_survivors_run_on_as_many_threads_as_their_size_allows(monkeypatch):

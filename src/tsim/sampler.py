@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections import deque
-from math import ceil
+from math import ceil, inf
 from typing import TYPE_CHECKING, Any, Literal, Protocol, overload
 
 import jax
@@ -21,6 +21,7 @@ from tsim.noise.channels import ChannelSampler
 from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
 from tsim.statevector.shared import (
     SharingLayout,
+    lane_bound,
     lane_bytes,
     sample_shared_component,
     sharing_layout,
@@ -38,10 +39,13 @@ if TYPE_CHECKING:
 STATEVECTOR_MAX_BATCH_SIZE = 2**16
 
 # NOTE: without a given batch size, a call is split into a batch per thread when
-# every batch gets at least this many shots, whose fixed costs would dominate
-# otherwise. A call too small for that stays one batch, which the parallel
-# kernels spread over the threads instead.
+# every batch gets at least MIN_THREAD_BATCH shots, whose fixed costs would
+# dominate otherwise. A smaller call stays one batch, which the parallel kernels
+# spread over the threads instead, at about 0.1 ms per parallel loop. That is
+# slower than a batch per thread of MIN_LANE_BATCH shots or more, unless sharing
+# keeps the shots on fewer lanes than such a batch has shots.
 MIN_THREAD_BATCH = 2**12
+MIN_LANE_BATCH = 2**8
 
 # NOTE: postselection screens shots for direct discards in chunks of at most
 # this many, several chunks per thread at a time, so that calls of a few batches
@@ -333,6 +337,13 @@ class _Backend(Protocol):
         """Return the peak memory of one shot of a batch."""
         ...
 
+    def max_lanes(self, mask: np.ndarray | None) -> float:
+        """Return the most states a batch simulates, however many shots it has.
+
+        ``mask`` marks the postselected detectors; ``inf`` means one per shot.
+        """
+        ...
+
     def sample(
         self,
         f_params: np.ndarray,
@@ -392,6 +403,9 @@ class _StabilizerRankBackend:
                 largest = max(max_a * 16, max_b * 4, max_c * 4, max_d * 16, max_e * 16)
                 peak = max(peak, G * largest * 3)
         return peak
+
+    def max_lanes(self, mask: np.ndarray | None) -> float:
+        return inf
 
     def sample(
         self,
@@ -462,6 +476,12 @@ class _StatevectorBackend:
             ),
             default=0,
         )
+
+    def max_lanes(self, mask: np.ndarray | None) -> float:
+        if not self._share:
+            return inf
+        layouts, _ = self.layouts(mask, None)
+        return max(map(lane_bound, layouts), default=0)
 
     def sample(
         self,
@@ -639,8 +659,8 @@ class _CompiledSamplerBase:
         """Choose a uniform batch size for ``shots`` samples.
 
         Without a ``batch_size``, batches are as large as memory allows, but split
-        into a batch per thread (``_threads``) when each gets at least
-        ``MIN_THREAD_BATCH`` shots, so that every thread has work.
+        into a batch per thread when that pays (``_per_thread``), so that every
+        thread has work.
         """
         if batch_size is None:
             batch_size = self._auto_batch_size(shots)
@@ -653,10 +673,19 @@ class _CompiledSamplerBase:
         num_batches = max(1, ceil(shots / self._estimate_batch_size()))
         return ceil(shots / max(num_batches, self._per_thread(shots)))
 
-    def _per_thread(self, shots: int) -> int:
-        """Return the thread count if ``shots`` fill a batch per thread, else 1."""
+    def _per_thread(self, shots: int, mask: np.ndarray | None = None) -> int:
+        """Return the thread count if a batch per thread pays for ``shots``, else 1.
+
+        It does when every batch gets at least ``MIN_THREAD_BATCH`` shots, or at
+        least ``MIN_LANE_BATCH`` and the backend may need as many lanes as a
+        batch has shots; ``mask`` marks the postselected detectors.
+        """
         threads = self._threads(1)
-        return threads if shots >= threads * MIN_THREAD_BATCH else 1
+        if shots >= threads * MIN_THREAD_BATCH:
+            return threads
+        if shots < threads * MIN_LANE_BATCH:
+            return 1
+        return threads if self._backend.max_lanes(mask) >= ceil(shots / threads) else 1
 
     def _peak_bytes_per_sample(self) -> int:
         """Estimate peak device memory per sample from compiled program structure."""
@@ -878,7 +907,7 @@ class _CompiledSamplerBase:
             elif split_last and ready:
                 # NOTE: JAX pads these batches to a power of two, so that few
                 # batch shapes are compiled.
-                per_thread = self._per_thread(ready)
+                per_thread = self._per_thread(ready, postselection_mask)
                 size = ceil(ready / max(1, ceil(ready / batch_size), per_thread))
                 rows = min(batch_size, 1 << (size - 1).bit_length())
             all_f, all_shot = np.concatenate(pending_f), np.concatenate(pending_shot)
@@ -1046,9 +1075,10 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             batch_size: The number of samples to process in each batch. Defaults to
                 None, which automatically chooses a batch size based on available
                 memory. With ``strategy="active_statevector"`` a call is split
-                into a batch per numba thread when each gets at least 4096 shots.
-                With a stabilizer-rank strategy on a GPU, setting this explicitly
-                can help fully utilize VRAM.
+                into a batch per numba thread when each gets at least 4096 shots,
+                or at least 256 that trajectory sharing may not keep on fewer
+                lanes. With a stabilizer-rank strategy on a GPU, setting this
+                explicitly can help fully utilize VRAM.
                 NOTE: Changing the batch size will affect reproducibility even with
                 a fixed seed.
 
@@ -1155,9 +1185,10 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             batch_size: The number of samples to process in each batch. Defaults to
                 None, which automatically chooses a batch size based on available
                 memory. With ``strategy="active_statevector"`` a call is split
-                into a batch per numba thread when each gets at least 4096 shots.
-                With a stabilizer-rank strategy on a GPU, setting this explicitly
-                can help fully utilize VRAM.
+                into a batch per numba thread when each gets at least 4096 shots,
+                or at least 256 that trajectory sharing may not keep on fewer
+                lanes. With a stabilizer-rank strategy on a GPU, setting this
+                explicitly can help fully utilize VRAM.
                 NOTE: Changing the batch size will affect reproducibility even with
                 a fixed seed.
             separate_observables: Defaults to False. When set to True, the return value
