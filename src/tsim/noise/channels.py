@@ -45,7 +45,7 @@ class Channel:
         # Python and the sum without np.isclose, with its tolerance.
         tol = 1e-6
         values = self.probs.tolist()
-        if min(values) < -tol or max(values) > 1.0 + tol:
+        if min(values, default=0.0) < -tol or max(values, default=0.0) > 1.0 + tol:
             raise ValueError(f"Probabilities must lie in [0, 1], but got: {self.probs}")
         if not abs(float(self.probs.sum()) - 1.0) <= 1e-8 + 1e-5:
             raise ValueError(
@@ -564,11 +564,15 @@ def unique_columns(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         packed[: len(rows)] |= rows << np.uint8(7 - bit)
     packed = np.ascontiguousarray(packed.T)
     ids: dict[bytes, int] = {}
-    column_ids = np.array(
-        [ids.setdefault(column.tobytes(), len(ids)) for column in packed],
-        dtype=np.int64,
-    )
-    _, first = np.unique(column_ids, return_index=True)
+    first_list: list[int] = []
+    column_ids = np.empty(len(packed), dtype=np.int64)
+    for i, column in enumerate(packed):
+        key = column.tobytes()
+        if key not in ids:
+            ids[key] = len(first_list)
+            first_list.append(i)
+        column_ids[i] = ids[key]
+    first = np.array(first_list, dtype=np.int64)
     keys = list(ids)
     order = np.array(sorted(range(len(keys)), key=keys.__getitem__), dtype=np.int64)
     rank = np.empty_like(order)
@@ -724,11 +728,7 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _Fire
     outcome_start, flip_start = [0], [0]
     # NOTE: signatures are sparse, so an outcome's flips are built as sets: those
     # of its lowest bit XOR those of the outcome without that bit.
-    used = {col_id for channel in channels for col_id in channel.unique_col_ids}
-    supports = {
-        col_id: frozenset(np.flatnonzero(signature_matrix[col_id]).tolist())
-        for col_id in used
-    }
+    supports: dict[int, frozenset[int]] = {}
     for channel in channels:
         probs = channel.probs.astype(np.float64)
         conditional = np.cumsum(np.clip(probs[1:], 0, None))
@@ -738,6 +738,11 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _Fire
         p_fire.append(fire)
         cdf.extend(conditional / conditional[-1])
         outcome_start.append(len(cdf))
+        for col_id in channel.unique_col_ids:
+            if col_id not in supports:
+                supports[col_id] = frozenset(
+                    np.flatnonzero(signature_matrix[col_id]).tolist()
+                )
         bit_supports = [supports[col_id] for col_id in channel.unique_col_ids]
         flips: list[frozenset[int]] = [frozenset()]
         for outcome in range(1, len(probs)):

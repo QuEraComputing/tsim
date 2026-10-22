@@ -119,7 +119,7 @@ def _ancestors(before: np.ndarray) -> np.ndarray:
     bits = np.unpackbits(
         ancestors.view(np.uint8), axis=1, count=num_ops, bitorder="little"
     )
-    return bits.astype(bool)
+    return bits.view(bool)
 
 
 @dataclass(frozen=True)

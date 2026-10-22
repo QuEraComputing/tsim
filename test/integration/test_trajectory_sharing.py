@@ -358,7 +358,9 @@ def test_shared_calls_split_when_a_batch_may_need_a_lane_per_shot(
         strategy="active_statevector", seed=7, trajectory_sharing=True
     )
     sampler._threads = lambda batch_size: 4
-    monkeypatch.setattr(sampler._backend, "max_lanes", lambda mask: max_lanes)
+    monkeypatch.setattr(
+        sampler._backend, "max_lanes", lambda mask, flip=None: max_lanes
+    )
     rows = _recording_rows(sampler, monkeypatch)
     sampler.sample(6_000)
     assert sorted(rows) == expected
@@ -396,9 +398,9 @@ def test_small_postselected_calls_split_unless_sharing_bounds_the_lanes(
     masks = []
     max_lanes = sampler._backend.max_lanes
 
-    def spy(mask):
+    def spy(mask, flip=None):
         masks.append(mask)
-        return max_lanes(mask)
+        return max_lanes(mask, flip)
 
     monkeypatch.setattr(sampler._backend, "max_lanes", spy)
     mask = np.ones(circuit.num_detectors, dtype=bool)

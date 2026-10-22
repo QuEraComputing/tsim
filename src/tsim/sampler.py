@@ -337,10 +337,13 @@ class _Backend(Protocol):
         """Return the peak memory of one shot of a batch."""
         ...
 
-    def max_lanes(self, mask: np.ndarray | None) -> float:
+    def max_lanes(
+        self, mask: np.ndarray | None, flip: np.ndarray | None = None
+    ) -> float:
         """Return the most states a batch simulates, however many shots it has.
 
-        ``mask`` marks the postselected detectors; ``inf`` means one per shot.
+        ``mask`` marks the postselected detectors and ``flip`` the reference bits
+        of the outputs, as in ``sample``; ``inf`` means one per shot.
         """
         ...
 
@@ -404,7 +407,9 @@ class _StabilizerRankBackend:
                 peak = max(peak, G * largest * 3)
         return peak
 
-    def max_lanes(self, mask: np.ndarray | None) -> float:
+    def max_lanes(
+        self, mask: np.ndarray | None, flip: np.ndarray | None = None
+    ) -> float:
         return inf
 
     def sample(
@@ -477,10 +482,12 @@ class _StatevectorBackend:
             default=0,
         )
 
-    def max_lanes(self, mask: np.ndarray | None) -> float:
+    def max_lanes(
+        self, mask: np.ndarray | None, flip: np.ndarray | None = None
+    ) -> float:
         if not self._share:
             return inf
-        layouts, _ = self.layouts(mask, None)
+        layouts, _ = self.layouts(mask, flip)
         return max(map(lane_bound, layouts), default=0)
 
     def sample(
@@ -673,19 +680,25 @@ class _CompiledSamplerBase:
         num_batches = max(1, ceil(shots / self._estimate_batch_size()))
         return ceil(shots / max(num_batches, self._per_thread(shots)))
 
-    def _per_thread(self, shots: int, mask: np.ndarray | None = None) -> int:
+    def _per_thread(
+        self,
+        shots: int,
+        mask: np.ndarray | None = None,
+        flip: np.ndarray | None = None,
+    ) -> int:
         """Return the thread count if a batch per thread pays for ``shots``, else 1.
 
         It does when every batch gets at least ``MIN_THREAD_BATCH`` shots, or at
         least ``MIN_LANE_BATCH`` and the backend may need as many lanes as a
-        batch has shots; ``mask`` marks the postselected detectors.
+        batch has shots; ``mask`` and ``flip`` are as in ``max_lanes``.
         """
         threads = self._threads(1)
         if shots >= threads * MIN_THREAD_BATCH:
             return threads
         if shots < threads * MIN_LANE_BATCH:
             return 1
-        return threads if self._backend.max_lanes(mask) >= ceil(shots / threads) else 1
+        lanes = self._backend.max_lanes(mask, flip)
+        return threads if lanes >= ceil(shots / threads) else 1
 
     def _peak_bytes_per_sample(self) -> int:
         """Estimate peak device memory per sample from compiled program structure."""
@@ -907,7 +920,7 @@ class _CompiledSamplerBase:
             elif split_last and ready:
                 # NOTE: JAX pads these batches to a power of two, so that few
                 # batch shapes are compiled.
-                per_thread = self._per_thread(ready, postselection_mask)
+                per_thread = self._per_thread(ready, postselection_mask, flip)
                 size = ceil(ready / max(1, ceil(ready / batch_size), per_thread))
                 rows = min(batch_size, 1 << (size - 1).bit_length())
             all_f, all_shot = np.concatenate(pending_f), np.concatenate(pending_shot)

@@ -616,7 +616,7 @@ def _unmask(mask: int, length: int) -> np.ndarray:
     # the bytes cover all ``length`` bits.
     num_bytes = -(-max(length, mask.bit_length()) // 8)
     data = np.frombuffer(mask.to_bytes(num_bytes, "little"), dtype=np.uint8)
-    return np.unpackbits(data, count=length, bitorder="little").astype(bool)
+    return np.unpackbits(data, count=length, bitorder="little").view(bool)
 
 
 def _bits(mask: int) -> Iterator[int]:
