@@ -104,14 +104,22 @@ def anticommutation(ops: PauliOps) -> np.ndarray:
 
 def _ancestors(before: np.ndarray) -> np.ndarray:
     """Return ``a[j, i]``: op ``i`` must run before op ``j`` (transitively)."""
+    # NOTE: the rows are OR-ed as bit-packed 64-bit words, which is several times
+    # faster than as booleans.
     num_ops = before.shape[0]
-    ancestors = np.zeros((num_ops, num_ops), dtype=bool)
+    preds = np.ascontiguousarray(before.T)
+    packed = np.zeros((num_ops, 8 * -(-num_ops // 64)), dtype=np.uint8)
+    packed[:, : -(-num_ops // 8)] = np.packbits(preds, axis=1, bitorder="little")
+    direct = packed.view(np.uint64)
+    ancestors = np.zeros_like(direct)
     for j in range(num_ops):
-        preds = np.flatnonzero(before[:, j])
-        if len(preds):
-            ancestors[j] = ancestors[preds].any(axis=0)
-            ancestors[j, preds] = True
-    return ancestors
+        rows = np.flatnonzero(preds[j])
+        if len(rows):
+            ancestors[j] = np.bitwise_or.reduce(ancestors[rows], axis=0) | direct[j]
+    bits = np.unpackbits(
+        ancestors.view(np.uint8), axis=1, count=num_ops, bitorder="little"
+    )
+    return bits.astype(bool)
 
 
 @dataclass(frozen=True)
