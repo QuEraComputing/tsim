@@ -193,6 +193,48 @@ class TestChannelValidation:
         with pytest.raises(ValueError):
             Channel(probs=pauli_channel_1_probs(0.6, 0.6, 0.6), unique_col_ids=(0, 1))
 
+    def test_accepts_what_numpy_comparisons_accept(self):
+        """The checks keep NumPy's semantics, tolerances, NaN and infinities too."""
+
+        def accepted_by_numpy(probs: np.ndarray) -> bool:
+            if np.any(probs < -1e-6) or np.any(probs > 1 + 1e-6):
+                return False
+            return bool(np.isclose(np.sum(probs), 1.0))
+
+        edge_cases = [
+            [1.0],
+            [1 + 1e-6, -1e-6],
+            [1 + 2e-6, -2e-6],
+            [0.5, 0.5 + 1e-5],
+            [0.5, 0.5 + 1.1e-5],
+            [0.5, 0.5 - 1.1e-5],
+            [np.nan, 1.0],
+            [np.nan, -1.0],
+            [np.inf, 0.0],
+            [-np.inf, 1.0],
+        ]
+        cases = [np.array(case) for case in edge_cases]
+        rng = np.random.default_rng(0)
+        for _ in range(2000):
+            probs = rng.dirichlet(np.ones(2 ** int(rng.integers(0, 5))))
+            scale = rng.choice([0, 1e-7, 1e-6, 4e-6, 1e-5, 3e-5])
+            cases.append(probs + scale * rng.standard_normal(len(probs)))
+            # NOTE: sums at np.isclose's tolerance, where rounding decides.
+            cases.append(probs * (1 + rng.uniform(-1.02e-5, 1.02e-5)))
+        cases += [case.astype(np.float32) for case in cases]
+        outcomes = []
+        for probs in cases:
+            try:
+                Channel(
+                    probs=probs, unique_col_ids=tuple(range(channel_num_bits(probs)))
+                )
+                accepted = True
+            except ValueError:
+                accepted = False
+            assert accepted == accepted_by_numpy(probs), probs
+            outcomes.append(accepted)
+        assert 0 < sum(outcomes) < len(outcomes)
+
     def test_channel_sampler_rejects_invalid_channel(self):
         # ChannelSampler wraps probs in a Channel, so invalid distributions
         # get caught at construction time rather than silently dropped.

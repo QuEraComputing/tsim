@@ -40,10 +40,14 @@ class Channel:
 
     def __post_init__(self) -> None:
         """Validate channel probabilities."""
+        # NOTE: NumPy's overhead dominates for a channel's few outcomes, and
+        # simplification makes many channels, so the range is checked in plain
+        # Python and the sum without np.isclose, with its tolerance.
         tol = 1e-6
-        if np.any(self.probs < -tol) or np.any(self.probs > 1.0 + tol):
+        values = self.probs.tolist()
+        if min(values) < -tol or max(values) > 1.0 + tol:
             raise ValueError(f"Probabilities must lie in [0, 1], but got: {self.probs}")
-        if not np.isclose(np.sum(self.probs), 1.0):
+        if not abs(float(self.probs.sum()) - 1.0) <= 1e-8 + 1e-5:
             raise ValueError(
                 f"Probabilities must sum to 1, but got: {self.probs} "
                 f"(sum {np.sum(self.probs)})"
