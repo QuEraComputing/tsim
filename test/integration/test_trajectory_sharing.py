@@ -346,6 +346,27 @@ def test_default_postselection_splits_the_survivors_over_the_threads(
     assert sum(rows) == survivors and max(rows) == size
 
 
+def test_split_survivors_run_on_as_many_threads_as_their_size_allows(monkeypatch):
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    sampler = circuit.compile_detector_sampler(
+        strategy="active_statevector", seed=8, trajectory_sharing=False
+    )
+    # NOTE: as for a wide component, only one batch of the largest size fits.
+    sampler._threads = lambda batch_size: 1 if batch_size > 20_000 else 4
+    calls = []
+    original = sampler_module.run_tasks
+
+    def spy(function, tasks, threads):
+        tasks = list(tasks)
+        calls.append((function.__name__, len(tasks), threads))
+        return original(function, tasks, threads)
+
+    monkeypatch.setattr(sampler_module, "run_tasks", spy)
+    mask = np.ones(circuit.num_detectors, dtype=bool)
+    sampler.sample(40_000, postselection_mask=mask)
+    assert [call for call in calls if call[0] == "dispatch"] == [("dispatch", 4, 4)]
+
+
 @pytest.mark.parametrize("rows", [1, 300, 70_000])
 @pytest.mark.parametrize("name", [*sorted(CIRCUITS), "direct_flips"])
 def test_direct_outputs_land_in_their_columns(name, rows):

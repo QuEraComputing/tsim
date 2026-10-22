@@ -891,7 +891,8 @@ class _CompiledSamplerBase:
                 )
                 for start in range(0, ready, size)
             ]
-            run_tasks(dispatch, batches, threads)
+            # NOTE: only JAX pads batches to ``rows``, and it runs one at a time.
+            run_tasks(dispatch, batches, self._threads(size))
             pending_f, pending_shot = [all_f[ready:]], [all_shot[ready:]]
             pending -= ready
         return result
