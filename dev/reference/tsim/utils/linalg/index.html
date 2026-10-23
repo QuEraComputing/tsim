@@ -59,19 +59,7 @@
 <span class=normal>63</span>
 <span class=normal>64</span>
 <span class=normal>65</span>
-<span class=normal>66</span>
-<span class=normal>67</span>
-<span class=normal>68</span>
-<span class=normal>69</span>
-<span class=normal>70</span>
-<span class=normal>71</span>
-<span class=normal>72</span>
-<span class=normal>73</span>
-<span class=normal>74</span>
-<span class=normal>75</span>
-<span class=normal>76</span>
-<span class=normal>77</span>
-<span class=normal>78</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>find_basis</span><span class=p>(</span><span class=n>vectors</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>]:</span>
+<span class=normal>66</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>find_basis</span><span class=p>(</span><span class=n>vectors</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>]:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Decompose a set of binary vectors into a basis subset and a transformation matrix over GF(2).</span>
 
 <span class=sd>    Given a set of vectors V, this function finds a maximal linearly independent subset B</span>
@@ -90,81 +78,69 @@
 <span class=sd>            transform: The transformation matrix, shape `(N, K)`.</span>
 
 <span class=sd>    &quot;&quot;&quot;</span>
-    <span class=n>vecs</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>array</span><span class=p>(</span><span class=n>vectors</span><span class=p>,</span> <span class=n>dtype</span><span class=o>=</span><span class=n>np</span><span class=o>.</span><span class=n>uint8</span><span class=p>)</span>
-    <span class=n>num_vectors</span><span class=p>,</span> <span class=n>_</span> <span class=o>=</span> <span class=n>vecs</span><span class=o>.</span><span class=n>shape</span>
+    <span class=n>vecs</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>asarray</span><span class=p>(</span><span class=n>vectors</span><span class=p>,</span> <span class=n>dtype</span><span class=o>=</span><span class=n>np</span><span class=o>.</span><span class=n>uint8</span><span class=p>)</span>
+    <span class=n>num_vectors</span> <span class=o>=</span> <span class=n>vecs</span><span class=o>.</span><span class=n>shape</span><span class=p>[</span><span class=mi>0</span><span class=p>]</span>
 
-    <span class=n>basis_indices</span> <span class=o>=</span> <span class=p>[]</span>
-    <span class=n>reduced_basis</span> <span class=o>=</span> <span class=p>[]</span>
-    <span class=n>pivots</span> <span class=o>=</span> <span class=p>[]</span>
-    <span class=n>basis_expansion</span> <span class=o>=</span> <span class=p>[]</span>
-    <span class=n>t_rows</span> <span class=o>=</span> <span class=p>[]</span>
+    <span class=c1># NOTE: vectors and their expansions over the basis are Python ints (bit j</span>
+    <span class=c1># is entry j). A vector is reduced by the basis vector whose lowest bit is</span>
+    <span class=c1># its own, until that bit is new (independent) or nothing is left.</span>
+    <span class=n>packed</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>packbits</span><span class=p>(</span><span class=n>vecs</span><span class=p>,</span> <span class=n>axis</span><span class=o>=</span><span class=mi>1</span><span class=p>,</span> <span class=n>bitorder</span><span class=o>=</span><span class=s2>&quot;little&quot;</span><span class=p>)</span>
+    <span class=n>reduced_basis</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>int</span><span class=p>,</span> <span class=nb>tuple</span><span class=p>[</span><span class=nb>int</span><span class=p>,</span> <span class=nb>int</span><span class=p>]]</span> <span class=o>=</span> <span class=p>{}</span>
+    <span class=n>basis_indices</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]</span> <span class=o>=</span> <span class=p>[]</span>
+    <span class=n>t_rows</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>]</span> <span class=o>=</span> <span class=p>[]</span>
 
-    <span class=k>for</span> <span class=n>i</span> <span class=ow>in</span> <span class=nb>range</span><span class=p>(</span><span class=n>num_vectors</span><span class=p>):</span>
-        <span class=n>v</span> <span class=o>=</span> <span class=n>vecs</span><span class=p>[</span><span class=n>i</span><span class=p>]</span><span class=o>.</span><span class=n>copy</span><span class=p>()</span>
-        <span class=n>coeffs</span> <span class=o>=</span> <span class=p>[]</span>
-
-        <span class=k>for</span> <span class=n>j</span><span class=p>,</span> <span class=n>b</span> <span class=ow>in</span> <span class=nb>enumerate</span><span class=p>(</span><span class=n>reduced_basis</span><span class=p>):</span>
-            <span class=k>if</span> <span class=n>v</span><span class=p>[</span><span class=n>pivots</span><span class=p>[</span><span class=n>j</span><span class=p>]]:</span>
-                <span class=n>v</span> <span class=o>^=</span> <span class=n>b</span>
-                <span class=n>coeffs</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>j</span><span class=p>)</span>
-
-        <span class=n>is_independent</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>any</span><span class=p>(</span><span class=n>v</span><span class=p>)</span>
-        <span class=n>current_rank</span> <span class=o>=</span> <span class=nb>len</span><span class=p>(</span><span class=n>basis_indices</span><span class=p>)</span>
-        <span class=n>new_size</span> <span class=o>=</span> <span class=n>current_rank</span> <span class=o>+</span> <span class=mi>1</span> <span class=k>if</span> <span class=n>is_independent</span> <span class=k>else</span> <span class=n>current_rank</span>
-
-        <span class=c1># Compute dependency on existing basis vectors</span>
-        <span class=n>dep_sum</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>zeros</span><span class=p>(</span><span class=n>new_size</span><span class=p>,</span> <span class=n>dtype</span><span class=o>=</span><span class=n>np</span><span class=o>.</span><span class=n>uint8</span><span class=p>)</span>
-        <span class=k>for</span> <span class=n>idx</span> <span class=ow>in</span> <span class=n>coeffs</span><span class=p>:</span>
-            <span class=n>e</span> <span class=o>=</span> <span class=n>basis_expansion</span><span class=p>[</span><span class=n>idx</span><span class=p>]</span>
-            <span class=n>dep_sum</span><span class=p>[:</span> <span class=nb>len</span><span class=p>(</span><span class=n>e</span><span class=p>)]</span> <span class=o>^=</span> <span class=n>e</span>
-
-        <span class=k>if</span> <span class=n>is_independent</span><span class=p>:</span>
-            <span class=n>basis_indices</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>i</span><span class=p>)</span>
-            <span class=n>reduced_basis</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>v</span><span class=p>)</span>
-            <span class=n>pivots</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>np</span><span class=o>.</span><span class=n>argmax</span><span class=p>(</span><span class=n>v</span><span class=p>))</span>
-
-            <span class=c1># Update basis expansion for the new reduced vector</span>
-            <span class=c1># reduced_v = v_original + sum(reduced_basis[c])</span>
-            <span class=c1># =&gt; reduced_v_expansion = e_new + sum(basis_expansion[c])</span>
-            <span class=n>dep_sum</span><span class=p>[</span><span class=n>current_rank</span><span class=p>]</span> <span class=o>=</span> <span class=mi>1</span>
-            <span class=n>basis_expansion</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>dep_sum</span><span class=p>)</span>
-
-            <span class=n>t_row</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>zeros</span><span class=p>(</span><span class=n>new_size</span><span class=p>,</span> <span class=n>dtype</span><span class=o>=</span><span class=n>np</span><span class=o>.</span><span class=n>uint8</span><span class=p>)</span>
-            <span class=n>t_row</span><span class=p>[</span><span class=n>current_rank</span><span class=p>]</span> <span class=o>=</span> <span class=mi>1</span>
-            <span class=n>t_rows</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>t_row</span><span class=p>)</span>
-        <span class=k>else</span><span class=p>:</span>
-            <span class=c1># Dependent vector is the sum of basis expansions of reducing vectors</span>
-            <span class=n>t_rows</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>dep_sum</span><span class=p>)</span>
+    <span class=k>for</span> <span class=n>i</span><span class=p>,</span> <span class=n>row</span> <span class=ow>in</span> <span class=nb>enumerate</span><span class=p>(</span><span class=n>packed</span><span class=p>):</span>
+        <span class=n>v</span> <span class=o>=</span> <span class=nb>int</span><span class=o>.</span><span class=n>from_bytes</span><span class=p>(</span><span class=n>row</span><span class=o>.</span><span class=n>tobytes</span><span class=p>(),</span> <span class=s2>&quot;little&quot;</span><span class=p>)</span>
+        <span class=n>dep_sum</span> <span class=o>=</span> <span class=mi>0</span>
+        <span class=k>while</span> <span class=n>v</span><span class=p>:</span>
+            <span class=n>pivot</span> <span class=o>=</span> <span class=p>(</span><span class=n>v</span> <span class=o>&amp;</span> <span class=o>-</span><span class=n>v</span><span class=p>)</span><span class=o>.</span><span class=n>bit_length</span><span class=p>()</span> <span class=o>-</span> <span class=mi>1</span>
+            <span class=k>if</span> <span class=n>pivot</span> <span class=ow>not</span> <span class=ow>in</span> <span class=n>reduced_basis</span><span class=p>:</span>
+                <span class=c1># reduced_v = v_original + sum(reducing vectors)</span>
+                <span class=c1># =&gt; reduced_v_expansion = e_new + sum(their expansions)</span>
+                <span class=n>rank</span> <span class=o>=</span> <span class=nb>len</span><span class=p>(</span><span class=n>basis_indices</span><span class=p>)</span>
+                <span class=n>reduced_basis</span><span class=p>[</span><span class=n>pivot</span><span class=p>]</span> <span class=o>=</span> <span class=p>(</span><span class=n>v</span><span class=p>,</span> <span class=n>dep_sum</span> <span class=o>|</span> <span class=mi>1</span> <span class=o>&lt;&lt;</span> <span class=n>rank</span><span class=p>)</span>
+                <span class=n>basis_indices</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>i</span><span class=p>)</span>
+                <span class=n>dep_sum</span> <span class=o>=</span> <span class=mi>1</span> <span class=o>&lt;&lt;</span> <span class=n>rank</span>
+                <span class=k>break</span>
+            <span class=n>b</span><span class=p>,</span> <span class=n>expansion</span> <span class=o>=</span> <span class=n>reduced_basis</span><span class=p>[</span><span class=n>pivot</span><span class=p>]</span>
+            <span class=n>v</span> <span class=o>^=</span> <span class=n>b</span>
+            <span class=n>dep_sum</span> <span class=o>^=</span> <span class=n>expansion</span>
+        <span class=c1># A dependent vector is the sum of the expansions of its reducing vectors</span>
+        <span class=n>t_rows</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>dep_sum</span><span class=p>)</span>
 
     <span class=n>rank</span> <span class=o>=</span> <span class=nb>len</span><span class=p>(</span><span class=n>basis_indices</span><span class=p>)</span>
-    <span class=n>transform</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>zeros</span><span class=p>((</span><span class=n>num_vectors</span><span class=p>,</span> <span class=n>rank</span><span class=p>),</span> <span class=n>dtype</span><span class=o>=</span><span class=n>np</span><span class=o>.</span><span class=n>uint8</span><span class=p>)</span>
-    <span class=k>for</span> <span class=n>i</span><span class=p>,</span> <span class=n>row</span> <span class=ow>in</span> <span class=nb>enumerate</span><span class=p>(</span><span class=n>t_rows</span><span class=p>):</span>
-        <span class=n>transform</span><span class=p>[</span><span class=n>i</span><span class=p>,</span> <span class=p>:</span> <span class=nb>len</span><span class=p>(</span><span class=n>row</span><span class=p>)]</span> <span class=o>=</span> <span class=n>row</span>
-
+    <span class=n>num_bytes</span> <span class=o>=</span> <span class=o>-</span><span class=p>(</span><span class=o>-</span><span class=n>rank</span> <span class=o>//</span> <span class=mi>8</span><span class=p>)</span>
+    <span class=n>t_bytes</span> <span class=o>=</span> <span class=sa>b</span><span class=s2>&quot;&quot;</span><span class=o>.</span><span class=n>join</span><span class=p>(</span><span class=n>row</span><span class=o>.</span><span class=n>to_bytes</span><span class=p>(</span><span class=n>num_bytes</span><span class=p>,</span> <span class=s2>&quot;little&quot;</span><span class=p>)</span> <span class=k>for</span> <span class=n>row</span> <span class=ow>in</span> <span class=n>t_rows</span><span class=p>)</span>
+    <span class=n>transform</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>unpackbits</span><span class=p>(</span>
+        <span class=n>np</span><span class=o>.</span><span class=n>frombuffer</span><span class=p>(</span><span class=n>t_bytes</span><span class=p>,</span> <span class=n>dtype</span><span class=o>=</span><span class=n>np</span><span class=o>.</span><span class=n>uint8</span><span class=p>)</span><span class=o>.</span><span class=n>reshape</span><span class=p>(</span><span class=n>num_vectors</span><span class=p>,</span> <span class=n>num_bytes</span><span class=p>),</span>
+        <span class=n>axis</span><span class=o>=</span><span class=mi>1</span><span class=p>,</span>
+        <span class=n>count</span><span class=o>=</span><span class=n>rank</span><span class=p>,</span>
+        <span class=n>bitorder</span><span class=o>=</span><span class=s2>&quot;little&quot;</span><span class=p>,</span>
+    <span class=p>)</span>
     <span class=k>return</span> <span class=n>vecs</span><span class=p>[</span><span class=n>basis_indices</span><span class=p>],</span> <span class=n>transform</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.linalg.matmul_gf2 class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">matmul_gf2</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>matmul_gf2</span><span class=p>(</span><span class=n>a</span><span class=p>:</span> <span class=n>Array</span><span class=p>,</span> <span class=n>b</span><span class=p>:</span> <span class=n>Array</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Array</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Compute binary dot products mod 2 as <code>a_GTP x b_BP -&gt; b_BGT</code>.</p> <p>Uses float32 matmul (integer matmul does not have BLAS support on CPU) then casts back to uint8.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>a</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Parameter bit-masks, shape <code>(G, T, P)</code> — G graphs, T terms, P parameters.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>b</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Binary parameter values, shape <code>(B, P)</code> — B batch elements.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Binary row-sums mod 2, shape <code>(B, G, T)</code>.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/linalg.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 81</span>
-<span class=normal> 82</span>
-<span class=normal> 83</span>
-<span class=normal> 84</span>
-<span class=normal> 85</span>
-<span class=normal> 86</span>
-<span class=normal> 87</span>
-<span class=normal> 88</span>
-<span class=normal> 89</span>
-<span class=normal> 90</span>
-<span class=normal> 91</span>
-<span class=normal> 92</span>
-<span class=normal> 93</span>
-<span class=normal> 94</span>
-<span class=normal> 95</span>
-<span class=normal> 96</span>
-<span class=normal> 97</span>
-<span class=normal> 98</span>
-<span class=normal> 99</span>
-<span class=normal>100</span>
-<span class=normal>101</span>
-<span class=normal>102</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>matmul_gf2</span><span class=p>(</span><span class=n>a</span><span class=p>:</span> <span class=n>Array</span><span class=p>,</span> <span class=n>b</span><span class=p>:</span> <span class=n>Array</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Array</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Compute binary dot products mod 2 as <code>a_GTP x b_BP -&gt; b_BGT</code>.</p> <p>Uses float32 matmul (integer matmul does not have BLAS support on CPU) then casts back to uint8.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>a</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Parameter bit-masks, shape <code>(G, T, P)</code> — G graphs, T terms, P parameters.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>b</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Binary parameter values, shape <code>(B, P)</code> — B batch elements.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Binary row-sums mod 2, shape <code>(B, G, T)</code>.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/linalg.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>69</span>
+<span class=normal>70</span>
+<span class=normal>71</span>
+<span class=normal>72</span>
+<span class=normal>73</span>
+<span class=normal>74</span>
+<span class=normal>75</span>
+<span class=normal>76</span>
+<span class=normal>77</span>
+<span class=normal>78</span>
+<span class=normal>79</span>
+<span class=normal>80</span>
+<span class=normal>81</span>
+<span class=normal>82</span>
+<span class=normal>83</span>
+<span class=normal>84</span>
+<span class=normal>85</span>
+<span class=normal>86</span>
+<span class=normal>87</span>
+<span class=normal>88</span>
+<span class=normal>89</span>
+<span class=normal>90</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>matmul_gf2</span><span class=p>(</span><span class=n>a</span><span class=p>:</span> <span class=n>Array</span><span class=p>,</span> <span class=n>b</span><span class=p>:</span> <span class=n>Array</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Array</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Compute binary dot products mod 2 as ``a_GTP x b_BP -&gt; b_BGT``.</span>
 
 <span class=sd>    Uses float32 matmul (integer matmul does not have BLAS support on CPU)</span>

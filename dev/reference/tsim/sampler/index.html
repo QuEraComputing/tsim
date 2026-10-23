@@ -31,37 +31,37 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-module-attribute"><code>module-attribute</code></small>
-  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>"active_statevector" (the default), or a stabilizer rank decomposition strategy ("cat5", "bss", "cutting").</p> </div> </td> <td> <code>&#39;active_statevector&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>trajectory_sharing</code> </td> <td> <code><span title=bool>bool</span> | None</code> </td> <td> <div class=doc-md-description> <p>With <code>strategy="active_statevector"</code>, simulate shots with equal histories on one lane. Defaults to True for <code>"active_statevector"</code> and False otherwise.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size and fixed reference sample settings. If deterministic samples are needed, the batch size should be set manually.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1067</span>
-<span class=normal>1068</span>
-<span class=normal>1069</span>
-<span class=normal>1070</span>
-<span class=normal>1071</span>
-<span class=normal>1072</span>
-<span class=normal>1073</span>
-<span class=normal>1074</span>
-<span class=normal>1075</span>
-<span class=normal>1076</span>
-<span class=normal>1077</span>
-<span class=normal>1078</span>
-<span class=normal>1079</span>
-<span class=normal>1080</span>
-<span class=normal>1081</span>
-<span class=normal>1082</span>
-<span class=normal>1083</span>
-<span class=normal>1084</span>
-<span class=normal>1085</span>
-<span class=normal>1086</span>
-<span class=normal>1087</span>
-<span class=normal>1088</span>
-<span class=normal>1089</span>
-<span class=normal>1090</span>
-<span class=normal>1091</span>
-<span class=normal>1092</span>
-<span class=normal>1093</span>
-<span class=normal>1094</span>
-<span class=normal>1095</span>
-<span class=normal>1096</span>
-<span class=normal>1097</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
+  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>"active_statevector" (the default), or a stabilizer rank decomposition strategy ("cat5", "bss", "cutting").</p> </div> </td> <td> <code>&#39;active_statevector&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>trajectory_sharing</code> </td> <td> <code><span title=bool>bool</span> | None</code> </td> <td> <div class=doc-md-description> <p>With <code>strategy="active_statevector"</code>, simulate shots with equal histories on one lane. Defaults to True for <code>"active_statevector"</code> and False otherwise.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size and fixed reference sample settings. If deterministic samples are needed, the batch size should be set manually.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1115</span>
+<span class=normal>1116</span>
+<span class=normal>1117</span>
+<span class=normal>1118</span>
+<span class=normal>1119</span>
+<span class=normal>1120</span>
+<span class=normal>1121</span>
+<span class=normal>1122</span>
+<span class=normal>1123</span>
+<span class=normal>1124</span>
+<span class=normal>1125</span>
+<span class=normal>1126</span>
+<span class=normal>1127</span>
+<span class=normal>1128</span>
+<span class=normal>1129</span>
+<span class=normal>1130</span>
+<span class=normal>1131</span>
+<span class=normal>1132</span>
+<span class=normal>1133</span>
+<span class=normal>1134</span>
+<span class=normal>1135</span>
+<span class=normal>1136</span>
+<span class=normal>1137</span>
+<span class=normal>1138</span>
+<span class=normal>1139</span>
+<span class=normal>1140</span>
+<span class=normal>1141</span>
+<span class=normal>1142</span>
+<span class=normal>1143</span>
+<span class=normal>1144</span>
+<span class=normal>1145</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>circuit</span><span class=p>:</span> <span class=n>Circuit</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
@@ -128,55 +128,7 @@
     <span class=n>use_observable_reference_sample</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
     <span class=n>postselection_mask</span><span class=p>:</span> <span class=n>ndarray</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span> <span class=o>|</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return detector samples from the circuit.</p> <p>The circuit must define the detectors using DETECTOR instructions. Observables defined by OBSERVABLE_INCLUDE instructions can also be included in the results as honorary detectors.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>shots</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The number of times to sample every detector in the circuit.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>The number of samples to process in each batch. Defaults to None, which automatically chooses a batch size based on available memory. With <code>strategy="active_statevector"</code> a call is split into a batch per numba thread when each gets at least 4096 shots. With a stabilizer-rank strategy on a GPU, setting this explicitly can help fully utilize VRAM. NOTE: Changing the batch size will affect reproducibility even with a fixed seed.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>separate_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When set to True, the return value is a (detection_events, observable_flips) tuple instead of a flat detection_events array.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>prepend_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, observables are included with the detectors and are placed at the start of the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>append_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, observables are included with the detectors and are placed at the end of the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>bit_packed</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, results are bit-packed.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_detector_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When True, a noiseless reference sample is computed and XORed with detector outcomes so that results represent deviations from the noiseless baseline. This should only be used when detectors are deterministic. Otherwise, it can unpredictably change the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_observable_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When True, a noiseless reference sample is computed and XORed with observable outcomes so that results represent deviations from the noiseless baseline. This should only be used when observables are deterministic. Otherwise, it can unpredictably change the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>postselection_mask</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span> | None</code> </td> <td> <div class=doc-md-description> <p>Optional boolean array of length <code>num_detectors</code>. When set, shots where any masked direct detector (an error bit or a constant) fires are not sampled further. All <code>shots</code> rows are still returned: survivors contain the full sample, while discarded rows retain direct detector columns and fill component columns with <code>False</code>; with <code>strategy="active_statevector"</code>, a shot discarded by a masked component detector also reads <code>False</code> in the outputs set after it. Re-apply the mask to the returned detector columns to recover surviving shots.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p>A numpy array or tuple of numpy arrays containing the samples.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=ValueError>ValueError</span></code> </td> <td> <div class=doc-md-description> <p>If <code>separate_observables</code> is combined with <code>prepend_observables</code> or <code>append_observables</code>.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1129</span>
-<span class=normal>1130</span>
-<span class=normal>1131</span>
-<span class=normal>1132</span>
-<span class=normal>1133</span>
-<span class=normal>1134</span>
-<span class=normal>1135</span>
-<span class=normal>1136</span>
-<span class=normal>1137</span>
-<span class=normal>1138</span>
-<span class=normal>1139</span>
-<span class=normal>1140</span>
-<span class=normal>1141</span>
-<span class=normal>1142</span>
-<span class=normal>1143</span>
-<span class=normal>1144</span>
-<span class=normal>1145</span>
-<span class=normal>1146</span>
-<span class=normal>1147</span>
-<span class=normal>1148</span>
-<span class=normal>1149</span>
-<span class=normal>1150</span>
-<span class=normal>1151</span>
-<span class=normal>1152</span>
-<span class=normal>1153</span>
-<span class=normal>1154</span>
-<span class=normal>1155</span>
-<span class=normal>1156</span>
-<span class=normal>1157</span>
-<span class=normal>1158</span>
-<span class=normal>1159</span>
-<span class=normal>1160</span>
-<span class=normal>1161</span>
-<span class=normal>1162</span>
-<span class=normal>1163</span>
-<span class=normal>1164</span>
-<span class=normal>1165</span>
-<span class=normal>1166</span>
-<span class=normal>1167</span>
-<span class=normal>1168</span>
-<span class=normal>1169</span>
-<span class=normal>1170</span>
-<span class=normal>1171</span>
-<span class=normal>1172</span>
-<span class=normal>1173</span>
-<span class=normal>1174</span>
-<span class=normal>1175</span>
-<span class=normal>1176</span>
-<span class=normal>1177</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return detector samples from the circuit.</p> <p>The circuit must define the detectors using DETECTOR instructions. Observables defined by OBSERVABLE_INCLUDE instructions can also be included in the results as honorary detectors.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>shots</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The number of times to sample every detector in the circuit.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>The number of samples to process in each batch. Defaults to None, which automatically chooses a batch size based on available memory. With <code>strategy="active_statevector"</code> a call is split into a batch per numba thread when each gets at least 4096 shots, or at least 256 that trajectory sharing may not keep on fewer lanes. With a stabilizer-rank strategy on a GPU, setting this explicitly can help fully utilize VRAM. NOTE: Changing the batch size will affect reproducibility even with a fixed seed.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>separate_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When set to True, the return value is a (detection_events, observable_flips) tuple instead of a flat detection_events array.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>prepend_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, observables are included with the detectors and are placed at the start of the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>append_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, observables are included with the detectors and are placed at the end of the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>bit_packed</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, results are bit-packed.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_detector_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When True, a noiseless reference sample is computed and XORed with detector outcomes so that results represent deviations from the noiseless baseline. This should only be used when detectors are deterministic. Otherwise, it can unpredictably change the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_observable_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When True, a noiseless reference sample is computed and XORed with observable outcomes so that results represent deviations from the noiseless baseline. This should only be used when observables are deterministic. Otherwise, it can unpredictably change the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>postselection_mask</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span> | None</code> </td> <td> <div class=doc-md-description> <p>Optional boolean array of length <code>num_detectors</code>. When set, shots where any masked direct detector (an error bit or a constant) fires are not sampled further. All <code>shots</code> rows are still returned: survivors contain the full sample, while discarded rows retain direct detector columns and fill component columns with <code>False</code>; with <code>strategy="active_statevector"</code>, a shot discarded by a masked component detector also reads <code>False</code> in the outputs set after it. Re-apply the mask to the returned detector columns to recover surviving shots.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p>A numpy array or tuple of numpy arrays containing the samples.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=ValueError>ValueError</span></code> </td> <td> <div class=doc-md-description> <p>If <code>separate_observables</code> is combined with <code>prepend_observables</code> or <code>append_observables</code>.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1177</span>
 <span class=normal>1178</span>
 <span class=normal>1179</span>
 <span class=normal>1180</span>
@@ -269,7 +221,56 @@
 <span class=normal>1267</span>
 <span class=normal>1268</span>
 <span class=normal>1269</span>
-<span class=normal>1270</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample</span><span class=p>(</span>
+<span class=normal>1270</span>
+<span class=normal>1271</span>
+<span class=normal>1272</span>
+<span class=normal>1273</span>
+<span class=normal>1274</span>
+<span class=normal>1275</span>
+<span class=normal>1276</span>
+<span class=normal>1277</span>
+<span class=normal>1278</span>
+<span class=normal>1279</span>
+<span class=normal>1280</span>
+<span class=normal>1281</span>
+<span class=normal>1282</span>
+<span class=normal>1283</span>
+<span class=normal>1284</span>
+<span class=normal>1285</span>
+<span class=normal>1286</span>
+<span class=normal>1287</span>
+<span class=normal>1288</span>
+<span class=normal>1289</span>
+<span class=normal>1290</span>
+<span class=normal>1291</span>
+<span class=normal>1292</span>
+<span class=normal>1293</span>
+<span class=normal>1294</span>
+<span class=normal>1295</span>
+<span class=normal>1296</span>
+<span class=normal>1297</span>
+<span class=normal>1298</span>
+<span class=normal>1299</span>
+<span class=normal>1300</span>
+<span class=normal>1301</span>
+<span class=normal>1302</span>
+<span class=normal>1303</span>
+<span class=normal>1304</span>
+<span class=normal>1305</span>
+<span class=normal>1306</span>
+<span class=normal>1307</span>
+<span class=normal>1308</span>
+<span class=normal>1309</span>
+<span class=normal>1310</span>
+<span class=normal>1311</span>
+<span class=normal>1312</span>
+<span class=normal>1313</span>
+<span class=normal>1314</span>
+<span class=normal>1315</span>
+<span class=normal>1316</span>
+<span class=normal>1317</span>
+<span class=normal>1318</span>
+<span class=normal>1319</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>shots</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
@@ -293,9 +294,10 @@
 <span class=sd>        batch_size: The number of samples to process in each batch. Defaults to</span>
 <span class=sd>            None, which automatically chooses a batch size based on available</span>
 <span class=sd>            memory. With ``strategy=&quot;active_statevector&quot;`` a call is split</span>
-<span class=sd>            into a batch per numba thread when each gets at least 4096 shots.</span>
-<span class=sd>            With a stabilizer-rank strategy on a GPU, setting this explicitly</span>
-<span class=sd>            can help fully utilize VRAM.</span>
+<span class=sd>            into a batch per numba thread when each gets at least 4096 shots,</span>
+<span class=sd>            or at least 256 that trajectory sharing may not keep on fewer</span>
+<span class=sd>            lanes. With a stabilizer-rank strategy on a GPU, setting this</span>
+<span class=sd>            explicitly can help fully utilize VRAM.</span>
 <span class=sd>            NOTE: Changing the batch size will affect reproducibility even with</span>
 <span class=sd>            a fixed seed.</span>
 <span class=sd>        separate_observables: Defaults to False. When set to True, the return value</span>
@@ -444,37 +446,37 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-module-attribute"><code>module-attribute</code></small>
-  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>"active_statevector" (the default), or a stabilizer rank decomposition strategy ("cat5", "bss", "cutting").</p> </div> </td> <td> <code>&#39;active_statevector&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>trajectory_sharing</code> </td> <td> <code><span title=bool>bool</span> | None</code> </td> <td> <div class=doc-md-description> <p>With <code>strategy="active_statevector"</code>, simulate shots with equal histories on one lane. Defaults to True for <code>"active_statevector"</code> and False otherwise.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size. If deterministic samples are needed, the batch size should be set manually.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1004</span>
-<span class=normal>1005</span>
-<span class=normal>1006</span>
-<span class=normal>1007</span>
-<span class=normal>1008</span>
-<span class=normal>1009</span>
-<span class=normal>1010</span>
-<span class=normal>1011</span>
-<span class=normal>1012</span>
-<span class=normal>1013</span>
-<span class=normal>1014</span>
-<span class=normal>1015</span>
-<span class=normal>1016</span>
-<span class=normal>1017</span>
-<span class=normal>1018</span>
-<span class=normal>1019</span>
-<span class=normal>1020</span>
-<span class=normal>1021</span>
-<span class=normal>1022</span>
-<span class=normal>1023</span>
-<span class=normal>1024</span>
-<span class=normal>1025</span>
-<span class=normal>1026</span>
-<span class=normal>1027</span>
-<span class=normal>1028</span>
-<span class=normal>1029</span>
-<span class=normal>1030</span>
-<span class=normal>1031</span>
-<span class=normal>1032</span>
-<span class=normal>1033</span>
-<span class=normal>1034</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
+  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>"active_statevector" (the default), or a stabilizer rank decomposition strategy ("cat5", "bss", "cutting").</p> </div> </td> <td> <code>&#39;active_statevector&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>trajectory_sharing</code> </td> <td> <code><span title=bool>bool</span> | None</code> </td> <td> <div class=doc-md-description> <p>With <code>strategy="active_statevector"</code>, simulate shots with equal histories on one lane. Defaults to True for <code>"active_statevector"</code> and False otherwise.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size. If deterministic samples are needed, the batch size should be set manually.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1051</span>
+<span class=normal>1052</span>
+<span class=normal>1053</span>
+<span class=normal>1054</span>
+<span class=normal>1055</span>
+<span class=normal>1056</span>
+<span class=normal>1057</span>
+<span class=normal>1058</span>
+<span class=normal>1059</span>
+<span class=normal>1060</span>
+<span class=normal>1061</span>
+<span class=normal>1062</span>
+<span class=normal>1063</span>
+<span class=normal>1064</span>
+<span class=normal>1065</span>
+<span class=normal>1066</span>
+<span class=normal>1067</span>
+<span class=normal>1068</span>
+<span class=normal>1069</span>
+<span class=normal>1070</span>
+<span class=normal>1071</span>
+<span class=normal>1072</span>
+<span class=normal>1073</span>
+<span class=normal>1074</span>
+<span class=normal>1075</span>
+<span class=normal>1076</span>
+<span class=normal>1077</span>
+<span class=normal>1078</span>
+<span class=normal>1079</span>
+<span class=normal>1080</span>
+<span class=normal>1081</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>circuit</span><span class=p>:</span> <span class=n>Circuit</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
@@ -508,25 +510,26 @@
 </code></pre></div></td></tr></table></div> </details> <div class="doc doc-children"> <div class="doc doc-object doc-function"> <h3 id=tsim.sampler.CompiledMeasurementSampler.sample class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">sample</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>sample</span><span class=p>(</span>
     <span class=n>shots</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Sample measurement outcomes from the circuit.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>shots</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The number of times to sample every measurement in the circuit.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>The number of samples to process in each batch. Defaults to None, which automatically chooses a batch size based on available memory. With <code>strategy="active_statevector"</code> a call is split into a batch per numba thread when each gets at least 4096 shots. With a stabilizer-rank strategy on a GPU, setting this explicitly can help fully utilize VRAM. NOTE: Changing the batch size will affect reproducibility even with a fixed seed.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>A numpy array containing the measurement samples.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1036</span>
-<span class=normal>1037</span>
-<span class=normal>1038</span>
-<span class=normal>1039</span>
-<span class=normal>1040</span>
-<span class=normal>1041</span>
-<span class=normal>1042</span>
-<span class=normal>1043</span>
-<span class=normal>1044</span>
-<span class=normal>1045</span>
-<span class=normal>1046</span>
-<span class=normal>1047</span>
-<span class=normal>1048</span>
-<span class=normal>1049</span>
-<span class=normal>1050</span>
-<span class=normal>1051</span>
-<span class=normal>1052</span>
-<span class=normal>1053</span>
-<span class=normal>1054</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>shots</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Sample measurement outcomes from the circuit.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>shots</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The number of times to sample every measurement in the circuit.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>The number of samples to process in each batch. Defaults to None, which automatically chooses a batch size based on available memory. With <code>strategy="active_statevector"</code> a call is split into a batch per numba thread when each gets at least 4096 shots, or at least 256 that trajectory sharing may not keep on fewer lanes. With a stabilizer-rank strategy on a GPU, setting this explicitly can help fully utilize VRAM. NOTE: Changing the batch size will affect reproducibility even with a fixed seed.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>A numpy array containing the measurement samples.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1083</span>
+<span class=normal>1084</span>
+<span class=normal>1085</span>
+<span class=normal>1086</span>
+<span class=normal>1087</span>
+<span class=normal>1088</span>
+<span class=normal>1089</span>
+<span class=normal>1090</span>
+<span class=normal>1091</span>
+<span class=normal>1092</span>
+<span class=normal>1093</span>
+<span class=normal>1094</span>
+<span class=normal>1095</span>
+<span class=normal>1096</span>
+<span class=normal>1097</span>
+<span class=normal>1098</span>
+<span class=normal>1099</span>
+<span class=normal>1100</span>
+<span class=normal>1101</span>
+<span class=normal>1102</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>shots</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Sample measurement outcomes from the circuit.</span>
 
 <span class=sd>    Args:</span>
@@ -534,9 +537,10 @@
 <span class=sd>        batch_size: The number of samples to process in each batch. Defaults to</span>
 <span class=sd>            None, which automatically chooses a batch size based on available</span>
 <span class=sd>            memory. With ``strategy=&quot;active_statevector&quot;`` a call is split</span>
-<span class=sd>            into a batch per numba thread when each gets at least 4096 shots.</span>
-<span class=sd>            With a stabilizer-rank strategy on a GPU, setting this explicitly</span>
-<span class=sd>            can help fully utilize VRAM.</span>
+<span class=sd>            into a batch per numba thread when each gets at least 4096 shots,</span>
+<span class=sd>            or at least 256 that trajectory sharing may not keep on fewer</span>
+<span class=sd>            lanes. With a stabilizer-rank strategy on a GPU, setting this</span>
+<span class=sd>            explicitly can help fully utilize VRAM.</span>
 <span class=sd>            NOTE: Changing the batch size will affect reproducibility even with</span>
 <span class=sd>            a fixed seed.</span>
 
@@ -578,32 +582,32 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-module-attribute"><code>module-attribute</code></small>
-  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy ("cat5", "bss", "cutting"); "active_statevector" cannot compute probabilities.</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed. If None, a random seed is generated. Note that deterministic results are only guaranteed for a fixed batch size.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1281</span>
-<span class=normal>1282</span>
-<span class=normal>1283</span>
-<span class=normal>1284</span>
-<span class=normal>1285</span>
-<span class=normal>1286</span>
-<span class=normal>1287</span>
-<span class=normal>1288</span>
-<span class=normal>1289</span>
-<span class=normal>1290</span>
-<span class=normal>1291</span>
-<span class=normal>1292</span>
-<span class=normal>1293</span>
-<span class=normal>1294</span>
-<span class=normal>1295</span>
-<span class=normal>1296</span>
-<span class=normal>1297</span>
-<span class=normal>1298</span>
-<span class=normal>1299</span>
-<span class=normal>1300</span>
-<span class=normal>1301</span>
-<span class=normal>1302</span>
-<span class=normal>1303</span>
-<span class=normal>1304</span>
-<span class=normal>1305</span>
-<span class=normal>1306</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
+  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy ("cat5", "bss", "cutting"); "active_statevector" cannot compute probabilities.</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed. If None, a random seed is generated. Note that deterministic results are only guaranteed for a fixed batch size.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1330</span>
+<span class=normal>1331</span>
+<span class=normal>1332</span>
+<span class=normal>1333</span>
+<span class=normal>1334</span>
+<span class=normal>1335</span>
+<span class=normal>1336</span>
+<span class=normal>1337</span>
+<span class=normal>1338</span>
+<span class=normal>1339</span>
+<span class=normal>1340</span>
+<span class=normal>1341</span>
+<span class=normal>1342</span>
+<span class=normal>1343</span>
+<span class=normal>1344</span>
+<span class=normal>1345</span>
+<span class=normal>1346</span>
+<span class=normal>1347</span>
+<span class=normal>1348</span>
+<span class=normal>1349</span>
+<span class=normal>1350</span>
+<span class=normal>1351</span>
+<span class=normal>1352</span>
+<span class=normal>1353</span>
+<span class=normal>1354</span>
+<span class=normal>1355</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>circuit</span><span class=p>:</span> <span class=n>Circuit</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
@@ -632,52 +636,52 @@
 </code></pre></div></td></tr></table></div> </details> <div class="doc doc-children"> <div class="doc doc-object doc-function"> <h3 id=tsim.sampler.CompiledStateProbs.probability_of class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">probability_of</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>probability_of</span><span class=p>(</span>
     <span class=n>state</span><span class=p>:</span> <span class=n>ndarray</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Compute probabilities for a batch of error samples given a measurement state.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>state</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>The measurement outcome state to compute probability for.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>Number of error samples to use for estimation.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>Array of probabilities P(state | error_sample) for each error sample.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1308</span>
-<span class=normal>1309</span>
-<span class=normal>1310</span>
-<span class=normal>1311</span>
-<span class=normal>1312</span>
-<span class=normal>1313</span>
-<span class=normal>1314</span>
-<span class=normal>1315</span>
-<span class=normal>1316</span>
-<span class=normal>1317</span>
-<span class=normal>1318</span>
-<span class=normal>1319</span>
-<span class=normal>1320</span>
-<span class=normal>1321</span>
-<span class=normal>1322</span>
-<span class=normal>1323</span>
-<span class=normal>1324</span>
-<span class=normal>1325</span>
-<span class=normal>1326</span>
-<span class=normal>1327</span>
-<span class=normal>1328</span>
-<span class=normal>1329</span>
-<span class=normal>1330</span>
-<span class=normal>1331</span>
-<span class=normal>1332</span>
-<span class=normal>1333</span>
-<span class=normal>1334</span>
-<span class=normal>1335</span>
-<span class=normal>1336</span>
-<span class=normal>1337</span>
-<span class=normal>1338</span>
-<span class=normal>1339</span>
-<span class=normal>1340</span>
-<span class=normal>1341</span>
-<span class=normal>1342</span>
-<span class=normal>1343</span>
-<span class=normal>1344</span>
-<span class=normal>1345</span>
-<span class=normal>1346</span>
-<span class=normal>1347</span>
-<span class=normal>1348</span>
-<span class=normal>1349</span>
-<span class=normal>1350</span>
-<span class=normal>1351</span>
-<span class=normal>1352</span>
-<span class=normal>1353</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>probability_of</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>state</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Compute probabilities for a batch of error samples given a measurement state.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>state</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>The measurement outcome state to compute probability for.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>Number of error samples to use for estimation.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>Array of probabilities P(state | error_sample) for each error sample.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1357</span>
+<span class=normal>1358</span>
+<span class=normal>1359</span>
+<span class=normal>1360</span>
+<span class=normal>1361</span>
+<span class=normal>1362</span>
+<span class=normal>1363</span>
+<span class=normal>1364</span>
+<span class=normal>1365</span>
+<span class=normal>1366</span>
+<span class=normal>1367</span>
+<span class=normal>1368</span>
+<span class=normal>1369</span>
+<span class=normal>1370</span>
+<span class=normal>1371</span>
+<span class=normal>1372</span>
+<span class=normal>1373</span>
+<span class=normal>1374</span>
+<span class=normal>1375</span>
+<span class=normal>1376</span>
+<span class=normal>1377</span>
+<span class=normal>1378</span>
+<span class=normal>1379</span>
+<span class=normal>1380</span>
+<span class=normal>1381</span>
+<span class=normal>1382</span>
+<span class=normal>1383</span>
+<span class=normal>1384</span>
+<span class=normal>1385</span>
+<span class=normal>1386</span>
+<span class=normal>1387</span>
+<span class=normal>1388</span>
+<span class=normal>1389</span>
+<span class=normal>1390</span>
+<span class=normal>1391</span>
+<span class=normal>1392</span>
+<span class=normal>1393</span>
+<span class=normal>1394</span>
+<span class=normal>1395</span>
+<span class=normal>1396</span>
+<span class=normal>1397</span>
+<span class=normal>1398</span>
+<span class=normal>1399</span>
+<span class=normal>1400</span>
+<span class=normal>1401</span>
+<span class=normal>1402</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>probability_of</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>state</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Compute probabilities for a batch of error samples given a measurement state.</span>
 
 <span class=sd>    Args:</span>
@@ -728,11 +732,7 @@
     <span class=n>f_params</span><span class=p>:</span> <span class=n>Array</span><span class=p>,</span>
     <span class=n>key</span><span class=p>:</span> <span class=n>Array</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>jax</span><span class=o>.</span><span class=n>Array</span><span class=p>,</span> <span class=n>PRNGKey</span><span class=p>,</span> <span class=n>jax</span><span class=o>.</span><span class=n>Array</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Sample outputs from a single component.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>component</code> </td> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">CompiledComponent</span> (<code>tsim.core.types.CompiledComponent</code>)' href=../core/types/#tsim.core.types.CompiledComponent>CompiledComponent</a></code> </td> <td> <div class=doc-md-description> <p>The compiled component to sample from.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>f_params</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Error parameters, shape (batch_size, num_f_params).</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>key</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>JAX random key.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Tuple of (samples, next_key, max_norm_deviation) where samples has shape</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>(batch_size, num_outputs_for_component).</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>119</span>
-<span class=normal>120</span>
-<span class=normal>121</span>
-<span class=normal>122</span>
-<span class=normal>123</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Sample outputs from a single component.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>component</code> </td> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">CompiledComponent</span> (<code>tsim.core.types.CompiledComponent</code>)' href=../core/types/#tsim.core.types.CompiledComponent>CompiledComponent</a></code> </td> <td> <div class=doc-md-description> <p>The compiled component to sample from.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>f_params</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Error parameters, shape (batch_size, num_f_params).</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>key</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>JAX random key.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Tuple of (samples, next_key, max_norm_deviation) where samples has shape</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>(batch_size, num_outputs_for_component).</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>123</span>
 <span class=normal>124</span>
 <span class=normal>125</span>
 <span class=normal>126</span>
@@ -748,7 +748,11 @@
 <span class=normal>136</span>
 <span class=normal>137</span>
 <span class=normal>138</span>
-<span class=normal>139</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample_component</span><span class=p>(</span>
+<span class=normal>139</span>
+<span class=normal>140</span>
+<span class=normal>141</span>
+<span class=normal>142</span>
+<span class=normal>143</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample_component</span><span class=p>(</span>
     <span class=n>component</span><span class=p>:</span> <span class=n>CompiledComponent</span><span class=p>,</span>
     <span class=n>f_params</span><span class=p>:</span> <span class=n>jax</span><span class=o>.</span><span class=n>Array</span><span class=p>,</span>
     <span class=n>key</span><span class=p>:</span> <span class=n>PRNGKey</span><span class=p>,</span>
@@ -777,11 +781,7 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span> (<code>tsim.core.types.CompiledProgram</code>)' href=../core/types/#tsim.core.types.CompiledProgram>CompiledProgram</a></code> </td> <td> <div class=doc-md-description> <p>The compiled program to sample from.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>f_params</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Error parameters, shape (batch_size, num_f_params).</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>key</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>JAX random key.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Samples array of shape (batch_size, num_outputs), reordered to</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>match the original output indices.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>170</span>
-<span class=normal>171</span>
-<span class=normal>172</span>
-<span class=normal>173</span>
-<span class=normal>174</span>
+  </span> (<code>tsim.core.types.CompiledProgram</code>)' href=../core/types/#tsim.core.types.CompiledProgram>CompiledProgram</a></code> </td> <td> <div class=doc-md-description> <p>The compiled program to sample from.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>f_params</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Error parameters, shape (batch_size, num_f_params).</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>key</code> </td> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>JAX random key.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>Samples array of shape (batch_size, num_outputs), reordered to</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=jax.Array>Array</span></code> </td> <td> <div class=doc-md-description> <p>match the original output indices.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>174</span>
 <span class=normal>175</span>
 <span class=normal>176</span>
 <span class=normal>177</span>
@@ -805,7 +805,11 @@
 <span class=normal>195</span>
 <span class=normal>196</span>
 <span class=normal>197</span>
-<span class=normal>198</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample_program</span><span class=p>(</span>
+<span class=normal>198</span>
+<span class=normal>199</span>
+<span class=normal>200</span>
+<span class=normal>201</span>
+<span class=normal>202</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample_program</span><span class=p>(</span>
     <span class=n>program</span><span class=p>:</span> <span class=n>CompiledProgram</span><span class=p>,</span> <span class=n>f_params</span><span class=p>:</span> <span class=n>jax</span><span class=o>.</span><span class=n>Array</span><span class=p>,</span> <span class=n>key</span><span class=p>:</span> <span class=n>PRNGKey</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>jax</span><span class=o>.</span><span class=n>Array</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Sample all outputs of a program of stabilizer-rank components with JAX.</span>
@@ -849,11 +853,7 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span> (<code>tsim.core.types.CompiledProgram</code>)' href=../core/types/#tsim.core.types.CompiledProgram>CompiledProgram</a></code> </td> <td> <div class=doc-md-description> <p>The compiled program to sample from.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>f_params</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>Error parameters, shape (batch_size, num_f_params).</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>Seed of the batch's random numbers, below 2^64.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>layouts</code> </td> <td> <code><span title=tuple>tuple</span>[<a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">SharingLayout</span> (<code>tsim.statevector.shared.SharingLayout</code>)' href=../statevector/shared/#tsim.statevector.shared.SharingLayout>SharingLayout</a>, ...]</code> </td> <td> <div class=doc-md-description> <p>The sharing layout of each component.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>direct_flips</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>The flip of each direct output, with its reference bit.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>share</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Whether shots with equal histories share a lane.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>sharing_stats</code> </td> <td> <code><span title=collections.deque>deque</span>[<span title=dict>dict</span>] | None</code> </td> <td> <div class=doc-md-description> <p>If given, the executor appends its lane counts.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>Samples array of shape (batch_size, num_outputs) in the original order.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>201</span>
-<span class=normal>202</span>
-<span class=normal>203</span>
-<span class=normal>204</span>
-<span class=normal>205</span>
+  </span> (<code>tsim.core.types.CompiledProgram</code>)' href=../core/types/#tsim.core.types.CompiledProgram>CompiledProgram</a></code> </td> <td> <div class=doc-md-description> <p>The compiled program to sample from.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>f_params</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>Error parameters, shape (batch_size, num_f_params).</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>Seed of the batch's random numbers, below 2^64.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>layouts</code> </td> <td> <code><span title=tuple>tuple</span>[<a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">SharingLayout</span> (<code>tsim.statevector.shared.SharingLayout</code>)' href=../statevector/shared/#tsim.statevector.shared.SharingLayout>SharingLayout</a>, ...]</code> </td> <td> <div class=doc-md-description> <p>The sharing layout of each component.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>direct_flips</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>The flip of each direct output, with its reference bit.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>share</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Whether shots with equal histories share a lane.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>sharing_stats</code> </td> <td> <code><span title=collections.deque>deque</span>[<span title=dict>dict</span>] | None</code> </td> <td> <div class=doc-md-description> <p>If given, the executor appends its lane counts.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>Samples array of shape (batch_size, num_outputs) in the original order.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>205</span>
 <span class=normal>206</span>
 <span class=normal>207</span>
 <span class=normal>208</span>
@@ -901,7 +901,11 @@
 <span class=normal>250</span>
 <span class=normal>251</span>
 <span class=normal>252</span>
-<span class=normal>253</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample_statevector_program</span><span class=p>(</span>
+<span class=normal>253</span>
+<span class=normal>254</span>
+<span class=normal>255</span>
+<span class=normal>256</span>
+<span class=normal>257</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample_statevector_program</span><span class=p>(</span>
     <span class=n>program</span><span class=p>:</span> <span class=n>CompiledProgram</span><span class=p>,</span>
     <span class=n>f_params</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span>
     <span class=n>seed</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>

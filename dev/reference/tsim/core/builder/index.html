@@ -14,13 +14,15 @@
 <span class=normal>65</span>
 <span class=normal>66</span>
 <span class=normal>67</span>
-<span class=normal>68</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>68</span>
+<span class=normal>69</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Start an empty circuit.&quot;&quot;&quot;</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_graph</span> <span class=o>=</span> <span class=n>Graph</span><span class=p>()</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_records</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>Vertex</span><span class=p>]</span> <span class=o>=</span> <span class=p>[]</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_silent_records</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>Vertex</span><span class=p>]</span> <span class=o>=</span> <span class=p>[]</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_detectors</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>Vertex</span><span class=p>]</span> <span class=o>=</span> <span class=p>[]</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_observables</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>int</span><span class=p>,</span> <span class=n>Vertex</span><span class=p>]</span> <span class=o>=</span> <span class=p>{}</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>_annotation_cols</span><span class=p>:</span> <span class=nb>set</span><span class=p>[</span><span class=nb>float</span><span class=p>]</span> <span class=o>=</span> <span class=nb>set</span><span class=p>()</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_first_vertex</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>int</span><span class=p>,</span> <span class=n>Vertex</span><span class=p>]</span> <span class=o>=</span> <span class=p>{}</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_last_vertex</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>int</span><span class=p>,</span> <span class=n>Vertex</span><span class=p>]</span> <span class=o>=</span> <span class=p>{}</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_channel_probs</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>]</span> <span class=o>=</span> <span class=p>[]</span>
@@ -34,8 +36,7 @@
 </code></pre></div> <div class="doc doc-contents "> <p>The number of error bits, which are the error parameter IDs.</p> </div> </div> <div class="doc doc-object doc-attribute"> <h3 id=tsim.core.builder.GraphBuilder.observables class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code> <span class="doc doc-object-name doc-attribute-name">observables</span> <span class="doc doc-labels"> <small class="doc doc-label doc-label-property"><code>property</code></small> </span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=n>observables</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>Vertex</span><span class=p>]</span>
 </code></pre></div> <div class="doc doc-contents "> <p>The observable spiders, sorted by index (<code>obs[k]</code>).</p> </div> </div> <div class="doc doc-object doc-attribute"> <h3 id=tsim.core.builder.GraphBuilder.records class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code> <span class="doc doc-object-name doc-attribute-name">records</span> <span class="doc doc-labels"> <small class="doc doc-label doc-label-property"><code>property</code></small> </span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=n>records</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>Vertex</span><span class=p>]</span>
 </code></pre></div> <div class="doc doc-contents "> <p>The measurement record spiders, in record order (<code>rec[i]</code>).</p> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.core.builder.GraphBuilder.add_channel class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">add_channel</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>add_channel</span><span class=p>(</span><span class=n>probs</span><span class=p>:</span> <span class=n>ndarray</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Record a noise channel and allocate its error bits.</p> <p><code>probs</code> is the channel's distribution over its <code>k</code> error bits, so it has <code>2^k</code> entries. Returns the first bit; the channel owns bits <code>first … first + k − 1</code>. Raises <code>ValueError</code> if the number of entries is not a power of two.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>321</span>
-<span class=normal>322</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Record a noise channel and allocate its error bits.</p> <p><code>probs</code> is the channel's distribution over its <code>k</code> error bits, so it has <code>2^k</code> entries. Returns the first bit; the channel owns bits <code>first … first + k − 1</code>. Raises <code>ValueError</code> if the number of entries is not a power of two.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>322</span>
 <span class=normal>323</span>
 <span class=normal>324</span>
 <span class=normal>325</span>
@@ -46,7 +47,8 @@
 <span class=normal>330</span>
 <span class=normal>331</span>
 <span class=normal>332</span>
-<span class=normal>333</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>add_channel</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>probs</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span><span class=p>:</span>
+<span class=normal>333</span>
+<span class=normal>334</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>add_channel</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>probs</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Record a noise channel and allocate its error bits.</span>
 
 <span class=sd>    ``probs`` is the channel&#39;s distribution over its ``k`` error bits, so it</span>
@@ -60,8 +62,7 @@
     <span class=bp>self</span><span class=o>.</span><span class=n>_num_error_bits</span> <span class=o>+=</span> <span class=n>num_bits</span>
     <span class=k>return</span> <span class=n>first</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.core.builder.GraphBuilder.add_detector class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">add_detector</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>add_detector</span><span class=p>(</span><span class=n>record_indices</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>])</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Add a detector that XORs the given measurement records.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>378</span>
-<span class=normal>379</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Add a detector that XORs the given measurement records.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>379</span>
 <span class=normal>380</span>
 <span class=normal>381</span>
 <span class=normal>382</span>
@@ -71,7 +72,8 @@
 <span class=normal>386</span>
 <span class=normal>387</span>
 <span class=normal>388</span>
-<span class=normal>389</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>add_detector</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>record_indices</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>])</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>389</span>
+<span class=normal>390</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>add_detector</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>record_indices</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>])</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Add a detector that XORs the given measurement records.&quot;&quot;&quot;</span>
     <span class=n>v0</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_graph</span><span class=o>.</span><span class=n>add_vertex</span><span class=p>(</span>
         <span class=n>VertexType</span><span class=o>.</span><span class=n>X</span><span class=p>,</span>
@@ -84,20 +86,17 @@
         <span class=bp>self</span><span class=o>.</span><span class=n>_xor_record</span><span class=p>(</span><span class=n>v0</span><span class=p>,</span> <span class=n>record_index</span><span class=p>)</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_detectors</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>v0</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.core.builder.GraphBuilder.advance class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">advance</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>advance</span><span class=p>(</span><span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Move the wire's end one column (the identity gate).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>181</span>
-<span class=normal>182</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Move the wire's end one column (the identity gate).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>182</span>
 <span class=normal>183</span>
 <span class=normal>184</span>
-<span class=normal>185</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>advance</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>185</span>
+<span class=normal>186</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>advance</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Move the wire&#39;s end one column (the identity gate).&quot;&quot;&quot;</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_ensure_lane</span><span class=p>(</span><span class=n>qubit</span><span class=p>)</span>
     <span class=n>v</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_last_vertex</span><span class=p>[</span><span class=n>qubit</span><span class=p>]</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_graph</span><span class=o>.</span><span class=n>set_col</span><span class=p>(</span><span class=n>v</span><span class=p>,</span> <span class=bp>self</span><span class=o>.</span><span class=n>_last_col</span><span class=p>(</span><span class=n>qubit</span><span class=p>)</span> <span class=o>+</span> <span class=mi>1</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.core.builder.GraphBuilder.build class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">build</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>build</span><span class=p>(</span><span class=o>*</span><span class=p>,</span> <span class=n>closed</span><span class=p>:</span> <span class=nb>bool</span><span class=p>,</span> <span class=n>outputs</span><span class=p>:</span> <span class=n>Outputs</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Graph</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return the circuit's graph with its wires closed or given ports.</p> <p>With <code>closed=False</code>, qubit <code>q</code>'s wire start, if it is still a boundary, gets input port <code>-(q + 1)</code> and its end gets output port <code>q</code>. With <code>closed=True</code>, wire starts that are still boundaries become <code>|0⟩</code> (a quantum X(0) spider) and wire ends are discarded. Helper lanes (negative indices, used by MPP, MPAD and heralded channels) are always discarded at the end.</p> <p><code>outputs</code> picks the classical output boundaries, whose ports follow the qubit outputs (from 0 when closed):</p> <ul> <li><code>"detectors"</code>: one per detector, then one per observable; the <code>det[i]</code> / <code>obs[k]</code> labels move to them.</li> <li><code>"records"</code>: one per measurement record; the <code>rec[i]</code> labels move to them.</li> <li><code>"none"</code>: no classical outputs.</li> </ul> <p>Detector and observable spiders are removed unless they are the outputs. In open graphs, measurement spiders that are not outputs keep their <code>rec[i]</code> / <code>m[i]</code> labels; closed graphs are meant to be reduced, so only their output boundaries carry labels, which survive reduction.</p> <p>An open graph's tensor is the circuit's channel together with the output bits; for bound error parameters, a closed graph's tensor is the joint distribution of its outputs. The builder is unchanged, so it can build again.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>448</span>
-<span class=normal>449</span>
-<span class=normal>450</span>
-<span class=normal>451</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return the circuit's graph with its wires closed or given ports.</p> <p>With <code>closed=False</code>, qubit <code>q</code>'s wire start, if it is still a boundary, gets input port <code>-(q + 1)</code> and its end gets output port <code>q</code>. With <code>closed=True</code>, wire starts that are still boundaries become <code>|0⟩</code> (a quantum X(0) spider) and wire ends are discarded. Helper lanes (negative indices, used by MPP, MPAD and heralded channels) are always discarded at the end.</p> <p><code>outputs</code> picks the classical output boundaries, whose ports follow the qubit outputs (from 0 when closed):</p> <ul> <li><code>"detectors"</code>: one per detector, then one per observable; the <code>det[i]</code> / <code>obs[k]</code> labels move to them.</li> <li><code>"records"</code>: one per measurement record; the <code>rec[i]</code> labels move to them.</li> <li><code>"none"</code>: no classical outputs.</li> </ul> <p>Detector and observable spiders are removed unless they are the outputs. In open graphs, measurement spiders that are not outputs keep their <code>rec[i]</code> / <code>m[i]</code> labels; closed graphs are meant to be reduced, so only their output boundaries carry labels, which survive reduction.</p> <p>An open graph's tensor is the circuit's channel together with the output bits; for bound error parameters, a closed graph's tensor is the joint distribution of its outputs. The builder is unchanged, so it can build again.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>451</span>
 <span class=normal>452</span>
 <span class=normal>453</span>
 <span class=normal>454</span>
@@ -157,7 +156,10 @@
 <span class=normal>508</span>
 <span class=normal>509</span>
 <span class=normal>510</span>
-<span class=normal>511</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>build</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>closed</span><span class=p>:</span> <span class=nb>bool</span><span class=p>,</span> <span class=n>outputs</span><span class=p>:</span> <span class=n>Outputs</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Graph</span><span class=p>:</span>
+<span class=normal>511</span>
+<span class=normal>512</span>
+<span class=normal>513</span>
+<span class=normal>514</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>build</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>closed</span><span class=p>:</span> <span class=nb>bool</span><span class=p>,</span> <span class=n>outputs</span><span class=p>:</span> <span class=n>Outputs</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Graph</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return the circuit&#39;s graph with its wires closed or given ports.</span>
 
 <span class=sd>    With ``closed=False``, qubit ``q``&#39;s wire start, if it is still a</span>
@@ -226,8 +228,7 @@
     <span class=n>types</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>Literal</span><span class=p>[</span><span class=s2>&quot;X&quot;</span><span class=p>,</span> <span class=s2>&quot;Y&quot;</span><span class=p>,</span> <span class=s2>&quot;Z&quot;</span><span class=p>]],</span>
     <span class=n>p</span><span class=p>:</span> <span class=nb>float</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Add a correlated error term affecting multiple qubits with given Pauli types.</p> <p>Its noise spiders get their error bit in <code>finalize_correlated_error</code>, which must run before the graph is built. Raises <code>ValueError</code>, and changes nothing, if <code>qubits</code> and <code>types</code> differ in length.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>335</span>
-<span class=normal>336</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Add a correlated error term affecting multiple qubits with given Pauli types.</p> <p>Its noise spiders get their error bit in <code>finalize_correlated_error</code>, which must run before the graph is built. Raises <code>ValueError</code>, and changes nothing, if <code>qubits</code> and <code>types</code> differ in length.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>336</span>
 <span class=normal>337</span>
 <span class=normal>338</span>
 <span class=normal>339</span>
@@ -249,7 +250,8 @@
 <span class=normal>355</span>
 <span class=normal>356</span>
 <span class=normal>357</span>
-<span class=normal>358</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>correlated_error</span><span class=p>(</span>
+<span class=normal>358</span>
+<span class=normal>359</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>correlated_error</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>qubits</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span>
     <span class=n>types</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>Literal</span><span class=p>[</span><span class=s2>&quot;X&quot;</span><span class=p>,</span> <span class=s2>&quot;Y&quot;</span><span class=p>,</span> <span class=s2>&quot;Z&quot;</span><span class=p>]],</span>
@@ -278,8 +280,7 @@
     <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=n>classically_controlled</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>bool</span><span class=p>]</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Apply CNOT; <code>classically_controlled</code> marks record targets (<code>rec[-k]</code>).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>213</span>
-<span class=normal>214</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Apply CNOT; <code>classically_controlled</code> marks record targets (<code>rec[-k]</code>).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>214</span>
 <span class=normal>215</span>
 <span class=normal>216</span>
 <span class=normal>217</span>
@@ -287,7 +288,8 @@
 <span class=normal>219</span>
 <span class=normal>220</span>
 <span class=normal>221</span>
-<span class=normal>222</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>cx</span><span class=p>(</span>
+<span class=normal>222</span>
+<span class=normal>223</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>cx</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
@@ -302,8 +304,7 @@
     <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=n>classically_controlled</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>bool</span><span class=p>]</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Apply CZ; <code>classically_controlled</code> marks record targets (<code>rec[-k]</code>).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>224</span>
-<span class=normal>225</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Apply CZ; <code>classically_controlled</code> marks record targets (<code>rec[-k]</code>).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>225</span>
 <span class=normal>226</span>
 <span class=normal>227</span>
 <span class=normal>228</span>
@@ -319,7 +320,8 @@
 <span class=normal>238</span>
 <span class=normal>239</span>
 <span class=normal>240</span>
-<span class=normal>241</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>cz</span><span class=p>(</span>
+<span class=normal>241</span>
+<span class=normal>242</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>cz</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>control</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=n>target</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
@@ -338,8 +340,7 @@
         <span class=n>VertexType</span><span class=o>.</span><span class=n>Z</span><span class=p>,</span> <span class=n>EdgeType</span><span class=o>.</span><span class=n>HADAMARD</span><span class=p>,</span> <span class=n>control</span><span class=p>,</span> <span class=n>target</span><span class=p>,</span> <span class=n>classically_controlled</span>
     <span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.core.builder.GraphBuilder.finalize_correlated_error class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">finalize_correlated_error</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>finalize_correlated_error</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Finalize the current correlated error channel.</p> <p>Adds the channel (<code>2^k</code> outcomes for its <code>k</code> terms), gives each pending noise spider its term's error bit, and clears the pending state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>360</span>
-<span class=normal>361</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Finalize the current correlated error channel.</p> <p>Adds the channel (<code>2^k</code> outcomes for its <code>k</code> terms), gives each pending noise spider its term's error bit, and clears the pending state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>361</span>
 <span class=normal>362</span>
 <span class=normal>363</span>
 <span class=normal>364</span>
@@ -350,7 +351,8 @@
 <span class=normal>369</span>
 <span class=normal>370</span>
 <span class=normal>371</span>
-<span class=normal>372</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>finalize_correlated_error</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>372</span>
+<span class=normal>373</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>finalize_correlated_error</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Finalize the current correlated error channel.</span>
 
 <span class=sd>    Adds the channel (``2^k`` outcomes for its ``k`` terms), gives each</span>
@@ -364,18 +366,17 @@
     <span class=bp>self</span><span class=o>.</span><span class=n>_pending_correlated</span> <span class=o>=</span> <span class=p>[]</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_correlated_error_probs</span> <span class=o>=</span> <span class=p>[]</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.core.builder.GraphBuilder.hadamard class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">hadamard</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>hadamard</span><span class=p>(</span><span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Apply a Hadamard gate by toggling the wire's trailing edge.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>176</span>
-<span class=normal>177</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Apply a Hadamard gate by toggling the wire's trailing edge.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>177</span>
 <span class=normal>178</span>
-<span class=normal>179</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>hadamard</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>179</span>
+<span class=normal>180</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>hadamard</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Apply a Hadamard gate by toggling the wire&#39;s trailing edge.&quot;&quot;&quot;</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_ensure_lane</span><span class=p>(</span><span class=n>qubit</span><span class=p>)</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_graph</span><span class=o>.</span><span class=n>toggle_edge</span><span class=p>(</span><span class=o>*</span><span class=bp>self</span><span class=o>.</span><span class=n>_last_edge</span><span class=p>(</span><span class=n>qubit</span><span class=p>))</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.core.builder.GraphBuilder.include_observable class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">include_observable</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>include_observable</span><span class=p>(</span>
     <span class=n>record_indices</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=n>index</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>XOR the given measurement records into observable <code>index</code>.</p> <p>The observable is created on first use, as in Stim's <code>OBSERVABLE_INCLUDE</code>; with no records, that is all this does.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>391</span>
-<span class=normal>392</span>
+</code></pre></div> <div class="doc doc-contents "> <p>XOR the given measurement records into observable <code>index</code>.</p> <p>The observable is created on first use, as in Stim's <code>OBSERVABLE_INCLUDE</code>; with no records, that is all this does.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>392</span>
 <span class=normal>393</span>
 <span class=normal>394</span>
 <span class=normal>395</span>
@@ -394,7 +395,8 @@
 <span class=normal>408</span>
 <span class=normal>409</span>
 <span class=normal>410</span>
-<span class=normal>411</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>include_observable</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>record_indices</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=n>index</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>411</span>
+<span class=normal>412</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>include_observable</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>record_indices</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=nb>int</span><span class=p>],</span> <span class=n>index</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;XOR the given measurement records into observable ``index``.</span>
 
 <span class=sd>    The observable is created on first use, as in Stim&#39;s</span>
@@ -416,8 +418,7 @@
     <span class=k>for</span> <span class=n>record_index</span> <span class=ow>in</span> <span class=n>record_indices</span><span class=p>:</span>
         <span class=bp>self</span><span class=o>.</span><span class=n>_xor_record</span><span class=p>(</span><span class=n>v0</span><span class=p>,</span> <span class=n>record_index</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.core.builder.GraphBuilder.measure class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">measure</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>measure</span><span class=p>(</span><span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>silent</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Vertex</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Measure a qubit in the Z basis and record it as <code>rec[i]</code>.</p> <p>A silent measurement is not recorded; it is labelled <code>m[i]</code>. Returns the measurement's classical spider.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>278</span>
-<span class=normal>279</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Measure a qubit in the Z basis and record it as <code>rec[i]</code>.</p> <p>A silent measurement is not recorded; it is labelled <code>m[i]</code>. Returns the measurement's classical spider.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>279</span>
 <span class=normal>280</span>
 <span class=normal>281</span>
 <span class=normal>282</span>
@@ -434,7 +435,8 @@
 <span class=normal>293</span>
 <span class=normal>294</span>
 <span class=normal>295</span>
-<span class=normal>296</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>measure</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>silent</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Vertex</span><span class=p>:</span>
+<span class=normal>296</span>
+<span class=normal>297</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>measure</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>silent</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Vertex</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Measure a qubit in the Z basis and record it as ``rec[i]``.</span>
 
 <span class=sd>    A silent measurement is not recorded; it is labelled ``m[i]``. Returns</span>
@@ -454,8 +456,7 @@
     <span class=bp>self</span><span class=o>.</span><span class=n>_graph</span><span class=o>.</span><span class=n>add_edge</span><span class=p>(</span><span class=n>v1</span><span class=p>,</span> <span class=n>v2</span><span class=p>)</span>
     <span class=k>return</span> <span class=n>v1</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.core.builder.GraphBuilder.reset class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">reset</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>reset</span><span class=p>(</span><span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Reset a qubit to <code>|0⟩</code>.</p> <p>If the qubit does not yet have a lane, create one in the reset state. Otherwise, silently measure the existing lane to trace out the previous state before reconnecting the qubit in the reset state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>298</span>
-<span class=normal>299</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Reset a qubit to <code>|0⟩</code>.</p> <p>If the qubit does not yet have a lane, create one in the reset state. Otherwise, silently measure the existing lane to trace out the previous state before reconnecting the qubit in the reset state.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>299</span>
 <span class=normal>300</span>
 <span class=normal>301</span>
 <span class=normal>302</span>
@@ -471,7 +472,8 @@
 <span class=normal>312</span>
 <span class=normal>313</span>
 <span class=normal>314</span>
-<span class=normal>315</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>reset</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>315</span>
+<span class=normal>316</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>reset</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Reset a qubit to ``|0⟩``.</span>
 
 <span class=sd>    If the qubit does not yet have a lane, create one in the reset state.</span>
@@ -496,8 +498,7 @@
     <span class=o>*</span><span class=p>,</span>
     <span class=n>col</span><span class=p>:</span> <span class=nb>float</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Vertex</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Turn the trailing boundary of a qubit's wire into a quantum spider.</p> <p>The spider keeps the boundary's quantum domain, moves to column <code>col</code> if given, and a new quantum boundary is appended after it. Returns the spider.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>151</span>
-<span class=normal>152</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Turn the trailing boundary of a qubit's wire into a quantum spider.</p> <p>The spider keeps the boundary's quantum domain, moves to column <code>col</code> if given, and a new quantum boundary is appended after it. Returns the spider.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>152</span>
 <span class=normal>153</span>
 <span class=normal>154</span>
 <span class=normal>155</span>
@@ -519,7 +520,8 @@
 <span class=normal>171</span>
 <span class=normal>172</span>
 <span class=normal>173</span>
-<span class=normal>174</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>spider</span><span class=p>(</span>
+<span class=normal>174</span>
+<span class=normal>175</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>spider</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>qubit</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=n>vertex_type</span><span class=p>:</span> <span class=n>VertexType</span><span class=p>,</span>
@@ -544,8 +546,7 @@
     <span class=bp>self</span><span class=o>.</span><span class=n>_graph</span><span class=o>.</span><span class=n>add_edge</span><span class=p>(</span><span class=n>v1</span><span class=p>,</span> <span class=n>v2</span><span class=p>)</span>
     <span class=k>return</span> <span class=n>v1</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.core.builder.GraphBuilder.swap class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">swap</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>swap</span><span class=p>(</span><span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Swap two wires by exchanging their ends (and rows).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>187</span>
-<span class=normal>188</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Swap two wires by exchanging their ends (and rows).</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>188</span>
 <span class=normal>189</span>
 <span class=normal>190</span>
 <span class=normal>191</span>
@@ -560,7 +561,8 @@
 <span class=normal>200</span>
 <span class=normal>201</span>
 <span class=normal>202</span>
-<span class=normal>203</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>swap</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>203</span>
+<span class=normal>204</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>swap</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Swap two wires by exchanging their ends (and rows).&quot;&quot;&quot;</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_ensure_lane</span><span class=p>(</span><span class=n>qubit1</span><span class=p>)</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_ensure_lane</span><span class=p>(</span><span class=n>qubit2</span><span class=p>)</span>
@@ -578,13 +580,13 @@
     <span class=bp>self</span><span class=o>.</span><span class=n>_graph</span><span class=o>.</span><span class=n>set_row</span><span class=p>(</span><span class=n>v1</span><span class=p>,</span> <span class=n>qubit2</span><span class=p>)</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_graph</span><span class=o>.</span><span class=n>set_row</span><span class=p>(</span><span class=n>v2</span><span class=p>,</span> <span class=n>qubit1</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.core.builder.GraphBuilder.tick class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">tick</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>tick</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=kc>None</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Align all wire ends to the same column.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>205</span>
-<span class=normal>206</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Align all wire ends to the same column.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/core/builder.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>206</span>
 <span class=normal>207</span>
 <span class=normal>208</span>
 <span class=normal>209</span>
 <span class=normal>210</span>
-<span class=normal>211</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>tick</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
+<span class=normal>211</span>
+<span class=normal>212</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>tick</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=kc>None</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Align all wire ends to the same column.&quot;&quot;&quot;</span>
     <span class=k>if</span> <span class=nb>len</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_last_vertex</span><span class=p>)</span> <span class=o>==</span> <span class=mi>0</span><span class=p>:</span>
         <span class=k>return</span>

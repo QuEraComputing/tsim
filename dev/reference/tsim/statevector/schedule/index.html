@@ -77,15 +77,7 @@
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return the symmetric matrix of which pairs of operations anticommute.&quot;&quot;&quot;</span>
     <span class=k>return</span> <span class=n>anticommute</span><span class=p>(</span><span class=n>ops</span><span class=o>.</span><span class=n>x</span><span class=p>,</span> <span class=n>ops</span><span class=o>.</span><span class=n>z</span><span class=p>,</span> <span class=n>ops</span><span class=o>.</span><span class=n>x</span><span class=p>,</span> <span class=n>ops</span><span class=o>.</span><span class=n>z</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.statevector.schedule.schedule class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">schedule</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>schedule</span><span class=p>(</span><span class=n>ops</span><span class=p>:</span> <span class=n>PauliOps</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Schedule</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return an order of <code>ops</code> that keeps the active width small.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/schedule.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>131</span>
-<span class=normal>132</span>
-<span class=normal>133</span>
-<span class=normal>134</span>
-<span class=normal>135</span>
-<span class=normal>136</span>
-<span class=normal>137</span>
-<span class=normal>138</span>
-<span class=normal>139</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return an order of <code>ops</code> that keeps the active width small.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/schedule.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>139</span>
 <span class=normal>140</span>
 <span class=normal>141</span>
 <span class=normal>142</span>
@@ -138,7 +130,15 @@
 <span class=normal>189</span>
 <span class=normal>190</span>
 <span class=normal>191</span>
-<span class=normal>192</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>schedule</span><span class=p>(</span><span class=n>ops</span><span class=p>:</span> <span class=n>PauliOps</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Schedule</span><span class=p>:</span>
+<span class=normal>192</span>
+<span class=normal>193</span>
+<span class=normal>194</span>
+<span class=normal>195</span>
+<span class=normal>196</span>
+<span class=normal>197</span>
+<span class=normal>198</span>
+<span class=normal>199</span>
+<span class=normal>200</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>schedule</span><span class=p>(</span><span class=n>ops</span><span class=p>:</span> <span class=n>PauliOps</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Schedule</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return an order of ``ops`` that keeps the active width small.&quot;&quot;&quot;</span>
     <span class=n>num_ops</span> <span class=o>=</span> <span class=n>ops</span><span class=o>.</span><span class=n>num_ops</span>
     <span class=n>before</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>triu</span><span class=p>(</span><span class=n>anticommutation</span><span class=p>(</span><span class=n>ops</span><span class=p>),</span> <span class=mi>1</span><span class=p>)</span>
