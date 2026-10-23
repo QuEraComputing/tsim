@@ -13,6 +13,7 @@ from test.helpers.statevector import (
 
 import numpy as np
 import pytest
+import stim
 from zxparam import Domain, Phase, VertexType
 
 from tsim.circuit import Circuit
@@ -24,6 +25,9 @@ from tsim.statevector.pbc import (
     ROTATION,
     ComponentLayout,
     PauliOps,
+    _mask,
+    _Reading,
+    _unmask,
     _with_commutant_measurements,
     anticommute,
     read_pauli_ops,
@@ -149,3 +153,31 @@ def test_a_plain_edge_at_a_quantum_spider_is_rejected():
     component.add_edge(u, w)
     with pytest.raises(ValueError, match="plain"):
         read_pauli_ops(component, layout)
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_graph_state_stabilizers_are_products_of_the_generators(seed):
+    rng = np.random.default_rng(seed)
+    n = int(rng.integers(1, 100))
+    edges = np.triu(rng.random((n, n)) < rng.choice([0.05, 0.3, 0.8]), 1)
+    # NOTE: a reading's stabilizers only need its graph state.
+    reading = object.__new__(_Reading)
+    reading.num_spiders = n
+    reading.neighbours = [_mask(row) for row in edges | edges.T]
+    for _ in range(20):
+        t = _mask(rng.random(n) < rng.random())
+        product = stim.PauliString(n)
+        for u in (u for u in range(n) if t >> u & 1):
+            k_u = stim.PauliString(n)
+            k_u[u] = "X"
+            for w in (w for w in range(n) if reading.neighbours[u] >> w & 1):
+                k_u[w] = "Z"
+            product *= k_u
+        assert reading.stabilizer(t) == product
+
+
+@pytest.mark.parametrize("length", [0, 1, 7, 8, 9, 70])
+def test_unmask_reads_the_low_bits_of_a_mask(length):
+    for mask in [0, 1, 0b1011, 2**69 + 2**8 + 1, (1 << 80) - 1]:
+        expected = [bool(mask >> i & 1) for i in range(length)]
+        assert _unmask(mask, length).tolist() == expected

@@ -6,9 +6,15 @@ from test.helpers.statevector import (
 )
 
 import numpy as np
+import pytest
 
 from tsim.statevector.pbc import MEASUREMENT, ROTATION, PauliOps
-from tsim.statevector.schedule import StabilizerGroup, anticommutation, schedule
+from tsim.statevector.schedule import (
+    StabilizerGroup,
+    _ancestors,
+    anticommutation,
+    schedule,
+)
 
 
 def _bits(*rows):
@@ -108,3 +114,15 @@ def test_width_is_the_largest_structural_width_of_the_order():
             run(ops.x[j], ops.z[j])
             widths.append(group.width)
         assert scheduled.width == max(widths)
+
+
+@pytest.mark.parametrize("num_ops", [0, 1, 63, 64, 65, 150])
+def test_ancestors_are_the_transitive_predecessors(num_ops):
+    rng = np.random.default_rng(num_ops)
+    before = np.triu(rng.random((num_ops, num_ops)) < 0.05, 1)
+    expected = np.zeros((num_ops, num_ops), dtype=bool)
+    for j in range(num_ops):
+        for i in np.flatnonzero(before[:, j]):
+            expected[j] |= expected[i]
+            expected[j, i] = True
+    np.testing.assert_array_equal(_ancestors(before), expected)

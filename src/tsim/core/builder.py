@@ -60,6 +60,7 @@ class GraphBuilder:
         self._silent_records: list[Vertex] = []
         self._detectors: list[Vertex] = []
         self._observables: dict[int, Vertex] = {}
+        self._annotation_cols: set[float] = set()
         self._first_vertex: dict[int, Vertex] = {}
         self._last_vertex: dict[int, Vertex] = {}
         self._channel_probs: list[np.ndarray] = []
@@ -411,13 +412,14 @@ class GraphBuilder:
             self._xor_record(v0, record_index)
 
     def _annotation_col(self, record_indices: list[int]) -> float:
-        """Pick a fresh column for a detector/observable vertex.
+        """Pick a fresh column for a detector/observable vertex, and reserve it.
 
         No records is valid Stim and represents a deterministic-zero annotation;
         fall back to a column after existing annotations rather than `min()` on an
-        empty set.
+        empty set. Annotation vertices never move, so their columns are kept as a
+        set rather than read off the graph every time.
         """
-        d_cols = {self._graph.col(d) for d in self._detectors + self.observables}
+        d_cols = self._annotation_cols
         if record_indices:
             col: float = (
                 min(self._graph.col(self._records[i]) for i in record_indices) - 0.5
@@ -426,6 +428,7 @@ class GraphBuilder:
             col = (max(d_cols) + 1) if d_cols else 0
         while col in d_cols:
             col += 1
+        d_cols.add(col)
         return col
 
     def _xor_record(self, annotation: Vertex, record_index: int) -> None:

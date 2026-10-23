@@ -40,10 +40,14 @@ class Channel:
 
     def __post_init__(self) -> None:
         """Validate channel probabilities."""
+        # NOTE: NumPy's overhead dominates for a channel's few outcomes, and
+        # simplification makes many channels, so the range is checked in plain
+        # Python and the sum without np.isclose, with its tolerance.
         tol = 1e-6
-        if np.any(self.probs < -tol) or np.any(self.probs > 1.0 + tol):
+        values = self.probs.tolist()
+        if min(values, default=0.0) < -tol or max(values, default=0.0) > 1.0 + tol:
             raise ValueError(f"Probabilities must lie in [0, 1], but got: {self.probs}")
-        if not np.isclose(np.sum(self.probs), 1.0):
+        if not abs(float(self.probs.sum()) - 1.0) <= 1e-8 + 1e-5:
             raise ValueError(
                 f"Probabilities must sum to 1, but got: {self.probs} "
                 f"(sum {np.sum(self.probs)})"
@@ -540,8 +544,8 @@ def unique_columns(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     ``np.unique`` sorts every column, comparing whole columns, which is slow for
     a large sparse matrix. Here a dict over the bit-packed columns finds the
-    distinct ones, and only those are sorted. Big-endian packing keeps the
-    lexicographic order of the columns, so the result is the same.
+    distinct ones, and only those are sorted, as bytes. Big-endian packing keeps
+    the lexicographic order of the columns, so the result is the same.
 
     Args:
         matrix: Binary matrix with entries 0 or 1 (nonzero entries count as 1).
@@ -551,14 +555,26 @@ def unique_columns(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         column of ``matrix`` among them.
 
     """
-    packed = np.ascontiguousarray(np.packbits(np.asarray(matrix) != 0, axis=0).T)
+    nonzero = (np.asarray(matrix) != 0).view(np.uint8)
+    # NOTE: np.packbits along axis 0 reads the matrix column by column; OR-ing
+    # every eighth row into the bytes reads it row by row, which is faster.
+    packed = np.zeros((-(-nonzero.shape[0] // 8), nonzero.shape[1]), dtype=np.uint8)
+    for bit in range(8):
+        rows = nonzero[bit::8]
+        packed[: len(rows)] |= rows << np.uint8(7 - bit)
+    packed = np.ascontiguousarray(packed.T)
     ids: dict[bytes, int] = {}
-    column_ids = np.array(
-        [ids.setdefault(column.tobytes(), len(ids)) for column in packed],
-        dtype=np.int64,
-    )
-    _, first = np.unique(column_ids, return_index=True)
-    _, order = np.unique(packed[first], axis=0, return_index=True)
+    first_list: list[int] = []
+    column_ids = np.empty(len(packed), dtype=np.int64)
+    for i, column in enumerate(packed):
+        key = column.tobytes()
+        if key not in ids:
+            ids[key] = len(first_list)
+            first_list.append(i)
+        column_ids[i] = ids[key]
+    first = np.array(first_list, dtype=np.int64)
+    keys = list(ids)
+    order = np.array(sorted(range(len(keys)), key=keys.__getitem__), dtype=np.int64)
     rank = np.empty_like(order)
     rank[order] = np.arange(len(order))
     return matrix[:, first[order]], rank[column_ids]
@@ -710,6 +726,9 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _Fire
     cdf: list[float] = []
     flip_cols: list[int] = []
     outcome_start, flip_start = [0], [0]
+    # NOTE: signatures are sparse, so an outcome's flips are built as sets: those
+    # of its lowest bit XOR those of the outcome without that bit.
+    supports: dict[int, frozenset[int]] = {}
     for channel in channels:
         probs = channel.probs.astype(np.float64)
         conditional = np.cumsum(np.clip(probs[1:], 0, None))
@@ -719,11 +738,18 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _Fire
         p_fire.append(fire)
         cdf.extend(conditional / conditional[-1])
         outcome_start.append(len(cdf))
-        col_ids = np.asarray(channel.unique_col_ids)
-        outcomes = np.arange(1, len(probs))
-        bits = (outcomes[:, None] >> np.arange(len(col_ids))) & 1
-        for flips in bits @ signature_matrix[col_ids] % 2:
-            flip_cols.extend(np.flatnonzero(flips).tolist())
+        for col_id in channel.unique_col_ids:
+            if col_id not in supports:
+                supports[col_id] = frozenset(
+                    np.flatnonzero(signature_matrix[col_id]).tolist()
+                )
+        bit_supports = [supports[col_id] for col_id in channel.unique_col_ids]
+        flips: list[frozenset[int]] = [frozenset()]
+        for outcome in range(1, len(probs)):
+            lowest = outcome & -outcome
+            bit = lowest.bit_length() - 1
+            flips.append(flips[outcome ^ lowest] ^ bit_supports[bit])
+            flip_cols.extend(sorted(flips[outcome]))
             flip_start.append(len(flip_cols))
     return _FireTables(
         p_fire=np.array(p_fire, dtype=np.float64),

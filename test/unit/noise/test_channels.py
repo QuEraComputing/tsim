@@ -193,6 +193,48 @@ class TestChannelValidation:
         with pytest.raises(ValueError):
             Channel(probs=pauli_channel_1_probs(0.6, 0.6, 0.6), unique_col_ids=(0, 1))
 
+    def test_accepts_what_numpy_comparisons_accept(self):
+        """The checks keep NumPy's semantics, tolerances, NaN and infinities too."""
+
+        def accepted_by_numpy(probs: np.ndarray) -> bool:
+            if np.any(probs < -1e-6) or np.any(probs > 1 + 1e-6):
+                return False
+            return bool(np.isclose(np.sum(probs), 1.0))
+
+        edge_cases = [
+            [1.0],
+            [1 + 1e-6, -1e-6],
+            [1 + 2e-6, -2e-6],
+            [0.5, 0.5 + 1e-5],
+            [0.5, 0.5 + 1.1e-5],
+            [0.5, 0.5 - 1.1e-5],
+            [np.nan, 1.0],
+            [np.nan, -1.0],
+            [np.inf, 0.0],
+            [-np.inf, 1.0],
+        ]
+        cases = [np.array(case) for case in edge_cases]
+        rng = np.random.default_rng(0)
+        for _ in range(2000):
+            probs = rng.dirichlet(np.ones(2 ** int(rng.integers(0, 5))))
+            scale = rng.choice([0, 1e-7, 1e-6, 4e-6, 1e-5, 3e-5])
+            cases.append(probs + scale * rng.standard_normal(len(probs)))
+            # NOTE: sums at np.isclose's tolerance, where rounding decides.
+            cases.append(probs * (1 + rng.uniform(-1.02e-5, 1.02e-5)))
+        cases += [case.astype(np.float32) for case in cases]
+        outcomes = []
+        for probs in cases:
+            try:
+                Channel(
+                    probs=probs, unique_col_ids=tuple(range(channel_num_bits(probs)))
+                )
+                accepted = True
+            except ValueError:
+                accepted = False
+            assert accepted == accepted_by_numpy(probs), probs
+            outcomes.append(accepted)
+        assert 0 < sum(outcomes) < len(outcomes)
+
     def test_channel_sampler_rejects_invalid_channel(self):
         # ChannelSampler wraps probs in a Channel, so invalid distributions
         # get caught at construction time rather than silently dropped.
@@ -796,11 +838,12 @@ class TestAbsorbMatchesPairwiseComparison:
 class TestUniqueColumns:
     """unique_columns returns exactly what np.unique(axis=1) returns."""
 
-    @pytest.mark.parametrize("rows", [0, 1, 7, 8, 9, 64, 100])
+    @pytest.mark.parametrize("rows", [0, 1, 7, 8, 9, 15, 17, 64, 100])
     @pytest.mark.parametrize("cols", [0, 1, 5, 200])
-    def test_matches_numpy(self, rows, cols):
+    @pytest.mark.parametrize("density", [0.2, 0.6])
+    def test_matches_numpy(self, rows, cols, density):
         rng = np.random.default_rng(rows * 1000 + cols)
-        distinct = (rng.random((rows, max(1, cols // 3))) < 0.2).astype(np.uint8)
+        distinct = (rng.random((rows, max(1, cols // 3))) < density).astype(np.uint8)
         matrix = distinct[:, rng.integers(0, distinct.shape[1], cols)]
         got_cols, got_inverse = unique_columns(matrix)
         expected_cols, expected_inverse = np.unique(matrix, axis=1, return_inverse=True)
@@ -1057,6 +1100,42 @@ class TestReduceNullBits:
         result = reduce_null_bits(channels, null_col_id=self.NULL)
 
         assert_allclose(np.sum(result[0].probs), 1.0, rtol=1e-5)
+
+
+class TestFireTables:
+    """The sampling tables of channels, against dense products over GF(2)."""
+
+    @pytest.mark.parametrize("seed", range(6))
+    def test_flips_match_dense_products(self, seed):
+        rng = np.random.default_rng(seed)
+        num_signatures, num_f = int(rng.integers(1, 20)), int(rng.integers(0, 40))
+        density = rng.choice([0.05, 0.3, 0.8])
+        signature_matrix = (rng.random((num_signatures, num_f)) < density).astype(
+            np.uint8
+        )
+        channels = [Channel(probs=np.array([1.0, 0.0]), unique_col_ids=(0,))]
+        for _ in range(60):
+            num_bits = int(rng.integers(0, 6))
+            # NOTE: repeated column IDs are allowed and cancel in pairs.
+            col_ids = tuple(rng.integers(0, num_signatures, num_bits).tolist())
+            probs = rng.random(2**num_bits) * (rng.random(2**num_bits) < 0.6)
+            probs[0] += 1e-3
+            channels.append(Channel(probs=probs / probs.sum(), unique_col_ids=col_ids))
+        tables = _fire_tables(channels, signature_matrix)
+
+        flip_start, flip_cols = [0], []
+        for channel in channels:
+            if np.clip(channel.probs[1:], 0, None).sum() <= 1e-15:
+                continue
+            for outcome in range(1, len(channel.probs)):
+                bits = [(outcome >> i) & 1 for i in range(channel.num_bits)]
+                flips = np.array(bits) @ signature_matrix[list(channel.unique_col_ids)]
+                flip_cols.extend(np.flatnonzero(flips % 2).tolist())
+                flip_start.append(len(flip_cols))
+        np.testing.assert_array_equal(tables.flip_start, flip_start)
+        np.testing.assert_array_equal(tables.flip_cols, flip_cols)
+        assert len(tables.outcome_start) == len(tables.p_fire) + 1
+        assert tables.outcome_start[-1] == len(flip_start) - 1
 
 
 class TestChannelSampler:

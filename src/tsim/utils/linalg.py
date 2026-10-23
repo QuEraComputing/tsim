@@ -24,57 +24,45 @@ def find_basis(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
             transform: The transformation matrix, shape `(N, K)`.
 
     """
-    vecs = np.array(vectors, dtype=np.uint8)
-    num_vectors, _ = vecs.shape
+    vecs = np.asarray(vectors, dtype=np.uint8)
+    num_vectors = vecs.shape[0]
 
-    basis_indices = []
-    reduced_basis = []
-    pivots = []
-    basis_expansion = []
-    t_rows = []
+    # NOTE: vectors and their expansions over the basis are Python ints (bit j
+    # is entry j). A vector is reduced by the basis vector whose lowest bit is
+    # its own, until that bit is new (independent) or nothing is left.
+    packed = np.packbits(vecs, axis=1, bitorder="little")
+    reduced_basis: dict[int, tuple[int, int]] = {}
+    basis_indices: list[int] = []
+    t_rows: list[int] = []
 
-    for i in range(num_vectors):
-        v = vecs[i].copy()
-        coeffs = []
-
-        for j, b in enumerate(reduced_basis):
-            if v[pivots[j]]:
-                v ^= b
-                coeffs.append(j)
-
-        is_independent = np.any(v)
-        current_rank = len(basis_indices)
-        new_size = current_rank + 1 if is_independent else current_rank
-
-        # Compute dependency on existing basis vectors
-        dep_sum = np.zeros(new_size, dtype=np.uint8)
-        for idx in coeffs:
-            e = basis_expansion[idx]
-            dep_sum[: len(e)] ^= e
-
-        if is_independent:
-            basis_indices.append(i)
-            reduced_basis.append(v)
-            pivots.append(np.argmax(v))
-
-            # Update basis expansion for the new reduced vector
-            # reduced_v = v_original + sum(reduced_basis[c])
-            # => reduced_v_expansion = e_new + sum(basis_expansion[c])
-            dep_sum[current_rank] = 1
-            basis_expansion.append(dep_sum)
-
-            t_row = np.zeros(new_size, dtype=np.uint8)
-            t_row[current_rank] = 1
-            t_rows.append(t_row)
-        else:
-            # Dependent vector is the sum of basis expansions of reducing vectors
-            t_rows.append(dep_sum)
+    for i, row in enumerate(packed):
+        v = int.from_bytes(row.tobytes(), "little")
+        dep_sum = 0
+        while v:
+            pivot = (v & -v).bit_length() - 1
+            if pivot not in reduced_basis:
+                # reduced_v = v_original + sum(reducing vectors)
+                # => reduced_v_expansion = e_new + sum(their expansions)
+                rank = len(basis_indices)
+                reduced_basis[pivot] = (v, dep_sum | 1 << rank)
+                basis_indices.append(i)
+                dep_sum = 1 << rank
+                break
+            b, expansion = reduced_basis[pivot]
+            v ^= b
+            dep_sum ^= expansion
+        # A dependent vector is the sum of the expansions of its reducing vectors
+        t_rows.append(dep_sum)
 
     rank = len(basis_indices)
-    transform = np.zeros((num_vectors, rank), dtype=np.uint8)
-    for i, row in enumerate(t_rows):
-        transform[i, : len(row)] = row
-
+    num_bytes = -(-rank // 8)
+    t_bytes = b"".join(row.to_bytes(num_bytes, "little") for row in t_rows)
+    transform = np.unpackbits(
+        np.frombuffer(t_bytes, dtype=np.uint8).reshape(num_vectors, num_bytes),
+        axis=1,
+        count=rank,
+        bitorder="little",
+    )
     return vecs[basis_indices], transform
 
 

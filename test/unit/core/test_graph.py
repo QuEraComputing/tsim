@@ -347,6 +347,27 @@ def test_circuit_graph_positions_are_distinct(text: str):
     assert _positions_are_distinct(Circuit(text).get_graph())
 
 
+def test_annotations_take_the_first_free_column_before_their_records():
+    builder = parse_stim_circuit(stim.Circuit("""
+        M 0 1
+        DETECTOR rec[-1]
+        DETECTOR rec[-1]
+        DETECTOR rec[-2] rec[-1]
+        DETECTOR
+        OBSERVABLE_INCLUDE(1) rec[-2]
+        OBSERVABLE_INCLUDE(0)
+        DETECTOR rec[-2]
+        M 0
+        DETECTOR rec[-1] rec[-2]
+        OBSERVABLE_INCLUDE(1) rec[-1]
+        """))
+    g = builder.graph
+    assert [g.col(v) for v in builder.records] == [1, 1, 2]
+    # NOTE: without records, an annotation goes after the last one.
+    assert [g.col(v) for v in builder.detectors] == [0.5, 1.5, 2.5, 3.5, 6.5, 7.5]
+    assert [g.col(v) for v in builder.observables] == [5.5, 4.5]
+
+
 @pytest.mark.parametrize("sample_detectors", [False, True])
 def test_sampling_graph_positions_are_distinct(sample_detectors: bool):
     c = Circuit("H 0\nM 0\nM 0\nMPP X0\nM 0\nDETECTOR rec[-1] rec[-3]")

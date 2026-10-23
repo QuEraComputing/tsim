@@ -41,11 +41,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   numba thread whenever each batch gets at least 4096 shots, and smaller
   calls run as one batch on the parallel kernels. An explicit `batch_size`
   keeps samples independent of the thread count. (#199)
+- Without a `batch_size`, a statevector call is now also split into one batch
+  per numba thread when each batch gets at least 256 shots and may need a
+  lane per shot: always without trajectory sharing, and with it unless every
+  component stays on fewer lanes (at most `2^(k + m)` for `k` key bits and `m`
+  measurements that split lanes). Calls of a few thousand shots, such as
+  postselection survivors, now use every thread. (#207)
 - Noise sampling runs in numba kernels, so the samples for a given seed
   differ from earlier versions; `numba>=0.61` is now a dependency. (#199)
 - Constant outputs now use the existing direct-output path, skipping component
   compilation and sampling. Postselection treats them as direct detectors.
   Samples for a fixed seed can differ from earlier versions. (#201)
+- Compiling a sampler does less work in channel validation and
+  simplification, the noise sampling tables, the GF(2) error basis
+  (`find_basis`), detector placement while parsing, and, for
+  `strategy="active_statevector"`, graph-state stabilizers and op scheduling;
+  `cultivation_d5_end2end` compiles about 2.5x faster. Compiled programs are
+  unchanged. Postselection also writes direct detectors faster. (#207)
 - Tsim now uses zxparam instead of pyzx-param. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zxparam.
 - `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`.
 - In `Circuit.get_graph()` (and the `"zx"` diagram), every detector and observable has a classical output boundary, with ports after the qubit outputs, so the graph's tensor is the circuit's channel together with the detector and observable bits.
@@ -63,6 +75,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Circuit.to_matrix()` (compare `to_tensor()` with `U ⊗ Ū` instead).
 - The `pyzx-param` dependency.
 - Internals: the `track_classical_wires` argument of `parse_stim_circuit`, the `tsim.compile.stabrank` module, and `ConnectedComponent`, `connected_components`, `get_params` and `evaluate_graph` from `tsim.core.graph`.
+
+### Fixed
+- With a `postselection_mask` and no `batch_size`, the last survivors of a call,
+  split into a batch per thread, ran one batch at a time for components so wide
+  that only one of the largest batches fits in memory. They now run on as many
+  threads as batches of their size allow. (#207)
 
 ## [0.1.5] - 2026-07-21
 
