@@ -9,6 +9,7 @@ import pytest
 import tsim.sampler as sampler_module
 import tsim.utils.kernels as kernels
 from tsim.circuit import Circuit
+from tsim.statevector.tables import OutcomeTables
 
 # NOTE: t_ghz plus a direct detector (detector 2); t_ghz's random detectors give
 # reference bits of 1 for some seeds.
@@ -63,6 +64,24 @@ OBSERVABLE_INCLUDE(2) rec[-1]
 """
 
 
+@pytest.fixture(params=["lanes", "tables", "mixed"])
+def mode(request, monkeypatch):
+    """Sample every shared component on lanes, from outcome tables, or both.
+
+    ``mixed`` gives only the key of no fault a table, so that shots with other
+    keys take lanes.
+    """
+    keys = {"tables": None, "mixed": np.zeros(1, dtype=np.uint64)}
+
+    def tables(component, noise):
+        if request.param == "lanes":
+            return None
+        return OutcomeTables(component, keys[request.param])
+
+    monkeypatch.setattr(sampler_module, "outcome_tables", tables)
+    return request.param
+
+
 def _sharing_stats(sampler):
     backend = sampler._backend
     assert isinstance(backend, sampler_module._StatevectorBackend)
@@ -82,39 +101,44 @@ def _accepted(sampler, shots, mask, *, reference=False):
 
 
 @pytest.mark.parametrize("reference", [False, True])
-def test_pruning_through_the_sampler_keeps_the_accepted_distribution(reference):
+def test_pruning_through_the_sampler_keeps_the_accepted_distribution(reference, mode):
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
     mask = np.ones(circuit.num_detectors, dtype=bool)
     shots = 40_000
-    seed = 1
+    seed, bits = 1, None
     if reference:
         for seed in range(1, 40):
             sampler = circuit.compile_detector_sampler(
                 strategy="active_statevector", seed=seed
             )
-            if sampler._compute_reference_sample()[:2].any():
+            bits = sampler._compute_reference_sample()
+            if bits[:2].any():
                 break
-    # NOTE: the baseline needs this sampler's reference bits, so it only stops sharing.
-    rate, expected = _accepted(
-        circuit.compile_detector_sampler(
-            strategy="active_statevector", seed=seed, trajectory_sharing=False
-        ),
-        shots,
-        mask,
-        reference=reference,
+    baseline = circuit.compile_detector_sampler(
+        strategy="active_statevector", seed=seed, trajectory_sharing=False
     )
     sampler = circuit.compile_detector_sampler(
         strategy="active_statevector", seed=seed, trajectory_sharing=True
     )
+    if bits is not None:
+        # NOTE: the random detectors make the reference bits a draw; both use
+        # this one, so that the baseline only stops sharing.
+        baseline._compute_reference_sample = lambda: bits
+        sampler._compute_reference_sample = lambda: bits
+    rate, expected = _accepted(baseline, shots, mask, reference=reference)
     shared_rate, got = _accepted(sampler, shots, mask, reference=reference)
-    assert any(stats["dead"] > 0 for stats in _sharing_stats(sampler))
+    stats = _sharing_stats(sampler)
+    if mode == "lanes":
+        assert any(entry["dead"] > 0 for entry in stats)
+    else:
+        assert all(entry["tables"] > 0 for entry in stats)
     sigma = np.sqrt(rate * (1 - rate) * 2 / shots)
     assert abs(shared_rate - rate) <= 5 * sigma + 3 / shots
     assert_counts_match(got, expected)
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_shared_detector_sampling_matches_stabilizer_rank(name):
+def test_shared_detector_sampling_matches_stabilizer_rank(name, mode):
     circuit = Circuit(CIRCUITS[name])
     shots = 20_000
     expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
@@ -128,7 +152,7 @@ def test_shared_detector_sampling_matches_stabilizer_rank(name):
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_shared_measurement_sampling_matches_stabilizer_rank(name):
+def test_shared_measurement_sampling_matches_stabilizer_rank(name, mode):
     circuit = Circuit(CIRCUITS[name])
     shots = 20_000
     expected = circuit.compile_sampler(strategy="cat5", seed=1).sample(
@@ -141,7 +165,7 @@ def test_shared_measurement_sampling_matches_stabilizer_rank(name):
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_pruned_postselection_keeps_the_accepted_distribution(name):
+def test_pruned_postselection_keeps_the_accepted_distribution(name, mode):
     circuit = Circuit(CIRCUITS[name])
     if circuit.num_detectors == 0:
         pytest.skip("no detectors to postselect")
@@ -164,7 +188,7 @@ def test_pruned_postselection_keeps_the_accepted_distribution(name):
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3])
-def test_shared_sampling_of_random_noisy_circuits(seed):
+def test_shared_sampling_of_random_noisy_circuits(seed, mode):
     stim_circuit = gen_stim_circuit(3, 60, p_t=3, p_x_error=0.5, p_r_z=0.5, seed=seed)
     circuit = Circuit.from_stim_program(stim_circuit)
     shots = 4_096
@@ -199,7 +223,7 @@ M 1
 
 
 @pytest.mark.parametrize("sharing", [False, True])
-def test_components_draw_independent_random_numbers(sharing):
+def test_components_draw_independent_random_numbers(sharing, mode):
     batch, batches = 64, 1_500
     sampler = Circuit(TWO_COMPONENTS).compile_sampler(
         strategy="active_statevector", seed=3, trajectory_sharing=sharing
@@ -237,7 +261,7 @@ def test_trajectory_sharing_needs_the_statevector_strategy():
 @pytest.mark.parametrize("postselect", [False, True])
 @pytest.mark.parametrize("reference", [False, True])
 def test_samples_do_not_depend_on_the_thread_count(
-    postselect, reference, screen_shots, sharing, monkeypatch
+    postselect, reference, screen_shots, sharing, mode, monkeypatch
 ):
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
     mask = np.ones(circuit.num_detectors, dtype=bool) if postselect else None
@@ -270,7 +294,7 @@ def test_samples_do_not_depend_on_the_thread_count(
             np.testing.assert_array_equal(got, want)
 
 
-def test_shared_measurement_samples_do_not_depend_on_the_thread_count():
+def test_shared_measurement_samples_do_not_depend_on_the_thread_count(mode):
     circuit = Circuit(CIRCUITS["midcircuit_feedforward"])
 
     def sample(threads):
@@ -453,7 +477,8 @@ def test_direct_outputs_land_in_their_columns(name, rows):
     np.testing.assert_array_equal(samples[:, columns], expected)
 
 
-def test_masks_of_component_detectors_alone_prune_lanes():
+def test_masks_of_component_detectors_alone_prune_lanes(monkeypatch):
+    monkeypatch.setattr(sampler_module, "outcome_tables", lambda *args: None)
     sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(
         strategy="active_statevector", seed=1
     )
@@ -462,7 +487,9 @@ def test_masks_of_component_detectors_alone_prune_lanes():
 
 
 @pytest.mark.parametrize("sharing", [False, True])
-def test_reference_bits_leave_the_outputs_of_pruned_shots_false(sharing, monkeypatch):
+def test_reference_bits_leave_the_outputs_of_pruned_shots_false(
+    sharing, mode, monkeypatch
+):
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
     mask = np.ones(circuit.num_detectors, dtype=bool)
 

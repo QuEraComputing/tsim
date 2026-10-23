@@ -16,6 +16,7 @@ from tsim.core.types import SamplingStrategy
 from tsim.external.vec_sim.vec_sampler import VecSampler
 from tsim.statevector.program import StatevectorComponent
 from tsim.statevector.shared import lane_bytes
+from tsim.statevector.tables import OutcomeTables
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
@@ -115,8 +116,15 @@ def _norm_warnings(monkeypatch, strategy, deviation):
         samples, _, stats = sample_shared(*args)
         return samples, deviation, stats
 
+    sample_tables = OutcomeTables.sample
+
+    def drifting_tables(self, *args):
+        samples, _, stats = sample_tables(self, *args)
+        return samples, deviation, stats
+
     monkeypatch.setattr(sampler_module, "sample_component", drifting)
     monkeypatch.setattr(sampler_module, "sample_shared_component", drifting_shared)
+    monkeypatch.setattr(OutcomeTables, "sample", drifting_tables)
     sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
         strategy=strategy, seed=0
     )

@@ -2,6 +2,7 @@ from dataclasses import replace
 from test.helpers.statevector import (
     CIRCUITS,
     assert_matches_distribution,
+    coherent_surface_code,
     f_patterns,
     output_indices,
     plan_distribution,
@@ -10,7 +11,6 @@ from test.helpers.statevector import (
 
 import numpy as np
 import pytest
-import stim
 
 import tsim.statevector.shared as shared
 import tsim.utils.kernels as kernels
@@ -219,28 +219,11 @@ def test_a_lone_shot_sees_an_outcome_of_probability_below_float32_resolution():
     assert abs(hits - expected) <= 5 * np.sqrt(expected) + 3
 
 
-def _coherent_surface_code(distance, rounds, angle=0.02):
-    """Return a surface-code memory with an R_Z over-rotation after every CX layer."""
-    base = stim.Circuit.generated(
-        "surface_code:rotated_memory_z",
-        distance=distance,
-        rounds=rounds,
-        after_clifford_depolarization=1e-3,
-    )
-    lines = []
-    for line in str(base.flattened()).splitlines():
-        lines.append(line)
-        if line.startswith("CX "):
-            qubits = sorted({int(t) for t in line.split()[1:]})
-            lines.append(f"R_Z({angle}) " + " ".join(map(str, qubits)))
-    return "\n".join(lines)
-
-
 @pytest.fixture(scope="module")
 def coherent():
     """A component whose extent drops and later rises again."""
     ((planned, component_layout, compiled),) = _compiled_text(
-        _coherent_surface_code(5, 3)
+        coherent_surface_code(5, 3)
     )
     extent = np.asarray(compiled.tape.extent)
     first_drop = np.flatnonzero(np.diff(extent) < 0)[0]

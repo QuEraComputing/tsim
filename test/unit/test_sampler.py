@@ -5,6 +5,7 @@ import pytest
 
 import tsim.sampler as sampler_module
 from tsim.circuit import Circuit
+from tsim.statevector.tables import OutcomeTables
 from tsim.utils.kernels import PARALLEL_WORK
 
 
@@ -513,7 +514,13 @@ def test_detector_sampler_out_of_order_observable_indices():
     assert np.all(obs[:, 2])
 
 
-def test_a_nan_normalization_deviation_warns(monkeypatch):
+@pytest.mark.parametrize("tables", [False, True])
+def test_a_nan_normalization_deviation_warns(tables, monkeypatch):
+    monkeypatch.setattr(
+        sampler_module,
+        "outcome_tables",
+        lambda component, noise: OutcomeTables(component) if tables else None,
+    )
     sampler = Circuit("R 0\nH 0\nT 0\nH 0\nM 0").compile_sampler(
         strategy="active_statevector", seed=0
     )
@@ -523,7 +530,14 @@ def test_a_nan_normalization_deviation_warns(monkeypatch):
         samples, _, stats = original(*args)
         return samples, float("nan"), stats
 
+    sample_tables = OutcomeTables.sample
+
+    def nan_table_deviation(self, *args):
+        samples, _, stats = sample_tables(self, *args)
+        return samples, float("nan"), stats
+
     monkeypatch.setattr(sampler_module, "sample_shared_component", nan_deviation)
+    monkeypatch.setattr(OutcomeTables, "sample", nan_table_deviation)
     with pytest.warns(UserWarning, match="not normalized"):
         sampler.sample(10)
 

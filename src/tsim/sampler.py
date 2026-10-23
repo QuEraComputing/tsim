@@ -17,7 +17,7 @@ from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
-from tsim.noise.channels import ChannelSampler
+from tsim.noise.channels import ChannelSampler, FireTables
 from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
 from tsim.statevector.shared import (
     SharingLayout,
@@ -26,6 +26,7 @@ from tsim.statevector.shared import (
     sample_shared_component,
     sharing_layout,
 )
+from tsim.statevector.tables import OutcomeTables, outcome_tables
 from tsim.utils.cuda_helpers import copy_d2h
 from tsim.utils.kernels import kernel, run_tasks
 from tsim.utils.rng import GOLDEN
@@ -211,6 +212,7 @@ def sample_statevector_program(
     *,
     share: bool,
     sharing_stats: deque[dict] | None = None,
+    tables: tuple[OutcomeTables | None, ...] | None = None,
 ) -> np.ndarray:
     """Sample all outputs of a program of statevector components, without JAX.
 
@@ -221,7 +223,9 @@ def sample_statevector_program(
         layouts: The sharing layout of each component.
         direct_flips: The flip of each direct output, with its reference bit.
         share: Whether shots with equal histories share a lane.
-        sharing_stats: If given, the executor appends its lane counts.
+        sharing_stats: If given, the executor appends its lane counts, and a
+            component with outcome tables its table counts.
+        tables: The outcome tables of each component, or None for lanes.
 
     Returns:
         Samples array of shape (batch_size, num_outputs) in the original order.
@@ -234,9 +238,15 @@ def sample_statevector_program(
     ):
         assert isinstance(component, StatevectorComponent)
         component_seed = (seed + index * int(GOLDEN)) % 2**64
-        samples, max_norm_deviation, stats = sample_shared_component(
-            component, layout, f_params, component_seed, share
-        )
+        component_tables = None if tables is None else tables[index]
+        if component_tables is not None:
+            samples, max_norm_deviation, stats = component_tables.sample(
+                f_params, component_seed, layout
+            )
+        else:
+            samples, max_norm_deviation, stats = sample_shared_component(
+                component, layout, f_params, component_seed, share
+            )
         if sharing_stats is not None:
             sharing_stats.append(stats)
         _check_norm(max_norm_deviation, component.norm_warning_threshold)
@@ -445,14 +455,21 @@ class _StabilizerRankBackend:
 class _StatevectorBackend:
     """Samples statevector programs with numba kernels on the host.
 
-    Up to ``numba.get_num_threads()`` batches run at once.
+    Up to ``numba.get_num_threads()`` batches run at once. With sharing, a
+    component samples from outcome tables when the noise model says that they
+    cost less than lanes (``outcome_tables``); the tables persist across calls.
     """
 
     prunes: bool = True
     max_batch_size: int | None = STATEVECTOR_MAX_BATCH_SIZE
 
     def __init__(
-        self, program: CompiledProgram, seed: int, num_detectors: int, share: bool
+        self,
+        program: CompiledProgram,
+        seed: int,
+        num_detectors: int,
+        share: bool,
+        noise: FireTables,
     ) -> None:
         self._program = program
         self._num_detectors = num_detectors
@@ -460,6 +477,14 @@ class _StatevectorBackend:
         self._seeds = np.random.default_rng([seed, 1])
         self._layouts: dict[bytes, tuple[tuple[SharingLayout, ...], np.ndarray]] = {}
         self.sharing_stats: deque[dict] = deque(maxlen=10_000)
+        self.tables: tuple[OutcomeTables | None, ...] = tuple(
+            (
+                outcome_tables(component, noise)
+                if share and isinstance(component, StatevectorComponent)
+                else None
+            )
+            for component in program.components
+        )
 
     def max_threads(self) -> int:
         return numba.get_num_threads()
@@ -509,6 +534,7 @@ class _StatevectorBackend:
             direct_flips,
             share=self._share,
             sharing_stats=self.sharing_stats,
+            tables=self.tables,
         )
 
     def layouts(
@@ -574,7 +600,9 @@ class _CompiledSamplerBase:
                 deterministic results are only guaranteed for a fixed batch size
                 and fixed reference sample settings.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane. Defaults to True for
+                with equal histories on one lane. A component whose shots mostly
+                share a few noise patterns draws them from outcome tables instead,
+                which later calls reuse. Defaults to True for
                 ``"active_statevector"`` and False otherwise.
 
         Raises:
@@ -604,7 +632,11 @@ class _CompiledSamplerBase:
         self._num_detectors = prepared.num_detectors
         self._backend: _Backend = (
             _StatevectorBackend(
-                self._program, seed, self._num_detectors, trajectory_sharing
+                self._program,
+                seed,
+                self._num_detectors,
+                trajectory_sharing,
+                self._channel_sampler.fire_tables,
             )
             if strategy == "active_statevector"
             else _StabilizerRankBackend(self._program, seed)
@@ -1063,7 +1095,9 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane. Defaults to True for
+                with equal histories on one lane. A component whose shots mostly
+                share a few noise patterns draws them from outcome tables instead,
+                which later calls reuse. Defaults to True for
                 ``"active_statevector"`` and False otherwise.
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size. If
@@ -1127,7 +1161,9 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane. Defaults to True for
+                with equal histories on one lane. A component whose shots mostly
+                share a few noise patterns draws them from outcome tables instead,
+                which later calls reuse. Defaults to True for
                 ``"active_statevector"`` and False otherwise.
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
                 will only produce deterministic samples for fixed batch size and

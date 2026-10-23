@@ -12,6 +12,7 @@ from math import cos, sin
 
 import jax.numpy as jnp
 import numpy as np
+import stim
 from zxparam import Graph
 
 from tsim.circuit import Circuit
@@ -168,6 +169,25 @@ CIRCUITS: dict[str, str] = {
         OBSERVABLE_INCLUDE(0) rec[-3] rec[-1]
     """,
 }
+
+
+def coherent_surface_code(
+    distance: int, rounds: int, angle: float = 0.02, noise: float = 1e-3
+) -> str:
+    """Return a surface-code memory with an R_Z over-rotation after every CX layer."""
+    base = stim.Circuit.generated(
+        "surface_code:rotated_memory_z",
+        distance=distance,
+        rounds=rounds,
+        after_clifford_depolarization=noise,
+    )
+    lines = []
+    for line in str(base.flattened()).splitlines():
+        lines.append(line)
+        if line.startswith("CX "):
+            qubits = sorted({int(t) for t in line.split()[1:]})
+            lines.append(f"R_Z({angle}) " + " ".join(map(str, qubits)))
+    return "\n".join(lines)
 
 
 def quantum_components(

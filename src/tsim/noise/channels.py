@@ -653,6 +653,11 @@ class ChannelSampler:
         )
         self._tables = _fire_tables(self.channels, self.signature_matrix)
 
+    @property
+    def fire_tables(self) -> FireTables:
+        """Return the sampling tables of the channels that can fire."""
+        return self._tables
+
     def block_seeds(self, num_samples: int) -> np.ndarray:
         """Draw the seeds of the blocks of the next ``num_samples`` samples."""
         num_blocks = -(-num_samples // _BLOCK_SHOTS)
@@ -693,7 +698,7 @@ class ChannelSampler:
         return result
 
 
-class _FireTables(NamedTuple):
+class FireTables(NamedTuple):
     """Geometric-skip sampling tables of the channels that can fire.
 
     Channel ``c`` fires with probability ``p_fire[c]``. Its non-identity
@@ -709,7 +714,7 @@ class _FireTables(NamedTuple):
     flip_cols: np.ndarray
 
 
-def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _FireTables:
+def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> FireTables:
     """Return the sampling tables of ``channels``.
 
     A channel fires with the total probability of its non-identity outcomes,
@@ -751,7 +756,7 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _Fire
             flips.append(flips[outcome ^ lowest] ^ bit_supports[bit])
             flip_cols.extend(sorted(flips[outcome]))
             flip_start.append(len(flip_cols))
-    return _FireTables(
+    return FireTables(
         p_fire=np.array(p_fire, dtype=np.float64),
         outcome_start=np.array(outcome_start, dtype=np.int64),
         cdf=np.array(cdf, dtype=np.float64),
