@@ -7,6 +7,7 @@ from test.helpers.statevector import (
     assert_matches_distribution,
     coherent_surface_code,
     f_patterns,
+    force_lanes,
     output_indices,
     plan_distribution,
     quantum_components,
@@ -249,7 +250,7 @@ def test_lookups_find_every_key_and_miss_the_others():
 def _tabled(text):
     backend = Circuit(text).compile_detector_sampler(seed=0)._backend
     assert isinstance(backend, sampler_module._StatevectorBackend)
-    return [tables is not None for tables in backend.tables()]
+    return [plan is not None and plan.tables is not None for plan in backend.plans()]
 
 
 def test_small_components_whose_keys_repeat_use_tables():
@@ -326,9 +327,14 @@ def _flagged_chain(rounds, noise=0.2, unflagged=0.0, flipped=()):
 
 def _picked(backend, mask=None):
     """Return the one component's tables and keys under ``mask``."""
-    (picked,) = backend.tables(mask)
-    assert picked is not None
-    return picked
+    (plan,) = backend.plans(mask)
+    assert plan is not None and plan.tables is not None
+    return plan.tables, plan.keys
+
+
+def _untabled(backend, mask=None):
+    """Return whether no component has tables under ``mask``."""
+    return all(plan is None or plan.tables is None for plan in backend.plans(mask))
 
 
 def test_a_mask_whose_detectors_catch_the_faults_gives_tables():
@@ -336,13 +342,13 @@ def test_a_mask_whose_detectors_catch_the_faults_gives_tables():
     backend = sampler._backend
     assert isinstance(backend, sampler_module._StatevectorBackend)
     mask = np.ones(sampler.circuit.num_detectors, dtype=bool)
-    assert backend.tables() == (None,)
+    assert _untabled(backend)
     tables, keys = _picked(backend, mask)
     np.testing.assert_array_equal(keys, [0])
     sampler.sample(1_000, postselection_mask=mask)
     sampler.sample(1_000, postselection_mask=mask)
     assert _picked(backend, mask) == (tables, keys) and tables.num_tables == 1
-    assert backend.tables() == (None,)
+    assert _untabled(backend)
 
 
 def test_masks_share_the_tables_of_a_component():
@@ -421,7 +427,7 @@ def test_deep_narrow_trees_use_lanes(rounds, noisy_rounds):
     sampler = Circuit(_chain(rounds, noisy_rounds)).compile_sampler(seed=0)
     backend = sampler._backend
     assert isinstance(backend, sampler_module._StatevectorBackend)
-    assert backend.tables() == (None,)
+    assert _untabled(backend)
 
 
 def test_a_rare_outcome_keeps_its_probability_on_either_side():
@@ -538,9 +544,9 @@ def test_postselected_samples_from_tables_match_lanes(monkeypatch):
     sampler = circuit.compile_detector_sampler(seed=0)
     backend = sampler._backend
     assert isinstance(backend, sampler_module._StatevectorBackend)
-    assert backend.tables(mask) != (None,)
+    assert not _untabled(backend, mask)
     got = sampler.sample(shots, postselection_mask=mask, append_observables=True)
-    monkeypatch.setattr(sampler_module, "table_keys", lambda *args: None)
+    force_lanes(monkeypatch)
     lanes = circuit.compile_detector_sampler(seed=1)
     expected = lanes.sample(shots, postselection_mask=mask, append_observables=True)
     _assert_same_rows(got, expected)

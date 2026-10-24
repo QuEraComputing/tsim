@@ -1,4 +1,4 @@
-from test.helpers.statevector import force_tables
+from test.helpers.statevector import force_lanes, force_tables
 from unittest.mock import patch
 
 import numpy as np
@@ -520,7 +520,7 @@ def test_a_nan_normalization_deviation_warns(tables, monkeypatch):
     if tables:
         force_tables(monkeypatch)
     else:
-        monkeypatch.setattr(sampler_module, "table_keys", lambda *args: None)
+        force_lanes(monkeypatch)
     sampler = Circuit("R 0\nH 0\nT 0\nH 0\nM 0").compile_sampler(
         strategy="active_statevector", seed=0
     )

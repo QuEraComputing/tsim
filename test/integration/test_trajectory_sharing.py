@@ -1,7 +1,13 @@
 """trajectory_sharing=True end to end, against the stabilizer-rank strategy."""
 
 from test.helpers.gen import gen_stim_circuit
-from test.helpers.statevector import CIRCUITS, assert_counts_match, force_tables
+from test.helpers.statevector import (
+    CIRCUITS,
+    assert_counts_match,
+    force_lanes,
+    force_tables,
+    force_trees,
+)
 
 import numpy as np
 import pytest
@@ -63,15 +69,17 @@ OBSERVABLE_INCLUDE(2) rec[-1]
 """
 
 
-@pytest.fixture(params=["lanes", "tables", "mixed"])
+@pytest.fixture(params=["lanes", "tables", "mixed", "trees"])
 def mode(request, monkeypatch):
-    """Sample every shared component on lanes, from outcome tables, or both.
+    """Sample every shared component on lanes, tables, both, or outcome trees.
 
     ``mixed`` gives only the key of no fault a table, so that shots with other
     keys take lanes.
     """
     if request.param == "lanes":
-        monkeypatch.setattr(sampler_module, "table_keys", lambda *args: None)
+        force_lanes(monkeypatch)
+    elif request.param == "trees":
+        force_trees(monkeypatch)
     else:
         keys = {"tables": None, "mixed": np.zeros(1, dtype=np.uint64)}
         force_tables(monkeypatch, keys[request.param])
@@ -126,6 +134,8 @@ def test_pruning_through_the_sampler_keeps_the_accepted_distribution(reference, 
     stats = _sharing_stats(sampler)
     if mode == "lanes":
         assert any(entry["dead"] > 0 for entry in stats)
+    elif mode == "trees":
+        assert all(entry["nodes"] > 0 for entry in stats)
     else:
         assert all(entry["tables"] > 0 for entry in stats)
     sigma = np.sqrt(rate * (1 - rate) * 2 / shots)
@@ -474,7 +484,7 @@ def test_direct_outputs_land_in_their_columns(name, rows):
 
 
 def test_masks_of_component_detectors_alone_prune_lanes(monkeypatch):
-    monkeypatch.setattr(sampler_module, "table_keys", lambda *args: None)
+    force_lanes(monkeypatch)
     sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(
         strategy="active_statevector", seed=1
     )

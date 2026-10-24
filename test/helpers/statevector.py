@@ -198,17 +198,35 @@ def force_tables(monkeypatch, keys: np.ndarray | None = None) -> None:
 
     stores: dict[tuple[int, int], OutcomeTables] = {}
 
-    def tables(self, mask=None, flip=None):
+    def plans(self, mask=None, flip=None):
         picks = []
         for index, component in enumerate(self._program.components):
             if not (self._share and isinstance(component, StatevectorComponent)):
                 picks.append(None)
                 continue
             store = stores.setdefault((id(self), index), OutcomeTables(component))
-            picks.append((store, keys))
+            picks.append(sampler_module.ComponentPlan(store, keys, None))
         return tuple(picks)
 
-    monkeypatch.setattr(sampler_module._StatevectorBackend, "tables", tables)
+    monkeypatch.setattr(sampler_module._StatevectorBackend, "plans", plans)
+
+
+def force_lanes(monkeypatch) -> None:
+    """Sample every statevector component on lanes."""
+    import tsim.sampler as sampler_module
+
+    def plans(self, mask=None, flip=None):
+        return (None,) * len(self._program.components)
+
+    monkeypatch.setattr(sampler_module._StatevectorBackend, "plans", plans)
+
+
+def force_trees(monkeypatch) -> None:
+    """Sample every shared statevector component on outcome trees alone."""
+    import tsim.sampler as sampler_module
+
+    monkeypatch.setattr(sampler_module, "table_keys", lambda *args: None)
+    monkeypatch.setattr(sampler_module, "TREE_MAX_NODES_PER_SHOT", float("inf"))
 
 
 def quantum_components(

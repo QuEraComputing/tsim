@@ -27,6 +27,7 @@ table.
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from typing import NamedTuple
 
 import numba
@@ -179,14 +180,16 @@ class OutcomeTables:
         seed: int,
         layout: SharingLayout,
         keys: np.ndarray | None = None,
+        rest: Callable[[np.ndarray, int, SharingLayout], tuple] | None = None,
     ) -> tuple[np.ndarray, float, dict]:
         """Sample one batch, as ``sample_shared_component`` does with ``layout``.
 
         Shots whose key is in ``keys`` (every key if None) draw from tables, built
-        as needed; the others run on lanes. ``layout`` gives the outputs'
-        reference bits and the postselected outputs: a shot that one of them
-        discards reads ``False`` in the outputs set after the discarding output,
-        as if its lane were pruned there.
+        as needed; ``rest(f_params, seed, layout)`` samples the others, on lanes
+        if None. ``layout`` gives the outputs' reference bits and the
+        postselected outputs: a shot that one of them discards reads ``False`` in
+        the outputs set after the discarding output, as if its lane were pruned
+        there.
 
         Returns:
             ``(samples, max_norm_deviation, stats)``, where ``stats`` counts the
@@ -245,9 +248,14 @@ class OutcomeTables:
         lanes = np.flatnonzero(tables < 0)
         stats = {"tables": len(store.keys), "built": built, "lane shots": len(lanes)}
         if len(lanes):
-            lane_samples, lane_deviation, lane_stats = sample_shared_component(
-                self.component, layout, f_params[lanes], int(lane_seed)
-            )
+            if rest is None:
+                lane_samples, lane_deviation, lane_stats = sample_shared_component(
+                    self.component, layout, f_params[lanes], int(lane_seed)
+                )
+            else:
+                lane_samples, lane_deviation, lane_stats = rest(
+                    f_params[lanes], int(lane_seed), layout
+                )
             samples[lanes] = lane_samples
             deviation = _worse(deviation, lane_deviation)
             stats.update(lane_stats)

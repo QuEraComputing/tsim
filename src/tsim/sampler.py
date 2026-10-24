@@ -5,8 +5,9 @@ from __future__ import annotations
 import threading
 import warnings
 from collections import deque
+from collections.abc import Callable
 from math import ceil, inf
-from typing import TYPE_CHECKING, Any, Literal, Protocol, overload
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Protocol, overload
 
 import jax
 import jax.numpy as jnp
@@ -28,6 +29,7 @@ from tsim.statevector.shared import (
     sharing_layout,
 )
 from tsim.statevector.tables import OutcomeTables, table_keys
+from tsim.statevector.trees import OutcomeTrees
 from tsim.utils.cuda_helpers import copy_d2h
 from tsim.utils.kernels import kernel, run_tasks
 from tsim.utils.rng import GOLDEN
@@ -37,9 +39,31 @@ if TYPE_CHECKING:
 
     from tsim.circuit import Circuit
 
-# NOTE: per component, its tables and the keys that draw from them (every key if
-# None), or None for lanes.
-ComponentTables = tuple[tuple[OutcomeTables, np.ndarray | None] | None, ...]
+# NOTE: a component's trees fall back to lanes after a call in which they built
+# more nodes per shot of the component than this, over at least TREE_MIN_SHOTS
+# shots. At about one node per shot, a node costs about what lanes spend per
+# shot (cultivation d=5 and d=7 and the end-to-end circuit on an M4 Pro).
+TREE_MAX_NODES_PER_SHOT = 1.0
+TREE_MIN_SHOTS = 2**10
+
+
+class ComponentPlan(NamedTuple):
+    """How a shared statevector component samples a batch.
+
+    Attributes:
+        tables: Its outcome tables, if some keys draw from them.
+        keys: The keys that draw from the tables, every key if None.
+        trees: Its outcome trees, which sample the shots without a table, or
+            None for lanes.
+
+    """
+
+    tables: OutcomeTables | None
+    keys: np.ndarray | None
+    trees: OutcomeTrees | None
+
+
+ComponentPlans = tuple[ComponentPlan | None, ...]
 
 # NOTE: beyond 2^16 lanes, statevector batches cost memory without being faster.
 STATEVECTOR_MAX_BATCH_SIZE = 2**16
@@ -217,7 +241,8 @@ def sample_statevector_program(
     *,
     share: bool,
     sharing_stats: deque[dict] | None = None,
-    tables: ComponentTables | None = None,
+    plans: ComponentPlans | None = None,
+    record: Callable[[int, int, dict], None] | None = None,
 ) -> np.ndarray:
     """Sample all outputs of a program of statevector components, without JAX.
 
@@ -229,9 +254,10 @@ def sample_statevector_program(
         direct_flips: The flip of each direct output, with its reference bit.
         share: Whether shots with equal histories share a lane.
         sharing_stats: If given, the executor appends its lane counts, and a
-            component with outcome tables its table counts.
-        tables: The outcome tables of each component and the keys that draw
-            from them, or None for lanes.
+            component with outcome tables or trees their counts.
+        plans: How each component samples, or None for lanes.
+        record: If given, called with each component's index, the batch's
+            shots and the component's counts.
 
     Returns:
         Samples array of shape (batch_size, num_outputs) in the original order.
@@ -244,11 +270,15 @@ def sample_statevector_program(
     ):
         assert isinstance(component, StatevectorComponent)
         component_seed = (seed + index * int(GOLDEN)) % 2**64
-        component_tables = None if tables is None else tables[index]
-        if component_tables is not None:
-            store, keys = component_tables
-            samples, max_norm_deviation, stats = store.sample(
-                f_params, component_seed, layout, keys
+        plan = None if plans is None else plans[index]
+        if plan is not None and plan.tables is not None:
+            rest = None if plan.trees is None else plan.trees.sample
+            samples, max_norm_deviation, stats = plan.tables.sample(
+                f_params, component_seed, layout, plan.keys, rest
+            )
+        elif plan is not None and plan.trees is not None:
+            samples, max_norm_deviation, stats = plan.trees.sample(
+                f_params, component_seed, layout
             )
         else:
             samples, max_norm_deviation, stats = sample_shared_component(
@@ -256,6 +286,8 @@ def sample_statevector_program(
             )
         if sharing_stats is not None:
             sharing_stats.append(stats)
+        if record is not None:
+            record(index, rows, stats)
         _check_norm(max_norm_deviation, component.norm_warning_threshold)
         results.append(samples)
     component_bits = (
@@ -342,6 +374,10 @@ class _Backend(Protocol):
         """Return how many batches may run at once."""
         ...
 
+    def finish_call(self) -> None:
+        """Note that a call's batches are done."""
+        ...
+
     def next_seed(self) -> Any:
         """Return the seed of the next batch, in the order of the batches."""
         ...
@@ -397,6 +433,9 @@ class _StabilizerRankBackend:
 
     def max_threads(self) -> int:
         return 1
+
+    def finish_call(self) -> None:
+        pass
 
     def next_seed(self) -> PRNGKey:
         self._key, key = jax.random.split(self._key)
@@ -464,10 +503,13 @@ class _StatevectorBackend:
 
     Up to ``numba.get_num_threads()`` batches run at once. With sharing, a
     component samples from outcome tables when the noise model says that they
-    cost less than lanes (``table_keys``). The choice depends on the
-    postselection mask, since the shots that the direct detectors discard never
-    reach a component, so it is made per mask; each component's tables are
-    shared by every mask and persist across calls.
+    cost less than lanes (``table_keys``), and the shots without a table walk
+    its outcome trees. The choice of tables depends on the postselection mask,
+    since the shots that the direct detectors discard never reach a component,
+    so it is made per mask; each component's tables and trees are shared by
+    every mask and persist across calls. Under a mask whose trees built more
+    than ``TREE_MAX_NODES_PER_SHOT`` nodes per shot in a call, the component's
+    later calls run on lanes, which share within a batch at less cost.
     """
 
     prunes: bool = True
@@ -488,7 +530,13 @@ class _StatevectorBackend:
         self._noise = noise
         self._layouts: dict[bytes, tuple[tuple[SharingLayout, ...], np.ndarray]] = {}
         self._stores: dict[int, OutcomeTables] = {}
-        self._tables: dict[bytes, ComponentTables] = {}
+        self._trees: dict[int, OutcomeTrees] = {}
+        self._plans: dict[bytes, ComponentPlans] = {}
+        self._on_lanes: set[tuple[bytes, int]] = set()
+        # NOTE: per screen and component, the shots of the batches in this call in
+        # which some shots walked its trees, and the nodes they built.
+        self._walked: dict[tuple[bytes, int], list[int]] = {}
+        self._lock = threading.Lock()
         self.sharing_stats: deque[dict] = deque(maxlen=10_000)
 
     def max_threads(self) -> int:
@@ -531,6 +579,15 @@ class _StatevectorBackend:
     ) -> np.ndarray:
         """Sample the batch; shots that a ``mask`` detector discards are pruned."""
         layouts, direct_flips = self.layouts(mask, flip)
+        screen = self.screened(mask, flip).tobytes()
+
+        def record(index: int, shots: int, stats: dict) -> None:
+            if "tree shots" in stats:
+                with self._lock:
+                    counts = self._walked.setdefault((screen, index), [0, 0])
+                    counts[0] += shots
+                    counts[1] += stats["nodes built"]
+
         return sample_statevector_program(
             self._program,
             f_params,
@@ -539,34 +596,65 @@ class _StatevectorBackend:
             direct_flips,
             share=self._share,
             sharing_stats=self.sharing_stats,
-            tables=self.tables(mask, flip),
+            plans=self.plans(mask, flip),
+            record=record,
         )
 
-    def tables(
-        self, mask: np.ndarray | None = None, flip: np.ndarray | None = None
-    ) -> ComponentTables:
-        """Return each component's tables and the keys that use them, or None.
+    def __getstate__(self) -> dict:
+        state = self.__dict__.copy()
+        del state["_lock"]
+        return state
 
-        The keys depend on the mask only through the f-bits it screens.
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        self._lock = threading.Lock()
+
+    def finish_call(self) -> None:
+        """Move to lanes the trees that built too many nodes per shot in this call.
+
+        Only the call's totals count, which don't depend on how its batches
+        were spread over the threads.
         """
-        screened = self.screened(mask, flip)
-        key = screened.tobytes()
-        if key not in self._tables:
-            picks: list[tuple[OutcomeTables, np.ndarray | None] | None] = []
-            for index, component in enumerate(self._program.components):
-                if not (self._share and isinstance(component, StatevectorComponent)):
-                    picks.append(None)
-                    continue
-                keys = table_keys(component, self._noise, screened)
-                if keys is None:
-                    picks.append(None)
-                    continue
-                if index not in self._stores:
-                    self._stores.setdefault(index, OutcomeTables(component))
-                picks.append((self._stores[index], keys))
-            # NOTE: batches run on threads; all of them use the first picks stored.
-            return self._tables.setdefault(key, tuple(picks))
-        return self._tables[key]
+        with self._lock:
+            walked, self._walked = self._walked, {}
+        for (screen, index), (shots, built) in walked.items():
+            if shots >= TREE_MIN_SHOTS and built > TREE_MAX_NODES_PER_SHOT * shots:
+                self._on_lanes.add((screen, index))
+                self._plans.pop(screen, None)
+
+    def plans(
+        self, mask: np.ndarray | None = None, flip: np.ndarray | None = None
+    ) -> ComponentPlans:
+        """Return how each component samples under ``mask``, None for lanes.
+
+        The tables' keys depend on the mask only through the f-bits it screens.
+        """
+        screen = self.screened(mask, flip).tobytes()
+        plans = self._plans.get(screen)
+        if plans is not None:
+            return plans
+        picks: list[ComponentPlan | None] = []
+        for index, component in enumerate(self._program.components):
+            if not (self._share and isinstance(component, StatevectorComponent)):
+                picks.append(None)
+                continue
+            keys = table_keys(component, self._noise, self.screened(mask, flip))
+            tables = None
+            if keys is not None:
+                tables = self._stores.get(index)
+                if tables is None:
+                    tables = self._stores.setdefault(index, OutcomeTables(component))
+            trees = None
+            if (screen, index) not in self._on_lanes:
+                trees = self._trees.get(index)
+                if trees is None:
+                    trees = self._trees.setdefault(index, OutcomeTrees(component))
+            if tables is None and trees is None:
+                picks.append(None)
+                continue
+            picks.append(ComponentPlan(tables, keys, trees))
+        # NOTE: batches run on threads; all of them use the first plans stored.
+        return self._plans.setdefault(screen, tuple(picks))
 
     def screened(self, mask: np.ndarray | None, flip: np.ndarray | None) -> np.ndarray:
         """Return the f-bits that discard a shot before the components under ``mask``.
@@ -910,6 +998,7 @@ class _CompiledSamplerBase:
             return backend.sample(f_params, seed)
 
         batches = run_tasks(sample_batch, tasks, self._threads(batch_size))
+        backend.finish_call()
         reference: np.ndarray | None = None
         if compute_reference:
             reference = np.asarray(batches[0][0])
@@ -1043,6 +1132,7 @@ class _CompiledSamplerBase:
             run_tasks(dispatch, batches, self._threads(size))
             pending_f, pending_shot = [all_f[ready:]], [all_shot[ready:]]
             pending -= ready
+        backend.finish_call()
         return result
 
     def _sample_direct(self, shots: int) -> np.ndarray:
