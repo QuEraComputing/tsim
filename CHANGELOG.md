@@ -70,6 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chunk, on parallel amplitude loops when a call is one chunk; single-component
   circuits such as distillation and cultivation sample about 3-4x faster on
   one thread. (#212)
+- The statevector rotation and measurement kernels take each amplitude pair's
+  parity with one popcount and mix pairs with real products (the coupling of
+  a Pauli rotation is real or imaginary), so wide components such as
+  `cultivation_d5` without postselection and `coherent_d5_r5` sample about
+  1.6x faster. Samples are unchanged. (#213)
 - Tsim now uses zxparam instead of pyzx-param. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zxparam.
 - `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`.
 - In `Circuit.get_graph()` (and the `"zx"` diagram), every detector and observable has a classical output boundary, with ports after the qubit outputs, so the graph's tensor is the circuit's channel together with the detector and observable bits.

@@ -1,3 +1,4 @@
+import itertools
 from dataclasses import replace
 from test.helpers.statevector import (
     CIRCUITS,
@@ -7,6 +8,8 @@ from test.helpers.statevector import (
     output_indices,
     plan_distribution,
     quantum_components,
+    reference_measure,
+    reference_rotate,
     sample_lanes,
 )
 
@@ -168,6 +171,90 @@ def test_a_seed_gives_its_samples_whatever_shares_its_lanes(name):
         np.testing.assert_array_equal(np.vstack([head, tail]), first)
         other, _, _ = sample_lanes(compiled, f_params, 14, True, postselected)
         assert not np.array_equal(first, other)
+
+
+def _in_ranges(kernel, amps, units, rng, *args):
+    """Call ``kernel(amps, lo, hi, *args)`` on ``0 … units-1`` in a few ranges."""
+    cuts = np.sort(rng.integers(0, units + 1, size=int(rng.integers(0, 4))))
+    for lo, hi in itertools.pairwise([0, *cuts.tolist(), units]):
+        kernel(amps, lo, hi, *args)
+
+
+@pytest.mark.parametrize("width", [1, 2, 3, 6])
+def test_kernels_match_the_reference_rotations_and_measurements(width):
+    rng = np.random.default_rng(width)
+    span, lanes = 1 << width, 3
+    for _ in range(60):
+        x, z = int(rng.integers(0, span)), int(rng.integers(0, span))
+        x_mask, z_mask = np.int64(x), np.int64(z)
+        angle = float(rng.uniform(-np.pi, np.pi))
+        # NOTE: the last lane is past the ranges, so the kernels leave it alone.
+        shape = (lanes + 1, span)
+        amps = rng.normal(size=shape) + 1j * rng.normal(size=shape)
+        amps /= np.linalg.norm(amps, axis=1, keepdims=True)
+        flip = rng.integers(0, 2, lanes)
+        i_power = shared._I_POWERS[(x & z).bit_count() & 3]
+        cos, sin = np.cos(angle), np.sin(angle)
+        factor = np.array([cos - 1j * sin, cos + 1j * sin])
+        rotated = amps.copy()
+        units = lanes * (span if x == 0 else span >> 1)
+        _in_ranges(
+            shared._rotate_range,
+            rotated,
+            units,
+            rng,
+            span,
+            flip,
+            x == 0,
+            x_mask,
+            z_mask,
+            cos,
+            factor,
+            -1j * sin * i_power,
+        )
+        for lane in range(lanes):
+            expected = reference_rotate(amps[lane], x, z, angle, bool(flip[lane]))
+            np.testing.assert_allclose(rotated[lane], expected, atol=1e-12)
+        np.testing.assert_array_equal(rotated[lanes], amps[lanes])
+
+        measured = x or z
+        if not measured:
+            continue
+        pivot = int(rng.choice([b for b in range(width) if (measured >> b) & 1]))
+        w0, w1 = np.zeros(lanes), np.zeros(lanes)
+        _in_ranges(
+            shared._weights_range,
+            amps,
+            lanes,
+            rng,
+            span,
+            x_mask,
+            z_mask,
+            i_power,
+            w0,
+            w1,
+        )
+        outcome = rng.integers(0, 2, lanes).astype(np.bool_)
+        projected = amps.copy()
+        _in_ranges(
+            shared._project_range,
+            projected,
+            lanes,
+            rng,
+            span,
+            x_mask,
+            z_mask,
+            pivot,
+            i_power,
+            outcome,
+            np.where(outcome, w1, w0),
+        )
+        for lane in range(lanes):
+            state, p = reference_measure(amps[lane], x, z, pivot, int(outcome[lane]))
+            assert abs((w1 if outcome[lane] else w0)[lane] - p) < 1e-12
+            if p > 1e-9:
+                np.testing.assert_allclose(projected[lane], state, atol=1e-9)
+        np.testing.assert_array_equal(projected[lanes], amps[lanes])
 
 
 @pytest.mark.parametrize(

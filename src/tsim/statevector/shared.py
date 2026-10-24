@@ -30,10 +30,13 @@ output reads, drawn per shot.
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from collections.abc import Callable
+from typing import NamedTuple, cast
 
 import numba
 import numpy as np
+from numba import types
+from numba.extending import intrinsic
 
 from tsim.statevector.program import (
     MEASURE,
@@ -323,16 +326,28 @@ def lane_bytes(component: StatevectorComponent, key: KeyBasis) -> int:
     return amplitudes + 4 * 8 * max_lane_words(component, key) + 64
 
 
+@intrinsic
+def _ctpop(typingctx, value):
+    def codegen(context, builder, signature, args):
+        return builder.ctpop(args[0])
+
+    return types.uint64(types.uint64), codegen
+
+
+# NOTE: the cast only tells type checkers how the kernels call it.
+_popcount = cast(Callable[[np.uint64], np.uint64], _ctpop)
+
+
 @jit
 def _parity(value):
     """Return the parity of the bits of a uint64."""
-    value ^= value >> np.uint64(32)
-    value ^= value >> np.uint64(16)
-    value ^= value >> np.uint64(8)
-    value ^= value >> np.uint64(4)
-    value ^= value >> np.uint64(2)
-    value ^= value >> np.uint64(1)
-    return np.int64(value & np.uint64(1))
+    return np.int64(_popcount(value) & np.uint64(1))
+
+
+@jit
+def _insert_zero(value, bit):
+    """Return ``value`` with a 0 bit inserted at the position of the power of 2 ``bit``."""
+    return (value & -bit) << 1 | (value & (bit - 1))
 
 
 @jit
@@ -368,48 +383,64 @@ def _grown(array, rows, used):
 
 
 @jit
-def _rotate_range(amps, lo, hi, shift, flip, diagonal, x, z, cos, factor, coupling):
-    """Apply one rotation to the entries ``lo … hi-1`` of ``lanes × 2^shift``.
+def _rotate_range(amps, lo, hi, span, flip, diagonal, x, z, cos, factor, coupling):
+    """Rotate the units ``lo … hi-1`` of the lanes' first ``span`` amplitudes.
 
-    A diagonal rotation multiplies amplitude i by ``factor[sign ^ parity(i & z)]``,
-    the others mix amplitudes i and ``i ^ x`` with ``cos`` and ``±coupling``: the
-    entry of the pair's lower amplitude updates both.
+    A diagonal rotation's units are the amplitudes i, which it multiplies by
+    ``factor[sign ^ parity(i & z)]``. The others' are the pairs of amplitudes i
+    and ``j = i ^ x``, which they mix with ``cos`` and ``±coupling``. A lane's
+    units follow the previous lane's.
     """
-    span = 1 << shift
+    if diagonal:
+        for lane in range(lo // span, -(-hi // span)):
+            for i in range(max(lo - lane * span, 0), min(hi - lane * span, span)):
+                amps[lane, i] *= factor[flip[lane] ^ _parity(np.uint64(i & z))]
+        return
+    # NOTE: parity(j & z) is parity(i & z) ^ parity(x & z), and the coupling is
+    # real or imaginary, so a pair takes one parity and real products.
+    values = amps.view(np.float64)
+    pairs = span >> 1
     low = x & -x
-    for t in range(lo, hi):
-        lane, i = t >> shift, t & (span - 1)
-        if diagonal:
-            amps[lane, i] *= factor[flip[lane] ^ _parity(np.uint64(i & z))]
-            continue
-        if i & low:
-            continue
-        j = i ^ x
-        c = -coupling if flip[lane] else coupling
-        p, q = amps[lane, i], amps[lane, j]
-        amps[lane, i] = cos * p + c * (-q if _parity(np.uint64(j & z)) else q)
-        amps[lane, j] = cos * q + c * (-p if _parity(np.uint64(i & z)) else p)
+    imaginary = coupling.real == 0
+    strength = coupling.imag if imaginary else coupling.real
+    partner = -1.0 if _parity(np.uint64(x & z)) else 1.0
+    for lane in range(lo // pairs, -(-hi // pairs)):
+        row = values[lane]
+        lane_strength = -strength if flip[lane] else strength
+        for t in range(max(lo - lane * pairs, 0), min(hi - lane * pairs, pairs)):
+            i = _insert_zero(t, low)
+            j = i ^ x
+            si = -lane_strength if _parity(np.uint64(i & z)) else lane_strength
+            sj = partner * si
+            pr, pi, qr, qi = row[2 * i], row[2 * i + 1], row[2 * j], row[2 * j + 1]
+            if imaginary:
+                row[2 * i], row[2 * i + 1] = cos * pr - sj * qi, cos * pi + sj * qr
+                row[2 * j], row[2 * j + 1] = cos * qr - si * pi, cos * qi + si * pr
+            else:
+                row[2 * i], row[2 * i + 1] = cos * pr + sj * qr, cos * pi + sj * qi
+                row[2 * j], row[2 * j + 1] = cos * qr + si * pr, cos * qi + si * pi
 
 
 @jit
 def _weights_range(amps, lo, hi, span, x, z, i_power, w0, w1):
     """Add the outcome weights of measuring ``X^x Z^z`` in lanes ``lo … hi-1``."""
     for lane in range(lo, hi):
+        zero, one = w0[lane], w1[lane]
         for i in range(span):
             a = amps[lane, i]
             if x == 0:
                 if _parity(np.uint64(i & z)):
-                    w1[lane] += a.real**2 + a.imag**2
+                    one += a.real**2 + a.imag**2
                 else:
-                    w0[lane] += a.real**2 + a.imag**2
-            else:
-                j = i ^ x
-                b = i_power * amps[lane, j]
-                if _parity(np.uint64(j & z)):
-                    b = -b
-                plus, minus = a + b, a - b
-                w0[lane] += (plus.real**2 + plus.imag**2) / 4
-                w1[lane] += (minus.real**2 + minus.imag**2) / 4
+                    zero += a.real**2 + a.imag**2
+                continue
+            b = i_power * amps[lane, i ^ x]
+            if _parity(np.uint64((i ^ x) & z)):
+                b = -b
+            plus, minus = a + b, a - b
+            zero += (plus.real**2 + plus.imag**2) / 4
+            one += (minus.real**2 + minus.imag**2) / 4
+        w0[lane], w1[lane] = zero, one
 
 
 @jit
@@ -425,11 +456,10 @@ def _project_range(amps, lo, hi, span, x, z, pivot, i_power, outcome, weight):
             scale = 1 / np.sqrt(max(weight[lane], _TINY))
         else:
             scale = 1 / np.sqrt(max(2 * weight[lane], _TINY))
-        for i in range(span):
-            if i & bit:
-                continue
+        for t in range(span >> 1):
+            i = _insert_zero(t, bit)
             if x == 0:
-                j = i ^ bit
+                j = i | bit
                 keep = _parity(np.uint64(i & z)) == outcome[lane]
                 amps[lane, i] = (amps[lane, i] if keep else amps[lane, j]) * scale
             else:
@@ -695,17 +725,17 @@ def run_lanes(
                 program.factor[a],
                 program.coupling[a],
             )
-            work = size * span
-            chunks = _chunks(work, work, parallel_work, threads)
+            units = size * span if diagonal else size * (span >> 1)
+            chunks = _chunks(size * span, units, parallel_work, threads)
             if chunks == 1:
                 _rotate_range(
-                    amps, 0, work, shift, flip, diagonal, x, z, cos, factor, coupling
+                    amps, 0, units, span, flip, diagonal, x, z, cos, factor, coupling
                 )
             else:
                 for c in numba.prange(chunks):
-                    lo, hi = work * c // chunks, work * (c + 1) // chunks
+                    lo, hi = units * c // chunks, units * (c + 1) // chunks
                     _rotate_range(
-                        amps, lo, hi, shift, flip, diagonal, x, z, cos, factor, coupling
+                        amps, lo, hi, span, flip, diagonal, x, z, cos, factor, coupling
                     )
             continue
         if not program.splits[a]:
