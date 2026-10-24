@@ -766,9 +766,13 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> FireT
 
 
 @jit
-def _sample_block(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols):
-    """Clear the rows of ``out``, then XOR in every channel's outcomes."""
-    out[:] = 0
+def _block_faults(rows, state, p_fire, outcome_start, cdf, fault_row, fault_outcome):
+    """Draw the faults of a block of ``rows`` shots, channel by channel.
+
+    Writes each fault's row and outcome; returns their count, or -1 if they
+    don't fit.
+    """
+    count = 0
     for c in range(len(p_fire)):
         log_keep = np.log1p(-p_fire[c])
         first, last = outcome_start[c], outcome_start[c + 1]
@@ -776,12 +780,57 @@ def _sample_block(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols)
         while True:
             state, skip = next_skip(state, log_keep)
             row += 1.0 + skip
-            if row >= out.shape[0]:
+            if row >= rows:
                 break
             state, u = next_uniform(state)
-            k = first + np.searchsorted(cdf[first:last], u, side="right")
+            if count == len(fault_row):
+                return -1
+            fault_row[count] = int(row)
+            fault_outcome[count] = first + np.searchsorted(
+                cdf[first:last], u, side="right"
+            )
+            count += 1
+    return count
+
+
+@jit
+def _sample_block(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols):
+    """Write the rows of ``out`` from the stream ``state``.
+
+    The faults are drawn channel by channel, then sorted by row, so that each
+    row is built from its own faults while it is in cache: rows far apart in a
+    block miss the cache when channels XOR into them in turn.
+    """
+    rows = out.shape[0]
+    expected = rows * np.sum(p_fire)
+    capacity = int(expected + 8 * np.sqrt(expected)) + 64
+    while True:
+        fault_row = np.empty(capacity, dtype=np.int64)
+        fault_outcome = np.empty(capacity, dtype=np.int64)
+        count = _block_faults(
+            rows, state, p_fire, outcome_start, cdf, fault_row, fault_outcome
+        )
+        if count >= 0:
+            break
+        capacity *= 2
+    start = np.zeros(rows + 1, dtype=np.int64)
+    for f in range(count):
+        start[fault_row[f] + 1] += 1
+    for r in range(rows):
+        start[r + 1] += start[r]
+    filled = start[:rows].copy()
+    by_row = np.empty(count, dtype=np.int64)
+    for f in range(count):
+        r = fault_row[f]
+        by_row[filled[r]] = fault_outcome[f]
+        filled[r] += 1
+    for r in range(rows):
+        row = out[r]
+        row[:] = 0
+        for i in range(start[r], start[r + 1]):
+            k = by_row[i]
             for j in range(flip_start[k], flip_start[k + 1]):
-                out[int(row), flip_cols[j]] ^= 1
+                row[flip_cols[j]] ^= 1
 
 
 @kernel
