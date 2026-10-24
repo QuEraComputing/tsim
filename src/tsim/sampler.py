@@ -26,7 +26,7 @@ from tsim.statevector.shared import (
     sample_shared_component,
     sharing_layout,
 )
-from tsim.statevector.tables import OutcomeTables, outcome_tables
+from tsim.statevector.tables import OutcomeTables, table_keys
 from tsim.utils.cuda_helpers import copy_d2h
 from tsim.utils.kernels import kernel, run_tasks
 from tsim.utils.rng import GOLDEN
@@ -35,6 +35,10 @@ if TYPE_CHECKING:
     from jax import Array as PRNGKey
 
     from tsim.circuit import Circuit
+
+# NOTE: per component, its tables and the keys that draw from them (every key if
+# None), or None for lanes.
+ComponentTables = tuple[tuple[OutcomeTables, np.ndarray | None] | None, ...]
 
 # NOTE: beyond 2^16 lanes, statevector batches cost memory without being faster.
 STATEVECTOR_MAX_BATCH_SIZE = 2**16
@@ -212,7 +216,7 @@ def sample_statevector_program(
     *,
     share: bool,
     sharing_stats: deque[dict] | None = None,
-    tables: tuple[OutcomeTables | None, ...] | None = None,
+    tables: ComponentTables | None = None,
 ) -> np.ndarray:
     """Sample all outputs of a program of statevector components, without JAX.
 
@@ -225,7 +229,8 @@ def sample_statevector_program(
         share: Whether shots with equal histories share a lane.
         sharing_stats: If given, the executor appends its lane counts, and a
             component with outcome tables its table counts.
-        tables: The outcome tables of each component, or None for lanes.
+        tables: The outcome tables of each component and the keys that draw
+            from them, or None for lanes.
 
     Returns:
         Samples array of shape (batch_size, num_outputs) in the original order.
@@ -240,8 +245,9 @@ def sample_statevector_program(
         component_seed = (seed + index * int(GOLDEN)) % 2**64
         component_tables = None if tables is None else tables[index]
         if component_tables is not None:
-            samples, max_norm_deviation, stats = component_tables.sample(
-                f_params, component_seed, layout
+            store, keys = component_tables
+            samples, max_norm_deviation, stats = store.sample(
+                f_params, component_seed, layout, keys
             )
         else:
             samples, max_norm_deviation, stats = sample_shared_component(
@@ -457,7 +463,10 @@ class _StatevectorBackend:
 
     Up to ``numba.get_num_threads()`` batches run at once. With sharing, a
     component samples from outcome tables when the noise model says that they
-    cost less than lanes (``outcome_tables``); the tables persist across calls.
+    cost less than lanes (``table_keys``). The choice depends on the
+    postselection mask, since the shots that the direct detectors discard never
+    reach a component, so it is made per mask; each component's tables are
+    shared by every mask and persist across calls.
     """
 
     prunes: bool = True
@@ -475,16 +484,11 @@ class _StatevectorBackend:
         self._num_detectors = num_detectors
         self._share = share
         self._seeds = np.random.default_rng([seed, 1])
+        self._noise = noise
         self._layouts: dict[bytes, tuple[tuple[SharingLayout, ...], np.ndarray]] = {}
+        self._stores: dict[int, OutcomeTables] = {}
+        self._tables: dict[bytes, ComponentTables] = {}
         self.sharing_stats: deque[dict] = deque(maxlen=10_000)
-        self.tables: tuple[OutcomeTables | None, ...] = tuple(
-            (
-                outcome_tables(component, noise)
-                if share and isinstance(component, StatevectorComponent)
-                else None
-            )
-            for component in program.components
-        )
 
     def max_threads(self) -> int:
         return numba.get_num_threads()
@@ -534,8 +538,52 @@ class _StatevectorBackend:
             direct_flips,
             share=self._share,
             sharing_stats=self.sharing_stats,
-            tables=self.tables,
+            tables=self.tables(mask, flip),
         )
+
+    def tables(
+        self, mask: np.ndarray | None = None, flip: np.ndarray | None = None
+    ) -> ComponentTables:
+        """Return each component's tables and the keys that use them, or None.
+
+        The keys depend on the mask only through the f-bits it screens.
+        """
+        screened = self.screened(mask, flip)
+        key = screened.tobytes()
+        if key not in self._tables:
+            picks: list[tuple[OutcomeTables, np.ndarray | None] | None] = []
+            for index, component in enumerate(self._program.components):
+                if not (self._share and isinstance(component, StatevectorComponent)):
+                    picks.append(None)
+                    continue
+                keys = table_keys(component, self._noise, screened)
+                if keys is None:
+                    picks.append(None)
+                    continue
+                if index not in self._stores:
+                    self._stores.setdefault(index, OutcomeTables(component))
+                picks.append((self._stores[index], keys))
+            # NOTE: batches run on threads; all of them use the first picks stored.
+            return self._tables.setdefault(key, tuple(picks))
+        return self._tables[key]
+
+    def screened(self, mask: np.ndarray | None, flip: np.ndarray | None) -> np.ndarray:
+        """Return the f-bits that discard a shot before the components under ``mask``.
+
+        A masked direct detector discards a shot when its f-bit differs from its
+        flip. One with flip 0 discards the shots with a fault that flips it. One
+        with flip 1 discards the shots without one, which the choice of tables
+        doesn't model, so it is left out.
+        """
+        program = self._program
+        _, direct_flips = self.layouts(mask, flip)
+        columns = program.output_order[: len(program.direct_f_indices)]
+        masked = np.zeros(len(columns), dtype=np.bool_)
+        if mask is not None:
+            is_detector = columns < self._num_detectors
+            masked[is_detector] = mask[columns[is_detector]]
+        screens = masked & ~direct_flips & (program.direct_f_indices >= 0)
+        return program.direct_f_indices[screens]
 
     def layouts(
         self, mask: np.ndarray | None, flip: np.ndarray | None
@@ -545,8 +593,8 @@ class _StatevectorBackend:
         postselected = np.zeros(program.num_outputs, dtype=np.bool_)
         if mask is not None:
             postselected[: self._num_detectors] = mask
-        if flip is None:
-            flip = np.zeros(program.num_outputs, dtype=np.bool_)
+        flip = np.zeros(program.num_outputs, dtype=np.bool_) if flip is None else flip
+        flip = np.asarray(flip, dtype=np.bool_)
         key = postselected.tobytes() + flip.tobytes()
         if key not in self._layouts:
             layouts = []

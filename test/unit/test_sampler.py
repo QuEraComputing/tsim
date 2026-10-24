@@ -1,3 +1,4 @@
+from test.helpers.statevector import force_tables
 from unittest.mock import patch
 
 import numpy as np
@@ -516,11 +517,10 @@ def test_detector_sampler_out_of_order_observable_indices():
 
 @pytest.mark.parametrize("tables", [False, True])
 def test_a_nan_normalization_deviation_warns(tables, monkeypatch):
-    monkeypatch.setattr(
-        sampler_module,
-        "outcome_tables",
-        lambda component, noise: OutcomeTables(component) if tables else None,
-    )
+    if tables:
+        force_tables(monkeypatch)
+    else:
+        monkeypatch.setattr(sampler_module, "table_keys", lambda *args: None)
     sampler = Circuit("R 0\nH 0\nT 0\nH 0\nM 0").compile_sampler(
         strategy="active_statevector", seed=0
     )

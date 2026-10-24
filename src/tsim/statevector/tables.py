@@ -12,11 +12,16 @@ per batch.
 
 Tables cover the keys of no fault and of one fault that reaches the key, which
 most shots have when noise is weak; a shot with another key is simulated on
-lanes, as without tables. The first batch to meet a covered key builds its
-table, and every later batch and call reuses it. Which shots draw from tables
-depends only on their keys, and a table only on its key, so the samples do not
-depend on which batch built a table. ``outcome_tables`` gives a component tables
-when, by the noise model, building them costs less than the lanes they replace.
+lanes, as without tables. With postselection, a fault that a postselected direct
+detector catches discards its shot before the component, so only the faults
+that pass this screen count. ``table_keys`` picks the keys for a screen when, by
+the noise model, building their tables costs less than the lanes they replace.
+
+One store holds a component's tables for every screen. The first batch to meet
+a picked key builds its table, and every later batch and call reuses it. Which
+shots draw from tables depends only on their keys and the picked keys, and a
+table only on its key, so the samples do not depend on which batch built a
+table.
 """
 
 from __future__ import annotations
@@ -127,7 +132,7 @@ def _packed(bits: np.ndarray) -> np.ndarray:
 
 
 class OutcomeTables:
-    """The outcome tables of one component, shared by every batch of a sampler.
+    """The outcome tables of one component, shared by every batch and call.
 
     Attributes:
         component: The compiled component.
@@ -136,16 +141,8 @@ class OutcomeTables:
 
     """
 
-    def __init__(
-        self, component: StatevectorComponent, keys: np.ndarray | None = None
-    ) -> None:
-        """Start without tables, which batches build as they meet ``keys``.
-
-        Args:
-            component: The compiled component.
-            keys: The keys that get tables, or None for every key.
-
-        """
+    def __init__(self, component: StatevectorComponent) -> None:
+        """Start without tables, which batches build as they meet their keys."""
         self.component = component
         self.layout = layout = sharing_layout(component)
         if len(layout.key_rows) > 64:
@@ -157,7 +154,6 @@ class OutcomeTables:
         self._output_columns = _packed(output_bits[:, :num_f].T)
         coins = np.flatnonzero(_unpack(layout.shot_dormant, num_words))
         self._coin_columns = _packed(output_bits[:, coins].T)
-        self._keys = None if keys is None else _hashed(np.asarray(keys, np.uint64))
         self._store = _empty_store(self._output_columns.shape[1])
         self._lock = threading.Lock()
 
@@ -178,13 +174,19 @@ class OutcomeTables:
         self._lock = threading.Lock()
 
     def sample(
-        self, f_params: np.ndarray, seed: int, layout: SharingLayout
+        self,
+        f_params: np.ndarray,
+        seed: int,
+        layout: SharingLayout,
+        keys: np.ndarray | None = None,
     ) -> tuple[np.ndarray, float, dict]:
         """Sample one batch, as ``sample_shared_component`` does with ``layout``.
 
-        ``layout`` gives the outputs' reference bits and the postselected outputs:
-        a shot that one of them discards reads ``False`` in the outputs set after
-        the discarding output, as if its lane were pruned there.
+        Shots whose key is in ``keys`` (every key if None) draw from tables, built
+        as needed; the others run on lanes. ``layout`` gives the outputs'
+        reference bits and the postselected outputs: a shot that one of them
+        discards reads ``False`` in the outputs set after the discarding output,
+        as if its lane were pruned there.
 
         Returns:
             ``(samples, max_norm_deviation, stats)``, where ``stats`` counts the
@@ -194,7 +196,7 @@ class OutcomeTables:
         """
         selection = self.component.tape.f_selection
         shots, num_words = f_params.shape[0], self._output_columns.shape[1]
-        keys, f_patterns = _shot_keys(
+        shot_keys, f_patterns = _shot_keys(
             shots * (len(selection) + 1),
             f_params,
             selection,
@@ -203,17 +205,24 @@ class OutcomeTables:
             kernels.PARALLEL_WORK,
             numba.get_num_threads(),
         )
+        picked = None
+        if keys is not None:
+            picked, _ = _lookup(shot_keys, *_hashed(np.asarray(keys, np.uint64)))
         store = self._store
-        tables, misses = _lookup(keys, store.slot_keys, store.slot_tables)
+        tables, _ = _lookup(shot_keys, store.slot_keys, store.slot_tables)
+        # NOTE: a table built for other keys is not used, so that which shots
+        # take lanes doesn't depend on what earlier calls built.
+        if picked is not None:
+            tables[picked < 0] = -1
         deviation, built = 0.0, 0
-        if misses:
-            missing = np.flatnonzero(tables < 0)
-            if self._keys is not None:
-                covered, _ = _lookup(keys[missing], *self._keys)
-                missing = missing[covered >= 0]
-            if len(missing):
-                store, deviation, built = self._add(keys, f_params, missing)
-                tables, _ = _lookup(keys, store.slot_keys, store.slot_tables)
+        missing = np.flatnonzero(tables < 0)
+        if picked is not None:
+            missing = missing[picked[missing] >= 0]
+        if len(missing):
+            store, deviation, built = self._add(shot_keys, f_params, missing)
+            tables, _ = _lookup(shot_keys, store.slot_keys, store.slot_tables)
+            if picked is not None:
+                tables[picked < 0] = -1
         postselected = layout.prune_first | layout.prune_outputs.any(axis=0)
         draws, coins, lane_seed = _streams(np.uint64(seed))
         samples = _draw(
@@ -380,12 +389,16 @@ def _extended(
     )
 
 
-def outcome_tables(
-    component: StatevectorComponent, noise: FireTables
-) -> OutcomeTables | None:
-    """Return outcome tables for ``component`` if they cost less than lanes.
+def table_keys(
+    component: StatevectorComponent,
+    noise: FireTables,
+    screened: np.ndarray | None = None,
+) -> np.ndarray | None:
+    """Return the keys that get outcome tables, or None if lanes cost less.
 
-    The tables cover the keys of zero or one fault (``_fault_keys``). Each costs
+    ``screened`` holds the f-bits that discard a shot before it reaches the
+    component (postselected direct detectors). The tables cover the keys of no
+    fault and of one fault that the screen passes (``_fault_keys``). Each costs
     its tree: every action runs on every branch alive at it, at most ``2^s``
     after ``s`` branching measurements, and every branch has its bookkeeping.
     Over ``_HORIZON`` shots, the tables also cost every shot its key, and they
@@ -397,7 +410,7 @@ def outcome_tables(
     branches = 2.0 ** np.count_nonzero(splitting)
     if len(layout.key_rows) > 64 or branches * _branch_bytes(component) > _BUILD_BYTES:
         return None
-    keys, covered = _fault_keys(component, layout, noise)
+    keys, covered = _fault_keys(component, layout, noise, screened)
     words = (component.num_outputs + 63) // 64
     if len(keys) * branches * (16 + 8 * words) > _BUILD_BYTES:
         return None
@@ -409,40 +422,57 @@ def outcome_tables(
     batch_tree = float(np.sum(np.minimum(alive, _BATCH) * extent))
     cost = len(keys) * tree + _HORIZON * _KEY_OVERHEAD
     saved = _HORIZON * covered * _LANE_OVERHEAD + _HORIZON / _BATCH * batch_tree
-    return OutcomeTables(component, keys) if cost <= saved else None
+    return keys if cost <= saved else None
 
 
 def _fault_keys(
-    component: StatevectorComponent, layout: SharingLayout, noise: FireTables
+    component: StatevectorComponent,
+    layout: SharingLayout,
+    noise: FireTables,
+    screened: np.ndarray | None = None,
 ) -> tuple[np.ndarray, float]:
-    """Return the keys of no fault and of one fault, and the chance of no or one.
+    """Return the keys of no fault and of one passing fault, and roughly their chance.
 
-    Only faults whose outcome changes the key count, so the chance is that of
-    a shot whose key is among them, or more.
+    A fault passes when it flips none of the ``screened`` f-bits, which discard
+    a shot before it reaches the component. The chance is that of a shot that
+    passes the screen having no fault that changes the key, or one such fault
+    that passes, with channels independent. It neglects shots that pass because
+    two caught faults cancel on the screened bits, which can have other keys.
     """
     selection = np.asarray(component.tape.f_selection, dtype=np.int64)
     flip_cols = np.asarray(noise.flip_cols, dtype=np.int64)
-    num_columns = max(int(flip_cols.max(initial=-1)), int(selection.max(initial=-1)))
-    columns = np.zeros(num_columns + 1, dtype=np.uint64)
+    screened = np.zeros(0, np.int64) if screened is None else np.asarray(screened)
+    num_columns = 1 + max(
+        int(flip_cols.max(initial=-1)),
+        int(selection.max(initial=-1)),
+        int(screened.max(initial=-1)),
+    )
+    columns = np.zeros(num_columns, dtype=np.uint64)
     columns[selection] = _key_columns(component, layout)
     prefix = np.concatenate(
         [np.zeros(1, dtype=np.uint64), np.bitwise_xor.accumulate(columns[flip_cols])]
     )
     outcome_key = prefix[noise.flip_start[1:]] ^ prefix[noise.flip_start[:-1]]
+    is_screened = np.zeros(num_columns, dtype=np.int64)
+    is_screened[screened] = 1
+    hits = np.concatenate([[0], np.cumsum(is_screened[flip_cols])])
+    detected = hits[noise.flip_start[1:]] > hits[noise.flip_start[:-1]]
     starts = np.zeros(len(noise.cdf), dtype=bool)
     starts[noise.outcome_start[:-1][np.diff(noise.outcome_start) > 0]] = True
     previous = np.concatenate([[0.0], noise.cdf])[: len(noise.cdf)]
     conditional = noise.cdf - np.where(starts, 0.0, previous)
     channel = np.repeat(np.arange(len(noise.p_fire)), np.diff(noise.outcome_start))
-    reaching = np.bincount(
-        channel,
-        weights=conditional * (outcome_key != 0),
-        minlength=len(noise.p_fire),
-    )
-    q = np.minimum(noise.p_fire * reaching, 1 - 1e-12)
-    p_none = float(np.prod(1 - q))
-    p_one = p_none * float(np.sum(q / (1 - q)))
-    keys = np.unique(np.concatenate([np.zeros(1, dtype=np.uint64), outcome_key]))
+
+    def chance(outcomes: np.ndarray) -> np.ndarray:
+        weights = conditional * outcomes
+        return noise.p_fire * np.bincount(channel, weights, len(noise.p_fire))
+
+    caught = np.minimum(chance(detected), 1 - 1e-12)
+    reaching = np.minimum(chance(~detected & (outcome_key != 0)), 1 - 1e-12 - caught)
+    p_none = float(np.exp(np.sum(np.log1p(-caught - reaching) - np.log1p(-caught))))
+    p_one = p_none * float(np.sum(reaching / (1 - caught - reaching)))
+    passing = outcome_key[~detected]
+    keys = np.unique(np.concatenate([np.zeros(1, dtype=np.uint64), passing]))
     return keys, min(1.0, p_none + p_one)
 
 

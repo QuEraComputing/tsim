@@ -249,7 +249,7 @@ def test_lookups_find_every_key_and_miss_the_others():
 def _tabled(text):
     backend = Circuit(text).compile_detector_sampler(seed=0)._backend
     assert isinstance(backend, sampler_module._StatevectorBackend)
-    return [tables is not None for tables in backend.tables]
+    return [tables is not None for tables in backend.tables()]
 
 
 def test_small_components_whose_keys_repeat_use_tables():
@@ -272,10 +272,12 @@ def test_tables_need_keys_that_repeat():
 def test_shots_whose_key_has_no_table_take_lanes(name):
     shots_each = 6_000
     for planned, compiled in _compiled(name):
-        tables = OutcomeTables(compiled, np.zeros(1, dtype=np.uint64))
+        tables = OutcomeTables(compiled)
         patterns = f_patterns(planned.num_f, limit=3)
         f_params = _f_params(compiled, patterns, shots_each)
-        samples, _, stats = tables.sample(f_params, 3, tables.layout)
+        samples, _, stats = tables.sample(
+            f_params, 3, tables.layout, np.zeros(1, dtype=np.uint64)
+        )
         keyed = sum(
             any(np.count_nonzero(row[: len(f)] & np.array(f, bool)) & 1 for row in key)
             for f in patterns
@@ -298,10 +300,109 @@ def test_the_fault_keys_cover_at_least_their_estimate(name):
         assert isinstance(component, StatevectorComponent)
         layout = sharing_layout(component)
         keys, covered = tables_module._fault_keys(component, layout, noise)
-        tables = OutcomeTables(component, keys)
-        _, _, stats = tables.sample(f_params, 0, tables.layout)
+        tables = OutcomeTables(component)
+        _, _, stats = tables.sample(f_params, 0, tables.layout, keys)
         rate = 1 - stats["lane shots"] / shots
         assert rate >= covered - 5 * np.sqrt(covered * (1 - covered) / shots)
+
+
+def _flagged_chain(rounds, noise=0.2, unflagged=0.0, flipped=()):
+    """Return a circuit whose faults flip a T gate's sign and a direct detector.
+
+    With ``unflagged``, each round also flips the sign alone, as the else branch
+    of its fault. The flags of ``flipped`` rounds read 1 without noise.
+    """
+    lines = ["R " + " ".join(map(str, range(rounds + 1)))]
+    for r in range(rounds):
+        lines += ["H 0", "T 0", f"E({noise}) Z0 X{r + 1}"]
+        if unflagged:
+            lines.append(f"ELSE_CORRELATED_ERROR({unflagged}) Z0")
+    lines += [f"X {r + 1}" for r in flipped]
+    lines += ["H 0", "M 0"] + [f"M {r + 1}" for r in range(rounds)]
+    lines += [f"DETECTOR rec[-{r + 1}]" for r in range(rounds)]
+    lines.append(f"OBSERVABLE_INCLUDE(0) rec[-{rounds + 1}]")
+    return "\n".join(lines)
+
+
+def _picked(backend, mask=None):
+    """Return the one component's tables and keys under ``mask``."""
+    (picked,) = backend.tables(mask)
+    assert picked is not None
+    return picked
+
+
+def test_a_mask_whose_detectors_catch_the_faults_gives_tables():
+    sampler = Circuit(_flagged_chain(16)).compile_detector_sampler(seed=0)
+    backend = sampler._backend
+    assert isinstance(backend, sampler_module._StatevectorBackend)
+    mask = np.ones(sampler.circuit.num_detectors, dtype=bool)
+    assert backend.tables() == (None,)
+    tables, keys = _picked(backend, mask)
+    np.testing.assert_array_equal(keys, [0])
+    sampler.sample(1_000, postselection_mask=mask)
+    sampler.sample(1_000, postselection_mask=mask)
+    assert _picked(backend, mask) == (tables, keys) and tables.num_tables == 1
+    assert backend.tables() == (None,)
+
+
+def test_masks_share_the_tables_of_a_component():
+    sampler = Circuit(_flagged_chain(16)).compile_detector_sampler(seed=0)
+    backend = sampler._backend
+    assert isinstance(backend, sampler_module._StatevectorBackend)
+    full = np.ones(sampler.circuit.num_detectors, dtype=bool)
+    most = full.copy()
+    # NOTE: the last detector flags the fault of the first round.
+    most[-1] = False
+    tables, _ = _picked(backend, full)
+    shared, keys = _picked(backend, most)
+    assert shared is tables and keys is not None and len(keys) == 2
+    sampler.sample(1_000, postselection_mask=full)
+    sampler.sample(4_000, postselection_mask=most)
+    assert tables.num_tables == 2
+
+
+@pytest.mark.parametrize("every", [1, 2, 3])
+def test_the_passing_fault_keys_cover_their_estimate(every):
+    """Among the shots that the screen passes, the keys cover their estimate.
+
+    Every round's sign also flips without its flag, so the estimate depends on
+    the chance of the caught faults as well; it is exact for this circuit.
+    """
+    circuit = _flagged_chain(12, noise=0.1, unflagged=0.05)
+    sampler = Circuit(circuit).compile_detector_sampler(seed=1)
+    backend = sampler._backend
+    assert isinstance(backend, sampler_module._StatevectorBackend)
+    mask = np.zeros(sampler.circuit.num_detectors, dtype=bool)
+    mask[::every] = True
+    screened = backend.screened(mask, None)
+    assert len(screened) == np.count_nonzero(mask)
+    f_params = sampler._channel_sampler.sample(1 << 16)
+    f_params = f_params[~f_params[:, screened].any(axis=1)]
+    (component,) = sampler._program.components
+    assert isinstance(component, StatevectorComponent)
+    noise = sampler._channel_sampler.fire_tables
+    keys, covered = tables_module._fault_keys(
+        component, sharing_layout(component), noise, screened
+    )
+    tables = OutcomeTables(component)
+    _, _, stats = tables.sample(f_params, 0, tables.layout, keys)
+    shots = len(f_params)
+    rate = 1 - stats["lane shots"] / shots
+    assert abs(rate - covered) <= 5 * np.sqrt(covered * (1 - covered) / shots)
+
+
+@pytest.mark.parametrize("reference", [False, True])
+def test_detectors_that_read_one_without_noise_screen_only_with_a_reference(
+    reference,
+):
+    circuit = Circuit(_flagged_chain(4, flipped=(1,)))
+    sampler = circuit.compile_detector_sampler(seed=0)
+    backend = sampler._backend
+    assert isinstance(backend, sampler_module._StatevectorBackend)
+    mask = np.ones(circuit.num_detectors, dtype=bool)
+    flip = sampler._compute_reference_sample() if reference else None
+    screened = backend.screened(mask, flip)
+    assert len(screened) == (4 if reference else 3)
 
 
 def _chain(rounds, noisy_rounds):
@@ -320,7 +421,7 @@ def test_deep_narrow_trees_use_lanes(rounds, noisy_rounds):
     sampler = Circuit(_chain(rounds, noisy_rounds)).compile_sampler(seed=0)
     backend = sampler._backend
     assert isinstance(backend, sampler_module._StatevectorBackend)
-    assert backend.tables == (None,)
+    assert backend.tables() == (None,)
 
 
 def test_a_rare_outcome_keeps_its_probability_on_either_side():
@@ -355,8 +456,8 @@ def test_a_nan_norm_deviation_reaches_the_caller():
         (4, sampler._channel_sampler.signature_matrix.shape[1]), np.uint8
     )
     for keys in (None, np.ones(1, dtype=np.uint64)):
-        tables = OutcomeTables(broken, keys)
-        _, deviation, _ = tables.sample(f_params, 1, tables.layout)
+        tables = OutcomeTables(broken)
+        _, deviation, _ = tables.sample(f_params, 1, tables.layout, keys)
         assert np.isnan(deviation)
 
 
@@ -373,11 +474,10 @@ def test_samplers_with_tables_pickle_with_their_tables():
     sampler = Circuit(CIRCUITS["t_interference"]).compile_detector_sampler(seed=0)
     backend = sampler._backend
     assert isinstance(backend, sampler_module._StatevectorBackend)
-    (tables,) = backend.tables
-    assert tables is not None
+    tables, _ = _picked(backend)
     sampler.sample(1_000)
     copy = pickle.loads(pickle.dumps(sampler))  # noqa: S301
-    (copied,) = copy._backend.tables
+    copied, _ = _picked(copy._backend)
     assert copied.num_tables == tables.num_tables > 0
     assert copy.sample(1_000).shape == (1_000, sampler.circuit.num_detectors)
 
@@ -428,3 +528,19 @@ def test_more_than_64_outputs_and_coins_match_lanes():
     # in triples.
     for columns in ([0, 1, 65], [2, 69, 70], [30, 64, 70]):
         _assert_same_rows(got[:, columns], expected[:, columns])
+
+
+def test_postselected_samples_from_tables_match_lanes(monkeypatch):
+    circuit = Circuit(_flagged_chain(8))
+    mask = np.zeros(circuit.num_detectors, dtype=bool)
+    mask[::2] = True
+    shots = 1 << 15
+    sampler = circuit.compile_detector_sampler(seed=0)
+    backend = sampler._backend
+    assert isinstance(backend, sampler_module._StatevectorBackend)
+    assert backend.tables(mask) != (None,)
+    got = sampler.sample(shots, postselection_mask=mask, append_observables=True)
+    monkeypatch.setattr(sampler_module, "table_keys", lambda *args: None)
+    lanes = circuit.compile_detector_sampler(seed=1)
+    expected = lanes.sample(shots, postselection_mask=mask, append_observables=True)
+    _assert_same_rows(got, expected)

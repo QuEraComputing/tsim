@@ -190,6 +190,27 @@ def coherent_surface_code(
     return "\n".join(lines)
 
 
+def force_tables(monkeypatch, keys: np.ndarray | None = None) -> None:
+    """Give every shared statevector component tables for ``keys``, or every key."""
+    import tsim.sampler as sampler_module
+    from tsim.statevector.program import StatevectorComponent
+    from tsim.statevector.tables import OutcomeTables
+
+    stores: dict[tuple[int, int], OutcomeTables] = {}
+
+    def tables(self, mask=None, flip=None):
+        picks = []
+        for index, component in enumerate(self._program.components):
+            if not (self._share and isinstance(component, StatevectorComponent)):
+                picks.append(None)
+                continue
+            store = stores.setdefault((id(self), index), OutcomeTables(component))
+            picks.append((store, keys))
+        return tuple(picks)
+
+    monkeypatch.setattr(sampler_module._StatevectorBackend, "tables", tables)
+
+
 def quantum_components(
     text: str, *, sample_detectors: bool
 ) -> tuple[list[Graph], ParamLayout]:

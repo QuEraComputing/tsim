@@ -1,7 +1,7 @@
 """trajectory_sharing=True end to end, against the stabilizer-rank strategy."""
 
 from test.helpers.gen import gen_stim_circuit
-from test.helpers.statevector import CIRCUITS, assert_counts_match
+from test.helpers.statevector import CIRCUITS, assert_counts_match, force_tables
 
 import numpy as np
 import pytest
@@ -9,7 +9,6 @@ import pytest
 import tsim.sampler as sampler_module
 import tsim.utils.kernels as kernels
 from tsim.circuit import Circuit
-from tsim.statevector.tables import OutcomeTables
 
 # NOTE: t_ghz plus a direct detector (detector 2); t_ghz's random detectors give
 # reference bits of 1 for some seeds.
@@ -71,14 +70,11 @@ def mode(request, monkeypatch):
     ``mixed`` gives only the key of no fault a table, so that shots with other
     keys take lanes.
     """
-    keys = {"tables": None, "mixed": np.zeros(1, dtype=np.uint64)}
-
-    def tables(component, noise):
-        if request.param == "lanes":
-            return None
-        return OutcomeTables(component, keys[request.param])
-
-    monkeypatch.setattr(sampler_module, "outcome_tables", tables)
+    if request.param == "lanes":
+        monkeypatch.setattr(sampler_module, "table_keys", lambda *args: None)
+    else:
+        keys = {"tables": None, "mixed": np.zeros(1, dtype=np.uint64)}
+        force_tables(monkeypatch, keys[request.param])
     return request.param
 
 
@@ -478,7 +474,7 @@ def test_direct_outputs_land_in_their_columns(name, rows):
 
 
 def test_masks_of_component_detectors_alone_prune_lanes(monkeypatch):
-    monkeypatch.setattr(sampler_module, "outcome_tables", lambda *args: None)
+    monkeypatch.setattr(sampler_module, "table_keys", lambda *args: None)
     sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(
         strategy="active_statevector", seed=1
     )
