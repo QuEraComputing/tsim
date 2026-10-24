@@ -110,9 +110,11 @@ def _record_noise(sampler) -> Iterator[Callable[[], np.ndarray]]:
         order.append(seeds.tobytes())
         return seeds
 
-    def record_sample(n: int, seeds: np.ndarray | None = None) -> np.ndarray:
+    def record_sample(
+        n: int, seeds: np.ndarray | None = None, out: np.ndarray | None = None
+    ) -> np.ndarray:
         assert seeds is not None
-        batch = sample(n, seeds)
+        batch = sample(n, seeds, out)
         drawn[seeds.tobytes()] = batch.copy()
         return batch
 

@@ -664,7 +664,10 @@ class ChannelSampler:
         return self._rng.integers(0, 2**64, size=num_blocks, dtype=np.uint64)
 
     def sample(
-        self, num_samples: int = 1, seeds: np.ndarray | None = None
+        self,
+        num_samples: int = 1,
+        seeds: np.ndarray | None = None,
+        out: np.ndarray | None = None,
     ) -> np.ndarray:
         """Sample from all error channels and transform to new error basis.
 
@@ -677,6 +680,8 @@ class ChannelSampler:
             num_samples: Number of samples to draw.
             seeds: The blocks' seeds from ``block_seeds(num_samples)``; drawn
                 here if ``None``.
+            out: A uint8 array of shape (num_samples, num_f) to write into, or
+                ``None`` for a new one.
 
         Returns:
             NumPy array of shape (num_samples, num_f) with uint8 values indicating
@@ -684,7 +689,11 @@ class ChannelSampler:
 
         """
         num_f = self.signature_matrix.shape[1]
-        result = np.empty((num_samples, num_f), dtype=np.uint8)
+        result = np.empty((num_samples, num_f), dtype=np.uint8) if out is None else out
+        if result.shape != (num_samples, num_f) or result.dtype != np.uint8:
+            raise ValueError(
+                f"out must be a uint8 array of shape {(num_samples, num_f)}"
+            )
         if seeds is None:
             seeds = self.block_seeds(num_samples)
         num_blocks = -(-num_samples // _BLOCK_SHOTS)

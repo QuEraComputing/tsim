@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import warnings
 from collections import deque
 from math import ceil, inf
@@ -612,6 +613,22 @@ class _StatevectorBackend:
         return np.concatenate(batches)
 
 
+_SCRATCH = threading.local()
+
+
+def _scratch(rows: int, columns: int) -> np.ndarray:
+    """Return this thread's reusable uint8 buffer of shape ``(rows, columns)``.
+
+    The first write to each page of a new array faults, and the kernel serves
+    those faults one at a time across threads, so batches reuse their thread's
+    buffer instead of allocating one each.
+    """
+    buffer = getattr(_SCRATCH, "buffer", None)
+    if buffer is None or buffer.shape[0] < rows or buffer.shape[1] != columns:
+        buffer = _SCRATCH.buffer = np.empty((rows, columns), dtype=np.uint8)
+    return buffer[:rows]
+
+
 def _check_sizes(shots: int, batch_size: int | None) -> None:
     if shots < 0:
         raise ValueError(f"shots must be non-negative, got {shots}")
@@ -879,9 +896,15 @@ class _CompiledSamplerBase:
             for index in range(num_batches)
         ]
 
+        num_f = self._channel_sampler.signature_matrix.shape[1]
+        # NOTE: JAX may read a host buffer after the call returns, so only the
+        # numba backend, which is done with it, reuses the buffers.
+        reuse = isinstance(backend, _StatevectorBackend)
+
         def sample_batch(task: tuple) -> jax.Array | np.ndarray:
             index, block_seeds, seed = task
-            f_params = self._channel_sampler.sample(batch_size, block_seeds)
+            out = _scratch(batch_size, num_f) if reuse else None
+            f_params = self._channel_sampler.sample(batch_size, block_seeds, out)
             if compute_reference and index == 0:
                 f_params[0] = 0
             return backend.sample(f_params, seed)
@@ -946,7 +969,10 @@ class _CompiledSamplerBase:
             """Write the direct detectors of the chunk at ``start``; return its survivors."""
             start, block_seeds = task
             stop = min(start + chunk, shots)
-            f_params = self._channel_sampler.sample(stop - start, block_seeds)
+            # NOTE: the survivors are copied out before the buffer is reused.
+            f_params = self._channel_sampler.sample(
+                stop - start, block_seeds, _scratch(stop - start, num_f)
+            )
             discarded = _write_direct_detectors(
                 (stop - start) * len(columns),
                 f_params,
