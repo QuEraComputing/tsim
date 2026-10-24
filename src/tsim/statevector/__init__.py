@@ -5,7 +5,8 @@ measurements in the frame of the initial ``|0…0⟩`` state (``pbc``),
 reordered to keep the dense array small (``schedule``), planned on a fixed
 number of array axes (``plan``), lowered to NumPy arrays (``program``) and run
 by numba kernels on the CPU, with shots that share a history on one lane
-(``shared``). As in Clifft [1], the dense array only spans the active qubits.
+(``shared``), on shot words that the noise sampler writes (``shots``). As in
+Clifft [1], the dense array only spans the active qubits.
 
 References:
     [1] B. A. Chase, F. Labib, "Clifft: Fast Exact Simulation of Near-Clifford

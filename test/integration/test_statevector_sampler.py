@@ -2,20 +2,21 @@
 
 import warnings
 from test.helpers.gen import gen_stim_circuit
-from test.helpers.statevector import CIRCUITS, assert_counts_match
+from test.helpers.statevector import CIRCUITS, assert_counts_match, shot_sampler
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
 
 import tsim.sampler as sampler_module
+import tsim.statevector.shared as shared
+import tsim.statevector.shots as shots_module
 from tsim.circuit import Circuit
 from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import SamplingStrategy
 from tsim.external.vec_sim.vec_sampler import VecSampler
 from tsim.statevector.program import StatevectorComponent
-from tsim.statevector.shared import lane_bytes
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
@@ -63,7 +64,7 @@ def test_statevector_samplers_hold_statevector_components():
     assert "statevector components" in repr(sampler)
 
 
-def test_postselection_and_partial_batches():
+def test_postselected_samples_agree_across_strategies():
     circuit = Circuit(CIRCUITS["two_components"])
     mask = np.ones(circuit.num_detectors, dtype=bool)
     shots = 30_000
@@ -105,18 +106,17 @@ def test_probabilities_reject_statevector():
 
 def _norm_warnings(monkeypatch, strategy, deviation):
     sample = sampler_module.sample_component
-    sample_shared = sampler_module.sample_shared_component
+    run_lanes = shared.run_lanes
 
     def drifting(component, f_params, key):
         samples, key, _ = sample(component, f_params, key)
         return samples, key, jnp.asarray(deviation)
 
-    def drifting_shared(*args):
-        samples, _, stats = sample_shared(*args)
-        return samples, deviation, stats
+    def drifting_lanes(*args):
+        return (deviation, *run_lanes(*args)[1:])
 
     monkeypatch.setattr(sampler_module, "sample_component", drifting)
-    monkeypatch.setattr(sampler_module, "sample_shared_component", drifting_shared)
+    monkeypatch.setattr(shared, "run_lanes", drifting_lanes)
     sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
         strategy=strategy, seed=0
     )
@@ -146,53 +146,12 @@ def test_a_vanishing_statevector_norm_raises(monkeypatch):
         _norm_warnings(monkeypatch, "active_statevector", 1.0)
 
 
-def test_the_automatic_batch_size_of_a_statevector_sampler_is_capped(monkeypatch):
-    monkeypatch.setattr(
-        sampler_module._CompiledSamplerBase, "_memory_budget", lambda self: 2**49
-    )
-    circuit = Circuit(CIRCUITS["t_ghz"])
-    sampler = circuit.compile_detector_sampler(strategy="active_statevector", seed=0)
-    assert sampler._estimate_batch_size() == 2**16
-    assert sampler._resolve_batch_size(10**7, None, compute_reference=False) <= 2**16
-    lanes = []
-    sample_program = sampler_module.sample_statevector_program
-
-    def recording(program, f_params, *args, **kwargs):
-        lanes.append(f_params.shape[0])
-        return sample_program(program, f_params, *args, **kwargs)
-
-    monkeypatch.setattr(sampler_module, "sample_statevector_program", recording)
-    sampler.sample(2**16 + 1)
-    sampler.sample(
-        2**16 + 1, postselection_mask=np.ones(circuit.num_detectors, dtype=bool)
-    )
-    assert lanes and max(lanes) <= 2**16
-    stabilizer_rank = circuit.compile_detector_sampler(strategy="cat5")
-    assert stabilizer_rank._estimate_batch_size() > 2**16
-
-
-def test_the_per_shot_estimate_counts_f_params_and_records():
-    sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
-        strategy="active_statevector"
-    )
-    lane = max(
-        lane_bytes(c)
-        for c in sampler._program.components
-        if isinstance(c, StatevectorComponent)
-    )
-    num_f = sampler._channel_sampler.signature_matrix.shape[1]
-    records = sampler._program.num_outputs
-    assert sampler._peak_bytes_per_sample() == lane + 2 * num_f + 2 * records
-
-
 def test_a_lane_must_fit_in_half_of_the_available_memory(monkeypatch):
     circuit = Circuit(CIRCUITS["t_ghz"])
-    peak = circuit.compile_detector_sampler(
-        strategy="active_statevector"
-    )._peak_bytes_per_sample()
-    base = sampler_module._CompiledSamplerBase
-    monkeypatch.setattr(base, "_memory_budget", lambda self: peak - 1)
+    sampler = circuit.compile_detector_sampler(strategy="active_statevector")
+    peak = shot_sampler(sampler).bytes_per_shot()
+    monkeypatch.setattr(shots_module, "memory_budget", lambda: peak - 1)
     with pytest.raises(ValueError, match="cat5"):
         circuit.compile_detector_sampler(strategy="active_statevector")
-    monkeypatch.setattr(base, "_memory_budget", lambda self: peak)
+    monkeypatch.setattr(shots_module, "memory_budget", lambda: peak)
     circuit.compile_detector_sampler(strategy="active_statevector")

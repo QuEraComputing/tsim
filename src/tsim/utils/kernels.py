@@ -78,8 +78,9 @@ def kernel(function: Callable) -> Callable:
 
     ``work`` estimates the call's cost in simple operations; calls below
     ``PARALLEL_WORK`` run serially, and so do calls on the worker threads of
-    ``run_tasks``. In the serial compilation every ``numba.prange`` is a plain
-    range, so both compute the same result.
+    ``run_tasks`` and calls while numba has one thread. In the serial
+    compilation every ``numba.prange`` is a plain range, so both compute the
+    same result.
     """
     serial = jit(function)
     # NOTE: numba names its cache files after the function, so the parallel
@@ -87,7 +88,11 @@ def kernel(function: Callable) -> Callable:
     parallel = jit(_renamed(function, "_prange"), parallel=True)
 
     def run(work: int, *args):
-        if work < PARALLEL_WORK or getattr(_TASK_THREAD, "active", False):
+        if (
+            work < PARALLEL_WORK
+            or getattr(_TASK_THREAD, "active", False)
+            or numba.get_num_threads() == 1
+        ):
             return serial(*args)
         with _LOCK:
             return parallel(*args)

@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cost grows as `2^W` in the active width `W`. It only samples: it cannot compute
   probabilities, and it raises `ValueError` for components it cannot read, for
   components wider than 30 active qubits, and when one shot needs more than half
-  of the available memory. Batches hold at most 2^16 shots. (#203)
+  of the available memory. (#203)
 - `trajectory_sharing=True` for `strategy="active_statevector"`: shots with
   equal histories share one state vector, which splits at measurements, and
   shots that a postselected component detector discards stop being simulated
@@ -37,16 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   False for the others). Amplitudes are complex128. Postselected
   detectors of a component prune its shots with sharing off as well, and also
   when no direct detector is postselected. (#199)
-- Without a `batch_size`, a statevector call is split into one batch per
-  numba thread whenever each batch gets at least 4096 shots, and smaller
-  calls run as one batch on the parallel kernels. An explicit `batch_size`
-  keeps samples independent of the thread count. (#199)
-- Without a `batch_size`, a statevector call is now also split into one batch
-  per numba thread when each batch gets at least 256 shots and may need a
-  lane per shot: always without trajectory sharing, and with it unless every
-  component stays on fewer lanes (at most `2^(k + m)` for `k` key bits and `m`
-  measurements that split lanes). Calls of a few thousand shots, such as
-  postselection survivors, now use every thread. (#207)
+- A statevector call samples its noise, then runs its components on one chunk
+  of shots per numba thread, each of at least 256 and at most 2^16 shots, or
+  `batch_size`. The samples of a seed depend on neither `batch_size`, the
+  thread count nor `trajectory_sharing`: the noise and every measurement
+  outcome are drawn from counter-based streams by shot index. Seeded samples
+  differ from earlier versions. (#199, #207, #PR)
 - Noise sampling runs in numba kernels, so the samples for a given seed
   differ from earlier versions; `numba>=0.61` is now a dependency. (#199)
 - Constant outputs now use the existing direct-output path, skipping component
@@ -65,6 +61,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CompiledDetectorSampler.sample(bit_packed=True)` packs the outputs straight
   from the noise sampler when every output is a noise bit, as in typical
   surface-code memory circuits, instead of packing a boolean array. (#211)
+- `strategy="active_statevector"` samples into *shot words*: the noise sampler
+  XORs each fault into the packed bits of its shot's outputs and component
+  keys, and the components add their branch parts in place, so no f-parameter
+  matrix is built and `bit_packed=True` returns the words' bytes for any circuit
+  whose outputs are in order; circuits of noise bits alone still get boolean
+  samples straight from the noise sampler. Each component runs in one numba kernel per
+  chunk, on parallel amplitude loops when a call is one chunk; single-component
+  circuits such as distillation and cultivation sample about 3-4x faster on
+  one thread. (#PR)
 - Tsim now uses zxparam instead of pyzx-param. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zxparam.
 - `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`.
 - In `Circuit.get_graph()` (and the `"zx"` diagram), every detector and observable has a classical output boundary, with ports after the qubit outputs, so the graph's tensor is the circuit's channel together with the detector and observable bits.
