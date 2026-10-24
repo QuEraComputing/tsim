@@ -91,8 +91,11 @@ MIN_LANE_BATCH = 2**8
 # this many, several chunks per thread at a time, so that calls of a few batches
 # still keep every thread busy and slow cores take fewer chunks.
 SCREEN_SHOTS = 2**14
-# NOTE: the fused shot kernel splits a call into about this many chunks.
+# NOTE: the fused shot kernel splits a call into about this many chunks, of at
+# most FUSED_SHOTS shots and FUSED_BYTES of shot states each.
 FUSED_CHUNKS = 16
+FUSED_SHOTS = 2**16
+FUSED_BYTES = 2**22
 SCREEN_CHUNKS_PER_THREAD = 2
 
 
@@ -1184,11 +1187,12 @@ class _CompiledSamplerBase:
         layout = fused[0]
         screen = backend.screened(mask, flip).tobytes()
         result = np.empty((shots, self._program.num_outputs), dtype=np.bool_)
-        # NOTE: about FUSED_CHUNKS chunks of whole noise blocks, from one block to
-        # SCREEN_SHOTS shots: enough tasks for the threads, few enough that their
-        # Python work stays small. The chunks depend only on the call.
-        blocks = -(-shots // (FUSED_CHUNKS * _BLOCK_SHOTS))
-        chunk = min(max(1, blocks) * _BLOCK_SHOTS, SCREEN_SHOTS)
+        # NOTE: about FUSED_CHUNKS chunks of whole noise blocks: enough tasks for
+        # the threads, few and large enough that their Python work, which runs
+        # under the GIL, stays small. The chunks depend only on the call.
+        blocks = max(1, -(-shots // (FUSED_CHUNKS * _BLOCK_SHOTS)))
+        fit = max(1, FUSED_BYTES // (8 * layout.words * _BLOCK_SHOTS))
+        chunk = min(blocks, fit, FUSED_SHOTS // _BLOCK_SHOTS) * _BLOCK_SHOTS
         if batch_size is not None:
             chunk = min(chunk, batch_size)
         noise = self._channel_sampler.fire_tables
