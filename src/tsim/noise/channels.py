@@ -17,6 +17,9 @@ from tsim.utils.rng import next_skip, next_uniform
 # from its own random stream; a block's rows stay in cache while every channel
 # visits them.
 _BLOCK_SHOTS = 4096
+# NOTE: a block of f rows up to this size stays in a core's cache, so its
+# faults are XOR-ed in channel by channel instead of being sorted by row first.
+_CACHED_BYTES = 2**18
 
 
 @dataclass
@@ -803,14 +806,37 @@ def _block_faults(rows, state, p_fire, outcome_start, cdf, fault_row, fault_outc
 
 
 @jit
+def _xor_faults(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols):
+    """XOR every channel's faults into the rows of ``out``, channel by channel."""
+    for c in range(len(p_fire)):
+        log_keep = np.log1p(-p_fire[c])
+        first, last = outcome_start[c], outcome_start[c + 1]
+        row = -1.0
+        while True:
+            state, skip = next_skip(state, log_keep)
+            row += 1.0 + skip
+            if row >= out.shape[0]:
+                break
+            state, u = next_uniform(state)
+            k = first + np.searchsorted(cdf[first:last], u, side="right")
+            for j in range(flip_start[k], flip_start[k + 1]):
+                out[int(row), flip_cols[j]] ^= 1
+
+
+@jit
 def _sample_block(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols):
     """Write the rows of ``out`` from the stream ``state``.
 
-    The faults are drawn channel by channel, then sorted by row, so that each
-    row is built from its own faults while it is in cache: rows far apart in a
-    block miss the cache when channels XOR into them in turn.
+    A block that fits in cache takes each channel's faults in turn. A larger
+    one draws them first, then sorts them by row, so that each row is built
+    from its own faults while it is in cache: rows far apart in a block miss
+    the cache when channels XOR into them in turn. Both give the same rows.
     """
     rows = out.shape[0]
+    if out.size <= _CACHED_BYTES:
+        out[:] = 0
+        _xor_faults(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols)
+        return
     expected = rows * np.sum(p_fire)
     capacity = int(expected + 8 * np.sqrt(expected)) + 64
     while True:
