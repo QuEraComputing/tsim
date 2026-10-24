@@ -41,6 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   postselection stops a shot at the output that discards it. A component whose
   trees still build more than 0.3 nodes per shot after their first call returns
   to lanes.
+- A fused shot kernel for `strategy="active_statevector"`: when every
+  statevector component samples from outcome tables or trees, each fault's
+  effect on the direct outputs and on each component's key, outputs and f-bits
+  is folded at compile time, and a chunk of shots draws its noise straight into
+  a few 64-bit words per shot, screens it, writes its direct outputs and
+  samples its survivors in one task. No f matrix is built and survivors are
+  not buffered. Seeded samples differ from before; their distribution is the
+  same.
 
 ### Changed
 - The samplers now default to `strategy="active_statevector"`; pass

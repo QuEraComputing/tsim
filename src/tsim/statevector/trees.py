@@ -32,6 +32,7 @@ change. Links store an id plus one, so that zero means missing.
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from typing import NamedTuple
 
 import numba
@@ -50,12 +51,12 @@ from tsim.statevector.shared import (
     _TINY,
     SharingLayout,
     _chunks,
-    _pack_range,
     _parity,
     _project_range,
     _rotate_range,
     _unpack,
     _weights_range,
+    packed_symbols,
     sharing_layout,
 )
 from tsim.statevector.tables import _packed, _streams, _worse
@@ -235,6 +236,16 @@ class OutcomeTrees:
         return sum(array.nbytes for array in self._arrays)
 
     @property
+    def key_columns(self) -> np.ndarray:
+        """Return the key bits that each of the component's f-bits flips."""
+        return self._key_columns
+
+    @property
+    def output_columns(self) -> np.ndarray:
+        """Return the outputs that each of the component's f-bits flips, packed."""
+        return self._output_columns
+
+    @property
     def num_nodes(self) -> int:
         """Return the number of nodes built so far."""
         return int(self._counts[_NODES])
@@ -297,19 +308,47 @@ class OutcomeTrees:
             parked shots.
 
         """
-        tape = self.component.tape
-        shots = f_params.shape[0]
-        output_words = self._output_columns.shape[1]
-        threads = numba.get_num_threads()
+        selection = self.component.tape.f_selection
         shot_keys, f_patterns = _shot_keys(
-            shots * (len(tape.f_selection) + 1),
+            f_params.shape[0] * (len(selection) + 1),
             f_params,
-            tape.f_selection,
+            selection,
             self._key_columns,
             self._output_columns,
             kernels.PARALLEL_WORK,
-            threads,
+            numba.get_num_threads(),
         )
+
+        def symbols_of(rows: np.ndarray) -> np.ndarray:
+            return packed_symbols(
+                len(rows) * len(selection),
+                f_params[rows],
+                selection,
+                self.component.num_words,
+                kernels.PARALLEL_WORK,
+                numba.get_num_threads(),
+            )
+
+        return self.sample_keyed(shot_keys, f_patterns, symbols_of, seed, layout)
+
+    def sample_keyed(
+        self,
+        shot_keys: np.ndarray,
+        f_patterns: np.ndarray,
+        symbols_of: Callable[[np.ndarray], np.ndarray],
+        seed: int,
+        layout: SharingLayout,
+    ) -> tuple[np.ndarray, float, dict]:
+        """Sample one batch from each shot's key and its f-bits' output pattern.
+
+        ``shot_keys`` has shape ``(B, key_words)`` and ``f_patterns`` ``(B,
+        words)``; ``symbols_of(rows)`` returns the packed f-bits
+        (``packed_symbols``) of the shots ``rows``, which new roots need.
+        Otherwise as ``sample``.
+        """
+        shots = f_patterns.shape[0]
+        output_words = self._output_columns.shape[1]
+        threads = numba.get_num_threads()
         postselected = layout.prune_first | layout.prune_outputs.any(axis=0)
         checks = np.flatnonzero(postselected)
         checks = checks[np.argsort(layout.ready[checks], kind="stable")]
@@ -367,7 +406,7 @@ class OutcomeTrees:
                 active,
                 need,
                 shot_keys,
-                f_params,
+                symbols_of,
                 (depth, patterns, ptr, checks, layout.ready, draws),
             )
             deviation = _worse(deviation, expanded[0])
@@ -390,7 +429,7 @@ class OutcomeTrees:
         active: np.ndarray,
         need: np.ndarray,
         shot_keys: np.ndarray,
-        f_params: np.ndarray,
+        symbols_of: Callable[[np.ndarray], np.ndarray],
         walks: tuple,
     ) -> tuple[float, int]:
         """Build what the ``active`` shots need; return the deviation and nodes built.
@@ -412,8 +451,7 @@ class OutcomeTrees:
         bits = np.concatenate([children & 1, np.zeros(len(rooted), np.int64)])
         shots = np.concatenate([child_shots, rooted])
         tape, component = self.component.tape, self.component
-        key_symbols = np.zeros((len(shots), component.num_words), np.uint32)
-        _pack_range(f_params[shots], tape.f_selection, key_symbols, 0, len(shots))
+        key_symbols = symbols_of(shots)
         starts = np.zeros((len(shots), 1 << component.width), np.complex128)
         has_state = np.zeros(len(shots), dtype=np.bool_)
         with self._lock:

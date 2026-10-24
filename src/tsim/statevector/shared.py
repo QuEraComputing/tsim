@@ -476,10 +476,11 @@ def _output_range(
 
 
 @kernel
-def _execute(f, tape, layout, width, seed, share, parallel_work, threads, poison):
+def _execute(symbols, tape, layout, width, seed, share, parallel_work, threads, poison):
     """Sample one batch of shots with shared trajectories.
 
-    ``tape`` is a ``Tape`` and ``layout`` a ``SharingLayout``. Lanes are rows
+    ``symbols`` holds each shot's f-bits, packed as lanes hold them, ``tape`` is
+    a ``Tape`` and ``layout`` a ``SharingLayout``. Lanes are rows
     ``0 … size-1`` of arrays with a row per shot (every lane holds a shot), but
     the amplitudes grow as lanes split. Each loop runs in chunks across threads
     once its work reaches ``parallel_work``.
@@ -489,33 +490,28 @@ def _execute(f, tape, layout, width, seed, share, parallel_work, threads, poison
 
     """
     # NOTE: numba's parallel loops cannot read the fields of a named tuple.
-    selection, output_row = tape.f_selection, tape.output_row
+    output_row = tape.output_row
     output_const, ready = layout.output_const, layout.ready
     key_rows, lane_branches, shot_dormant = (
         layout.key_rows,
         layout.lane_branches,
         layout.shot_dormant,
     )
-    shots, num_words = f.shape[0], lane_branches.shape[0]
+    shots, num_words = symbols.shape[0], lane_branches.shape[0]
     num_actions = tape.kind.shape[0]
     # NOTE: SplitMix64 counts up from its state, so seeds that differ by a few
     # GOLDEN steps would share outputs; their mixed output starts a fresh stream.
     _, state = splitmix64(np.uint64(seed))
 
-    symbols = np.zeros((shots, num_words), dtype=np.uint32)
     num_key_words = (key_rows.shape[0] + 31) >> 5 if share else 0
     keys = np.zeros((shots, num_key_words), dtype=np.uint32)
-    key_work = key_rows.size if share else 0
-    chunks = _chunks(shots * (len(selection) + key_work), parallel_work, threads)
-    if chunks == 1:
-        _pack_range(f, selection, symbols, 0, shots)
-        if share:
+    if share:
+        chunks = _chunks(shots * key_rows.size, parallel_work, threads)
+        if chunks == 1:
             _key_range(symbols, key_rows, keys, 0, shots)
-    else:
-        for c in numba.prange(chunks):
-            lo, hi = shots * c // chunks, shots * (c + 1) // chunks
-            _pack_range(f, selection, symbols, lo, hi)
-            if share:
+        else:
+            for c in numba.prange(chunks):
+                lo, hi = shots * c // chunks, shots * (c + 1) // chunks
                 _key_range(symbols, key_rows, keys, lo, hi)
     if share:
         order, start, count, state = _group(keys, state)
@@ -783,9 +779,34 @@ def sample_shared_component(
 
     """
     f = np.asarray(f_params)
-    samples, deviation, groups, peak, lanes, dead = _execute(
-        f.shape[0] << component.width,
+    selection = component.tape.f_selection
+    symbols = packed_symbols(
+        f.shape[0] * len(selection),
         f,
+        selection,
+        component.num_words,
+        kernels.PARALLEL_WORK,
+        numba.get_num_threads(),
+    )
+    return sample_shared_symbols(component, layout, symbols, seed, share)
+
+
+def sample_shared_symbols(
+    component: StatevectorComponent,
+    layout: SharingLayout,
+    symbols: np.ndarray,
+    seed: int,
+    share: bool = True,
+) -> tuple[np.ndarray, float, dict]:
+    """Sample one component's outputs from its shots' packed f-bits.
+
+    ``symbols`` holds bit ``j`` of the component's f-bits in word ``j // 32``,
+    shape ``(B, num_words)``, as ``packed_symbols`` returns them; otherwise as
+    ``sample_shared_component``.
+    """
+    samples, deviation, groups, peak, lanes, dead = _execute(
+        symbols.shape[0] << component.width,
+        symbols,
         component.tape,
         layout,
         component.width,
@@ -797,3 +818,18 @@ def sample_shared_component(
     )
     stats = {"groups": groups, "peak lanes": peak, "lanes": lanes, "dead": dead}
     return samples, float(deviation), stats
+
+
+@kernel
+def packed_symbols(f, selection, num_words, parallel_work, threads):
+    """Return each shot's f-bits of ``selection``, bit ``j`` in word ``j // 32``."""
+    shots = f.shape[0]
+    symbols = np.zeros((shots, num_words), dtype=np.uint32)
+    chunks = _chunks(shots * len(selection), parallel_work, threads)
+    if chunks == 1:
+        _pack_range(f, selection, symbols, 0, shots)
+    else:
+        for c in numba.prange(chunks):
+            lo, hi = shots * c // chunks, shots * (c + 1) // chunks
+            _pack_range(f, selection, symbols, lo, hi)
+    return symbols

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from test.helpers.statevector import force_legacy
 from unittest.mock import patch
 
 import numpy as np
@@ -12,6 +13,13 @@ import stim
 
 import tsim.sampler as sampler_module
 from tsim.circuit import Circuit
+
+
+@pytest.fixture(autouse=True)
+def _legacy(monkeypatch):
+    """These tests follow the f matrix, screen and batches of the unfused path."""
+    force_legacy(monkeypatch)
+
 
 # ────────────────────────── shared circuits ──────────────────────────────────
 

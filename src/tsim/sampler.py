@@ -19,7 +19,7 @@ from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
-from tsim.noise.channels import ChannelSampler, FireTables
+from tsim.noise.channels import _BLOCK_SHOTS, ChannelSampler, FireTables
 from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
 from tsim.statevector.shared import (
     SharingLayout,
@@ -27,6 +27,14 @@ from tsim.statevector.shared import (
     lane_bytes,
     sample_shared_component,
     sharing_layout,
+)
+from tsim.statevector.shots import (
+    ShotLayout,
+    gather,
+    gather_symbols,
+    sample_shots,
+    scatter,
+    shot_layout,
 )
 from tsim.statevector.tables import OutcomeTables, table_keys
 from tsim.statevector.trees import MIN_SLOTS, OutcomeTrees
@@ -83,6 +91,8 @@ MIN_LANE_BATCH = 2**8
 # this many, several chunks per thread at a time, so that calls of a few batches
 # still keep every thread busy and slow cores take fewer chunks.
 SCREEN_SHOTS = 2**14
+# NOTE: the fused shot kernel splits a call into about this many chunks.
+FUSED_CHUNKS = 16
 SCREEN_CHUNKS_PER_THREAD = 2
 
 
@@ -538,6 +548,7 @@ class _StatevectorBackend:
         # NOTE: per screen and component, the shots of the batches in this call in
         # which some shots walked its trees, and the nodes they built.
         self._walked: dict[tuple[bytes, int], list[int]] = {}
+        self._fused: dict[tuple[bytes, bytes], tuple] = {}
         self._lock = threading.Lock()
         self.sharing_stats: deque[dict] = deque(maxlen=10_000)
 
@@ -610,6 +621,117 @@ class _StatevectorBackend:
     def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
         self._lock = threading.Lock()
+
+    def fused(
+        self, mask: np.ndarray | None, flip: np.ndarray | None
+    ) -> tuple[ShotLayout, ComponentPlans, tuple[SharingLayout, ...]] | None:
+        """Return the shot layout, plans and layouts for the fused kernel, if any.
+
+        The fused kernel needs noise to fold, and every statevector component on
+        tables or trees: lanes share within a batch, and the kernel's batches
+        are small.
+        """
+        program = self._program
+        if not len(self._noise.p_fire) or not program.components:
+            return None
+        plans = self.plans(mask, flip)
+        if any(plan is None for plan in plans):
+            return None
+        layouts, direct_flips = self.layouts(mask, flip)
+        key = (self.screened(mask, flip).tobytes(), direct_flips.tobytes())
+        cached = self._fused.get(key)
+        if cached is not None and cached[1] is plans:
+            return cached
+        columns = []
+        for component, plan in zip(program.components, plans, strict=True):
+            assert isinstance(component, StatevectorComponent) and plan is not None
+            engine = plan.tables if plan.tables is not None else plan.trees
+            assert engine is not None
+            key_columns = engine.key_columns
+            columns.append(
+                (
+                    np.asarray(component.tape.f_selection),
+                    component.num_words,
+                    key_columns.reshape(
+                        len(key_columns), -1 if key_columns.size else 1
+                    ),
+                    engine.output_columns,
+                )
+            )
+        num_f = 1 + max(
+            int(self._noise.flip_cols.max(initial=-1)),
+            int(program.direct_f_indices.max(initial=-1)),
+            *(int(selection.max(initial=-1)) for selection, *_ in columns),
+        )
+        layout = shot_layout(
+            self._noise,
+            num_f,
+            program.direct_f_indices,
+            direct_flips,
+            program.output_order[: len(program.direct_f_indices)],
+            program.num_outputs,
+            self._num_detectors,
+            mask,
+            columns,
+        )
+        fused = (layout, plans, layouts)
+        self._fused[key] = fused
+        return fused
+
+    def sample_components(
+        self,
+        fused: tuple[ShotLayout, ComponentPlans, tuple[SharingLayout, ...]],
+        state: np.ndarray,
+        survivors: np.ndarray,
+        out: np.ndarray,
+        seed: int,
+        screen: bytes,
+    ) -> None:
+        """Sample the components of the ``survivors`` from their shot states.
+
+        Writes their outputs into the rows ``survivors`` of ``out``.
+        """
+        layout, plans, layouts = fused
+        program = self._program
+        for index, (component, plan, words, component_layout) in enumerate(
+            zip(program.components, plans, layout.components, layouts, strict=True)
+        ):
+            assert isinstance(component, StatevectorComponent)
+            assert plan is not None and words is not None
+            component_seed = (seed + index * int(GOLDEN)) % 2**64
+            keys = gather(state, survivors, words.key, words.key_words)
+            patterns = gather(state, survivors, words.pattern, words.pattern_words)
+
+            def symbols_of(
+                chosen: np.ndarray, words=words, num_words=component.num_words
+            ) -> np.ndarray:
+                return gather_symbols(
+                    state, survivors[chosen], words.symbols, num_words
+                )
+
+            if plan.tables is not None:
+                samples, deviation, stats = plan.tables.sample_keyed(
+                    keys,
+                    patterns,
+                    symbols_of,
+                    component_seed,
+                    component_layout,
+                    plan.keys,
+                )
+            else:
+                assert plan.trees is not None
+                samples, deviation, stats = plan.trees.sample_keyed(
+                    keys, patterns, symbols_of, component_seed, component_layout
+                )
+            self.sharing_stats.append(stats)
+            if "tree shots" in stats:
+                with self._lock:
+                    counts = self._walked.setdefault((screen, index), [0, 0])
+                    counts[0] += len(survivors)
+                    counts[1] += stats["nodes built"]
+            _check_norm(deviation, component.norm_warning_threshold)
+            columns = np.asarray(component.output_indices, dtype=np.int64)
+            scatter(out, survivors, columns, samples)
 
     def finish_call(self) -> None:
         """Move to lanes the trees that built too many nodes per shot in this call.
@@ -996,6 +1118,10 @@ class _CompiledSamplerBase:
                 reference = self._compute_reference_sample()
                 return samples, reference
             return samples
+        if not compute_reference:
+            fused = self._sample_fused(shots, batch_size, None, None)
+            if fused is not None:
+                return fused
 
         # NOTE: with a reference sample the batch size grows by one when the
         # batches would hold exactly ``shots``, so that the first batch's
@@ -1036,6 +1162,75 @@ class _CompiledSamplerBase:
             return result, reference
         return result
 
+    def _sample_fused(
+        self,
+        shots: int,
+        batch_size: int | None,
+        mask: np.ndarray | None,
+        flip: np.ndarray | None,
+    ) -> np.ndarray | None:
+        """Sample with the fused shot kernel, or return None if it doesn't apply.
+
+        Each chunk of shots draws its noise into packed shot states, writes its
+        direct outputs, and samples its survivors' components from their states,
+        in one task: no f matrix is built and no survivors wait for a batch.
+        """
+        backend = self._backend
+        if not isinstance(backend, _StatevectorBackend):
+            return None
+        fused = backend.fused(mask, flip)
+        if fused is None:
+            return None
+        layout = fused[0]
+        screen = backend.screened(mask, flip).tobytes()
+        result = np.empty((shots, self._program.num_outputs), dtype=np.bool_)
+        # NOTE: about FUSED_CHUNKS chunks of whole noise blocks, from one block to
+        # SCREEN_SHOTS shots: enough tasks for the threads, few enough that their
+        # Python work stays small. The chunks depend only on the call.
+        blocks = -(-shots // (FUSED_CHUNKS * _BLOCK_SHOTS))
+        chunk = min(max(1, blocks) * _BLOCK_SHOTS, SCREEN_SHOTS)
+        if batch_size is not None:
+            chunk = min(chunk, batch_size)
+        noise = self._channel_sampler.fire_tables
+        tasks = [
+            (
+                start,
+                self._channel_sampler.block_seeds(min(chunk, shots - start)),
+                backend.next_seed(),
+            )
+            for start in range(0, shots, chunk)
+        ]
+
+        def sample_chunk(task: tuple) -> None:
+            start, block_seeds, seed = task
+            stop = min(start + chunk, shots)
+            state = _scratch(stop - start, 8 * layout.words).view(np.uint64)
+            out = result[start:stop]
+            discarded = sample_shots(
+                len(out) * (len(noise.p_fire) // _BLOCK_SHOTS + layout.words + 1),
+                out,
+                state,
+                block_seeds,
+                _BLOCK_SHOTS,
+                noise.p_fire,
+                noise.outcome_start,
+                noise.cdf,
+                layout.signature_start,
+                layout.signature_word,
+                layout.signature_bits,
+                layout.flips,
+                layout.screens,
+                layout.direct_bit,
+                layout.kept,
+            )
+            survivors = np.flatnonzero(~discarded)
+            if len(survivors):
+                backend.sample_components(fused, state, survivors, out, seed, screen)
+
+        run_tasks(sample_chunk, tasks, self._threads(chunk))
+        backend.finish_call()
+        return result
+
     def _sample_batches_with_postselection(
         self,
         shots: int,
@@ -1066,12 +1261,15 @@ class _CompiledSamplerBase:
         if shots == 0:
             return np.empty((0, num_outputs), dtype=np.bool_)
 
-        split_last = batch_size is None
-        if batch_size is None:
-            batch_size = self._estimate_batch_size()
         flip = None
         if referenced is not None:
             flip = self._compute_reference_sample() & referenced
+        fused = self._sample_fused(shots, batch_size, postselection_mask, flip)
+        if fused is not None:
+            return fused
+        split_last = batch_size is None
+        if batch_size is None:
+            batch_size = self._estimate_batch_size()
         f_indices, flips, columns = self._direct_detectors
         if flip is not None:
             flips = flips ^ flip[columns]

@@ -211,6 +211,15 @@ def force_tables(monkeypatch, keys: np.ndarray | None = None) -> None:
     monkeypatch.setattr(sampler_module._StatevectorBackend, "plans", plans)
 
 
+def force_legacy(monkeypatch) -> None:
+    """Sample without the fused shot kernel: f matrices, screens and batches."""
+    import tsim.sampler as sampler_module
+
+    monkeypatch.setattr(
+        sampler_module._StatevectorBackend, "fused", lambda self, mask, flip: None
+    )
+
+
 def force_lanes(monkeypatch) -> None:
     """Sample every statevector component on lanes."""
     import tsim.sampler as sampler_module

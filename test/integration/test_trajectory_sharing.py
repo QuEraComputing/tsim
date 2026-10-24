@@ -5,6 +5,7 @@ from test.helpers.statevector import (
     CIRCUITS,
     assert_counts_match,
     force_lanes,
+    force_legacy,
     force_tables,
     force_trees,
 )
@@ -327,6 +328,7 @@ def _recording_rows(sampler, monkeypatch) -> list[int]:
 
 
 def test_shared_postselection_samples_the_survivors_without_padding(monkeypatch):
+    force_legacy(monkeypatch)
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
     sampler = circuit.compile_detector_sampler(
         strategy="active_statevector", seed=5, trajectory_sharing=True
@@ -358,6 +360,7 @@ def test_shared_postselection_samples_the_survivors_without_padding(monkeypatch)
     ],
 )
 def test_default_batches_give_every_thread_one(sharing, shots, expected, monkeypatch):
+    force_legacy(monkeypatch)
     sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(
         strategy="active_statevector", seed=7, trajectory_sharing=sharing
     )
@@ -369,6 +372,7 @@ def test_default_batches_give_every_thread_one(sharing, shots, expected, monkeyp
 
 @pytest.mark.parametrize("sharing", [False, True])
 def test_one_thread_samples_a_call_as_one_batch(sharing, monkeypatch):
+    force_legacy(monkeypatch)
     sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(
         strategy="active_statevector", seed=7, trajectory_sharing=sharing
     )
@@ -384,6 +388,7 @@ def test_one_thread_samples_a_call_as_one_batch(sharing, monkeypatch):
 def test_shared_calls_split_when_a_batch_may_need_a_lane_per_shot(
     max_lanes, expected, monkeypatch
 ):
+    force_legacy(monkeypatch)
     sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(
         strategy="active_statevector", seed=7, trajectory_sharing=True
     )
@@ -400,6 +405,7 @@ def test_shared_calls_split_when_a_batch_may_need_a_lane_per_shot(
 def test_default_postselection_splits_the_survivors_over_the_threads(
     sharing, monkeypatch
 ):
+    force_legacy(monkeypatch)
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
     sampler = circuit.compile_detector_sampler(
         strategy="active_statevector", seed=8, trajectory_sharing=sharing
@@ -419,6 +425,7 @@ def test_default_postselection_splits_the_survivors_over_the_threads(
 def test_small_postselected_calls_split_unless_sharing_bounds_the_lanes(
     sharing, monkeypatch
 ):
+    force_legacy(monkeypatch)
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
     sampler = circuit.compile_detector_sampler(
         strategy="active_statevector", seed=8, trajectory_sharing=sharing
