@@ -15,10 +15,12 @@ import tsim.sampler as sampler_module
 from tsim.circuit import Circuit
 
 
-@pytest.fixture(autouse=True)
-def _legacy(monkeypatch):
-    """These tests follow the f matrix, screen and batches of the unfused path."""
-    force_legacy(monkeypatch)
+@pytest.fixture(params=["fused", "legacy"], autouse=True)
+def path(request, monkeypatch):
+    """Sample with the fused shot kernel where it applies, or without it."""
+    if request.param == "legacy":
+        force_legacy(monkeypatch)
+    return request.param
 
 
 # ────────────────────────── shared circuits ──────────────────────────────────
@@ -105,32 +107,21 @@ def _keep(samples: np.ndarray, mask: np.ndarray) -> np.ndarray:
 def _record_noise(sampler) -> Iterator[Callable[[], np.ndarray]]:
     """Record the noise ``sampler`` draws; yield a function returning it in shot order.
 
-    Chunks of shots are sampled on several threads, so their draws are put back
-    into shot order by the order in which their seeds were drawn.
+    Every chunk of shots draws its seeds in shot order, and the f-bits of ``n``
+    shots from ``seeds`` are ``sample(n, seeds)`` on either path, so the noise is
+    rebuilt from the seeds: the fused path draws it without an f matrix.
     """
     channel_sampler = sampler._channel_sampler
-    order: list[bytes] = []
-    drawn: dict[bytes, np.ndarray] = {}
+    drawn: list[tuple[int, np.ndarray]] = []
     block_seeds, sample = channel_sampler.block_seeds, channel_sampler.sample
 
     def record_seeds(n: int) -> np.ndarray:
         seeds = block_seeds(n)
-        order.append(seeds.tobytes())
+        drawn.append((n, seeds))
         return seeds
 
-    def record_sample(
-        n: int, seeds: np.ndarray | None = None, out: np.ndarray | None = None
-    ) -> np.ndarray:
-        assert seeds is not None
-        batch = sample(n, seeds, out)
-        drawn[seeds.tobytes()] = batch.copy()
-        return batch
-
-    with (
-        patch.object(channel_sampler, "block_seeds", side_effect=record_seeds),
-        patch.object(channel_sampler, "sample", side_effect=record_sample),
-    ):
-        yield lambda: np.concatenate([drawn[seeds] for seeds in order])
+    with patch.object(channel_sampler, "block_seeds", side_effect=record_seeds):
+        yield lambda: np.concatenate([sample(n, seeds) for n, seeds in drawn])
 
 
 # ────────────────────────── validation ───────────────────────────────────────
@@ -285,7 +276,12 @@ def test_postselection_direct_cols_always_equal_numpy():
 
 
 def _record_rows(monkeypatch, store: list[int]) -> None:
-    """Append the rows of every call to the program samplers to ``store``."""
+    """Append the rows of every call to the program samplers to ``store``.
+
+    The fused shot kernel samples its components without these, so the rows
+    are recorded on the unfused path.
+    """
+    force_legacy(monkeypatch)
     for name in ("sample_program", "sample_statevector_program"):
         original = getattr(sampler_module, name)
 

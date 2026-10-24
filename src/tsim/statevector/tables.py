@@ -176,14 +176,15 @@ class OutcomeTables:
         return len(self._store.keys)
 
     def __getstate__(self) -> dict:
-        """Return the state to pickle: all but the lock."""
+        """Return the state to pickle: all but the lock and the caches."""
         state = self.__dict__.copy()
-        del state["_lock"]
+        del state["_lock"], state["_hashes"], state["_packed_outputs"]
         return state
 
     def __setstate__(self, state: dict) -> None:
-        """Restore a pickled state with a new lock."""
+        """Restore a pickled state with a new lock and empty caches."""
         self.__dict__.update(state)
+        self._hashes, self._packed_outputs = {}, {}
         self._lock = threading.Lock()
 
     def sample(
@@ -302,6 +303,8 @@ class OutcomeTables:
         """Return the hash of the picked ``keys``, kept while ``keys`` is."""
         cached = self._hashes.get(id(keys))
         if cached is None or cached[0] is not keys:
+            if len(self._hashes) > 64:
+                self._hashes.clear()
             cached = (keys, _hashed(np.asarray(keys, np.uint64)))
             self._hashes[id(keys)] = cached
         return cached[1]
@@ -310,6 +313,8 @@ class OutcomeTables:
         """Return a layout's packed output constants and postselected outputs."""
         cached = self._packed_outputs.get(id(layout))
         if cached is None or cached[0] is not layout:
+            if len(self._packed_outputs) > 64:
+                self._packed_outputs.clear()
             postselected = layout.prune_first | layout.prune_outputs.any(axis=0)
             packed = (
                 _packed(layout.output_const[None, :])[0],

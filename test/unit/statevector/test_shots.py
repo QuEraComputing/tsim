@@ -1,4 +1,10 @@
-from test.helpers.statevector import CIRCUITS, force_legacy
+from test.helpers.statevector import (
+    CIRCUITS,
+    coherent_surface_code,
+    force_legacy,
+    force_trees,
+)
+from test.integration.test_trajectory_sharing import GHZ_WITH_DIRECT_DETECTOR
 from test.unit.statevector.test_tables import _assert_same_rows, _flagged_chain
 
 import numba
@@ -173,3 +179,142 @@ def test_fused_samples_do_not_depend_on_the_threads():
     finally:
         numba.set_num_threads(threads)
     np.testing.assert_array_equal(runs[0], runs[1])
+
+
+# NOTE: a T-gate observable and a direct detector that reads 1 without noise.
+FLIPPED_DIRECT = """
+R 0 1 2
+H 0
+T 0
+X_ERROR(0.1) 0
+H 0
+M 0
+OBSERVABLE_INCLUDE(0) rec[-1]
+X 1
+X_ERROR(0.2) 1
+M 1
+DETECTOR rec[-1]
+X_ERROR(0.2) 2
+M 2
+DETECTOR rec[-1]
+"""
+
+
+def test_a_component_detector_mask_does_not_leak_into_an_unmasked_call():
+    sampler = Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(seed=0)
+    sampler.sample(50_000, postselection_mask=np.array([True, False, False]))
+    samples = sampler.sample(50_000)
+    assert samples[samples[:, 0], 1].mean() > 0.4
+
+
+def test_a_flipped_direct_detector_mask_does_not_leak_into_an_unmasked_call():
+    sampler = Circuit(FLIPPED_DIRECT).compile_detector_sampler(seed=0)
+    sampler.sample(50_000, postselection_mask=np.array([True, False]))
+    samples = sampler.sample(50_000, append_observables=True)
+    assert samples[:, -1].mean() > 0.1
+
+
+def test_a_flipped_direct_detector_mask_applies_after_an_unmasked_call():
+    sampler = Circuit(FLIPPED_DIRECT).compile_detector_sampler(seed=0)
+    sampler.sample(50_000, append_observables=True)
+    samples = sampler.sample(
+        50_000, postselection_mask=np.array([True, False]), append_observables=True
+    )
+    assert samples[:, -1].mean() < 0.06
+
+
+def _fused_and_legacy(monkeypatch, text, sample, trees=False):
+    """Return samples of the fused and the unfused path, from different seeds.
+
+    Both use one reference sample, which is a draw when some outputs are random.
+    """
+    reference = Circuit(text).compile_detector_sampler(seed=2)
+    bits = reference._compute_reference_sample()
+    with monkeypatch.context() as patch:
+        if trees:
+            force_trees(patch)
+        fused = Circuit(text).compile_detector_sampler(seed=0)
+        fused._compute_reference_sample = lambda: bits
+        got = sample(fused)
+        assert _backend(fused).fused(None, None) is not None
+    with monkeypatch.context() as patch:
+        if trees:
+            force_trees(patch)
+        force_legacy(patch)
+        legacy = Circuit(text).compile_detector_sampler(seed=1)
+        legacy._compute_reference_sample = lambda: bits
+        expected = sample(legacy)
+    return got, expected
+
+
+@pytest.mark.parametrize("trees", [False, True])
+@pytest.mark.parametrize("name", ["two_components", "midcircuit_feedforward", "t_ghz"])
+def test_fused_samples_of_several_components_match(name, trees, monkeypatch):
+    def sample(sampler):
+        mask = np.ones(sampler.circuit.num_detectors, bool)
+        return sampler.sample(1 << 15, postselection_mask=mask, append_observables=True)
+
+    got, expected = _fused_and_legacy(monkeypatch, CIRCUITS[name], sample, trees)
+    _assert_same_rows(got, expected)
+
+
+def test_fused_samples_with_wide_keys_and_symbols_match(monkeypatch):
+    """Over 64 f-bits: multiword symbols and keys, on trees."""
+    text = coherent_surface_code(3, 3)
+
+    def sample(sampler):
+        mask = np.ones(sampler.circuit.num_detectors, bool)
+        return sampler.sample(1 << 14, postselection_mask=mask, append_observables=True)
+
+    got, expected = _fused_and_legacy(monkeypatch, text, sample, trees=True)
+    for columns in ([0, 1, 2], [-3, -2, -1], [5, 9, -1]):
+        _assert_same_rows(got[:, columns], expected[:, columns])
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"postselection_mask": np.array([True, True, False])},
+        {"postselection_mask": np.array([False, True, True])},
+        {
+            "postselection_mask": np.array([True, False, True]),
+            "use_observable_reference_sample": True,
+        },
+        {
+            "postselection_mask": np.array([False, False, True]),
+            "use_detector_reference_sample": True,
+            "batch_size": 1_000,
+        },
+    ],
+)
+def test_fused_samples_with_component_masks_and_references_match(options, monkeypatch):
+    def sample(sampler):
+        return sampler.sample(1 << 15, append_observables=True, **options)
+
+    got, expected = _fused_and_legacy(monkeypatch, GHZ_WITH_DIRECT_DETECTOR, sample)
+    _assert_same_rows(got, expected)
+
+
+@pytest.mark.parametrize("reference", [False, True])
+def test_fused_samples_with_a_flipped_direct_detector_match(reference, monkeypatch):
+    def sample(sampler):
+        return sampler.sample(
+            1 << 15,
+            postselection_mask=np.array([True, True]),
+            use_detector_reference_sample=reference,
+            append_observables=True,
+        )
+
+    got, expected = _fused_and_legacy(monkeypatch, FLIPPED_DIRECT, sample)
+    _assert_same_rows(got, expected)
+
+
+def test_fused_measurement_samples_with_small_batches_match(monkeypatch):
+    circuit = Circuit(DIRECT)
+    fused = circuit.compile_sampler(seed=0)
+    assert _backend(fused).fused(None, None) is not None
+    got = fused.sample(1 << 15, batch_size=1_000)
+    with monkeypatch.context() as patch:
+        force_legacy(patch)
+        expected = circuit.compile_sampler(seed=1).sample(1 << 15, batch_size=1_000)
+    _assert_same_rows(got, expected)

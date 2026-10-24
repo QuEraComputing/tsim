@@ -551,7 +551,7 @@ class _StatevectorBackend:
         # NOTE: per screen and component, the shots of the batches in this call in
         # which some shots walked its trees, and the nodes they built.
         self._walked: dict[tuple[bytes, int], list[int]] = {}
-        self._fused: dict[tuple[bytes, bytes], tuple] = {}
+        self._fused: dict[tuple[bytes], tuple] = {}
         self._lock = threading.Lock()
         self.sharing_stats: deque[dict] = deque(maxlen=10_000)
 
@@ -641,9 +641,11 @@ class _StatevectorBackend:
         if any(plan is None for plan in plans):
             return None
         layouts, direct_flips = self.layouts(mask, flip)
-        key = (self.screened(mask, flip).tobytes(), direct_flips.tobytes())
+        # NOTE: the layouts are cached per mask and flips, and the plans per
+        # screen; a fused layout holds both, so it is valid while both are.
+        key = (_layout_key(program.num_outputs, self._num_detectors, mask, flip),)
         cached = self._fused.get(key)
-        if cached is not None and cached[1] is plans:
+        if cached is not None and cached[1] is plans and cached[2] is layouts:
             return cached
         columns = []
         for component, plan in zip(program.components, plans, strict=True):
@@ -651,13 +653,13 @@ class _StatevectorBackend:
             engine = plan.tables if plan.tables is not None else plan.trees
             assert engine is not None
             key_columns = engine.key_columns
+            if key_columns.ndim == 1:
+                key_columns = key_columns[:, None]
             columns.append(
                 (
                     np.asarray(component.tape.f_selection),
                     component.num_words,
-                    key_columns.reshape(
-                        len(key_columns), -1 if key_columns.size else 1
-                    ),
+                    key_columns,
                     engine.output_columns,
                 )
             )
@@ -819,7 +821,7 @@ class _StatevectorBackend:
             postselected[: self._num_detectors] = mask
         flip = np.zeros(program.num_outputs, dtype=np.bool_) if flip is None else flip
         flip = np.asarray(flip, dtype=np.bool_)
-        key = postselected.tobytes() + flip.tobytes()
+        key = _layout_key(program.num_outputs, self._num_detectors, mask, flip)
         if key not in self._layouts:
             layouts = []
             for component in program.components:
@@ -866,6 +868,22 @@ def _scratch(rows: int, columns: int) -> np.ndarray:
         else:
             _SCRATCH.pop(thread, None)
         return buffer
+
+
+def _layout_key(
+    num_outputs: int,
+    num_detectors: int,
+    mask: np.ndarray | None,
+    flip: np.ndarray | None,
+) -> bytes:
+    """Return the cache key of a postselection mask and the outputs' flips."""
+    postselected = np.zeros(num_outputs, dtype=np.bool_)
+    if mask is not None:
+        postselected[:num_detectors] = mask
+    flipped = np.zeros(num_outputs, dtype=np.bool_)
+    if flip is not None:
+        flipped[:] = flip
+    return postselected.tobytes() + flipped.tobytes()
 
 
 def _check_sizes(shots: int, batch_size: int | None) -> None:
@@ -1189,7 +1207,8 @@ class _CompiledSamplerBase:
         result = np.empty((shots, self._program.num_outputs), dtype=np.bool_)
         # NOTE: about FUSED_CHUNKS chunks of whole noise blocks: enough tasks for
         # the threads, few and large enough that their Python work, which runs
-        # under the GIL, stays small. The chunks depend only on the call.
+        # under the GIL, stays small. The chunks depend on the call and the
+        # shot layout, never on the threads.
         blocks = max(1, -(-shots // (FUSED_CHUNKS * _BLOCK_SHOTS)))
         fit = max(1, FUSED_BYTES // (8 * layout.words * _BLOCK_SHOTS))
         chunk = min(blocks, fit, FUSED_SHOTS // _BLOCK_SHOTS) * _BLOCK_SHOTS
@@ -1211,7 +1230,8 @@ class _CompiledSamplerBase:
             state = _scratch(stop - start, 8 * layout.words).view(np.uint64)
             out = result[start:stop]
             discarded = sample_shots(
-                len(out) * (len(noise.p_fire) // _BLOCK_SHOTS + layout.words + 1),
+                len(out) * (len(noise.p_fire) // _BLOCK_SHOTS + layout.words + 1)
+                + len(noise.p_fire) * len(block_seeds),
                 out,
                 state,
                 block_seeds,
