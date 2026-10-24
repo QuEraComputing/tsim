@@ -6,8 +6,8 @@ from tsim.noise.channels import (
     _BLOCK_SHOTS,
     Channel,
     ChannelSampler,
+    _alias_tables,
     _fire_tables,
-    _sample_blocks,
     absorb_subset_channels,
     channel_num_bits,
     correlated_error_probs,
@@ -1281,6 +1281,49 @@ class TestChannelSampler:
         with pytest.raises(ValueError, match="block seeds"):
             sampler.sample(_BLOCK_SHOTS + 1, sampler.block_seeds(_BLOCK_SHOTS))
 
+    def test_alias_tables_give_each_outcome_its_probability(self):
+        """Each slot's own outcome and alias add up to the conditional outcome probabilities."""
+        rng = np.random.default_rng(5)
+        weights = [rng.random(n) for n in (1, 3, 7, 15)] + [np.array([1.0, 0.0, 2.0])]
+        outcome_start = np.cumsum([0] + [len(w) for w in weights])
+        cdf = np.concatenate([np.cumsum(w) / w.sum() for w in weights])
+        alias_prob, alias_index = _alias_tables(outcome_start, cdf)
+        for c, w in enumerate(weights):
+            first, last = outcome_start[c], outcome_start[c + 1]
+            count = last - first
+            got = np.zeros(count)
+            for slot in range(first, last):
+                got[slot - first] += alias_prob[slot] / count
+                got[alias_index[slot] - first] += (1 - alias_prob[slot]) / count
+            assert_allclose(got, w / w.sum(), atol=1e-15)
+
+    def test_packed_rows_are_the_uint8_rows(self):
+        """``sample_packed`` draws the rows of ``sample`` from the same seeds."""
+        probs = [
+            pauli_channel_2_probs(*([0.01] * 15)),
+            error_probs(0.2),
+            error_probs(0.05),
+        ]
+        rng = np.random.default_rng(8)
+        transform = rng.integers(0, 2, size=(70, 6), dtype=np.uint8)
+        sampler = ChannelSampler(probs, transform, seed=6)
+        num_samples = 2 * _BLOCK_SHOTS + 77
+        seeds = sampler.block_seeds(num_samples)
+        rows = sampler.sample(num_samples, seeds)
+        packed = sampler.sample_packed(num_samples, seeds)
+        assert packed.shape == (num_samples, 2) and packed.dtype == np.uint64
+        bits = np.unpackbits(packed.view(np.uint8), axis=1, bitorder="little")
+        assert np.array_equal(bits[:, : rows.shape[1]], rows)
+        assert not bits[:, rows.shape[1] :].any()
+
+    def test_zero_probability_outcomes_never_occur(self):
+        """An outcome of probability 0 is never drawn, from any alias slot."""
+        probs = np.array([0.4, 0.0, 0.35, 0.25])
+        sampler = ChannelSampler([probs], np.eye(2, dtype=np.uint8), seed=12)
+        samples = sampler.sample(200_000)
+        assert not np.any((samples[:, 0] == 1) & (samples[:, 1] == 0))
+        assert_allclose(np.mean(samples[:, 1] & ~samples[:, 0]), 0.35, rtol=0.02)
+
     def test_sampled_blocks_clear_their_rows(self):
         """Sampling overwrites whatever the output array held before."""
         probs = [error_probs(0.1), error_probs(0.2)]
@@ -1290,5 +1333,5 @@ class TestChannelSampler:
         seeds = sampler.block_seeds(num_samples)
         expected = sampler.sample(num_samples, seeds)
         out = np.ones_like(expected)
-        _sample_blocks(0, out, seeds, *sampler._tables)
+        sampler._sample_into(out, seeds, sampler._flip_tables(packed=False))
         assert np.array_equal(out, expected)

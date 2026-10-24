@@ -58,6 +58,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `strategy="active_statevector"`, graph-state stabilizers and op scheduling;
   `cultivation_d5_end2end` compiles about 2.5x faster. Compiled programs are
   unchanged. Postselection also writes direct detectors faster. (#207)
+- The noise sampler picks each fault's outcome from an alias table and takes
+  the logarithm of its geometric skips inline instead of calling libm, so it
+  draws faults faster; the sampled distribution is unchanged, but seeded
+  samples differ from earlier versions. (#PR)
+- `CompiledDetectorSampler.sample(bit_packed=True)` packs the outputs straight
+  from the noise sampler when every output is a noise bit, as in typical
+  surface-code memory circuits, instead of packing a boolean array. (#PR)
 - Tsim now uses zxparam instead of pyzx-param. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zxparam.
 - `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`.
 - In `Circuit.get_graph()` (and the `"zx"` diagram), every detector and observable has a classical output boundary, with ports after the qubit outputs, so the graph's tensor is the circuit's channel together with the detector and observable bits.
