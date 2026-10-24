@@ -12,6 +12,7 @@ from math import cos, sin
 
 import jax.numpy as jnp
 import numpy as np
+import stim
 from zxparam import Graph
 
 from tsim.circuit import Circuit
@@ -168,6 +169,46 @@ CIRCUITS: dict[str, str] = {
         OBSERVABLE_INCLUDE(0) rec[-3] rec[-1]
     """,
 }
+
+
+def coherent_surface_code(
+    distance: int, rounds: int, angle: float = 0.02, noise: float = 1e-3
+) -> str:
+    """Return a surface-code memory with an R_Z over-rotation after every CX layer."""
+    base = stim.Circuit.generated(
+        "surface_code:rotated_memory_z",
+        distance=distance,
+        rounds=rounds,
+        after_clifford_depolarization=noise,
+    )
+    lines = []
+    for line in str(base.flattened()).splitlines():
+        lines.append(line)
+        if line.startswith("CX "):
+            qubits = sorted({int(t) for t in line.split()[1:]})
+            lines.append(f"R_Z({angle}) " + " ".join(map(str, qubits)))
+    return "\n".join(lines)
+
+
+def force_tables(monkeypatch, keys: np.ndarray | None = None) -> None:
+    """Give every shared statevector component tables for ``keys``, or every key."""
+    import tsim.sampler as sampler_module
+    from tsim.statevector.program import StatevectorComponent
+    from tsim.statevector.tables import OutcomeTables
+
+    stores: dict[tuple[int, int], OutcomeTables] = {}
+
+    def tables(self, mask=None, flip=None):
+        picks = []
+        for index, component in enumerate(self._program.components):
+            if not (self._share and isinstance(component, StatevectorComponent)):
+                picks.append(None)
+                continue
+            store = stores.setdefault((id(self), index), OutcomeTables(component))
+            picks.append((store, keys))
+        return tuple(picks)
+
+    monkeypatch.setattr(sampler_module._StatevectorBackend, "tables", tables)
 
 
 def quantum_components(

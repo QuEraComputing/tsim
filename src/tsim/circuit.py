@@ -877,7 +877,9 @@ class Circuit:
                 to ``numba.get_num_threads()`` batches at once, each with its
                 own memory.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane. Defaults to True for
+                with equal histories on one lane. A component whose shots mostly
+                share a few noise patterns draws them from outcome tables instead,
+                which later calls reuse. Defaults to True for
                 ``"active_statevector"`` and False otherwise.
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If
@@ -916,7 +918,9 @@ class Circuit:
                 to ``numba.get_num_threads()`` batches at once, each with its
                 own memory.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane. Defaults to True for
+                with equal histories on one lane. A component whose shots mostly
+                share a few noise patterns draws them from outcome tables instead,
+                which later calls reuse. Defaults to True for
                 ``"active_statevector"`` and False otherwise.
             seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
                 only produce deterministic samples for fixed batch size. If

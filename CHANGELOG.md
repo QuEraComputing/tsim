@@ -26,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   equal histories share one state vector, which splits at measurements, and
   shots that a postselected component detector discards stop being simulated
   there. (#198)
+- Outcome tables for trajectory sharing: a statevector component whose shots
+  mostly share a few noise patterns (the patterns of no fault and of one fault
+  that changes a rotation sign) draws those shots' outputs from a table per
+  pattern, built the first time a batch meets the pattern and reused by every
+  later batch and call. Shots with other patterns still run on lanes. The noise
+  model decides per component and postselection mask whether the tables cost
+  less than lanes: with postselection, only the faults that no postselected
+  direct detector catches count.
 
 ### Changed
 - The samplers now default to `strategy="active_statevector"`; pass
