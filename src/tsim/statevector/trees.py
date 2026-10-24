@@ -24,7 +24,9 @@ don't depend on the threads, the parking rounds or what was built before.
 
 Readers take the store's published counts and treat ids beyond them as missing;
 one writer at a time appends nodes and edges and links them in, then publishes
-the new counts.
+the new counts. The node, edge and state arrays are allocated once, at their
+capacity, as zeros, which take no memory until written, so that they never
+grow by copying; links store an id plus one, so that zero means missing.
 """
 
 from __future__ import annotations
@@ -54,6 +56,7 @@ from tsim.statevector.shared import (
     _rotate_range,
     _unpack,
     _weights_range,
+    sample_shared_component,
     sharing_layout,
 )
 from tsim.statevector.tables import _packed, _streams, _worse
@@ -76,6 +79,10 @@ _FULL = 2.0**64 - 2.0**11
 # oldest are evicted and recomputed from the root when needed.
 _STATE_BYTES = 2**28
 _LONGEST = np.iinfo(np.int64).max
+# NOTE: the states that one round grows hold at most about this many bytes.
+_ROUND_BYTES = 2**26
+# NOTE: a store holds at most this many nodes and edges.
+_CAPACITY = 2**22
 
 
 class _Arrays(NamedTuple):
@@ -83,17 +90,18 @@ class _Arrays(NamedTuple):
 
     Attributes:
         slot_keys: Open-addressing hash of the keys, shape ``(C, key_words)``.
-        slot_roots: Root edge of each slot, MISSING if empty, shape ``(C,)``.
+        slot_roots: Root edge of each slot plus one, 0 if empty, shape ``(C,)``.
         key_symbols: Symbols of one shot of each key, shape ``(K, num_words)``.
         node_action: Measurement of each node, shape ``(N,)``.
         node_threshold: Chance of outcome 1 times 2^64, shape ``(N,)``.
-        node_child: Edge of each outcome, MISSING if not built, shape ``(N, 2)``.
+        node_child: Edge of each outcome plus one, 0 if not built, shape
+            ``(N, 2)``.
         node_weight: The measured weights of both outcomes, shape ``(N, 2)``.
         node_symbols: Symbols before the measurement, shape ``(N, num_words)``.
         node_parent: Node whose outcome leads here, -1 at a root, shape ``(N,)``.
         node_outcome: That outcome, shape ``(N,)``.
         node_key: Key of each node, shape ``(N,)``.
-        node_slot: State slot of each node, -1 if none, shape ``(N,)``.
+        node_slot: State slot of each node plus one, 0 if none, shape ``(N,)``.
         edge_pattern: Output pattern of each edge, shape ``(E, output_words)``.
         edge_next: Node at the end of each edge, END at the end of the tape,
             shape ``(E,)``.
@@ -101,7 +109,7 @@ class _Arrays(NamedTuple):
             tape's length, shape ``(E,)``.
         states: Amplitudes before the measurement of slot owners, shape
             ``(S, 2^width)``.
-        slot_owner: Node of each state slot, -1 if free, shape ``(S,)``.
+        slot_owner: Node of each state slot plus one, 0 if free, shape ``(S,)``.
 
     """
 
@@ -149,13 +157,6 @@ class _Fixed(NamedTuple):
 _NODES, _EDGES, _KEYS, _SLOTS, _EVICT = range(5)
 
 
-def _grown(array: np.ndarray, rows: int, fill: int | float = 0) -> np.ndarray:
-    """Return ``array`` with ``rows`` rows, the new ones set to ``fill``."""
-    out = np.full((rows, *array.shape[1:]), fill, dtype=array.dtype)
-    out[: len(array)] = array
-    return out
-
-
 class OutcomeTrees:
     """The outcome trees of one component, shared by every batch and call.
 
@@ -199,29 +200,36 @@ class OutcomeTrees:
         self._max_slots = max(16, min(2**20, _STATE_BYTES // (16 << component.width)))
         self._arrays = self._empty(num_words, output_words)
         self._counts = np.zeros(5, dtype=np.int64)
+        # NOTE: readers take this pair without the lock; the writer replaces it.
+        self._published = (self._arrays, self._counts.copy())
         self._lock = threading.Lock()
 
     def _empty(self, num_words: int, output_words: int) -> _Arrays:
-        rows, width = 64, self.component.width
+        rows, width = _CAPACITY, self.component.width
         return _Arrays(
             slot_keys=np.zeros((128, self.key_words), np.uint64),
-            slot_roots=np.full(128, MISSING, np.int64),
+            slot_roots=np.zeros(128, np.int64),
             key_symbols=np.zeros((rows, num_words), np.uint32),
             node_action=np.zeros(rows, np.int64),
             node_threshold=np.zeros(rows, np.uint64),
-            node_child=np.full((rows, 2), MISSING, np.int64),
+            node_child=np.zeros((rows, 2), np.int64),
             node_weight=np.zeros((rows, 2), np.float64),
             node_symbols=np.zeros((rows, num_words), np.uint32),
             node_parent=np.zeros(rows, np.int64),
             node_outcome=np.zeros(rows, np.int64),
             node_key=np.zeros(rows, np.int64),
-            node_slot=np.full(rows, -1, np.int64),
+            node_slot=np.zeros(rows, np.int64),
             edge_pattern=np.zeros((rows, output_words), np.uint64),
             edge_next=np.zeros(rows, np.int64),
             edge_last=np.zeros(rows, np.int64),
-            states=np.zeros((16, 1 << width), np.complex128),
-            slot_owner=np.full(16, -1, np.int64),
+            states=np.zeros((self._max_slots, 1 << width), np.complex128),
+            slot_owner=np.zeros(self._max_slots, np.int64),
         )
+
+    @property
+    def full(self) -> bool:
+        """Return whether the store holds half its capacity of nodes or edges."""
+        return 2 * int(max(self._counts[_NODES], self._counts[_EDGES])) > _CAPACITY
 
     @property
     def num_nodes(self) -> int:
@@ -234,14 +242,37 @@ class OutcomeTrees:
         return int(self._counts[_KEYS])
 
     def __getstate__(self) -> dict:
-        """Return the state to pickle: all but the lock."""
+        """Return the state to pickle: the used rows of the arrays, no lock."""
         state = self.__dict__.copy()
-        del state["_lock"]
+        del state["_lock"], state["_published"]
+        counts = self._counts
+        used = {"key_symbols": counts[_KEYS], "states": counts[_SLOTS]}
+        used["slot_owner"] = counts[_SLOTS]
+        for name in _Arrays._fields:
+            if name.startswith("node_"):
+                used[name] = counts[_NODES]
+            elif name.startswith("edge_"):
+                used[name] = counts[_EDGES]
+        state["_arrays"] = {
+            name: array[: used[name]] if name in used else array
+            for name, array in self._arrays._asdict().items()
+        }
         return state
 
     def __setstate__(self, state: dict) -> None:
-        """Restore a pickled state with a new lock."""
+        """Restore a pickled state into arrays at full capacity, with a new lock."""
+        used = state.pop("_arrays")
         self.__dict__.update(state)
+        output_words = self._output_columns.shape[1]
+        arrays = self._empty(self.component.num_words, output_words)
+        for name, array in used.items():
+            target = getattr(arrays, name)
+            if target.shape == array.shape:
+                arrays = arrays._replace(**{name: array.copy()})
+            else:
+                target[: len(array)] = array
+        self._arrays = arrays
+        self._published = (self._arrays, self._counts.copy())
         self._lock = threading.Lock()
 
     def sample(
@@ -275,7 +306,7 @@ class OutcomeTrees:
         postselected = layout.prune_first | layout.prune_outputs.any(axis=0)
         checks = np.flatnonzero(postselected)
         checks = checks[np.argsort(layout.ready[checks], kind="stable")]
-        draws, coins, _ = _streams(np.uint64(seed))
+        draws, coins, lanes = _streams(np.uint64(seed))
         at, outcome, depth, pruned, patterns = _start(
             shots * (output_words + len(self._coin_columns) + 1),
             f_patterns,
@@ -292,8 +323,7 @@ class OutcomeTrees:
         need = np.full(shots, _NEEDS_NOTHING, dtype=np.int64)
         deviation, built, rounds, parked = 0.0, 0, 0, 0
         while len(active):
-            with self._lock:
-                arrays, counts = self._arrays, self._counts.copy()
+            arrays, counts = self._published
             _walk(
                 len(active) * self._stride,
                 active,
@@ -326,12 +356,28 @@ class OutcomeTrees:
                 break
             rounds += 1
             parked += len(active)
-            part_deviation, part_built = self._expand(active, need, shot_keys, f_params)
-            deviation = _worse(deviation, part_deviation)
-            built += part_built
+            expanded = self._expand(
+                arrays,
+                active,
+                need,
+                shot_keys,
+                f_params,
+                (depth, patterns, ptr, checks, layout.ready, draws),
+            )
+            if expanded is None:
+                break
+            deviation = _worse(deviation, expanded[0])
+            built += expanded[1]
         samples = _outputs(
             shots * self.component.num_outputs, patterns, layout.ready, pruned
         )
+        if len(active):
+            # NOTE: a full store sends the shots still walking to lanes.
+            lane_samples, lane_deviation, _ = sample_shared_component(
+                self.component, layout, f_params[active], int(lanes)
+            )
+            samples[active] = lane_samples
+            deviation = _worse(deviation, lane_deviation)
         stats = {
             "tree shots": shots,
             "nodes": self.num_nodes,
@@ -343,70 +389,115 @@ class OutcomeTrees:
 
     def _expand(
         self,
+        arrays: _Arrays,
         active: np.ndarray,
         need: np.ndarray,
         shot_keys: np.ndarray,
         f_params: np.ndarray,
-    ) -> tuple[float, int]:
-        """Build what the ``active`` shots need; return the deviation and nodes built."""
+        walks: tuple,
+    ) -> tuple[float, int] | None:
+        """Build what the ``active`` shots need; return the deviation and nodes built.
+
+        Returns None if the store has no room for them.
+
+        Each missing edge or key grows along the path of one of the shots that
+        need it, so that a batch needs few rounds. The tape runs outside the lock,
+        on the published ``arrays`` that the shots walked, so that batches expand
+        their trees at once; the lock covers copying cached states and linking
+        in what is still missing.
+        """
+        depth, patterns, ptr, checks, ready, draws = walks
         wants = need[active]
-        children = np.unique(wants[wants >= 0])
+        children, first = np.unique(wants[wants >= 0], return_index=True)
+        child_shots = active[wants >= 0][first]
         rooted = active[wants == _NEEDS_ROOT]
         _, first = np.unique(shot_keys[rooted], axis=0, return_index=True)
         rooted = rooted[np.sort(first)]
-        tape = self.component.tape
-        symbols = np.zeros((len(rooted), self.component.num_words), dtype=np.uint32)
-        _pack_range(f_params[rooted], tape.f_selection, symbols, 0, len(rooted))
+        nodes = np.concatenate([children >> 1, np.full(len(rooted), -1)])
+        bits = np.concatenate([children & 1, np.zeros(len(rooted), np.int64)])
+        shots = np.concatenate([child_shots, rooted])
+        tape, component = self.component.tape, self.component
+        key_symbols = np.zeros((len(shots), component.num_words), np.uint32)
+        _pack_range(f_params[shots], tape.f_selection, key_symbols, 0, len(shots))
+        starts = np.zeros((len(shots), 1 << component.width), np.complex128)
+        has_state = np.zeros(len(shots), dtype=np.bool_)
         with self._lock:
-            self._reserve(len(children) + len(rooted), len(rooted))
+            missing = _gather(nodes, bits, self._arrays, starts, has_state)
+        nodes, bits, shots = nodes[missing], bits[missing], shots[missing]
+        key_symbols, starts = key_symbols[missing], starts[missing]
+        has_state, keys = has_state[missing], shot_keys[shots]
+        state_bytes = 16 << component.width
+        capacity = min(
+            len(nodes) * self._stride,
+            max(len(nodes), _ROUND_BYTES // state_bytes),
+        )
+        grown = self._rows(capacity)
+        rows, deviation = _grow(
+            nodes,
+            bits,
+            key_symbols,
+            starts,
+            has_state,
+            shots,
+            depth,
+            patterns,
+            ptr,
+            checks,
+            ready,
+            draws,
+            self._stride,
+            grown,
+            arrays,
+            tape,
+            self._fixed,
+            _NEGLIGIBLE,
+        )
+        with self._lock:
+            if not self._reserve(rows, int(np.count_nonzero(nodes < 0))):
+                return None
             before = int(self._counts[_NODES])
-            deviation = _build(
-                children >> 1,
-                children & 1,
-                shot_keys[rooted],
-                symbols,
-                tape,
-                self._fixed,
+            _link(
+                nodes,
+                bits,
+                keys,
+                key_symbols,
+                grown,
+                rows,
                 self._arrays,
                 self._counts,
-                self._max_slots,
-                _NEGLIGIBLE,
+                len(tape.kind),
             )
-            return float(deviation), int(self._counts[_NODES]) - before
+            self._published = (self._arrays, self._counts.copy())
+            built = int(self._counts[_NODES]) - before
+        return float(deviation), built
 
-    def _reserve(self, edges: int, keys: int) -> None:
-        """Make room for ``edges`` more edges and nodes and ``keys`` more keys."""
+    def _rows(self, rows: int) -> _Grown:
+        """Return empty rows for edges and nodes computed outside the store."""
+        component = self.component
+        return _Grown(
+            request=np.zeros(rows, np.int64),
+            outcome=np.zeros(rows, np.int64),
+            states=np.zeros((rows, 1 << component.width), np.complex128),
+            patterns=np.zeros((rows, self._output_columns.shape[1]), np.uint64),
+            last=np.zeros(rows, np.int64),
+            symbols=np.zeros((rows, component.num_words), np.uint32),
+            weights=np.zeros((rows, 2)),
+        )
+
+    def _reserve(self, edges: int, keys: int) -> bool:
+        """Make room for ``keys`` more keys; return whether ``edges`` more fit."""
         arrays, counts = self._arrays, self._counts
-        changes: dict[str, np.ndarray] = {}
-        nodes = counts[_NODES] + edges
-        if nodes > len(arrays.node_action):
-            rows = max(int(nodes), 2 * len(arrays.node_action))
-            for name in _Arrays._fields:
-                if name.startswith("node_"):
-                    fill = MISSING if name in ("node_child", "node_slot") else 0
-                    changes[name] = _grown(getattr(arrays, name), rows, fill)
-        if counts[_EDGES] + edges > len(arrays.edge_next):
-            rows = max(int(counts[_EDGES] + edges), 2 * len(arrays.edge_next))
-            for name in ("edge_pattern", "edge_next", "edge_last"):
-                changes[name] = _grown(getattr(arrays, name), rows)
-        if counts[_KEYS] + keys > len(arrays.key_symbols):
-            rows = max(int(counts[_KEYS] + keys), 2 * len(arrays.key_symbols))
-            changes["key_symbols"] = _grown(arrays.key_symbols, rows)
+        if counts[_NODES] + edges > _CAPACITY or counts[_EDGES] + edges > _CAPACITY:
+            return False
         capacity = len(arrays.slot_roots)
         if 2 * (counts[_KEYS] + keys) > capacity:
             while 2 * (counts[_KEYS] + keys) > capacity:
                 capacity *= 2
             slot_keys = np.zeros((capacity, self.key_words), np.uint64)
-            slot_roots = np.full(capacity, MISSING, np.int64)
+            slot_roots = np.zeros(capacity, np.int64)
             _rehash(arrays.slot_keys, arrays.slot_roots, slot_keys, slot_roots)
-            changes["slot_keys"], changes["slot_roots"] = slot_keys, slot_roots
-        slots = len(arrays.slot_owner)
-        if counts[_SLOTS] + edges > slots and slots < self._max_slots:
-            rows = min(self._max_slots, max(int(counts[_SLOTS] + edges), 2 * slots))
-            changes["states"] = _grown(arrays.states, rows)
-            changes["slot_owner"] = _grown(arrays.slot_owner, rows, -1)
-        if changes:
-            self._arrays = arrays._replace(**changes)
+            self._arrays = arrays._replace(slot_keys=slot_keys, slot_roots=slot_roots)
+        return True
 
 
 @jit
@@ -424,7 +515,7 @@ def _find(words, slot_keys, slot_roots, num_edges):
     mask = np.uint64(len(slot_roots) - 1)
     slot = _hash(words) & mask
     while True:
-        root = slot_roots[slot]
+        root = slot_roots[slot] - 1
         if root == MISSING:
             return MISSING
         if root < num_edges:
@@ -443,10 +534,10 @@ def _rehash(old_keys, old_roots, slot_keys, slot_roots):
     """Insert every key of the old hash into the new one."""
     mask = np.uint64(len(slot_roots) - 1)
     for old in range(len(old_roots)):
-        if old_roots[old] == MISSING:
+        if old_roots[old] == 0:
             continue
         slot = _hash(old_keys[old]) & mask
-        while slot_roots[slot] != MISSING:
+        while slot_roots[slot] != 0:
             slot = (slot + np.uint64(1)) & mask
         slot_keys[slot] = old_keys[old]
         slot_roots[slot] = old_roots[old]
@@ -609,7 +700,7 @@ def _walk_range(
                     _, z = splitmix64(draws + n * GOLDEN)
                     depth[s] += 1
                     outcome[s] = 1 if z < node_threshold[node] else 0
-                edge = node_child[node, outcome[s]]
+                edge = node_child[node, outcome[s]] - 1
                 if edge < 0 or edge >= num_edges:
                     need[s] = 2 * node + outcome[s]
                     break
@@ -821,16 +912,12 @@ def _take(amps, symbols, a, bit, weight, tape, fixed, pattern):
 
 
 @jit
-def _state(node, tape, fixed, arrays, amps, negligible):
-    """Write the state of ``node`` before its measurement into ``amps``.
+def _replay(node, tape, fixed, arrays, amps, negligible):
+    """Write the state of ``node`` before its measurement into ``amps[0]``.
 
-    Copies it from the node's slot, or recomputes it from the root along the
-    node's outcomes.
+    Recomputes it from the root along the node's outcomes, reading only what a
+    published node never changes.
     """
-    slot = arrays.node_slot[node]
-    if slot >= 0:
-        amps[0] = arrays.states[slot]
-        return
     path = []
     n = node
     while n >= 0:
@@ -852,8 +939,162 @@ def _state(node, tape, fixed, arrays, amps, negligible):
         a += 1
 
 
+class _Grown(NamedTuple):
+    """Edges and nodes computed outside the store, along the paths of shots.
+
+    Row ``r`` is an edge of request ``request[r]``, and unless the edge ends
+    the tape, the node it ends at. The first row of a request starts at the
+    request's node or key; every other row starts at the previous row's node.
+
+    Attributes:
+        request: Request of each row, shape ``(R,)``.
+        outcome: Outcome that starts each row's edge, shape ``(R,)``.
+        states: Each node's state before its measurement, shape ``(R, 2^width)``.
+        patterns: Each edge's output pattern, shape ``(R, output_words)``.
+        last: The action that ends each edge, shape ``(R,)``.
+        symbols: Each node's symbols, shape ``(R, num_words)``.
+        weights: Each node's measured weights, shape ``(R, 2)``.
+
+    """
+
+    request: np.ndarray
+    outcome: np.ndarray
+    states: np.ndarray
+    patterns: np.ndarray
+    last: np.ndarray
+    symbols: np.ndarray
+    weights: np.ndarray
+
+
 @jit
-def _keep(node, amps, arrays, counts, max_slots):
+def _gather(nodes, bits, arrays, states, has_state):
+    """Copy the cached states of the parents of the edges ``(nodes, bits)``.
+
+    Returns which of the edges are still missing.
+    """
+    missing = np.zeros(len(nodes), dtype=np.bool_)
+    for r in range(len(nodes)):
+        if nodes[r] < 0:
+            missing[r] = True
+            continue
+        if arrays.node_child[nodes[r], bits[r]] > 0:
+            continue
+        missing[r] = True
+        slot = arrays.node_slot[nodes[r]] - 1
+        if slot >= 0:
+            states[r] = arrays.states[slot]
+            has_state[r] = True
+    return missing
+
+
+@jit
+def _threshold(w0, w1):
+    """Return the chance of outcome 1 times 2^64, as a node stores it."""
+    one = w1 / (w0 + w1) if w0 + w1 > _TINY else 0.0
+    return np.uint64(min(one * 2.0**64, _FULL))
+
+
+@jit
+def _grow(
+    nodes,
+    bits,
+    key_symbols,
+    starts,
+    has_state,
+    shots,
+    depth,
+    patterns,
+    ptr,
+    checks,
+    ready,
+    draws,
+    stride,
+    grown,
+    arrays,
+    tape,
+    fixed,
+    negligible,
+):
+    """Build each request's missing edges along the path of one of its shots.
+
+    Request ``q`` starts at outcome ``bits[q]`` of node ``nodes[q]``, or at the
+    root of a key with symbols ``key_symbols[q]`` if the node is -1, from the
+    state ``starts[q]`` (replayed unless ``has_state[q]``). It follows the path
+    that shot ``shots[q]`` takes, drawing its outcomes from its stream as its
+    walk would, until the tape ends, the shot is discarded or the rows run out.
+
+    Returns:
+        ``(rows, deviation)``: the rows written and the largest deviation of a
+        measured norm from 1.
+
+    """
+    num_actions = len(tape.kind)
+    measured = np.zeros(3)
+    shot_pattern = np.zeros(patterns.shape[1], dtype=np.uint64)
+    rows = 0
+    for q in range(len(nodes)):
+        # NOTE: every later request keeps at least one row.
+        room = len(grown.last) - rows - (len(nodes) - 1 - q)
+        if room <= 0:
+            break
+        amps = starts[q : q + 1]
+        if nodes[q] < 0:
+            amps[0] = 0
+            amps[0, 0] = 1
+            symbols = key_symbols[q].copy()
+            a, bit = 0, 0
+        else:
+            node, bit = nodes[q], bits[q]
+            if not has_state[q]:
+                _replay(node, tape, fixed, arrays, amps, negligible)
+            symbols = arrays.node_symbols[node].copy()
+            a = arrays.node_action[node]
+        s = shots[q]
+        shot_pattern[:] = patterns[s]
+        check, d = ptr[s], depth[s]
+        first = True
+        while room > 0:
+            r = rows
+            rows += 1
+            room -= 1
+            pattern = grown.patterns[r]
+            pattern[:] = 0
+            grown.request[r], grown.outcome[r] = q, bit
+            if not first or nodes[q] >= 0:
+                weight = (
+                    arrays.node_weight[nodes[q], bit]
+                    if first
+                    else grown.weights[r - 1, bit]
+                )
+                _take(amps, symbols, a, bit, weight, tape, fixed, pattern)
+                a += 1
+            first = False
+            a = _advance(amps, symbols, a, tape, fixed, pattern, negligible, measured)
+            grown.last[r] = a
+            grown.symbols[r] = symbols
+            grown.weights[r, 0], grown.weights[r, 1] = measured[1], measured[2]
+            grown.states[r] = amps[0]
+            if a == num_actions:
+                break
+            discarded = False
+            for w in range(len(shot_pattern)):
+                shot_pattern[w] ^= pattern[w]
+            while check < len(checks) and ready[checks[check]] < a:
+                o = checks[check]
+                check += 1
+                if (shot_pattern[o >> 6] >> np.uint64(o & 63)) & np.uint64(1):
+                    discarded = True
+                    break
+            if discarded:
+                break
+            _, z = splitmix64(draws + np.uint64(s * stride + d) * GOLDEN)
+            d += 1
+            bit = 1 if z < _threshold(measured[1], measured[2]) else 0
+    return rows, measured[0]
+
+
+@jit
+def _keep(node, state, arrays, counts):
     """Keep the state of a new node in a slot, evicting the oldest if all are used."""
     if counts[_SLOTS] < len(arrays.slot_owner):
         slot = counts[_SLOTS]
@@ -861,132 +1102,86 @@ def _keep(node, amps, arrays, counts, max_slots):
     else:
         slot = counts[_EVICT] % len(arrays.slot_owner)
         counts[_EVICT] += 1
-        owner = arrays.slot_owner[slot]
+        owner = arrays.slot_owner[slot] - 1
         if owner >= 0:
-            arrays.node_slot[owner] = -1
-    arrays.states[slot] = amps[0]
-    arrays.slot_owner[slot] = node
-    arrays.node_slot[node] = slot
+            arrays.node_slot[owner] = 0
+    arrays.states[slot] = state
+    arrays.slot_owner[slot] = node + 1
+    arrays.node_slot[node] = slot + 1
 
 
 @jit
-def _emit(
-    amps,
-    symbols,
-    a,
-    pattern,
-    measured,
-    key,
-    parent,
-    bit,
-    arrays,
-    counts,
-    max_slots,
-    num_actions,
-):
-    """Append the edge that ends at action ``a`` and its node; return the edge."""
+def _append(grown, r, key, parent, arrays, counts, num_actions):
+    """Append the edge of row ``r`` and its node; return the edge and the node."""
     edge = counts[_EDGES]
     counts[_EDGES] += 1
-    arrays.edge_pattern[edge] = pattern
+    arrays.edge_pattern[edge] = grown.patterns[r]
+    a = grown.last[r]
     arrays.edge_last[edge] = a
     if a == num_actions:
         arrays.edge_next[edge] = END
-        return edge
+        return edge, -1
     node = counts[_NODES]
-    arrays.node_action[node] = a
-    w0, w1 = measured[1], measured[2]
-    one = w1 / (w0 + w1) if w0 + w1 > _TINY else 0.0
-    arrays.node_threshold[node] = np.uint64(min(one * 2.0**64, _FULL))
-    arrays.node_weight[node, 0], arrays.node_weight[node, 1] = w0, w1
-    arrays.node_symbols[node] = symbols
-    arrays.node_parent[node] = parent
-    arrays.node_outcome[node] = bit
-    arrays.node_key[node] = key
-    arrays.node_child[node, 0] = MISSING
-    arrays.node_child[node, 1] = MISSING
-    arrays.node_slot[node] = -1
-    _keep(node, amps, arrays, counts, max_slots)
-    arrays.edge_next[edge] = node
     counts[_NODES] += 1
-    return edge
+    arrays.node_action[node] = a
+    w0, w1 = grown.weights[r, 0], grown.weights[r, 1]
+    arrays.node_threshold[node] = _threshold(w0, w1)
+    arrays.node_weight[node, 0], arrays.node_weight[node, 1] = w0, w1
+    arrays.node_symbols[node] = grown.symbols[r]
+    arrays.node_parent[node] = parent
+    arrays.node_outcome[node] = grown.outcome[r]
+    arrays.node_key[node] = key
+    arrays.node_child[node, 0] = 0
+    arrays.node_child[node, 1] = 0
+    arrays.node_slot[node] = 0
+    _keep(node, grown.states[r], arrays, counts)
+    arrays.edge_next[edge] = node
+    return edge, node
 
 
 @jit
-def _build(
-    nodes, bits, keys, key_symbols, tape, fixed, arrays, counts, max_slots, negligible
-):
-    """Build the child edges ``(nodes, bits)`` and the roots of ``keys``.
+def _link(nodes, bits, keys, key_symbols, grown, rows, arrays, counts, num_actions):
+    """Append the rows of every request whose first edge is still missing.
 
-    Each new edge's node is linked last, so that a reader that finds the link
-    within the published counts finds the node and edge complete.
-
-    Returns:
-        The largest deviation of a measured norm from 1.
-
+    A link is written after its edge and node, so that a reader that finds it
+    within the published counts finds them complete.
     """
-    num_actions = len(tape.kind)
-    amps = np.zeros((1, arrays.states.shape[1]), dtype=np.complex128)
-    pattern = np.zeros(arrays.edge_pattern.shape[1], dtype=np.uint64)
-    measured = np.zeros(3)
-    for r in range(len(keys)):
-        if _find(keys[r], arrays.slot_keys, arrays.slot_roots, counts[_EDGES]) >= 0:
-            continue
-        key = counts[_KEYS]
-        counts[_KEYS] += 1
-        arrays.key_symbols[key] = key_symbols[r]
-        symbols = key_symbols[r].copy()
-        amps[0] = 0
-        amps[0, 0] = 1
-        pattern[:] = 0
-        a = _advance(amps, symbols, 0, tape, fixed, pattern, negligible, measured)
-        edge = _emit(
-            amps,
-            symbols,
-            a,
-            pattern,
-            measured,
-            key,
-            -1,
-            0,
-            arrays,
-            counts,
-            max_slots,
-            num_actions,
-        )
-        mask = np.uint64(len(arrays.slot_roots) - 1)
-        slot = _hash(keys[r]) & mask
-        while arrays.slot_roots[slot] != MISSING:
-            slot = (slot + np.uint64(1)) & mask
-        arrays.slot_keys[slot] = keys[r]
-        arrays.slot_roots[slot] = edge
-    for r in range(len(nodes)):
-        node, bit = nodes[r], bits[r]
-        if arrays.node_child[node, bit] >= 0:
-            continue
-        _state(node, tape, fixed, arrays, amps, negligible)
-        symbols = arrays.node_symbols[node].copy()
-        pattern[:] = 0
-        a = arrays.node_action[node]
-        _take(
-            amps, symbols, a, bit, arrays.node_weight[node, bit], tape, fixed, pattern
-        )
-        a = _advance(amps, symbols, a + 1, tape, fixed, pattern, negligible, measured)
-        edge = _emit(
-            amps,
-            symbols,
-            a,
-            pattern,
-            measured,
-            arrays.node_key[node],
-            node,
-            bit,
-            arrays,
-            counts,
-            max_slots,
-            num_actions,
-        )
-        arrays.node_child[node, bit] = edge
-        if arrays.node_child[node, 1 - bit] >= 0 and arrays.node_slot[node] >= 0:
-            arrays.slot_owner[arrays.node_slot[node]] = -1
-            arrays.node_slot[node] = -1
-    return measured[0]
+    r = 0
+    while r < rows:
+        q = grown.request[r]
+        end = r
+        while end < rows and grown.request[end] == q:
+            end += 1
+        node = nodes[q]
+        if node < 0:
+            if _find(keys[q], arrays.slot_keys, arrays.slot_roots, counts[_EDGES]) >= 0:
+                r = end
+                continue
+            key = counts[_KEYS]
+            counts[_KEYS] += 1
+            arrays.key_symbols[key] = key_symbols[q]
+        else:
+            if arrays.node_child[node, bits[q]] > 0:
+                r = end
+                continue
+            key = arrays.node_key[node]
+        parent = node
+        for row in range(r, end):
+            edge, child = _append(grown, row, key, parent, arrays, counts, num_actions)
+            if parent < 0:
+                mask = np.uint64(len(arrays.slot_roots) - 1)
+                slot = _hash(keys[q]) & mask
+                while arrays.slot_roots[slot] != 0:
+                    slot = (slot + np.uint64(1)) & mask
+                arrays.slot_keys[slot] = keys[q]
+                arrays.slot_roots[slot] = edge + 1
+            else:
+                bit = grown.outcome[row]
+                arrays.node_child[parent, bit] = edge + 1
+                if arrays.node_child[parent, 1 - bit] > 0:
+                    slot = arrays.node_slot[parent] - 1
+                    if slot >= 0:
+                        arrays.slot_owner[slot] = 0
+                        arrays.node_slot[parent] = 0
+            parent = child
+        r = end

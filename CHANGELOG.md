@@ -35,11 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   less than lanes: with postselection, only the faults that no postselected
   direct detector catches count.
 - Outcome trees for trajectory sharing: the shots of a statevector component
-  without an outcome table walk their key's tree of measurement outcomes, which
+  without outcome tables walk their key's tree of measurement outcomes, which
   is expanded as shots reach it and persists across batches and calls. A shot
   draws each outcome from its own random stream, so no shots are sorted, and
   postselection stops a shot at the output that discards it. A component whose
-  trees build more than one node per shot in a call returns to lanes.
+  trees still build more than 0.3 nodes per shot after their first call returns
+  to lanes.
 
 ### Changed
 - The samplers now default to `strategy="active_statevector"`; pass

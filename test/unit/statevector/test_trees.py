@@ -212,6 +212,9 @@ def test_trees_that_build_a_node_per_shot_fall_back_to_lanes(monkeypatch):
     (plan,) = backend.plans()
     assert plan is not None and plan.trees is not None
     sampler.sample(4_000)
+    # NOTE: the first call warms the trees up and doesn't count.
+    assert backend.plans() == (plan,)
+    sampler.sample(4_000)
     assert backend.plans() == (None,)
     before = plan.trees.num_nodes
     sampler.sample(4_000)

@@ -39,11 +39,11 @@ if TYPE_CHECKING:
 
     from tsim.circuit import Circuit
 
-# NOTE: a component's trees fall back to lanes after a call in which they built
-# more nodes per shot of the component than this, over at least TREE_MIN_SHOTS
-# shots. At about one node per shot, a node costs about what lanes spend per
-# shot (cultivation d=5 and d=7 and the end-to-end circuit on an M4 Pro).
-TREE_MAX_NODES_PER_SHOT = 1.0
+# NOTE: a component's trees fall back to lanes after a call, past the first
+# under its mask, in which they built more nodes per shot of the component than
+# this, over at least TREE_MIN_SHOTS shots. At about half a node per shot, trees cost about what lanes do on one
+# thread and more on several (cultivation d=5 without postselection, M4 Pro).
+TREE_MAX_NODES_PER_SHOT = 0.3
 TREE_MIN_SHOTS = 2**10
 
 
@@ -51,10 +51,10 @@ class ComponentPlan(NamedTuple):
     """How a shared statevector component samples a batch.
 
     Attributes:
-        tables: Its outcome tables, if some keys draw from them.
+        tables: Its outcome tables, if some keys draw from them; the other shots
+            run on lanes.
         keys: The keys that draw from the tables, every key if None.
-        trees: Its outcome trees, which sample the shots without a table, or
-            None for lanes.
+        trees: Its outcome trees, if it has no tables, or None for lanes.
 
     """
 
@@ -272,9 +272,8 @@ def sample_statevector_program(
         component_seed = (seed + index * int(GOLDEN)) % 2**64
         plan = None if plans is None else plans[index]
         if plan is not None and plan.tables is not None:
-            rest = None if plan.trees is None else plan.trees.sample
             samples, max_norm_deviation, stats = plan.tables.sample(
-                f_params, component_seed, layout, plan.keys, rest
+                f_params, component_seed, layout, plan.keys
             )
         elif plan is not None and plan.trees is not None:
             samples, max_norm_deviation, stats = plan.trees.sample(
@@ -503,8 +502,8 @@ class _StatevectorBackend:
 
     Up to ``numba.get_num_threads()`` batches run at once. With sharing, a
     component samples from outcome tables when the noise model says that they
-    cost less than lanes (``table_keys``), and the shots without a table walk
-    its outcome trees. The choice of tables depends on the postselection mask,
+    cost less than lanes (``table_keys``), and otherwise its shots walk its
+    outcome trees. The choice of tables depends on the postselection mask,
     since the shots that the direct detectors discard never reach a component,
     so it is made per mask; each component's tables and trees are shared by
     every mask and persist across calls. Under a mask whose trees built more
@@ -533,6 +532,7 @@ class _StatevectorBackend:
         self._trees: dict[int, OutcomeTrees] = {}
         self._plans: dict[bytes, ComponentPlans] = {}
         self._on_lanes: set[tuple[bytes, int]] = set()
+        self._warm: set[tuple[bytes, int]] = set()
         # NOTE: per screen and component, the shots of the batches in this call in
         # which some shots walked its trees, and the nodes they built.
         self._walked: dict[tuple[bytes, int], list[int]] = {}
@@ -618,7 +618,11 @@ class _StatevectorBackend:
         with self._lock:
             walked, self._walked = self._walked, {}
         for (screen, index), (shots, built) in walked.items():
-            if shots >= TREE_MIN_SHOTS and built > TREE_MAX_NODES_PER_SHOT * shots:
+            many = shots >= TREE_MIN_SHOTS and built > TREE_MAX_NODES_PER_SHOT * shots
+            warm = (screen, index) in self._warm
+            if shots >= TREE_MIN_SHOTS:
+                self._warm.add((screen, index))
+            if (many and warm) or self._trees[index].full:
                 self._on_lanes.add((screen, index))
                 self._plans.pop(screen, None)
 
@@ -645,7 +649,7 @@ class _StatevectorBackend:
                 if tables is None:
                     tables = self._stores.setdefault(index, OutcomeTables(component))
             trees = None
-            if (screen, index) not in self._on_lanes:
+            if tables is None and (screen, index) not in self._on_lanes:
                 trees = self._trees.get(index)
                 if trees is None:
                     trees = self._trees.setdefault(index, OutcomeTrees(component))
