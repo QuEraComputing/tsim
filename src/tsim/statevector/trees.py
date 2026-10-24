@@ -24,9 +24,9 @@ don't depend on the threads, the parking rounds or what was built before.
 
 Readers take the store's published counts and treat ids beyond them as missing;
 one writer at a time appends nodes and edges and links them in, then publishes
-the new counts. The node, edge and state arrays are allocated once, at their
-capacity, as zeros, which take no memory until written, so that they never
-grow by copying; links store an id plus one, so that zero means missing.
+the new counts. Arrays that run out of rows are copied into larger ones, and a
+reader keeps reading the arrays it took, whose rows below its counts don't
+change. Links store an id plus one, so that zero means missing.
 """
 
 from __future__ import annotations
@@ -56,7 +56,6 @@ from tsim.statevector.shared import (
     _rotate_range,
     _unpack,
     _weights_range,
-    sample_shared_component,
     sharing_layout,
 )
 from tsim.statevector.tables import _packed, _streams, _worse
@@ -74,15 +73,17 @@ _NEEDS_NOTHING = -2
 # NOTE: as in the tables, draws resolve 2^-64, so an outcome less likely than
 # this is never drawn: its measurement counts as certain.
 _NEGLIGIBLE = 2.0**-66
-_FULL = 2.0**64 - 2.0**11
 # NOTE: the states of nodes with a missing edge hold at most this many bytes; the
 # oldest are evicted and recomputed from the root when needed.
 _STATE_BYTES = 2**28
 _LONGEST = np.iinfo(np.int64).max
 # NOTE: the states that one round grows hold at most about this many bytes.
 _ROUND_BYTES = 2**26
-# NOTE: a store holds at most this many nodes and edges.
-_CAPACITY = 2**22
+# NOTE: the rows a store starts with; arrays double when they run out.
+_ROWS = 2**10
+# NOTE: components with fewer state slots than this run on lanes: nearly every
+# expansion would recompute its state.
+MIN_SLOTS = 64
 
 
 class _Arrays(NamedTuple):
@@ -197,7 +198,7 @@ class OutcomeTrees:
         )
         splitting = np.isin(tape.kind, (MEASURE, MEASURE_DIAG)) | layout.lane_dormant
         self._stride = int(np.count_nonzero(splitting)) + 1
-        self._max_slots = max(16, min(2**20, _STATE_BYTES // (16 << component.width)))
+        self.max_slots = max(1, min(2**20, _STATE_BYTES // (16 << component.width)))
         self._arrays = self._empty(num_words, output_words)
         self._counts = np.zeros(5, dtype=np.int64)
         # NOTE: readers take this pair without the lock; the writer replaces it.
@@ -205,31 +206,33 @@ class OutcomeTrees:
         self._lock = threading.Lock()
 
     def _empty(self, num_words: int, output_words: int) -> _Arrays:
-        rows, width = _CAPACITY, self.component.width
+        rows, width = _ROWS, self.component.width
+        # NOTE: every row is written before it is read, so the arrays start
+        # empty; a fresh state slot is never read before it is written.
         return _Arrays(
             slot_keys=np.zeros((128, self.key_words), np.uint64),
             slot_roots=np.zeros(128, np.int64),
-            key_symbols=np.zeros((rows, num_words), np.uint32),
-            node_action=np.zeros(rows, np.int64),
-            node_threshold=np.zeros(rows, np.uint64),
-            node_child=np.zeros((rows, 2), np.int64),
-            node_weight=np.zeros((rows, 2), np.float64),
-            node_symbols=np.zeros((rows, num_words), np.uint32),
-            node_parent=np.zeros(rows, np.int64),
-            node_outcome=np.zeros(rows, np.int64),
-            node_key=np.zeros(rows, np.int64),
-            node_slot=np.zeros(rows, np.int64),
-            edge_pattern=np.zeros((rows, output_words), np.uint64),
-            edge_next=np.zeros(rows, np.int64),
-            edge_last=np.zeros(rows, np.int64),
-            states=np.zeros((self._max_slots, 1 << width), np.complex128),
-            slot_owner=np.zeros(self._max_slots, np.int64),
+            key_symbols=np.empty((rows, num_words), np.uint32),
+            node_action=np.empty(rows, np.int64),
+            node_threshold=np.empty(rows, np.uint64),
+            node_child=np.empty((rows, 2), np.int64),
+            node_weight=np.empty((rows, 2), np.float64),
+            node_symbols=np.empty((rows, num_words), np.uint32),
+            node_parent=np.empty(rows, np.int64),
+            node_outcome=np.empty(rows, np.int64),
+            node_key=np.empty(rows, np.int64),
+            node_slot=np.empty(rows, np.int64),
+            edge_pattern=np.empty((rows, output_words), np.uint64),
+            edge_next=np.empty(rows, np.int64),
+            edge_last=np.empty(rows, np.int64),
+            states=np.empty((self.max_slots, 1 << width), np.complex128),
+            slot_owner=np.empty(self.max_slots, np.int64),
         )
 
     @property
-    def full(self) -> bool:
-        """Return whether the store holds half its capacity of nodes or edges."""
-        return 2 * int(max(self._counts[_NODES], self._counts[_EDGES])) > _CAPACITY
+    def nbytes(self) -> int:
+        """Return the bytes of the store's arrays."""
+        return sum(array.nbytes for array in self._arrays)
 
     @property
     def num_nodes(self) -> int:
@@ -260,18 +263,22 @@ class OutcomeTrees:
         return state
 
     def __setstate__(self, state: dict) -> None:
-        """Restore a pickled state into arrays at full capacity, with a new lock."""
+        """Restore a pickled state, with room to grow and a new lock."""
         used = state.pop("_arrays")
         self.__dict__.update(state)
         output_words = self._output_columns.shape[1]
         arrays = self._empty(self.component.num_words, output_words)
+        changes = {}
         for name, array in used.items():
             target = getattr(arrays, name)
-            if target.shape == array.shape:
-                arrays = arrays._replace(**{name: array.copy()})
-            else:
-                target[: len(array)] = array
-        self._arrays = arrays
+            if name.startswith("slot_") and name != "slot_owner":
+                changes[name] = array.copy()
+                continue
+            if len(array) > len(target):
+                target = np.empty((2 * len(array), *array.shape[1:]), array.dtype)
+            target[: len(array)] = array
+            changes[name] = target
+        self._arrays = arrays._replace(**changes)
         self._published = (self._arrays, self._counts.copy())
         self._lock = threading.Lock()
 
@@ -306,7 +313,7 @@ class OutcomeTrees:
         postselected = layout.prune_first | layout.prune_outputs.any(axis=0)
         checks = np.flatnonzero(postselected)
         checks = checks[np.argsort(layout.ready[checks], kind="stable")]
-        draws, coins, lanes = _streams(np.uint64(seed))
+        draws, coins, _ = _streams(np.uint64(seed))
         at, outcome, depth, pruned, patterns = _start(
             shots * (output_words + len(self._coin_columns) + 1),
             f_patterns,
@@ -344,7 +351,6 @@ class OutcomeTrees:
                 arrays.edge_pattern,
                 arrays.edge_next,
                 arrays.edge_last,
-                counts[_NODES],
                 counts[_EDGES],
                 draws,
                 self._stride,
@@ -364,20 +370,11 @@ class OutcomeTrees:
                 f_params,
                 (depth, patterns, ptr, checks, layout.ready, draws),
             )
-            if expanded is None:
-                break
             deviation = _worse(deviation, expanded[0])
             built += expanded[1]
         samples = _outputs(
             shots * self.component.num_outputs, patterns, layout.ready, pruned
         )
-        if len(active):
-            # NOTE: a full store sends the shots still walking to lanes.
-            lane_samples, lane_deviation, _ = sample_shared_component(
-                self.component, layout, f_params[active], int(lanes)
-            )
-            samples[active] = lane_samples
-            deviation = _worse(deviation, lane_deviation)
         stats = {
             "tree shots": shots,
             "nodes": self.num_nodes,
@@ -395,10 +392,8 @@ class OutcomeTrees:
         shot_keys: np.ndarray,
         f_params: np.ndarray,
         walks: tuple,
-    ) -> tuple[float, int] | None:
+    ) -> tuple[float, int]:
         """Build what the ``active`` shots need; return the deviation and nodes built.
-
-        Returns None if the store has no room for them.
 
         Each missing edge or key grows along the path of one of the shots that
         need it, so that a batch needs few rounds. The tape runs outside the lock,
@@ -453,8 +448,7 @@ class OutcomeTrees:
             _NEGLIGIBLE,
         )
         with self._lock:
-            if not self._reserve(rows, int(np.count_nonzero(nodes < 0))):
-                return None
+            self._reserve(rows, int(np.count_nonzero(nodes < 0)))
             before = int(self._counts[_NODES])
             _link(
                 nodes,
@@ -484,11 +478,30 @@ class OutcomeTrees:
             weights=np.zeros((rows, 2)),
         )
 
-    def _reserve(self, edges: int, keys: int) -> bool:
-        """Make room for ``keys`` more keys; return whether ``edges`` more fit."""
+    def _reserve(self, edges: int, keys: int) -> None:
+        """Make room for ``edges`` more edges and nodes and ``keys`` more keys.
+
+        Arrays that run out are copied into ones twice as large; readers keep
+        the old ones, whose rows below their counts stay valid.
+        """
         arrays, counts = self._arrays, self._counts
-        if counts[_NODES] + edges > _CAPACITY or counts[_EDGES] + edges > _CAPACITY:
-            return False
+        changes: dict[str, np.ndarray] = {}
+        for prefix, count, extra in (
+            ("node_", counts[_NODES], edges),
+            ("edge_", counts[_EDGES], edges),
+            ("key_", counts[_KEYS], keys),
+        ):
+            names = [name for name in _Arrays._fields if name.startswith(prefix)]
+            rows = len(getattr(arrays, names[0]))
+            if count + extra <= rows:
+                continue
+            while count + extra > rows:
+                rows *= 2
+            for name in names:
+                old = getattr(arrays, name)
+                new = np.empty((rows, *old.shape[1:]), dtype=old.dtype)
+                new[:count] = old[:count]
+                changes[name] = new
         capacity = len(arrays.slot_roots)
         if 2 * (counts[_KEYS] + keys) > capacity:
             while 2 * (counts[_KEYS] + keys) > capacity:
@@ -496,8 +509,9 @@ class OutcomeTrees:
             slot_keys = np.zeros((capacity, self.key_words), np.uint64)
             slot_roots = np.zeros(capacity, np.int64)
             _rehash(arrays.slot_keys, arrays.slot_roots, slot_keys, slot_roots)
-            self._arrays = arrays._replace(slot_keys=slot_keys, slot_roots=slot_roots)
-        return True
+            changes["slot_keys"], changes["slot_roots"] = slot_keys, slot_roots
+        if changes:
+            self._arrays = arrays._replace(**changes)
 
 
 @jit
@@ -675,7 +689,6 @@ def _walk_range(
     edge_pattern,
     edge_next,
     edge_last,
-    num_nodes,
     num_edges,
     draws,
     stride,
@@ -743,7 +756,6 @@ def _walk(
     edge_pattern,
     edge_next,
     edge_last,
-    num_nodes,
     num_edges,
     draws,
     stride,
@@ -772,7 +784,6 @@ def _walk(
             edge_pattern,
             edge_next,
             edge_last,
-            num_nodes,
             num_edges,
             draws,
             stride,
@@ -801,7 +812,6 @@ def _walk(
                 edge_pattern,
                 edge_next,
                 edge_last,
-                num_nodes,
                 num_edges,
                 draws,
                 stride,
@@ -989,9 +999,17 @@ def _gather(nodes, bits, arrays, states, has_state):
 
 @jit
 def _threshold(w0, w1):
-    """Return the chance of outcome 1 times 2^64, as a node stores it."""
-    one = w1 / (w0 + w1) if w0 + w1 > _TINY else 0.0
-    return np.uint64(min(one * 2.0**64, _FULL))
+    """Return the chance of outcome 1 times 2^64, as a node stores it.
+
+    The rarer outcome's chance is computed, so that either keeps its precision.
+    """
+    total = w0 + w1
+    if not total > _TINY:
+        return np.uint64(0)
+    if w1 <= w0:
+        return np.uint64(w1 / total * 2.0**64)
+    zero = np.uint64(max(w0 / total * 2.0**64, 1.0))
+    return np.uint64(0) - zero
 
 
 @jit

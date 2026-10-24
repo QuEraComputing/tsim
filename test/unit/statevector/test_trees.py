@@ -16,6 +16,7 @@ from test.unit.statevector.test_tables import (
 import numpy as np
 import pytest
 
+import tsim.sampler as sampler_module
 import tsim.statevector.trees as trees_module
 import tsim.utils.kernels as kernels
 from tsim.circuit import Circuit
@@ -86,7 +87,6 @@ def test_samples_do_not_depend_on_what_was_built_before(name, monkeypatch):
         np.testing.assert_array_equal(first, other)
         assert built["nodes built"] == fresh.num_nodes and rebuilt["nodes built"] == 0
         assert rebuilt["rounds"] == 0
-        # NOTE: with one state slot, nearly every expansion recomputes its state.
         monkeypatch.setattr(trees_module, "_STATE_BYTES", 1)
         evicting = OutcomeTrees(compiled)
         evicted, _, _ = evicting.sample(f_params, 11, evicting.layout)
@@ -200,7 +200,6 @@ def test_trees_pickle_with_their_nodes():
 
 def test_trees_that_build_a_node_per_shot_fall_back_to_lanes(monkeypatch):
     """Without repeating keys or outcomes, a call moves the component to lanes."""
-    import tsim.sampler as sampler_module
 
     monkeypatch.setattr(sampler_module, "table_keys", lambda *args: None)
     lines = ["R 0"]
@@ -222,7 +221,6 @@ def test_trees_that_build_a_node_per_shot_fall_back_to_lanes(monkeypatch):
 
 
 def test_trees_that_repeat_stay():
-    import tsim.sampler as sampler_module
 
     sampler = Circuit(coherent_surface_code(3, 3)).compile_detector_sampler(seed=0)
     backend = sampler._backend
@@ -231,3 +229,104 @@ def test_trees_that_repeat_stay():
         sampler.sample(20_000)
     (plan,) = backend.plans()
     assert plan is not None and plan.tables is None and plan.trees is not None
+
+
+@pytest.mark.parametrize("name", ["t_ghz", "midcircuit_feedforward", "rotations"])
+def test_small_arrays_that_grow_keep_the_samples(name, monkeypatch):
+    """Arrays that start with one row grow by copying; samples don't change."""
+    for planned, compiled in _compiled(name):
+        f_params = _f_params(compiled, f_patterns(planned.num_f, 4), 2_000)
+        trees = OutcomeTrees(compiled)
+        expected, _, _ = trees.sample(f_params, 3, trees.layout)
+        monkeypatch.setattr(trees_module, "_ROWS", 1)
+        small = OutcomeTrees(compiled)
+        monkeypatch.undo()
+        got, _, _ = small.sample(f_params, 3, small.layout)
+        np.testing.assert_array_equal(got, expected)
+        for i, f in enumerate(f_patterns(planned.num_f, 4)):
+            rows = got[i * 2_000 : (i + 1) * 2_000]
+            assert_matches_distribution(rows, plan_distribution(planned, f))
+
+
+@pytest.mark.parametrize("name", NAMES)
+def test_states_recomputed_from_the_root_keep_the_samples(name, monkeypatch):
+    for planned, compiled in _compiled(name):
+        f_params = _f_params(compiled, f_patterns(planned.num_f, 6), 500)
+        np.random.default_rng(5).shuffle(f_params)
+        trees = OutcomeTrees(compiled)
+        expected, _, _ = trees.sample(f_params, 13, trees.layout)
+        # NOTE: one state slot: every node but the newest is recomputed.
+        monkeypatch.setattr(trees_module, "_STATE_BYTES", 1)
+        evicting = OutcomeTrees(compiled)
+        monkeypatch.undo()
+        assert evicting.max_slots == 1
+        got, _, _ = evicting.sample(f_params, 13, evicting.layout)
+        np.testing.assert_array_equal(got, expected)
+        if evicting.num_nodes > 1:
+            assert evicting._counts[trees_module._EVICT] > 0
+
+
+def test_a_rare_outcome_keeps_its_probability_on_either_side():
+    (component,) = (
+        Circuit("R 0\nH 0\nT 0\nH 0\nM 0").compile_sampler()._program.components
+    )
+    assert isinstance(component, StatevectorComponent)
+    rotation = int(np.flatnonzero(component.tape.sin)[0])
+    for cos_rotation, sin_rotation in ((1.0, 1e-9), (1e-9, 1.0)):
+        cos, sin = component.tape.cos.copy(), component.tape.sin.copy()
+        cos[rotation], sin[rotation] = cos_rotation, sin_rotation
+        tilted = dataclasses.replace(
+            component, tape=component.tape._replace(cos=cos, sin=sin)
+        )
+        trees = OutcomeTrees(tilted)
+        trees.sample(np.zeros((1, 0), dtype=np.uint8), 0, trees.layout)
+        assert trees.num_nodes == 1
+        threshold = int(trees._arrays.node_threshold[0])
+        one = threshold / 2.0**64
+        rare = min(one, 1 - one) if one not in (0.0, 1.0) else 0.0
+        if threshold > 2**63:
+            rare = (2**64 - threshold) / 2.0**64
+        # NOTE: the threshold resolves 2^-64 on either side.
+        np.testing.assert_allclose(rare, 1e-18, rtol=0, atol=2.0**-64)
+
+
+def test_outputs_of_f_bits_alone_discard_before_the_walk():
+    """An output without branch bits is tested before the key's root, like lanes."""
+    sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(seed=0)
+    (component,) = sampler._program.components
+    assert isinstance(component, StatevectorComponent)
+    tape = component.tape
+    num_f = len(tape.f_selection)
+    assert num_f > 0
+    output_row = tape.output_row.copy()
+    # NOTE: output 0 becomes the parity of the component's first f-bit.
+    output_row[0] = 0
+    output_row[0, 0] = 1
+    changed = dataclasses.replace(component, tape=tape._replace(output_row=output_row))
+    postselected = np.zeros(changed.num_outputs, dtype=bool)
+    postselected[0] = True
+    layout = sharing_layout(changed, postselected)
+    assert layout.ready[0] == -1 and layout.prune_first[0]
+    f_params = sampler._channel_sampler.sample(1 << 15)
+    f_params[: 1 << 14, tape.f_selection[0]] = 1
+    trees = OutcomeTrees(changed)
+    got, _, _ = trees.sample(f_params, 1, layout)
+    expected, _, _ = sample_shared_component(changed, layout, f_params, 2)
+    discarded = (f_params[:, tape.f_selection[0]] != 0) ^ layout.output_const[0]
+    np.testing.assert_array_equal(got[:, 0], discarded)
+    assert not got[discarded][:, layout.ready > -1].any()
+    _assert_same_rows(got, expected)
+
+
+def test_samplers_with_trees_pickle_after_their_key_hash_grows():
+    sampler = Circuit(coherent_surface_code(3, 3)).compile_detector_sampler(seed=0)
+    sampler.sample(20_000)
+    backend = sampler._backend
+    assert isinstance(backend, sampler_module._StatevectorBackend)
+    (trees,) = backend._trees.values()
+    assert trees.num_keys > 64
+    copy = pickle.loads(pickle.dumps(sampler))  # noqa: S301
+    assert isinstance(copy._backend, sampler_module._StatevectorBackend)
+    (copied,) = copy._backend._trees.values()
+    assert copied.num_nodes == trees.num_nodes
+    np.testing.assert_array_equal(copy.sample(5_000), sampler.sample(5_000))

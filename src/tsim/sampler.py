@@ -29,7 +29,7 @@ from tsim.statevector.shared import (
     sharing_layout,
 )
 from tsim.statevector.tables import OutcomeTables, table_keys
-from tsim.statevector.trees import OutcomeTrees
+from tsim.statevector.trees import MIN_SLOTS, OutcomeTrees
 from tsim.utils.cuda_helpers import copy_d2h
 from tsim.utils.kernels import kernel, run_tasks
 from tsim.utils.rng import GOLDEN
@@ -45,6 +45,8 @@ if TYPE_CHECKING:
 # thread and more on several (cultivation d=5 without postselection, M4 Pro).
 TREE_MAX_NODES_PER_SHOT = 0.3
 TREE_MIN_SHOTS = 2**10
+# NOTE: and after a call that left its trees larger than this.
+TREE_MAX_BYTES = 2**31
 
 
 class ComponentPlan(NamedTuple):
@@ -622,7 +624,7 @@ class _StatevectorBackend:
             warm = (screen, index) in self._warm
             if shots >= TREE_MIN_SHOTS:
                 self._warm.add((screen, index))
-            if (many and warm) or self._trees[index].full:
+            if (many and warm) or self._trees[index].nbytes > TREE_MAX_BYTES:
                 self._on_lanes.add((screen, index))
                 self._plans.pop(screen, None)
 
@@ -645,14 +647,18 @@ class _StatevectorBackend:
             keys = table_keys(component, self._noise, self.screened(mask, flip))
             tables = None
             if keys is not None:
-                tables = self._stores.get(index)
-                if tables is None:
-                    tables = self._stores.setdefault(index, OutcomeTables(component))
+                with self._lock:
+                    if index not in self._stores:
+                        self._stores[index] = OutcomeTables(component)
+                    tables = self._stores[index]
             trees = None
             if tables is None and (screen, index) not in self._on_lanes:
-                trees = self._trees.get(index)
-                if trees is None:
-                    trees = self._trees.setdefault(index, OutcomeTrees(component))
+                with self._lock:
+                    if index not in self._trees:
+                        self._trees[index] = OutcomeTrees(component)
+                    trees = self._trees[index]
+                if trees.max_slots < MIN_SLOTS:
+                    trees = None
             if tables is None and trees is None:
                 picks.append(None)
                 continue
@@ -705,7 +711,11 @@ class _StatevectorBackend:
         return np.concatenate(batches)
 
 
-_SCRATCH = threading.local()
+# NOTE: the noise buffers that threads keep between batches and calls hold at
+# most this many bytes in total; larger requests get a new array each time.
+SCRATCH_BYTES = 2**28
+_SCRATCH: dict[int, np.ndarray] = {}
+_SCRATCH_LOCK = threading.Lock()
 
 
 def _scratch(rows: int, columns: int) -> np.ndarray:
@@ -713,12 +723,24 @@ def _scratch(rows: int, columns: int) -> np.ndarray:
 
     The first write to each page of a new array faults, and the kernel serves
     those faults one at a time across threads, so batches reuse their thread's
-    buffer instead of allocating one each.
+    buffer instead of allocating one each, within ``SCRATCH_BYTES``.
     """
-    buffer = getattr(_SCRATCH, "buffer", None)
-    if buffer is None or buffer.shape[0] < rows or buffer.shape[1] != columns:
-        buffer = _SCRATCH.buffer = np.empty((rows, columns), dtype=np.uint8)
-    return buffer[:rows]
+    thread = threading.get_ident()
+    with _SCRATCH_LOCK:
+        buffer = _SCRATCH.get(thread)
+        if (
+            buffer is not None
+            and buffer.shape[0] >= rows
+            and buffer.shape[1] == columns
+        ):
+            return buffer[:rows]
+        kept = sum(b.nbytes for t, b in _SCRATCH.items() if t != thread)
+        buffer = np.empty((rows, columns), dtype=np.uint8)
+        if kept + buffer.nbytes <= SCRATCH_BYTES:
+            _SCRATCH[thread] = buffer
+        else:
+            _SCRATCH.pop(thread, None)
+        return buffer
 
 
 def _check_sizes(shots: int, batch_size: int | None) -> None:
