@@ -1,4 +1,4 @@
-from test.helpers.statevector import force_tables
+from test.helpers.statevector import force_lanes, force_legacy, force_tables
 from unittest.mock import patch
 
 import numpy as np
@@ -252,7 +252,8 @@ def test_sampler_repr():
     ("shots", "expected_batch_size"),
     [(100, 25), (101, 26)],
 )
-def test_auto_batch(shots, expected_batch_size):
+def test_auto_batch(shots, expected_batch_size, monkeypatch):
+    force_legacy(monkeypatch)
     c = Circuit("""
         H 0
         M 0
@@ -321,9 +322,17 @@ def make_sampler():
     ],
 )
 def test_batch_size_with_reference(
-    make_sampler, shots, max_batch, batch_size, compute_ref, expected_bs, expected_n
+    make_sampler,
+    shots,
+    max_batch,
+    batch_size,
+    compute_ref,
+    expected_bs,
+    expected_n,
+    monkeypatch,
 ):
     """Verify batch sizes are uniform (no JIT retrace) and sized correctly."""
+    force_legacy(monkeypatch)
     sampler, mb = make_sampler(max_batch or 9999)
 
     with (
@@ -520,7 +529,7 @@ def test_a_nan_normalization_deviation_warns(tables, monkeypatch):
     if tables:
         force_tables(monkeypatch)
     else:
-        monkeypatch.setattr(sampler_module, "table_keys", lambda *args: None)
+        force_lanes(monkeypatch)
     sampler = Circuit("R 0\nH 0\nT 0\nH 0\nM 0").compile_sampler(
         strategy="active_statevector", seed=0
     )
@@ -530,14 +539,14 @@ def test_a_nan_normalization_deviation_warns(tables, monkeypatch):
         samples, _, stats = original(*args)
         return samples, float("nan"), stats
 
-    sample_tables = OutcomeTables.sample
+    sample_tables = OutcomeTables.sample_keyed
 
     def nan_table_deviation(self, *args):
         samples, _, stats = sample_tables(self, *args)
         return samples, float("nan"), stats
 
     monkeypatch.setattr(sampler_module, "sample_shared_component", nan_deviation)
-    monkeypatch.setattr(OutcomeTables, "sample", nan_table_deviation)
+    monkeypatch.setattr(OutcomeTables, "sample_keyed", nan_table_deviation)
     with pytest.warns(UserWarning, match="not normalized"):
         sampler.sample(10)
 

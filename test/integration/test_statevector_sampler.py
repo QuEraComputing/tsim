@@ -2,7 +2,7 @@
 
 import warnings
 from test.helpers.gen import gen_stim_circuit
-from test.helpers.statevector import CIRCUITS, assert_counts_match
+from test.helpers.statevector import CIRCUITS, assert_counts_match, force_legacy
 
 import jax.numpy as jnp
 import numpy as np
@@ -116,7 +116,7 @@ def _norm_warnings(monkeypatch, strategy, deviation):
         samples, _, stats = sample_shared(*args)
         return samples, deviation, stats
 
-    sample_tables = OutcomeTables.sample
+    sample_tables = OutcomeTables.sample_keyed
 
     def drifting_tables(self, *args):
         samples, _, stats = sample_tables(self, *args)
@@ -124,7 +124,7 @@ def _norm_warnings(monkeypatch, strategy, deviation):
 
     monkeypatch.setattr(sampler_module, "sample_component", drifting)
     monkeypatch.setattr(sampler_module, "sample_shared_component", drifting_shared)
-    monkeypatch.setattr(OutcomeTables, "sample", drifting_tables)
+    monkeypatch.setattr(OutcomeTables, "sample_keyed", drifting_tables)
     sampler = Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
         strategy=strategy, seed=0
     )
@@ -155,6 +155,7 @@ def test_a_vanishing_statevector_norm_raises(monkeypatch):
 
 
 def test_the_automatic_batch_size_of_a_statevector_sampler_is_capped(monkeypatch):
+    force_legacy(monkeypatch)
     monkeypatch.setattr(
         sampler_module._CompiledSamplerBase, "_memory_budget", lambda self: 2**49
     )

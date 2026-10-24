@@ -7,7 +7,6 @@ from tsim.noise.channels import (
     Channel,
     ChannelSampler,
     _fire_tables,
-    _sample_blocks,
     absorb_subset_channels,
     channel_num_bits,
     correlated_error_probs,
@@ -1290,5 +1289,12 @@ class TestChannelSampler:
         seeds = sampler.block_seeds(num_samples)
         expected = sampler.sample(num_samples, seeds)
         out = np.ones_like(expected)
-        _sample_blocks(0, out, seeds, *sampler._tables)
+        assert sampler.sample(num_samples, seeds, out) is out
         assert np.array_equal(out, expected)
+
+    def test_an_out_array_of_the_wrong_shape_raises(self):
+        sampler = ChannelSampler(
+            [error_probs(0.1)], np.ones((1, 1), dtype=np.uint8), seed=0
+        )
+        with pytest.raises(ValueError, match="out must be"):
+            sampler.sample(10, out=np.zeros((9, 1), dtype=np.uint8))

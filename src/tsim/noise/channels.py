@@ -17,6 +17,9 @@ from tsim.utils.rng import next_skip, next_uniform
 # from its own random stream; a block's rows stay in cache while every channel
 # visits them.
 _BLOCK_SHOTS = 4096
+# NOTE: a block of f rows up to this size stays in a core's cache, so its
+# faults are XOR-ed in channel by channel instead of being sorted by row first.
+_CACHED_BYTES = 2**18
 
 
 @dataclass
@@ -664,7 +667,10 @@ class ChannelSampler:
         return self._rng.integers(0, 2**64, size=num_blocks, dtype=np.uint64)
 
     def sample(
-        self, num_samples: int = 1, seeds: np.ndarray | None = None
+        self,
+        num_samples: int = 1,
+        seeds: np.ndarray | None = None,
+        out: np.ndarray | None = None,
     ) -> np.ndarray:
         """Sample from all error channels and transform to new error basis.
 
@@ -677,6 +683,8 @@ class ChannelSampler:
             num_samples: Number of samples to draw.
             seeds: The blocks' seeds from ``block_seeds(num_samples)``; drawn
                 here if ``None``.
+            out: A uint8 array of shape (num_samples, num_f) to write into, or
+                ``None`` for a new one.
 
         Returns:
             NumPy array of shape (num_samples, num_f) with uint8 values indicating
@@ -684,7 +692,11 @@ class ChannelSampler:
 
         """
         num_f = self.signature_matrix.shape[1]
-        result = np.empty((num_samples, num_f), dtype=np.uint8)
+        result = np.empty((num_samples, num_f), dtype=np.uint8) if out is None else out
+        if result.shape != (num_samples, num_f) or result.dtype != np.uint8:
+            raise ValueError(
+                f"out must be a uint8 array of shape {(num_samples, num_f)}"
+            )
         if seeds is None:
             seeds = self.block_seeds(num_samples)
         num_blocks = -(-num_samples // _BLOCK_SHOTS)
@@ -766,9 +778,36 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> FireT
 
 
 @jit
-def _sample_block(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols):
-    """Clear the rows of ``out``, then XOR in every channel's outcomes."""
-    out[:] = 0
+def _block_faults(rows, state, p_fire, outcome_start, cdf, fault_row, fault_outcome):
+    """Draw the faults of a block of ``rows`` shots, channel by channel.
+
+    Writes each fault's row and outcome; returns their count, or -1 if they
+    don't fit.
+    """
+    count = 0
+    for c in range(len(p_fire)):
+        log_keep = np.log1p(-p_fire[c])
+        first, last = outcome_start[c], outcome_start[c + 1]
+        row = -1.0
+        while True:
+            state, skip = next_skip(state, log_keep)
+            row += 1.0 + skip
+            if row >= rows:
+                break
+            state, u = next_uniform(state)
+            if count == len(fault_row):
+                return -1
+            fault_row[count] = int(row)
+            fault_outcome[count] = first + np.searchsorted(
+                cdf[first:last], u, side="right"
+            )
+            count += 1
+    return count
+
+
+@jit
+def _xor_faults(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols):
+    """XOR every channel's faults into the rows of ``out``, channel by channel."""
     for c in range(len(p_fire)):
         log_keep = np.log1p(-p_fire[c])
         first, last = outcome_start[c], outcome_start[c + 1]
@@ -782,6 +821,51 @@ def _sample_block(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols)
             k = first + np.searchsorted(cdf[first:last], u, side="right")
             for j in range(flip_start[k], flip_start[k + 1]):
                 out[int(row), flip_cols[j]] ^= 1
+
+
+@jit
+def _sample_block(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols):
+    """Write the rows of ``out`` from the stream ``state``.
+
+    A block that fits in cache takes each channel's faults in turn. A larger
+    one draws them first, then sorts them by row, so that each row is built
+    from its own faults while it is in cache: rows far apart in a block miss
+    the cache when channels XOR into them in turn. Both give the same rows.
+    """
+    rows = out.shape[0]
+    if out.size <= _CACHED_BYTES:
+        out[:] = 0
+        _xor_faults(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols)
+        return
+    expected = rows * np.sum(p_fire)
+    capacity = int(expected + 8 * np.sqrt(expected)) + 64
+    while True:
+        fault_row = np.empty(capacity, dtype=np.int64)
+        fault_outcome = np.empty(capacity, dtype=np.int64)
+        count = _block_faults(
+            rows, state, p_fire, outcome_start, cdf, fault_row, fault_outcome
+        )
+        if count >= 0:
+            break
+        capacity *= 2
+    start = np.zeros(rows + 1, dtype=np.int64)
+    for f in range(count):
+        start[fault_row[f] + 1] += 1
+    for r in range(rows):
+        start[r + 1] += start[r]
+    filled = start[:rows].copy()
+    by_row = np.empty(count, dtype=np.int64)
+    for f in range(count):
+        r = fault_row[f]
+        by_row[filled[r]] = fault_outcome[f]
+        filled[r] += 1
+    for r in range(rows):
+        row = out[r]
+        row[:] = 0
+        for i in range(start[r], start[r + 1]):
+            k = by_row[i]
+            for j in range(flip_start[k], flip_start[k + 1]):
+                row[flip_cols[j]] ^= 1
 
 
 @kernel

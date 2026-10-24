@@ -27,6 +27,7 @@ table.
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from typing import NamedTuple
 
 import numba
@@ -46,14 +47,14 @@ from tsim.statevector.shared import (
     _TINY,
     SharingLayout,
     _chunks,
-    _pack_range,
     _parity,
     _project_range,
     _rotate_range,
     _signs,
     _unpack,
     _weights_range,
-    sample_shared_component,
+    packed_symbols,
+    sample_shared_symbols,
     sharing_layout,
 )
 from tsim.utils.kernels import jit, kernel
@@ -155,7 +156,19 @@ class OutcomeTables:
         coins = np.flatnonzero(_unpack(layout.shot_dormant, num_words))
         self._coin_columns = _packed(output_bits[:, coins].T)
         self._store = _empty_store(self._output_columns.shape[1])
+        self._hashes: dict[int, tuple] = {}
+        self._packed_outputs: dict[int, tuple] = {}
         self._lock = threading.Lock()
+
+    @property
+    def key_columns(self) -> np.ndarray:
+        """Return the key bits that each of the component's f-bits flips."""
+        return self._key_columns
+
+    @property
+    def output_columns(self) -> np.ndarray:
+        """Return the outputs that each of the component's f-bits flips, packed."""
+        return self._output_columns
 
     @property
     def num_tables(self) -> int:
@@ -163,14 +176,15 @@ class OutcomeTables:
         return len(self._store.keys)
 
     def __getstate__(self) -> dict:
-        """Return the state to pickle: all but the lock."""
+        """Return the state to pickle: all but the lock and the caches."""
         state = self.__dict__.copy()
-        del state["_lock"]
+        del state["_lock"], state["_hashes"], state["_packed_outputs"]
         return state
 
     def __setstate__(self, state: dict) -> None:
-        """Restore a pickled state with a new lock."""
+        """Restore a pickled state with a new lock and empty caches."""
         self.__dict__.update(state)
+        self._hashes, self._packed_outputs = {}, {}
         self._lock = threading.Lock()
 
     def sample(
@@ -195,9 +209,8 @@ class OutcomeTables:
 
         """
         selection = self.component.tape.f_selection
-        shots, num_words = f_params.shape[0], self._output_columns.shape[1]
         shot_keys, f_patterns = _shot_keys(
-            shots * (len(selection) + 1),
+            f_params.shape[0] * (len(selection) + 1),
             f_params,
             selection,
             self._key_columns,
@@ -205,9 +218,42 @@ class OutcomeTables:
             kernels.PARALLEL_WORK,
             numba.get_num_threads(),
         )
+
+        def symbols_of(rows: np.ndarray) -> np.ndarray:
+            return packed_symbols(
+                len(rows) * len(selection),
+                f_params[rows],
+                selection,
+                self.component.num_words,
+                kernels.PARALLEL_WORK,
+                numba.get_num_threads(),
+            )
+
+        return self.sample_keyed(
+            shot_keys[:, None], f_patterns, symbols_of, seed, layout, keys
+        )
+
+    def sample_keyed(
+        self,
+        shot_keys: np.ndarray,
+        f_patterns: np.ndarray,
+        symbols_of: Callable[[np.ndarray], np.ndarray],
+        seed: int,
+        layout: SharingLayout,
+        keys: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, float, dict]:
+        """Sample one batch from each shot's key and its f-bits' output pattern.
+
+        ``shot_keys`` has shape ``(B, 1)`` and ``f_patterns`` ``(B, words)``, as
+        ``table_columns`` folds them; ``symbols_of(rows)`` returns the packed
+        f-bits (``packed_symbols``) of the shots ``rows``, which builds and lanes
+        need. Otherwise as ``sample``.
+        """
+        shot_keys = np.ascontiguousarray(shot_keys[:, 0])
+        shots, num_words = f_patterns.shape
         picked = None
         if keys is not None:
-            picked, _ = _lookup(shot_keys, *_hashed(np.asarray(keys, np.uint64)))
+            picked, _ = _lookup(shot_keys, *self._picked(keys))
         store = self._store
         tables, _ = _lookup(shot_keys, store.slot_keys, store.slot_tables)
         # NOTE: a table built for other keys is not used, so that which shots
@@ -219,11 +265,11 @@ class OutcomeTables:
         if picked is not None:
             missing = missing[picked[missing] >= 0]
         if len(missing):
-            store, deviation, built = self._add(shot_keys, f_params, missing)
+            store, deviation, built = self._add(shot_keys, symbols_of, missing)
             tables, _ = _lookup(shot_keys, store.slot_keys, store.slot_tables)
             if picked is not None:
                 tables[picked < 0] = -1
-        postselected = layout.prune_first | layout.prune_outputs.any(axis=0)
+        const, postselected = self._outputs(layout)
         draws, coins, lane_seed = _streams(np.uint64(seed))
         samples = _draw(
             shots * (num_words + self.component.num_outputs + 1),
@@ -234,8 +280,8 @@ class OutcomeTables:
             store.alias,
             store.patterns,
             self._coin_columns,
-            _packed(layout.output_const[None, :])[0],
-            _packed(postselected[None, :])[0],
+            const,
+            postselected,
             layout.ready,
             draws,
             coins,
@@ -245,16 +291,44 @@ class OutcomeTables:
         lanes = np.flatnonzero(tables < 0)
         stats = {"tables": len(store.keys), "built": built, "lane shots": len(lanes)}
         if len(lanes):
-            lane_samples, lane_deviation, lane_stats = sample_shared_component(
-                self.component, layout, f_params[lanes], int(lane_seed)
+            lane_samples, lane_deviation, lane_stats = sample_shared_symbols(
+                self.component, layout, symbols_of(lanes), int(lane_seed)
             )
             samples[lanes] = lane_samples
             deviation = _worse(deviation, lane_deviation)
             stats.update(lane_stats)
         return samples, deviation, stats
 
+    def _picked(self, keys: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Return the hash of the picked ``keys``, kept while ``keys`` is."""
+        cached = self._hashes.get(id(keys))
+        if cached is None or cached[0] is not keys:
+            if len(self._hashes) > 64:
+                self._hashes.clear()
+            cached = (keys, _hashed(np.asarray(keys, np.uint64)))
+            self._hashes[id(keys)] = cached
+        return cached[1]
+
+    def _outputs(self, layout: SharingLayout) -> tuple[np.ndarray, np.ndarray]:
+        """Return a layout's packed output constants and postselected outputs."""
+        cached = self._packed_outputs.get(id(layout))
+        if cached is None or cached[0] is not layout:
+            if len(self._packed_outputs) > 64:
+                self._packed_outputs.clear()
+            postselected = layout.prune_first | layout.prune_outputs.any(axis=0)
+            packed = (
+                _packed(layout.output_const[None, :])[0],
+                _packed(postselected[None, :])[0],
+            )
+            cached = (layout, packed)
+            self._packed_outputs[id(layout)] = cached
+        return cached[1]
+
     def _add(
-        self, keys: np.ndarray, f_params: np.ndarray, missing: np.ndarray
+        self,
+        keys: np.ndarray,
+        symbols_of: Callable[[np.ndarray], np.ndarray],
+        missing: np.ndarray,
     ) -> tuple[_Store, float, int]:
         """Build the tables of the keys of the ``missing`` shots; return the store."""
         with self._lock:
@@ -264,15 +338,15 @@ class OutcomeTables:
             if not len(missing):
                 return store, 0.0, 0
             new_keys, first = np.unique(keys[missing], return_index=True)
-            *entries, deviation = self._build(f_params[missing[first]])
+            *entries, deviation = self._build(symbols_of(missing[first]))
             store = _extended(store, new_keys, *entries)
             self._store = store
             return store, deviation, len(new_keys)
 
     def _build(
-        self, f_params: np.ndarray
+        self, symbols: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
-        """Return the tables of the keys of ``f_params``, one shot's f-bits each.
+        """Return the tables of the keys of ``symbols``, one shot's packed f-bits each.
 
         Returns:
             ``(start, threshold, alias, patterns, max_norm_deviation)`` as in
@@ -281,8 +355,6 @@ class OutcomeTables:
         """
         component, layout = self.component, self.layout
         tape = component.tape
-        symbols = np.zeros((len(f_params), component.num_words), dtype=np.uint32)
-        _pack_range(f_params, tape.f_selection, symbols, 0, len(f_params))
         splits = int(np.count_nonzero(_splitting(component, layout)))
         chunk = max(1, int(_BUILD_BYTES // (2.0**splits * _branch_bytes(component))))
         work = 2**splits * int(np.sum(1 << tape.extent.astype(np.int64)))
