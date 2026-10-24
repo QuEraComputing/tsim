@@ -10,7 +10,7 @@ from typing import NamedTuple
 import numba
 import numpy as np
 
-from tsim.utils.kernels import jit, run_tasks
+from tsim.utils.kernels import jit, kernel
 from tsim.utils.rng import next_skip, next_uniform
 
 # NOTE: shots are sampled in blocks of this many rows, in parallel, each block
@@ -702,18 +702,8 @@ class ChannelSampler:
                 f"{num_samples} samples need {num_blocks} block seeds, "
                 f"got {len(seeds)}"
             )
-        # NOTE: tasks of a few blocks, which idle threads take in turn, keep every
-        # core busy: a static split waits for the slowest core.
-        threads = numba.get_num_threads()
-        chunks = max(1, min(num_blocks, 4 * threads))
-        bounds = [num_blocks * c // chunks for c in range(chunks + 1)]
-
-        def sample_chunk(c: int) -> None:
-            lo, hi = bounds[c], bounds[c + 1]
-            rows = result[lo * _BLOCK_SHOTS : hi * _BLOCK_SHOTS]
-            _sample_blocks(rows, seeds[lo:hi], *self._tables)
-
-        run_tasks(sample_chunk, range(chunks), threads)
+        work = num_samples * len(self._tables.p_fire)
+        _sample_blocks(work, result, seeds, *self._tables)
         return result
 
 
@@ -852,9 +842,9 @@ def _sample_block(out, state, p_fire, outcome_start, cdf, flip_start, flip_cols)
                 row[flip_cols[j]] ^= 1
 
 
-@jit
+@kernel
 def _sample_blocks(out, seeds, p_fire, outcome_start, cdf, flip_start, flip_cols):
     """Sample block ``b`` of ``_BLOCK_SHOTS`` rows from the stream ``seeds[b]``."""
-    for b in range(len(seeds)):
+    for b in numba.prange(len(seeds)):
         rows = out[b * _BLOCK_SHOTS : (b + 1) * _BLOCK_SHOTS]
         _sample_block(rows, seeds[b], p_fire, outcome_start, cdf, flip_start, flip_cols)
