@@ -7,7 +7,7 @@ authors = [
     { name = "Chen Zhao", email = "czhao@quera.com" },
 ]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 keywords = [
     "quantum",
@@ -24,10 +24,10 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Physics",
     "Typing :: Typed",
 ]
@@ -112,7 +112,7 @@ src_paths = ["src/tsim"]
 
 [tool.black]
 line-length = 88
-target-version = ["py310"]
+target-version = ["py311"]
 exclude = '''
 /(
     \.eggs
@@ -129,7 +129,7 @@ exclude = '''
 '''
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 include = ["src/**/*.py", "test/**/*.py"]
 extend-exclude = ["src/tsim/external"]
 
