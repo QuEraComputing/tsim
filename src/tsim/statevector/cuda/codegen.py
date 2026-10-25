@@ -33,6 +33,14 @@ from tsim.statevector.shared import LaneProgram
 
 TINY = 1e-30
 
+CERTAIN = 1e-11
+"""Outcome weight, relative to the total, below which an outcome is impossible.
+
+float32 amplitudes leave a certain outcome's other branch a weight of ~1e-14 to
+1e-12; genuine outcome probabilities of tsim's circuits (T gates, Pauli noise,
+small-angle rotations) stay above ~1e-10.
+"""
+
 UNROLL_BUDGET = 12_000
 """Amplitude updates (local spans summed over the actions) up to which a tape unrolls.
 
@@ -419,7 +427,7 @@ def tape_function(
     )
     emit("    if (t == 0) a[0].x = 1.f;")
     emit("    int grave = 0x7fffffff;")
-    emit("    float w0, w1, total, p1, weight, scale, s; int outcome, f;")
+    emit("    float w0, w1, total, weight, scale, s; int outcome, f;")
     for a in sorted(watched):
         emit(f"    float ev_{a} = 0.f; int b_{a} = 0;")
     if p.prune_first.any():
@@ -436,10 +444,14 @@ def tape_function(
         emit("    total = w0 + w1;")
         if kind != MEASURE_DORMANT:
             emit("    if (t == 0) deviate(deviation, total);")
-        emit(f"    p1 = total > {TINY}f ? w1 / total : 0.f;")
-        emit("    if (p1 <= 0.f) outcome = 0; else if (p1 >= 1.f) outcome = 1;")
+        # NOTE: float32 rounding leaves an outcome that is certain a weight of up to
+        # ~1e-12 of the total; it counts as impossible (CERTAIN), and the others
+        # are drawn against the full 64-bit draw, as the CPU executor draws them.
         emit(
-            f"    else outcome = (float)(draw(seed, shot, {slots}, {a}) >> 40) < p1 * 16777216.0f;"
+            f"    if (w1 <= {CERTAIN}f * total) outcome = 0; else if (w0 <= {CERTAIN}f * total) outcome = 1;"
+        )
+        emit(
+            f"    else outcome = draw(seed, shot, {slots}, {a}) < (u64)((double)w1 / (double)total * 18446744073709551616.0);"
         )
         emit("    weight = outcome ? w1 : w0;")
         if a in watched:
