@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from tsim.statevector.program import StatevectorComponent
 
 SamplingStrategy = Literal["active_statevector", "cat5", "bss", "cutting"]
+Device = Literal["cpu", "cuda"]
 """``"active_statevector"``, or a stabilizer-rank decomposition strategy."""
 
 

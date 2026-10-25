@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 from tsim.core.graph import transform_error_basis
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.core.tags import encode_t_tag
-from tsim.core.types import SamplingStrategy
+from tsim.core.types import Device, SamplingStrategy
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
 from tsim.utils.diagram import draw_zx, render_svg
@@ -936,6 +936,7 @@ class Circuit:
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
+        device: Device = "cpu",
     ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
@@ -955,19 +956,29 @@ class Circuit:
                 need the same explicit ``batch_size``, since the default batch size
                 depends on the free memory.
 
+            device: "cpu" (the default), or "cuda" to run the noise and the
+                statevector components as float32 CUDA kernels (needs
+                ``strategy="active_statevector"``, CuPy and an NVIDIA GPU).
+
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
 
         """
         from tsim.sampler import CompiledMeasurementSampler
 
-        return CompiledMeasurementSampler(self, seed=seed, strategy=strategy)
+        return CompiledMeasurementSampler(
+            self,
+            seed=seed,
+            strategy=strategy,
+            device=device,
+        )
 
     def compile_detector_sampler(
         self,
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
+        device: Device = "cpu",
     ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
 
@@ -992,13 +1003,22 @@ class Circuit:
                 need the same explicit ``batch_size`` and the same reference sample
                 settings, since the default batch size depends on the free memory.
 
+            device: "cpu" (the default), or "cuda" to run the noise and the
+                statevector components as float32 CUDA kernels (needs
+                ``strategy="active_statevector"``, CuPy and an NVIDIA GPU).
+
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.
 
         """
         from tsim.sampler import CompiledDetectorSampler
 
-        return CompiledDetectorSampler(self, seed=seed, strategy=strategy)
+        return CompiledDetectorSampler(
+            self,
+            seed=seed,
+            strategy=strategy,
+            device=device,
+        )
 
     def inverse(self) -> Circuit:
         """Return the inverse of the circuit."""
