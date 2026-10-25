@@ -246,3 +246,15 @@ def test_cuda_rejects_components_wider_than_its_limit():
     assert _widest(circuit) > 11
     with pytest.raises(ValueError, match="active qubits"):
         circuit.compile_sampler(seed=1, device="cuda")
+
+
+@pytest.mark.parametrize(("probability", "shots"), [(1e-10, 1 << 28), (1e-6, 1 << 26)])
+def test_cuda_draws_small_outcome_probabilities_at_their_rate(probability, shots):
+    # NOTE: a 24-bit draw takes any positive probability at least 2^-24 = 6e-8 of
+    # the time; float32 rounding gives certain outcomes such probabilities.
+    theta = float(2 * np.arcsin(np.sqrt(probability)) / np.pi)
+    circuit = Circuit(f"R 0\nI[R_X(theta={theta!r}*pi)] 0\nM 0")
+    sampler = circuit.compile_sampler(seed=3, device="cuda")
+    ones = sum(int(sampler.sample(1 << 24).sum()) for _ in range(shots >> 24))
+    expected = probability * shots
+    assert abs(ones - expected) <= 5 * np.sqrt(expected) + 1
