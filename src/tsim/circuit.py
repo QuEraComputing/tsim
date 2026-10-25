@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 from tsim.core.graph import transform_error_basis
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.core.tags import encode_t_tag
-from tsim.core.types import SamplingStrategy
+from tsim.core.types import Device, SamplingStrategy
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
 from tsim.utils.diagram import draw_zx, render_svg
@@ -866,6 +866,7 @@ class Circuit:
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
         trajectory_sharing: bool | None = None,
+        device: Device = "cpu",
     ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
@@ -883,6 +884,10 @@ class Circuit:
                 with a stabilizer-rank strategy they are only deterministic for a
                 fixed batch size.
 
+            device: "cpu" (the default), or "cuda" to run the noise and the
+                statevector components as float32 CUDA kernels (needs
+                ``strategy="active_statevector"``, CuPy and an NVIDIA GPU).
+
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
 
@@ -890,7 +895,11 @@ class Circuit:
         from tsim.sampler import CompiledMeasurementSampler
 
         return CompiledMeasurementSampler(
-            self, seed=seed, strategy=strategy, trajectory_sharing=trajectory_sharing
+            self,
+            seed=seed,
+            strategy=strategy,
+            trajectory_sharing=trajectory_sharing,
+            device=device,
         )
 
     def compile_detector_sampler(
@@ -899,6 +908,7 @@ class Circuit:
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
         trajectory_sharing: bool | None = None,
+        device: Device = "cpu",
     ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
 
@@ -921,6 +931,10 @@ class Circuit:
                 with a stabilizer-rank strategy they are only deterministic for a
                 fixed batch size.
 
+            device: "cpu" (the default), or "cuda" to run the noise and the
+                statevector components as float32 CUDA kernels (needs
+                ``strategy="active_statevector"``, CuPy and an NVIDIA GPU).
+
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.
 
@@ -928,7 +942,11 @@ class Circuit:
         from tsim.sampler import CompiledDetectorSampler
 
         return CompiledDetectorSampler(
-            self, seed=seed, strategy=strategy, trajectory_sharing=trajectory_sharing
+            self,
+            seed=seed,
+            strategy=strategy,
+            trajectory_sharing=trajectory_sharing,
+            device=device,
         )
 
     def cast_to_stim(self) -> stim.Circuit:
