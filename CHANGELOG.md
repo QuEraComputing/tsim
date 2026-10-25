@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `batch_size`. The samples of a seed depend on neither `batch_size`, the
   thread count nor `trajectory_sharing`: the noise and every measurement
   outcome are drawn from counter-based streams by shot index. Seeded samples
-  differ from earlier versions. (#199, #207, #PR)
+  differ from earlier versions. (#199, #207, #212)
 - Noise sampling runs in numba kernels, so the samples for a given seed
   differ from earlier versions; `numba>=0.61` is now a dependency. (#199)
 - Constant outputs now use the existing direct-output path, skipping component
@@ -69,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   samples straight from the noise sampler. Each component runs in one numba kernel per
   chunk, on parallel amplitude loops when a call is one chunk; single-component
   circuits such as distillation and cultivation sample about 3-4x faster on
-  one thread. (#PR)
+  one thread. (#212)
 - Tsim now uses zxparam instead of pyzx-param. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zxparam.
 - `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`.
 - In `Circuit.get_graph()` (and the `"zx"` diagram), every detector and observable has a classical output boundary, with ports after the qubit outputs, so the graph's tensor is the circuit's channel together with the detector and observable bits.
