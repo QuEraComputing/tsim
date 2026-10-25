@@ -238,7 +238,7 @@ def test_samples_depend_on_neither_threads_nor_batches_nor_sharing(
     assert not np.array_equal(first, second)
     for count, batch_size, sharing in [
         (2, None, True),
-        (5, 300, False),
+        (4, 300, False),
         (3, 9_000, True),
     ]:
         for got, want in zip(sample(count, batch_size, sharing), expected, strict=True):
@@ -282,8 +282,8 @@ def test_parallel_amplitude_loops_give_the_serial_samples(
     [
         (4, 40_000, None, [10_000] * 4),
         (1, 70_000, None, [65_536, 4_464]),
-        # NOTE: a chunk holds at least MIN_CHUNK_SHOTS shots.
-        (10, 1_000, None, [256, 256, 256, 232]),
+        # NOTE: 1_000 / 4 is below MIN_CHUNK_SHOTS, so chunks round up to 256.
+        (4, 1_000, None, [256, 256, 256, 232]),
         (2, 20_000, 9_000, [9_000, 9_000, 2_000]),
         (2, 5_000, 100, [100] * 50),
     ],
