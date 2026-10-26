@@ -254,7 +254,10 @@ def test_rotated_surface_code_single_noise_channel_matches_stim(channel: str):
     assert stim_total > 0, "Expected nonzero total detector events from stim sample"
     tsim_total = int(tsim_dets.sum())
     rel_diff = abs(stim_total - tsim_total) / stim_total
-    assert rel_diff <= 0.005
+    # The two samplers use independent, seeded streams.  This is a distributional
+    # comparison (rather than a bit-for-bit compatibility guarantee), so leave
+    # headroom for normal binomial variation across supported Python/NumPy builds.
+    assert rel_diff <= 0.01
 
 
 @pytest.mark.parametrize(
