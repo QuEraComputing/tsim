@@ -432,16 +432,20 @@ class ShotSampler:
         """Return the shots of a chunk and how many chunks run at once.
 
         A chunk per thread, of ``MIN_CHUNK_SHOTS`` or more, and at most
-        ``MAX_CHUNK_SHOTS`` and ``batch_size``. The chunks that run at once fit in
-        half of the free memory, so a call that fits in one chunk runs alone, on
-        parallel amplitude loops.
+        ``MAX_CHUNK_SHOTS`` and ``batch_size``. A call that fits in one chunk runs
+        alone, on parallel amplitude loops; otherwise as many chunks run at once
+        as there are threads, if they fit in half of the free memory, and
+        smaller ones, or fewer, if not.
         """
         fits = max(1, memory_budget() // self.bytes_per_shot())
-        chunk = min(max(-(-shots // threads), MIN_CHUNK_SHOTS), MAX_CHUNK_SHOTS, fits)
+        chunk = min(max(-(-shots // threads), MIN_CHUNK_SHOTS), MAX_CHUNK_SHOTS)
         if batch_size is not None:
             chunk = min(chunk, batch_size)
-        workers = max(1, min(threads, -(-shots // chunk), fits // chunk))
-        return chunk, workers
+        if shots <= min(chunk, fits):
+            return chunk, 1
+        workers = min(threads, fits)
+        chunk = max(1, min(chunk, fits // workers))
+        return chunk, min(workers, -(-shots // chunk))
 
     def _run_chunk(
         self,

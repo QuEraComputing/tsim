@@ -124,10 +124,13 @@ def test_a_reference_sample_leaves_the_samples_of_a_seed_alone():
         # NOTE: one lane fits but not ten, so the one-shot chunks run one at a time.
         (3 * 2**30, 4 * 2**30, 10, (1, 1)),
         # NOTE: the call fits in one chunk, which then runs alone.
-        (50 * 2**20, 2 * 2**30, 8, (40, 1)),
-        (50 * 2**20, 2 * 2**30, 64, (40, 1)),
-        (50 * 2**20, 8 * 2**30, 64, (163, 1)),
+        (50 * 2**20, 2 * 2**30, 8, (256, 1)),
+        (50 * 2**20, 8 * 2**30, 64, (256, 1)),
+        # NOTE: otherwise a chunk per thread, as small as the memory needs.
+        (50 * 2**20, 2 * 2**30, 64, (4, 10)),
+        (3 * 2**20, 4 * 2**30, 262_144, (136, 10)),
         (1000, 2**40, 262_144, (26_215, 10)),
+        (1000, 2**40, 1000, (256, 4)),
     ],
 )
 def test_the_chunks_that_run_at_once_fit_in_memory(
