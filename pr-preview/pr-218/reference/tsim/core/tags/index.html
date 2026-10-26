@@ -126,7 +126,7 @@
         <span class=k>return</span> <span class=kc>None</span>
 
     <span class=n>gate_name</span><span class=p>,</span> <span class=n>args_text</span> <span class=o>=</span> <span class=n>match</span><span class=o>.</span><span class=n>groups</span><span class=p>()</span>
-    <span class=n>args</span> <span class=o>=</span> <span class=p>[</span><span class=n>arg</span><span class=o>.</span><span class=n>strip</span><span class=p>()</span> <span class=k>for</span> <span class=n>arg</span> <span class=ow>in</span> <span class=n>args_text</span><span class=o>.</span><span class=n>split</span><span class=p>(</span><span class=s2>&quot;,&quot;</span><span class=p>)</span> <span class=k>if</span> <span class=n>arg</span><span class=o>.</span><span class=n>strip</span><span class=p>()]</span>
+    <span class=n>args</span> <span class=o>=</span> <span class=p>[</span><span class=n>arg</span><span class=o>.</span><span class=n>strip</span><span class=p>()</span> <span class=k>for</span> <span class=n>arg</span> <span class=ow>in</span> <span class=n>args_text</span><span class=o>.</span><span class=n>split</span><span class=p>(</span><span class=s2>&quot;,&quot;</span><span class=p>)]</span> <span class=k>if</span> <span class=n>args_text</span><span class=o>.</span><span class=n>strip</span><span class=p>()</span> <span class=k>else</span> <span class=p>[]</span>
 
     <span class=n>expected</span> <span class=o>=</span> <span class=n>_PARAMETRIC_GATE_PARAMS</span><span class=o>.</span><span class=n>get</span><span class=p>(</span><span class=n>gate_name</span><span class=p>)</span>
     <span class=k>if</span> <span class=n>expected</span> <span class=ow>is</span> <span class=kc>None</span><span class=p>:</span>
