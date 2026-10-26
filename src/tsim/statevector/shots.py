@@ -26,7 +26,7 @@ import psutil
 
 import tsim.statevector.shared as shared
 from tsim.core.types import CompiledProgram
-from tsim.noise.channels import ChannelSampler, WordTables
+from tsim.noise.channels import _BLOCK_SHOTS, ChannelSampler, WordTables
 from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
 from tsim.statevector.shared import KeyBasis, LaneProgram, key_basis, lane_program
 from tsim.utils.kernels import PARALLEL_WORK, jit, kernel, run_tasks
@@ -333,17 +333,23 @@ class ShotSampler:
     def sample(
         self,
         shots: int,
+        columns: list[np.ndarray],
         *,
+        bit_packed: bool,
         batch_size: int | None = None,
         mask: np.ndarray | None = None,
         flip: np.ndarray | None = None,
-    ) -> tuple[np.ndarray, float]:
-        """Return the shot words of ``shots`` shots and the largest norm deviation.
+    ) -> tuple[list[np.ndarray], float]:
+        """Return the output bits ``columns`` of ``shots`` shots and the largest norm deviation.
 
-        The words have shape ``(shots, num_words)``.
+        Each list of columns gives an array, as ``read_outputs`` reads it. A call
+        whose shot words do not fit in a quarter of the free memory runs in parts
+        of whole noise blocks, which draw the samples of the whole call.
 
         Args:
             shots: Number of shots.
+            columns: The output columns of each array.
+            bit_packed: Whether the arrays are bit-packed.
             batch_size: The most shots a thread runs at once; it bounds memory and
                 does not change the samples.
             mask: The postselected detectors: a shot with a postselected direct
@@ -353,21 +359,78 @@ class ShotSampler:
 
         """
         plan = self.plan(mask)
+        constant = self._constant(flip)
+        noise_seeds = self._channels.block_seeds(shots)
+        seeds = self._next_seeds(self._seeds)
+        num_outputs, part = self._layout.num_outputs, self._part_shots()
+
+        def read(words: np.ndarray, c: np.ndarray) -> np.ndarray:
+            return read_outputs(words, c, num_outputs, bit_packed=bit_packed)
+
+        if shots <= part:
+            words, deviation = self._sample_part(
+                0, shots, noise_seeds, seeds, plan, constant, batch_size
+            )
+            return [read(words, c) for c in columns], deviation
+        outputs = [
+            (
+                np.empty((shots, -(-len(c) // 8)), dtype=np.uint8)
+                if bit_packed
+                else np.empty((shots, len(c)), dtype=np.bool_)
+            )
+            for c in columns
+        ]
+        deviation = 0.0
+        for start in range(0, shots, part):
+            stop = min(start + part, shots)
+            words, part_deviation = self._sample_part(
+                start, stop, noise_seeds, seeds, plan, constant, batch_size
+            )
+            for out, c in zip(outputs, columns, strict=True):
+                out[start:stop] = read(words, c)
+            # NOTE: written so that a NaN deviation sticks.
+            if part_deviation > deviation or part_deviation != part_deviation:
+                deviation = part_deviation
+        return outputs, deviation
+
+    def _part_shots(self) -> int:
+        """Return the shots of a part: whole noise blocks whose words fit in memory.
+
+        That is a quarter of the free memory: half of the sampling budget.
+        """
+        fits = memory_budget() // (2 * 8 * max(1, self._layout.num_words))
+        return _BLOCK_SHOTS * max(1, fits // _BLOCK_SHOTS)
+
+    def _sample_part(
+        self,
+        start: int,
+        stop: int,
+        noise_seeds: np.ndarray,
+        seeds: np.ndarray,
+        plan: ShotPlan,
+        constant: np.ndarray,
+        batch_size: int | None,
+    ) -> tuple[np.ndarray, float]:
+        """Return the shot words of a call's shots ``start … stop-1`` and their deviation.
+
+        ``noise_seeds`` seed the call's noise blocks, so ``start`` is a whole
+        number of blocks, and ``seeds`` its components.
+        """
+        shots = stop - start
         words = np.empty((shots, self._layout.num_words), dtype=np.uint64)
         if shots == 0:
             return words, 0.0
-        self._channels.sample_words(words, self._layout.noise)
-        constant = self._constant(flip)
+        blocks = noise_seeds[start // _BLOCK_SHOTS : -(-stop // _BLOCK_SHOTS)]
+        self._channels.sample_words(words, self._layout.noise, blocks)
         if not self._layout.components and not (constant.any() or plan.screen.any()):
             # NOTE: direct outputs without constants are their noise bits.
             return words, 0.0
-        seeds = self._next_seeds(self._seeds)
         threads = numba.get_num_threads()
         chunk, workers = self._schedule(shots, batch_size, threads)
 
-        def run(start: int) -> list[tuple]:
-            rows = words[start : start + chunk]
-            return self._run_chunk(rows, plan, constant, start, seeds, threads)
+        def run(offset: int) -> list[tuple]:
+            rows = words[offset : offset + chunk]
+            return self._run_chunk(rows, plan, constant, start + offset, seeds, threads)
 
         results = run_tasks(run, range(0, shots, chunk), workers)
         return words, self._record([stats for result in results for stats in result])

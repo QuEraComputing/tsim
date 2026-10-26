@@ -6,6 +6,7 @@ import pytest
 import tsim.statevector.shared as shared
 import tsim.statevector.shots as shots_module
 from tsim.circuit import Circuit
+from tsim.noise.channels import _BLOCK_SHOTS
 from tsim.statevector.shots import bool_outputs, packed_outputs
 
 # NOTE: flipped direct detectors and observables, unflipped ones, and two T
@@ -149,3 +150,39 @@ def test_the_memory_estimate_holds_every_lane_symbol():
     assert program.lane_words >= 4
     amplitudes = 3 * 16 * 2**program.width
     assert sampler.bytes_per_shot() >= amplitudes + 4 * 8 * program.lane_words
+
+
+@pytest.mark.parametrize("postselect", [False, True])
+@pytest.mark.parametrize("bit_packed", [False, True])
+def test_calls_whose_words_do_not_fit_run_in_parts_of_the_same_samples(
+    bit_packed, postselect, monkeypatch
+):
+    shots = 3 * _BLOCK_SHOTS + 5
+
+    def sample():
+        sampler = Circuit(DIRECT_FLIPS).compile_detector_sampler(seed=9)
+        mask = np.ones(sampler._num_detectors, bool) if postselect else None
+        return sampler, lambda: sampler.sample(
+            shots,
+            bit_packed=bit_packed,
+            separate_observables=True,
+            postselection_mask=mask,
+        )
+
+    _, whole = sample()
+    expected = whole()
+    sampler, parted = sample()
+    executor = shot_sampler(sampler)
+    budget = 2 * 8 * executor.layout.num_words * _BLOCK_SHOTS
+    monkeypatch.setattr(shots_module, "memory_budget", lambda: budget)
+    starts = []
+    sample_part = executor._sample_part
+
+    def spy(start, *args):
+        starts.append(start)
+        return sample_part(start, *args)
+
+    monkeypatch.setattr(executor, "_sample_part", spy)
+    for got, want in zip(parted(), expected, strict=True):
+        np.testing.assert_array_equal(got, want)
+    assert starts == [0, _BLOCK_SHOTS, 2 * _BLOCK_SHOTS, 3 * _BLOCK_SHOTS]

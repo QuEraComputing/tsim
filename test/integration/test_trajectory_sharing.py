@@ -201,11 +201,24 @@ def test_trajectory_sharing_needs_the_statevector_strategy():
         )
 
 
+# NOTE: numba's most threads, which it sets as a config attribute at import.
+_LIMIT = numba.config.NUMBA_NUM_THREADS  # pyright: ignore[reportAttributeAccessIssue]
+
+
 @pytest.fixture
 def threads():
-    """Set numba's thread count for the test, then restore it."""
+    """Set numba's thread count for the test, then restore it.
+
+    A count above numba's limit (``NUMBA_NUM_THREADS``) skips the test.
+    """
     original = numba.get_num_threads()
-    yield numba.set_num_threads
+
+    def set_threads(count: int) -> None:
+        if count > _LIMIT:
+            pytest.skip(f"needs {count} numba threads")
+        numba.set_num_threads(count)
+
+    yield set_threads
     numba.set_num_threads(original)
 
 

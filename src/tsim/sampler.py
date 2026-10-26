@@ -18,7 +18,7 @@ from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.program import StatevectorComponent
-from tsim.statevector.shots import ShotSampler, bool_outputs, read_outputs
+from tsim.statevector.shots import ShotSampler
 from tsim.utils.cuda_helpers import copy_d2h
 from tsim.utils.kernels import kernel
 
@@ -371,21 +371,29 @@ class _CompiledSamplerBase:
         self._direct_detector_mask = np.zeros(self._num_detectors, dtype=np.bool_)
         self._direct_detector_mask[columns[is_detector]] = True
 
-    def _sample_shot_words(
+    def _sample_shot_outputs(
         self,
         shots: int,
         batch_size: int | None,
+        columns: list[np.ndarray],
+        *,
+        bit_packed: bool,
         mask: np.ndarray | None = None,
         flip: np.ndarray | None = None,
-    ) -> np.ndarray:
-        """Return the shot words of ``shots`` shots (``ShotSampler.sample``)."""
+    ) -> list[np.ndarray]:
+        """Return the output bits ``columns`` of ``shots`` shots (``ShotSampler.sample``)."""
         assert self._shots is not None
         _check_sizes(shots, batch_size)
-        words, deviation = self._shots.sample(
-            shots, batch_size=batch_size, mask=mask, flip=flip
+        arrays, deviation = self._shots.sample(
+            shots,
+            columns,
+            bit_packed=bit_packed,
+            batch_size=batch_size,
+            mask=mask,
+            flip=flip,
         )
         _check_norm(deviation, StatevectorComponent.norm_warning_threshold)
-        return words
+        return arrays
 
     def _reference_sample(self) -> np.ndarray:
         """Return a noiseless sample of every output (all f-params 0).
@@ -734,8 +742,9 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             if not self._program.components:
                 _check_sizes(shots, batch_size)
                 return self._shots.direct_bools(shots, columns)[0]
-            words = self._sample_shot_words(shots, batch_size)
-            return bool_outputs(words, columns[0])
+            return self._sample_shot_outputs(
+                shots, batch_size, columns, bit_packed=False
+            )[0]
         return self._sample_batches(shots, batch_size)
 
 
@@ -941,13 +950,14 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             # NOTE: the reference bits are XOR-ed in before the postselection tests.
             flip = self._reference_sample() & referenced if compute_reference else None
             if self._program.components or bit_packed:
-                words = self._sample_shot_words(
-                    shots, batch_size, postselection_mask, flip
+                arrays = self._sample_shot_outputs(
+                    shots,
+                    batch_size,
+                    columns,
+                    bit_packed=bit_packed,
+                    mask=postselection_mask,
+                    flip=flip,
                 )
-                arrays = [
-                    read_outputs(words, c, num_outputs, bit_packed=bit_packed)
-                    for c in columns
-                ]
             else:
                 _check_sizes(shots, batch_size)
                 arrays = self._shots.direct_bools(shots, columns, flip)
