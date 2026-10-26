@@ -266,6 +266,9 @@ def lane_program(
     ]
     i_power = np.array([_I_POWERS[q] for q in quarter_turns], dtype=np.complex128)
     cos, sin = tape.cos, tape.sin
+    coupling = -1j * sin * i_power
+    # NOTE: _rotate_range mixes pairs with a real or an imaginary coupling alone.
+    assert np.all((coupling.real == 0) | (coupling.imag == 0))
     lane_branch = np.where(splits, lane_bit[np.maximum(branch, 0)], -1)
     return LaneProgram(
         width=component.width,
@@ -296,7 +299,7 @@ def lane_program(
         coin_pattern=pack_bits(coin_pattern, len(out_words)),
         i_power=i_power,
         factor=np.stack([cos - 1j * sin, cos + 1j * sin], axis=1),
-        coupling=-1j * sin * i_power,
+        coupling=coupling,
     )
 
 
@@ -448,7 +451,9 @@ def _project_range(amps, lo, hi, span, x, z, pivot, i_power, outcome, weight):
     """Project lanes ``lo … hi-1`` onto their outcome and free the pivot.
 
     The pivot-1 half of the amplitudes becomes 0: the planner moved the measured
-    Pauli onto the pivot, so the pivot ends in ``|0⟩``.
+    Pauli onto the pivot, so the pivot ends in ``|0⟩``. The pivot is a bit of
+    ``x`` when ``x`` is nonzero, else of ``z``: the loop pairs each pivot-0
+    amplitude i with ``i ^ x``, which must then lie in the pivot-1 half.
     """
     bit = 1 << pivot
     for lane in range(lo, hi):
