@@ -170,8 +170,11 @@ def test_detector_sampler_no_detectors_bit_packed():
     assert result.shape == (5, 0)
 
 
+@pytest.mark.parametrize("reference", [False, True])
 @pytest.mark.parametrize("append_observables", [False, True])
-def test_bit_packed_direct_outputs_are_the_packed_bool_outputs(append_observables):
+def test_bit_packed_direct_outputs_are_the_packed_bool_outputs(
+    append_observables, reference
+):
     """Outputs that are the noise bits are packed straight from the noise sampler."""
     text = (
         "X_ERROR(0.1) 0 1 2 3\nM 0 1 2 3\n"
@@ -180,8 +183,13 @@ def test_bit_packed_direct_outputs_are_the_packed_bool_outputs(append_observable
     )
     unpacked = Circuit(text).compile_detector_sampler(seed=5)
     packed = Circuit(text).compile_detector_sampler(seed=5)
-    expected = unpacked.sample(9000, append_observables=append_observables)
-    result = packed.sample(9000, append_observables=append_observables, bit_packed=True)
+    options = dict(
+        append_observables=append_observables,
+        use_detector_reference_sample=reference,
+        use_observable_reference_sample=reference,
+    )
+    expected = unpacked.sample(9000, **options)
+    result = packed.sample(9000, bit_packed=True, **options)
     assert result.dtype == np.uint8
     assert np.array_equal(result, np.packbits(expected, axis=1, bitorder="little"))
     # NOTE: checked last, since it draws from the sampler's stream.

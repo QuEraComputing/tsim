@@ -743,9 +743,8 @@ class _FireTables(NamedTuple):
     """Geometric-skip sampling tables of the channels that can fire.
 
     Channel ``c`` fires with probability ``p_fire[c]``. Its non-identity
-    outcomes are ``outcome_start[c] … outcome_start[c+1] - 1``, with the
-    conditional CDF ``cdf`` over those indices, and outcome ``k`` flips the
-    f-variables ``flip_cols[flip_start[k] : flip_start[k+1]]``.
+    outcomes are ``outcome_start[c] … outcome_start[c+1] - 1``, and outcome
+    ``k`` flips the f-variables ``flip_cols[flip_start[k] : flip_start[k+1]]``.
 
     The samplers pick outcomes with Walker alias tables: among a channel's ``n``
     outcomes from ``first``, slot ``i`` is outcome ``first + i`` with probability
@@ -756,7 +755,6 @@ class _FireTables(NamedTuple):
 
     p_fire: np.ndarray
     outcome_start: np.ndarray
-    cdf: np.ndarray
     flip_start: np.ndarray
     flip_cols: np.ndarray
     alias_prob: np.ndarray
@@ -809,15 +807,13 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _Fire
             flip_cols.extend(sorted(flips[outcome]))
             flip_start.append(len(flip_cols))
     starts = np.array(outcome_start, dtype=np.int64)
-    conditional_cdf = np.array(cdf, dtype=np.float64)
-    alias_prob, alias_index = _alias_tables(starts, conditional_cdf)
+    alias_prob, alias_index = _alias_tables(starts, np.array(cdf, dtype=np.float64))
     flip_starts = np.array(flip_start, dtype=np.int64)
     columns = np.array(flip_cols, dtype=np.int64)
     pack_start, flip_word, flip_mask = _packed_flips(flip_starts, columns)
     return _FireTables(
         p_fire=np.array(p_fire, dtype=np.float64),
         outcome_start=starts,
-        cdf=conditional_cdf,
         flip_start=flip_starts,
         flip_cols=columns,
         alias_prob=alias_prob,

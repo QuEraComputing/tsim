@@ -1244,7 +1244,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 with the detectors and are placed at the start of the results.
             append_observables: Defaults to false. When set, observables are included
                 with the detectors and are placed at the end of the results.
-            bit_packed: Defaults to false. When set, results are bit-packed.
+            bit_packed: Defaults to false. When set, results are bit-packed. The
+                packed rows may be a strided view of a wider array.
             use_detector_reference_sample: Defaults to False. When True, a noiseless
                 reference sample is computed and XORed with detector outcomes so that
                 results represent deviations from the noiseless baseline. This should
@@ -1309,7 +1310,6 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         if (
             bit_packed
             and postselection_mask is None
-            and not compute_reference
             and not (prepend_observables or separate_observables)
         ):
             _check_sizes(shots, batch_size)
