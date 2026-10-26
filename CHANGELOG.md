@@ -30,7 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `I[R_X(0.1)] 0` is `R_X(0.1) 0`, `I[U3(0.3, 0.24, 0.49)] 0` is
   `U3(0.3, 0.24, 0.49) 0`, and `SPP[R_PAULI(0.1)] X0*Y1` is
   `R_PAULI(0.1) X0*Y1`. The keyword form (`R_X(theta=0.1*pi)`) still works;
-  program text is canonicalized to it. (#202)
+  program text is canonicalized to it. Empty angle fields, as in
+  `R_X(theta=0.1*pi,)`, are now rejected in both forms. (#202)
 
 ### Changed
 - The samplers now default to `strategy="active_statevector"`; pass

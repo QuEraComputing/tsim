@@ -192,6 +192,8 @@ def test_shorthand_to_stim_keeps_hash_inside_tag():
         ("REPEAT[r] 2 {R_X(0.1) 0\n}", "REPEAT[r] 2 {I[R_X(theta=0.1*pi)] 0\n}"),
         ("REPEAT 2 {\nH 0\n} T 0", "REPEAT 2 {\nH 0\n} S[T] 0"),
         ("} REPEAT 3 { i[R_Z(0.5)] 0", "} REPEAT 3 { i[R_Z(theta=0.5*pi)] 0"),
+        ("repeat 2 { T 0\n}", "repeat 2 { S[T] 0\n}"),
+        ("Repeat 2 {R_Z(0.5) 0\n}", "Repeat 2 {I[R_Z(theta=0.5*pi)] 0\n}"),
     ],
 )
 def test_shorthand_to_stim_converts_instructions_next_to_braces(text, expected):

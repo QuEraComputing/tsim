@@ -1085,6 +1085,21 @@ class TestParseParametricTag:
         ):
             parse_parametric_tag(_instr("U3(0.1)"))
 
+    @pytest.mark.parametrize(
+        "tag",
+        [
+            "R_X(,0.25)",
+            "R_X(,,0.1)",
+            "R_X(0.25,)",
+            "U3(0.1,,0.2,0.3)",
+            "R_X(theta=0.25*pi,)",
+            "U3(theta=0.1*pi,, phi=0.2*pi, lambda=0.3*pi)",
+        ],
+    )
+    def test_empty_angle_field_raises(self, tag):
+        with pytest.raises(ValueError, match="Malformed parametric tag"):
+            parse_parametric_tag(_instr(tag))
+
     def test_mixed_positional_and_keyword_raises(self):
         with pytest.raises(ValueError, match="Malformed parametric tag"):
             parse_parametric_tag(_instr("U3(0.1, phi=0.2*pi, lambda=0.3*pi)"))

@@ -67,7 +67,7 @@ def parse_parametric_tag_text(tag: str) -> tuple[str, dict[str, Fraction]] | Non
         return None
 
     gate_name, args_text = match.groups()
-    args = [arg.strip() for arg in args_text.split(",") if arg.strip()]
+    args = [arg.strip() for arg in args_text.split(",")] if args_text.strip() else []
 
     expected = _PARAMETRIC_GATE_PARAMS.get(gate_name)
     if expected is None:

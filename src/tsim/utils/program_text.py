@@ -29,7 +29,7 @@ _PARAMETRIC_TAG_GATES = {"I", "SPP", "SPP_DAG"}
 # The prefix group also takes block delimiters that share the instruction's line,
 # as in `REPEAT 2 { H 0` or `} H 0`.
 _INSTRUCTION_RE = re.compile(
-    r"^((?:\s*(?:\}|REPEAT(?:\[[^\]\n]*\])?\s+\d+\s*\{))*\s*)"
+    r"^((?:\s*(?:\}|(?i:REPEAT)(?:\[[^\]\n]*\])?\s+\d+\s*\{))*\s*)"
     r"(\w+)(?:\[([^\]\n]*)\])?(.*)$"
 )
 _TAG_RE = re.compile(r"\[[^\]\n]*\]")
