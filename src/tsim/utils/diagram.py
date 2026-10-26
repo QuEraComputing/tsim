@@ -14,8 +14,7 @@ from zxparam import Graph
 from zxparam.viz.layout import Layout
 
 from tsim.core.params import ParamLayout
-from tsim.core.tags import is_t_tag
-from tsim.utils.program_text import FLOAT_RE
+from tsim.core.tags import is_t_tag, parse_parametric_tag_text
 
 _ZX_SCALE = 40
 """zxparam's default number of pixels per unit of (col, row)."""
@@ -332,27 +331,17 @@ def _deduplicate_doubled_spp(svg_string: str) -> str:
 
 
 def _parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
-    """Parse a parametric gate tag like R_Z(theta=0.3*pi)."""
-    match = re.match(r"^(\w+)\((.*)\)$", tag)
-    if not match:
+    """Parse a parametric gate tag like R_Z(theta=0.3*pi) or R_Z(0.3)."""
+    try:
+        result = parse_parametric_tag_text(tag)
+    except ValueError:
         return None
-
-    gate_name = match.group(1)
-    params_str = match.group(2)
-
-    params = {}
-    for param in params_str.split(","):
-        param = param.strip()
-        if not param:
-            continue
-        param_match = re.match(rf"^(\w+)=({FLOAT_RE})\*pi$", param)
-        if not param_match:
-            return None
-        param_name = param_match.group(1)
-        value = Fraction(param_match.group(2)).limit_denominator(10000)
-        params[param_name] = value
-
-    return gate_name, params
+    if result is None:
+        return None
+    gate_name, params = result
+    return gate_name, {
+        name: value.limit_denominator(10000) for name, value in params.items()
+    }
 
 
 def tagged_gates_to_placeholder(
