@@ -297,13 +297,30 @@ def lane_program(
     )
 
 
-def lane_bytes(component: StatevectorComponent) -> int:
+def max_lane_words(component: StatevectorComponent, key: KeyBasis) -> int:
+    """Return the most words of lane symbols that ``lane_program`` gives a component.
+
+    That is under any mask: the key's words, every word of its outputs, and a bit
+    per measurement.
+    """
+    tape = component.tape
+    output_words = np.unique(np.asarray(component.output_indices, dtype=np.int64) >> 6)
+    measurements = int(
+        np.isin(tape.kind, (MEASURE_DIAG, MEASURE, MEASURE_DORMANT)).sum()
+    )
+    bits = 64 * (-(-len(key.rows) // 64) + len(output_words)) + measurements
+    return max(1, -(-bits // 64))
+
+
+def lane_bytes(component: StatevectorComponent, key: KeyBasis) -> int:
     """Return the peak memory of one lane of ``run_lanes``.
 
-    That is three rows of amplitudes (the old and the new array while lanes grow)
-    and 64 bytes for its lane symbols, a grave and the per-lane scratch.
+    That is three rows of amplitudes (the old and the new array while lanes grow),
+    four rows of lane symbols (its own, and a grave's while the graves grow) and
+    64 bytes of per-lane scratch.
     """
-    return 3 * 2**component.width * np.dtype(np.complex128).itemsize + 64
+    amplitudes = 3 * 2**component.width * np.dtype(np.complex128).itemsize
+    return amplitudes + 4 * 8 * max_lane_words(component, key) + 64
 
 
 @jit
@@ -447,6 +464,25 @@ def _threshold(p1):
     """
     scaled = p1 * 18446744073709551616.0
     return np.uint64(scaled) if scaled < 1.8446744073709550e19 else _MAX_THRESHOLD
+
+
+@jit
+def _cut(w0, w1):
+    """Return ``(certain, threshold)`` for a measurement of outcome weights w0, w1.
+
+    ``certain`` is the outcome if it is certain, else -1, and then a uniform 64-bit
+    draw below ``threshold`` is outcome 1. The threshold comes from the rarer
+    outcome's chance, so that a rare 0 keeps its chance as a rare 1 does: when
+    ``w0`` is the smaller, the draws from ``2^64 - _threshold(p0)`` up are 0.
+    """
+    total = w0 + w1
+    if not total > _TINY:
+        return 0, np.uint64(0)
+    if w1 <= w0:
+        rare = _threshold(w1 / total) if w1 > 0.0 else np.uint64(0)
+        return (0 if rare == 0 else -1), rare
+    rare = _threshold(w0 / total) if w0 > 0.0 else np.uint64(0)
+    return (1 if rare == 0 else -1), np.uint64(0) - rare
 
 
 @jit
@@ -601,6 +637,8 @@ def run_lanes(
         if alive[s]:
             live[n] = s
             n += 1
+    if n == 0:
+        return 0.0, 0, 0, 0, 0
     symbols, row, size = _group(words, live, n, program, share)
     groups, peak = size, size
     amps = np.zeros((max(1, size), 1 << program.width), dtype=np.complex128)
@@ -696,10 +734,8 @@ def run_lanes(
                 # NOTE: written so that a NaN deviation sticks.
                 if d > deviation or d != d:
                     deviation = d
-            p1 = w1[r] / total if total > _TINY else 0.0
-            certain[r] = 0 if p1 <= 0.0 else 1 if p1 >= 1.0 else -1
+            certain[r], threshold[r] = _cut(w0[r], w1[r])
             if certain[r] < 0:
-                threshold[r] = _threshold(p1)
                 any_random = True
         outcome = np.empty(2 * size, dtype=np.bool_)
         new = size

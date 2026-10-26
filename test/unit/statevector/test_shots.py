@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import tsim.statevector.shared as shared
+import tsim.statevector.shots as shots_module
 from tsim.circuit import Circuit
 from tsim.statevector.shots import bool_outputs, packed_outputs
 
@@ -93,3 +94,55 @@ def test_unpacked_and_packed_outputs_match_packbits():
         )
     # NOTE: a leading run of outputs ends in a masked copy, so the words keep theirs.
     np.testing.assert_array_equal(_bits(words)[:, :128], bits)
+
+
+# NOTE: two T components: a detector on one, an observable on the other.
+TWO_T_COMPONENTS = """
+R 0 1
+H 0 1
+T 0 1
+H 0 1
+M 0 1
+DETECTOR rec[-2]
+OBSERVABLE_INCLUDE(0) rec[-1]
+"""
+
+
+def test_a_reference_sample_leaves_the_samples_of_a_seed_alone():
+    def sample(reference):
+        sampler = Circuit(TWO_T_COMPONENTS).compile_detector_sampler(seed=3)
+        return sampler.sample(
+            2000, append_observables=True, use_detector_reference_sample=reference
+        )
+
+    np.testing.assert_array_equal(sample(False)[:, 1], sample(True)[:, 1])
+
+
+@pytest.mark.parametrize(
+    "per_shot, budget, shots, expected",
+    [
+        # NOTE: one lane fits but not ten, so the one-shot chunks run one at a time.
+        (3 * 2**30, 4 * 2**30, 10, (1, 1)),
+        # NOTE: the call fits in one chunk, which then runs alone.
+        (50 * 2**20, 2 * 2**30, 8, (40, 1)),
+        (50 * 2**20, 2 * 2**30, 64, (40, 1)),
+        (50 * 2**20, 8 * 2**30, 64, (163, 1)),
+        (1000, 2**40, 262_144, (26_215, 10)),
+    ],
+)
+def test_the_chunks_that_run_at_once_fit_in_memory(
+    per_shot, budget, shots, expected, monkeypatch
+):
+    sampler = shot_sampler(Circuit(TWO_T_COMPONENTS).compile_detector_sampler(seed=1))
+    monkeypatch.setattr(shots_module, "memory_budget", lambda: budget)
+    monkeypatch.setattr(sampler, "bytes_per_shot", lambda: per_shot)
+    assert sampler._schedule(shots, None, 10) == expected
+
+
+def test_the_memory_estimate_holds_every_lane_symbol():
+    text = "R 0 1\nH 0 1\n" + "T 0\nT 1\nMPP X0*X1\n" * 300
+    sampler = shot_sampler(Circuit(text).compile_sampler(seed=1))
+    program = max(sampler.plan(None).programs, key=lambda p: p.lane_words)
+    assert program.lane_words >= 4
+    amplitudes = 3 * 16 * 2**program.width
+    assert sampler.bytes_per_shot() >= amplitudes + 4 * 8 * program.lane_words

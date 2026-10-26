@@ -182,6 +182,24 @@ def test_thresholds_resolve_probabilities_to_2_to_the_minus_64(p):
         assert threshold > 0
 
 
+@pytest.mark.parametrize("rare", [0, 1])
+def test_a_rare_outcome_keeps_its_chance_either_way(rare):
+    # NOTE: w1 / (w0 + w1) rounds to 1 here, but outcome 0 still has 265 draws.
+    small = 1.4381067500455907e-17
+    weights = (small, 1.0) if rare == 0 else (1.0, small)
+    certain, threshold = shared._cut(*weights)
+    assert certain == -1
+    rare_draws = int(threshold) if rare else 2**64 - int(threshold)
+    assert rare_draws == int(small * 2**64)
+    # NOTE: a draw below the threshold is outcome 1; the rare draws sit at one end.
+    lowest, highest = np.uint64(0), np.uint64(2**64 - 1)
+    rare_draw, common_draw = (lowest, highest) if rare else (highest, lowest)
+    assert int(rare_draw < threshold) == rare
+    assert int(common_draw < threshold) == 1 - rare
+    assert shared._cut(*(w if w == 1.0 else 0.0 for w in weights)) == (1 - rare, 0)
+    assert shared._cut(0.0, 0.0) == (0, 0)
+
+
 def _coherent_surface_code(distance, rounds, angle=0.02):
     """Return a surface-code memory with an R_Z over-rotation after every CX layer."""
     base = stim.Circuit.generated(

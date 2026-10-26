@@ -31,10 +31,6 @@ from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
 from tsim.statevector.shared import KeyBasis, LaneProgram, key_basis, lane_program
 from tsim.utils.kernels import PARALLEL_WORK, jit, kernel, run_tasks
 
-# NOTE: a little-endian word's bytes hold its bits in packbits' "little" order,
-# which the output readers rely on.
-assert sys.byteorder == "little"
-
 # NOTE: beyond 2^16 shots a chunk costs memory without sharing more, and below
 # 2^8 its fixed costs dominate.
 MAX_CHUNK_SHOTS = 2**16
@@ -280,14 +276,22 @@ class ShotSampler:
         """Lay out the program's shot words; ``share`` lets shots share lanes.
 
         Raises:
+            NotImplementedError: On a big-endian host.
             ValueError: If one shot needs more than half of the free memory.
 
         """
+        # NOTE: a little-endian word's bytes hold its bits in packbits' "little"
+        # order, which the output readers rely on.
+        if sys.byteorder != "little":
+            raise NotImplementedError("shot words need a little-endian host")
         self._layout = shot_layout(program, channels)
         self._channels = channels
         self._num_detectors = num_detectors
         self._share = share
         self._seeds = np.random.default_rng([seed, 1])
+        # NOTE: reference samples draw from their own stream, so that asking for
+        # one leaves the samples of a seed alone.
+        self._reference_seeds = np.random.default_rng([seed, 2])
         self._plans: dict[bytes, ShotPlan] = {}
         self._bool_tables: dict[bytes, WordTables] = {}
         # NOTE: lane counts of the latest chunks, for tests and diagnostics.
@@ -313,7 +317,10 @@ class ShotSampler:
         That is its words, its own lane at worst, and 32 bytes for its place in
         the executor's shot lists.
         """
-        lane = max(map(shared.lane_bytes, self._layout.components), default=0)
+        lane = max(
+            map(shared.lane_bytes, self._layout.components, self._layout.keys),
+            default=0,
+        )
         return 8 * self._layout.num_words + lane + 32
 
     def plan(self, mask: np.ndarray | None) -> ShotPlan:
@@ -354,15 +361,15 @@ class ShotSampler:
         if not self._layout.components and not (constant.any() or plan.screen.any()):
             # NOTE: direct outputs without constants are their noise bits.
             return words, 0.0
-        seeds = self._next_seeds()
+        seeds = self._next_seeds(self._seeds)
         threads = numba.get_num_threads()
-        chunk = self._chunk_shots(shots, batch_size, threads)
+        chunk, workers = self._schedule(shots, batch_size, threads)
 
         def run(start: int) -> list[tuple]:
             rows = words[start : start + chunk]
             return self._run_chunk(rows, plan, constant, start, seeds, threads)
 
-        results = run_tasks(run, range(0, shots, chunk), threads)
+        results = run_tasks(run, range(0, shots, chunk), workers)
         return words, self._record([stats for result in results for stats in result])
 
     def direct_bools(
@@ -388,17 +395,21 @@ class ShotSampler:
         )
         if constant[order].any():
             out ^= constant[order]
+        # NOTE: the arrays are views of one array, as copies would cost more than
+        # sampling them.
         bools = out.view(np.bool_)
-        if len(columns) == 1:
-            return [bools]
-        parts = np.split(bools, np.cumsum([len(c) for c in columns])[:-1], axis=1)
-        return [np.ascontiguousarray(part) for part in parts]
+        return np.split(bools, np.cumsum([len(c) for c in columns])[:-1], axis=1)
 
     def reference(self) -> tuple[np.ndarray, float]:
         """Return a noiseless sample of every output and its largest norm deviation."""
         words = np.zeros((1, self._layout.num_words), dtype=np.uint64)
         stats = self._run_chunk(
-            words, self.plan(None), self._constant(None), 0, self._next_seeds(), 1
+            words,
+            self.plan(None),
+            self._constant(None),
+            0,
+            self._next_seeds(self._reference_seeds),
+            1,
         )
         outputs = bool_outputs(words, np.arange(self._layout.num_outputs))[0]
         return outputs, self._record(stats)
@@ -410,22 +421,27 @@ class ShotSampler:
             constant = constant ^ flip
         return shared.pack_bits(constant, self._layout.output_words)
 
-    def _next_seeds(self) -> np.ndarray:
-        """Return a seed per component for one call."""
+    def _next_seeds(self, stream: np.random.Generator) -> np.ndarray:
+        """Return a seed per component for one call, from ``stream``."""
         count = len(self._layout.components)
-        return self._seeds.integers(0, 2**64, size=count, dtype=np.uint64)
+        return stream.integers(0, 2**64, size=count, dtype=np.uint64)
 
-    def _chunk_shots(self, shots: int, batch_size: int | None, threads: int) -> int:
-        """Return the shots of a chunk: a chunk per thread, of ``MIN_CHUNK_SHOTS`` or more.
+    def _schedule(
+        self, shots: int, batch_size: int | None, threads: int
+    ) -> tuple[int, int]:
+        """Return the shots of a chunk and how many chunks run at once.
 
-        Chunks are at most ``MAX_CHUNK_SHOTS``, ``batch_size`` and what fits in half
-        of the free memory per thread.
+        A chunk per thread, of ``MIN_CHUNK_SHOTS`` or more, and at most
+        ``MAX_CHUNK_SHOTS`` and ``batch_size``. The chunks that run at once fit in
+        half of the free memory, so a call that fits in one chunk runs alone, on
+        parallel amplitude loops.
         """
-        chunk = max(-(-shots // threads), MIN_CHUNK_SHOTS)
-        cap = min(MAX_CHUNK_SHOTS, memory_budget() // (threads * self.bytes_per_shot()))
+        fits = max(1, memory_budget() // self.bytes_per_shot())
+        chunk = min(max(-(-shots // threads), MIN_CHUNK_SHOTS), MAX_CHUNK_SHOTS, fits)
         if batch_size is not None:
-            cap = min(cap, batch_size)
-        return max(1, min(chunk, cap))
+            chunk = min(chunk, batch_size)
+        workers = max(1, min(threads, -(-shots // chunk), fits // chunk))
+        return chunk, workers
 
     def _run_chunk(
         self,
@@ -443,6 +459,8 @@ class ShotSampler:
         """
         alive = np.empty(len(rows), dtype=np.bool_)
         _screen(rows, constant, plan.screen, plan.kept, alive)
+        if not alive.any():
+            return []
         return [
             shared.run_lanes(
                 len(rows) << component.width,

@@ -279,8 +279,7 @@ def _record_rows(monkeypatch, store: list[int]) -> None:
         return sample_program(program, f_params, *args, **kwargs)
 
     def spy_lanes(work, words, alive, *args):
-        if alive.any():
-            store.append(int(alive.sum()))
+        store.append(int(alive.sum()))
         return run_lanes(work, words, alive, *args)
 
     monkeypatch.setattr(sampler_module, "sample_program", spy_program)

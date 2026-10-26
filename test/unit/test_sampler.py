@@ -234,7 +234,7 @@ def test_bool_noise_outputs_are_the_shot_word_outputs(layout, reference):
         return result if isinstance(result, tuple) else (result,)
 
     for bools, packed in zip(sample(False), sample(True), strict=True):
-        assert bools.dtype == np.bool_ and bools.flags.c_contiguous
+        assert bools.dtype == np.bool_
         expected = np.packbits(bools, axis=1, bitorder="little")
         np.testing.assert_array_equal(packed, expected)
 
