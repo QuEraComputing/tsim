@@ -528,16 +528,18 @@ def _draw(seed, shot, slots, slot):
     return value
 
 
+# NOTE: _lane_key runs once per shot and takes only the LaneProgram fields it
+# reads. Called from a kernel loaded from numba's disk cache it is not inlined,
+# and passing the whole LaneProgram (~200 machine words) by value made
+# trajectory sharing 5-8x slower on x86.
 @jit
-def _lane_key(words, shot, program, out):
+def _lane_key(words, shot, key_start, key_words, ps_word, ps_mask, out):
     """Write a shot's first lane symbols, its key and postselected f-parts, to ``out``."""
-    for w in range(program.key_words):
-        out[w] = words[shot, program.key_start + w]
-    for j in range(len(program.ps_word)):
-        out[program.key_words + j] = (
-            words[shot, program.ps_word[j]] & program.ps_mask[j]
-        )
-    for w in range(program.key_words + len(program.ps_word), len(out)):
+    for w in range(key_words):
+        out[w] = words[shot, key_start + w]
+    for j in range(len(ps_word)):
+        out[key_words + j] = words[shot, ps_word[j]] & ps_mask[j]
+    for w in range(key_words + len(ps_word), len(out)):
         out[w] = 0
 
 
@@ -557,11 +559,15 @@ def _group(words, live, n, program, share):
     With ``share``, shots with equal first lane symbols (``_lane_key``) share a
     lane, found in an open-addressing hash table; otherwise each has its own.
     """
+    key_start, key_words = program.key_start, program.key_words
+    ps_word, ps_mask = program.ps_word, program.ps_mask
     symbols = np.zeros((max(16, n), program.lane_words), dtype=np.uint64)
     row = np.empty(n, dtype=np.int64)
     if not share:
         for i in range(n):
-            _lane_key(words, live[i], program, symbols[i])
+            _lane_key(
+                words, live[i], key_start, key_words, ps_word, ps_mask, symbols[i]
+            )
             row[i] = i
         return symbols, row, n
     size = 16
@@ -571,7 +577,7 @@ def _group(words, live, n, program, share):
     candidate = np.zeros(program.lane_words, dtype=np.uint64)
     count = 0
     for i in range(n):
-        _lane_key(words, live[i], program, candidate)
+        _lane_key(words, live[i], key_start, key_words, ps_word, ps_mask, candidate)
         slot = _hash(candidate) & np.uint64(size - 1)
         while True:
             lane = table[slot]
