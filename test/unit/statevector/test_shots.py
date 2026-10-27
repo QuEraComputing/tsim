@@ -186,3 +186,58 @@ def test_calls_whose_words_do_not_fit_run_in_parts_of_the_same_samples(
     for got, want in zip(parted(), expected, strict=True):
         np.testing.assert_array_equal(got, want)
     assert starts == [0, _BLOCK_SHOTS, 2 * _BLOCK_SHOTS, 3 * _BLOCK_SHOTS]
+
+
+def _brickwork(width: int, layers: int) -> str:
+    rng = np.random.default_rng(0)
+    lines = ["R " + " ".join(map(str, range(width)))]
+    for layer in range(layers):
+        for q in range(width):
+            a, b, c = rng.random(3)
+            lines.append(f"U3({a:.3f}, {b:.3f}, {c:.3f}) {q}")
+        lines += [f"CNOT {q} {q + 1}" for q in range(layer % 2, width - 1, 2)]
+    lines.append("M " + " ".join(map(str, range(width))))
+    lines += [f"DETECTOR rec[-{q + 1}]" for q in range(width)]
+    return "\n".join(lines)
+
+
+def test_a_wide_components_small_call_fills_every_thread():
+    sampler = shot_sampler(Circuit(_brickwork(12, 15)).compile_detector_sampler(seed=1))
+    assert max(c.width for c in sampler.layout.components) == 12
+    shots = shots_module.MIN_CHUNK_SHOTS + 1
+    assert sampler._schedule(shots, None, 10) == (26, 10)
+    assert sampler._schedule(10, None, 10) == (16, 1)
+    # NOTE: a narrow component's chunks keep their least size.
+    narrow = shot_sampler(Circuit(TWO_T_COMPONENTS).compile_detector_sampler(seed=1))
+    assert narrow._schedule(shots, None, 10) == (256, 2)
+
+
+@pytest.mark.parametrize("mask", [False, True])
+def test_an_empty_call_leaves_the_next_samples_alone(mask):
+    def sampler():
+        return Circuit(TWO_T_COMPONENTS).compile_detector_sampler(seed=5)
+
+    def sample(s, shots):
+        m = np.ones(s._num_detectors, bool) if mask else None
+        return s.sample(shots, append_observables=True, postselection_mask=m)
+
+    fresh, used = sampler(), sampler()
+    assert sample(used, 0).shape == (0, 2)
+    np.testing.assert_array_equal(sample(used, 3000), sample(fresh, 3000))
+
+
+# NOTE: two components whose noise gives them key words.
+KEYED_COMPONENTS = "R 0 1\n" + "".join(
+    f"H {q}\nT {q}\nX_ERROR(0.1) {q}\nT {q}\nH {q}\nM {q}\nDETECTOR rec[-1]\n"
+    for q in (0, 1)
+)
+
+
+def test_packed_outputs_do_not_keep_the_component_keys_alive():
+    sampler = Circuit(KEYED_COMPONENTS).compile_detector_sampler(seed=1)
+    layout = shot_sampler(sampler).layout
+    assert layout.num_words > layout.output_words
+    packed = sampler.sample(1000, bit_packed=True)
+    expected = np.packbits(sampler.sample(1000), axis=1, bitorder="little")
+    assert packed.base is None or packed.base.nbytes == packed.nbytes
+    assert packed.shape == expected.shape

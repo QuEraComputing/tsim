@@ -237,14 +237,18 @@ def packed_outputs(words: np.ndarray, count: int, num_outputs: int) -> np.ndarra
     """Return the first ``count`` of ``num_outputs`` output bits as ``np.packbits`` does.
 
     Bits are in little order. The bits past the outputs are zero, so with all of
-    them, or whole bytes, the result is a view of ``words``; else a masked copy.
+    them, or whole bytes, of words that hold only outputs the result is a view of
+    ``words``; else a copy, masked past ``count``. A view of words that also hold
+    component keys would keep the keys alive.
     """
     num_bytes = -(-count // 8)
     packed = words.view(np.uint8)[:, :num_bytes]
-    if count % 8 == 0 or count == num_outputs:
+    only_outputs = words.shape[1] == -(-num_outputs // 64)
+    if only_outputs and (count % 8 == 0 or count == num_outputs):
         return packed
     packed = packed.copy()
-    packed[:, -1] &= np.uint8((1 << (count % 8)) - 1)
+    if count % 8:
+        packed[:, -1] &= np.uint8((1 << (count % 8)) - 1)
     return packed
 
 
@@ -293,6 +297,7 @@ class ShotSampler:
         # one leaves the samples of a seed alone.
         self._reference_seeds = np.random.default_rng([seed, 2])
         self._plans: dict[bytes, ShotPlan] = {}
+        self._widest = max((c.width for c in self._layout.components), default=0)
         self._direct_tables: WordTables | None = None
         if not self._layout.components:
             f = self._layout.direct_f
@@ -363,10 +368,17 @@ class ShotSampler:
 
         """
         plan = self.plan(mask)
+        num_outputs, part = self._layout.num_outputs, self._part_shots()
+        if shots == 0:
+            # NOTE: an empty call draws no seeds, so it leaves the next samples alone.
+            words = np.empty((0, self._layout.num_words), dtype=np.uint64)
+            return [
+                read_outputs(words, c, num_outputs, bit_packed=bit_packed)
+                for c in columns
+            ], 0.0
         constant = self._constant(flip)
         noise_seeds = self._channels.block_seeds(shots)
         seeds = self._next_seeds(self._seeds)
-        num_outputs, part = self._layout.num_outputs, self._part_shots()
 
         def read(words: np.ndarray, c: np.ndarray) -> np.ndarray:
             return read_outputs(words, c, num_outputs, bit_packed=bit_packed)
@@ -486,14 +498,18 @@ class ShotSampler:
     ) -> tuple[int, int]:
         """Return the shots of a chunk and how many chunks run at once.
 
-        A chunk per thread, of ``MIN_CHUNK_SHOTS`` or more, and at most
+        A chunk per thread, of at least ``MIN_CHUNK_SHOTS`` or the fewer shots
+        whose amplitude work reaches ``PARALLEL_WORK``, and at most
         ``MAX_CHUNK_SHOTS`` and ``batch_size``. A call that fits in one chunk runs
         alone, on parallel amplitude loops; otherwise as many chunks run at once
         as there are threads, if they fit in half of the free memory, and
         smaller ones, or fewer, if not.
         """
         fits = max(1, memory_budget() // self.bytes_per_shot())
-        chunk = min(max(-(-shots // threads), MIN_CHUNK_SHOTS), MAX_CHUNK_SHOTS)
+        # NOTE: the least size outweighs a chunk's fixed cost; a wide component's
+        # shots do so sooner, so that its small calls still fill every thread.
+        least = max(1, min(MIN_CHUNK_SHOTS, PARALLEL_WORK >> self._widest))
+        chunk = min(max(-(-shots // threads), least), MAX_CHUNK_SHOTS)
         if batch_size is not None:
             chunk = min(chunk, batch_size)
         if shots <= min(chunk, fits):
