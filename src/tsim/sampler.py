@@ -741,7 +741,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             columns = [np.arange(self._program.num_outputs)]
             if not self._program.components:
                 _check_sizes(shots, batch_size)
-                return self._shots.direct_bools(shots, columns)[0]
+                return self._shots.direct_bools(shots)
             return self._sample_shot_outputs(
                 shots, batch_size, columns, bit_packed=False
             )[0]
@@ -753,6 +753,14 @@ def _maybe_bit_pack(array: np.ndarray, *, bit_packed: bool) -> np.ndarray:
     if not bit_packed:
         return array
     return np.packbits(array.astype(np.bool_), axis=1, bitorder="little")
+
+
+def _take_columns(samples: np.ndarray, columns: np.ndarray) -> np.ndarray:
+    """Return ``samples[:, columns]``, as a view when ``columns`` is a range."""
+    start = int(columns[0]) if len(columns) else 0
+    if np.array_equal(columns, np.arange(start, start + len(columns))):
+        return samples[:, start : start + len(columns)]
+    return samples[:, columns]
 
 
 def _output_columns(
@@ -958,12 +966,10 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                     mask=postselection_mask,
                     flip=flip,
                 )
-            else:
-                _check_sizes(shots, batch_size)
-                arrays = self._shots.direct_bools(shots, columns, flip)
-            return (arrays[0], arrays[1]) if separate_observables else arrays[0]
-
-        if postselection_mask is not None:
+                return (arrays[0], arrays[1]) if separate_observables else arrays[0]
+            _check_sizes(shots, batch_size)
+            samples = self._shots.direct_bools(shots, flip)
+        elif postselection_mask is not None:
             if not compute_reference:
                 referenced = None
             samples = self._sample_batches_with_postselection(
@@ -983,7 +989,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         else:
             samples = self._sample_batches(shots, batch_size)
         arrays = [
-            _maybe_bit_pack(samples[:, c], bit_packed=bit_packed) for c in columns
+            _maybe_bit_pack(_take_columns(samples, c), bit_packed=bit_packed)
+            for c in columns
         ]
         return (arrays[0], arrays[1]) if separate_observables else arrays[0]
 

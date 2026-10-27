@@ -293,7 +293,11 @@ class ShotSampler:
         # one leaves the samples of a seed alone.
         self._reference_seeds = np.random.default_rng([seed, 2])
         self._plans: dict[bytes, ShotPlan] = {}
-        self._bool_tables: dict[bytes, WordTables] = {}
+        self._direct_tables: WordTables | None = None
+        if not self._layout.components:
+            f = self._layout.direct_f
+            sets = np.flatnonzero(f >= 0)
+            self._direct_tables = channels.word_tables(f[sets], sets, bits=1)
         # NOTE: lane counts of the latest chunks, for tests and diagnostics.
         self.sharing_stats: deque[dict] = deque(maxlen=10_000)
         peak = self.bytes_per_shot()
@@ -435,33 +439,21 @@ class ShotSampler:
         results = run_tasks(run, range(0, shots, chunk), workers)
         return words, self._record([stats for result in results for stats in result])
 
-    def direct_bools(
-        self, shots: int, columns: list[np.ndarray], flip: np.ndarray | None = None
-    ) -> list[np.ndarray]:
-        """Return the output bits ``columns`` of a program without components.
+    def direct_bools(self, shots: int, flip: np.ndarray | None = None) -> np.ndarray:
+        """Return every output bit of a program without components, as booleans.
 
-        The noise sampler writes them as booleans: a row holds every list of
-        columns in turn, so the lists' arrays share each shot's faults. The
-        samples equal those of ``sample``. ``flip`` is as in ``sample``.
+        The noise sampler writes them straight into the rows. The samples equal
+        those of ``sample``. ``flip`` is as in ``sample``.
         """
-        assert not self._layout.components
-        order = np.concatenate(columns).astype(np.int64)
-        key = order.tobytes()
-        if key not in self._bool_tables:
-            f = self._layout.direct_f[order]
-            sets = np.flatnonzero(f >= 0)
-            self._bool_tables[key] = self._channels.word_tables(f[sets], sets, bits=1)
-        out = np.empty((shots, len(order)), dtype=np.uint8)
-        self._channels.sample_words(out, self._bool_tables[key])
-        constant = (
-            self._layout.constant if flip is None else self._layout.constant ^ flip
-        )
-        if constant[order].any():
-            out ^= constant[order]
-        # NOTE: the arrays are views of one array, as copies would cost more than
-        # sampling them.
-        bools = out.view(np.bool_)
-        return np.split(bools, np.cumsum([len(c) for c in columns])[:-1], axis=1)
+        assert self._direct_tables is not None
+        out = np.empty((shots, self._layout.num_outputs), dtype=np.uint8)
+        self._channels.sample_words(out, self._direct_tables)
+        constant = self._layout.constant
+        if flip is not None:
+            constant = constant ^ flip
+        if constant.any():
+            out ^= constant
+        return out.view(np.bool_)
 
     def reference(self) -> tuple[np.ndarray, float]:
         """Return a noiseless sample of every output and its largest norm deviation."""
