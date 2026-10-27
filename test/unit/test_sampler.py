@@ -170,6 +170,54 @@ def test_detector_sampler_no_detectors_bit_packed():
     assert result.shape == (5, 0)
 
 
+@pytest.mark.parametrize("reference", [False, True])
+@pytest.mark.parametrize("append_observables", [False, True])
+def test_bit_packed_direct_outputs_are_the_packed_bool_outputs(
+    append_observables, reference
+):
+    """Outputs that are the noise bits are packed straight from the noise sampler."""
+    text = (
+        "X_ERROR(0.1) 0 1 2 3\nM 0 1 2 3\n"
+        "DETECTOR rec[-4]\nDETECTOR rec[-3]\nDETECTOR rec[-2]\n"
+        "OBSERVABLE_INCLUDE(0) rec[-1]\n"
+    )
+    unpacked = Circuit(text).compile_detector_sampler(seed=5)
+    packed = Circuit(text).compile_detector_sampler(seed=5)
+    options = dict(
+        append_observables=append_observables,
+        use_detector_reference_sample=reference,
+        use_observable_reference_sample=reference,
+    )
+    expected = unpacked.sample(9000, **options)
+    result = packed.sample(9000, bit_packed=True, **options)
+    assert result.dtype == np.uint8
+    assert np.array_equal(result, np.packbits(expected, axis=1, bitorder="little"))
+    # NOTE: checked last, since it draws from the sampler's stream.
+    num_outputs = 4 if append_observables else 3
+    assert packed._sample_direct_packed(1, num_outputs) is not None
+
+
+@pytest.mark.parametrize("shots", [0, 5000])
+def test_bit_packed_direct_outputs_span_several_words(shots):
+    """72 detectors over two words: whole last byte, a later observable, and no shots."""
+    n = 72
+    targets = " ".join(map(str, range(n + 1)))
+    text = f"X_ERROR(0.02) {targets}\nM {targets}\n"
+    text += "".join(f"DETECTOR rec[-{n + 1 - i}]\n" for i in range(n))
+    text += "OBSERVABLE_INCLUDE(0) rec[-1]\n"
+    unpacked = Circuit(text).compile_detector_sampler(seed=2)
+    packed = Circuit(text).compile_detector_sampler(seed=2)
+    for append_observables in (False, True):
+        expected = unpacked.sample(shots, append_observables=append_observables)
+        result = packed.sample(
+            shots, append_observables=append_observables, bit_packed=True
+        )
+        expected = np.packbits(expected, axis=1, bitorder="little")
+        assert result.shape == expected.shape
+        assert np.array_equal(result, expected)
+    assert packed._sample_direct_packed(1, n) is not None
+
+
 def test_detector_sampler_no_detectors_with_reference_sample():
     """Detector sampler with use_detector_reference_sample=True and no detectors returns (shots, 0)."""
     c = Circuit("H 0\nM 0")

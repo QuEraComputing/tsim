@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import warnings
 from collections import deque
 from math import ceil, inf
@@ -939,6 +940,38 @@ class _CompiledSamplerBase:
             pending -= ready
         return result
 
+    def _sample_direct_packed(self, shots: int, num_outputs: int) -> np.ndarray | None:
+        """Return the first ``num_outputs`` outputs bit-packed, if they are f-variables.
+
+        Without components, and when output ``i`` is f-variable ``i`` unflipped (as
+        in typical surface-code detector circuits), the noise sampler's bit-packed
+        rows are the outputs' bit-packed rows, so no boolean array is built.
+
+        Returns:
+            A uint8 array of shape (shots, ceil(num_outputs / 8)) as from
+            ``np.packbits(..., axis=1, bitorder="little")``, or None.
+
+        """
+        program = self._program
+        num_direct = len(program.direct_f_indices)
+        # NOTE: a little-endian word's bytes hold its bits in packbits' "little" order.
+        if (
+            sys.byteorder != "little"
+            or program.components
+            or program.output_reindex is not None
+            or program.direct_flips.any()
+            or not np.array_equal(program.direct_f_indices, np.arange(num_direct))
+        ):
+            return None
+        num_bytes = -(-num_outputs // 8)
+        packed = self._channel_sampler.sample_packed(shots).view(np.uint8)
+        # NOTE: past the f-variables the words are zero, so only an output count
+        # below them leaves bits to clear in the last byte.
+        num_f = self._channel_sampler.signature_matrix.shape[1]
+        if num_outputs % 8 and num_outputs < num_f:
+            packed[:, num_bytes - 1] &= np.uint8((1 << (num_outputs % 8)) - 1)
+        return packed[:, :num_bytes]
+
     def _sample_direct(self, shots: int) -> np.ndarray:
         """Sample a program without components, whose outputs are all direct."""
         program = self._program
@@ -1211,7 +1244,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 with the detectors and are placed at the start of the results.
             append_observables: Defaults to false. When set, observables are included
                 with the detectors and are placed at the end of the results.
-            bit_packed: Defaults to false. When set, results are bit-packed.
+            bit_packed: Defaults to false. When set, results are bit-packed. The
+                packed rows may be a strided view of a wider array.
             use_detector_reference_sample: Defaults to False. When True, a noiseless
                 reference sample is computed and XORed with detector outcomes so that
                 results represent deviations from the noiseless baseline. This should
@@ -1272,6 +1306,19 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             postselection_mask = (
                 mask if skips.any() and self._program.components else None
             )
+
+        if (
+            bit_packed
+            and postselection_mask is None
+            and not (prepend_observables or separate_observables)
+        ):
+            _check_sizes(shots, batch_size)
+            num_outputs = (
+                self._program.num_outputs if append_observables else num_detectors
+            )
+            packed = self._sample_direct_packed(shots, num_outputs)
+            if packed is not None:
+                return packed
 
         if postselection_mask is not None:
             referenced = None
