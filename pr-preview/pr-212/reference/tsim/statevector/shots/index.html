@@ -68,7 +68,11 @@
 <span class=normal>304</span>
 <span class=normal>305</span>
 <span class=normal>306</span>
-<span class=normal>307</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
+<span class=normal>307</span>
+<span class=normal>308</span>
+<span class=normal>309</span>
+<span class=normal>310</span>
+<span class=normal>311</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>program</span><span class=p>:</span> <span class=n>CompiledProgram</span><span class=p>,</span>
     <span class=n>channels</span><span class=p>:</span> <span class=n>ChannelSampler</span><span class=p>,</span>
@@ -97,7 +101,11 @@
     <span class=c1># one leaves the samples of a seed alone.</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_reference_seeds</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>random</span><span class=o>.</span><span class=n>default_rng</span><span class=p>([</span><span class=n>seed</span><span class=p>,</span> <span class=mi>2</span><span class=p>])</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>_plans</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>bytes</span><span class=p>,</span> <span class=n>ShotPlan</span><span class=p>]</span> <span class=o>=</span> <span class=p>{}</span>
-    <span class=bp>self</span><span class=o>.</span><span class=n>_bool_tables</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>bytes</span><span class=p>,</span> <span class=n>WordTables</span><span class=p>]</span> <span class=o>=</span> <span class=p>{}</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>_direct_tables</span><span class=p>:</span> <span class=n>WordTables</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
+    <span class=k>if</span> <span class=ow>not</span> <span class=bp>self</span><span class=o>.</span><span class=n>_layout</span><span class=o>.</span><span class=n>components</span><span class=p>:</span>
+        <span class=n>f</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_layout</span><span class=o>.</span><span class=n>direct_f</span>
+        <span class=n>sets</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>flatnonzero</span><span class=p>(</span><span class=n>f</span> <span class=o>&gt;=</span> <span class=mi>0</span><span class=p>)</span>
+        <span class=bp>self</span><span class=o>.</span><span class=n>_direct_tables</span> <span class=o>=</span> <span class=n>channels</span><span class=o>.</span><span class=n>word_tables</span><span class=p>(</span><span class=n>f</span><span class=p>[</span><span class=n>sets</span><span class=p>],</span> <span class=n>sets</span><span class=p>,</span> <span class=n>bits</span><span class=o>=</span><span class=mi>1</span><span class=p>)</span>
     <span class=c1># NOTE: lane counts of the latest chunks, for tests and diagnostics.</span>
     <span class=bp>self</span><span class=o>.</span><span class=n>sharing_stats</span><span class=p>:</span> <span class=n>deque</span><span class=p>[</span><span class=nb>dict</span><span class=p>]</span> <span class=o>=</span> <span class=n>deque</span><span class=p>(</span><span class=n>maxlen</span><span class=o>=</span><span class=mi>10_000</span><span class=p>)</span>
     <span class=n>peak</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>bytes_per_shot</span><span class=p>()</span>
@@ -111,17 +119,17 @@
         <span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> <div class="doc doc-children"> <div class="doc doc-object doc-attribute"> <h3 id=tsim.statevector.shots.ShotSampler.layout class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code> <span class="doc doc-object-name doc-attribute-name">layout</span> <span class="doc doc-labels"> <small class="doc doc-label doc-label-property"><code>property</code></small> </span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=n>layout</span><span class=p>:</span> <span class=n>ShotLayout</span>
 </code></pre></div> <div class="doc doc-contents "> <p>Return the shot words' layout.</p> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.statevector.shots.ShotSampler.bytes_per_shot class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">bytes_per_shot</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>bytes_per_shot</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=nb>int</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return the peak memory of one shot.</p> <p>That is its words, its own lane at worst, and 32 bytes for its place in the executor's shot lists.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shots.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>314</span>
-<span class=normal>315</span>
-<span class=normal>316</span>
-<span class=normal>317</span>
-<span class=normal>318</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return the peak memory of one shot.</p> <p>That is its words, its own lane at worst, and 32 bytes for its place in the executor's shot lists.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shots.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>318</span>
 <span class=normal>319</span>
 <span class=normal>320</span>
 <span class=normal>321</span>
 <span class=normal>322</span>
 <span class=normal>323</span>
-<span class=normal>324</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>bytes_per_shot</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span><span class=p>:</span>
+<span class=normal>324</span>
+<span class=normal>325</span>
+<span class=normal>326</span>
+<span class=normal>327</span>
+<span class=normal>328</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>bytes_per_shot</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>int</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return the peak memory of one shot.</span>
 
 <span class=sd>    That is its words, its own lane at worst, and 32 bytes for its place in</span>
@@ -133,15 +141,9 @@
     <span class=p>)</span>
     <span class=k>return</span> <span class=mi>8</span> <span class=o>*</span> <span class=bp>self</span><span class=o>.</span><span class=n>_layout</span><span class=o>.</span><span class=n>num_words</span> <span class=o>+</span> <span class=n>lane</span> <span class=o>+</span> <span class=mi>32</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.statevector.shots.ShotSampler.direct_bools class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">direct_bools</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>direct_bools</span><span class=p>(</span>
-    <span class=n>shots</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
-    <span class=n>columns</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>ndarray</span><span class=p>],</span>
-    <span class=n>flip</span><span class=p>:</span> <span class=n>ndarray</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
-<span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>list</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return the output bits <code>columns</code> of a program without components.</p> <p>The noise sampler writes them as booleans: a row holds every list of columns in turn, so the lists' arrays share each shot's faults. The samples equal those of <code>sample</code>. <code>flip</code> is as in <code>sample</code>.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shots.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>438</span>
-<span class=normal>439</span>
-<span class=normal>440</span>
-<span class=normal>441</span>
-<span class=normal>442</span>
+    <span class=n>shots</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>flip</span><span class=p>:</span> <span class=n>ndarray</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
+<span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return every output bit of a program without components, as booleans.</p> <p>The noise sampler writes them straight into the rows. The samples equal those of <code>sample</code>. <code>flip</code> is as in <code>sample</code>.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shots.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>442</span>
 <span class=normal>443</span>
 <span class=normal>444</span>
 <span class=normal>445</span>
@@ -155,67 +157,47 @@
 <span class=normal>453</span>
 <span class=normal>454</span>
 <span class=normal>455</span>
-<span class=normal>456</span>
-<span class=normal>457</span>
-<span class=normal>458</span>
-<span class=normal>459</span>
-<span class=normal>460</span>
-<span class=normal>461</span>
-<span class=normal>462</span>
-<span class=normal>463</span>
-<span class=normal>464</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>direct_bools</span><span class=p>(</span>
-    <span class=bp>self</span><span class=p>,</span> <span class=n>shots</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>columns</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>],</span> <span class=n>flip</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
-<span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>list</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>]:</span>
-<span class=w>    </span><span class=sd>&quot;&quot;&quot;Return the output bits ``columns`` of a program without components.</span>
+<span class=normal>456</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>direct_bools</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>shots</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span> <span class=n>flip</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>:</span>
+<span class=w>    </span><span class=sd>&quot;&quot;&quot;Return every output bit of a program without components, as booleans.</span>
 
-<span class=sd>    The noise sampler writes them as booleans: a row holds every list of</span>
-<span class=sd>    columns in turn, so the lists&#39; arrays share each shot&#39;s faults. The</span>
-<span class=sd>    samples equal those of ``sample``. ``flip`` is as in ``sample``.</span>
+<span class=sd>    The noise sampler writes them straight into the rows. The samples equal</span>
+<span class=sd>    those of ``sample``. ``flip`` is as in ``sample``.</span>
 <span class=sd>    &quot;&quot;&quot;</span>
-    <span class=k>assert</span> <span class=ow>not</span> <span class=bp>self</span><span class=o>.</span><span class=n>_layout</span><span class=o>.</span><span class=n>components</span>
-    <span class=n>order</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>concatenate</span><span class=p>(</span><span class=n>columns</span><span class=p>)</span><span class=o>.</span><span class=n>astype</span><span class=p>(</span><span class=n>np</span><span class=o>.</span><span class=n>int64</span><span class=p>)</span>
-    <span class=n>key</span> <span class=o>=</span> <span class=n>order</span><span class=o>.</span><span class=n>tobytes</span><span class=p>()</span>
-    <span class=k>if</span> <span class=n>key</span> <span class=ow>not</span> <span class=ow>in</span> <span class=bp>self</span><span class=o>.</span><span class=n>_bool_tables</span><span class=p>:</span>
-        <span class=n>f</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_layout</span><span class=o>.</span><span class=n>direct_f</span><span class=p>[</span><span class=n>order</span><span class=p>]</span>
-        <span class=n>sets</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>flatnonzero</span><span class=p>(</span><span class=n>f</span> <span class=o>&gt;=</span> <span class=mi>0</span><span class=p>)</span>
-        <span class=bp>self</span><span class=o>.</span><span class=n>_bool_tables</span><span class=p>[</span><span class=n>key</span><span class=p>]</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_channels</span><span class=o>.</span><span class=n>word_tables</span><span class=p>(</span><span class=n>f</span><span class=p>[</span><span class=n>sets</span><span class=p>],</span> <span class=n>sets</span><span class=p>,</span> <span class=n>bits</span><span class=o>=</span><span class=mi>1</span><span class=p>)</span>
-    <span class=n>out</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>empty</span><span class=p>((</span><span class=n>shots</span><span class=p>,</span> <span class=nb>len</span><span class=p>(</span><span class=n>order</span><span class=p>)),</span> <span class=n>dtype</span><span class=o>=</span><span class=n>np</span><span class=o>.</span><span class=n>uint8</span><span class=p>)</span>
-    <span class=bp>self</span><span class=o>.</span><span class=n>_channels</span><span class=o>.</span><span class=n>sample_words</span><span class=p>(</span><span class=n>out</span><span class=p>,</span> <span class=bp>self</span><span class=o>.</span><span class=n>_bool_tables</span><span class=p>[</span><span class=n>key</span><span class=p>])</span>
-    <span class=n>constant</span> <span class=o>=</span> <span class=p>(</span>
-        <span class=bp>self</span><span class=o>.</span><span class=n>_layout</span><span class=o>.</span><span class=n>constant</span> <span class=k>if</span> <span class=n>flip</span> <span class=ow>is</span> <span class=kc>None</span> <span class=k>else</span> <span class=bp>self</span><span class=o>.</span><span class=n>_layout</span><span class=o>.</span><span class=n>constant</span> <span class=o>^</span> <span class=n>flip</span>
-    <span class=p>)</span>
-    <span class=k>if</span> <span class=n>constant</span><span class=p>[</span><span class=n>order</span><span class=p>]</span><span class=o>.</span><span class=n>any</span><span class=p>():</span>
-        <span class=n>out</span> <span class=o>^=</span> <span class=n>constant</span><span class=p>[</span><span class=n>order</span><span class=p>]</span>
-    <span class=c1># NOTE: the arrays are views of one array, as copies would cost more than</span>
-    <span class=c1># sampling them.</span>
-    <span class=n>bools</span> <span class=o>=</span> <span class=n>out</span><span class=o>.</span><span class=n>view</span><span class=p>(</span><span class=n>np</span><span class=o>.</span><span class=n>bool_</span><span class=p>)</span>
-    <span class=k>return</span> <span class=n>np</span><span class=o>.</span><span class=n>split</span><span class=p>(</span><span class=n>bools</span><span class=p>,</span> <span class=n>np</span><span class=o>.</span><span class=n>cumsum</span><span class=p>([</span><span class=nb>len</span><span class=p>(</span><span class=n>c</span><span class=p>)</span> <span class=k>for</span> <span class=n>c</span> <span class=ow>in</span> <span class=n>columns</span><span class=p>])[:</span><span class=o>-</span><span class=mi>1</span><span class=p>],</span> <span class=n>axis</span><span class=o>=</span><span class=mi>1</span><span class=p>)</span>
+    <span class=k>assert</span> <span class=bp>self</span><span class=o>.</span><span class=n>_direct_tables</span> <span class=ow>is</span> <span class=ow>not</span> <span class=kc>None</span>
+    <span class=n>out</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>empty</span><span class=p>((</span><span class=n>shots</span><span class=p>,</span> <span class=bp>self</span><span class=o>.</span><span class=n>_layout</span><span class=o>.</span><span class=n>num_outputs</span><span class=p>),</span> <span class=n>dtype</span><span class=o>=</span><span class=n>np</span><span class=o>.</span><span class=n>uint8</span><span class=p>)</span>
+    <span class=bp>self</span><span class=o>.</span><span class=n>_channels</span><span class=o>.</span><span class=n>sample_words</span><span class=p>(</span><span class=n>out</span><span class=p>,</span> <span class=bp>self</span><span class=o>.</span><span class=n>_direct_tables</span><span class=p>)</span>
+    <span class=n>constant</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_layout</span><span class=o>.</span><span class=n>constant</span>
+    <span class=k>if</span> <span class=n>flip</span> <span class=ow>is</span> <span class=ow>not</span> <span class=kc>None</span><span class=p>:</span>
+        <span class=n>constant</span> <span class=o>=</span> <span class=n>constant</span> <span class=o>^</span> <span class=n>flip</span>
+    <span class=k>if</span> <span class=n>constant</span><span class=o>.</span><span class=n>any</span><span class=p>():</span>
+        <span class=n>out</span> <span class=o>^=</span> <span class=n>constant</span>
+    <span class=k>return</span> <span class=n>out</span><span class=o>.</span><span class=n>view</span><span class=p>(</span><span class=n>np</span><span class=o>.</span><span class=n>bool_</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.statevector.shots.ShotSampler.plan class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">plan</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>plan</span><span class=p>(</span><span class=n>mask</span><span class=p>:</span> <span class=n>ndarray</span> <span class=o>|</span> <span class=kc>None</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>ShotPlan</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return the plan for a postselection <code>mask</code>.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shots.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>326</span>
-<span class=normal>327</span>
-<span class=normal>328</span>
-<span class=normal>329</span>
-<span class=normal>330</span>
-<span class=normal>331</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>plan</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>mask</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span> <span class=o>|</span> <span class=kc>None</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>ShotPlan</span><span class=p>:</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return the plan for a postselection <code>mask</code>.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shots.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>330</span>
+<span class=normal>331</span>
+<span class=normal>332</span>
+<span class=normal>333</span>
+<span class=normal>334</span>
+<span class=normal>335</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>plan</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>mask</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span> <span class=o>|</span> <span class=kc>None</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>ShotPlan</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return the plan for a postselection ``mask``.&quot;&quot;&quot;</span>
     <span class=n>key</span> <span class=o>=</span> <span class=sa>b</span><span class=s2>&quot;&quot;</span> <span class=k>if</span> <span class=n>mask</span> <span class=ow>is</span> <span class=kc>None</span> <span class=k>else</span> <span class=n>np</span><span class=o>.</span><span class=n>asarray</span><span class=p>(</span><span class=n>mask</span><span class=p>,</span> <span class=nb>bool</span><span class=p>)</span><span class=o>.</span><span class=n>tobytes</span><span class=p>()</span>
     <span class=k>if</span> <span class=n>key</span> <span class=ow>not</span> <span class=ow>in</span> <span class=bp>self</span><span class=o>.</span><span class=n>_plans</span><span class=p>:</span>
         <span class=bp>self</span><span class=o>.</span><span class=n>_plans</span><span class=p>[</span><span class=n>key</span><span class=p>]</span> <span class=o>=</span> <span class=n>shot_plan</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_layout</span><span class=p>,</span> <span class=bp>self</span><span class=o>.</span><span class=n>_num_detectors</span><span class=p>,</span> <span class=n>mask</span><span class=p>)</span>
     <span class=k>return</span> <span class=bp>self</span><span class=o>.</span><span class=n>_plans</span><span class=p>[</span><span class=n>key</span><span class=p>]</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.statevector.shots.ShotSampler.reference class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">reference</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>reference</span><span class=p>()</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=nb>float</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a noiseless sample of every output and its largest norm deviation.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shots.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>466</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a noiseless sample of every output and its largest norm deviation.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shots.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>458</span>
+<span class=normal>459</span>
+<span class=normal>460</span>
+<span class=normal>461</span>
+<span class=normal>462</span>
+<span class=normal>463</span>
+<span class=normal>464</span>
+<span class=normal>465</span>
+<span class=normal>466</span>
 <span class=normal>467</span>
 <span class=normal>468</span>
 <span class=normal>469</span>
-<span class=normal>470</span>
-<span class=normal>471</span>
-<span class=normal>472</span>
-<span class=normal>473</span>
-<span class=normal>474</span>
-<span class=normal>475</span>
-<span class=normal>476</span>
-<span class=normal>477</span>
-<span class=normal>478</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>reference</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=nb>float</span><span class=p>]:</span>
+<span class=normal>470</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>reference</span><span class=p>(</span><span class=bp>self</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=nb>float</span><span class=p>]:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return a noiseless sample of every output and its largest norm deviation.&quot;&quot;&quot;</span>
     <span class=n>words</span> <span class=o>=</span> <span class=n>np</span><span class=o>.</span><span class=n>zeros</span><span class=p>((</span><span class=mi>1</span><span class=p>,</span> <span class=bp>self</span><span class=o>.</span><span class=n>_layout</span><span class=o>.</span><span class=n>num_words</span><span class=p>),</span> <span class=n>dtype</span><span class=o>=</span><span class=n>np</span><span class=o>.</span><span class=n>uint64</span><span class=p>)</span>
     <span class=n>stats</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_run_chunk</span><span class=p>(</span>
@@ -237,11 +219,7 @@
     <span class=n>mask</span><span class=p>:</span> <span class=n>ndarray</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
     <span class=n>flip</span><span class=p>:</span> <span class=n>ndarray</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=nb>list</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>],</span> <span class=nb>float</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return the output bits <code>columns</code> of <code>shots</code> shots and the largest norm deviation.</p> <p>Each list of columns gives an array, as <code>read_outputs</code> reads it. A call whose shot words do not fit in a quarter of the free memory runs in parts of whole noise blocks, which draw the samples of the whole call.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>shots</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>Number of shots.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>columns</code> </td> <td> <code><span title=list>list</span>[<span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p>The output columns of each array.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>bit_packed</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Whether the arrays are bit-packed.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>The most shots a thread runs at once; it bounds memory and does not change the samples.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>mask</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span> | None</code> </td> <td> <div class=doc-md-description> <p>The postselected detectors: a shot with a postselected direct detector of 1 keeps only its direct detectors, and the components prune shots at their postselected outputs.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>flip</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span> | None</code> </td> <td> <div class=doc-md-description> <p>A reference bit per output, XOR-ed in before the tests.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shots.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>333</span>
-<span class=normal>334</span>
-<span class=normal>335</span>
-<span class=normal>336</span>
-<span class=normal>337</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return the output bits <code>columns</code> of <code>shots</code> shots and the largest norm deviation.</p> <p>Each list of columns gives an array, as <code>read_outputs</code> reads it. A call whose shot words do not fit in a quarter of the free memory runs in parts of whole noise blocks, which draw the samples of the whole call.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>shots</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>Number of shots.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>columns</code> </td> <td> <code><span title=list>list</span>[<span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p>The output columns of each array.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>bit_packed</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Whether the arrays are bit-packed.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>The most shots a thread runs at once; it bounds memory and does not change the samples.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>mask</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span> | None</code> </td> <td> <div class=doc-md-description> <p>The postselected detectors: a shot with a postselected direct detector of 1 keeps only its direct detectors, and the components prune shots at their postselected outputs.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>flip</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span> | None</code> </td> <td> <div class=doc-md-description> <p>A reference bit per output, XOR-ed in before the tests.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shots.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>337</span>
 <span class=normal>338</span>
 <span class=normal>339</span>
 <span class=normal>340</span>
@@ -298,7 +276,11 @@
 <span class=normal>391</span>
 <span class=normal>392</span>
 <span class=normal>393</span>
-<span class=normal>394</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample</span><span class=p>(</span>
+<span class=normal>394</span>
+<span class=normal>395</span>
+<span class=normal>396</span>
+<span class=normal>397</span>
+<span class=normal>398</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>shots</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=n>columns</span><span class=p>:</span> <span class=nb>list</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>],</span>
