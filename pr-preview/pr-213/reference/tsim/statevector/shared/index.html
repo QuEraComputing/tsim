@@ -389,13 +389,7 @@
     <span class=n>parallel_work</span><span class=p>,</span>
     <span class=n>threads</span><span class=p>,</span>
 <span class=p>)</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Run one component on the alive shots of a chunk and add its outputs.</p> <p><code>words</code> holds the chunk's shot words (row <code>s</code> is shot <code>first_shot + s</code>) and <code>program</code> is the component's <code>LaneProgram</code>. The shots' output bits get the component's branch parts and coins, and those that a pruning hides are cleared. The amplitude loops run in up to <code>4 * threads</code> parallel chunks once their work reaches <code>parallel_work</code>.</p> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> </td> <td> <div class=doc-md-description> <p><code>(deviation, groups, peak, size, dead)</code>: the largest normalization</p> </div> </td> </tr> <tr class=doc-section-item> <td> </td> <td> <div class=doc-md-description> <p>deviation, the first lanes, the most lanes at once, the live lanes at the</p> </div> </td> </tr> <tr class=doc-section-item> <td> </td> <td> <div class=doc-md-description> <p>end and the pruned ones.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shared.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>644</span>
-<span class=normal>645</span>
-<span class=normal>646</span>
-<span class=normal>647</span>
-<span class=normal>648</span>
-<span class=normal>649</span>
-<span class=normal>650</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Run one component on the alive shots of a chunk and add its outputs.</p> <p><code>words</code> holds the chunk's shot words (row <code>s</code> is shot <code>first_shot + s</code>) and <code>program</code> is the component's <code>LaneProgram</code>. The shots' output bits get the component's branch parts and coins, and those that a pruning hides are cleared. The amplitude loops run in up to <code>4 * threads</code> parallel chunks once their work reaches <code>parallel_work</code>.</p> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> </td> <td> <div class=doc-md-description> <p><code>(deviation, groups, peak, size, dead)</code>: the largest normalization</p> </div> </td> </tr> <tr class=doc-section-item> <td> </td> <td> <div class=doc-md-description> <p>deviation, the first lanes, the most lanes at once, the live lanes at the</p> </div> </td> </tr> <tr class=doc-section-item> <td> </td> <td> <div class=doc-md-description> <p>end and the pruned ones.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/statevector/shared.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>650</span>
 <span class=normal>651</span>
 <span class=normal>652</span>
 <span class=normal>653</span>
@@ -633,7 +627,13 @@
 <span class=normal>885</span>
 <span class=normal>886</span>
 <span class=normal>887</span>
-<span class=normal>888</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@kernel</span>
+<span class=normal>888</span>
+<span class=normal>889</span>
+<span class=normal>890</span>
+<span class=normal>891</span>
+<span class=normal>892</span>
+<span class=normal>893</span>
+<span class=normal>894</span></pre></div></td><td class=code><div><pre><span></span><code><span class=nd>@kernel</span>
 <span class=k>def</span><span class=w> </span><span class=nf>run_lanes</span><span class=p>(</span>
     <span class=n>words</span><span class=p>,</span> <span class=n>alive</span><span class=p>,</span> <span class=n>first_shot</span><span class=p>,</span> <span class=n>seed</span><span class=p>,</span> <span class=n>share</span><span class=p>,</span> <span class=n>program</span><span class=p>,</span> <span class=n>poison</span><span class=p>,</span> <span class=n>parallel_work</span><span class=p>,</span> <span class=n>threads</span>
 <span class=p>):</span>
