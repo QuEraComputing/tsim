@@ -10,6 +10,7 @@ import pytest
 from zxparam import Domain, EdgeType, Graph, Phase, VertexType, decompose
 
 import tsim.sampler as sampler_module
+import tsim.statevector.shared as shared
 from tsim.circuit import Circuit
 from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import (
@@ -171,7 +172,7 @@ def test_all_constant_detectors_skip_jax(monkeypatch, strategy):
         raise AssertionError("sample_program must not be called")
 
     monkeypatch.setattr(sampler_module, "sample_program", fail)
-    monkeypatch.setattr(sampler_module, "sample_statevector_program", fail)
+    monkeypatch.setattr(shared, "run_lanes", fail)
     dets, obs = sampler.sample(10, separate_observables=True)
     assert (dets == [False, True]).all()
     assert obs.all()

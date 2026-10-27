@@ -2,8 +2,8 @@
 
 ``plan_component`` reads the Pauli ops off the component, schedules and
 plans them; ``lower`` turns the plan into the NumPy arrays of a
-``StatevectorComponent``: an action tape that ``shared.sample_shared_component``
-runs, and the outputs as parities of the symbols the tape leaves behind.
+``StatevectorComponent``: an action tape that ``shared.run_lanes`` runs, and the
+outputs as parities of the symbols the tape leaves behind.
 """
 
 from __future__ import annotations
@@ -99,7 +99,7 @@ class StatevectorComponent:
 
     @property
     def num_words(self) -> int:
-        """Return the number of uint32 words that hold a lane's symbols."""
+        """Return the number of uint32 words that hold the tape's symbols."""
         return int(self.tape.sign_row.shape[1])
 
     @property

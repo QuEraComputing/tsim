@@ -873,16 +873,15 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, up
-                to ``numba.get_num_threads()`` batches at once, each with its
-                own memory.
+                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                ``numba.get_num_threads()`` threads.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
                 with equal histories on one lane. Defaults to True for
                 ``"active_statevector"`` and False otherwise.
-            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
-                only produce deterministic samples for fixed batch size. If
-                deterministic samples are needed, the batch size should be set
-                manually.
+            seed: Random seed for the sampler. With "active_statevector" the samples
+                of a seed depend on neither the batch size nor the thread count;
+                with a stabilizer-rank strategy they are only deterministic for a
+                fixed batch size.
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
@@ -912,16 +911,15 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, up
-                to ``numba.get_num_threads()`` batches at once, each with its
-                own memory.
+                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                ``numba.get_num_threads()`` threads.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
                 with equal histories on one lane. Defaults to True for
                 ``"active_statevector"`` and False otherwise.
-            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
-                only produce deterministic samples for fixed batch size. If
-                deterministic samples are needed, the batch size should be set
-                manually.
+            seed: Random seed for the sampler. With "active_statevector" the samples
+                of a seed depend on neither the batch size nor the thread count;
+                with a stabilizer-rank strategy they are only deterministic for a
+                fixed batch size.
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.

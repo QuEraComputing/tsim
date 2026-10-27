@@ -2,10 +2,12 @@ from dataclasses import replace
 from test.helpers.statevector import (
     CIRCUITS,
     assert_matches_distribution,
+    component_program,
     f_patterns,
     output_indices,
     plan_distribution,
     quantum_components,
+    sample_lanes,
 )
 
 import numpy as np
@@ -13,13 +15,7 @@ import pytest
 import stim
 
 import tsim.statevector.shared as shared
-import tsim.utils.kernels as kernels
 from tsim.statevector.program import MEASURE, MEASURE_DIAG, lower, plan_component
-from tsim.statevector.shared import (
-    lane_bound,
-    sample_shared_component,
-    sharing_layout,
-)
 
 NAMES = [
     "t_ghz",
@@ -87,17 +83,14 @@ def _assert_counts(rows, discarded, expected):
 def test_sampling_matches_the_plan_distribution(name, share):
     shots = 20_000
     for planned, component_layout, compiled in _compiled(name):
-        layout = sharing_layout(compiled)
         for f in f_patterns(planned.num_f, limit=2):
             f_params = _f_params(component_layout, [f], shots)
-            samples, deviation, _ = sample_shared_component(
-                compiled, layout, np.asarray(f_params), 7, share
-            )
-            assert float(deviation) < 1e-4
+            samples, deviation, _ = sample_lanes(compiled, f_params, 7, share)
+            assert deviation < 1e-4
             distribution = plan_distribution(planned, f)
-            assert_matches_distribution(np.asarray(samples), distribution)
+            assert_matches_distribution(samples, distribution)
             # NOTE: an outcome of probability 0 is never drawn, not even rarely.
-            seen = {tuple(row) for row in np.asarray(samples).astype(int).tolist()}
+            seen = {tuple(row) for row in samples.astype(int).tolist()}
             assert all(distribution.get(key, 0.0) > 1e-12 for key in seen)
 
 
@@ -108,13 +101,8 @@ def test_mixed_noise_patterns_share_one_batch(name):
         patterns = f_patterns(planned.num_f, limit=3)
         f_params = _f_params(component_layout, patterns, shots_each)
         permutation = np.random.default_rng(1).permutation(len(f_params))
-        samples, _, _ = sample_shared_component(
-            compiled,
-            sharing_layout(compiled),
-            np.asarray(f_params[permutation]),
-            3,
-        )
-        samples = np.asarray(samples)[np.argsort(permutation)]
+        samples, _, _ = sample_lanes(compiled, f_params[permutation], 3)
+        samples = samples[np.argsort(permutation)]
         for i, f in enumerate(patterns):
             rows = samples[i * shots_each : (i + 1) * shots_each]
             assert_matches_distribution(rows, plan_distribution(planned, f))
@@ -130,13 +118,11 @@ def test_pruning_discards_exactly_the_postselected_failures(name, flip, share):
         postselected[-1] = False
         flipped = np.zeros(compiled.num_outputs, dtype=bool)
         flipped[0] = flip
-        layout = sharing_layout(compiled, postselected, flipped)
         patterns = f_patterns(planned.num_f, limit=3)
         f_params = _f_params(component_layout, patterns, shots_each)
-        samples, _, _ = sample_shared_component(
-            compiled, layout, np.asarray(f_params), 5, share
+        samples, _, _ = sample_lanes(
+            compiled, f_params, 5, share, postselected, flipped
         )
-        samples = np.asarray(samples)
         for i, f in enumerate(patterns):
             rows = samples[i * shots_each : (i + 1) * shots_each]
             discarded = np.asarray((rows & postselected).any(axis=1))
@@ -152,14 +138,12 @@ def test_pruned_shots_report_false_after_their_pruning_action(name, flip):
     for planned, component_layout, compiled in _compiled(name):
         postselected = np.ones(compiled.num_outputs, dtype=bool)
         flipped = np.full(compiled.num_outputs, flip)
-        layout = sharing_layout(compiled, postselected, flipped)
         f_params = _f_params(component_layout, f_patterns(planned.num_f, 3), 4_000)
-        samples, _, _ = sample_shared_component(
-            compiled, layout, np.asarray(f_params), 9
+        rows, _, _ = sample_lanes(
+            compiled, f_params, 9, postselected=postselected, flipped=flipped
         )
-        rows = np.asarray(samples)
-        ready = layout.ready
-        tested = layout.prune_outputs
+        lanes = component_program(compiled, postselected)[1]
+        ready, tested = lanes.ready, lanes.prune_outputs
         prune_at = np.where(tested.any(axis=0), tested.argmax(axis=0), ready)
         pruning = np.min(np.where(rows, prune_at[None, :], np.inf), axis=1)
         late = rows & (ready[None, :] > pruning[:, None])
@@ -167,56 +151,53 @@ def test_pruned_shots_report_false_after_their_pruning_action(name, flip):
 
 
 @pytest.mark.parametrize("name", ["t_ghz", "midcircuit_feedforward", "injection_check"])
-def test_equal_keys_give_equal_samples(name):
+def test_a_seed_gives_its_samples_whatever_shares_its_lanes(name):
     for planned, component_layout, compiled in _compiled(name):
         postselected = np.zeros(compiled.num_outputs, dtype=bool)
         postselected[0] = True
-        layout = sharing_layout(compiled, postselected)
-        f_params = np.asarray(
-            _f_params(component_layout, f_patterns(planned.num_f, 3), 3_000)
+        f_params = _f_params(component_layout, f_patterns(planned.num_f, 3), 3_000)
+        first, _, _ = sample_lanes(compiled, f_params, 13, True, postselected)
+        unshared, _, _ = sample_lanes(compiled, f_params, 13, False, postselected)
+        np.testing.assert_array_equal(first, unshared)
+        # NOTE: a shot's draws depend on its index, so it samples alike in any chunk.
+        cut = 1_234
+        head, _, _ = sample_lanes(compiled, f_params[:cut], 13, True, postselected)
+        tail, _, _ = sample_lanes(
+            compiled, f_params[cut:], 13, True, postselected, first_shot=cut
         )
-        first, _, _ = sample_shared_component(compiled, layout, f_params, 13)
-        second, _, _ = sample_shared_component(compiled, layout, f_params, 13)
-        third, _, _ = sample_shared_component(compiled, layout, f_params, 14)
-        np.testing.assert_array_equal(first, second)
-        assert not np.array_equal(first, third)
+        np.testing.assert_array_equal(np.vstack([head, tail]), first)
+        other, _, _ = sample_lanes(compiled, f_params, 14, True, postselected)
+        assert not np.array_equal(first, other)
 
 
-def test_rare_outcomes_keep_their_binomial_law():
-    lanes = 1 << 21
-    for count, q in [(1, 1e-4), (3, 2e-3), (50, 0.3), (7, 0.5)]:
-        w1 = np.full(lanes, q)
-        ones = shared._draw_ones(np.full(lanes, count), 1 - w1, w1, np.uint64(count))
-        p_any = 1 - (1 - q) ** count
-        hits = np.count_nonzero(ones)
-        assert abs(hits - lanes * p_any) <= 5 * np.sqrt(lanes * p_any) + 3
-        mean, sigma = count * q, np.sqrt(count * q * (1 - q) / lanes)
-        assert abs(ones.mean() - mean) <= 5 * sigma + 1e-6
-        assert ones.min() >= 0 and ones.max() <= count
+@pytest.mark.parametrize(
+    "p", [1e-18, 2**-60, 1e-12, 1e-7, 0.25, 0.5, 1 - 1e-9, 1 - 2**-53]
+)
+def test_thresholds_resolve_probabilities_to_2_to_the_minus_64(p):
+    threshold = int(shared._threshold(p))
+    assert 0 <= threshold < 2**64
+    # NOTE: a uniform 64-bit draw is below the threshold with chance threshold / 2^64.
+    assert abs(threshold / 2**64 - p) <= 2**-64 + p * 2**-52
+    if p >= 2**-64:
+        assert threshold > 0
 
 
-def test_the_common_outcome_counts_the_shots_that_miss_the_rare_one():
-    lanes = 1 << 18
-    count, q = 40, 0.01
-    w1 = np.full(lanes, 1 - q)
-    ones = shared._draw_ones(np.full(lanes, count), 1 - w1, w1, np.uint64(3))
-    zeros = count - ones
-    assert abs(zeros.mean() - count * q) <= 5 * np.sqrt(count * q / lanes)
-
-
-def test_a_lone_shot_sees_an_outcome_of_probability_below_float32_resolution():
-    q = 1e-7
-    lanes = 1 << 22
-    hits = 0
-    for seed in range(24):
-        w1 = np.full(lanes, q)
-        ones = shared._draw_ones(
-            np.ones(lanes, dtype=np.int64), 1 - w1, w1, np.uint64(seed)
-        )
-        hits += int(np.count_nonzero(ones))
-    expected = 24 * lanes * q
-    assert hits > 0
-    assert abs(hits - expected) <= 5 * np.sqrt(expected) + 3
+@pytest.mark.parametrize("rare", [0, 1])
+def test_a_rare_outcome_keeps_its_chance_either_way(rare):
+    # NOTE: w1 / (w0 + w1) rounds to 1 here, but outcome 0 still has 265 draws.
+    small = 1.4381067500455907e-17
+    weights = (small, 1.0) if rare == 0 else (1.0, small)
+    certain, threshold = shared._cut(*weights)
+    assert certain == -1
+    rare_draws = int(threshold) if rare else 2**64 - int(threshold)
+    assert rare_draws == int(small * 2**64)
+    # NOTE: a draw below the threshold is outcome 1; the rare draws sit at one end.
+    lowest, highest = np.uint64(0), np.uint64(2**64 - 1)
+    rare_draw, common_draw = (lowest, highest) if rare else (highest, lowest)
+    assert int(rare_draw < threshold) == rare
+    assert int(common_draw < threshold) == 1 - rare
+    assert shared._cut(*(w if w == 1.0 else 0.0 for w in weights)) == (1 - rare, 0)
+    assert shared._cut(0.0, 0.0) == (0, 0)
 
 
 def _coherent_surface_code(distance, rounds, angle=0.02):
@@ -250,7 +231,7 @@ def coherent():
 
 def test_extents_and_reused_slots_do_not_change_the_samples(coherent, monkeypatch):
     planned, component_layout, compiled = coherent
-    layout = sharing_layout(compiled, np.ones(compiled.num_outputs, dtype=bool))
+    postselected = np.ones(compiled.num_outputs, dtype=bool)
     extent = compiled.tape.extent
 
     def with_extent(values):
@@ -261,72 +242,53 @@ def test_extents_and_reused_slots_do_not_change_the_samples(coherent, monkeypatc
     # samples and makes the extent drop and rise around splits and prunes.
     every_fifth = np.arange(len(extent)) % 5 == 0
     raised = with_extent(np.where(every_fifth, compiled.width, extent))
-    f_params = np.asarray(
-        _f_params(component_layout, f_patterns(planned.num_f, 7), 300)
+    f_params = _f_params(component_layout, f_patterns(planned.num_f, 7), 300)
+    reference, deviation, _ = sample_lanes(
+        full, f_params, 17, postselected=postselected
     )
-    key = 17
-    reference, deviation, _ = sample_shared_component(full, layout, f_params, key)
     # NOTE: NaN fills every amplitude the executor must not read.
     monkeypatch.setattr(shared, "_POISON", True)
     for component in (compiled, raised):
-        samples, other, stats = sample_shared_component(
-            component, layout, f_params, key
+        samples, other, stats = sample_lanes(
+            component, f_params, 17, postselected=postselected
         )
         np.testing.assert_array_equal(samples, reference)
         assert other == deviation
         assert stats["dead"] > 0
 
 
-@pytest.mark.parametrize("name", [*NAMES, "coherent"])
-def test_parallel_kernels_give_the_serial_samples(name, coherent, monkeypatch):
-    compiled_components = [coherent] if name == "coherent" else _compiled(name)
-    for planned, component_layout, compiled in compiled_components:
-        postselected = np.zeros(compiled.num_outputs, dtype=bool)
-        postselected[0] = True
-        layout = sharing_layout(compiled, postselected)
-        f_params = np.asarray(
-            _f_params(component_layout, f_patterns(planned.num_f, 3), 1_000)
-        )
-        samples = []
-        for threshold in (np.iinfo(np.int64).max, 0):
-            with monkeypatch.context() as patch:
-                patch.setattr(kernels, "PARALLEL_WORK", threshold)
-                rows, _, _ = sample_shared_component(compiled, layout, f_params, 19)
-            samples.append(rows)
-        np.testing.assert_array_equal(samples[1], samples[0])
-
-
 @pytest.mark.parametrize("postselect", [False, True])
-def test_lanes_stay_within_the_lane_bound(postselect):
-    reached = False
+def test_lanes_split_only_for_the_outcomes_their_shots_draw(postselect):
     for name in NAMES:
         for planned, component_layout, compiled in _compiled(name):
             postselected = np.full(compiled.num_outputs, postselect)
-            layout = sharing_layout(compiled, postselected)
-            f_params = np.asarray(
-                _f_params(component_layout, f_patterns(planned.num_f), 500)
+            patterns = f_patterns(planned.num_f)
+            f_params = _f_params(component_layout, patterns, 500)
+            _, _, stats = sample_lanes(compiled, f_params, 3, postselected=postselected)
+            splits = int(component_program(compiled, postselected)[1].splits.sum())
+            assert stats["groups"] <= len(patterns)
+            assert stats["peak lanes"] <= min(len(f_params), stats["groups"] << splits)
+            _, _, alone = sample_lanes(
+                compiled, f_params, 3, share=False, postselected=postselected
             )
-            _, _, stats = sample_shared_component(compiled, layout, f_params, 3)
-            assert stats["peak lanes"] <= lane_bound(layout)
-            reached |= stats["peak lanes"] == lane_bound(layout) > 1
-    assert reached
+            assert alone["groups"] == len(f_params)
 
 
 def test_shots_whose_lanes_all_die_are_still_sampled():
     all_died = False
     for name in NAMES:
         for planned, component_layout, compiled in _compiled(name):
-            layout = sharing_layout(compiled, np.ones(compiled.num_outputs, dtype=bool))
-            f_params = np.asarray(
-                _f_params(component_layout, f_patterns(planned.num_f, 1)[:1], 1)
-            )
+            postselected = np.ones(compiled.num_outputs, dtype=bool)
+            f_params = _f_params(component_layout, f_patterns(planned.num_f, 1)[:1], 1)
             for seed in range(40):
-                samples, _, stats = sample_shared_component(
-                    compiled, layout, f_params, seed
+                samples, _, stats = sample_lanes(
+                    compiled, f_params, seed, postselected=postselected
                 )
                 assert samples.shape == (1, compiled.num_outputs)
                 all_died |= stats["lanes"] == 0
-            samples, _, _ = sample_shared_component(compiled, layout, f_params[:0], 0)
+            samples, _, _ = sample_lanes(
+                compiled, f_params[:0], 0, postselected=postselected
+            )
             assert samples.shape == (0, compiled.num_outputs)
     assert all_died
 

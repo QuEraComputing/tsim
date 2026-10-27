@@ -680,43 +680,59 @@ class ChannelSampler:
         """
         num_f = self.signature_matrix.shape[1]
         result = np.empty((num_samples, num_f), dtype=np.uint8)
-        self._sample_into(result, seeds, self._flip_tables(packed=False))
+        self.sample_words(result, self._tables.flips, seeds)
         return result
 
-    def sample_packed(
-        self, num_samples: int = 1, seeds: np.ndarray | None = None
-    ) -> np.ndarray:
-        """Return ``sample``'s rows bit-packed, as ``sample`` draws them from ``seeds``.
+    def word_tables(
+        self, f_index: np.ndarray, bit: np.ndarray, *, bits: int = 64
+    ) -> WordTables:
+        """Return the fault outcomes' flips on rows of words of ``bits`` bits.
 
-        f-variable ``i`` is bit ``i % 64`` of word ``i // 64``; the bits past
-        ``num_f`` are zero.
-
-        Returns:
-            NumPy array of shape (num_samples, ceil(num_f / 64)) of uint64.
-
+        F-variable ``f_index[j]`` flips bit ``bit[j]`` of a row (bit ``b`` is bit
+        ``b % bits`` of word ``b // bits``), so a row holds the XOR of its set
+        f-variables' bits. The pairs must be distinct. Rows are of uint64 words
+        for ``bits=64`` and of a uint8 per bit for ``bits=1``.
         """
+        flips = self._tables.flips
         num_f = self.signature_matrix.shape[1]
-        result = np.empty((num_samples, -(-num_f // 64)), dtype=np.uint64)
-        self._sample_into(result, seeds, self._flip_tables(packed=True))
-        return result
+        order = np.argsort(f_index, kind="stable")
+        targets = np.asarray(bit, dtype=np.int64)[order]
+        column_start = np.searchsorted(np.asarray(f_index)[order], np.arange(num_f + 1))
+        # NOTE: each outcome's flipped f-variables expand into their bits; a bit
+        # that an even number of them flip cancels.
+        first = column_start[flips.word]
+        count = column_start[flips.word + 1] - first
+        entry = np.arange(count.sum()) + np.repeat(
+            first - np.cumsum(count) + count, count
+        )
+        num_outcomes = len(flips.start) - 1
+        outcome = np.repeat(
+            np.repeat(np.arange(num_outcomes), np.diff(flips.start)), count
+        )
+        span = int(targets.max(initial=0)) + 1
+        flat, parity = np.unique(outcome * span + targets[entry], return_counts=True)
+        flat = flat[parity % 2 == 1]
+        outcome, flipped = flat // span, flat % span
+        word = flipped // bits
+        runs = np.flatnonzero(
+            np.diff(outcome, prepend=-1).astype(bool)
+            | np.diff(word, prepend=-1).astype(bool)
+        )
+        ones = np.left_shift(np.uint64(1), (flipped % bits).astype(np.uint64))
+        mask = np.bitwise_or.reduceat(ones, runs) if len(runs) else ones
+        start = np.searchsorted(outcome[runs], np.arange(num_outcomes + 1))
+        if bits == 1:
+            mask = mask.astype(np.uint8)
+        return WordTables(start.astype(np.int64), word[runs].astype(np.int64), mask)
 
-    def _flip_tables(
-        self, *, packed: bool
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Return the outcome flips of bit-packed or uint8 rows, as ``_sample_block`` takes them."""
-        t = self._tables
-        if packed:
-            return t.pack_start, t.flip_word, t.flip_mask
-        # NOTE: a uint8 row flips one f-variable per entry, with a mask of 1.
-        return t.flip_start, t.flip_cols, np.ones(len(t.flip_cols), dtype=np.uint8)
-
-    def _sample_into(
-        self,
-        out: np.ndarray,
-        seeds: np.ndarray | None,
-        flips: tuple[np.ndarray, np.ndarray, np.ndarray],
+    def sample_words(
+        self, out: np.ndarray, flips: WordTables, seeds: np.ndarray | None = None
     ) -> None:
-        """Write ``len(out)`` rows into ``out`` with the outcome ``flips`` of its layout."""
+        """Write ``len(out)`` rows of noise into ``out``, as ``flips`` sets their words.
+
+        Row ``r`` is drawn as ``sample`` draws row ``r``: block by block from
+        ``seeds``, so every layout of the rows holds the same faults.
+        """
         num_samples = len(out)
         if seeds is None:
             seeds = self.block_seeds(num_samples)
@@ -739,29 +755,36 @@ class ChannelSampler:
         )
 
 
+class WordTables(NamedTuple):
+    """The words each fault outcome XORs into a row.
+
+    Outcome ``k`` XORs ``mask[j]`` into word ``word[j]`` of its row, for ``j`` in
+    ``start[k] … start[k+1] - 1``.
+    """
+
+    start: np.ndarray
+    word: np.ndarray
+    mask: np.ndarray
+
+
 class _FireTables(NamedTuple):
     """Geometric-skip sampling tables of the channels that can fire.
 
     Channel ``c`` fires with probability ``p_fire[c]``. Its non-identity
     outcomes are ``outcome_start[c] … outcome_start[c+1] - 1``, and outcome
-    ``k`` flips the f-variables ``flip_cols[flip_start[k] : flip_start[k+1]]``.
+    ``k`` flips the f-variables ``flips.word[flips.start[k] : flips.start[k+1]]``:
+    ``flips`` writes rows of one uint8 per f-variable.
 
     The samplers pick outcomes with Walker alias tables: among a channel's ``n``
     outcomes from ``first``, slot ``i`` is outcome ``first + i`` with probability
-    ``alias_prob[first + i]`` and otherwise ``alias_index[first + i]``. For
-    bit-packed rows, outcome ``k`` XORs ``flip_mask[j]`` into word ``flip_word[j]``
-    for ``j`` in ``pack_start[k] … pack_start[k+1] - 1``.
+    ``alias_prob[first + i]`` and otherwise ``alias_index[first + i]``.
     """
 
     p_fire: np.ndarray
     outcome_start: np.ndarray
-    flip_start: np.ndarray
-    flip_cols: np.ndarray
+    flips: WordTables
     alias_prob: np.ndarray
     alias_index: np.ndarray
-    pack_start: np.ndarray
-    flip_word: np.ndarray
-    flip_mask: np.ndarray
 
 
 def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _FireTables:
@@ -808,38 +831,17 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _Fire
             flip_start.append(len(flip_cols))
     starts = np.array(outcome_start, dtype=np.int64)
     alias_prob, alias_index = _alias_tables(starts, np.array(cdf, dtype=np.float64))
-    flip_starts = np.array(flip_start, dtype=np.int64)
-    columns = np.array(flip_cols, dtype=np.int64)
-    pack_start, flip_word, flip_mask = _packed_flips(flip_starts, columns)
     return _FireTables(
         p_fire=np.array(p_fire, dtype=np.float64),
         outcome_start=starts,
-        flip_start=flip_starts,
-        flip_cols=columns,
+        flips=WordTables(
+            np.array(flip_start, dtype=np.int64),
+            np.array(flip_cols, dtype=np.int64),
+            np.ones(len(flip_cols), dtype=np.uint8),
+        ),
         alias_prob=alias_prob,
         alias_index=alias_index,
-        pack_start=pack_start,
-        flip_word=flip_word,
-        flip_mask=flip_mask,
     )
-
-
-def _packed_flips(
-    flip_start: np.ndarray, flip_cols: np.ndarray
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return the outcomes' flips as (pack_start, flip_word, flip_mask) for packed rows.
-
-    An outcome's columns are sorted, so each of its words is one run of entries.
-    """
-    outcome = np.repeat(np.arange(len(flip_start) - 1), np.diff(flip_start))
-    word = flip_cols >> 6
-    bits = np.left_shift(np.uint64(1), (flip_cols & 63).astype(np.uint64))
-    new = np.ones(len(flip_cols), dtype=bool)
-    new[1:] = (outcome[1:] != outcome[:-1]) | (word[1:] != word[:-1])
-    runs = np.flatnonzero(new)
-    mask = np.bitwise_or.reduceat(bits, runs) if len(runs) else bits
-    pack_start = np.searchsorted(outcome[runs], np.arange(len(flip_start)))
-    return pack_start.astype(np.int64), word[runs], mask
 
 
 def _alias_tables(
@@ -887,13 +889,12 @@ def _pick_outcome(state, first, last, alias_prob, alias_index):
 
 @jit
 def _sample_block(
-    out, state, p_fire, outcome_start, alias_prob, alias_index, flip_start, index, mask
+    out, state, p_fire, outcome_start, alias_prob, alias_index, flip_start, word, mask
 ):
     """Clear the rows of ``out``, then XOR in every channel's outcomes.
 
-    Outcome ``k`` XORs ``mask[j]`` into ``out[row, index[j]]`` for ``j`` in
-    ``flip_start[k] … flip_start[k+1] - 1``: f-variables with masks of 1 for
-    uint8 rows, words with their bits for bit-packed rows.
+    Outcome ``k`` XORs ``mask[j]`` into ``out[row, word[j]]`` for ``j`` in
+    ``flip_start[k] … flip_start[k+1] - 1`` (``WordTables``).
     """
     out[:] = 0
     for c in range(len(p_fire)):
@@ -907,12 +908,12 @@ def _sample_block(
                 break
             state, k = _pick_outcome(state, first, last, alias_prob, alias_index)
             for j in range(flip_start[k], flip_start[k + 1]):
-                out[int(row), index[j]] ^= mask[j]
+                out[int(row), word[j]] ^= mask[j]
 
 
 @kernel
 def _sample_blocks(
-    out, seeds, p_fire, outcome_start, alias_prob, alias_index, flip_start, index, mask
+    out, seeds, p_fire, outcome_start, alias_prob, alias_index, flip_start, word, mask
 ):
     """Sample block ``b`` of ``_BLOCK_SHOTS`` rows from the stream ``seeds[b]``."""
     for b in numba.prange(len(seeds)):
@@ -925,6 +926,6 @@ def _sample_blocks(
             alias_prob,
             alias_index,
             flip_start,
-            index,
+            word,
             mask,
         )

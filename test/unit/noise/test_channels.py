@@ -1132,8 +1132,8 @@ class TestFireTables:
                 flips = np.array(bits) @ signature_matrix[list(channel.unique_col_ids)]
                 flip_cols.extend(np.flatnonzero(flips % 2).tolist())
                 flip_start.append(len(flip_cols))
-        np.testing.assert_array_equal(tables.flip_start, flip_start)
-        np.testing.assert_array_equal(tables.flip_cols, flip_cols)
+        np.testing.assert_array_equal(tables.flips.start, flip_start)
+        np.testing.assert_array_equal(tables.flips.word, flip_cols)
         assert len(tables.outcome_start) == len(tables.p_fire) + 1
         assert tables.outcome_start[-1] == len(flip_start) - 1
 
@@ -1297,8 +1297,8 @@ class TestChannelSampler:
                 got[alias_index[slot] - first] += (1 - alias_prob[slot]) / count
             assert_allclose(got, w / w.sum(), atol=1e-15)
 
-    def test_packed_rows_are_the_uint8_rows(self):
-        """``sample_packed`` draws the rows of ``sample`` from the same seeds."""
+    def test_word_tables_put_each_rows_parities_in_its_words(self):
+        """A row's words are the XOR of its f-variables' columns, block by block."""
         probs = [
             pauli_channel_2_probs(*([0.01] * 15)),
             error_probs(0.2),
@@ -1307,14 +1307,20 @@ class TestChannelSampler:
         rng = np.random.default_rng(8)
         transform = rng.integers(0, 2, size=(70, 6), dtype=np.uint8)
         sampler = ChannelSampler(probs, transform, seed=6)
+        num_f = sampler.signature_matrix.shape[1]
         num_samples = 2 * _BLOCK_SHOTS + 77
         seeds = sampler.block_seeds(num_samples)
         rows = sampler.sample(num_samples, seeds)
-        packed = sampler.sample_packed(num_samples, seeds)
-        assert packed.shape == (num_samples, 2) and packed.dtype == np.uint64
-        bits = np.unpackbits(packed.view(np.uint8), axis=1, bitorder="little")
-        assert np.array_equal(bits[:, : rows.shape[1]], rows)
-        assert not bits[:, rows.shape[1] :].any()
+        # NOTE: 70 parities over two words, among them a few single f-variables.
+        parities = rng.integers(0, 2, size=(70, num_f)).astype(bool)
+        parities[: min(num_f, 8)] = np.eye(num_f, dtype=bool)[:8]
+        bit, f_index = np.nonzero(parities)
+        words = np.ones((num_samples, 2), dtype=np.uint64)
+        sampler.sample_words(words, sampler.word_tables(f_index, bit), seeds)
+        bits = np.unpackbits(words.view(np.uint8), axis=1, bitorder="little")
+        expected = (rows @ parities.T.astype(np.uint8)) % 2
+        assert np.array_equal(bits[:, :70], expected)
+        assert not bits[:, 70:].any()
 
     def test_zero_probability_outcomes_never_occur(self):
         """An outcome of probability 0 is never drawn, from any alias slot."""
@@ -1333,5 +1339,5 @@ class TestChannelSampler:
         seeds = sampler.block_seeds(num_samples)
         expected = sampler.sample(num_samples, seeds)
         out = np.ones_like(expected)
-        sampler._sample_into(out, seeds, sampler._flip_tables(packed=False))
+        sampler.sample_words(out, sampler._tables.flips, seeds)
         assert np.array_equal(out, expected)
