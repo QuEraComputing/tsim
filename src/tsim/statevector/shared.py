@@ -146,13 +146,6 @@ class KeyBasis(NamedTuple):
     sign_coords: np.ndarray
 
 
-def unpack_symbols(words: np.ndarray, num_words: int) -> np.ndarray:
-    """Return uint32 symbol words as booleans: symbol s is bit s % 32 of word s // 32."""
-    shifts = np.arange(32, dtype=np.uint32)
-    bits = (words[..., None] >> shifts) & 1
-    return bits.reshape(*words.shape[:-1], 32 * num_words).astype(bool)
-
-
 def pack_bits(bits: np.ndarray, num_words: int) -> np.ndarray:
     """Return booleans as uint64 words: bit i is bit i % 64 of word i // 64."""
     padded = np.zeros((*bits.shape[:-1], 64 * num_words), dtype=bool)
@@ -164,7 +157,7 @@ def key_basis(component: StatevectorComponent) -> KeyBasis:
     """Return a basis of the f-parts of the component's rotation signs."""
     tape = component.tape
     num_f = len(tape.f_selection)
-    signs = unpack_symbols(tape.sign_row, component.num_words)[:, :num_f]
+    signs = tape.sign_row[:, :num_f]
     rotation = np.isin(tape.kind, (ROTATE_DIAG, ROTATE))
     signs = signs & rotation[:, None]
     nonzero = signs.any(axis=1)
@@ -197,9 +190,8 @@ def lane_program(
     num_actions = len(tape.kind)
     num_outputs = component.num_outputs
     kind, branch = tape.kind, tape.branch
-    symbol_bits = 32 * component.num_words
-    sign_bits = unpack_symbols(tape.sign_row, component.num_words)
-    output_bits = unpack_symbols(tape.output_row, component.num_words)
+    symbol_bits = component.num_symbols
+    sign_bits, output_bits = tape.sign_row, tape.output_row
     postselected = np.asarray(postselected, dtype=bool)
 
     setter = np.full(symbol_bits, -1, dtype=np.int64)

@@ -68,8 +68,8 @@ def test_noise_writes_each_outputs_f_part_and_each_key(name, rows):
     ):
         tape = component.tape
         f_bits = f[:, list(tape.f_selection)]
-        output_bits = shared.unpack_symbols(tape.output_row, component.num_words)
-        f_parts = (f_bits @ output_bits[:, : len(tape.f_selection)].T) % 2 == 1
+        output_bits = tape.output_row[:, : len(tape.f_selection)].astype(np.uint8)
+        f_parts = (f_bits @ output_bits.T) % 2 == 1
         expected[:, list(component.output_indices)] = f_parts
         keys = (f_bits @ key.rows.T.astype(np.uint8)) % 2 == 1
         np.testing.assert_array_equal(
