@@ -371,7 +371,7 @@ class _CompiledSamplerBase:
         self._direct_detector_mask = np.zeros(self._num_detectors, dtype=np.bool_)
         self._direct_detector_mask[columns[is_detector]] = True
 
-    def _sample_shot_outputs(
+    def _sample_outputs(
         self,
         shots: int,
         batch_size: int | None,
@@ -379,11 +379,38 @@ class _CompiledSamplerBase:
         *,
         bit_packed: bool,
         mask: np.ndarray | None = None,
-        flip: np.ndarray | None = None,
+        referenced: np.ndarray | None = None,
     ) -> list[np.ndarray]:
-        """Return the output bits ``columns`` of ``shots`` shots (``ShotSampler.sample``)."""
-        assert self._shots is not None
+        """Return the output bits ``columns`` of ``shots`` shots, one array per list.
+
+        Args:
+            shots: Number of shots.
+            batch_size: As in ``CompiledDetectorSampler.sample``.
+            columns: The output columns of each array.
+            bit_packed: Whether the arrays are bit-packed.
+            mask: The postselected detectors, as in
+                ``CompiledDetectorSampler.sample``, if any.
+            referenced: The outputs that a noiseless reference sample is XOR-ed
+                into, before the postselection tests, if any.
+
+        """
         _check_sizes(shots, batch_size)
+        if self._shots is None:
+            return self._sample_stabilizer_rank_outputs(
+                shots,
+                batch_size,
+                columns,
+                bit_packed=bit_packed,
+                mask=mask,
+                referenced=referenced,
+            )
+        flip = None if referenced is None else self._reference_sample() & referenced
+        # NOTE: a discarded shot reads False past its direct detectors, which only
+        # the shot words write; the noise sampler writes direct outputs straight
+        # into boolean rows otherwise.
+        if not (self._program.components or bit_packed or mask is not None):
+            samples = self._shots.direct_bools(shots, flip)
+            return [_take_columns(samples, c) for c in columns]
         arrays, deviation = self._shots.sample(
             shots,
             columns,
@@ -394,6 +421,48 @@ class _CompiledSamplerBase:
         )
         _check_norm(deviation, StatevectorComponent.norm_warning_threshold)
         return arrays
+
+    def _sample_stabilizer_rank_outputs(
+        self,
+        shots: int,
+        batch_size: int | None,
+        columns: list[np.ndarray],
+        *,
+        bit_packed: bool,
+        mask: np.ndarray | None,
+        referenced: np.ndarray | None,
+    ) -> list[np.ndarray]:
+        """Return the output bits ``columns`` of ``shots`` shots, sampled with JAX.
+
+        The arguments are those of ``_sample_outputs``. A mask only changes the
+        samples through direct detectors that can fire, so other masks are
+        sampled without postselection.
+        """
+        if mask is not None:
+            skips = mask & self._direct_detector_mask
+            indices, flips, direct_columns = self._direct_detectors
+            constant = indices < 0
+            fires = flips[constant]
+            if referenced is not None:
+                fires = fires & ~referenced[direct_columns[constant]]
+            skips[direct_columns[constant]] &= fires
+            if not skips.any():
+                mask = None
+        if mask is not None:
+            samples = self._sample_batches_with_postselection(
+                shots, batch_size, postselection_mask=mask, referenced=referenced
+            )
+        elif referenced is not None:
+            samples, reference = self._sample_batches(
+                shots, batch_size, compute_reference=True
+            )
+            samples ^= reference & referenced
+        else:
+            samples = self._sample_batches(shots, batch_size)
+        return [
+            _maybe_bit_pack(_take_columns(samples, c), bit_packed=bit_packed)
+            for c in columns
+        ]
 
     def _reference_sample(self) -> np.ndarray:
         """Return a noiseless sample of every output (all f-params 0).
@@ -737,15 +806,8 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             A numpy array containing the measurement samples.
 
         """
-        if self._shots is not None:
-            columns = [np.arange(self._program.num_outputs)]
-            if not self._program.components:
-                _check_sizes(shots, batch_size)
-                return self._shots.direct_bools(shots)
-            return self._sample_shot_outputs(
-                shots, batch_size, columns, bit_packed=False
-            )[0]
-        return self._sample_batches(shots, batch_size)
+        columns = [np.arange(self._program.num_outputs)]
+        return self._sample_outputs(shots, batch_size, columns, bit_packed=False)[0]
 
 
 def _maybe_bit_pack(array: np.ndarray, *, bit_packed: bool) -> np.ndarray:
@@ -918,12 +980,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 "append_observables=True or prepend_observables=True"
             )
 
-        compute_reference = (
-            use_detector_reference_sample or use_observable_reference_sample
-        )
         num_detectors = self._num_detectors
-        mask_given = postselection_mask is not None
-
+        mask = None
         if postselection_mask is not None:
             mask = np.asarray(postselection_mask, dtype=np.bool_)
             if mask.shape != (num_detectors,):
@@ -931,24 +989,14 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                     f"postselection_mask must have shape ({num_detectors},), "
                     f"got {mask.shape}"
                 )
-            # NOTE: shot words discard and prune with any mask; with a
-            # stabilizer-rank strategy only direct detectors that can fire skip work.
-            if self._shots is not None:
-                postselection_mask = mask
-            else:
-                skips = mask & self._direct_detector_mask
-                indices, flips, columns = self._direct_detectors
-                constant = indices < 0
-                skips[columns[constant]] &= flips[constant] & (
-                    not use_detector_reference_sample
-                )
-                postselection_mask = mask if skips.any() else None
-
         num_outputs = self._program.num_outputs
-        is_detector = np.arange(num_outputs) < num_detectors
-        referenced = np.where(
-            is_detector, use_detector_reference_sample, use_observable_reference_sample
-        )
+        referenced = None
+        if use_detector_reference_sample or use_observable_reference_sample:
+            referenced = np.where(
+                np.arange(num_outputs) < num_detectors,
+                use_detector_reference_sample,
+                use_observable_reference_sample,
+            )
         columns = _output_columns(
             num_detectors,
             num_outputs,
@@ -956,46 +1004,14 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             append=append_observables,
             separate=separate_observables,
         )
-        if self._shots is not None:
-            # NOTE: the reference bits are XOR-ed in before the postselection tests.
-            flip = self._reference_sample() & referenced if compute_reference else None
-            # NOTE: a discarded shot reads False past its direct detectors, which
-            # only the shot words write; direct_bools serves the other calls.
-            if self._program.components or bit_packed or mask_given:
-                arrays = self._sample_shot_outputs(
-                    shots,
-                    batch_size,
-                    columns,
-                    bit_packed=bit_packed,
-                    mask=postselection_mask,
-                    flip=flip,
-                )
-                return (arrays[0], arrays[1]) if separate_observables else arrays[0]
-            _check_sizes(shots, batch_size)
-            samples = self._shots.direct_bools(shots, flip)
-        elif postselection_mask is not None:
-            if not compute_reference:
-                referenced = None
-            samples = self._sample_batches_with_postselection(
-                shots,
-                batch_size,
-                postselection_mask=postselection_mask,
-                referenced=referenced,
-            )
-        elif compute_reference:
-            samples, reference = self._sample_batches(
-                shots, batch_size, compute_reference=True
-            )
-            if use_detector_reference_sample:
-                samples[:, :num_detectors] ^= reference[:num_detectors]
-            if use_observable_reference_sample:
-                samples[:, num_detectors:] ^= reference[num_detectors:]
-        else:
-            samples = self._sample_batches(shots, batch_size)
-        arrays = [
-            _maybe_bit_pack(_take_columns(samples, c), bit_packed=bit_packed)
-            for c in columns
-        ]
+        arrays = self._sample_outputs(
+            shots,
+            batch_size,
+            columns,
+            bit_packed=bit_packed,
+            mask=mask,
+            referenced=referenced,
+        )
         return (arrays[0], arrays[1]) if separate_observables else arrays[0]
 
 
