@@ -460,7 +460,7 @@ def sample_lanes(
     num_f = len(tape.f_selection)
     num_outputs = compiled.num_outputs
     f = np.asarray(f_params)[:, list(tape.f_selection)].astype(np.uint8)
-    output_bits = shared.unpack_symbols(tape.output_row, compiled.num_words)
+    output_bits = tape.output_row
     f_parts = (f @ output_bits[:, :num_f].T.astype(np.uint8)) % 2 == 1
     constant = np.asarray(tape.output_const, dtype=bool)
     if flipped is not None:

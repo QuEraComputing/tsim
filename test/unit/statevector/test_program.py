@@ -85,17 +85,18 @@ def test_lower_encodes_every_action():
     assert tape.pivot.tolist()[2:4] == [1, 0]
     assert tape.branch.tolist() == [-1, -1, 1, 2, 3]
     assert tape.sign_const.tolist()[:2] == [True, False]
-    assert tape.sign_row[:2, 0].tolist() == [1, 0]
+    assert tape.sign_row[:2].tolist() == [[True, False, False, False], [False] * 4]
     assert tape.output_const.tolist() == [False, True]
-    assert tape.output_row[:, 0].tolist() == [0b1010, 0b0101]
-    assert compiled.num_words == 1
+    assert np.flatnonzero(tape.output_row[0]).tolist() == [1, 3]
+    assert np.flatnonzero(tape.output_row[1]).tolist() == [0, 2]
+    assert compiled.num_symbols == 4
     assert tape.f_selection.tolist() == [4]
     assert compiled.output_indices == (2, 5)
     assert (compiled.width, compiled.num_outputs) == (2, 2)
     assert compiled.num_actions == 5
 
 
-def test_lower_packs_symbols_beyond_32_into_more_words():
+def test_lower_keeps_a_column_per_symbol():
     planned = Plan(
         width=0,
         num_f=40,
@@ -103,8 +104,8 @@ def test_lower_packs_symbols_beyond_32_into_more_words():
         outputs=(AffineRow(False, frozenset({0, 33, 39})),),
     )
     compiled = lower(planned, ComponentLayout(tuple(range(40)), {}, (0,)))
-    assert compiled.num_words == 2
-    assert compiled.tape.output_row.tolist() == [[1, (1 << 1) | (1 << 7)]]
+    assert compiled.num_symbols == 40
+    assert np.flatnonzero(compiled.tape.output_row[0]).tolist() == [0, 33, 39]
 
 
 def test_too_wide_components_are_rejected(monkeypatch):
