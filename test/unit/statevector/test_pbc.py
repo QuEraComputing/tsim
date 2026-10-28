@@ -27,6 +27,7 @@ from tsim.statevector.pbc import (
     PauliOps,
     _mask,
     _Reading,
+    _Relations,
     _unmask,
     _with_commutant_measurements,
     anticommute,
@@ -181,3 +182,81 @@ def test_unmask_reads_the_low_bits_of_a_mask(length):
     for mask in [0, 1, 0b1011, 2**69 + 2**8 + 1, (1 << 80) - 1]:
         expected = [bool(mask >> i & 1) for i in range(length)]
         assert _unmask(mask, length).tolist() == expected
+
+
+def _affine(form: int, f: int) -> int:
+    """Return the affine form ``form`` of ``(1, f_0, f_1, …)`` at the f-bits ``f``."""
+    return (form & (1 | f << 1)).bit_count() & 1
+
+
+@pytest.mark.parametrize("seed", range(300))
+def test_relations_eliminate_and_reduce_like_brute_force(seed):
+    """Summing the sign over eliminated variables leaves the reduced rows' indicator.
+
+    The weight of an assignment ``v`` is ``(-1)^Φ`` times whether every equality
+    holds. Summed over the eliminated variables, it must be, for each f-bit
+    pattern, a constant times the indicator of the reduced rows; the reduction
+    raises exactly when some pattern breaks that form.
+    """
+    rng = np.random.default_rng(seed)
+    num_vars, num_f = int(rng.integers(1, 7)), int(rng.integers(0, 3))
+    forms = 1 << (1 + num_f)
+    relations = _Relations(num_vars)
+    for _ in range(int(rng.integers(0, 2 * num_vars))):
+        i, j = (int(v) for v in rng.integers(0, num_vars, 2))
+        relations.add_sign(i, j)
+    for i in range(num_vars):
+        if rng.random() < 0.3:
+            relations.lin[i] ^= int(rng.integers(0, forms))
+    for _ in range(int(rng.integers(0, num_vars + 1))):
+        mask = int(rng.integers(1, 1 << num_vars))
+        relations.equalities.append((mask, int(rng.integers(0, forms))))
+    pairs, lin = list(relations.pairs), list(relations.lin)
+    equalities = list(relations.equalities)
+    eliminated = [v for v in range(num_vars) if rng.random() < 0.5]
+    kept = [int(v) for v in rng.permutation(num_vars) if v not in eliminated]
+
+    def summed(f: int) -> dict[int, int]:
+        """Return the weight of each kept assignment, summed over the others."""
+        total: dict[int, int] = {}
+        for v in range(1 << num_vars):
+            if not all(
+                (mask & v).bit_count() & 1 == _affine(rhs, f)
+                for mask, rhs in equalities
+            ):
+                continue
+            # NOTE: pairs are symmetric, so the pairs below i count each once; a
+            # diagonal pair is in lin, where add_sign keeps it.
+            phase = sum(
+                (v >> i & 1)
+                * (((pairs[i] & v) & ((1 << i) - 1)).bit_count() + _affine(lin[i], f))
+                for i in range(num_vars)
+            )
+            key = sum((v >> k & 1) << k for k in kept)
+            total[key] = total.get(key, 0) + (-1) ** (phase % 2)
+        return total
+
+    def kept_assignments():
+        for bits in range(1 << len(kept)):
+            yield sum((bits >> n & 1) << k for n, k in enumerate(kept))
+
+    weights = [summed(f) for f in range(1 << num_f)]
+
+    def representable(total: dict[int, int]) -> bool:
+        values = {w for w in total.values() if w}
+        return len(values) == 1
+
+    try:
+        for v in eliminated:
+            relations.eliminate(v)
+        rows = relations.reduce(kept)
+    except ValueError:
+        assert not all(representable(total) for total in weights)
+        return
+    for f, total in enumerate(weights):
+        assert representable(total)
+        for v in kept_assignments():
+            holds = all(
+                (mask & v).bit_count() & 1 == _affine(rhs, f) for _, mask, rhs in rows
+            )
+            assert bool(total.get(v, 0)) == holds
