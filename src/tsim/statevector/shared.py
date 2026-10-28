@@ -656,7 +656,8 @@ def run_lanes(
     ``words`` holds the chunk's shot words (row ``s`` is shot ``first_shot + s``)
     and ``program`` is the component's ``LaneProgram``. The shots' output bits get
     the component's branch parts and coins, and those that a pruning hides are
-    cleared. The amplitude loops run in up to ``4 * threads`` parallel chunks once
+    cleared. A pruned shot leaves ``alive``, so later components skip it. The
+    amplitude loops run in up to ``4 * threads`` parallel chunks once
     their work reaches ``parallel_work``.
 
     Returns:
@@ -880,6 +881,8 @@ def run_lanes(
                 e = size - 1 - e
         else:
             shot, e = dead_shot[i - n], size + dead_grave[i - n]
+        if e >= size:
+            alive[shot] = False
         for w in range(len(out_words)):
             words[shot, out_words[w]] ^= pattern[e, w]
         coins = np.uint64(0)

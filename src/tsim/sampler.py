@@ -895,13 +895,14 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             postselection_mask: Optional boolean array of length ``num_detectors``.
                 When set, shots where any masked direct detector (an error bit
                 or a constant) fires are not sampled further. All ``shots`` rows
-                are still returned: survivors
-                contain the full sample, while discarded rows retain direct detector
-                columns and fill component columns with ``False``; with
-                ``strategy="active_statevector"``, a shot discarded by a masked
-                component detector also reads ``False`` in the outputs set after
-                it. Re-apply the mask to the returned detector columns to recover
-                surviving shots.
+                are still returned: survivors contain the full sample, while
+                discarded rows keep their direct detector columns and read
+                ``False`` in every other column, observables included. With
+                ``strategy="active_statevector"`` a masked component detector
+                also discards a shot: its row keeps the direct detectors and the
+                outputs that component set up to that detector, and reads
+                ``False`` elsewhere. Re-apply the mask to the returned detector
+                columns to recover surviving shots.
 
         Returns:
             A numpy array or tuple of numpy arrays containing the samples.
@@ -921,6 +922,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             use_detector_reference_sample or use_observable_reference_sample
         )
         num_detectors = self._num_detectors
+        mask_given = postselection_mask is not None
 
         if postselection_mask is not None:
             mask = np.asarray(postselection_mask, dtype=np.bool_)
@@ -932,7 +934,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             # NOTE: shot words discard and prune with any mask; with a
             # stabilizer-rank strategy only direct detectors that can fire skip work.
             if self._shots is not None:
-                postselection_mask = mask if self._program.components else None
+                postselection_mask = mask
             else:
                 skips = mask & self._direct_detector_mask
                 indices, flips, columns = self._direct_detectors
@@ -957,7 +959,9 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         if self._shots is not None:
             # NOTE: the reference bits are XOR-ed in before the postselection tests.
             flip = self._reference_sample() & referenced if compute_reference else None
-            if self._program.components or bit_packed:
+            # NOTE: a discarded shot reads False past its direct detectors, which
+            # only the shot words write; direct_bools serves the other calls.
+            if self._program.components or bit_packed or mask_given:
                 arrays = self._sample_shot_outputs(
                     shots,
                     batch_size,
