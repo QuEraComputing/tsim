@@ -1,43 +1,43 @@
 """Trajectory-sharing executor for statevector components, on the CPU with numba.
 
-Shots that agree on every symbol that reaches the amplitudes share one lane. The
-only per-shot input to the amplitudes is the sign of a rotation (outputs are
-parities of the final symbols), so a shot's grouping key is the f-bit part of
-every rotation sign. With postselection the key also holds the f-bit part of
-every postselected output, so that a lane is pruned as a whole as soon as one of
-its postselected outputs is known to be 1: at the action that sets the output's
-last branch bit, or before the first action for an output of f-bits only.
+A shot reaches a component's amplitudes only through its rotation signs, which
+read parities of its f-bits (the component's *key*) and the outcomes of earlier
+measurements. A postselected output prunes a shot through its f-part and its
+outcomes. The noise sampler writes each shot's key and output f-parts into the
+shot's words (``tsim.statevector.shots``), so this executor never sees f-bits.
 
-A lane holds amplitudes, the symbols of one of its shots (its f-bits agree with
-every member on the key, and its branch bits are the lane's outcomes), a shot
-count and a range in the key-sorted order of the shots. At a measurement the lane
-draws how many of its shots see the rarer outcome (a binomial whose chance of a
-first hit is resolved to 2^-64) and splits: the child takes the last n shots of
-the range. Shots in a lane agree on the key, so they are exchangeable, and the
-sort breaks ties at random, so each range is in uniformly random order: this
-assignment gives every shot independent outputs. Pruned lanes keep their range,
-outcomes and pruning action but drop their amplitudes. A dormant measurement
-splits lanes the same way (p = 1/2) when its branch reaches a key sign; otherwise
-it is a fair coin drawn per shot at the end.
+Lanes. The shots of a chunk with equal keys and equal f-parts of the
+postselected outputs share a lane: its amplitudes and its *lane symbols*, the key
+bits, then those f-parts, then the branch bits of the lane's outcomes.
+``lane_program`` rewrites the rotation signs, the pruning tests and the outputs'
+branch parts over lane symbols.
 
-One numba function samples a batch without the GIL: it groups the shots, runs
-the tape on the live lanes and the ``2^extent`` amplitudes each action can
-touch, and evaluates the outputs. When the extent grows, the newly touched
-amplitudes are cleared, because a slot reused for another lane can hold stale
-values there. After the tape each shot's outputs are evaluated from its own
-f-bits, its lane's outcomes and its own dormant coins, XOR its reference bit; a
-pruned shot's outputs that need a branch bit set after its pruning action are
-False.
+Outcomes. At a measurement every live shot compares its own random number, drawn
+from a counter-based stream by its index and the action, with its lane's chance
+of outcome 1. A lane splits into one lane per outcome its shots drew. A shot's
+outcomes so depend only on the seed, its index and its key: not on the other
+shots, the chunk, the threads or whether lanes are shared at all.
+
+Pruning. After the action that sets a postselected output's last branch bit (or
+before the first action, for an output of f-bits only) the lanes in which it reads
+1 die. Their shots keep the outcomes drawn so far, and their outputs that need a
+later branch bit read False.
+
+Outputs. Each shot XORs the branch part of its outputs, from its last lane, and
+its own fair coins: the dormant measurements that no sign and no postselected
+output reads, drawn per shot.
 """
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from collections.abc import Callable
+from typing import NamedTuple, cast
 
 import numba
 import numpy as np
+from numba import types
+from numba.extending import intrinsic
 
-import tsim.utils.kernels as kernels
 from tsim.statevector.program import (
     MEASURE,
     MEASURE_DIAG,
@@ -48,123 +48,217 @@ from tsim.statevector.program import (
 )
 from tsim.utils.kernels import jit, kernel
 from tsim.utils.linalg import find_basis
-from tsim.utils.rng import GOLDEN, next_skip, splitmix64
+from tsim.utils.rng import GOLDEN, splitmix64
 
 _TINY = 1e-30
 _I_POWERS = (1, 1j, -1, -1j)
+# NOTE: the largest uint64 a float64 below 2^64 converts to.
+_MAX_THRESHOLD = np.uint64(0xFFFF_FFFF_FFFF_F800)
 
 
-class SharingLayout(NamedTuple):
-    """Which symbols the shots of a lane must share, and which outputs prune them.
+class LaneProgram(NamedTuple):
+    """A component's tape over lane symbols, for one postselection mask.
+
+    Lane symbols are ``lane_words`` uint64 words: the key's words, then the shot
+    words that hold postselected outputs, masked to them (so they hold their
+    f-parts), then the branch bits of the measurements that split lanes.
 
     Attributes:
-        key_rows: f-bit masks whose parities form the grouping key, a basis of the
-            f-parts of every rotation sign and every postselected output,
-            shape ``(K, num_words)``.
-        lane_dormant: Dormant measurements that split lanes, shape ``(A,)``.
-        prune_first: The postselected outputs of f-bits only, tested before the
-            first action, shape ``(num_outputs,)``.
-        pruned: Actions after which some postselected output is tested,
-            shape ``(A,)``.
-        prune_outputs: The postselected outputs tested after each action,
-            shape ``(A, num_outputs)``.
-        output_const: Constant of each output XOR its reference bit, shape
-            ``(num_outputs,)``.
-        lane_branches: Branch bits a lane carries, shape ``(num_words,)``.
-        shot_dormant: Branch bits of the dormant measurements drawn per shot,
-            shape ``(num_words,)``.
-        ready: The action that sets each output's last branch bit, -1 for an
-            output of f-bits only, shape ``(num_outputs,)``.
-        i_power: ``i^|x∧z|`` of each action's Pauli ``X^x Z^z``, shape ``(A,)``.
+        width: Number of qubits of a lane's amplitudes.
+        kind: Kernel of each action, ``(A,)``.
+        extent: Each action's active qubits: it touches the first
+            ``2^extent`` amplitudes of a lane, ``(A,)``.
+        x_mask: X part of each action's Pauli, ``(A,)``.
+        z_mask: Z part of each action's Pauli, ``(A,)``.
+        pivot: Qubit that each measurement frees, ``(A,)``.
+        cos: Each rotation's ``cos θ``, ``(A,)``.
+        key_start: First word of the component's key in the shot words.
+        key_words: Number of words of the key.
+        ps_word: The shot words that hold postselected outputs, ``(W,)``.
+        ps_mask: The postselected outputs' bits in them, ``(W,)``.
+        lane_words: Number of words of lane symbols.
+        splits: Whether each action is a measurement that splits lanes, ``(A,)``.
+        branch: Lane bit that each action sets, -1 for none, ``(A,)``.
+        sign_row: Lane bits of each rotation's sign, ``(A, lane_words)``.
+        sign_const: Constant of each rotation's sign, ``(A,)``.
+        prune_first: Postselected outputs of f-bits only, ``(O,)``.
+        pruned: Actions after which postselected outputs are tested, ``(A,)``.
+        prune_outputs: The outputs tested after each action, ``(A, O)``.
+        prune_row: Lane bits of each postselected output, ``(O, lane_words)``: its
+            f-part bit, which holds its constant and reference bit, and its branches.
+        out_words: The shot words that hold the component's outputs, ``(W,)``.
+        output_word: Each output's word in ``out_words``, ``(O,)``.
+        output_bit: Each output's bit in its word, ``(O,)``.
+        branch_row: Lane bits of each output's branch part, ``(O, lane_words)``.
+        ready: Action that sets each output's last branch bit, -1 for none, ``(O,)``.
+        coin_pattern: Output bits that each fair coin flips in ``out_words``,
+            ``(C, W)``.
+        i_power: ``i^|x∧z|`` of each action's Pauli ``X^x Z^z``, ``(A,)``.
         factor: Each action's diagonal rotation factors ``cos θ ∓ i sin θ``,
-            shape ``(A, 2)``.
-        coupling: Each action's rotation coupling ``-i sin θ i^|x∧z|``, shape
-            ``(A,)``.
+            ``(A, 2)``.
+        coupling: Each action's rotation coupling ``-i sin θ i^|x∧z|``, ``(A,)``.
 
     """
 
-    key_rows: np.ndarray
-    lane_dormant: np.ndarray
+    width: int
+    kind: np.ndarray
+    extent: np.ndarray
+    x_mask: np.ndarray
+    z_mask: np.ndarray
+    pivot: np.ndarray
+    cos: np.ndarray
+    key_start: int
+    key_words: int
+    ps_word: np.ndarray
+    ps_mask: np.ndarray
+    lane_words: int
+    splits: np.ndarray
+    branch: np.ndarray
+    sign_row: np.ndarray
+    sign_const: np.ndarray
     prune_first: np.ndarray
     pruned: np.ndarray
     prune_outputs: np.ndarray
-    output_const: np.ndarray
-    lane_branches: np.ndarray
-    shot_dormant: np.ndarray
+    prune_row: np.ndarray
+    out_words: np.ndarray
+    output_word: np.ndarray
+    output_bit: np.ndarray
+    branch_row: np.ndarray
     ready: np.ndarray
+    coin_pattern: np.ndarray
     i_power: np.ndarray
     factor: np.ndarray
     coupling: np.ndarray
 
 
-def _unpack(words: np.ndarray, num_words: int) -> np.ndarray:
+class KeyBasis(NamedTuple):
+    """A component's key: parities of its f-bits that its rotation signs read.
+
+    Attributes:
+        rows: Key bit ``k`` is the parity of the component f-bits in ``rows[k]``,
+            shape ``(K, num_f)``.
+        sign_coords: Each action's sign f-part in key bits, ``(A, K)``: the sign
+            reads the parity of the key bits it marks.
+
+    """
+
+    rows: np.ndarray
+    sign_coords: np.ndarray
+
+
+def unpack_symbols(words: np.ndarray, num_words: int) -> np.ndarray:
+    """Return uint32 symbol words as booleans: symbol s is bit s % 32 of word s // 32."""
     shifts = np.arange(32, dtype=np.uint32)
     bits = (words[..., None] >> shifts) & 1
     return bits.reshape(*words.shape[:-1], 32 * num_words).astype(bool)
 
 
-def _pack(bits: np.ndarray, num_words: int) -> np.ndarray:
-    padded = np.zeros((*bits.shape[:-1], 32 * num_words), dtype=np.uint64)
+def pack_bits(bits: np.ndarray, num_words: int) -> np.ndarray:
+    """Return booleans as uint64 words: bit i is bit i % 64 of word i // 64."""
+    padded = np.zeros((*bits.shape[:-1], 64 * num_words), dtype=bool)
     padded[..., : bits.shape[-1]] = bits
-    shifts = np.arange(32, dtype=np.uint64)
-    words = padded.reshape(*bits.shape[:-1], num_words, 32) << shifts
-    return words.sum(axis=-1).astype(np.uint32)
+    return np.packbits(padded, axis=-1, bitorder="little").view("<u8").astype(np.uint64)
 
 
-def sharing_layout(
+def key_basis(component: StatevectorComponent) -> KeyBasis:
+    """Return a basis of the f-parts of the component's rotation signs."""
+    tape = component.tape
+    num_f = len(tape.f_selection)
+    signs = unpack_symbols(tape.sign_row, component.num_words)[:, :num_f]
+    rotation = np.isin(tape.kind, (ROTATE_DIAG, ROTATE))
+    signs = signs & rotation[:, None]
+    nonzero = signs.any(axis=1)
+    if not nonzero.any():
+        return KeyBasis(np.zeros((0, num_f), bool), np.zeros((len(signs), 0), bool))
+    rows, _ = find_basis(signs[nonzero].astype(np.uint8))
+    rows = np.asarray(rows, dtype=bool)
+    # NOTE: the basis rows come first, so each sign's coordinates are its transform.
+    _, transform = find_basis(np.vstack([rows, signs]).astype(np.uint8))
+    coords = np.asarray(transform, dtype=bool)[len(rows) :]
+    return KeyBasis(rows, coords)
+
+
+def lane_program(
     component: StatevectorComponent,
-    postselected: np.ndarray | None = None,
-    flipped: np.ndarray | None = None,
-) -> SharingLayout:
-    """Return the sharing layout of a component.
+    key: KeyBasis,
+    key_start: int,
+    postselected: np.ndarray,
+) -> LaneProgram:
+    """Return the component's tape over lane symbols.
 
     Args:
         component: The compiled component.
-        postselected: Whether each output slot is postselected, shape
-            ``(num_outputs,)``. ``None`` prunes nothing.
-        flipped: Reference bit of each output slot, XOR-ed into the output before
-            the postselection test and before a pruned shot's later outputs are
-            cleared, shape ``(num_outputs,)``. ``None`` flips nothing.
+        key: Its key basis.
+        key_start: First word of the key in the shot words.
+        postselected: Whether each output slot is postselected, ``(O,)``.
 
     """
     tape = component.tape
-    num_words = component.num_words
-    num_f = len(tape.f_selection)
-    kind, branch = tape.kind, tape.branch
+    num_actions = len(tape.kind)
     num_outputs = component.num_outputs
-    sign_bits = _unpack(tape.sign_row, num_words)
-    output_bits = _unpack(tape.output_row, num_words)
-    no_outputs = np.zeros(num_outputs, dtype=bool)
-    postselected = np.asarray(
-        no_outputs if postselected is None else postselected, dtype=bool
-    )
-    flipped = np.asarray(no_outputs if flipped is None else flipped, dtype=bool)
+    kind, branch = tape.kind, tape.branch
+    symbol_bits = 32 * component.num_words
+    sign_bits = unpack_symbols(tape.sign_row, component.num_words)
+    output_bits = unpack_symbols(tape.output_row, component.num_words)
+    postselected = np.asarray(postselected, dtype=bool)
 
-    setter = np.full(32 * num_words, -1, dtype=np.int32)
+    setter = np.full(symbol_bits, -1, dtype=np.int64)
     setter[branch[branch >= 0]] = np.flatnonzero(branch >= 0)
     ready = np.max(np.where(output_bits, setter[None, :], -1), axis=1, initial=-1)
-    prune_outputs = np.zeros((len(kind), num_outputs), dtype=bool)
-    for o in np.flatnonzero(postselected & (ready >= 0)):
-        prune_outputs[ready[o], o] = True
 
+    # NOTE: a dormant measurement splits lanes when a sign or a postselected output
+    # reads its branch; otherwise it is a fair coin per shot.
     rotation = np.isin(kind, (ROTATE_DIAG, ROTATE))
-    keyed_bits = np.vstack([sign_bits[rotation], output_bits[postselected]])
-    key_bits = keyed_bits[:, :num_f]
-    key_bits = key_bits[key_bits.any(axis=1)]
-    if len(key_bits):
-        key_bits, _ = find_basis(key_bits.astype(np.uint8))
-        key_bits = np.asarray(key_bits, dtype=bool)
-
-    # NOTE: a pruning action sets a branch bit of a postselected output, so its
-    # branch reaches the key.
-    reaches_key = np.asarray(np.any(keyed_bits, axis=0), dtype=bool)
+    read = np.asarray(sign_bits[rotation].any(axis=0)) | np.asarray(
+        output_bits[postselected].any(axis=0)
+    )
     dormant = kind == MEASURE_DORMANT
-    lane_dormant = dormant & reaches_key[branch]
-    active = np.isin(kind, (MEASURE_DIAG, MEASURE))
-    lane_bits = np.zeros(32 * num_words, dtype=bool)
-    lane_bits[branch[active | lane_dormant]] = True
-    shot_bits = np.zeros(32 * num_words, dtype=bool)
-    shot_bits[branch[dormant & ~lane_dormant]] = True
+    lane_dormant = dormant & read[branch]
+    splits = np.isin(kind, (MEASURE_DIAG, MEASURE)) | lane_dormant
+    coin = dormant & ~lane_dormant
+
+    num_key = len(key.rows)
+    key_words = -(-num_key // 64)
+    output_index = np.asarray(component.output_indices, dtype=np.int64)
+    ps_word, ps_index = np.unique(output_index[postselected] >> 6, return_inverse=True)
+    ps_mask = np.zeros(len(ps_word), dtype=np.uint64)
+    np.bitwise_or.at(
+        ps_mask,
+        ps_index,
+        np.uint64(1) << (output_index[postselected] & 63).astype(np.uint64),
+    )
+    first_branch = 64 * (key_words + len(ps_word))
+    lane_words = max(1, -(-(first_branch + int(splits.sum())) // 64))
+    # NOTE: the lane bit of each symbol: f-bits have none, lane-splitting branches do.
+    lane_bit = np.full(symbol_bits, -1, dtype=np.int64)
+    lane_bit[branch[splits]] = first_branch + np.arange(int(splits.sum()))
+
+    def branch_part(rows: np.ndarray) -> np.ndarray:
+        """Lane bits of the lane-splitting branches in symbol rows."""
+        out = np.zeros((len(rows), 64 * lane_words), dtype=bool)
+        carried = lane_bit >= 0
+        for i, row in enumerate(rows):
+            out[i, lane_bit[row & carried]] = True
+        return out
+
+    signs = branch_part(sign_bits)
+    signs[:, :num_key] = key.sign_coords
+    signs[~rotation] = False
+    prunes = branch_part(output_bits)
+    slots = np.flatnonzero(postselected)
+    prunes[slots, 64 * (key_words + ps_index) + (output_index[slots] & 63)] = True
+    prunes[~postselected] = False
+
+    prune_outputs = np.zeros((num_actions, num_outputs), dtype=bool)
+    slots = np.flatnonzero(postselected & (ready >= 0))
+    prune_outputs[ready[slots], slots] = True
+
+    out_words, output_word = np.unique(output_index >> 6, return_inverse=True)
+    local_bit = 64 * output_word + (output_index & 63)
+    coin_symbols = branch[coin]
+    coin_pattern = np.zeros((len(coin_symbols), 64 * len(out_words)), dtype=bool)
+    for j, symbol in enumerate(coin_symbols):
+        coin_pattern[j, local_bit[output_bits[:, symbol]]] = True
 
     quarter_turns = [
         int(x & z).bit_count() & 3
@@ -172,40 +266,100 @@ def sharing_layout(
     ]
     i_power = np.array([_I_POWERS[q] for q in quarter_turns], dtype=np.complex128)
     cos, sin = tape.cos, tape.sin
-
-    return SharingLayout(
-        key_rows=_pack(key_bits, num_words).reshape(-1, num_words),
-        lane_dormant=lane_dormant,
+    coupling = -1j * sin * i_power
+    # NOTE: _rotate_range mixes pairs with a real or an imaginary coupling alone.
+    assert np.all((coupling.real == 0) | (coupling.imag == 0))
+    lane_branch = np.where(splits, lane_bit[np.maximum(branch, 0)], -1)
+    return LaneProgram(
+        width=component.width,
+        kind=tape.kind,
+        extent=tape.extent,
+        x_mask=tape.x_mask,
+        z_mask=tape.z_mask,
+        pivot=tape.pivot,
+        cos=cos,
+        key_start=key_start,
+        key_words=key_words,
+        ps_word=ps_word.astype(np.int64),
+        ps_mask=ps_mask,
+        lane_words=lane_words,
+        splits=splits,
+        branch=lane_branch.astype(np.int64),
+        sign_row=pack_bits(signs, lane_words),
+        sign_const=tape.sign_const.astype(np.int64),
         prune_first=postselected & (ready < 0),
         pruned=np.asarray(prune_outputs.any(axis=1)),
         prune_outputs=prune_outputs,
-        output_const=tape.output_const ^ flipped,
-        lane_branches=_pack(lane_bits, num_words),
-        shot_dormant=_pack(shot_bits, num_words),
+        prune_row=pack_bits(prunes, lane_words),
+        out_words=out_words.astype(np.int64),
+        output_word=output_word.astype(np.int64),
+        output_bit=output_index & 63,
+        branch_row=pack_bits(branch_part(output_bits), lane_words),
         ready=ready.astype(np.int64),
+        coin_pattern=pack_bits(coin_pattern, len(out_words)),
         i_power=i_power,
         factor=np.stack([cos - 1j * sin, cos + 1j * sin], axis=1),
-        coupling=-1j * sin * i_power,
+        coupling=coupling,
     )
+
+
+def max_lane_words(component: StatevectorComponent, key: KeyBasis) -> int:
+    """Return the most words of lane symbols that ``lane_program`` gives a component.
+
+    That is under any mask: the key's words, every word of its outputs, and a bit
+    per measurement.
+    """
+    tape = component.tape
+    output_words = np.unique(np.asarray(component.output_indices, dtype=np.int64) >> 6)
+    measurements = int(
+        np.isin(tape.kind, (MEASURE_DIAG, MEASURE, MEASURE_DORMANT)).sum()
+    )
+    bits = 64 * (-(-len(key.rows) // 64) + len(output_words)) + measurements
+    return max(1, -(-bits // 64))
+
+
+def lane_bytes(component: StatevectorComponent, key: KeyBasis) -> int:
+    """Return the peak memory of one lane of ``run_lanes``.
+
+    That is three rows of amplitudes (the old and the new array while lanes grow),
+    four rows of lane symbols (its own, and a grave's while the graves grow) and
+    64 bytes of per-lane scratch.
+    """
+    amplitudes = 3 * 2**component.width * np.dtype(np.complex128).itemsize
+    return amplitudes + 4 * 8 * max_lane_words(component, key) + 64
+
+
+@intrinsic
+def _ctpop(typingctx, value):
+    def codegen(context, builder, signature, args):
+        return builder.ctpop(args[0])
+
+    return types.uint64(types.uint64), codegen
+
+
+# NOTE: the cast only tells type checkers how the kernels call it.
+_popcount = cast(Callable[[np.uint64], np.uint64], _ctpop)
 
 
 @jit
 def _parity(value):
-    """Return the parity of the bits of a non-negative integer below 2^32."""
-    value ^= value >> 16
-    value ^= value >> 8
-    value ^= value >> 4
-    value ^= value >> 2
-    value ^= value >> 1
-    return value & 1
+    """Return the parity of the bits of a uint64."""
+    return np.int64(_popcount(value) & np.uint64(1))
 
 
 @jit
-def _chunks(work, parallel_work, threads):
-    """Return how many chunks a loop of ``work`` runs in: 1 below ``parallel_work``."""
-    if work < parallel_work:
-        return 1
-    return min(work, 4 * threads)
+def _insert_zero(value, bit):
+    """Return ``value`` with a 0 bit inserted at the position of the power of 2 ``bit``."""
+    return (value & -bit) << 1 | (value & (bit - 1))
+
+
+@jit
+def _row_parity(symbols, row, mask):
+    """Return the parity of ``symbols[row] & mask``."""
+    acc = np.uint64(0)
+    for w in range(len(mask)):
+        acc ^= symbols[row, w] & mask[w]
+    return _parity(acc)
 
 
 @jit
@@ -224,90 +378,72 @@ def _clear(amps, lanes, lo, hi):
 
 
 @jit
-def _grown(amps, rows, lanes, span):
-    """Return ``amps`` with ``rows`` rows, keeping the lanes' first ``span``."""
-    out = np.zeros((rows, amps.shape[1]), dtype=amps.dtype)
-    for lane in range(lanes):
-        for i in range(span):
-            out[lane, i] = amps[lane, i]
+def _grown(array, rows, used):
+    """Return ``array`` with ``rows`` rows, keeping the first ``used``."""
+    out = np.zeros((rows, array.shape[1]), dtype=array.dtype)
+    out[:used] = array[:used]
     return out
 
 
 @jit
-def _pack_range(f, selection, out, lo, hi):
-    """Pack the selected f-bits of shots ``lo … hi-1``: bit j is in word j // 32."""
-    for s in range(lo, hi):
-        for j in range(len(selection)):
-            if f[s, selection[j]]:
-                out[s, j >> 5] |= np.uint32(1) << np.uint32(j & 31)
+def _rotate_range(amps, lo, hi, span, flip, diagonal, x, z, cos, factor, coupling):
+    """Rotate the units ``lo … hi-1`` of the lanes' first ``span`` amplitudes.
 
-
-@jit
-def _key_range(symbols, key_rows, out, lo, hi):
-    """Pack the parities of shots ``lo … hi-1`` with the key rows into words."""
-    for s in range(lo, hi):
-        for k in range(key_rows.shape[0]):
-            acc = 0
-            for w in range(key_rows.shape[1]):
-                acc ^= symbols[s, w] & key_rows[k, w]
-            if _parity(acc):
-                out[s, k >> 5] |= np.uint32(1) << np.uint32(k & 31)
-
-
-@jit
-def _signs(symbols, lanes, row, const):
-    """Return each lane's sign bit: ``const ^ parity(symbols[l] & row)``."""
-    flip = np.zeros(lanes, dtype=np.int64)
-    for lane in range(lanes):
-        acc = 0
-        for w in range(len(row)):
-            acc ^= symbols[lane, w] & row[w]
-        flip[lane] = _parity(acc) ^ const
-    return flip
-
-
-@jit
-def _rotate_range(amps, lo, hi, shift, flip, diagonal, x, z, cos, factor, coupling):
-    """Apply one rotation to the entries ``lo … hi-1`` of ``lanes × 2^shift``.
-
-    A diagonal rotation multiplies amplitude i by ``factor[sign ^ parity(i & z)]``,
-    the others mix amplitudes i and ``i ^ x`` with ``cos`` and ``±coupling``.
+    A diagonal rotation's units are the amplitudes i, which it multiplies by
+    ``factor[sign ^ parity(i & z)]``. The others' are the pairs of amplitudes i
+    and ``j = i ^ x``, which they mix with ``cos`` and ``±coupling``. A lane's
+    units follow the previous lane's.
     """
-    span = 1 << shift
+    if diagonal:
+        for lane in range(lo // span, -(-hi // span)):
+            for i in range(max(lo - lane * span, 0), min(hi - lane * span, span)):
+                amps[lane, i] *= factor[flip[lane] ^ _parity(np.uint64(i & z))]
+        return
+    # NOTE: parity(j & z) is parity(i & z) ^ parity(x & z), and the coupling is
+    # real or imaginary, so a pair takes one parity and real products.
+    values = amps.view(np.float64)
+    pairs = span >> 1
     low = x & -x
-    for t in range(lo, hi):
-        lane, i = t >> shift, t & (span - 1)
-        if diagonal:
-            amps[lane, i] *= factor[flip[lane] ^ _parity(i & z)]
-            continue
-        if i & low:
-            continue
-        j = i ^ x
-        c = -coupling if flip[lane] else coupling
-        p, q = amps[lane, i], amps[lane, j]
-        amps[lane, i] = cos * p + c * (-q if _parity(j & z) else q)
-        amps[lane, j] = cos * q + c * (-p if _parity(i & z) else p)
+    imaginary = coupling.real == 0
+    strength = coupling.imag if imaginary else coupling.real
+    partner = -1.0 if _parity(np.uint64(x & z)) else 1.0
+    for lane in range(lo // pairs, -(-hi // pairs)):
+        row = values[lane]
+        lane_strength = -strength if flip[lane] else strength
+        for t in range(max(lo - lane * pairs, 0), min(hi - lane * pairs, pairs)):
+            i = _insert_zero(t, low)
+            j = i ^ x
+            si = -lane_strength if _parity(np.uint64(i & z)) else lane_strength
+            sj = partner * si
+            pr, pi, qr, qi = row[2 * i], row[2 * i + 1], row[2 * j], row[2 * j + 1]
+            if imaginary:
+                row[2 * i], row[2 * i + 1] = cos * pr - sj * qi, cos * pi + sj * qr
+                row[2 * j], row[2 * j + 1] = cos * qr - si * pi, cos * qi + si * pr
+            else:
+                row[2 * i], row[2 * i + 1] = cos * pr + sj * qr, cos * pi + sj * qi
+                row[2 * j], row[2 * j + 1] = cos * qr + si * pr, cos * qi + si * pi
 
 
 @jit
 def _weights_range(amps, lo, hi, span, x, z, i_power, w0, w1):
-    """Write the outcome weights of measuring ``X^x Z^z`` for lanes ``lo … hi-1``."""
+    """Add the outcome weights of measuring ``X^x Z^z`` in lanes ``lo … hi-1``."""
     for lane in range(lo, hi):
+        zero, one = w0[lane], w1[lane]
         for i in range(span):
             a = amps[lane, i]
             if x == 0:
-                if _parity(i & z):
-                    w1[lane] += a.real**2 + a.imag**2
+                if _parity(np.uint64(i & z)):
+                    one += a.real**2 + a.imag**2
                 else:
-                    w0[lane] += a.real**2 + a.imag**2
-            else:
-                j = i ^ x
-                b = i_power * amps[lane, j]
-                if _parity(j & z):
-                    b = -b
-                plus, minus = a + b, a - b
-                w0[lane] += (plus.real**2 + plus.imag**2) / 4
-                w1[lane] += (minus.real**2 + minus.imag**2) / 4
+                    zero += a.real**2 + a.imag**2
+                continue
+            b = i_power * amps[lane, i ^ x]
+            if _parity(np.uint64((i ^ x) & z)):
+                b = -b
+            plus, minus = a + b, a - b
+            zero += (plus.real**2 + plus.imag**2) / 4
+            one += (minus.real**2 + minus.imag**2) / 4
+        w0[lane], w1[lane] = zero, one
 
 
 @jit
@@ -315,7 +451,9 @@ def _project_range(amps, lo, hi, span, x, z, pivot, i_power, outcome, weight):
     """Project lanes ``lo … hi-1`` onto their outcome and free the pivot.
 
     The pivot-1 half of the amplitudes becomes 0: the planner moved the measured
-    Pauli onto the pivot, so the pivot ends in ``|0⟩``.
+    Pauli onto the pivot, so the pivot ends in ``|0⟩``. The pivot is a bit of
+    ``x`` when ``x`` is nonzero, else of ``z``: the loop pairs each pivot-0
+    amplitude i with ``i ^ x``, which must then lie in the pivot-1 half.
     """
     bit = 1 << pivot
     for lane in range(lo, hi):
@@ -323,17 +461,16 @@ def _project_range(amps, lo, hi, span, x, z, pivot, i_power, outcome, weight):
             scale = 1 / np.sqrt(max(weight[lane], _TINY))
         else:
             scale = 1 / np.sqrt(max(2 * weight[lane], _TINY))
-        for i in range(span):
-            if i & bit:
-                continue
+        for t in range(span >> 1):
+            i = _insert_zero(t, bit)
             if x == 0:
-                j = i ^ bit
-                keep = _parity(i & z) == outcome[lane]
+                j = i | bit
+                keep = _parity(np.uint64(i & z)) == outcome[lane]
                 amps[lane, i] = (amps[lane, i] if keep else amps[lane, j]) * scale
             else:
                 j = i ^ x
                 b = i_power * amps[lane, j]
-                if _parity(j & z):
+                if _parity(np.uint64(j & z)):
                     b = -b
                 if outcome[lane]:
                     b = -b
@@ -342,95 +479,9 @@ def _project_range(amps, lo, hi, span, x, z, pivot, i_power, outcome, weight):
 
 
 @jit
-def _draw_ones(count, w0, w1, state):
-    """Return how many of each lane's shots see outcome 1.
-
-    The rarer outcome's count is a Binomial(count, q) drawn by geometric skips,
-    so the chance of a first hit, 1 - (1 - q)^count, is exact to about 2^-64.
-    """
-    ones = np.zeros(len(count), dtype=np.int64)
-    for lane in range(len(count)):
-        total = w0[lane] + w1[lane]
-        q = min(w0[lane], w1[lane]) / total if total > _TINY else 0.0
-        hits = 0
-        if q > 0:
-            log_keep = np.log1p(-q)
-            position = -1.0
-            while True:
-                state, skip = next_skip(state, log_keep)
-                position += 1.0 + skip
-                if position >= count[lane]:
-                    break
-                hits += 1
-        ones[lane] = hits if w1[lane] <= w0[lane] else count[lane] - hits
-    return ones
-
-
-@jit
-def _group(keys, state):
-    """Sort shots by key; return ``(order, start, count, state)`` of the groups.
-
-    Ties are broken at random (a random permutation, then stable sorts), so the
-    shots of a group appear in uniformly random order.
-    """
-    num_shots = keys.shape[0]
-    order = np.arange(num_shots)
-    for i in range(num_shots - 1, 0, -1):
-        state, z = splitmix64(state)
-        j = z % np.uint64(i + 1)
-        order[i], order[j] = order[j], order[i]
-    for column in range(keys.shape[1]):
-        order = order[np.argsort(keys[order, column], kind="mergesort")]
-    start = np.empty(num_shots, dtype=np.int64)
-    groups = 0
-    for p in range(num_shots):
-        new = p == 0
-        for column in range(keys.shape[1]):
-            new |= keys[order[p], column] != keys[order[p - 1], column]
-        if new:
-            start[groups] = p
-            groups += 1
-    start = start[:groups]
-    count = np.empty(groups, dtype=np.int64)
-    for g in range(groups):
-        count[g] = (start[g + 1] if g + 1 < groups else num_shots) - start[g]
-    return order, start, count, state
-
-
-@jit
-def _prune(amps, span, size, dead, tests, output_row, output_const, lanes, graves, a):
-    """Move the lanes with a tested output of 1 to the dead lanes; return the counts.
-
-    ``tests`` marks the outputs to test, ``lanes`` holds the live lanes' symbols,
-    starts and counts, and ``graves`` the same and the pruning action of the dead
-    lanes. The live lanes keep their order in rows ``0 … kept-1``.
-    """
-    symbols, start, count = lanes
-    dead_symbols, dead_start, dead_count, dead_action = graves
-    kept = 0
-    for lane in range(size):
-        dies = False
-        for o in range(len(tests)):
-            if not tests[o]:
-                continue
-            acc = 0
-            for w in range(symbols.shape[1]):
-                acc ^= symbols[lane, w] & output_row[o, w]
-            if _parity(acc) ^ output_const[o]:
-                dies = True
-                break
-        if dies:
-            dead_symbols[dead] = symbols[lane]
-            dead_start[dead], dead_count[dead] = start[lane], count[lane]
-            dead_action[dead] = a
-            dead += 1
-            continue
-        if kept != lane:
-            _copy_lane(amps, kept, lane, span)
-            symbols[kept] = symbols[lane]
-            start[kept], count[kept] = start[lane], count[lane]
-        kept += 1
-    return kept, dead
+def _chunks(work, units, parallel_work, threads):
+    """Return how many chunks a loop over ``units`` runs in: 1 below ``parallel_work``."""
+    return 1 if work < parallel_work else max(1, min(units, 4 * threads))
 
 
 @jit
@@ -441,200 +492,341 @@ def _poison(amps, size, span):
 
 
 @jit
-def _shot_range(
-    symbols, order, owner, entry_symbols, lane_branches, dormant, seed, out, lo, hi
-):
-    """Write the symbols of the shots at positions ``lo … hi-1``.
+def _threshold(p1):
+    """Return the uint64 below which a draw is outcome 1, for ``0 < p1 < 1``.
 
-    A shot's symbols are its f-bits, its lane's branches and its dormant coins.
+    A uniform 64-bit draw is below it with probability ``p1`` to within 2^-64.
     """
-    num_words = symbols.shape[1]
-    for position in range(lo, hi):
-        shot, entry = order[position], owner[position]
-        for w in range(num_words):
-            word = symbols[shot, w] | (entry_symbols[entry, w] & lane_branches[w])
-            if dormant[w]:
-                n = np.uint64(position * num_words + w)
-                _, coin = splitmix64(seed + n * GOLDEN)
-                word |= np.uint32(coin & np.uint64(0xFFFFFFFF)) & dormant[w]
-            out[shot, w] = word
+    scaled = p1 * 18446744073709551616.0
+    return np.uint64(scaled) if scaled < 1.8446744073709550e19 else _MAX_THRESHOLD
 
 
 @jit
-def _output_range(
-    shot_symbols, output_row, output_const, ready, pruned_at, out, lo, hi
-):
-    """Write the outputs of shots ``lo … hi-1``; outputs set after pruning are 0."""
-    for s in range(lo, hi):
-        for o in range(output_row.shape[0]):
-            acc = 0
-            for w in range(output_row.shape[1]):
-                acc ^= shot_symbols[s, w] & output_row[o, w]
-            out[s, o] = bool(_parity(acc) ^ output_const[o]) and (
-                ready[o] <= pruned_at[s]
+def _cut(w0, w1):
+    """Return ``(certain, threshold)`` for a measurement of outcome weights w0, w1.
+
+    ``certain`` is the outcome if it is certain, else -1, and then a uniform 64-bit
+    draw below ``threshold`` is outcome 1. The threshold comes from the rarer
+    outcome's chance, so that a rare 0 keeps its chance as a rare 1 does: when
+    ``w0`` is the smaller, the draws from ``2^64 - _threshold(p0)`` up are 0.
+    """
+    total = w0 + w1
+    if not total > _TINY:
+        return 0, np.uint64(0)
+    if w1 <= w0:
+        rare = _threshold(w1 / total) if w1 > 0.0 else np.uint64(0)
+        return (0 if rare == 0 else -1), rare
+    rare = _threshold(w0 / total) if w0 > 0.0 else np.uint64(0)
+    return (1 if rare == 0 else -1), np.uint64(0) - rare
+
+
+@jit
+def _draw(seed, shot, slots, slot):
+    """Return shot ``shot``'s random number in draw slot ``slot`` of the stream ``seed``."""
+    index = np.uint64(shot) * np.uint64(slots) + np.uint64(slot)
+    _, value = splitmix64(seed + index * GOLDEN)
+    return value
+
+
+# NOTE: _lane_key runs once per shot and takes only the LaneProgram fields it
+# reads. Called from a kernel loaded from numba's disk cache it is not inlined,
+# and passing the whole LaneProgram (~200 machine words) by value made
+# trajectory sharing 5-8x slower on x86.
+@jit
+def _lane_key(words, shot, key_start, key_words, ps_word, ps_mask, out):
+    """Write a shot's first lane symbols, its key and postselected f-parts, to ``out``."""
+    for w in range(key_words):
+        out[w] = words[shot, key_start + w]
+    for j in range(len(ps_word)):
+        out[key_words + j] = words[shot, ps_word[j]] & ps_mask[j]
+    for w in range(key_words + len(ps_word), len(out)):
+        out[w] = 0
+
+
+@jit
+def _hash(row):
+    value = np.uint64(0x9E3779B97F4A7C15)
+    for w in range(len(row)):
+        value = (value ^ row[w]) * np.uint64(0xBF58476D1CE4E5B9)
+        value ^= value >> np.uint64(31)
+    return value
+
+
+@jit
+def _group(words, live, n, program, share):
+    """Return the first lanes of the live shots: ``(symbols, row of each shot, lanes)``.
+
+    With ``share``, shots with equal first lane symbols (``_lane_key``) share a
+    lane, found in an open-addressing hash table; otherwise each has its own.
+    """
+    key_start, key_words = program.key_start, program.key_words
+    ps_word, ps_mask = program.ps_word, program.ps_mask
+    symbols = np.zeros((max(16, n), program.lane_words), dtype=np.uint64)
+    row = np.empty(n, dtype=np.int64)
+    if not share:
+        for i in range(n):
+            _lane_key(
+                words, live[i], key_start, key_words, ps_word, ps_mask, symbols[i]
             )
+            row[i] = i
+        return symbols, row, n
+    size = 16
+    while size < 2 * n:
+        size <<= 1
+    table = np.full(size, -1, dtype=np.int64)
+    candidate = np.zeros(program.lane_words, dtype=np.uint64)
+    count = 0
+    for i in range(n):
+        _lane_key(words, live[i], key_start, key_words, ps_word, ps_mask, candidate)
+        slot = _hash(candidate) & np.uint64(size - 1)
+        while True:
+            lane = table[slot]
+            if lane < 0:
+                table[slot] = count
+                symbols[count] = candidate
+                lane = count
+                count += 1
+                break
+            same = True
+            for w in range(program.lane_words):
+                same &= symbols[lane, w] == candidate[w]
+            if same:
+                break
+            slot = (slot + np.uint64(1)) & np.uint64(size - 1)
+        row[i] = lane
+    return symbols, row, count
+
+
+@jit
+def _prune(
+    amps,
+    symbols,
+    size,
+    span,
+    tests,
+    prune_row,
+    graves,
+    grave_at,
+    dead,
+    code_row,
+    action,
+):
+    """Bury the lanes in which a tested output reads 1.
+
+    The other lanes move down in order, and ``code_row`` maps codes to their new
+    rows, or to the graves. Returns ``(size, graves, grave_at, dead)``.
+    """
+    new_row = np.empty(size, dtype=np.int64)
+    kept = 0
+    for r in range(size):
+        dies = False
+        for o in range(len(tests)):
+            if tests[o] and _row_parity(symbols, r, prune_row[o]):
+                dies = True
+                break
+        if dies:
+            if dead == len(grave_at):
+                graves = _grown(graves, 2 * dead, dead)
+                at = np.zeros(2 * dead, dtype=np.int64)
+                at[:dead] = grave_at
+                grave_at = at
+            graves[dead] = symbols[r]
+            grave_at[dead] = action
+            new_row[r] = -1 - dead
+            dead += 1
+            continue
+        if kept != r:
+            _copy_lane(amps, kept, r, span)
+            symbols[kept] = symbols[r]
+        new_row[r] = kept
+        kept += 1
+    if kept < size:
+        for code in range(len(code_row)):
+            if code_row[code] >= 0:
+                code_row[code] = new_row[code_row[code]]
+    return kept, graves, grave_at, dead
 
 
 @kernel
-def _execute(f, tape, layout, width, seed, share, parallel_work, threads, poison):
-    """Sample one batch of shots with shared trajectories.
+def run_lanes(
+    words, alive, first_shot, seed, share, program, poison, parallel_work, threads
+):
+    """Run one component on the alive shots of a chunk and add its outputs.
 
-    ``tape`` is a ``Tape`` and ``layout`` a ``SharingLayout``. Lanes are rows
-    ``0 … size-1`` of arrays with a row per shot (every lane holds a shot), but
-    the amplitudes grow as lanes split. Each loop runs in chunks across threads
-    once its work reaches ``parallel_work``.
+    ``words`` holds the chunk's shot words (row ``s`` is shot ``first_shot + s``)
+    and ``program`` is the component's ``LaneProgram``. The shots' output bits get
+    the component's branch parts and coins, and those that a pruning hides are
+    cleared. The amplitude loops run in up to ``4 * threads`` parallel chunks once
+    their work reaches ``parallel_work``.
 
     Returns:
-        ``(samples, deviation, groups, peak, lanes, dead)``.
+        ``(deviation, groups, peak, size, dead)``: the largest normalization
+        deviation, the first lanes, the most lanes at once, the live lanes at the
+        end and the pruned ones.
 
     """
-    # NOTE: numba's parallel loops cannot read the fields of a named tuple.
-    selection, output_row = tape.f_selection, tape.output_row
-    output_const, ready = layout.output_const, layout.ready
-    key_rows, lane_branches, shot_dormant = (
-        layout.key_rows,
-        layout.lane_branches,
-        layout.shot_dormant,
-    )
-    shots, num_words = f.shape[0], lane_branches.shape[0]
-    num_actions = tape.kind.shape[0]
-    # NOTE: SplitMix64 counts up from its state, so seeds that differ by a few
-    # GOLDEN steps would share outputs; their mixed output starts a fresh stream.
-    _, state = splitmix64(np.uint64(seed))
+    shots = words.shape[0]
+    num_actions = len(program.kind)
+    out_words = program.out_words
+    num_coins = program.coin_pattern.shape[0]
+    # NOTE: a shot's draw slots are one per action, then its coins, 64 per slot.
+    slots = num_actions + (num_coins + 63) // 64
 
-    symbols = np.zeros((shots, num_words), dtype=np.uint32)
-    num_key_words = (key_rows.shape[0] + 31) >> 5 if share else 0
-    keys = np.zeros((shots, num_key_words), dtype=np.uint32)
-    key_work = key_rows.size if share else 0
-    chunks = _chunks(shots * (len(selection) + key_work), parallel_work, threads)
-    if chunks == 1:
-        _pack_range(f, selection, symbols, 0, shots)
-        if share:
-            _key_range(symbols, key_rows, keys, 0, shots)
-    else:
-        for c in numba.prange(chunks):
-            lo, hi = shots * c // chunks, shots * (c + 1) // chunks
-            _pack_range(f, selection, symbols, lo, hi)
-            if share:
-                _key_range(symbols, key_rows, keys, lo, hi)
-    if share:
-        order, start, count, state = _group(keys, state)
-    else:
-        order = np.arange(shots)
-        start = np.arange(shots)
-        count = np.ones(shots, dtype=np.int64)
-    groups = len(start)
-
-    # NOTE: lane and dead-lane rows are written before they are read.
-    lane_symbols = np.empty((shots, num_words), dtype=np.uint32)
-    lane_start = np.empty(shots, dtype=np.int64)
-    lane_count = np.empty(shots, dtype=np.int64)
-    amps = np.zeros((min(max(16, 2 * groups), shots), 1 << width), dtype=np.complex128)
-    for g in range(groups):
-        lane_symbols[g] = symbols[order[start[g]]]
-        lane_start[g], lane_count[g] = start[g], count[g]
-        amps[g, 0] = 1
-    lanes = (lane_symbols, lane_start, lane_count)
-    graves = (
-        np.empty((shots, num_words), dtype=np.uint32),
-        np.empty(shots, dtype=np.int64),
-        np.empty(shots, dtype=np.int64),
-        np.empty(shots, dtype=np.int64),
-    )
-    size, dead = _prune(
-        amps,
-        1,
-        groups,
-        0,
-        layout.prune_first,
-        output_row,
-        output_const,
-        lanes,
-        graves,
-        -1,
-    )
-    peak, region, deviation = groups, 0, 0.0
+    live = np.empty(shots, dtype=np.int64)
+    n = 0
+    for s in range(shots):
+        if alive[s]:
+            live[n] = s
+            n += 1
+    if n == 0:
+        return 0.0, 0, 0, 0, 0
+    symbols, row, size = _group(words, live, n, program, share)
+    groups, peak = size, size
+    amps = np.zeros((max(1, size), 1 << program.width), dtype=np.complex128)
+    for r in range(size):
+        amps[r, 0] = 1
+    # NOTE: each live shot holds a code, and ``code_row`` maps codes to rows, or to
+    # graves as ``-1 - grave``: splits and prunes rewrite the map in a step per
+    # lane, and the next pass over the shots drops those in graves.
+    code_row = np.arange(max(size, 1), dtype=np.int64)
+    graves = np.zeros((16, program.lane_words), dtype=np.uint64)
+    grave_at = np.zeros(16, dtype=np.int64)
+    dead = 0
+    dead_shot = np.empty(n, dtype=np.int64)
+    dead_grave = np.empty(n, dtype=np.int64)
+    num_dead_shots = 0
+    region = 0
+    deviation = 0.0
+    if size and program.prune_first.any():
+        size, graves, grave_at, dead = _prune(
+            amps,
+            symbols,
+            size,
+            1,
+            program.prune_first,
+            program.prune_row,
+            graves,
+            grave_at,
+            dead,
+            code_row,
+            -1,
+        )
 
     for a in range(num_actions):
         if size == 0:
             break
         if poison:
             _poison(amps, size, 1 << region)
-        shift = tape.extent[a]
+        shift = program.extent[a]
         span = 1 << shift
         if shift > region:
             _clear(amps, size, 1 << region, span)
         region = shift
-        kind = tape.kind[a]
-        x, z = np.int64(tape.x_mask[a]), np.int64(tape.z_mask[a])
+        kind = program.kind[a]
+        x, z = np.int64(program.x_mask[a]), np.int64(program.z_mask[a])
         if kind in (ROTATE_DIAG, ROTATE):
-            flip = _signs(
-                lane_symbols, size, tape.sign_row[a], np.int64(tape.sign_const[a])
-            )
+            flip = np.empty(size, dtype=np.int64)
+            for r in range(size):
+                flip[r] = _row_parity(symbols, r, program.sign_row[a]) ^ (
+                    program.sign_const[a]
+                )
             diagonal = kind == ROTATE_DIAG
-            cos, factor, coupling = tape.cos[a], layout.factor[a], layout.coupling[a]
-            work = size * span
-            chunks = _chunks(work, parallel_work, threads)
+            cos, factor, coupling = (
+                program.cos[a],
+                program.factor[a],
+                program.coupling[a],
+            )
+            units = size * span if diagonal else size * (span >> 1)
+            chunks = _chunks(size * span, units, parallel_work, threads)
             if chunks == 1:
                 _rotate_range(
-                    amps, 0, work, shift, flip, diagonal, x, z, cos, factor, coupling
+                    amps, 0, units, span, flip, diagonal, x, z, cos, factor, coupling
                 )
             else:
                 for c in numba.prange(chunks):
-                    lo, hi = work * c // chunks, work * (c + 1) // chunks
+                    lo, hi = units * c // chunks, units * (c + 1) // chunks
                     _rotate_range(
-                        amps, lo, hi, shift, flip, diagonal, x, z, cos, factor, coupling
+                        amps, lo, hi, span, flip, diagonal, x, z, cos, factor, coupling
                     )
             continue
-        dormant = kind == MEASURE_DORMANT
-        if dormant and not layout.lane_dormant[a]:
+        if not program.splits[a]:
             continue
+        dormant = kind == MEASURE_DORMANT
         half = 0.5 if dormant else 0.0
         w0 = np.full(size, half)
         w1 = np.full(size, half)
-        i_power, pivot = layout.i_power[a], tape.pivot[a]
+        i_power = program.i_power[a]
         if not dormant:
-            chunks = _chunks(size * span, parallel_work, threads)
+            chunks = _chunks(size * span, size, parallel_work, threads)
             if chunks == 1:
                 _weights_range(amps, 0, size, span, x, z, i_power, w0, w1)
             else:
                 for c in numba.prange(chunks):
                     lo, hi = size * c // chunks, size * (c + 1) // chunks
                     _weights_range(amps, lo, hi, span, x, z, i_power, w0, w1)
-            for lane in range(size):
-                d = abs(w0[lane] + w1[lane] - 1)
+        # NOTE: each lane's outcome if certain (0 or 1), else -1 and its threshold.
+        certain = np.empty(size, dtype=np.int64)
+        threshold = np.zeros(size, dtype=np.uint64)
+        any_random = False
+        for r in range(size):
+            total = w0[r] + w1[r]
+            if not dormant:
+                d = abs(total - 1)
                 # NOTE: written so that a NaN deviation sticks.
                 if d > deviation or d != d:
                     deviation = d
-        state, draw = splitmix64(state)
-        ones = _draw_ones(lane_count[:size], w0, w1, draw)
-
+            certain[r], threshold[r] = _cut(w0[r], w1[r])
+            if certain[r] < 0:
+                any_random = True
+        outcome = np.empty(2 * size, dtype=np.bool_)
         new = size
-        for lane in range(size):
-            if 0 < ones[lane] < lane_count[lane]:
-                new += 1
-        if new > amps.shape[0]:
-            rows = min(max(new, 2 * amps.shape[0]), shots)
-            amps = _grown(amps, rows, size, span)
-        outcome = np.zeros(new, dtype=np.bool_)
-        weight = np.zeros(new)
-        child = size
-        for lane in range(size):
-            n, total = ones[lane], lane_count[lane]
-            outcome[lane] = n == total
-            weight[lane] = w1[lane] if n == total else w0[lane]
-            if 0 < n < total:
-                _copy_lane(amps, child, lane, span)
-                lane_symbols[child] = lane_symbols[lane]
-                lane_count[child] = n
-                lane_start[child] = lane_start[lane] + total - n
-                lane_count[lane] = total - n
-                outcome[child] = True
-                weight[child] = w1[lane]
-                child += 1
+        if any_random:
+            seen = np.zeros(2 * size, dtype=np.bool_)
+            m = 0
+            for i in range(n):
+                shot, r = live[i], code_row[row[i]]
+                if r < 0:
+                    dead_shot[num_dead_shots] = shot
+                    dead_grave[num_dead_shots] = -1 - r
+                    num_dead_shots += 1
+                    continue
+                c = certain[r]
+                if c < 0:
+                    u = _draw(seed, first_shot + shot, slots, a)
+                    c = np.int64(u < threshold[r])
+                live[m], row[m] = shot, 2 * r + c
+                seen[2 * r + c] = True
+                m += 1
+            n = m
+            for r in range(size):
+                if seen[2 * r] and seen[2 * r + 1]:
+                    new += 1
+            if new > amps.shape[0]:
+                # NOTE: a lane holds a live shot, so there are at most ``n``.
+                amps = _grown(amps, min(max(new, 2 * amps.shape[0]), n), size)
+            code_row = np.empty(2 * size, dtype=np.int64)
+            weight = np.empty(new)
+            child = size
+            for r in range(size):
+                code_row[2 * r] = code_row[2 * r + 1] = r
+                if seen[2 * r] and seen[2 * r + 1]:
+                    _copy_lane(amps, child, r, span)
+                    symbols[child] = symbols[r]
+                    code_row[2 * r + 1] = child
+                    outcome[child], weight[child] = True, w1[r]
+                    child += 1
+                one = seen[2 * r + 1] and not seen[2 * r]
+                outcome[r], weight[r] = one, w1[r] if one else w0[r]
+        else:
+            weight = np.empty(size)
+            for r in range(size):
+                outcome[r] = certain[r] == 1
+                weight[r] = w1[r] if outcome[r] else w0[r]
         size = new
+        peak = max(peak, size)
         if not dormant:
-            chunks = _chunks(size * span, parallel_work, threads)
+            pivot = program.pivot[a]
+            chunks = _chunks(size * span, size, parallel_work, threads)
             if chunks == 1:
                 _project_range(
                     amps, 0, size, span, x, z, pivot, i_power, outcome, weight
@@ -645,155 +837,62 @@ def _execute(f, tape, layout, width, seed, share, parallel_work, threads, poison
                     _project_range(
                         amps, lo, hi, span, x, z, pivot, i_power, outcome, weight
                     )
-        bit = tape.branch[a]
+        bit = program.branch[a]
         if bit >= 0:
-            for lane in range(size):
-                if outcome[lane]:
-                    lane_symbols[lane, bit >> 5] |= np.uint32(1) << np.uint32(bit & 31)
-        peak = max(peak, size)
-        if layout.pruned[a]:
-            tests = layout.prune_outputs[a]
-            size, dead = _prune(
+            for r in range(size):
+                if outcome[r]:
+                    symbols[r, bit >> 6] |= np.uint64(1) << np.uint64(bit & 63)
+        if program.pruned[a]:
+            size, graves, grave_at, dead = _prune(
                 amps,
-                span,
+                symbols,
                 size,
-                dead,
-                tests,
-                output_row,
-                output_const,
-                lanes,
+                1 << region,
+                program.prune_outputs[a],
+                program.prune_row,
                 graves,
+                grave_at,
+                dead,
+                code_row,
                 a,
             )
 
-    # NOTE: the live and dead lanes' ranges tile the sorted positions.
-    dead_symbols, dead_start, dead_count, dead_action = graves
-    entry_symbols = np.zeros((size + dead, num_words), dtype=np.uint32)
-    entry_pruned = np.empty(size + dead, dtype=np.int64)
-    owner = np.empty(shots, dtype=np.int64)
-    for e in range(size + dead):
-        if e < size:
-            entry_symbols[e] = lane_symbols[e]
-            entry_pruned[e] = num_actions
-            first, last = lane_start[e], lane_start[e] + lane_count[e]
+    # NOTE: each entry (a live lane or a grave) has a branch pattern on the outputs
+    # and hides the outputs that its pruning makes unknown; every shot takes its
+    # entry's.
+    entries = size + dead
+    pattern = np.zeros((entries, len(out_words)), dtype=np.uint64)
+    hidden = np.zeros((entries, len(out_words)), dtype=np.uint64)
+    for e in range(entries):
+        lane_symbols = symbols if e < size else graves
+        r = e if e < size else e - size
+        for o in range(len(program.output_bit)):
+            w = program.output_word[o]
+            one = np.uint64(1) << np.uint64(program.output_bit[o])
+            if _row_parity(lane_symbols, r, program.branch_row[o]):
+                pattern[e, w] ^= one
+            if e >= size and program.ready[o] > grave_at[r]:
+                hidden[e, w] |= one
+    for i in range(n + num_dead_shots):
+        if i < n:
+            shot, e = live[i], code_row[row[i]]
+            if e < 0:
+                e = size - 1 - e
         else:
-            entry_symbols[e] = dead_symbols[e - size]
-            entry_pruned[e] = dead_action[e - size]
-            first = dead_start[e - size]
-            last = first + dead_count[e - size]
-        for p in range(first, last):
-            owner[p] = e
-    pruned_at = np.empty(shots, dtype=np.int64)
-    for p in range(shots):
-        pruned_at[order[p]] = entry_pruned[owner[p]]
-    state, coins = splitmix64(state)
-    shot_symbols = np.empty_like(symbols)
-    samples = np.zeros((shots, output_row.shape[0]), dtype=np.bool_)
-    chunks = _chunks(shots * (num_words + output_row.size), parallel_work, threads)
-    if chunks == 1:
-        _shot_range(
-            symbols,
-            order,
-            owner,
-            entry_symbols,
-            lane_branches,
-            shot_dormant,
-            coins,
-            shot_symbols,
-            0,
-            shots,
-        )
-        _output_range(
-            shot_symbols, output_row, output_const, ready, pruned_at, samples, 0, shots
-        )
-    else:
-        for c in numba.prange(chunks):
-            lo, hi = shots * c // chunks, shots * (c + 1) // chunks
-            _shot_range(
-                symbols,
-                order,
-                owner,
-                entry_symbols,
-                lane_branches,
-                shot_dormant,
-                coins,
-                shot_symbols,
-                lo,
-                hi,
-            )
-        for c in numba.prange(chunks):
-            lo, hi = shots * c // chunks, shots * (c + 1) // chunks
-            _output_range(
-                shot_symbols,
-                output_row,
-                output_const,
-                ready,
-                pruned_at,
-                samples,
-                lo,
-                hi,
-            )
-    return samples, deviation, groups, peak, size, dead
+            shot, e = dead_shot[i - n], size + dead_grave[i - n]
+        for w in range(len(out_words)):
+            words[shot, out_words[w]] ^= pattern[e, w]
+        coins = np.uint64(0)
+        for j in range(num_coins):
+            if j % 64 == 0:
+                coins = _draw(seed, first_shot + shot, slots, num_actions + j // 64)
+            if (coins >> np.uint64(j % 64)) & np.uint64(1):
+                for w in range(len(out_words)):
+                    words[shot, out_words[w]] ^= program.coin_pattern[j, w]
+        for w in range(len(out_words)):
+            words[shot, out_words[w]] &= ~hidden[e, w]
+    return deviation, groups, peak, size, dead
 
 
 # NOTE: tests set this to fill every amplitude the executor must not read with NaN.
 _POISON = False
-
-
-def lane_bytes(component: StatevectorComponent) -> int:
-    """Return the peak memory of one lane of ``sample_shared_component``.
-
-    That is three rows of amplitudes (the old and the new array while lanes
-    grow) and the per-shot symbols, ranges and outputs.
-    """
-    amplitudes = 3 * 2**component.width * np.dtype(np.complex128).itemsize
-    return amplitudes + 24 * component.num_words + 128 + component.num_outputs
-
-
-def lane_bound(layout: SharingLayout) -> int:
-    """Return the most lanes a batch with sharing can need, however many shots.
-
-    The shots of a lane agree on the key, of ``len(key_rows)`` bits, and every
-    measurement that splits lanes, one per lane branch bit, at most doubles them.
-    """
-    splits = sum(int(word).bit_count() for word in layout.lane_branches)
-    return 2 ** (len(layout.key_rows) + splits)
-
-
-def sample_shared_component(
-    component: StatevectorComponent,
-    layout: SharingLayout,
-    f_params: np.ndarray,
-    seed: int,
-    share: bool = True,
-) -> tuple[np.ndarray, float, dict]:
-    """Sample one component's outputs, with shared trajectories if ``share``.
-
-    Args:
-        component: The compiled component.
-        layout: Its sharing layout.
-        f_params: Error-basis bits of every shot, shape ``(B, num_f_global)``.
-        seed: Seed of the batch's random numbers, below 2^64.
-        share: Whether shots with equal keys share a lane; otherwise every shot
-            has its own.
-
-    Returns:
-        ``(samples, max_norm_deviation, stats)``, where ``samples`` has shape
-        ``(B, num_outputs)`` and ``stats`` counts groups and lanes.
-
-    """
-    f = np.asarray(f_params)
-    samples, deviation, groups, peak, lanes, dead = _execute(
-        f.shape[0] << component.width,
-        f,
-        component.tape,
-        layout,
-        component.width,
-        np.uint64(seed),
-        share,
-        kernels.PARALLEL_WORK,
-        numba.get_num_threads(),
-        _POISON,
-    )
-    stats = {"groups": groups, "peak lanes": peak, "lanes": lanes, "dead": dead}
-    return samples, float(deviation), stats

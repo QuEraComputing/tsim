@@ -46,23 +46,31 @@ def _prange_only() -> dict[str, bool]:
     return {**dict.fromkeys(options, False), "stencil": False, "fusion": False}
 
 
-def jit(function: Callable, *, parallel: bool = False) -> Callable:
+def jit(
+    function: Callable | None = None, *, parallel: bool = False, contract: bool = False
+) -> Callable:
     """Compile ``function`` with numba, cached on disk where numba can write.
 
     The compiled function releases the GIL, so Python threads can run it at once.
     Numba refuses to define a cached function when no cache directory is
     writable (e.g. a read-only install without ``NUMBA_CACHE_DIR``), so such
-    installs compile in every process instead.
+    installs compile in every process instead. With ``contract``, LLVM may fuse
+    the function's multiplies and adds.
     """
+    if function is None:
+        return functools.partial(jit, parallel=parallel, contract=contract)
     # NOTE: numba names its cache files after the function and ignores nogil when
-    # it reads them, so the name carries the flag: an entry cached without nogil
+    # it reads them, so the name carries the flags: an entry cached without nogil
     # would keep holding the GIL.
-    function = _renamed(function, "_nogil")
+    function = _renamed(function, "_nogil_contract" if contract else "_nogil")
     options = _prange_only() if parallel else False
+    fastmath = {"contract"} if contract else False
     try:
-        return numba.njit(cache=True, parallel=options, nogil=True)(function)
+        return numba.njit(cache=True, parallel=options, nogil=True, fastmath=fastmath)(
+            function
+        )
     except RuntimeError:
-        return numba.njit(parallel=options, nogil=True)(function)
+        return numba.njit(parallel=options, nogil=True, fastmath=fastmath)(function)
 
 
 def kernel(function: Callable) -> Callable:
@@ -70,8 +78,9 @@ def kernel(function: Callable) -> Callable:
 
     ``work`` estimates the call's cost in simple operations; calls below
     ``PARALLEL_WORK`` run serially, and so do calls on the worker threads of
-    ``run_tasks``. In the serial compilation every ``numba.prange`` is a plain
-    range, so both compute the same result.
+    ``run_tasks`` and calls while numba has one thread. In the serial
+    compilation every ``numba.prange`` is a plain range, so both compute the
+    same result.
     """
     serial = jit(function)
     # NOTE: numba names its cache files after the function, so the parallel
@@ -79,7 +88,11 @@ def kernel(function: Callable) -> Callable:
     parallel = jit(_renamed(function, "_prange"), parallel=True)
 
     def run(work: int, *args):
-        if work < PARALLEL_WORK or getattr(_TASK_THREAD, "active", False):
+        if (
+            work < PARALLEL_WORK
+            or getattr(_TASK_THREAD, "active", False)
+            or numba.get_num_threads() == 1
+        ):
             return serial(*args)
         with _LOCK:
             return parallel(*args)

@@ -7,13 +7,16 @@ from __future__ import annotations
 
 import itertools
 from collections.abc import Sequence
+from dataclasses import replace
 from functools import cache
 from math import cos, sin
 
 import jax.numpy as jnp
+import numba
 import numpy as np
 from zxparam import Graph
 
+import tsim.statevector.shared as shared
 from tsim.circuit import Circuit
 from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import classify_direct
@@ -27,6 +30,9 @@ from tsim.statevector.pbc import (
     read_pauli_ops,
 )
 from tsim.statevector.plan import MeasureActive, Plan, Rotate
+from tsim.statevector.shared import key_basis, lane_program
+from tsim.statevector.shots import ShotSampler
+from tsim.utils.kernels import PARALLEL_WORK
 
 Distribution = dict[tuple[int, ...], float]
 
@@ -416,3 +422,74 @@ def assert_counts_match(samples: np.ndarray, reference: np.ndarray) -> None:
     assert np.all(
         np.abs(a * scale_a - b * scale_b) <= 5 * sigma + 3 * (scale_a + scale_b)
     )
+
+
+def shot_sampler(sampler) -> ShotSampler:
+    """Return a sampler's shot-word executor."""
+    assert sampler._shots is not None
+    return sampler._shots
+
+
+def component_program(compiled, postselected=None):
+    """Return a component's key basis and lane program, outputs at bits 0, 1, …."""
+    local = replace(compiled, output_indices=tuple(range(compiled.num_outputs)))
+    if postselected is None:
+        postselected = np.zeros(compiled.num_outputs, dtype=bool)
+    key = key_basis(local)
+    output_words = -(-compiled.num_outputs // 64)
+    return key, lane_program(local, key, output_words, postselected)
+
+
+def sample_lanes(
+    compiled,
+    f_params,
+    seed,
+    share=True,
+    postselected=None,
+    flipped=None,
+    first_shot=0,
+):
+    """Sample one statevector component's outputs from given f-params.
+
+    The shot words hold the component's outputs (their f-parts, constants and
+    ``flipped`` bits) and its key, as ``tsim.statevector.shots`` lays them out, and
+    ``run_lanes`` adds the branch parts. Returns ``(samples, deviation, stats)``.
+    """
+    key, program = component_program(compiled, postselected)
+    tape = compiled.tape
+    num_f = len(tape.f_selection)
+    num_outputs = compiled.num_outputs
+    f = np.asarray(f_params)[:, list(tape.f_selection)].astype(np.uint8)
+    output_bits = shared.unpack_symbols(tape.output_row, compiled.num_words)
+    f_parts = (f @ output_bits[:, :num_f].T.astype(np.uint8)) % 2 == 1
+    constant = np.asarray(tape.output_const, dtype=bool)
+    if flipped is not None:
+        constant = constant ^ np.asarray(flipped, dtype=bool)
+    keys = (f @ key.rows.T.astype(np.uint8)) % 2 == 1
+    output_words = -(-num_outputs // 64)
+    words = np.ascontiguousarray(
+        np.hstack(
+            [
+                shared.pack_bits(f_parts ^ constant, output_words),
+                shared.pack_bits(keys, -(-len(key.rows) // 64)),
+            ]
+        )
+    )
+    alive = np.ones(len(words), dtype=np.bool_)
+    deviation, groups, peak, size, dead = shared.run_lanes(
+        len(words) << compiled.width,
+        words,
+        alive,
+        first_shot,
+        np.uint64(seed),
+        share,
+        program,
+        shared._POISON,
+        PARALLEL_WORK,
+        numba.get_num_threads(),
+    )
+    bits = np.unpackbits(
+        words[:, :output_words].view(np.uint8), axis=1, bitorder="little"
+    )
+    stats = {"groups": groups, "peak lanes": peak, "lanes": size, "dead": dead}
+    return bits[:, :num_outputs].astype(bool), float(deviation), stats

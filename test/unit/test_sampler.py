@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import tsim.sampler as sampler_module
+import tsim.statevector.shared as shared
 from tsim.circuit import Circuit
 from tsim.utils.kernels import PARALLEL_WORK
 
@@ -170,6 +171,94 @@ def test_detector_sampler_no_detectors_bit_packed():
     assert result.shape == (5, 0)
 
 
+# NOTE: noise bits only, and a T component next to them.
+PACKED_CIRCUITS = [
+    "X_ERROR(0.1) 0 1 2 3\nM 0 1 2 3\n"
+    "DETECTOR rec[-4]\nDETECTOR rec[-3]\nDETECTOR rec[-2]\n"
+    "OBSERVABLE_INCLUDE(0) rec[-1]\n",
+    "X_ERROR(0.1) 0 1\nH 2\nT 2\nH 2\nM 0 1 2\n"
+    "DETECTOR rec[-3]\nDETECTOR rec[-2]\nDETECTOR rec[-1]\n"
+    "OBSERVABLE_INCLUDE(0) rec[-1] rec[-3]\n",
+]
+
+
+@pytest.mark.parametrize("text", PACKED_CIRCUITS)
+@pytest.mark.parametrize(
+    "layout",
+    [{}, {"append_observables": True}, {"prepend_observables": True}],
+)
+def test_bit_packed_outputs_are_the_packed_bool_outputs(text, layout):
+    unpacked = Circuit(text).compile_detector_sampler(seed=5)
+    packed = Circuit(text).compile_detector_sampler(seed=5)
+    expected = unpacked.sample(9000, **layout)
+    result = packed.sample(9000, bit_packed=True, **layout)
+    assert result.dtype == np.uint8
+    assert np.array_equal(result, np.packbits(expected, axis=1, bitorder="little"))
+
+
+# NOTE: noise outputs only, one of them constant, so bool samples come straight
+# from the noise sampler and packed ones from the shot words.
+DIRECT_ONLY = """
+X 1
+X_ERROR(0.2) 0 2 3
+M 0 1 2 3
+DETECTOR rec[-4]
+DETECTOR rec[-3]
+DETECTOR rec[-2]
+OBSERVABLE_INCLUDE(0) rec[-1]
+OBSERVABLE_INCLUDE(1) rec[-4] rec[-1]
+"""
+
+
+@pytest.mark.parametrize("reference", [False, True])
+@pytest.mark.parametrize(
+    "layout",
+    [
+        {},
+        {"append_observables": True},
+        {"prepend_observables": True},
+        {"prepend_observables": True, "append_observables": True},
+        {"separate_observables": True},
+    ],
+)
+def test_bool_noise_outputs_are_the_shot_word_outputs(layout, reference):
+    def sample(bit_packed):
+        sampler = Circuit(DIRECT_ONLY).compile_detector_sampler(seed=3)
+        result = sampler.sample(
+            5000,
+            bit_packed=bit_packed,
+            use_detector_reference_sample=reference,
+            use_observable_reference_sample=reference,
+            **layout,
+        )
+        return result if isinstance(result, tuple) else (result,)
+
+    for bools, packed in zip(sample(False), sample(True), strict=True):
+        assert bools.dtype == np.bool_
+        expected = np.packbits(bools, axis=1, bitorder="little")
+        np.testing.assert_array_equal(packed, expected)
+
+
+@pytest.mark.parametrize("shots", [0, 5000])
+def test_bit_packed_direct_outputs_span_several_words(shots):
+    """72 detectors over two words: whole last byte, a later observable, and no shots."""
+    n = 72
+    targets = " ".join(map(str, range(n + 1)))
+    text = f"X_ERROR(0.02) {targets}\nM {targets}\n"
+    text += "".join(f"DETECTOR rec[-{n + 1 - i}]\n" for i in range(n))
+    text += "OBSERVABLE_INCLUDE(0) rec[-1]\n"
+    unpacked = Circuit(text).compile_detector_sampler(seed=2)
+    packed = Circuit(text).compile_detector_sampler(seed=2)
+    for append_observables in (False, True):
+        expected = unpacked.sample(shots, append_observables=append_observables)
+        result = packed.sample(
+            shots, append_observables=append_observables, bit_packed=True
+        )
+        expected = np.packbits(expected, axis=1, bitorder="little")
+        assert result.shape == expected.shape
+        assert np.array_equal(result, expected)
+
+
 def test_detector_sampler_no_detectors_with_reference_sample():
     """Detector sampler with use_detector_reference_sample=True and no detectors returns (shots, 0)."""
     c = Circuit("H 0\nM 0")
@@ -255,7 +344,7 @@ def test_auto_batch(shots, expected_batch_size):
         H 0
         M 0
         """)
-    sampler = c.compile_sampler(seed=42)
+    sampler = c.compile_sampler(strategy="cat5", seed=42)
 
     # Mock _estimate_batch_size to return a small value so auto-batching kicks in.
     with (
@@ -281,7 +370,7 @@ def make_sampler():
 
     def _make(max_batch_size: int = 30):
         c = Circuit("H 0\nM 0")
-        sampler = c.compile_sampler(seed=0)
+        sampler = c.compile_sampler(strategy="cat5", seed=0)
         return sampler, max_batch_size
 
     return _make
@@ -517,13 +606,12 @@ def test_a_nan_normalization_deviation_warns(monkeypatch):
     sampler = Circuit("R 0\nH 0\nT 0\nH 0\nM 0").compile_sampler(
         strategy="active_statevector", seed=0
     )
-    original = sampler_module.sample_shared_component
+    original = shared.run_lanes
 
     def nan_deviation(*args):
-        samples, _, stats = original(*args)
-        return samples, float("nan"), stats
+        return (float("nan"), *original(*args)[1:])
 
-    monkeypatch.setattr(sampler_module, "sample_shared_component", nan_deviation)
+    monkeypatch.setattr(shared, "run_lanes", nan_deviation)
     with pytest.warns(UserWarning, match="not normalized"):
         sampler.sample(10)
 
@@ -568,36 +656,3 @@ def test_direct_detectors_match_a_reference(work):
     np.testing.assert_array_equal(out, expected)
     np.testing.assert_array_equal(discarded, (bits & postselect).any(axis=1))
     assert 0 < discarded.sum() < rows
-
-
-T_CIRCUIT = """
-H 0
-T 0
-H 0
-M 0
-DETECTOR rec[-1]
-"""
-
-
-@pytest.mark.parametrize(
-    ("strategy", "sharing", "backend", "batch_size", "expected"),
-    [
-        ("cat5", False, "cpu", 10, 1),
-        ("active_statevector", True, "cpu", 10, 6),
-        ("active_statevector", True, "gpu", 10, 6),
-        ("active_statevector", False, "cpu", 10, 6),
-        # NOTE: statevector programs sample on the host whatever JAX's backend.
-        ("active_statevector", False, "gpu", 10, 6),
-        ("active_statevector", False, "cpu", 10**12, 1),
-        ("active_statevector", True, "cpu", 10**12, 1),
-    ],
-)
-def test_batches_running_at_once(
-    strategy, sharing, backend, batch_size, expected, monkeypatch
-):
-    sampler = Circuit(T_CIRCUIT).compile_detector_sampler(
-        strategy=strategy, trajectory_sharing=sharing
-    )
-    monkeypatch.setattr(sampler_module.numba, "get_num_threads", lambda: 6)
-    monkeypatch.setattr(sampler_module.jax, "default_backend", lambda: backend)
-    assert sampler._threads(batch_size) == expected

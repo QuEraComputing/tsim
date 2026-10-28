@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import warnings
-from collections import deque
-from math import ceil, inf
-from typing import TYPE_CHECKING, Any, Literal, Protocol, overload
+from math import ceil
+from typing import TYPE_CHECKING, Literal, overload
 
 import jax
 import jax.numpy as jnp
@@ -18,40 +17,20 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
-from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
-from tsim.statevector.shared import (
-    SharingLayout,
-    lane_bound,
-    lane_bytes,
-    sample_shared_component,
-    sharing_layout,
-)
+from tsim.statevector.program import StatevectorComponent
+from tsim.statevector.shots import ShotSampler
 from tsim.utils.cuda_helpers import copy_d2h
-from tsim.utils.kernels import kernel, run_tasks
-from tsim.utils.rng import GOLDEN
+from tsim.utils.kernels import kernel
 
 if TYPE_CHECKING:
     from jax import Array as PRNGKey
 
     from tsim.circuit import Circuit
 
-# NOTE: beyond 2^16 lanes, statevector batches cost memory without being faster.
-STATEVECTOR_MAX_BATCH_SIZE = 2**16
-
-# NOTE: without a given batch size, a call is split into a batch per thread when
-# every batch gets at least MIN_THREAD_BATCH shots, whose fixed costs would
-# dominate otherwise. A smaller call stays one batch, which the parallel kernels
-# spread over the threads instead, at about 0.1 ms per parallel loop. That is
-# slower than a batch per thread of MIN_LANE_BATCH shots or more, unless sharing
-# keeps the shots on fewer lanes than such a batch has shots.
-MIN_THREAD_BATCH = 2**12
-MIN_LANE_BATCH = 2**8
-
-# NOTE: postselection screens shots for direct discards in chunks of at most
-# this many, several chunks per thread at a time, so that calls of a few batches
-# still keep every thread busy and slow cores take fewer chunks.
+# NOTE: postselection with a stabilizer-rank strategy screens shots for direct
+# discards in rounds of SCREEN_CHUNKS chunks of at most SCREEN_SHOTS shots.
 SCREEN_SHOTS = 2**14
-SCREEN_CHUNKS_PER_THREAD = 2
+SCREEN_CHUNKS = 2
 
 
 def _sample_component(
@@ -202,61 +181,6 @@ def sample_program(
     return combined
 
 
-def sample_statevector_program(
-    program: CompiledProgram,
-    f_params: np.ndarray,
-    seed: int,
-    layouts: tuple[SharingLayout, ...],
-    direct_flips: np.ndarray,
-    *,
-    share: bool,
-    sharing_stats: deque[dict] | None = None,
-) -> np.ndarray:
-    """Sample all outputs of a program of statevector components, without JAX.
-
-    Args:
-        program: The compiled program to sample from.
-        f_params: Error parameters, shape (batch_size, num_f_params).
-        seed: Seed of the batch's random numbers, below 2^64.
-        layouts: The sharing layout of each component.
-        direct_flips: The flip of each direct output, with its reference bit.
-        share: Whether shots with equal histories share a lane.
-        sharing_stats: If given, the executor appends its lane counts.
-
-    Returns:
-        Samples array of shape (batch_size, num_outputs) in the original order.
-
-    """
-    rows = f_params.shape[0]
-    results = []
-    for index, (component, layout) in enumerate(
-        zip(program.components, layouts, strict=True)
-    ):
-        assert isinstance(component, StatevectorComponent)
-        component_seed = (seed + index * int(GOLDEN)) % 2**64
-        samples, max_norm_deviation, stats = sample_shared_component(
-            component, layout, f_params, component_seed, share
-        )
-        if sharing_stats is not None:
-            sharing_stats.append(stats)
-        _check_norm(max_norm_deviation, component.norm_warning_threshold)
-        results.append(samples)
-    component_bits = (
-        np.concatenate(results, axis=1) if results else np.zeros((rows, 0), np.bool_)
-    )
-    out = np.empty((rows, program.num_outputs), dtype=np.bool_)
-    _gather_outputs(
-        out.size,
-        f_params,
-        program.direct_f_indices,
-        direct_flips,
-        component_bits,
-        program.output_order,
-        out,
-    )
-    return out
-
-
 @kernel
 def _write_direct_detectors(f, f_indices, flips, columns, postselect, out):
     """Clear every row of ``out`` and write its direct detector ``j`` at ``columns[j]``.
@@ -281,25 +205,6 @@ def _write_direct_detectors(f, f_indices, flips, columns, postselect, out):
     return discarded
 
 
-@kernel
-def _gather_outputs(f, f_indices, flips, component_bits, order, out):
-    """Write every row's outputs into ``out`` in their original order.
-
-    Output ``k`` of the concatenation goes to column ``order[k]``: first the
-    direct outputs (just ``flips[j]`` when ``f_indices[j]`` is -1), then
-    ``component_bits``.
-    """
-    num_direct = len(f_indices)
-    for row in numba.prange(f.shape[0]):
-        for j in range(num_direct):
-            bit = flips[j]
-            if f_indices[j] >= 0:
-                bit ^= f[row, f_indices[j]] != 0
-            out[row, order[j]] = bit
-        for j in range(component_bits.shape[1]):
-            out[row, order[num_direct + j]] = component_bits[row, j]
-
-
 def _nbytes(tree: object) -> int:
     if isinstance(tree, StatevectorComponent):
         return sum(array.nbytes for array in tree.tape)
@@ -308,78 +213,12 @@ def _nbytes(tree: object) -> int:
     )
 
 
-class _Backend(Protocol):
-    """Samples batches of a program's non-direct components.
-
-    Attributes:
-        prunes: Whether shots that a masked component detector discards stop
-            being simulated.
-        max_batch_size: The largest batch worth sampling at once, if any.
-
-    """
-
-    prunes: bool
-    max_batch_size: int | None
-
-    def max_threads(self) -> int:
-        """Return how many batches may run at once."""
-        ...
-
-    def next_seed(self) -> Any:
-        """Return the seed of the next batch, in the order of the batches."""
-        ...
-
-    def memory_available(self) -> int:
-        """Return the free memory of the device that holds the batches."""
-        ...
-
-    def peak_bytes_per_shot(self, num_f: int) -> int:
-        """Return the peak memory of one shot of a batch."""
-        ...
-
-    def max_lanes(
-        self, mask: np.ndarray | None, flip: np.ndarray | None = None
-    ) -> float:
-        """Return the most states a batch simulates, however many shots it has.
-
-        ``mask`` marks the postselected detectors and ``flip`` the reference bits
-        of the outputs, as in ``sample``; ``inf`` means one per shot.
-        """
-        ...
-
-    def sample(
-        self,
-        f_params: np.ndarray,
-        seed: Any,
-        *,
-        mask: np.ndarray | None = None,
-        flip: np.ndarray | None = None,
-        pad_to: int | None = None,
-    ) -> Any:
-        """Return the outputs of one batch, XOR ``flip`` (one bit per output).
-
-        ``mask`` marks the postselected detectors and ``pad_to`` the number of
-        rows the batch may be padded to.
-        """
-        ...
-
-    def concatenate(self, batches: list) -> np.ndarray:
-        """Return the batches' outputs as one host array."""
-        ...
-
-
 class _StabilizerRankBackend:
     """Samples stabilizer-rank programs with JAX, one batch at a time."""
-
-    prunes: bool = False
-    max_batch_size: int | None = None
 
     def __init__(self, program: CompiledProgram, seed: int) -> None:
         self._program = program
         self._key = jax.random.key(seed)
-
-    def max_threads(self) -> int:
-        return 1
 
     def next_seed(self) -> PRNGKey:
         self._key, key = jax.random.split(self._key)
@@ -392,7 +231,7 @@ class _StabilizerRankBackend:
         stats = device.memory_stats()
         return stats.get("bytes_limit", 8 * 1024**3) - stats.get("bytes_in_use", 0)
 
-    def peak_bytes_per_shot(self, num_f: int) -> int:
+    def peak_bytes_per_shot(self) -> int:
         peak = 0
         for component in self._program.components:
             assert isinstance(component, CompiledComponent)
@@ -407,17 +246,11 @@ class _StabilizerRankBackend:
                 peak = max(peak, G * largest * 3)
         return peak
 
-    def max_lanes(
-        self, mask: np.ndarray | None, flip: np.ndarray | None = None
-    ) -> float:
-        return inf
-
     def sample(
         self,
         f_params: np.ndarray,
         seed: PRNGKey,
         *,
-        mask: np.ndarray | None = None,
         flip: np.ndarray | None = None,
         pad_to: int | None = None,
     ) -> jax.Array:
@@ -440,102 +273,6 @@ class _StabilizerRankBackend:
         combined = batches[0] if len(batches) == 1 else jnp.concatenate(batches)
         jax.block_until_ready(combined)
         return copy_d2h(combined)
-
-
-class _StatevectorBackend:
-    """Samples statevector programs with numba kernels on the host.
-
-    Up to ``numba.get_num_threads()`` batches run at once.
-    """
-
-    prunes: bool = True
-    max_batch_size: int | None = STATEVECTOR_MAX_BATCH_SIZE
-
-    def __init__(
-        self, program: CompiledProgram, seed: int, num_detectors: int, share: bool
-    ) -> None:
-        self._program = program
-        self._num_detectors = num_detectors
-        self._share = share
-        self._seeds = np.random.default_rng([seed, 1])
-        self._layouts: dict[bytes, tuple[tuple[SharingLayout, ...], np.ndarray]] = {}
-        self.sharing_stats: deque[dict] = deque(maxlen=10_000)
-
-    def max_threads(self) -> int:
-        return numba.get_num_threads()
-
-    def next_seed(self) -> int:
-        return int(self._seeds.integers(0, 2**64, dtype=np.uint64))
-
-    def memory_available(self) -> int:
-        return psutil.virtual_memory().available
-
-    def peak_bytes_per_shot(self, num_f: int) -> int:
-        # NOTE: plus the f-params and the output records, twice over.
-        records = 2 * num_f + 2 * self._program.num_outputs
-        return max(
-            (
-                lane_bytes(component) + records
-                for component in self._program.components
-                if isinstance(component, StatevectorComponent)
-            ),
-            default=0,
-        )
-
-    def max_lanes(
-        self, mask: np.ndarray | None, flip: np.ndarray | None = None
-    ) -> float:
-        if not self._share:
-            return inf
-        layouts, _ = self.layouts(mask, flip)
-        return max(map(lane_bound, layouts), default=0)
-
-    def sample(
-        self,
-        f_params: np.ndarray,
-        seed: int,
-        *,
-        mask: np.ndarray | None = None,
-        flip: np.ndarray | None = None,
-        pad_to: int | None = None,
-    ) -> np.ndarray:
-        """Sample the batch; shots that a ``mask`` detector discards are pruned."""
-        layouts, direct_flips = self.layouts(mask, flip)
-        return sample_statevector_program(
-            self._program,
-            f_params,
-            seed,
-            layouts,
-            direct_flips,
-            share=self._share,
-            sharing_stats=self.sharing_stats,
-        )
-
-    def layouts(
-        self, mask: np.ndarray | None, flip: np.ndarray | None
-    ) -> tuple[tuple[SharingLayout, ...], np.ndarray]:
-        """Return the components' sharing layouts and the direct outputs' flips."""
-        program = self._program
-        postselected = np.zeros(program.num_outputs, dtype=np.bool_)
-        if mask is not None:
-            postselected[: self._num_detectors] = mask
-        if flip is None:
-            flip = np.zeros(program.num_outputs, dtype=np.bool_)
-        key = postselected.tobytes() + flip.tobytes()
-        if key not in self._layouts:
-            layouts = []
-            for component in program.components:
-                assert isinstance(component, StatevectorComponent)
-                outputs = list(component.output_indices)
-                layouts.append(
-                    sharing_layout(component, postselected[outputs], flip[outputs])
-                )
-            direct = program.output_order[: len(program.direct_f_indices)]
-            self._layouts[key] = (tuple(layouts), program.direct_flips ^ flip[direct])
-        return self._layouts[key]
-
-    def concatenate(self, batches: list) -> np.ndarray:
-        return np.concatenate(batches)
 
 
 def _check_sizes(shots: int, batch_size: int | None) -> None:
@@ -567,12 +304,13 @@ class _CompiledSamplerBase:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, up
-                to ``numba.get_num_threads()`` batches at once, each with its
-                own memory.
-            seed: Random seed. If None, a random seed is generated. Note that
-                deterministic results are only guaranteed for a fixed batch size
-                and fixed reference sample settings.
+                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                ``numba.get_num_threads()`` threads.
+            seed: Random seed. If None, a random seed is generated. With
+                "active_statevector", and for circuits without non-direct
+                components, the samples of a seed depend on neither the batch
+                size nor the thread count; with a stabilizer-rank strategy they
+                are only deterministic for a fixed batch size.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
                 with equal histories on one lane. Defaults to True for
                 ``"active_statevector"`` and False otherwise.
@@ -602,16 +340,24 @@ class _CompiledSamplerBase:
 
         self.circuit = circuit
         self._num_detectors = prepared.num_detectors
-        self._backend: _Backend = (
-            _StatevectorBackend(
-                self._program, seed, self._num_detectors, trajectory_sharing
-            )
-            if strategy == "active_statevector"
-            else _StabilizerRankBackend(self._program, seed)
-        )
-
         program = self._program
-        # NOTE: _gather_outputs writes column output_order[k] without bounds checks.
+        # NOTE: programs of statevector components, and programs without components
+        # under any strategy, are sampled as shot words; the others with JAX.
+        self._shots: ShotSampler | None = None
+        self._backend: _StabilizerRankBackend | None = None
+        if strategy == "active_statevector" or not program.components:
+            self._shots = ShotSampler(
+                program,
+                self._channel_sampler,
+                self._num_detectors,
+                seed,
+                share=trajectory_sharing,
+            )
+        else:
+            self._backend = _StabilizerRankBackend(program, seed)
+
+        # NOTE: _write_direct_detectors writes column output_order[k] without
+        # bounds checks.
         assert np.array_equal(
             np.sort(program.output_order), np.arange(program.num_outputs)
         )
@@ -625,32 +371,40 @@ class _CompiledSamplerBase:
         self._direct_detector_mask = np.zeros(self._num_detectors, dtype=np.bool_)
         self._direct_detector_mask[columns[is_detector]] = True
 
-        statevector = [
-            c for c in program.components if isinstance(c, StatevectorComponent)
-        ]
-        if statevector:
-            peak = self._peak_bytes_per_sample()
-            if peak > self._memory_budget():
-                widest = max(statevector, key=lambda c: c.width)
-                raise ValueError(
-                    f"strategy='active_statevector' needs {peak} bytes per shot for the "
-                    f"component with outputs {list(widest.output_indices)} (width "
-                    f"{widest.width}), more than half of the available memory. "
-                    f"{STABILIZER_RANK_HINT}"
-                )
+    def _sample_shot_outputs(
+        self,
+        shots: int,
+        batch_size: int | None,
+        columns: list[np.ndarray],
+        *,
+        bit_packed: bool,
+        mask: np.ndarray | None = None,
+        flip: np.ndarray | None = None,
+    ) -> list[np.ndarray]:
+        """Return the output bits ``columns`` of ``shots`` shots (``ShotSampler.sample``)."""
+        assert self._shots is not None
+        _check_sizes(shots, batch_size)
+        arrays, deviation = self._shots.sample(
+            shots,
+            columns,
+            bit_packed=bit_packed,
+            batch_size=batch_size,
+            mask=mask,
+            flip=flip,
+        )
+        _check_norm(deviation, StatevectorComponent.norm_warning_threshold)
+        return arrays
 
-    def _compute_reference_sample(self) -> np.ndarray:
-        """Return the noiseless reference sample (all f_params = 0).
+    def _reference_sample(self) -> np.ndarray:
+        """Return a noiseless sample of every output (all f-params 0).
 
         Does not advance the channel sampler RNG.
         """
-        program = self._program
-        if not program.components:
-            reference = np.zeros(program.num_outputs, dtype=np.bool_)
-            reference[program.output_order[: len(program.direct_f_indices)]] = (
-                program.direct_flips
-            )
+        if self._shots is not None:
+            reference, deviation = self._shots.reference()
+            _check_norm(deviation, StatevectorComponent.norm_warning_threshold)
             return reference
+        assert self._backend is not None
         num_f = self._channel_sampler.signature_matrix.shape[1]
         f_ref = np.zeros((1, num_f), dtype=np.uint8)
         samples = self._backend.sample(f_ref, self._backend.next_seed())
@@ -663,12 +417,7 @@ class _CompiledSamplerBase:
         *,
         compute_reference: bool,
     ) -> int:
-        """Choose a uniform batch size for ``shots`` samples.
-
-        Without a ``batch_size``, batches are as large as memory allows, but split
-        into a batch per thread when that pays (``_per_thread``), so that every
-        thread has work.
-        """
+        """Choose a uniform batch size for ``shots`` samples: as memory allows."""
         if batch_size is None:
             batch_size = self._auto_batch_size(shots)
         if compute_reference and batch_size * ceil(shots / batch_size) == shots:
@@ -676,64 +425,23 @@ class _CompiledSamplerBase:
         return batch_size
 
     def _auto_batch_size(self, shots: int) -> int:
-        """Return the size of equal batches of ``shots``, one or more per thread."""
+        """Return the size of equal batches of ``shots`` that fit in memory."""
         num_batches = max(1, ceil(shots / self._estimate_batch_size()))
-        return ceil(shots / max(num_batches, self._per_thread(shots)))
-
-    def _per_thread(
-        self,
-        shots: int,
-        mask: np.ndarray | None = None,
-        flip: np.ndarray | None = None,
-    ) -> int:
-        """Return the thread count if a batch per thread pays for ``shots``, else 1.
-
-        It does when every batch gets at least ``MIN_THREAD_BATCH`` shots, or at
-        least ``MIN_LANE_BATCH`` and the backend may need as many lanes as a
-        batch has shots; ``mask`` and ``flip`` are as in ``max_lanes``.
-        """
-        threads = self._threads(1)
-        if shots >= threads * MIN_THREAD_BATCH:
-            return threads
-        if shots < threads * MIN_LANE_BATCH:
-            return 1
-        lanes = self._backend.max_lanes(mask, flip)
-        return threads if lanes >= ceil(shots / threads) else 1
+        return ceil(shots / num_batches)
 
     def _peak_bytes_per_sample(self) -> int:
         """Estimate peak device memory per sample from compiled program structure."""
-        num_f = self._channel_sampler.signature_matrix.shape[1]
-        return max(self._backend.peak_bytes_per_shot(num_f), 1)
+        assert self._backend is not None
+        return max(self._backend.peak_bytes_per_shot(), 1)
 
     def _memory_budget(self) -> int:
         """Return the memory one batch may use: half of the free device memory."""
+        assert self._backend is not None
         return int(self._backend.memory_available() * 0.5)  # conservative
 
-    def _threads(self, batch_size: int) -> int:
-        """Return how many batches of ``batch_size`` shots run at once.
-
-        That is the backend's limit, as long as the batches fit in the memory
-        budget.
-        """
-        # NOTE: with sharing a batch may still hold a lane per shot.
-        fits = self._memory_budget() // (self._peak_bytes_per_sample() * batch_size)
-        return max(1, min(self._backend.max_threads(), fits))
-
     def _estimate_batch_size(self) -> int:
-        """Estimate the largest batch size that fits in available device memory.
-
-        Without sharing, every batch that runs at once holds a lane per shot. With
-        sharing, lanes are allocated as trajectories split, so the estimate
-        leaves room for a lane per shot in one batch only. The backend may cap
-        the batch size further.
-        """
-        peak = self._peak_bytes_per_sample()
-        if not self._trajectory_sharing:
-            peak *= self._threads(1)
-        batch_size = max(1, self._memory_budget() // peak)
-        if self._backend.max_batch_size is not None:
-            batch_size = min(batch_size, self._backend.max_batch_size)
-        return batch_size
+        """Estimate the largest batch size that fits in available device memory."""
+        return max(1, self._memory_budget() // self._peak_bytes_per_sample())
 
     @overload
     def _sample_batches(
@@ -760,7 +468,7 @@ class _CompiledSamplerBase:
         *,
         compute_reference: bool = False,
     ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
-        """Sample in batches and concatenate results.
+        """Sample in batches with JAX and concatenate results.
 
         Args:
             shots: Number of samples to draw.
@@ -779,13 +487,6 @@ class _CompiledSamplerBase:
                 return empty, np.zeros(self._program.num_outputs, dtype=np.bool_)
             return empty
 
-        if not self._program.components:
-            samples = self._sample_direct(shots)
-            if compute_reference:
-                reference = self._compute_reference_sample()
-                return samples, reference
-            return samples
-
         # NOTE: with a reference sample the batch size grows by one when the
         # batches would hold exactly ``shots``, so that the first batch's
         # reference sample fits without another batch shape for JIT.
@@ -794,19 +495,13 @@ class _CompiledSamplerBase:
         )
         num_batches = ceil((shots + compute_reference) / batch_size)
         backend = self._backend
-        tasks = [
-            (index, self._channel_sampler.block_seeds(batch_size), backend.next_seed())
-            for index in range(num_batches)
-        ]
-
-        def sample_batch(task: tuple) -> jax.Array | np.ndarray:
-            index, block_seeds, seed = task
-            f_params = self._channel_sampler.sample(batch_size, block_seeds)
+        assert backend is not None
+        batches = []
+        for index in range(num_batches):
+            f_params = self._channel_sampler.sample(batch_size)
             if compute_reference and index == 0:
                 f_params[0] = 0
-            return backend.sample(f_params, seed)
-
-        batches = run_tasks(sample_batch, tasks, self._threads(batch_size))
+            batches.append(backend.sample(f_params, backend.next_seed()))
         reference: np.ndarray | None = None
         if compute_reference:
             reference = np.asarray(batches[0][0])
@@ -826,14 +521,12 @@ class _CompiledSamplerBase:
         postselection_mask: np.ndarray,
         referenced: np.ndarray | None = None,
     ) -> np.ndarray:
-        """Sample with postselection, skipping the components for direct discards.
+        """Sample with postselection and JAX, skipping the components for direct discards.
 
         A shot that a masked direct detector discards keeps its direct detector
-        columns and reads ``False`` elsewhere. If the backend prunes, a shot that
-        a masked component detector discards also reads ``False`` in the outputs
-        set after that. The other shots are sampled in batches of ``batch_size``.
-        Without a ``batch_size``, batches are as large as memory allows, and the
-        last survivors are split into a batch per thread.
+        columns and reads ``False`` elsewhere. The other shots are sampled in
+        batches of ``batch_size``. Without a ``batch_size``, batches are as large
+        as memory allows, and the last survivors are split into equal batches.
 
         Args:
             shots: Number of samples to draw.
@@ -853,115 +546,64 @@ class _CompiledSamplerBase:
             batch_size = self._estimate_batch_size()
         flip = None
         if referenced is not None:
-            flip = self._compute_reference_sample() & referenced
+            flip = self._reference_sample() & referenced
         f_indices, flips, columns = self._direct_detectors
         if flip is not None:
             flips = flips ^ flip[columns]
         postselect = postselection_mask[columns]
         result = np.empty((shots, num_outputs), dtype=np.bool_)
         backend = self._backend
+        assert backend is not None
         chunk = min(batch_size, SCREEN_SHOTS)
-
-        def screen(task: tuple[int, np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
-            """Write the direct detectors of the chunk at ``start``; return its survivors."""
-            start, block_seeds = task
-            stop = min(start + chunk, shots)
-            f_params = self._channel_sampler.sample(stop - start, block_seeds)
-            discarded = _write_direct_detectors(
-                (stop - start) * len(columns),
-                f_params,
-                f_indices,
-                flips,
-                columns,
-                postselect,
-                result[start:stop],
-            )
-            survivors = np.flatnonzero(~discarded)
-            return f_params[survivors], start + survivors
-
-        def dispatch(task: tuple) -> None:
-            f_batch, shot_batch, seed, rows = task
-            samples = backend.sample(
-                f_batch, seed, mask=postselection_mask, flip=flip, pad_to=rows
-            )
-            result[shot_batch] = np.asarray(samples)
-
-        threads = self._threads(batch_size)
         num_f = self._channel_sampler.signature_matrix.shape[1]
         pending_f = [np.empty((0, num_f), dtype=np.uint8)]
         pending_shot = [np.empty(0, dtype=np.int64)]
         pending = 0
         starts = range(0, shots, chunk)
         screened_chunks = 0
-        # NOTE: chunks are screened until every thread has a full batch of
-        # survivors. A batch starts every batch_size survivors, and all seeds
-        # are drawn in order, so the thread count doesn't change the samples.
+        # NOTE: chunks are screened until a full batch of survivors is pending. A
+        # batch starts every batch_size survivors, and all seeds are drawn in order.
         while screened_chunks < len(starts) or pending:
-            while screened_chunks < len(starts) and pending < threads * batch_size:
-                tasks = [
-                    (
-                        start,
-                        self._channel_sampler.block_seeds(min(chunk, shots - start)),
+            while screened_chunks < len(starts) and pending < batch_size:
+                round_starts = starts[screened_chunks : screened_chunks + SCREEN_CHUNKS]
+                screened_chunks += len(round_starts)
+                for start in round_starts:
+                    stop = min(start + chunk, shots)
+                    f_params = self._channel_sampler.sample(stop - start)
+                    discarded = _write_direct_detectors(
+                        (stop - start) * len(columns),
+                        f_params,
+                        f_indices,
+                        flips,
+                        columns,
+                        postselect,
+                        result[start:stop],
                     )
-                    for start in starts[
-                        screened_chunks : screened_chunks
-                        + SCREEN_CHUNKS_PER_THREAD * threads
-                    ]
-                ]
-                screened_chunks += len(tasks)
-                for f_survivors, shot_survivors in run_tasks(screen, tasks, threads):
-                    pending_f.append(f_survivors)
-                    pending_shot.append(shot_survivors)
-                    pending += len(shot_survivors)
+                    survivors = np.flatnonzero(~discarded)
+                    pending_f.append(f_params[survivors])
+                    pending_shot.append(start + survivors)
+                    pending += len(survivors)
             ready = pending
             size, rows = batch_size, batch_size
             if screened_chunks < len(starts):
-                ready -= ready % (threads * batch_size)
+                ready -= ready % batch_size
             elif split_last and ready:
                 # NOTE: JAX pads these batches to a power of two, so that few
                 # batch shapes are compiled.
-                per_thread = self._per_thread(ready, postselection_mask, flip)
-                size = ceil(ready / max(1, ceil(ready / batch_size), per_thread))
+                size = ceil(ready / ceil(ready / batch_size))
                 rows = min(batch_size, 1 << (size - 1).bit_length())
             all_f, all_shot = np.concatenate(pending_f), np.concatenate(pending_shot)
-            batches = [
-                (
+            for start in range(0, ready, size):
+                samples = backend.sample(
                     all_f[start : start + size],
-                    all_shot[start : start + size],
                     backend.next_seed(),
-                    rows,
+                    flip=flip,
+                    pad_to=rows,
                 )
-                for start in range(0, ready, size)
-            ]
-            # NOTE: only JAX pads batches to ``rows``, and it runs one at a time.
-            run_tasks(dispatch, batches, self._threads(size))
+                result[all_shot[start : start + size]] = np.asarray(samples)
             pending_f, pending_shot = [all_f[ready:]], [all_shot[ready:]]
             pending -= ready
         return result
-
-    def _sample_direct(self, shots: int) -> np.ndarray:
-        """Sample a program without components, whose outputs are all direct."""
-        program = self._program
-        f_params = self._channel_sampler.sample(shots)
-        num_direct = len(program.direct_f_indices)
-        # NOTE: typical surface-code detector circuits need no copy.
-        if (
-            program.output_reindex is None
-            and not program.direct_flips.any()
-            and np.array_equal(program.direct_f_indices, np.arange(num_direct))
-        ):
-            return f_params[:, :num_direct].view(np.bool_)
-        out = np.empty((shots, program.num_outputs), dtype=np.bool_)
-        _gather_outputs(
-            out.size,
-            f_params,
-            program.direct_f_indices,
-            program.direct_flips,
-            np.zeros((shots, 0), dtype=np.bool_),
-            program.output_order,
-            out,
-        )
-        return out
 
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""
@@ -1065,10 +707,9 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
                 with equal histories on one lane. Defaults to True for
                 ``"active_statevector"`` and False otherwise.
-            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
-                will only produce deterministic samples for fixed batch size. If
-                deterministic samples are needed, the batch size should be set
-                manually.
+            seed: Random seed for the sampler. With "active_statevector" the samples
+                of a seed do not depend on the batch size; with a stabilizer-rank
+                strategy they are only deterministic for a fixed batch size.
 
         """
         super().__init__(
@@ -1085,20 +726,25 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
 
         Args:
             shots: The number of times to sample every measurement in the circuit.
-            batch_size: The number of samples to process in each batch. Defaults to
-                None, which automatically chooses a batch size based on available
-                memory. With ``strategy="active_statevector"`` a call is split
-                into a batch per numba thread when each gets at least 4096 shots,
-                or at least 256 that trajectory sharing may not keep on fewer
-                lanes. With a stabilizer-rank strategy on a GPU, setting this
-                explicitly can help fully utilize VRAM.
-                NOTE: Changing the batch size will affect reproducibility even with
-                a fixed seed.
+            batch_size: The number of samples to process at once. Defaults to None,
+                which chooses it from the available memory. With
+                ``strategy="active_statevector"`` it bounds the shots a thread
+                holds and does not change the samples.
+                With a stabilizer-rank strategy on a GPU, setting this explicitly
+                can help fully utilize VRAM; it changes the samples of a seed.
 
         Returns:
             A numpy array containing the measurement samples.
 
         """
+        if self._shots is not None:
+            columns = [np.arange(self._program.num_outputs)]
+            if not self._program.components:
+                _check_sizes(shots, batch_size)
+                return self._shots.direct_bools(shots)
+            return self._sample_shot_outputs(
+                shots, batch_size, columns, bit_packed=False
+            )[0]
         return self._sample_batches(shots, batch_size)
 
 
@@ -1107,6 +753,32 @@ def _maybe_bit_pack(array: np.ndarray, *, bit_packed: bool) -> np.ndarray:
     if not bit_packed:
         return array
     return np.packbits(array.astype(np.bool_), axis=1, bitorder="little")
+
+
+def _take_columns(samples: np.ndarray, columns: np.ndarray) -> np.ndarray:
+    """Return ``samples[:, columns]``, as a view when ``columns`` is a range."""
+    start = int(columns[0]) if len(columns) else 0
+    if np.array_equal(columns, np.arange(start, start + len(columns))):
+        return samples[:, start : start + len(columns)]
+    return samples[:, columns]
+
+
+def _output_columns(
+    num_detectors: int,
+    num_outputs: int,
+    *,
+    prepend: bool,
+    append: bool,
+    separate: bool,
+) -> list[np.ndarray]:
+    """Return the output columns of each array that a detector sample returns."""
+    detectors = np.arange(num_detectors)
+    observables = np.arange(num_detectors, num_outputs)
+    if separate:
+        return [detectors, observables]
+    return [
+        np.concatenate([observables] * prepend + [detectors] + [observables] * append)
+    ]
 
 
 class CompiledDetectorSampler(_CompiledSamplerBase):
@@ -1129,10 +801,10 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
                 with equal histories on one lane. Defaults to True for
                 ``"active_statevector"`` and False otherwise.
-            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler
-                will only produce deterministic samples for fixed batch size and
-                fixed reference sample settings. If deterministic samples are
-                needed, the batch size should be set manually.
+            seed: Random seed for the sampler. With "active_statevector" the samples
+                of a seed do not depend on the batch size; with a stabilizer-rank
+                strategy they are only deterministic for a fixed batch size and
+                fixed reference sample settings.
 
         """
         super().__init__(
@@ -1195,15 +867,12 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
 
         Args:
             shots: The number of times to sample every detector in the circuit.
-            batch_size: The number of samples to process in each batch. Defaults to
-                None, which automatically chooses a batch size based on available
-                memory. With ``strategy="active_statevector"`` a call is split
-                into a batch per numba thread when each gets at least 4096 shots,
-                or at least 256 that trajectory sharing may not keep on fewer
-                lanes. With a stabilizer-rank strategy on a GPU, setting this
-                explicitly can help fully utilize VRAM.
-                NOTE: Changing the batch size will affect reproducibility even with
-                a fixed seed.
+            batch_size: The number of samples to process at once. Defaults to None,
+                which chooses it from the available memory. With
+                ``strategy="active_statevector"`` it bounds the shots a thread
+                holds and does not change the samples.
+                With a stabilizer-rank strategy on a GPU, setting this explicitly
+                can help fully utilize VRAM; it changes the samples of a seed.
             separate_observables: Defaults to False. When set to True, the return value
                 is a (detection_events, observable_flips) tuple instead of a flat
                 detection_events array.
@@ -1211,7 +880,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 with the detectors and are placed at the start of the results.
             append_observables: Defaults to false. When set, observables are included
                 with the detectors and are placed at the end of the results.
-            bit_packed: Defaults to false. When set, results are bit-packed.
+            bit_packed: Defaults to false. When set, results are bit-packed. The
+                packed rows may be a strided view of a wider array.
             use_detector_reference_sample: Defaults to False. When True, a noiseless
                 reference sample is computed and XORed with detector outcomes so that
                 results represent deviations from the noiseless baseline. This should
@@ -1259,29 +929,49 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                     f"postselection_mask must have shape ({num_detectors},), "
                     f"got {mask.shape}"
                 )
-            # NOTE: without pruning, only direct detectors can skip any work.
-            if not self._backend.prunes:
-                skips = mask & self._direct_detector_mask
+            # NOTE: shot words discard and prune with any mask; with a
+            # stabilizer-rank strategy only direct detectors that can fire skip work.
+            if self._shots is not None:
+                postselection_mask = mask if self._program.components else None
             else:
-                skips = mask.copy()
-            indices, flips, columns = self._direct_detectors
-            constant = indices < 0
-            skips[columns[constant]] &= flips[constant] & (
-                not use_detector_reference_sample
-            )
-            postselection_mask = (
-                mask if skips.any() and self._program.components else None
-            )
-
-        if postselection_mask is not None:
-            referenced = None
-            if compute_reference:
-                is_detector = np.arange(self._program.num_outputs) < num_detectors
-                referenced = np.where(
-                    is_detector,
-                    use_detector_reference_sample,
-                    use_observable_reference_sample,
+                skips = mask & self._direct_detector_mask
+                indices, flips, columns = self._direct_detectors
+                constant = indices < 0
+                skips[columns[constant]] &= flips[constant] & (
+                    not use_detector_reference_sample
                 )
+                postselection_mask = mask if skips.any() else None
+
+        num_outputs = self._program.num_outputs
+        is_detector = np.arange(num_outputs) < num_detectors
+        referenced = np.where(
+            is_detector, use_detector_reference_sample, use_observable_reference_sample
+        )
+        columns = _output_columns(
+            num_detectors,
+            num_outputs,
+            prepend=prepend_observables,
+            append=append_observables,
+            separate=separate_observables,
+        )
+        if self._shots is not None:
+            # NOTE: the reference bits are XOR-ed in before the postselection tests.
+            flip = self._reference_sample() & referenced if compute_reference else None
+            if self._program.components or bit_packed:
+                arrays = self._sample_shot_outputs(
+                    shots,
+                    batch_size,
+                    columns,
+                    bit_packed=bit_packed,
+                    mask=postselection_mask,
+                    flip=flip,
+                )
+                return (arrays[0], arrays[1]) if separate_observables else arrays[0]
+            _check_sizes(shots, batch_size)
+            samples = self._shots.direct_bools(shots, flip)
+        elif postselection_mask is not None:
+            if not compute_reference:
+                referenced = None
             samples = self._sample_batches_with_postselection(
                 shots,
                 batch_size,
@@ -1298,25 +988,11 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 samples[:, num_detectors:] ^= reference[num_detectors:]
         else:
             samples = self._sample_batches(shots, batch_size)
-
-        det_samples = samples[:, :num_detectors]
-        obs_samples = samples[:, num_detectors:]
-
-        if prepend_observables and append_observables:
-            combined = np.concatenate([obs_samples, det_samples, obs_samples], axis=1)
-            return _maybe_bit_pack(combined, bit_packed=bit_packed)
-        if append_observables:
-            return _maybe_bit_pack(samples, bit_packed=bit_packed)
-        if prepend_observables:
-            combined = np.concatenate([obs_samples, det_samples], axis=1)
-            return _maybe_bit_pack(combined, bit_packed=bit_packed)
-        if separate_observables:
-            return (
-                _maybe_bit_pack(det_samples, bit_packed=bit_packed),
-                _maybe_bit_pack(obs_samples, bit_packed=bit_packed),
-            )
-
-        return _maybe_bit_pack(det_samples, bit_packed=bit_packed)
+        arrays = [
+            _maybe_bit_pack(_take_columns(samples, c), bit_packed=bit_packed)
+            for c in columns
+        ]
+        return (arrays[0], arrays[1]) if separate_observables else arrays[0]
 
 
 class CompiledStateProbs(_CompiledSamplerBase):
