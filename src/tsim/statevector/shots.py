@@ -93,8 +93,7 @@ def shot_layout(program: CompiledProgram, channels: ChannelSampler) -> ShotLayou
         assert isinstance(component, StatevectorComponent)
         tape = component.tape
         selection = np.asarray(tape.f_selection, dtype=np.int64)
-        output_bits = shared.unpack_symbols(tape.output_row, component.num_words)
-        slot, f = np.nonzero(output_bits[:, : len(selection)])
+        slot, f = np.nonzero(tape.output_row[:, : len(selection)])
         f_index.append(selection[f])
         bit.append(np.asarray(component.output_indices, dtype=np.int64)[slot])
         constant[list(component.output_indices)] = tape.output_const

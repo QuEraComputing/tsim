@@ -84,6 +84,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The ZX diagram types are now `"zx"`, `"zx-dets"` and `"zx-meas"`. They return zxparam's HTML drawing object instead of a graph.
 - Internals: `GraphRepresentation` (`tsim.core.instructions`) is now `GraphBuilder` in the new `tsim.core.builder`, and `parse_stim_circuit` returns it. Its bookkeeping functions became methods: `detector` is now `add_detector` and `observable_include` is now `include_observable`; `tick`, `correlated_error` and `finalize_correlated_error` keep their names; `ensure_lane`, `add_lane`, `add_quantum_boundary`, `last_col` and `last_edge` are now private. Its fields are private behind read-only properties (`rec` is now `records`). `ANNOTATION_ROW`, `HELPER_LANE` and `_error_phase` (now `error_phase`) moved to `tsim.core.builder`. `build_sampling_graph` (`tsim.core.graph`) is replaced by `GraphBuilder.build(closed=..., outputs=...)`.
 - Internals moved or removed: `classify_direct` moved from `tsim.core.graph` to `tsim.compile.pipeline`; `tsim.utils.diagram.render_pyzx_d3`, `squash_graph` and `scale_horizontally` are gone, since ZX diagrams use zxparam's `draw` layout and scale options.
+- Internals of `strategy="active_statevector"`: a component's tape keeps a
+  boolean column per symbol instead of uint32 words, `run_lanes` writes a pruned
+  shot's outputs when its lane dies instead of keeping graves, and both samplers
+  pick their backend in one `_sample_outputs` method. Samples are unchanged.
+  (#223)
 
 ### Deprecated
 - The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types. They still work as aliases for `"zx"`, `"zx-dets"` and `"zx-meas"` but emit a `DeprecationWarning`.

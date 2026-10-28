@@ -20,8 +20,8 @@ shots, the chunk, the threads or whether lanes are shared at all.
 
 Pruning. After the action that sets a postselected output's last branch bit (or
 before the first action, for an output of f-bits only) the lanes in which it reads
-1 die. Their shots keep the outcomes drawn so far, and their outputs that need a
-later branch bit read False.
+1 die. Their shots get their outputs there, from the outcomes drawn so far, and
+those that need a later branch bit read False.
 
 Outputs. Each shot XORs the branch part of its outputs, from its last lane, and
 its own fair coins: the dormant measurements that no sign and no postselected
@@ -146,13 +146,6 @@ class KeyBasis(NamedTuple):
     sign_coords: np.ndarray
 
 
-def unpack_symbols(words: np.ndarray, num_words: int) -> np.ndarray:
-    """Return uint32 symbol words as booleans: symbol s is bit s % 32 of word s // 32."""
-    shifts = np.arange(32, dtype=np.uint32)
-    bits = (words[..., None] >> shifts) & 1
-    return bits.reshape(*words.shape[:-1], 32 * num_words).astype(bool)
-
-
 def pack_bits(bits: np.ndarray, num_words: int) -> np.ndarray:
     """Return booleans as uint64 words: bit i is bit i % 64 of word i // 64."""
     padded = np.zeros((*bits.shape[:-1], 64 * num_words), dtype=bool)
@@ -164,7 +157,7 @@ def key_basis(component: StatevectorComponent) -> KeyBasis:
     """Return a basis of the f-parts of the component's rotation signs."""
     tape = component.tape
     num_f = len(tape.f_selection)
-    signs = unpack_symbols(tape.sign_row, component.num_words)[:, :num_f]
+    signs = tape.sign_row[:, :num_f]
     rotation = np.isin(tape.kind, (ROTATE_DIAG, ROTATE))
     signs = signs & rotation[:, None]
     nonzero = signs.any(axis=1)
@@ -197,9 +190,8 @@ def lane_program(
     num_actions = len(tape.kind)
     num_outputs = component.num_outputs
     kind, branch = tape.kind, tape.branch
-    symbol_bits = 32 * component.num_words
-    sign_bits = unpack_symbols(tape.sign_row, component.num_words)
-    output_bits = unpack_symbols(tape.output_row, component.num_words)
+    symbol_bits = component.num_symbols
+    sign_bits, output_bits = tape.sign_row, tape.output_row
     postselected = np.asarray(postselected, dtype=bool)
 
     setter = np.full(symbol_bits, -1, dtype=np.int64)
@@ -322,11 +314,11 @@ def lane_bytes(component: StatevectorComponent, key: KeyBasis) -> int:
     """Return the peak memory of one lane of ``run_lanes``.
 
     That is three rows of amplitudes (the old and the new array while lanes grow),
-    four rows of lane symbols (its own, and a grave's while the graves grow) and
-    64 bytes of per-lane scratch.
+    two rows of lane symbols (its own, and its output pattern while it is
+    pruned) and 64 bytes of per-lane scratch.
     """
     amplitudes = 3 * 2**component.width * np.dtype(np.complex128).itemsize
-    return amplitudes + 4 * 8 * max_lane_words(component, key) + 64
+    return amplitudes + 2 * 8 * max_lane_words(component, key) + 64
 
 
 @intrinsic
@@ -598,53 +590,128 @@ def _group(words, live, n, program, share):
 
 
 @jit
+def _lane_pattern(symbols, r, branch_row, output_word, output_bit, num_words):
+    """Return the branch parts of the outputs of lane ``r``, on the output words."""
+    pattern = np.zeros(num_words, dtype=np.uint64)
+    for o in range(len(output_bit)):
+        if _row_parity(symbols, r, branch_row[o]):
+            pattern[output_word[o]] ^= np.uint64(1) << np.uint64(output_bit[o])
+    return pattern
+
+
+# NOTE: _finish_shot runs once per shot, so, like _lane_key, it takes only the
+# arrays it reads and not the LaneProgram.
+@jit
+def _finish_shot(
+    words, shot, pattern, hidden, out_words, coin_pattern, seed, index, slots, first
+):
+    """Add a shot's branch parts and coins to its outputs, then clear ``hidden``.
+
+    The coins come from the shot's draw slots ``first`` on, 64 per slot.
+    """
+    for w in range(len(out_words)):
+        words[shot, out_words[w]] ^= pattern[w]
+    coins = np.uint64(0)
+    for j in range(coin_pattern.shape[0]):
+        if j % 64 == 0:
+            coins = _draw(seed, index, slots, first + j // 64)
+        if (coins >> np.uint64(j % 64)) & np.uint64(1):
+            for w in range(len(out_words)):
+                words[shot, out_words[w]] ^= coin_pattern[j, w]
+    for w in range(len(out_words)):
+        words[shot, out_words[w]] &= ~hidden[w]
+
+
+@jit
 def _prune(
     amps,
     symbols,
     size,
     span,
-    tests,
-    prune_row,
-    graves,
-    grave_at,
-    dead,
+    live,
+    row,
+    n,
     code_row,
+    words,
+    alive,
+    first_shot,
+    seed,
+    slots,
+    program,
+    tests,
     action,
 ):
-    """Bury the lanes in which a tested output reads 1.
+    """Finish the shots of the lanes in which a tested output reads 1.
 
-    The other lanes move down in order, and ``code_row`` maps codes to their new
-    rows, or to the graves. Returns ``(size, graves, grave_at, dead)``.
+    Those shots get their outputs as they stand after ``action``, with the
+    outputs that need a later branch bit cleared, and leave ``live`` and
+    ``alive``. The other lanes move down in order, and ``code_row`` maps codes
+    to their new rows. Returns ``(size, n, pruned lanes)``.
     """
+    dies = np.zeros(size, dtype=np.bool_)
+    pruned = 0
+    for r in range(size):
+        for o in range(len(tests)):
+            if tests[o] and _row_parity(symbols, r, program.prune_row[o]):
+                dies[r] = True
+                pruned += 1
+                break
+    if pruned == 0:
+        return size, n, 0
+    out_words = program.out_words
+    hidden = np.zeros(len(out_words), dtype=np.uint64)
+    for o in range(len(program.output_bit)):
+        if program.ready[o] > action:
+            w = program.output_word[o]
+            hidden[w] |= np.uint64(1) << np.uint64(program.output_bit[o])
+    pattern = np.zeros((size, len(out_words)), dtype=np.uint64)
+    for r in range(size):
+        if dies[r]:
+            pattern[r] = _lane_pattern(
+                symbols,
+                r,
+                program.branch_row,
+                program.output_word,
+                program.output_bit,
+                len(out_words),
+            )
+    coins = program.coin_pattern
+    first_coin = len(program.kind)
+    m = 0
+    for i in range(n):
+        shot, r = live[i], code_row[row[i]]
+        if dies[r]:
+            _finish_shot(
+                words,
+                shot,
+                pattern[r],
+                hidden,
+                out_words,
+                coins,
+                seed,
+                first_shot + shot,
+                slots,
+                first_coin,
+            )
+            alive[shot] = False
+            continue
+        live[m], row[m] = shot, row[i]
+        m += 1
     new_row = np.empty(size, dtype=np.int64)
     kept = 0
     for r in range(size):
-        dies = False
-        for o in range(len(tests)):
-            if tests[o] and _row_parity(symbols, r, prune_row[o]):
-                dies = True
-                break
-        if dies:
-            if dead == len(grave_at):
-                graves = _grown(graves, 2 * dead, dead)
-                at = np.zeros(2 * dead, dtype=np.int64)
-                at[:dead] = grave_at
-                grave_at = at
-            graves[dead] = symbols[r]
-            grave_at[dead] = action
-            new_row[r] = -1 - dead
-            dead += 1
+        if dies[r]:
+            new_row[r] = -1
             continue
         if kept != r:
             _copy_lane(amps, kept, r, span)
             symbols[kept] = symbols[r]
         new_row[r] = kept
         kept += 1
-    if kept < size:
-        for code in range(len(code_row)):
-            if code_row[code] >= 0:
-                code_row[code] = new_row[code_row[code]]
-    return kept, graves, grave_at, dead
+    for code in range(len(code_row)):
+        if code_row[code] >= 0:
+            code_row[code] = new_row[code_row[code]]
+    return kept, m, pruned
 
 
 @kernel
@@ -657,8 +724,8 @@ def run_lanes(
     and ``program`` is the component's ``LaneProgram``. The shots' output bits get
     the component's branch parts and coins, and those that a pruning hides are
     cleared. A pruned shot leaves ``alive``, so later components skip it. The
-    amplitude loops run in up to ``4 * threads`` parallel chunks once
-    their work reaches ``parallel_work``.
+    amplitude loops run in up to ``4 * threads`` parallel chunks once their work
+    reaches ``parallel_work``.
 
     Returns:
         ``(deviation, groups, peak, size, dead)``: the largest normalization
@@ -686,30 +753,29 @@ def run_lanes(
     amps = np.zeros((max(1, size), 1 << program.width), dtype=np.complex128)
     for r in range(size):
         amps[r, 0] = 1
-    # NOTE: each live shot holds a code, and ``code_row`` maps codes to rows, or to
-    # graves as ``-1 - grave``: splits and prunes rewrite the map in a step per
-    # lane, and the next pass over the shots drops those in graves.
+    # NOTE: each live shot holds a code, and ``code_row`` maps codes to rows: a
+    # split rewrites the map in a step per lane, and a pruning in a step per code.
     code_row = np.arange(max(size, 1), dtype=np.int64)
-    graves = np.zeros((16, program.lane_words), dtype=np.uint64)
-    grave_at = np.zeros(16, dtype=np.int64)
     dead = 0
-    dead_shot = np.empty(n, dtype=np.int64)
-    dead_grave = np.empty(n, dtype=np.int64)
-    num_dead_shots = 0
     region = 0
     deviation = 0.0
     if size and program.prune_first.any():
-        size, graves, grave_at, dead = _prune(
+        size, n, dead = _prune(
             amps,
             symbols,
             size,
             1,
-            program.prune_first,
-            program.prune_row,
-            graves,
-            grave_at,
-            dead,
+            live,
+            row,
+            n,
             code_row,
+            words,
+            alive,
+            first_shot,
+            seed,
+            slots,
+            program,
+            program.prune_first,
             -1,
         )
 
@@ -783,22 +849,14 @@ def run_lanes(
         new = size
         if any_random:
             seen = np.zeros(2 * size, dtype=np.bool_)
-            m = 0
             for i in range(n):
                 shot, r = live[i], code_row[row[i]]
-                if r < 0:
-                    dead_shot[num_dead_shots] = shot
-                    dead_grave[num_dead_shots] = -1 - r
-                    num_dead_shots += 1
-                    continue
                 c = certain[r]
                 if c < 0:
                     u = _draw(seed, first_shot + shot, slots, a)
                     c = np.int64(u < threshold[r])
-                live[m], row[m] = shot, 2 * r + c
+                row[i] = 2 * r + c
                 seen[2 * r + c] = True
-                m += 1
-            n = m
             for r in range(size):
                 if seen[2 * r] and seen[2 * r + 1]:
                     new += 1
@@ -844,56 +902,51 @@ def run_lanes(
                 if outcome[r]:
                     symbols[r, bit >> 6] |= np.uint64(1) << np.uint64(bit & 63)
         if program.pruned[a]:
-            size, graves, grave_at, dead = _prune(
+            size, n, pruned = _prune(
                 amps,
                 symbols,
                 size,
                 1 << region,
-                program.prune_outputs[a],
-                program.prune_row,
-                graves,
-                grave_at,
-                dead,
+                live,
+                row,
+                n,
                 code_row,
+                words,
+                alive,
+                first_shot,
+                seed,
+                slots,
+                program,
+                program.prune_outputs[a],
                 a,
             )
+            dead += pruned
 
-    # NOTE: each entry (a live lane or a grave) has a branch pattern on the outputs
-    # and hides the outputs that its pruning makes unknown; every shot takes its
-    # entry's.
-    entries = size + dead
-    pattern = np.zeros((entries, len(out_words)), dtype=np.uint64)
-    hidden = np.zeros((entries, len(out_words)), dtype=np.uint64)
-    for e in range(entries):
-        lane_symbols = symbols if e < size else graves
-        r = e if e < size else e - size
-        for o in range(len(program.output_bit)):
-            w = program.output_word[o]
-            one = np.uint64(1) << np.uint64(program.output_bit[o])
-            if _row_parity(lane_symbols, r, program.branch_row[o]):
-                pattern[e, w] ^= one
-            if e >= size and program.ready[o] > grave_at[r]:
-                hidden[e, w] |= one
-    for i in range(n + num_dead_shots):
-        if i < n:
-            shot, e = live[i], code_row[row[i]]
-            if e < 0:
-                e = size - 1 - e
-        else:
-            shot, e = dead_shot[i - n], size + dead_grave[i - n]
-        if e >= size:
-            alive[shot] = False
-        for w in range(len(out_words)):
-            words[shot, out_words[w]] ^= pattern[e, w]
-        coins = np.uint64(0)
-        for j in range(num_coins):
-            if j % 64 == 0:
-                coins = _draw(seed, first_shot + shot, slots, num_actions + j // 64)
-            if (coins >> np.uint64(j % 64)) & np.uint64(1):
-                for w in range(len(out_words)):
-                    words[shot, out_words[w]] ^= program.coin_pattern[j, w]
-        for w in range(len(out_words)):
-            words[shot, out_words[w]] &= ~hidden[e, w]
+    pattern = np.zeros((size, len(out_words)), dtype=np.uint64)
+    for r in range(size):
+        pattern[r] = _lane_pattern(
+            symbols,
+            r,
+            program.branch_row,
+            program.output_word,
+            program.output_bit,
+            len(out_words),
+        )
+    hidden = np.zeros(len(out_words), dtype=np.uint64)
+    for i in range(n):
+        shot = live[i]
+        _finish_shot(
+            words,
+            shot,
+            pattern[code_row[row[i]]],
+            hidden,
+            out_words,
+            program.coin_pattern,
+            seed,
+            first_shot + shot,
+            slots,
+            num_actions,
+        )
     return deviation, groups, peak, size, dead
 
 
