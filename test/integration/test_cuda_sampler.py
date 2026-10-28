@@ -131,20 +131,57 @@ def test_sample_postselected_returns_only_passing_shots(device):
     mask = np.zeros(circuit.num_detectors, dtype=bool)
     mask[[0, 2]] = True
     sampler = circuit.compile_detector_sampler(seed=4, device=device)
-    packed = sampler.sample_postselected(20_000, postselection_mask=mask)
-    bits = np.unpackbits(packed, axis=1, bitorder="little")[
-        :, : circuit.num_detectors + 1
-    ]
-    assert not bits[:, :3][:, mask].any()
+    packed, discarded = sampler.sample_postselected(20_000, postselection_mask=mask)
+    assert discarded == 20_000 - len(packed)
+    kept = circuit.num_detectors - mask.sum() + 1
+    bits = np.unpackbits(packed, axis=1, bitorder="little")
+    assert not bits[:, kept:].any()
     full = _accepted(circuit.compile_detector_sampler(seed=5), 20_000, mask)
     assert abs(len(bits) - len(full)) <= 5 * np.sqrt(len(full))
-    assert_counts_match(bits.astype(bool), full)
+    outside = np.concatenate([~mask, [True]])
+    assert_counts_match(bits[:, :kept].astype(bool), full[:, outside])
+
+
+# NOTE: 150 noisy detectors, so the rows span three words, and two observables.
+NOISY_DETECTORS = "\n".join(
+    [
+        "R " + " ".join(map(str, range(150))),
+        "X_ERROR(0.3) " + " ".join(map(str, range(150))),
+        "M " + " ".join(map(str, range(150))),
+        *(f"DETECTOR rec[{i - 150}]" for i in range(150)),
+        "OBSERVABLE_INCLUDE(0) rec[-1] rec[-7]",
+        "OBSERVABLE_INCLUDE(1) rec[-150]",
+    ]
+)
+
+
+def test_cuda_returns_the_outputs_outside_the_mask():
+    circuit = Circuit(NOISY_DETECTORS)
+    rng = np.random.default_rng(0)
+    mask = np.zeros(150, dtype=bool)
+    # NOTE: a few masked detectors, then unmasked runs across words, then a mix.
+    mask[[0, 3, 4]] = True
+    mask[100:] = rng.random(50) < 0.1
+    full, _ = circuit.compile_detector_sampler(
+        seed=11, device="cuda"
+    ).sample_postselected(5_000)
+    rows, discarded = circuit.compile_detector_sampler(
+        seed=11, device="cuda"
+    ).sample_postselected(5_000, postselection_mask=mask)
+    full_bits = np.unpackbits(full, axis=1, count=152, bitorder="little")
+    passing = ~full_bits[:, :150][:, mask].any(axis=1)
+    outside = np.concatenate([~mask, [True, True]])
+    expected = np.packbits(full_bits[passing][:, outside], axis=1, bitorder="little")
+    assert discarded == 5_000 - passing.sum() > 0
+    np.testing.assert_array_equal(rows, expected)
 
 
 def test_observable_expectations_average_to_the_sampled_observable():
     circuit = Circuit(T_STATE_X)
     sampler = circuit.compile_detector_sampler(seed=6, device="cuda")
-    packed, values = sampler.sample_postselected(200_000, observable_expectations=True)
+    packed, values, _ = sampler.sample_postselected(
+        200_000, observable_expectations=True
+    )
     assert values.shape == (len(packed), 1)
     # NOTE: given the shot's Z error, the expectation is ±cos(π/4).
     np.testing.assert_allclose(np.abs(values), np.sqrt(0.5), atol=1e-5)
@@ -194,7 +231,7 @@ def _postselected_expectations(text, shots):
     circuit = Circuit(text)
     mask = np.ones(circuit.num_detectors, dtype=bool)
     sampler = circuit.compile_detector_sampler(seed=9, device="cuda")
-    _, values = sampler.sample_postselected(
+    _, values, _ = sampler.sample_postselected(
         shots, postselection_mask=mask, observable_expectations=True
     )
     detectors, observables = circuit.compile_detector_sampler(seed=10).sample(
@@ -226,7 +263,9 @@ def test_clifford_observables_have_expectations_of_plus_or_minus_one():
         "R 0 1\nX_ERROR(0.3) 0\nCNOT 0 1\nM 0 1\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-2]"
     )
     sampler = circuit.compile_detector_sampler(seed=8, device="cuda")
-    packed, values = sampler.sample_postselected(10_000, observable_expectations=True)
+    packed, values, _ = sampler.sample_postselected(
+        10_000, observable_expectations=True
+    )
     bits = np.unpackbits(packed, axis=1, bitorder="little")
     np.testing.assert_array_equal(values[:, 0], 1 - 2 * bits[:, 1].astype(np.float32))
 
