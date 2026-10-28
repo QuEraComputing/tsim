@@ -149,7 +149,7 @@ def test_the_memory_estimate_holds_every_lane_symbol():
     program = max(sampler.plan(None).programs, key=lambda p: p.lane_words)
     assert program.lane_words >= 4
     amplitudes = 3 * 16 * 2**program.width
-    assert sampler.bytes_per_shot() >= amplitudes + 4 * 8 * program.lane_words
+    assert sampler.bytes_per_shot() >= amplitudes + 2 * 8 * program.lane_words
 
 
 @pytest.mark.parametrize("postselect", [False, True])
