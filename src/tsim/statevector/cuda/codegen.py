@@ -19,7 +19,11 @@ With ``expectations``, the tape also returns, for each observable output, the
 expectation of ``(-1)^output`` given the shot's history before the measurement
 that sets the observable's last branch bit ``b``:
 ``(-1)^(output ⊕ b) (w0 - w1) / (w0 + w1)``. A fair coin's is 0 and an output
-without branch bits has ``±1``.
+without branch bits has ``±1``. The expectation ignores postselection that
+follows it, so when a postselected output of the component is tested at or
+after that measurement, the tape returns the sampled ``(-1)^output`` instead:
+the expectation's average over the accepted shots would be biased, the sample's
+is not.
 """
 
 from __future__ import annotations
@@ -408,8 +412,12 @@ def tape_function(
     num_coins = p.coin_pattern.shape[0]
     slots = A + (num_coins + 63) // 64
     ready = p.ready
+    # NOTE: an expectation is exact only if no postselected output of the component
+    # is tested at or after its measurement (other components and direct outputs
+    # depend on it only through the f-bits, which it is conditioned on).
+    exact = {o: ready[o] < 0 or not p.pruned[ready[o] :].any() for o in observables}
     # NOTE: the measurements whose weights an observable's expectation reads.
-    watched = {int(ready[o]) for o in observables if ready[o] >= 0}
+    watched = {int(ready[o]) for o in observables if ready[o] >= 0 and exact[o]}
 
     emit(
         f"__device__ __forceinline__ int component_{index}(u64* words, u64 shot, u64 seed, int t, unsigned gmask, float* ev, unsigned* deviation) {{"
@@ -497,9 +505,12 @@ def tape_function(
             w = int(p.out_words[p.output_word[o]])
             bit = f"(int)((words[{w}] >> {int(p.output_bit[o])}) & 1)"
             r = int(ready[o])
-            if r < 0:
+            if r >= 0 and not p.splits[r]:
+                # NOTE: a fair coin that no postselected output reads.
+                value = "0.f"
+            elif r < 0 or not exact[o]:
                 value = f"({bit} ? -1.f : 1.f)"
-            elif int(p.kind[r]) == MEASURE_DORMANT or not p.splits[r]:
+            elif int(p.kind[r]) == MEASURE_DORMANT:
                 value = "0.f"
             else:
                 value = f"((({bit}) ^ b_{r}) ? -ev_{r} : ev_{r})"

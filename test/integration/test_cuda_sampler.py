@@ -160,6 +160,67 @@ def test_observable_expectations_average_to_the_sampled_observable():
     assert abs(observed.mean() - values.mean()) < 5 / np.sqrt(200_000)
 
 
+# NOTE: the T state's X outcome is copied onto qubit 1, whose postselected (and
+# noisy) detector is settled after the observable's measurement.
+T_STATE_X_THEN_DETECTOR = """
+R 0 1
+H 0
+T 0
+H 0
+CNOT 0 1
+X_ERROR(0.1) 1
+M 0
+OBSERVABLE_INCLUDE(0) rec[-1]
+M 1
+DETECTOR rec[-1]
+"""
+
+# NOTE: a postselected T-state detector settled before the observable's measurement.
+T_STATE_X_AFTER_DETECTOR = """
+R 0 1
+H 0 1
+T 0 1
+H 1
+M 1
+DETECTOR rec[-1]
+Z_ERROR(0.1) 0
+H 0
+M 0
+OBSERVABLE_INCLUDE(0) rec[-1]
+"""
+
+
+def _postselected_expectations(text, shots):
+    circuit = Circuit(text)
+    mask = np.ones(circuit.num_detectors, dtype=bool)
+    sampler = circuit.compile_detector_sampler(seed=9, device="cuda")
+    _, values = sampler.sample_postselected(
+        shots, postselection_mask=mask, observable_expectations=True
+    )
+    detectors, observables = circuit.compile_detector_sampler(seed=10).sample(
+        shots, separate_observables=True
+    )
+    kept = observables[~(detectors & mask).any(axis=1), 0]
+    return values[:, 0], np.mean(1 - 2 * kept.astype(float)), len(kept)
+
+
+def test_expectations_stay_unbiased_under_later_postselection():
+    values, expected, kept = _postselected_expectations(
+        T_STATE_X_THEN_DETECTOR, 200_000
+    )
+    # NOTE: the expectation before the measurement would average to cos(π/4).
+    assert abs(values.mean() - expected) < 5 * np.sqrt(1 / len(values) + 1 / kept)
+    np.testing.assert_array_equal(np.abs(values), 1)
+
+
+def test_expectations_are_exact_after_earlier_postselection():
+    values, expected, kept = _postselected_expectations(
+        T_STATE_X_AFTER_DETECTOR, 200_000
+    )
+    np.testing.assert_allclose(np.abs(values), np.sqrt(0.5), atol=1e-5)
+    assert abs(values.mean() - expected) < 5 * np.sqrt(1 / len(values) + 1 / kept)
+
+
 def test_clifford_observables_have_expectations_of_plus_or_minus_one():
     circuit = Circuit(
         "R 0 1\nX_ERROR(0.3) 0\nCNOT 0 1\nM 0 1\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-2]"
