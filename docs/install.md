@@ -1,6 +1,6 @@
 # Installation
 
-tsim requires Python 3.10 or later.
+tsim requires Python 3.11 or later.
 
 ## Using uv (recommended)
 
