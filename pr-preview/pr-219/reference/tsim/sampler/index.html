@@ -32,15 +32,7 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-module-attribute"><code>module-attribute</code></small>
-  </span> (<code>tsim.core.types.Device</code>)' href=../core/types/#tsim.core.types.Device>Device</a></code> </td> <td> <div class=doc-md-description> <p>"cpu" (the default) or "cuda" (see <code>_CompiledSamplerBase</code>).</p> </div> </td> <td> <code>&#39;cpu&#39;</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>800</span>
-<span class=normal>801</span>
-<span class=normal>802</span>
-<span class=normal>803</span>
-<span class=normal>804</span>
-<span class=normal>805</span>
-<span class=normal>806</span>
-<span class=normal>807</span>
-<span class=normal>808</span>
+  </span> (<code>tsim.core.types.Device</code>)' href=../core/types/#tsim.core.types.Device>Device</a></code> </td> <td> <div class=doc-md-description> <p>"cpu" (the default) or "cuda" (see <code>_CompiledSamplerBase</code>).</p> </div> </td> <td> <code>&#39;cpu&#39;</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>808</span>
 <span class=normal>809</span>
 <span class=normal>810</span>
 <span class=normal>811</span>
@@ -66,7 +58,15 @@
 <span class=normal>831</span>
 <span class=normal>832</span>
 <span class=normal>833</span>
-<span class=normal>834</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
+<span class=normal>834</span>
+<span class=normal>835</span>
+<span class=normal>836</span>
+<span class=normal>837</span>
+<span class=normal>838</span>
+<span class=normal>839</span>
+<span class=normal>840</span>
+<span class=normal>841</span>
+<span class=normal>842</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>circuit</span><span class=p>:</span> <span class=n>Circuit</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
@@ -137,15 +137,7 @@
     <span class=n>use_observable_reference_sample</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
     <span class=n>postselection_mask</span><span class=p>:</span> <span class=n>ndarray</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span> <span class=o>|</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return detector samples from the circuit.</p> <p>The circuit must define the detectors using DETECTOR instructions. Observables defined by OBSERVABLE_INCLUDE instructions can also be included in the results as honorary detectors.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>shots</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The number of times to sample every detector in the circuit.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>The number of samples to process at once. Defaults to None, which chooses it from the available memory. With <code>strategy="active_statevector"</code> it bounds the shots a thread holds and does not change the samples. With a stabilizer-rank strategy on a GPU, setting this explicitly can help fully utilize VRAM; it changes the samples of a seed.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>separate_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When set to True, the return value is a (detection_events, observable_flips) tuple instead of a flat detection_events array.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>prepend_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, observables are included with the detectors and are placed at the start of the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>append_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, observables are included with the detectors and are placed at the end of the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>bit_packed</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, results are bit-packed. The packed rows may be a strided view of a wider array.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_detector_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When True, a noiseless reference sample is computed and XORed with detector outcomes so that results represent deviations from the noiseless baseline. This should only be used when detectors are deterministic. Otherwise, it can unpredictably change the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_observable_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When True, a noiseless reference sample is computed and XORed with observable outcomes so that results represent deviations from the noiseless baseline. This should only be used when observables are deterministic. Otherwise, it can unpredictably change the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>postselection_mask</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span> | None</code> </td> <td> <div class=doc-md-description> <p>Optional boolean array of length <code>num_detectors</code>. When set, shots where any masked direct detector (an error bit or a constant) fires are not sampled further. All <code>shots</code> rows are still returned: survivors contain the full sample, while discarded rows retain direct detector columns and fill component columns with <code>False</code>; with <code>strategy="active_statevector"</code>, a shot discarded by a masked component detector also reads <code>False</code> in the outputs set after it. Re-apply the mask to the returned detector columns to recover surviving shots.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p>A numpy array or tuple of numpy arrays containing the samples.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=ValueError>ValueError</span></code> </td> <td> <div class=doc-md-description> <p>If <code>separate_observables</code> is combined with <code>prepend_observables</code> or <code>append_observables</code>.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 866</span>
-<span class=normal> 867</span>
-<span class=normal> 868</span>
-<span class=normal> 869</span>
-<span class=normal> 870</span>
-<span class=normal> 871</span>
-<span class=normal> 872</span>
-<span class=normal> 873</span>
-<span class=normal> 874</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return detector samples from the circuit.</p> <p>The circuit must define the detectors using DETECTOR instructions. Observables defined by OBSERVABLE_INCLUDE instructions can also be included in the results as honorary detectors.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>shots</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The number of times to sample every detector in the circuit.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>The number of samples to process at once. Defaults to None, which chooses it from the available memory. With <code>strategy="active_statevector"</code> it bounds the shots a thread holds and does not change the samples. With a stabilizer-rank strategy on a GPU, setting this explicitly can help fully utilize VRAM; it changes the samples of a seed.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>separate_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When set to True, the return value is a (detection_events, observable_flips) tuple instead of a flat detection_events array.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>prepend_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, observables are included with the detectors and are placed at the start of the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>append_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, observables are included with the detectors and are placed at the end of the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>bit_packed</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, results are bit-packed. The packed rows may be a strided view of a wider array.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_detector_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When True, a noiseless reference sample is computed and XORed with detector outcomes so that results represent deviations from the noiseless baseline. This should only be used when detectors are deterministic. Otherwise, it can unpredictably change the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_observable_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When True, a noiseless reference sample is computed and XORed with observable outcomes so that results represent deviations from the noiseless baseline. This should only be used when observables are deterministic. Otherwise, it can unpredictably change the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>postselection_mask</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span> | None</code> </td> <td> <div class=doc-md-description> <p>Optional boolean array of length <code>num_detectors</code>. When set, shots where any masked direct detector (an error bit or a constant) fires are not sampled further. All <code>shots</code> rows are still returned: survivors contain the full sample, while discarded rows retain direct detector columns and fill component columns with <code>False</code>; with <code>strategy="active_statevector"</code>, a shot discarded by a masked component detector also reads <code>False</code> in the outputs set after it. Re-apply the mask to the returned detector columns to recover surviving shots.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p>A numpy array or tuple of numpy arrays containing the samples.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=ValueError>ValueError</span></code> </td> <td> <div class=doc-md-description> <p>If <code>separate_observables</code> is combined with <code>prepend_observables</code> or <code>append_observables</code>.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 874</span>
 <span class=normal> 875</span>
 <span class=normal> 876</span>
 <span class=normal> 877</span>
@@ -284,7 +276,14 @@
 <span class=normal>1010</span>
 <span class=normal>1011</span>
 <span class=normal>1012</span>
-<span class=normal>1013</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample</span><span class=p>(</span>
+<span class=normal>1013</span>
+<span class=normal>1014</span>
+<span class=normal>1015</span>
+<span class=normal>1016</span>
+<span class=normal>1017</span>
+<span class=normal>1018</span>
+<span class=normal>1019</span>
+<span class=normal>1020</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>shots</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
@@ -404,12 +403,10 @@
                 <span class=n>mask</span><span class=o>=</span><span class=n>postselection_mask</span><span class=p>,</span>
                 <span class=n>flip</span><span class=o>=</span><span class=n>flip</span><span class=p>,</span>
             <span class=p>)</span>
-        <span class=k>else</span><span class=p>:</span>
-            <span class=n>_check_sizes</span><span class=p>(</span><span class=n>shots</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>)</span>
-            <span class=n>arrays</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_shots</span><span class=o>.</span><span class=n>direct_bools</span><span class=p>(</span><span class=n>shots</span><span class=p>,</span> <span class=n>columns</span><span class=p>,</span> <span class=n>flip</span><span class=p>)</span>
-        <span class=k>return</span> <span class=p>(</span><span class=n>arrays</span><span class=p>[</span><span class=mi>0</span><span class=p>],</span> <span class=n>arrays</span><span class=p>[</span><span class=mi>1</span><span class=p>])</span> <span class=k>if</span> <span class=n>separate_observables</span> <span class=k>else</span> <span class=n>arrays</span><span class=p>[</span><span class=mi>0</span><span class=p>]</span>
-
-    <span class=k>if</span> <span class=n>postselection_mask</span> <span class=ow>is</span> <span class=ow>not</span> <span class=kc>None</span><span class=p>:</span>
+            <span class=k>return</span> <span class=p>(</span><span class=n>arrays</span><span class=p>[</span><span class=mi>0</span><span class=p>],</span> <span class=n>arrays</span><span class=p>[</span><span class=mi>1</span><span class=p>])</span> <span class=k>if</span> <span class=n>separate_observables</span> <span class=k>else</span> <span class=n>arrays</span><span class=p>[</span><span class=mi>0</span><span class=p>]</span>
+        <span class=n>_check_sizes</span><span class=p>(</span><span class=n>shots</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>)</span>
+        <span class=n>samples</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_shots</span><span class=o>.</span><span class=n>direct_bools</span><span class=p>(</span><span class=n>shots</span><span class=p>,</span> <span class=n>flip</span><span class=p>)</span>
+    <span class=k>elif</span> <span class=n>postselection_mask</span> <span class=ow>is</span> <span class=ow>not</span> <span class=kc>None</span><span class=p>:</span>
         <span class=k>if</span> <span class=ow>not</span> <span class=n>compute_reference</span><span class=p>:</span>
             <span class=n>referenced</span> <span class=o>=</span> <span class=kc>None</span>
         <span class=n>samples</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_sample_batches_with_postselection</span><span class=p>(</span>
@@ -429,7 +426,8 @@
     <span class=k>else</span><span class=p>:</span>
         <span class=n>samples</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_sample_batches</span><span class=p>(</span><span class=n>shots</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>)</span>
     <span class=n>arrays</span> <span class=o>=</span> <span class=p>[</span>
-        <span class=n>_maybe_bit_pack</span><span class=p>(</span><span class=n>samples</span><span class=p>[:,</span> <span class=n>c</span><span class=p>],</span> <span class=n>bit_packed</span><span class=o>=</span><span class=n>bit_packed</span><span class=p>)</span> <span class=k>for</span> <span class=n>c</span> <span class=ow>in</span> <span class=n>columns</span>
+        <span class=n>_maybe_bit_pack</span><span class=p>(</span><span class=n>_take_columns</span><span class=p>(</span><span class=n>samples</span><span class=p>,</span> <span class=n>c</span><span class=p>),</span> <span class=n>bit_packed</span><span class=o>=</span><span class=n>bit_packed</span><span class=p>)</span>
+        <span class=k>for</span> <span class=n>c</span> <span class=ow>in</span> <span class=n>columns</span>
     <span class=p>]</span>
     <span class=k>return</span> <span class=p>(</span><span class=n>arrays</span><span class=p>[</span><span class=mi>0</span><span class=p>],</span> <span class=n>arrays</span><span class=p>[</span><span class=mi>1</span><span class=p>])</span> <span class=k>if</span> <span class=n>separate_observables</span> <span class=k>else</span> <span class=n>arrays</span><span class=p>[</span><span class=mi>0</span><span class=p>]</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h3 id=tsim.sampler.CompiledDetectorSampler.sample_postselected class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">sample_postselected</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>sample_postselected</span><span class=p>(</span>
@@ -441,14 +439,7 @@
     <span class=n>use_observable_reference_sample</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
     <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span> <span class=o>|</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Sample <code>shots</code> shots and return only those that pass postselection.</p> <p>A shot passes when none of the detectors in <code>postselection_mask</code> fires (every shot passes without a mask). Unlike <code>sample</code>, the discarded shots are not returned, so with <code>device="cuda"</code> they are never copied off the GPU.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>shots</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The number of shots to sample, discarded ones included.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>postselection_mask</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span> | None</code> </td> <td> <div class=doc-md-description> <p>Optional boolean array of length <code>num_detectors</code>.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>observable_expectations</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Also return, for each passing shot and each observable, the expectation of <code>(-1)^observable</code> given the shot's history before the measurement that settles it, as a <code>(passed, num_observables)</code> float32 array. This is the observable's expectation value on the shot's state (cf. Clifft's <code>EXP_VAL</code>): it is <code>±1</code> for a deterministic observable and <code>0</code> for a fair coin. Needs <code>device="cuda"</code>.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_detector_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>As in <code>sample</code>.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_observable_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>As in <code>sample</code>.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Shots per batch.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p>The passing shots' detectors then observables, bit-packed as</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p><code>np.packbits(..., bitorder="little")</code> would, in shot order; with</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p><code>observable_expectations</code>, also their expectations.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=ValueError>ValueError</span></code> </td> <td> <div class=doc-md-description> <p>If <code>observable_expectations</code> is set without <code>device="cuda"</code>.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1015</span>
-<span class=normal>1016</span>
-<span class=normal>1017</span>
-<span class=normal>1018</span>
-<span class=normal>1019</span>
-<span class=normal>1020</span>
-<span class=normal>1021</span>
-<span class=normal>1022</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Sample <code>shots</code> shots and return only those that pass postselection.</p> <p>A shot passes when none of the detectors in <code>postselection_mask</code> fires (every shot passes without a mask). Unlike <code>sample</code>, the discarded shots are not returned, so with <code>device="cuda"</code> they are never copied off the GPU.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>shots</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The number of shots to sample, discarded ones included.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>postselection_mask</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span> | None</code> </td> <td> <div class=doc-md-description> <p>Optional boolean array of length <code>num_detectors</code>.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>observable_expectations</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Also return, for each passing shot and each observable, the expectation of <code>(-1)^observable</code> given the shot's history before the measurement that settles it, as a <code>(passed, num_observables)</code> float32 array. This is the observable's expectation value on the shot's state (cf. Clifft's <code>EXP_VAL</code>): it is <code>±1</code> for a deterministic observable and <code>0</code> for a fair coin. It does not condition on postselection that follows that measurement, so when a postselected detector is settled by a measurement of the observable's statevector component at or after it, the observable's value is the sampled <code>±1</code> (<code>1 - 2 * observable</code>) instead; either way it averages to the passing shots' expectation. Needs <code>device="cuda"</code>.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_detector_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>As in <code>sample</code>.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_observable_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>As in <code>sample</code>.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Shots per batch.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p>The passing shots' detectors then observables, bit-packed as</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p><code>np.packbits(..., bitorder="little")</code> would, in shot order; with</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p><code>observable_expectations</code>, also their expectations.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=ValueError>ValueError</span></code> </td> <td> <div class=doc-md-description> <p>If <code>observable_expectations</code> is set without <code>device="cuda"</code>.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1022</span>
 <span class=normal>1023</span>
 <span class=normal>1024</span>
 <span class=normal>1025</span>
@@ -538,7 +529,19 @@
 <span class=normal>1109</span>
 <span class=normal>1110</span>
 <span class=normal>1111</span>
-<span class=normal>1112</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample_postselected</span><span class=p>(</span>
+<span class=normal>1112</span>
+<span class=normal>1113</span>
+<span class=normal>1114</span>
+<span class=normal>1115</span>
+<span class=normal>1116</span>
+<span class=normal>1117</span>
+<span class=normal>1118</span>
+<span class=normal>1119</span>
+<span class=normal>1120</span>
+<span class=normal>1121</span>
+<span class=normal>1122</span>
+<span class=normal>1123</span>
+<span class=normal>1124</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample_postselected</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>shots</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
@@ -564,7 +567,12 @@
 <span class=sd>            ``(passed, num_observables)`` float32 array. This is the</span>
 <span class=sd>            observable&#39;s expectation value on the shot&#39;s state (cf. Clifft&#39;s</span>
 <span class=sd>            ``EXP_VAL``): it is ``±1`` for a deterministic observable and</span>
-<span class=sd>            ``0`` for a fair coin. Needs ``device=&quot;cuda&quot;``.</span>
+<span class=sd>            ``0`` for a fair coin. It does not condition on postselection</span>
+<span class=sd>            that follows that measurement, so when a postselected detector</span>
+<span class=sd>            is settled by a measurement of the observable&#39;s statevector</span>
+<span class=sd>            component at or after it, the observable&#39;s value is the sampled</span>
+<span class=sd>            ``±1`` (``1 - 2 * observable``) instead; either way it averages</span>
+<span class=sd>            to the passing shots&#39; expectation. Needs ``device=&quot;cuda&quot;``.</span>
 <span class=sd>        use_detector_reference_sample: As in ``sample``.</span>
 <span class=sd>        use_observable_reference_sample: As in ``sample``.</span>
 <span class=sd>        batch_size: Shots per batch.</span>
@@ -784,7 +792,7 @@
         <span class=n>columns</span> <span class=o>=</span> <span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>arange</span><span class=p>(</span><span class=bp>self</span><span class=o>.</span><span class=n>_program</span><span class=o>.</span><span class=n>num_outputs</span><span class=p>)]</span>
         <span class=k>if</span> <span class=ow>not</span> <span class=bp>self</span><span class=o>.</span><span class=n>_program</span><span class=o>.</span><span class=n>components</span><span class=p>:</span>
             <span class=n>_check_sizes</span><span class=p>(</span><span class=n>shots</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>)</span>
-            <span class=k>return</span> <span class=bp>self</span><span class=o>.</span><span class=n>_shots</span><span class=o>.</span><span class=n>direct_bools</span><span class=p>(</span><span class=n>shots</span><span class=p>,</span> <span class=n>columns</span><span class=p>)[</span><span class=mi>0</span><span class=p>]</span>
+            <span class=k>return</span> <span class=bp>self</span><span class=o>.</span><span class=n>_shots</span><span class=o>.</span><span class=n>direct_bools</span><span class=p>(</span><span class=n>shots</span><span class=p>)</span>
         <span class=k>return</span> <span class=bp>self</span><span class=o>.</span><span class=n>_sample_shot_outputs</span><span class=p>(</span>
             <span class=n>shots</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>,</span> <span class=n>columns</span><span class=p>,</span> <span class=n>bit_packed</span><span class=o>=</span><span class=kc>False</span>
         <span class=p>)[</span><span class=mi>0</span><span class=p>]</span>
@@ -817,19 +825,7 @@
                   return '';
                 }
               });
-            </script> <p>Computes measurement probabilities for a given state.</p> <p>Uses joint decomposition [0, n] where: - compiled_scalar_graphs[0]: normalization (0 outputs plugged) - compiled_scalar_graphs[1]: full joint probability (all outputs plugged)</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>circuit</code> </td> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">Circuit</span> (<code>tsim.circuit.Circuit</code>)' href=../circuit/#tsim.circuit.Circuit>Circuit</a></code> </td> <td> <div class=doc-md-description> <p>The quantum circuit to compile.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>sample_detectors</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>If True, compute detector/observable probabilities.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>strategy</code> </td> <td> <code><span title=tsim.core.types.SamplingStrategy>SamplingStrategy</span></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy ("cat5", "bss", "cutting"); "active_statevector" cannot compute probabilities.</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed. If None, a random seed is generated. Note that deterministic results are only guaranteed for a fixed batch size.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1123</span>
-<span class=normal>1124</span>
-<span class=normal>1125</span>
-<span class=normal>1126</span>
-<span class=normal>1127</span>
-<span class=normal>1128</span>
-<span class=normal>1129</span>
-<span class=normal>1130</span>
-<span class=normal>1131</span>
-<span class=normal>1132</span>
-<span class=normal>1133</span>
-<span class=normal>1134</span>
-<span class=normal>1135</span>
+            </script> <p>Computes measurement probabilities for a given state.</p> <p>Uses joint decomposition [0, n] where: - compiled_scalar_graphs[0]: normalization (0 outputs plugged) - compiled_scalar_graphs[1]: full joint probability (all outputs plugged)</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>circuit</code> </td> <td> <code><a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">Circuit</span> (<code>tsim.circuit.Circuit</code>)' href=../circuit/#tsim.circuit.Circuit>Circuit</a></code> </td> <td> <div class=doc-md-description> <p>The quantum circuit to compile.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>sample_detectors</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>If True, compute detector/observable probabilities.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>strategy</code> </td> <td> <code><span title=tsim.core.types.SamplingStrategy>SamplingStrategy</span></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy ("cat5", "bss", "cutting"); "active_statevector" cannot compute probabilities.</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed. If None, a random seed is generated. Note that deterministic results are only guaranteed for a fixed batch size.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1135</span>
 <span class=normal>1136</span>
 <span class=normal>1137</span>
 <span class=normal>1138</span>
@@ -842,7 +838,19 @@
 <span class=normal>1145</span>
 <span class=normal>1146</span>
 <span class=normal>1147</span>
-<span class=normal>1148</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
+<span class=normal>1148</span>
+<span class=normal>1149</span>
+<span class=normal>1150</span>
+<span class=normal>1151</span>
+<span class=normal>1152</span>
+<span class=normal>1153</span>
+<span class=normal>1154</span>
+<span class=normal>1155</span>
+<span class=normal>1156</span>
+<span class=normal>1157</span>
+<span class=normal>1158</span>
+<span class=normal>1159</span>
+<span class=normal>1160</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>circuit</span><span class=p>:</span> <span class=n>Circuit</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
@@ -871,19 +879,7 @@
 </code></pre></div></td></tr></table></div> </details> <div class="doc doc-children"> <div class="doc doc-object doc-function"> <h3 id=tsim.sampler.CompiledStateProbs.probability_of class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">probability_of</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>probability_of</span><span class=p>(</span>
     <span class=n>state</span><span class=p>:</span> <span class=n>ndarray</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Compute probabilities for a batch of error samples given a measurement state.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>state</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>The measurement outcome state to compute probability for.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>Number of error samples to use for estimation.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>Array of probabilities P(state | error_sample) for each error sample.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1150</span>
-<span class=normal>1151</span>
-<span class=normal>1152</span>
-<span class=normal>1153</span>
-<span class=normal>1154</span>
-<span class=normal>1155</span>
-<span class=normal>1156</span>
-<span class=normal>1157</span>
-<span class=normal>1158</span>
-<span class=normal>1159</span>
-<span class=normal>1160</span>
-<span class=normal>1161</span>
-<span class=normal>1162</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Compute probabilities for a batch of error samples given a measurement state.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>state</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>The measurement outcome state to compute probability for.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>Number of error samples to use for estimation.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>Array of probabilities P(state | error_sample) for each error sample.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1162</span>
 <span class=normal>1163</span>
 <span class=normal>1164</span>
 <span class=normal>1165</span>
@@ -916,7 +912,19 @@
 <span class=normal>1192</span>
 <span class=normal>1193</span>
 <span class=normal>1194</span>
-<span class=normal>1195</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>probability_of</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>state</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>:</span>
+<span class=normal>1195</span>
+<span class=normal>1196</span>
+<span class=normal>1197</span>
+<span class=normal>1198</span>
+<span class=normal>1199</span>
+<span class=normal>1200</span>
+<span class=normal>1201</span>
+<span class=normal>1202</span>
+<span class=normal>1203</span>
+<span class=normal>1204</span>
+<span class=normal>1205</span>
+<span class=normal>1206</span>
+<span class=normal>1207</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>probability_of</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>state</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Compute probabilities for a batch of error samples given a measurement state.</span>
 
 <span class=sd>    Args:</span>
