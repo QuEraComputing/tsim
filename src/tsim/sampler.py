@@ -1045,7 +1045,12 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 ``(passed, num_observables)`` float32 array. This is the
                 observable's expectation value on the shot's state (cf. Clifft's
                 ``EXP_VAL``): it is ``±1`` for a deterministic observable and
-                ``0`` for a fair coin. Needs ``device="cuda"``.
+                ``0`` for a fair coin. It does not condition on postselection
+                that follows that measurement, so when a postselected detector
+                is settled by a measurement of the observable's statevector
+                component at or after it, the observable's value is the sampled
+                ``±1`` (``1 - 2 * observable``) instead; either way it averages
+                to the passing shots' expectation. Needs ``device="cuda"``.
             use_detector_reference_sample: As in ``sample``.
             use_observable_reference_sample: As in ``sample``.
             batch_size: Shots per batch.

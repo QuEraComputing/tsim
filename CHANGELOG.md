@@ -34,7 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CompiledDetectorSampler.sample_postselected`: returns only the shots that pass
   postselection, bit-packed, and with `observable_expectations=True` (needs
   `device="cuda"`) each observable's expectation on the shot's state before the
-  measurement that settles it.
+  measurement that settles it, or its sampled `±1` when a postselected detector
+  is settled at or after that measurement.
 
 ### Changed
 - The samplers now default to `strategy="active_statevector"`; pass

@@ -496,8 +496,10 @@ class CudaShotSampler:
             bit-packed as ``np.packbits(..., bitorder="little")`` would (``uint8``,
             in pinned host memory), with ``expectations`` each observable's
             expectation of ``(-1)^observable`` given the shot's history before
-            the measurement that settles it (else None), and the largest
-            normalization deviation beyond float32 rounding.
+            the measurement that settles it, or its sampled ``±1`` when a
+            postselected output of its component is tested at or after that
+            measurement (else None), and the largest normalization deviation
+            beyond float32 rounding.
 
         """
         cp = self._cp
