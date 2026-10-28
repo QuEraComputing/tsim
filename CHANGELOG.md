@@ -100,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   elsewhere for every circuit. With `strategy="active_statevector"`, a shot that a
   component's postselected detector discards is no longer simulated by the
   other components, and reads `False` in their outputs and in the direct
-  observables, whatever the order of the components.
+  observables, whatever the order of the components. (#222)
 - With a `postselection_mask` and no `batch_size`, the last survivors of a call,
   split into a batch per thread, ran one batch at a time for components so wide
   that only one of the largest batches fits in memory. They now run on as many
