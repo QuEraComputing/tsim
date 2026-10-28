@@ -116,6 +116,33 @@ extern "C" __global__ void gather_bytes(const u64* __restrict__ rows, long long 
     }}
 }}
 
+// The outputs ``cols`` of rows ``index[j]``, bit-packed densely into ``nb`` bytes per
+// row; ``run[b]`` marks the bytes whose eight outputs are consecutive.
+extern "C" __global__ void gather_columns(const u64* __restrict__ rows, long long n, int nw, int nb,
+                                          const unsigned* __restrict__ index,
+                                          const int* __restrict__ cols, int m,
+                                          const unsigned char* __restrict__ run,
+                                          unsigned char* __restrict__ dst) {{
+    for (long long k = (long long)blockIdx.x * blockDim.x + threadIdx.x; k < n * nb;
+         k += (long long)gridDim.x * blockDim.x) {{
+        long long j = k / nb; int b = (int)(k - j * nb);
+        const u64* row = rows + (index != nullptr ? (long long)index[j] : j) * nw;
+        unsigned v = 0;
+        if (run[b]) {{
+            int c = cols[8 * b], w = c >> 6, s = c & 63;
+            u64 bits = row[w] >> s;
+            if (s > 56) bits |= row[w + 1] << (64 - s);
+            v = (unsigned)(bits & 0xffu);
+        }} else {{
+            for (int t = 0; t < 8 && 8 * b + t < m; ++t) {{
+                int c = cols[8 * b + t];
+                v |= (unsigned)((row[c >> 6] >> (c & 63)) & 1u) << t;
+            }}
+        }}
+        dst[k] = (unsigned char)v;
+    }}
+}}
+
 // Observable expectations of rows ``index[j]``, densely.
 extern "C" __global__ void gather_float(const float* __restrict__ values, long long n, int width,
                                         const unsigned* __restrict__ index, float* __restrict__ dst) {{
@@ -136,12 +163,17 @@ class _Module:
     tape: Any
     gather: Any
     gather_bytes: Any
+    gather_columns: Any
     gather_float: Any
     screen: Any
     kept: Any
     psm: Any
     tape_blocks: int
     has_mask: bool
+    columns: np.ndarray
+    """The outputs that ``sample_accepted`` returns: those outside the mask."""
+    columns_d: Any
+    runs_d: Any
 
 
 class CudaShotSampler:
@@ -277,17 +309,26 @@ class CudaShotSampler:
         bits = np.zeros(64 * layout.output_words, dtype=bool)
         if mask is not None:
             bits[: len(mask)] = mask
+        columns = np.flatnonzero(~bits[: layout.num_outputs]).astype(np.int32)
+        # NOTE: a byte of consecutive outputs is a shift of the row's words.
+        octets = np.pad(columns, (0, -len(columns) % 8), constant_values=-1)
+        octets = octets.reshape(-1, 8)
+        runs = (octets[:, 7] >= 0) & (octets[:, 7] - octets[:, 0] == 7)
         compiled = _Module(
             noise=module.get_function("noise"),
             tape=tape,
             gather=module.get_function("gather"),
             gather_bytes=module.get_function("gather_bytes"),
+            gather_columns=module.get_function("gather_columns"),
             gather_float=module.get_function("gather_float"),
             screen=cp.asarray(plan.screen),
             kept=cp.asarray(plan.kept),
             psm=cp.asarray(pack_bits(bits, layout.output_words)),
             tape_blocks=runtime.multiprocessors() * blocks_per_sm,
             has_mask=mask is not None,
+            columns=columns,
+            columns_d=cp.asarray(columns if len(columns) else [0], dtype=np.int32),
+            runs_d=cp.asarray(runs if len(runs) else [0], dtype=np.uint8),
         )
         self._modules[key] = compiled
         return compiled
@@ -417,6 +458,33 @@ class CudaShotSampler:
         )
         return self._to_host(dst, count, nb, np.uint8)
 
+    def _gather_columns(self, module: _Module, words, count: int, index) -> np.ndarray:
+        """Return the outputs ``module.columns`` of ``count`` rows ``index``, bit-packed."""
+        m = len(module.columns)
+        if m == self.layout.num_outputs:
+            return self._gather_bytes(module, words, count, index, -(-m // 8))
+        nb = -(-m // 8)
+        if not nb:
+            return np.empty((count, 0), np.uint8)
+        dst = self._buffer("dst_bytes", (max(count, 1), nb), np.uint8)
+        if count:
+            module.gather_columns(
+                (runtime.multiprocessors() * 8,),
+                (256,),
+                (
+                    words,
+                    np.int64(count),
+                    np.int32(words.shape[1]),
+                    np.int32(nb),
+                    index,
+                    module.columns_d,
+                    np.int32(m),
+                    module.runs_d,
+                    dst,
+                ),
+            )
+        return self._to_host(dst, count, nb, np.uint8)
+
     def _gather_values(
         self, module: _Module, values, count: int, index, width: int
     ) -> np.ndarray:
@@ -489,11 +557,12 @@ class CudaShotSampler:
         """Sample ``shots`` shots; return only those that pass postselection.
 
         A shot passes when none of the ``mask``'s detectors is set (every shot
-        passes without a mask). Rows keep their shots' order.
+        passes without a mask). Rows keep their shots' order and hold only the
+        outputs outside the mask, whose bits are known for a passing shot.
 
         Returns:
-            ``(outputs, expectations, deviation)``: the passing shots' outputs,
-            bit-packed as ``np.packbits(..., bitorder="little")`` would (``uint8``,
+            ``(outputs, expectations, deviation)``: the passing shots' outputs
+            outside the mask, bit-packed as ``np.packbits(..., bitorder="little")`` would (``uint8``,
             in pinned host memory), with ``expectations`` each observable's
             expectation of ``(-1)^observable`` given the shot's history before
             the measurement that settles it, or its sampled ``±1`` when a
@@ -505,7 +574,7 @@ class CudaShotSampler:
         cp = self._cp
         module = self._module(mask)
         layout = self.layout
-        nb, no = -(-layout.num_outputs // 8), len(self._observables)
+        nb, no = -(-len(module.columns) // 8), len(self._observables)
         constant = self._host._constant(flip)
         batch = min(batch_size or BATCH_SHOTS, BATCH_SHOTS)
         rows, values, deviation = [], [], 0.0
@@ -520,7 +589,7 @@ class CudaShotSampler:
                 count = int(counts[1:2].get()[0])
                 # NOTE: the queue's order is the warps'; rows keep their shots'.
                 index = cp.sort(accepted[:count])
-            rows.append(self._gather_bytes(module, words, count, index, nb))
+            rows.append(self._gather_columns(module, words, count, index))
             if expectations:
                 if no and layout.components:
                     if index is None:
@@ -541,17 +610,23 @@ class CudaShotSampler:
             if len(values) == 1
             else np.concatenate(values) if values else np.empty((0, no), np.float32)
         )
-        self._direct_expectations(out_rows, out_values)
+        self._direct_expectations(out_rows, out_values, module.columns)
         return out_rows, out_values, deviation
 
-    def _direct_expectations(self, rows: np.ndarray, values: np.ndarray) -> None:
-        """Set the expectations of observables outside the components: ``±1``."""
+    def _direct_expectations(
+        self, rows: np.ndarray, values: np.ndarray, columns: np.ndarray
+    ) -> None:
+        """Set the expectations of observables outside the components: ``±1``.
+
+        ``columns`` are the outputs that ``rows`` hold.
+        """
         layout = self.layout
         in_components = {i for c in layout.components for i in c.output_indices}
         for column, index in enumerate(self._observables):
             if int(index) in in_components:
                 continue
-            bit = (rows[:, index >> 3] >> np.uint8(index & 7)) & np.uint8(1)
+            k = int(np.searchsorted(columns, index))
+            bit = (rows[:, k >> 3] >> np.uint8(k & 7)) & np.uint8(1)
             values[:, column] = 1.0 - 2.0 * bit.astype(np.float32)
 
     def direct_bools(self, shots: int, flip: np.ndarray | None = None) -> np.ndarray:

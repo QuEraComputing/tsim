@@ -45,8 +45,9 @@ pip install "bloqade-tsim[gpu]"
 ```python
 sampler = circuit.compile_detector_sampler(device="cuda")
 samples = sampler.sample(1_000_000, append_observables=True)
-# Only the shots that pass postselection, bit-packed:
-kept = sampler.sample_postselected(1_000_000, postselection_mask=mask)
+# Only the shots that pass postselection, bit-packed, without the postselected
+# detectors, and the number of shots that postselection discarded:
+kept, discarded = sampler.sample_postselected(1_000_000, postselection_mask=mask)
 ```
 
 It simulates components of up to 11 active qubits in float32.

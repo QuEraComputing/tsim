@@ -1019,6 +1019,30 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         ]
         return (arrays[0], arrays[1]) if separate_observables else arrays[0]
 
+    @overload
+    def sample_postselected(
+        self,
+        shots: int,
+        *,
+        postselection_mask: np.ndarray | None = None,
+        observable_expectations: Literal[False] = False,
+        use_detector_reference_sample: bool = False,
+        use_observable_reference_sample: bool = False,
+        batch_size: int | None = None,
+    ) -> tuple[np.ndarray, int]: ...
+
+    @overload
+    def sample_postselected(
+        self,
+        shots: int,
+        *,
+        postselection_mask: np.ndarray | None = None,
+        observable_expectations: Literal[True],
+        use_detector_reference_sample: bool = False,
+        use_observable_reference_sample: bool = False,
+        batch_size: int | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, int]: ...
+
     def sample_postselected(
         self,
         shots: int,
@@ -1028,12 +1052,13 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         use_detector_reference_sample: bool = False,
         use_observable_reference_sample: bool = False,
         batch_size: int | None = None,
-    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, int] | tuple[np.ndarray, np.ndarray, int]:
         """Sample ``shots`` shots and return only those that pass postselection.
 
         A shot passes when none of the detectors in ``postselection_mask`` fires
         (every shot passes without a mask). Unlike ``sample``, the discarded
-        shots are not returned, so with ``device="cuda"`` they are never copied
+        shots are not returned, and neither are the postselected detectors,
+        which no passing shot fires; with ``device="cuda"`` neither is copied
         off the GPU.
 
         Args:
@@ -1056,9 +1081,12 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             batch_size: Shots per batch.
 
         Returns:
-            The passing shots' detectors then observables, bit-packed as
-            ``np.packbits(..., bitorder="little")`` would, in shot order; with
-            ``observable_expectations``, also their expectations.
+            ``(rows, discarded)``, or ``(rows, expectations, discarded)`` with
+            ``observable_expectations``: ``rows`` holds the passing shots, in shot
+            order, with their detectors outside ``postselection_mask`` then their
+            observables, bit-packed as ``np.packbits(..., bitorder="little")``
+            would; ``discarded`` is the number of shots that postselection
+            discarded, ``shots - len(rows)``.
 
         Raises:
             ValueError: If ``observable_expectations`` is set without
@@ -1100,10 +1128,11 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 batch_size=batch_size,
             )
             _check_norm(deviation, StatevectorComponent.norm_warning_threshold)
+            discarded = shots - len(rows)
             if observable_expectations:
                 assert values is not None
-                return rows, values
-            return rows
+                return rows, values, discarded
+            return rows, discarded
         if observable_expectations:
             raise ValueError("observable_expectations needs device='cuda'")
         samples = self.sample(
@@ -1116,12 +1145,13 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             postselection_mask=mask,
         )
         if mask is None:
-            return samples
-        mask_bytes = np.packbits(
-            np.concatenate([mask, np.zeros(num_outputs - num_detectors, bool)]),
-            bitorder="little",
-        )
-        return samples[~(samples & mask_bytes).any(axis=1)]
+            return samples, 0
+        selected = np.concatenate([mask, np.zeros(num_outputs - num_detectors, bool)])
+        mask_bytes = np.packbits(selected, bitorder="little")
+        rows = samples[~(samples & mask_bytes).any(axis=1)]
+        bits = np.unpackbits(rows, axis=1, count=num_outputs, bitorder="little")
+        rows = np.packbits(bits[:, ~selected], axis=1, bitorder="little")
+        return rows, shots - len(rows)
 
 
 class CompiledStateProbs(_CompiledSamplerBase):
