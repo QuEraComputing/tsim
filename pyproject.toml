@@ -55,6 +55,8 @@ Issues = "https://github.com/QuEraComputing/tsim/issues"
 [project.optional-dependencies]
 cuda12 = ["jax[cuda12]>=0.4.38"]
 cuda13 = ["jax[cuda13]>=0.6.0"]
+# The statevector executor on NVIDIA GPUs (device="cuda").
+gpu = ["cupy-cuda13x[ctk]>=14.0"]
 
 [build-system]
 requires = ["hatchling"]

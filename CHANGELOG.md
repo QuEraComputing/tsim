@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   equal histories share one state vector, which splits at measurements, and
   shots that a postselected component detector discards stop being simulated
   there. (#198)
+- `device="cuda"` for `compile_sampler`, `compile_detector_sampler` and the
+  sampler classes, with `strategy="active_statevector"`: the noise sampler and
+  every statevector component run as CUDA kernels that CuPy compiles with NVRTC,
+  in float32, with no trajectory sharing. Components of up to 11 active qubits
+  are supported. Install with `pip install bloqade-tsim[gpu]`.
+- `CompiledDetectorSampler.sample_postselected`: returns only the shots that pass
+  postselection, bit-packed, and with `observable_expectations=True` (needs
+  `device="cuda"`) each observable's expectation on the shot's state before the
+  measurement that settles it, or its sampled `±1` when a postselected detector
+  is settled at or after that measurement.
 
 ### Changed
 - The samplers now default to `strategy="active_statevector"`; pass

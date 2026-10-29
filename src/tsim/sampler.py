@@ -15,7 +15,7 @@ import psutil
 from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
-from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
+from tsim.core.types import CompiledComponent, CompiledProgram, Device, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.program import StatevectorComponent
 from tsim.statevector.shots import ShotSampler
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from jax import Array as PRNGKey
 
     from tsim.circuit import Circuit
+    from tsim.statevector.cuda.sampler import CudaShotSampler
 
 # NOTE: postselection with a stabilizer-rank strategy screens shots for direct
 # discards in rounds of SCREEN_CHUNKS chunks of at most SCREEN_SHOTS shots.
@@ -294,6 +295,7 @@ class _CompiledSamplerBase:
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
         trajectory_sharing: bool | None = None,
+        device: Device = "cpu",
     ):
         """Initialize the sampler by compiling the circuit.
 
@@ -313,17 +315,26 @@ class _CompiledSamplerBase:
                 are only deterministic for a fixed batch size.
             trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
                 with equal histories on one lane. Defaults to True for
-                ``"active_statevector"`` and False otherwise.
+                ``"active_statevector"`` and False otherwise. Only the CPU
+                executor shares lanes.
+            device: "cpu" (the default), or "cuda" to run the noise sampler and
+                the statevector components as CUDA kernels in float32 (needs
+                ``strategy="active_statevector"``, CuPy and an NVIDIA GPU).
 
         Raises:
             ValueError: If ``trajectory_sharing`` is combined with a
-                stabilizer-rank strategy.
+                stabilizer-rank strategy, or ``device="cuda"`` with one.
 
         """
         if trajectory_sharing is None:
             trajectory_sharing = strategy == "active_statevector"
         if trajectory_sharing and strategy != "active_statevector":
             raise ValueError("trajectory_sharing needs strategy='active_statevector'")
+        if device not in ("cpu", "cuda"):
+            raise ValueError(f"device must be 'cpu' or 'cuda', got {device!r}")
+        if device == "cuda" and strategy != "active_statevector":
+            raise ValueError("device='cuda' needs strategy='active_statevector'")
+        self._device = device
         if seed is None:
             seed = int(np.random.default_rng().integers(0, 2**30))
         self._trajectory_sharing = trajectory_sharing
@@ -343,9 +354,15 @@ class _CompiledSamplerBase:
         program = self._program
         # NOTE: programs of statevector components, and programs without components
         # under any strategy, are sampled as shot words; the others with JAX.
-        self._shots: ShotSampler | None = None
+        self._shots: ShotSampler | CudaShotSampler | None = None
         self._backend: _StabilizerRankBackend | None = None
-        if strategy == "active_statevector" or not program.components:
+        if device == "cuda":
+            from tsim.statevector.cuda.sampler import CudaShotSampler
+
+            self._shots = CudaShotSampler(
+                program, self._channel_sampler, self._num_detectors, seed
+            )
+        elif strategy == "active_statevector" or not program.components:
             self._shots = ShotSampler(
                 program,
                 self._channel_sampler,
@@ -697,6 +714,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
         trajectory_sharing: bool | None = None,
+        device: Device = "cpu",
     ):
         """Create a measurement sampler.
 
@@ -711,6 +729,8 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
                 of a seed do not depend on the batch size; with a stabilizer-rank
                 strategy they are only deterministic for a fixed batch size.
 
+            device: "cpu" (the default) or "cuda" (see ``_CompiledSamplerBase``).
+
         """
         super().__init__(
             circuit,
@@ -719,6 +739,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             seed=seed,
             strategy=strategy,
             trajectory_sharing=trajectory_sharing,
+            device=device,
         )
 
     def sample(self, shots: int, *, batch_size: int | None = None) -> np.ndarray:
@@ -791,6 +812,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
         trajectory_sharing: bool | None = None,
+        device: Device = "cpu",
     ):
         """Create a detector sampler.
 
@@ -806,6 +828,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 strategy they are only deterministic for a fixed batch size and
                 fixed reference sample settings.
 
+            device: "cpu" (the default) or "cuda" (see ``_CompiledSamplerBase``).
+
         """
         super().__init__(
             circuit,
@@ -814,6 +838,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             seed=seed,
             strategy=strategy,
             trajectory_sharing=trajectory_sharing,
+            device=device,
         )
 
     @overload
@@ -993,6 +1018,110 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             for c in columns
         ]
         return (arrays[0], arrays[1]) if separate_observables else arrays[0]
+
+    def sample_postselected(
+        self,
+        shots: int,
+        *,
+        postselection_mask: np.ndarray | None = None,
+        observable_expectations: bool = False,
+        use_detector_reference_sample: bool = False,
+        use_observable_reference_sample: bool = False,
+        batch_size: int | None = None,
+    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+        """Sample ``shots`` shots and return only those that pass postselection.
+
+        A shot passes when none of the detectors in ``postselection_mask`` fires
+        (every shot passes without a mask). Unlike ``sample``, the discarded
+        shots are not returned, so with ``device="cuda"`` they are never copied
+        off the GPU.
+
+        Args:
+            shots: The number of shots to sample, discarded ones included.
+            postselection_mask: Optional boolean array of length ``num_detectors``.
+            observable_expectations: Also return, for each passing shot and each
+                observable, the expectation of ``(-1)^observable`` given the
+                shot's history before the measurement that settles it, as a
+                ``(passed, num_observables)`` float32 array. This is the
+                observable's expectation value on the shot's state (cf. Clifft's
+                ``EXP_VAL``): it is ``±1`` for a deterministic observable and
+                ``0`` for a fair coin. It does not condition on postselection
+                that follows that measurement, so when a postselected detector
+                is settled by a measurement of the observable's statevector
+                component at or after it, the observable's value is the sampled
+                ``±1`` (``1 - 2 * observable``) instead; either way it averages
+                to the passing shots' expectation. Needs ``device="cuda"``.
+            use_detector_reference_sample: As in ``sample``.
+            use_observable_reference_sample: As in ``sample``.
+            batch_size: Shots per batch.
+
+        Returns:
+            The passing shots' detectors then observables, bit-packed as
+            ``np.packbits(..., bitorder="little")`` would, in shot order; with
+            ``observable_expectations``, also their expectations.
+
+        Raises:
+            ValueError: If ``observable_expectations`` is set without
+                ``device="cuda"``.
+
+        """
+        num_detectors = self._num_detectors
+        num_outputs = self._program.num_outputs
+        mask = None
+        if postselection_mask is not None:
+            mask = np.asarray(postselection_mask, dtype=np.bool_)
+            if mask.shape != (num_detectors,):
+                raise ValueError(
+                    f"postselection_mask must have shape ({num_detectors},), "
+                    f"got {mask.shape}"
+                )
+        compute_reference = (
+            use_detector_reference_sample or use_observable_reference_sample
+        )
+        flip = None
+        if compute_reference:
+            is_detector = np.arange(num_outputs) < num_detectors
+            referenced = np.where(
+                is_detector,
+                use_detector_reference_sample,
+                use_observable_reference_sample,
+            )
+            flip = self._reference_sample() & referenced
+        if self._device == "cuda":
+            from tsim.statevector.cuda.sampler import CudaShotSampler
+
+            assert isinstance(self._shots, CudaShotSampler)
+            _check_sizes(shots, batch_size)
+            rows, values, deviation = self._shots.sample_accepted(
+                shots,
+                mask=mask,
+                flip=flip,
+                expectations=observable_expectations,
+                batch_size=batch_size,
+            )
+            _check_norm(deviation, StatevectorComponent.norm_warning_threshold)
+            if observable_expectations:
+                assert values is not None
+                return rows, values
+            return rows
+        if observable_expectations:
+            raise ValueError("observable_expectations needs device='cuda'")
+        samples = self.sample(
+            shots,
+            batch_size=batch_size,
+            append_observables=True,
+            bit_packed=True,
+            use_detector_reference_sample=use_detector_reference_sample,
+            use_observable_reference_sample=use_observable_reference_sample,
+            postselection_mask=mask,
+        )
+        if mask is None:
+            return samples
+        mask_bytes = np.packbits(
+            np.concatenate([mask, np.zeros(num_outputs - num_detectors, bool)]),
+            bitorder="little",
+        )
+        return samples[~(samples & mask_bytes).any(axis=1)]
 
 
 class CompiledStateProbs(_CompiledSamplerBase):
