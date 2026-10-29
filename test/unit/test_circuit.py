@@ -1228,3 +1228,23 @@ def test_diagram_zx_names_parameters_by_kind_and_index(
     else:  # two error bits, so error-basis bit j has ID 2 + 2j
         expected = {p: f"f{(p - 2) // 2}" for p in g.parameters()}
     assert names == expected
+
+
+def test_detector_error_model_decompose_errors():
+    stim_circuit = stim.Circuit.generated(
+        "surface_code:rotated_memory_z",
+        distance=3,
+        rounds=2,
+        after_clifford_depolarization=0.001,
+    )
+    # A non-Clifford rotation, which stim alone cannot parse.
+    program = str(stim_circuit).replace("TICK", "TICK\nR_Z(0.1) 1", 1)
+    c = Circuit(program)
+    dem = c.detector_error_model(decompose_errors=True)
+    assert dem.num_detectors == stim_circuit.num_detectors
+    assert any(
+        t.is_separator()
+        for instruction in dem.flattened()
+        if instruction.type == "error"
+        for t in instruction.targets_copy()
+    )

@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `Circuit.detector_error_model(decompose_errors=True)` is supported. The
+  argument is passed on to stim instead of raising `ValueError`. The docstring
+  now warns that the default, undecomposed model loses every error mechanism
+  that flips more than two detectors when it is given to a matching decoder
+  such as PyMatching. (#232)
 - `"timeline-text"` diagram type. Renders tsim's custom gates under their
   logical names instead of the Clifford placeholders used to store them, so
   `T` prints as `T` rather than `S`. Covers `T`, `T_DAG`, `TPP`, `TPP_DAG`,

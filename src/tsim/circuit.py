@@ -593,6 +593,12 @@ class Circuit:
         Unlike the stim.Circuit.detector_error_model() method, this method allows for non-deterministic observables
         when `allow_gauge_detectors` is set to true.
 
+        Warning:
+            By default (`decompose_errors=False`) the model is not decomposed. Matching decoders such as
+            PyMatching build their graph only from error mechanisms that flip at most two detectors, and silently
+            ignore the rest, which can raise the logical error rate substantially. Set `decompose_errors=True`
+            when the model is meant for a matching decoder.
+
         Args:
             decompose_errors: Defaults to false. When set to true, the error analysis attempts to decompose the
                 components of composite error mechanisms (such as depolarization errors) into simpler errors, and
@@ -601,8 +607,8 @@ class Circuit:
                 X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to
                 decompose large errors into simple errors that affect at most two detectors.
 
-                This is not supported by tsim and setting it to true will raise an error. The argument is present
-                for compatibility with stim.
+                The observables are analyzed as detectors (so that they may be non-deterministic), so stim may
+                choose a different (equally valid) decomposition than it would for `self.stim_circuit`.
             flatten_loops: Defaults to false. When set to true, the output will not contain any `repeat` blocks.
                 When set to false, the error analysis watches for loops in the circuit reaching a periodic steady
                 state with respect to the detectors being introduced, the error mechanisms that affect them, and the
