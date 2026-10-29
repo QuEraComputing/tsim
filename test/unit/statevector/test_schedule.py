@@ -59,6 +59,20 @@ def test_measurements_run_before_unrelated_expansions():
     assert scheduled.width == 1
 
 
+def test_expansions_after_the_last_measurement_still_run():
+    ops = PauliOps(
+        kind=np.array([MEASUREMENT, ROTATION], dtype=np.uint8),
+        x=_bits([0], [1]),
+        z=_bits([1], [0]),
+        angle=np.array([0.0, 0.3]),
+        sign=np.zeros((2, 1), dtype=bool),
+        slot=np.array([0, -1], dtype=np.int32),
+    )
+    scheduled = schedule(ops)
+    assert scheduled.order.tolist() == [0, 1]
+    assert scheduled.width == 1
+
+
 def _measurement_after_two_expansions_or_after_one(lower_first: bool):
     # Rotate about X0, X1 and X2, then measure Z0 Z1 (peak 2) and Z2 (peak 1).
     rotations = [[0, 0, 1], [1, 0, 0], [0, 1, 0]]

@@ -25,8 +25,11 @@ from tsim.statevector.pbc import (
     ROTATION,
     ComponentLayout,
     PauliOps,
+    _frame,
     _mask,
     _Reading,
+    _Relations,
+    _rotation_axes,
     _unmask,
     _with_commutant_measurements,
     anticommute,
@@ -81,6 +84,22 @@ def test_commutant_measurements_commute_with_every_op():
         forgotten = (ops.kind == MEASUREMENT) & (ops.slot < 0)
         anti = anticommute(ops.x[forgotten], ops.z[forgotten], ops.x, ops.z)
         assert not anti.any()
+
+
+def test_commutant_measurements_pairwise_commute():
+    # NOTE: X1 and Z1 both commute with a rotation about Z0, but not with each other.
+    ops = PauliOps(
+        kind=np.array([ROTATION], dtype=np.uint8),
+        x=np.array([[0, 0]], dtype=bool),
+        z=np.array([[1, 0]], dtype=bool),
+        angle=np.array([0.3]),
+        sign=np.zeros((1, 1), dtype=bool),
+        slot=np.array([-1], dtype=np.int32),
+    )
+    measured = _with_commutant_measurements(ops)
+    assert measured.num_ops == ops.num_ops + 1
+    assert measured.x[0].tolist() == [False, True]
+    assert not measured.z[0].any()
 
 
 def test_commutant_measurements_have_independent_x_parts():
@@ -181,3 +200,69 @@ def test_unmask_reads_the_low_bits_of_a_mask(length):
     for mask in [0, 1, 0b1011, 2**69 + 2**8 + 1, (1 << 80) - 1]:
         expected = [bool(mask >> i & 1) for i in range(length)]
         assert _unmask(mask, length).tolist() == expected
+
+
+def test_an_input_is_rejected():
+    component, layout = _t_ghz()
+    boundary = component.add_vertex(VertexType.BOUNDARY)
+    component.set_vertex_domain(boundary, Domain.CLASSICAL)
+    with pytest.raises(ValueError, match="input"):
+        read_pauli_ops(component, layout)
+
+
+def test_a_sign_of_one_variable_is_linear():
+    relations = _Relations(1)
+    relations.add_sign(0, 0)
+    assert relations.lin == [1] and relations.pairs == [0]
+
+
+def test_contradicting_equalities_are_rejected():
+    relations = _Relations(1)
+    relations.equalities = [(1, 0), (1, 1)]
+    with pytest.raises(ValueError, match="inconsistent"):
+        relations.reduce([0])
+
+
+def test_an_equality_that_reduces_to_one_is_rejected():
+    relations = _Relations(2)
+    relations.equalities = [(0b11, 0), (0b11, 1)]
+    with pytest.raises(ValueError, match="inconsistent"):
+        relations.eliminate(0)
+
+
+def test_a_sign_left_after_reducing_is_rejected():
+    relations = _Relations(2)
+    relations.add_sign(0, 1)
+    with pytest.raises(ValueError, match="stochastic"):
+        relations.reduce([0, 1])
+
+
+def _reading(n, *, angle=None, posts=()):
+    """Return a reading of ``n`` unconnected X spiders."""
+    reading = object.__new__(_Reading)
+    reading.num_spiders = n
+    reading.neighbours = [0] * n
+    reading.letter = ["X"] * n
+    reading.negative = 0
+    reading.angle = angle or {}
+    reading.posts = list(posts)
+    return reading
+
+
+def test_a_rotation_that_no_order_commutes_with_its_postselection_is_rejected():
+    # NOTE: Z0 anticommutes with the postselection of X0, and no unrotated
+    # spider can fix that.
+    with pytest.raises(ValueError, match="no flow"):
+        _rotation_axes(_reading(1, angle={0: 0.3}), ([0], [1]))
+
+
+@pytest.mark.parametrize("rhs", [0, 1])
+def test_a_dependent_postselection_must_hold_with_certainty(rhs):
+    # NOTE: |+⟩ postselected twice on X: again on +1 holds, on -1 never does.
+    reading = _reading(1, posts=[(1, 0), (1, rhs)])
+    if rhs:
+        with pytest.raises(ValueError, match="probability 0"):
+            _frame(reading, [0], 0)
+    else:
+        _, targets = _frame(reading, [0], 0)
+        assert targets.shape == (0, 0)

@@ -43,6 +43,13 @@ def test_t_then_h_promotes_one_axis_and_measures_it():
     assert planned.outputs == (AffineRow(False, frozenset({1})),)
 
 
+def test_a_rotation_about_a_dormant_z_is_dropped():
+    ops = _ops([("Z", pi / 8, False, -1), ("Z", None, False, 0)])
+    planned = plan(ops, schedule(ops))
+    assert planned.width == 0
+    assert not any(isinstance(action, Rotate) for action in planned.actions)
+
+
 def test_affine_rows_xor_and_evaluate():
     row = AffineRow(True, frozenset({0, 2})) ^ AffineRow(False, frozenset({2, 3}))
     assert row == AffineRow(True, frozenset({0, 3}))

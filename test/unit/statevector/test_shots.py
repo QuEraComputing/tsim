@@ -1,3 +1,4 @@
+import sys
 from test.helpers.statevector import CIRCUITS, shot_sampler
 
 import numpy as np
@@ -241,3 +242,9 @@ def test_packed_outputs_do_not_keep_the_component_keys_alive():
     expected = np.packbits(sampler.sample(1000), axis=1, bitorder="little")
     assert packed.base is None or packed.base.nbytes == packed.nbytes
     assert packed.shape == expected.shape
+
+
+def test_a_big_endian_host_is_rejected(monkeypatch):
+    monkeypatch.setattr(sys, "byteorder", "big")
+    with pytest.raises(NotImplementedError, match="little-endian"):
+        Circuit(DIRECT_FLIPS).compile_detector_sampler(seed=0)
