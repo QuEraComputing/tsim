@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from test.helpers.statevector import shot_sampler
 from unittest.mock import patch
 
 import numpy as np
@@ -701,3 +702,95 @@ def test_postselection_surface_code_caller_filter():
     survivors = _keep(samples[:, :num_det], mask)
     assert survivors.any()
     assert not np.any(samples[survivors] & mask)
+
+
+# Detector 0 and observable 0 are direct, with no statevector component.
+DIRECT_ONLY_OBS_CIRCUIT = """
+X_ERROR(0.5) 0 1
+M 0 1
+DETECTOR rec[-2]
+OBSERVABLE_INCLUDE(0) rec[-1]
+"""
+
+
+@pytest.mark.parametrize("strategy", ["active_statevector", "cat5"])
+@pytest.mark.parametrize("bit_packed", [False, True])
+def test_direct_only_discards_read_false_in_their_observables(strategy, bit_packed):
+    """Without components a discarded row reads False past its direct detectors too."""
+    sampler = Circuit(DIRECT_ONLY_OBS_CIRCUIT).compile_detector_sampler(
+        strategy=strategy, seed=4
+    )
+    assert not sampler._program.components
+    samples = sampler.sample(
+        2_000,
+        append_observables=True,
+        bit_packed=bit_packed,
+        postselection_mask=np.array([True]),
+    )
+    if bit_packed:
+        samples = np.unpackbits(samples, axis=1, bitorder="little")[:, :2] == 1
+    discarded = samples[:, 0]
+    assert discarded.any() and (~discarded).any()
+    assert not samples[discarded, 1].any()
+    assert samples[~discarded, 1].any()
+
+
+# Detector 0 is direct; detector 1, detector 2 and observable 0 are statevector
+# components, which run in that order.
+TWO_COMPONENTS_CIRCUIT = """
+R 0 1 2 3 4
+X_ERROR(0.2) 4
+H 0 2
+T 0 2
+H 0 2
+T 0 2
+CNOT 0 1
+CNOT 2 3
+X_ERROR(0.1) 1 3
+T 1 3
+H 0 1 2 3
+M 4 0 1 2 3
+DETECTOR rec[-5]
+DETECTOR rec[-4] rec[-3]
+DETECTOR rec[-2] rec[-1]
+OBSERVABLE_INCLUDE(0) rec[-4]
+"""
+
+
+@pytest.mark.parametrize("share", [True, False])
+@pytest.mark.parametrize("masked", [1, 2])
+def test_a_component_discard_skips_and_clears_the_other_components(share, masked):
+    """A shot a component prunes reads False in the other components' outputs.
+
+    That holds for the components that run before the pruning one and after
+    it, and the survivors are the shots of the unmasked call.
+    """
+    circuit = Circuit(TWO_COMPONENTS_CIRCUIT)
+    mask = np.zeros(circuit.num_detectors, dtype=bool)
+    mask[masked] = True
+    others = [c for c in (1, 2, 3) if c != masked]
+
+    def sample(postselection_mask):
+        sampler = circuit.compile_detector_sampler(
+            strategy="active_statevector", seed=8, trajectory_sharing=share
+        )
+        components = sampler._program.components
+        assert [c.output_indices for c in components] == [(1,), (2,), (3,)]
+        samples = sampler.sample(
+            5_000, append_observables=True, postselection_mask=postselection_mask
+        )
+        return samples, sum(
+            stat["groups"] for stat in shot_sampler(sampler).sharing_stats
+        )
+
+    (free, _), (kept, lanes) = sample(None), sample(mask)
+    discarded = kept[:, masked]
+    if not share and masked == 1:
+        # NOTE: without sharing each live shot starts its own lane, so the later
+        # components start lanes for the survivors alone.
+        assert lanes == len(kept) + 2 * int((~discarded).sum())
+    assert discarded.any() and (~discarded).any()
+    assert np.array_equal(kept[~discarded], free[~discarded])
+    assert np.array_equal(kept[:, 0], free[:, 0])
+    assert not kept[discarded][:, others].any()
+    assert free[discarded][:, others].any(axis=0).all()
