@@ -1,6 +1,5 @@
 """Parser for converting stim circuits to ZX graph representations."""
 
-import re
 from collections.abc import Iterator
 from fractions import Fraction
 from typing import Literal
@@ -20,15 +19,7 @@ from tsim.core.instructions import (
     tpp,
     u3,
 )
-from tsim.core.tags import is_t_tag
-
-_PARAMETRIC_GATE_PARAMS: dict[str, frozenset[str]] = {
-    "R_X": frozenset({"theta"}),
-    "R_Y": frozenset({"theta"}),
-    "R_Z": frozenset({"theta"}),
-    "R_PAULI": frozenset({"theta"}),
-    "U3": frozenset({"theta", "phi", "lambda"}),
-}
+from tsim.core.tags import is_t_tag, parse_parametric_tag_text
 
 R_PAULI_MAX_QUBITS = 64
 
@@ -38,7 +29,8 @@ def parse_parametric_tag(
 ) -> tuple[str, dict[str, Fraction]] | None:
     """Parse the parametric tag on an instruction (e.g. ``I[R_Z(theta=0.3*pi)]``).
 
-    Supports gates: R_Z, R_X, R_Y, U3.
+    Supports gates: R_Z, R_X, R_Y, R_PAULI, U3. Angles are in units of pi and may
+    be given by keyword (``R_Z(theta=0.3*pi)``) or by position (``R_Z(0.3)``).
 
     Args:
         instruction: The stim instruction whose tag will be parsed.
@@ -51,44 +43,15 @@ def parse_parametric_tag(
     Raises:
         ValueError: When the tag looks parametric (matches ``name(...)``) but is
             malformed: a parameter value does not parse, the gate name is unknown,
-            or the parameter keys do not match the expected set for the gate.
+            or the parameters do not match the expected set for the gate.
 
     """
-    tag = instruction.tag
-    err_prefix = f"Could not parse instruction {str(instruction)!r}"
-
-    match = re.match(r"^(\w+)\((.*)\)$", tag)
-    if not match:
-        return None
-
-    gate_name = match.group(1)
-    params_str = match.group(2)
-
-    params = {}
-    for param in params_str.split(","):
-        param = param.strip()
-        if not param:
-            continue
-        # Match param=value*pi (value can be negative/decimal/scientific)
-        param_match = re.match(
-            r"^(\w+)=([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\*pi$", param
-        )
-        if not param_match:
-            raise ValueError(f"{err_prefix}. Malformed parametric tag {tag!r}")
-        param_name = param_match.group(1)
-        value = Fraction(param_match.group(2))
-        params[param_name] = value
-
-    expected = _PARAMETRIC_GATE_PARAMS.get(gate_name)
-    if expected is None:
-        raise ValueError(f"{err_prefix}. Unknown parametric gate {gate_name!r}")
-    if params.keys() != expected:
+    try:
+        return parse_parametric_tag_text(instruction.tag)
+    except ValueError as exc:
         raise ValueError(
-            f"{err_prefix}. Parametric tag {tag!r} has parameters "
-            f"{sorted(params)}, expected {sorted(expected)}"
-        )
-
-    return gate_name, params
+            f"Could not parse instruction {str(instruction)!r}. {exc}"
+        ) from None
 
 
 _PAULI_PRODUCT: dict[
@@ -264,8 +227,13 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
             continue
         if name in ("SPP", "SPP_DAG") and instruction.tag:
             parsed = parse_parametric_tag(instruction)
-            if parsed is not None and parsed[0] == "R_PAULI":
-                params = parsed[1]
+            if parsed is not None:
+                gate_name, params = parsed
+                if gate_name != "R_PAULI":
+                    raise ValueError(
+                        f"Parametric gate {gate_name} is not supported on "
+                        f"{name} in {str(instruction)!r}. Use I[{instruction.tag}]."
+                    )
                 _validate_r_pauli_targets(instruction)
                 is_dag = name == "SPP_DAG"
                 for paulis, invert in _iter_pauli_products(instruction):

@@ -1052,6 +1052,64 @@ class TestParseParametricTag:
         ):
             parse_parametric_tag(instr)
 
+    def test_positional_r_axis_tag_returns_theta(self):
+        for axis in ("R_X", "R_Y", "R_Z"):
+            assert parse_parametric_tag(_instr(f"{axis}(0.5)")) == (
+                axis,
+                {"theta": Fraction(1, 2)},
+            )
+
+    def test_positional_u3_tag_uses_theta_phi_lambda_order(self):
+        assert parse_parametric_tag(_instr("U3(0.25, -0.5, 1e-1)")) == (
+            "U3",
+            {
+                "theta": Fraction(1, 4),
+                "phi": Fraction(-1, 2),
+                "lambda": Fraction(1, 10),
+            },
+        )
+
+    def test_positional_r_pauli_tag_returns_theta(self):
+        instr = stim.CircuitInstruction(
+            name="SPP",
+            targets=[stim.target_x(0), stim.target_combiner(), stim.target_y(1)],
+            tag="R_PAULI(0.25)",
+        )
+        assert parse_parametric_tag(instr) == ("R_PAULI", {"theta": Fraction(1, 4)})
+
+    def test_positional_wrong_angle_count_raises(self):
+        with pytest.raises(ValueError, match=r"has 2 angles, expected 1 \(theta\)"):
+            parse_parametric_tag(_instr("R_X(0.1, 0.2)"))
+        with pytest.raises(
+            ValueError, match=r"has 1 angles, expected 3 \(theta, phi, lambda\)"
+        ):
+            parse_parametric_tag(_instr("U3(0.1)"))
+
+    @pytest.mark.parametrize(
+        "tag",
+        [
+            "R_X(,0.25)",
+            "R_X(,,0.1)",
+            "R_X(0.25,)",
+            "U3(0.1,,0.2,0.3)",
+            "R_X(theta=0.25*pi,)",
+            "U3(theta=0.1*pi,, phi=0.2*pi, lambda=0.3*pi)",
+        ],
+    )
+    def test_empty_angle_field_raises(self, tag):
+        with pytest.raises(ValueError, match="Malformed parametric tag"):
+            parse_parametric_tag(_instr(tag))
+
+    def test_mixed_positional_and_keyword_raises(self):
+        with pytest.raises(ValueError, match="Malformed parametric tag"):
+            parse_parametric_tag(_instr("U3(0.1, phi=0.2*pi, lambda=0.3*pi)"))
+
+    def test_malformed_error_suggests_both_forms(self):
+        with pytest.raises(
+            ValueError, match=r"e\.g\. 'R_X\(0\.25\)' or 'R_X\(theta=0\.25\*pi\)'"
+        ):
+            parse_parametric_tag(_instr("R_X(.)"))
+
 
 class TestSweepTargets:
     """Sweep targets are not supported and must raise rather than be silently lowered as qubit targets."""

@@ -143,3 +143,81 @@ def test_circuit_eq_roundtrip_scientific_notation(program):
 def test_circuit_parse_error_shows_snippet(text, snippet):
     with pytest.raises(ValueError, match=re.escape(snippet)):
         Circuit(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "X[R_X(0.1)] 0",
+        "X[U3(0.1, 0.2, 0.3)] 0",
+        "H[R_XX(0.5)] 0",
+        "H[my T tag] 0",
+        "CX[T_DAG and TPP] 0 1",
+        "H 0  # R_X(0.1) T U3(0.1, 0.2, 0.3)",
+        "# T 0",
+    ],
+)
+def test_shorthand_to_stim_ignores_tags_and_comments(text):
+    assert shorthand_to_stim(text) == text
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("I[R_X(0.1)] 0", "I[R_X(theta=0.1*pi)] 0"),
+        ("I[R_Z(-0.5e-2)] 0", "I[R_Z(theta=-0.005*pi)] 0"),
+        (
+            "I[U3(0.1,0.2, 0.3)] 0",
+            "I[U3(theta=0.1*pi, phi=0.2*pi, lambda=0.3*pi)] 0",
+        ),
+        ("SPP[R_PAULI(0.25)] X0*Y1", "SPP[R_PAULI(theta=0.25*pi)] X0*Y1"),
+        ("SPP_DAG[R_PAULI(0.25)] Z0", "SPP_DAG[R_PAULI(theta=0.25*pi)] Z0"),
+        ("  I[R_Y(0.3)] 0  # c", "  I[R_Y(theta=0.3*pi)] 0  # c"),
+        ("I[R_X(.)] 0", "I[R_X(.)] 0"),
+        ("I[label] 0", "I[label] 0"),
+    ],
+)
+def test_shorthand_to_stim_canonicalizes_parametric_tags(text, expected):
+    assert shorthand_to_stim(text) == expected
+
+
+def test_shorthand_to_stim_keeps_hash_inside_tag():
+    assert shorthand_to_stim("T[a#b] 0  # T") == "S[T:a#b] 0  # T"
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("REPEAT 2 { T 0\n}", "REPEAT 2 { S[T] 0\n}"),
+        ("REPEAT[r] 2 {R_X(0.1) 0\n}", "REPEAT[r] 2 {I[R_X(theta=0.1*pi)] 0\n}"),
+        ("REPEAT 2 {\nH 0\n} T 0", "REPEAT 2 {\nH 0\n} S[T] 0"),
+        ("} REPEAT 3 { i[R_Z(0.5)] 0", "} REPEAT 3 { i[R_Z(theta=0.5*pi)] 0"),
+        ("repeat 2 { T 0\n}", "repeat 2 { S[T] 0\n}"),
+        ("Repeat 2 {R_Z(0.5) 0\n}", "Repeat 2 {I[R_Z(theta=0.5*pi)] 0\n}"),
+    ],
+)
+def test_shorthand_to_stim_converts_instructions_next_to_braces(text, expected):
+    assert shorthand_to_stim(text) == expected
+
+
+def test_parse_error_ignores_shorthand_in_comments():
+    with pytest.raises(ValueError, match=r"Could not parse 'R_X' in"):
+        Circuit("H 0 # apply R_X(0.1) later\nR_X 0")
+
+
+@pytest.mark.parametrize(
+    "tagged, shorthand",
+    [
+        ("I[R_X(0.1)] 0", "R_X(0.1) 0"),
+        ("I[R_Y(-0.3)] 1", "R_Y(-0.3) 1"),
+        ("I[R_Z(1e-3)] 0", "R_Z(1e-3) 0"),
+        ("I[U3(0.3, 0.24, 0.49)] 0", "U3(0.3, 0.24, 0.49) 0"),
+        ("SPP[R_PAULI(0.1)] X0*X1", "R_XX(0.1) 0 1"),
+        ("SPP[R_PAULI(0.1)] X0*Y1", "R_PAULI(0.1) X0*Y1"),
+    ],
+)
+def test_positional_tag_matches_shorthand(tagged, shorthand):
+    circuit = Circuit(tagged)
+    assert circuit == Circuit(shorthand)
+    assert str(circuit) == str(Circuit(shorthand))
+    assert Circuit(str(circuit)) == circuit

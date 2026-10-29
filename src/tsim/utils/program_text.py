@@ -3,10 +3,13 @@
 import re
 from collections.abc import Callable
 
-from tsim.core.tags import decode_t_user_tag, encode_t_tag
-
-# Matches valid numeric literals including scientific notation (e.g. 0.5, 4e-4, 1.2e3)
-FLOAT_RE = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+from tsim.core.tags import (
+    FLOAT_RE,
+    decode_t_user_tag,
+    encode_t_tag,
+    format_parametric_tag,
+    parse_parametric_tag_text,
+)
 
 _TSIM_GATES = {
     "CCZ",
@@ -20,6 +23,17 @@ _TSIM_GATES = {
     "R_PAULI",
     "U3",
 }
+_ROTATION_SHORTHAND_GATES = _TSIM_GATES - {"CCZ", "CCX"}
+_T_FAMILY = {"T": "S", "T_DAG": "S_DAG", "TPP": "SPP", "TPP_DAG": "SPP_DAG"}
+_PARAMETRIC_TAG_GATES = {"I", "SPP", "SPP_DAG"}
+# The prefix group also takes block delimiters that share the instruction's line,
+# as in `REPEAT 2 { H 0` or `} H 0`.
+_INSTRUCTION_RE = re.compile(
+    r"^((?:\s*(?:\}|(?i:REPEAT)(?:\[[^\]\n]*\])?\s+\d+\s*\{))*\s*)"
+    r"(\w+)(?:\[([^\]\n]*)\])?(.*)$"
+)
+_TAG_RE = re.compile(r"\[[^\]\n]*\]")
+_COMMENT_RE = re.compile(r"#.*")
 _GATE_NOT_FOUND_RE = re.compile(r"Gate not found: '(\w+)'")
 _GATE_USAGE_RE = re.compile(
     r"(?<!\[)\b(CCZ\b|CCX\b|R_PAULI\([^)]*\)|R_[XYZ]{1,2}\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)"
@@ -90,13 +104,6 @@ def _expand_controlled_gates(text: str) -> str:
     return "\n".join(lines)
 
 
-def _replace_t_family(stim_gate: str) -> Callable[[re.Match[str]], str]:
-    def replace(m: re.Match[str]) -> str:
-        return f"{stim_gate}[{encode_t_tag(m.group(1) or '')}]"
-
-    return replace
-
-
 def _replace_t_family_shorthand(tsim_gate: str) -> Callable[[re.Match[str]], str]:
     def replace(m: re.Match[str]) -> str:
         user_tag = decode_t_user_tag(m.group(1))
@@ -116,8 +123,10 @@ def enriched_stim_error(exc: ValueError, converted_text: str) -> ValueError:
     m = _GATE_NOT_FOUND_RE.search(str(exc))
     if not m or m.group(1) not in _TSIM_GATES:
         return exc
-    # Successfully converted gates live inside brackets (e.g. I[R_Z(...)]) and won't match.
-    usage = _GATE_USAGE_RE.search(converted_text)
+    # Successfully converted gates live inside tags (e.g. I[R_Z(...)]), which are
+    # dropped so that they can't match. Tags go first since they may contain '#'.
+    code = _COMMENT_RE.sub("", _TAG_RE.sub("", converted_text))
+    usage = _GATE_USAGE_RE.search(code)
     if not usage:
         return exc
     return ValueError(f"Could not parse '{usage.group()}' in program text.")
@@ -142,32 +151,46 @@ def shorthand_to_stim(text: str) -> str:
         R_PAULI(0.3) X0*Y1  → SPP[R_PAULI(theta=0.3*pi)] X0*Y1
         U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0
 
+    Tags and comments are left untouched, except that parametric tags on ``I``,
+    ``SPP`` and ``SPP_DAG`` are canonicalized to the keyword form above, so that
+    e.g. ``I[R_X(0.25)] 0`` and ``R_X(0.25) 0`` produce the same instruction.
+
     """
     text = _expand_controlled_gates(text)
+    return "\n".join(_convert_line(line) for line in text.split("\n"))
 
-    # TPP_DAG/TPP must come before T_DAG/T to avoid partial matches
-    # (?<!\[) ensures we don't match T inside [T]
-    text = re.sub(
-        r"(?<!\[)\bTPP_DAG(?:\[([^\]\n]*)\])?(?!\w)",
-        _replace_t_family("SPP_DAG"),
-        text,
-    )
-    text = re.sub(
-        r"(?<!\[)\bTPP(?:\[([^\]\n]*)\])?(?!\w)",
-        _replace_t_family("SPP"),
-        text,
-    )
-    text = re.sub(
-        r"(?<!\[)\bT_DAG(?:\[([^\]\n]*)\])?(?!\w)",
-        _replace_t_family("S_DAG"),
-        text,
-    )
-    text = re.sub(
-        r"(?<!\[)\bT(?:\[([^\]\n]*)\])?(?!\w)",
-        _replace_t_family("S"),
-        text,
-    )
 
+def _convert_line(line: str) -> str:
+    match = _INSTRUCTION_RE.match(line)
+    if not match:
+        return line
+    indent, name, tag, rest = match.groups()
+    rest, sep, comment = rest.partition("#")
+
+    if name in _T_FAMILY:
+        instruction = f"{_T_FAMILY[name]}[{encode_t_tag(tag or '')}]{rest}"
+    elif name in _ROTATION_SHORTHAND_GATES and tag is None:
+        instruction = _expand_rotation_shorthand(name + rest)
+    elif name.upper() in _PARAMETRIC_TAG_GATES and tag:
+        instruction = f"{name}[{_canonical_parametric_tag(tag)}]{rest}"
+    else:
+        return line
+    return f"{indent}{instruction}{sep}{comment}"
+
+
+def _canonical_parametric_tag(tag: str) -> str:
+    # Canonicalize so that equivalent inputs like `I[R_X(0.005)]`,
+    # `I[R_X(theta=0.5e-2*pi)]` and `I[R_X(theta=0.005*pi)]` produce the same stim
+    # tag string. This keeps `tsim.Circuit(str(c)) == c` round-trip stable across
+    # notations. Malformed tags are kept as-is and rejected when parsed.
+    try:
+        parsed = parse_parametric_tag_text(tag)
+        return tag if parsed is None else format_parametric_tag(*parsed)
+    except (ValueError, OverflowError):
+        return tag
+
+
+def _expand_rotation_shorthand(instruction: str) -> str:
     def replace_pauli_pair(m: re.Match) -> str:
         pauli = m.group(1)
         alpha = float(m.group(2))
@@ -178,50 +201,37 @@ def shorthand_to_stim(text: str) -> str:
             )
         return f"SPP[R_PAULI(theta={alpha}*pi)] {pauli}{q0}*{pauli}{q1}"
 
-    text = re.sub(
-        rf"\bR_([XYZ])\1\(({FLOAT_RE})\)\s+(\d+)\s+(\d+)", replace_pauli_pair, text
+    instruction = re.sub(
+        rf"^R_([XYZ])\1\(({FLOAT_RE})\)\s+(\d+)\s+(\d+)",
+        replace_pauli_pair,
+        instruction,
     )
 
     def replace_pauli(m: re.Match) -> str:
         alpha = float(m.group(1))
         return f"SPP[R_PAULI(theta={alpha}*pi)] {m.group(2)}"
 
-    text = re.sub(
-        rf"\bR_PAULI\(({FLOAT_RE})\)\s+((?:[XYZ]\d+)(?:\*[XYZ]\d+)*)",
+    instruction = re.sub(
+        rf"^R_PAULI\(({FLOAT_RE})\)\s+((?:[XYZ]\d+)(?:\*[XYZ]\d+)*)",
         replace_pauli,
-        text,
+        instruction,
     )
 
     def replace_rotation(m: re.Match) -> str:
         axis = m.group(1)
         return f"I[R_{axis}(theta={float(m.group(2))}*pi)]"
 
-    text = re.sub(rf"\bR_([XYZ])\(({FLOAT_RE})\)", replace_rotation, text)
+    instruction = re.sub(rf"^R_([XYZ])\(({FLOAT_RE})\)", replace_rotation, instruction)
 
     def replace_u3(m: re.Match) -> str:
         theta, phi, lam = float(m.group(1)), float(m.group(2)), float(m.group(3))
         return f"I[U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)]"
 
-    text = re.sub(
-        rf"\bU3\(({FLOAT_RE})\s*,\s*({FLOAT_RE})\s*,\s*({FLOAT_RE})\)",
+    return re.sub(
+        rf"^U3\(({FLOAT_RE})\s*,\s*({FLOAT_RE})\s*,\s*({FLOAT_RE})\)",
         replace_u3,
-        text,
+        instruction,
     )
-
-    # Canonicalize literals inside already-expanded parametric tags so that
-    # equivalent inputs like `I[R_X(theta=0.5e-2*pi)]` and
-    # `I[R_X(theta=0.005*pi)]` produce the same stim tag string. This keeps
-    # `tsim.Circuit(str(c)) == c` round-trip stable across notations.
-    def _canonicalize_param(m: re.Match) -> str:
-        return f"{m.group(1)}={float(m.group(2))}*pi"
-
-    text = re.sub(
-        rf"\b(theta|phi|lambda)=({FLOAT_RE})\*pi",
-        _canonicalize_param,
-        text,
-    )
-
-    return text
 
 
 def stim_to_shorthand(text: str) -> str:

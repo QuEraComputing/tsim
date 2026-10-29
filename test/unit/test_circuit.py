@@ -134,6 +134,33 @@ def test_rotation_gate_shorthand():
     assert c1._stim_circ == c2._stim_circ
 
 
+@pytest.mark.parametrize(
+    "program",
+    ["SPP[R_X(0.1)] X0", "SPP_DAG[U3(theta=0.1*pi, phi=0*pi, lambda=0*pi)] Z0"],
+)
+def test_non_r_pauli_parametric_tag_on_spp_raises(program):
+    with pytest.raises(ValueError, match="is not supported on SPP"):
+        Circuit(program).to_tensor()
+
+
+@pytest.mark.parametrize(
+    "stim_program, shorthand",
+    [
+        ("I[R_X(0.1)] 0", "R_X(0.1) 0"),
+        ("I[U3(0.3, 0.24, 0.49)] 0", "U3(0.3, 0.24, 0.49) 0"),
+        ("SPP[R_PAULI(0.1)] X0*Y1", "R_PAULI(0.1) X0*Y1"),
+    ],
+)
+def test_positional_tag_from_stim_matches_shorthand(stim_program, shorthand):
+    c1 = Circuit.from_stim_program(stim.Circuit(stim_program))
+    c2 = Circuit(shorthand)
+    assert c1.stim_circuit != c2.stim_circuit
+    np.testing.assert_allclose(c1.to_tensor(), c2.to_tensor(), atol=1e-12)
+    np.testing.assert_allclose(
+        c1.inverse().to_tensor(), c2.inverse().to_tensor(), atol=1e-12
+    )
+
+
 def test_u3_gate_shorthand():
     """Test that U3(theta, phi, lambda) shorthand is converted correctly."""
     c1 = Circuit("U3(0.3, 0.24, 0.49) 0")
