@@ -74,6 +74,15 @@ __device__ __forceinline__ u64 draw(u64 seed, u64 shot, u64 slots, u64 slot) {
     return mix64(seed + (shot * slots + slot) * GOLDEN + GOLDEN);
 }
 __device__ __forceinline__ int par(u64 v) { return __popcll(v) & 1; }
+// Whether the 64-bit draw r falls below the share w1 / total of its range.
+// float32 decides it unless r / 2^64 lies within 2^-21 of the share, which
+// covers both roundings; there double precision does, as it would everywhere.
+__device__ __forceinline__ int draw_below(u64 r, float w1, float total) {
+    float p = w1 / total, x = __ull2float_rz(r) * 0x1p-64f;
+    if (x < p * (1.f - 0x1p-21f)) return 1;
+    if (x > p * (1.f + 0x1p-21f)) return 0;
+    return r < (u64)((double)w1 / (double)total * 18446744073709551616.0);
+}
 // A uniform in (0, 1] from the high 24 bits, so that logf never sees 0.
 __device__ __forceinline__ float unit(u64 r) { return ((r >> 40) + 1) * (1.0f / 16777216.0f); }
 __device__ __forceinline__ float2 cmul(float2 p, float2 q) {
@@ -555,7 +564,7 @@ def tape_function(
             f"    if (w1 <= {CERTAIN}f * total) outcome = 0; else if (w0 <= {CERTAIN}f * total) outcome = 1;"
         )
         emit(
-            f"    else outcome = draw(seed, shot, {slots}, {a}) < (u64)((double)w1 / (double)total * 18446744073709551616.0);"
+            f"    else outcome = draw_below(draw(seed, shot, {slots}, {a}), w1, total);"
         )
         emit("    weight = outcome ? w1 : w0;")
         if a in watched:
