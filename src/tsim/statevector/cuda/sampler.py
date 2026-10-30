@@ -1,6 +1,6 @@
 """``CudaShotSampler``: ``ShotSampler`` with the noise and the tapes on a CUDA GPU.
 
-A batch of shots runs as three kernels on one stream:
+A batch of shots runs as these kernels on one stream:
 
     noise  draws every shot's noise into its words and screens it (``noise``);
            the screened survivors go to a queue
@@ -8,6 +8,9 @@ A batch of shots runs as three kernels on one stream:
            per shot with its amplitudes in registers (``codegen``); with a
            postselection mask it queues the accepted shots, and with
            expectations it writes each observable's expectation
+    kept   under postselection, draws the noise that cannot change whether a
+           shot is kept on the accepted shots only (``noise_kept``), when that
+           noise is at least ``DEFER_SHARE`` of the faults
     select gathers the rows (or the accepted rows) for the copy to the host
 
 The kernels are compiled with NVRTC once per postselection mask (CuPy caches
@@ -28,7 +31,7 @@ from tsim.core.types import CompiledProgram
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.cuda import runtime
 from tsim.statevector.cuda.codegen import PRELUDE, tape_function
-from tsim.statevector.cuda.noise import noise_tables
+from tsim.statevector.cuda.noise import NoiseGroups, deferred_channels, noise_tables
 from tsim.statevector.program import STABILIZER_RANK_HINT
 from tsim.statevector.shared import pack_bits
 from tsim.statevector.shots import ShotPlan, ShotSampler, bool_outputs, read_outputs
@@ -41,6 +44,10 @@ BATCH_SHOTS = 1 << 22
 
 DEVIATION_TOLERANCE = 1e-3
 """Normalization deviation that float32 amplitudes tolerate without a warning."""
+
+DEFER_SHARE = 0.25
+"""Share of the expected faults that postselection cannot see, from which they
+are drawn on the accepted shots only, after the tapes."""
 
 _KERNELS = r"""
 extern "C" __global__ void __launch_bounds__({block}) tape(
@@ -156,10 +163,20 @@ extern "C" __global__ void gather_float(const float* __restrict__ values, long l
 
 
 @dataclass
+class _Launch:
+    """The device tables of one noise launch: its segments and channels."""
+
+    args: list[Any]
+    num_segments: int
+    max_events: int
+
+
+@dataclass
 class _Module:
     """A plan's compiled kernels and its device constants."""
 
     noise: Any
+    noise_kept: Any
     tape: Any
     gather: Any
     gather_bytes: Any
@@ -174,6 +191,10 @@ class _Module:
     """The outputs that ``sample_accepted`` returns: those outside the mask."""
     columns_d: Any
     runs_d: Any
+    plan: ShotPlan
+    psm_words: np.ndarray
+    splits: dict[bool, tuple[_Launch, _Launch] | None]
+    """Each ``expectations`` value's noise passes (screened, deferred), or None."""
 
 
 class CudaShotSampler:
@@ -214,15 +235,15 @@ class CudaShotSampler:
         self._num_detectors = num_detectors
         self._observables = np.arange(num_detectors, layout.num_outputs)
         self._rng = np.random.default_rng(seed)
+        self._channels = channels
         self._noise = noise_tables(channels, layout.noise, layout.num_words)
         n = self._noise
-        self._noise_args = [
-            *(cp.asarray(a) for a in n.segments),
-            cp.asarray(n.channels),
+        self._record_args = [
             cp.asarray(n.records.view(np.uint8)),
             cp.asarray(n.overflow_word),
             cp.asarray(n.overflow_mask),
         ]
+        self._all = self._launch(n.groups)
         self._modules: dict[bytes, _Module] = {}
         self._buffers: dict[str, Any] = {}
 
@@ -283,7 +304,7 @@ class CudaShotSampler:
         )
         source = (
             PRELUDE
-            + self._noise.source(layout.num_words, layout.output_words)
+            + self._noise.source(layout.output_words)
             + functions
             + _KERNELS.format(
                 block=block,
@@ -310,6 +331,7 @@ class CudaShotSampler:
         bits = np.zeros(64 * layout.output_words, dtype=bool)
         if mask is not None:
             bits[: len(mask)] = mask
+        psm_words = pack_bits(bits, layout.output_words)
         columns = np.flatnonzero(~bits[: layout.num_outputs]).astype(np.int32)
         # NOTE: a byte of consecutive outputs is a shift of the row's words.
         octets = np.pad(columns, (0, -len(columns) % 8), constant_values=-1)
@@ -317,6 +339,7 @@ class CudaShotSampler:
         runs = (octets[:, 7] >= 0) & (octets[:, 7] - octets[:, 0] == 7)
         compiled = _Module(
             noise=module.get_function("noise"),
+            noise_kept=module.get_function("noise_kept"),
             tape=tape,
             gather=module.get_function("gather"),
             gather_bytes=module.get_function("gather_bytes"),
@@ -324,15 +347,66 @@ class CudaShotSampler:
             gather_float=module.get_function("gather_float"),
             screen=cp.asarray(plan.screen),
             kept=cp.asarray(plan.kept),
-            psm=cp.asarray(pack_bits(bits, layout.output_words)),
+            psm=cp.asarray(psm_words),
             tape_blocks=runtime.multiprocessors() * blocks_per_sm,
             has_mask=mask is not None,
             columns=columns,
             columns_d=cp.asarray(columns if len(columns) else [0], dtype=np.int32),
             runs_d=cp.asarray(runs if len(runs) else [0], dtype=np.uint8),
+            plan=plan,
+            psm_words=psm_words,
+            splits={},
         )
         self._modules[key] = compiled
         return compiled
+
+    def _launch(self, groups: NoiseGroups) -> _Launch:
+        """Upload a noise launch's segments and channels."""
+        cp = self._cp
+        return _Launch(
+            args=[
+                *(cp.asarray(a) for a in groups.segments),
+                cp.asarray(groups.channels),
+            ],
+            num_segments=len(groups.segments[0]),
+            max_events=groups.max_events,
+        )
+
+    def _split(
+        self, module: _Module, expectations: bool
+    ) -> tuple[_Launch, _Launch] | None:
+        """Return a postselected batch's noise passes (screened, deferred), or None.
+
+        The deferred channels flip none of the bits that the screen, the tapes or
+        the postselection read: the postselected outputs, the keys, and with
+        ``expectations`` the components' observables. Each key word is read
+        whole, so the deferred channels flip output words only.
+        """
+        if not module.has_mask:
+            return None
+        if expectations in module.splits:
+            return module.splits[expectations]
+        layout = self.layout
+        read = np.zeros(layout.num_words, dtype=np.uint64)
+        read[: layout.output_words] = module.psm_words | module.plan.screen
+        for program in module.plan.programs:
+            start = program.key_start
+            read[start : start + program.key_words] = ~np.uint64(0)
+            np.bitwise_or.at(read, program.ps_word, program.ps_mask.astype(np.uint64))
+        if expectations:
+            bits = np.zeros(64 * layout.output_words, dtype=bool)
+            for component in layout.components:
+                for index in component.output_indices:
+                    if index >= self._num_detectors:
+                        bits[index] = True
+            read[: layout.output_words] |= pack_bits(bits, layout.output_words)
+        deferred = deferred_channels(self._channels, layout.noise, read)
+        later = self._noise.subset(deferred)
+        split = None
+        if later.faults > 0 and later.faults >= DEFER_SHARE * self._noise.groups.faults:
+            split = (self._launch(self._noise.subset(~deferred)), self._launch(later))
+        module.splits[expectations] = split
+        return split
 
     def _compile(self, source: str):
         """Compile with NVRTC; ptxas -O3 fails on some shuffled tapes, so lower levels follow."""
@@ -372,8 +446,12 @@ class CudaShotSampler:
         first_shot: int,
         constant: np.ndarray,
         expectations: bool,
+        launch: _Launch,
     ) -> tuple[Any, Any, Any, Any]:
-        """Sample one batch on the device: ``(words, accepted, count, values)``."""
+        """Sample one batch on the device: ``(words, accepted, count, values)``.
+
+        ``launch`` holds the channels that the noise kernel draws.
+        """
         cp = self._cp
         layout = self.layout
         nw, no = layout.num_words, max(1, len(self._observables))
@@ -400,14 +478,17 @@ class CudaShotSampler:
                 words,
                 np.int64(shots),
                 noise_seed,
-                np.int32(len(self._noise.segments[0])),
-                *self._noise_args,
+                np.int32(launch.num_segments),
+                np.int32(launch.max_events),
+                *launch.args,
+                *self._record_args,
                 constant_d,
                 module.screen,
                 module.kept,
                 queue,
                 counts[0:1],
             ),
+            shared_mem=8 * launch.max_events,
         )
         if layout.components:
             module.tape(
@@ -430,6 +511,28 @@ class CudaShotSampler:
             # NOTE: without components the screened survivors are the accepted shots.
             accepted, counts[1:2] = queue, counts[0:1]
         return words, accepted, counts, values
+
+    def _add_deferred(
+        self, module: _Module, launch: _Launch, words, count: int, index
+    ) -> None:
+        """Draw the deferred channels' faults on the ``count`` kept rows ``index``."""
+        S = self._noise.block_shots
+        seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
+        module.noise_kept(
+            ((count + S - 1) // S,),
+            (256,),
+            (
+                words,
+                np.int64(count),
+                index,
+                seed,
+                np.int32(launch.num_segments),
+                np.int32(launch.max_events),
+                *launch.args,
+                *self._record_args,
+            ),
+            shared_mem=8 * launch.max_events,
+        )
 
     def _to_host(self, device, rows: int, width: int, dtype) -> np.ndarray:
         """Copy ``device[:rows]`` to a new pinned host array (CuPy's pinned pool)."""
@@ -541,7 +644,9 @@ class CudaShotSampler:
         deviation = 0.0
         for start in range(0, shots, batch):
             n = min(batch, shots - start)
-            words, _, counts, _ = self._run_batch(module, n, start, constant, False)
+            words, _, counts, _ = self._run_batch(
+                module, n, start, constant, False, self._all
+            )
             words.get(out=out[start : start + n])
             deviation = max(deviation, self._deviation(counts))
         return out, deviation
@@ -577,12 +682,18 @@ class CudaShotSampler:
         layout = self.layout
         nb, no = -(-len(module.columns) // 8), len(self._observables)
         constant = self._host._constant(flip)
+        split = self._split(module, expectations)
         batch = min(batch_size or BATCH_SHOTS, BATCH_SHOTS)
         rows, values, deviation = [], [], 0.0
         for start in range(0, shots, batch):
             n = min(batch, shots - start)
             words, accepted, counts, ev = self._run_batch(
-                module, n, start, constant, expectations
+                module,
+                n,
+                start,
+                constant,
+                expectations,
+                split[0] if split else self._all,
             )
             if mask is None:
                 count, index = n, None
@@ -590,6 +701,8 @@ class CudaShotSampler:
                 count = int(counts[1:2].get()[0])
                 # NOTE: the queue's order is the warps'; rows keep their shots'.
                 index = cp.sort(accepted[:count])
+                if split is not None and count:
+                    self._add_deferred(module, split[1], words, count, index)
             rows.append(self._gather_columns(module, words, count, index))
             if expectations:
                 if no and layout.components:

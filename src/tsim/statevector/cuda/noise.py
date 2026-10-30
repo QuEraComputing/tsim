@@ -24,6 +24,13 @@ A block then screens its shots (constants, postselected direct detectors),
 writes their rows (coalesced) and appends the surviving shots to a queue for
 the tape kernel. The samples follow ``ChannelSampler``'s distribution, not its
 streams: every block draws from its own counter-based stream.
+
+Under postselection the channels can be drawn in two passes. Those with an
+outcome that flips a bit the screen, the tapes or the postselection read go
+first (``noise``); the others cannot change whether a shot is kept, so
+``noise_kept`` draws them after the tapes, on the kept shots only. Channels are
+independent and their flips commute, so the kept shots' distribution is
+unchanged.
 """
 
 from __future__ import annotations
@@ -37,7 +44,7 @@ from tsim.noise.channels import ChannelSampler, WordTables
 
 FAULTS_PER_SEGMENT = 4.0
 # NOTE: rows take 8 bits of an event, and the block's words and events share
-# 46 KB of static shared memory.
+# 46 KB of shared memory (the events' share is dynamic, set per launch).
 MAX_BLOCK_SHOTS = 256
 SHARED_BYTES = 46 * 1024
 
@@ -74,28 +81,19 @@ __device__ __forceinline__ void apply_fault(u64* sw, int row, int2 channel, unsi
     }}
 }}
 
-extern "C" __global__ void __launch_bounds__(256) noise(
-    u64* __restrict__ out, long long shots, u64 seed, int num_segments,
+// Phases 1 and 2: draw the segments' faults on the block's ``ns`` shots and XOR them into ``sw``.
+__device__ __forceinline__ void add_faults(u64* sw, uint2* events, int* num_events, int max_events,
+    int ns, u64 stream, int num_segments,
     const int* __restrict__ seg_first, const int* __restrict__ seg_begin,
     const int* __restrict__ seg_end, const float* __restrict__ seg_log_keep,
     const int2* __restrict__ channels, const Record* __restrict__ records,
-    const int* __restrict__ overflow_word, const u64* __restrict__ overflow_mask,
-    const u64* __restrict__ constant, const u64* __restrict__ screen, const u64* __restrict__ kept,
-    unsigned* __restrict__ queue, unsigned* __restrict__ count)
+    const int* __restrict__ overflow_word, const u64* __restrict__ overflow_mask)
 {{
-    __shared__ u64 sw[{NW} * {S}];
-    __shared__ uint2 events[{E}];
-    __shared__ int num_events;
-    long long base = (long long)blockIdx.x * {S};
-    int ns = (int)min((long long){S}, shots - base);
-    for (int i = threadIdx.x; i < {NW} * {S}; i += blockDim.x) sw[i] = 0;
-    if (threadIdx.x == 0) num_events = 0;
-    __syncthreads();
     for (int sg = threadIdx.x; sg < num_segments; sg += blockDim.x) {{
         float lk = seg_log_keep[sg];
         int first = seg_first[sg], end = seg_end[sg];
         int idx = seg_begin[sg] - 1;
-        u64 state = mix64(seed ^ ((u64)blockIdx.x * 0xD1B54A32D192ED03ULL) ^ ((u64)sg * GOLDEN));
+        u64 state = mix64(stream ^ ((u64)sg * GOLDEN));
         while (true) {{
             state += GOLDEN;
             u64 r = mix64(state);
@@ -106,18 +104,40 @@ extern "C" __global__ void __launch_bounds__(256) noise(
             if (row >= ns) continue;  // the last block's missing shots
             // NOTE: the skip reads the high 24 bits of r, the outcome its low 32.
             unsigned bits = (unsigned)r;
-            int e = atomicAdd(&num_events, 1);
-            if (e < {E}) events[e] = make_uint2((unsigned)row | ((unsigned)(first + ch) << 8), bits);
+            int e = atomicAdd(num_events, 1);
+            if (e < max_events) events[e] = make_uint2((unsigned)row | ((unsigned)(first + ch) << 8), bits);
             else apply_fault(sw, row, channels[first + ch], bits, records, overflow_word, overflow_mask);
         }}
     }}
     __syncthreads();
-    int ne = min(num_events, {E});
+    int ne = min(*num_events, max_events);
     for (int e = threadIdx.x; e < ne; e += blockDim.x) {{
         uint2 v = events[e];
         apply_fault(sw, v.x & 255, channels[v.x >> 8], v.y, records, overflow_word, overflow_mask);
     }}
     __syncthreads();
+}}
+
+extern "C" __global__ void __launch_bounds__(256) noise(
+    u64* __restrict__ out, long long shots, u64 seed, int num_segments, int max_events,
+    const int* __restrict__ seg_first, const int* __restrict__ seg_begin,
+    const int* __restrict__ seg_end, const float* __restrict__ seg_log_keep,
+    const int2* __restrict__ channels, const Record* __restrict__ records,
+    const int* __restrict__ overflow_word, const u64* __restrict__ overflow_mask,
+    const u64* __restrict__ constant, const u64* __restrict__ screen, const u64* __restrict__ kept,
+    unsigned* __restrict__ queue, unsigned* __restrict__ count)
+{{
+    __shared__ u64 sw[{NW} * {S}];
+    extern __shared__ uint2 events[];
+    __shared__ int num_events;
+    long long base = (long long)blockIdx.x * {S};
+    int ns = (int)min((long long){S}, shots - base);
+    for (int i = threadIdx.x; i < {NW} * {S}; i += blockDim.x) sw[i] = 0;
+    if (threadIdx.x == 0) num_events = 0;
+    __syncthreads();
+    add_faults(sw, events, &num_events, max_events, ns, seed ^ ((u64)blockIdx.x * 0xD1B54A32D192ED03ULL),
+               num_segments, seg_first, seg_begin, seg_end, seg_log_keep, channels, records,
+               overflow_word, overflow_mask);
     for (int s0 = 0; s0 < {S}; s0 += blockDim.x) {{
         int s = s0 + threadIdx.x;
         bool alive = false;
@@ -152,65 +172,110 @@ extern "C" __global__ void __launch_bounds__(256) noise(
         rows[i] = sw[word * {S} + s];
     }}
 }}
+
+// The deferred channels' faults on the ``n`` kept shots ``index``: they flip
+// output words only, so a block loads and stores just those.
+extern "C" __global__ void __launch_bounds__(256) noise_kept(
+    u64* __restrict__ out, long long n, const unsigned* __restrict__ index, u64 seed,
+    int num_segments, int max_events,
+    const int* __restrict__ seg_first, const int* __restrict__ seg_begin,
+    const int* __restrict__ seg_end, const float* __restrict__ seg_log_keep,
+    const int2* __restrict__ channels, const Record* __restrict__ records,
+    const int* __restrict__ overflow_word, const u64* __restrict__ overflow_mask)
+{{
+    __shared__ u64 sw[{OW} * {S}];
+    extern __shared__ uint2 events[];
+    __shared__ int num_events;
+    long long base = (long long)blockIdx.x * {S};
+    int ns = (int)min((long long){S}, n - base);
+    for (int i = threadIdx.x; i < ns * {OW}; i += blockDim.x) {{
+        int s = i / {OW}, word = i - s * {OW};
+        sw[word * {S} + s] = out[(long long)index[base + s] * {NW} + word];
+    }}
+    if (threadIdx.x == 0) num_events = 0;
+    __syncthreads();
+    add_faults(sw, events, &num_events, max_events, ns, seed ^ ((u64)blockIdx.x * 0xD1B54A32D192ED03ULL),
+               num_segments, seg_first, seg_begin, seg_end, seg_log_keep, channels, records,
+               overflow_word, overflow_mask);
+    for (int i = threadIdx.x; i < ns * {OW}; i += blockDim.x) {{
+        int s = i / {OW}, word = i - s * {OW};
+        out[(long long)index[base + s] * {NW} + word] = sw[word * {S} + s];
+    }}
+}}
 """
 
 
 @dataclass(frozen=True)
-class NoiseTables:
-    """The host tables of the noise kernel.
+class NoiseGroups:
+    """A set of channels as one launch draws them: their groups, cut into segments.
 
     Attributes:
-        block_shots: Shots per block (``S``).
         max_events: Events a block records before it applies faults at once.
         segments: ``(first, begin, end, log_keep)`` of each segment: its group's
             first channel (in group order), its trial range and log(1 - p).
         channels: Each channel's ``(first outcome, outcomes)``, in group order.
+        faults: Expected faults per shot.
+
+    """
+
+    max_events: int
+    segments: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    channels: np.ndarray
+    faults: float
+
+
+@dataclass(frozen=True)
+class NoiseTables:
+    """The host tables of the noise kernels.
+
+    Attributes:
+        block_shots: Shots per block (``S``).
+        groups: Every channel's groups.
         records: One 32-byte record per fault outcome.
         overflow_word: Words of the flips past an outcome's first two.
         overflow_mask: Masks of the flips past an outcome's first two.
+        p_fire: Each channel's fire probability.
+        outcome_start: Each channel's first outcome (and the end).
+        num_words: Words per shot.
 
     """
 
     block_shots: int
-    max_events: int
-    segments: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-    channels: np.ndarray
+    groups: NoiseGroups
     records: np.ndarray
     overflow_word: np.ndarray
     overflow_mask: np.ndarray
+    p_fire: np.ndarray
+    outcome_start: np.ndarray
+    num_words: int
 
-    def source(self, num_words: int, output_words: int) -> str:
-        """Return the CUDA source of the ``noise`` kernel."""
-        return SOURCE.format(
-            NW=num_words, OW=output_words, S=self.block_shots, E=self.max_events
+    def source(self, output_words: int) -> str:
+        """Return the CUDA source of the ``noise`` and ``noise_kept`` kernels."""
+        return SOURCE.format(NW=self.num_words, OW=output_words, S=self.block_shots)
+
+    def subset(self, select: np.ndarray) -> NoiseGroups:
+        """Return the groups of the channels ``select`` (a boolean mask)."""
+        return _groups(
+            self.p_fire, self.outcome_start, self.block_shots, self.num_words, select
         )
 
 
-def noise_tables(
-    channels: ChannelSampler, flips: WordTables, num_words: int
-) -> NoiseTables:
-    """Return the noise kernel's tables for rows of ``num_words`` shot words."""
-    fire = channels._tables
-    if len(fire.p_fire) >= 1 << 24:
-        raise ValueError("the CUDA noise sampler supports fewer than 2^24 channels")
-    if num_words >= 1 << 16:
-        raise ValueError("the CUDA noise sampler supports fewer than 2^16 shot words")
-    block_shots = max(
-        32, min(MAX_BLOCK_SHOTS, (SHARED_BYTES // 2 // (8 * num_words)) // 32 * 32)
-    )
-    if 8 * num_words * block_shots > SHARED_BYTES - 8 * 256:
-        raise ValueError(
-            f"{num_words} shot words do not fit the noise kernel's shared memory"
-        )
-    faults = float(fire.p_fire.sum()) * block_shots
+def _groups(
+    p_fire: np.ndarray,
+    outcome_start: np.ndarray,
+    block_shots: int,
+    num_words: int,
+    select: np.ndarray,
+) -> NoiseGroups:
+    faults = float(p_fire[select].sum())
     max_events = min(
-        max(256, int(2 * faults + 256)),
+        max(256, int(2 * faults * block_shots + 256)),
         (SHARED_BYTES - 8 * num_words * block_shots) // 8,
     )
-
     # NOTE: channels of equal fire probability form a group.
-    order = np.argsort(fire.p_fire, kind="stable")
-    p_sorted = fire.p_fire[order]
+    chosen = np.flatnonzero(select)
+    order = chosen[np.argsort(p_fire[chosen], kind="stable")]
+    p_sorted = p_fire[order]
     starts = np.flatnonzero(np.diff(p_sorted, prepend=-1.0) != 0)
     group_start = np.append(starts, len(order))
     first, begin, end, log_keep = [], [], [], []
@@ -233,7 +298,50 @@ def noise_tables(
     # take a second segment take short ones.
     expected = (np.array(end) - np.array(begin)) * -np.expm1(np.array(log_keep))
     by_work = np.argsort(-expected, kind="stable")
+    pairs = np.stack([outcome_start[order], np.diff(outcome_start)[order]], axis=1)
+    return NoiseGroups(
+        max_events=max_events,
+        segments=(
+            np.asarray(first, np.int32)[by_work],
+            np.asarray(begin, np.int32)[by_work],
+            np.asarray(end, np.int32)[by_work],
+            np.asarray(log_keep, np.float32)[by_work],
+        ),
+        channels=pairs.astype(np.int32).reshape(-1, 2),
+        faults=faults,
+    )
 
+
+def deferred_channels(
+    channels: ChannelSampler, flips: WordTables, read: np.ndarray
+) -> np.ndarray:
+    """Return which channels flip none of the bits ``read`` (as shot words)."""
+    fire = channels._tables
+    hit = (read[flips.word] & flips.mask) != 0
+    # NOTE: hits per outcome, then per channel, as differences of running counts.
+    per_flip = np.concatenate([[0], np.cumsum(hit)])
+    per_outcome = per_flip[flips.start[1:]] - per_flip[flips.start[:-1]] > 0
+    per_outcome = np.concatenate([[0], np.cumsum(per_outcome)])
+    start = fire.outcome_start
+    return per_outcome[start[1:]] == per_outcome[start[:-1]]
+
+
+def noise_tables(
+    channels: ChannelSampler, flips: WordTables, num_words: int
+) -> NoiseTables:
+    """Return the noise kernels' tables for rows of ``num_words`` shot words."""
+    fire = channels._tables
+    if len(fire.p_fire) >= 1 << 24:
+        raise ValueError("the CUDA noise sampler supports fewer than 2^24 channels")
+    if num_words >= 1 << 16:
+        raise ValueError("the CUDA noise sampler supports fewer than 2^16 shot words")
+    block_shots = max(
+        32, min(MAX_BLOCK_SHOTS, (SHARED_BYTES // 2 // (8 * num_words)) // 32 * 32)
+    )
+    if 8 * num_words * block_shots > SHARED_BYTES - 8 * 256:
+        raise ValueError(
+            f"{num_words} shot words do not fit the noise kernel's shared memory"
+        )
     outcome_start = fire.outcome_start
     records = np.zeros(len(fire.alias_prob), dtype=_RECORD)
     overflow_word: list[int] = []
@@ -264,18 +372,14 @@ def noise_tables(
             overflow_mask.extend(masks[2:])
     if len(overflow_word) >= 1 << 24:
         raise ValueError("too many noise flips for the CUDA noise sampler")
-    pairs = np.stack([outcome_start[order], np.diff(outcome_start)[order]], axis=1)
+    every = np.ones(len(fire.p_fire), dtype=bool)
     return NoiseTables(
         block_shots=block_shots,
-        max_events=max_events,
-        segments=(
-            np.asarray(first, np.int32)[by_work],
-            np.asarray(begin, np.int32)[by_work],
-            np.asarray(end, np.int32)[by_work],
-            np.asarray(log_keep, np.float32)[by_work],
-        ),
-        channels=pairs.astype(np.int32),
+        groups=_groups(fire.p_fire, outcome_start, block_shots, num_words, every),
         records=records,
         overflow_word=np.asarray([*overflow_word, 0], np.int32),
         overflow_mask=np.asarray([*overflow_mask, 0], np.uint64),
+        p_fire=fire.p_fire,
+        outcome_start=outcome_start,
+        num_words=num_words,
     )

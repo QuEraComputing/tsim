@@ -8,6 +8,7 @@ import pytest
 
 from tsim.circuit import Circuit
 from tsim.statevector.cuda import available
+from tsim.statevector.cuda import sampler as cuda_sampler
 from tsim.statevector.program import StatevectorComponent
 
 pytestmark = pytest.mark.skipif(not available(), reason="needs CuPy and a CUDA GPU")
@@ -155,7 +156,9 @@ NOISY_DETECTORS = "\n".join(
 )
 
 
-def test_cuda_returns_the_outputs_outside_the_mask():
+def test_cuda_returns_the_outputs_outside_the_mask(monkeypatch):
+    # NOTE: the masked run must draw the unmasked run's noise, so none is deferred.
+    monkeypatch.setattr(cuda_sampler, "DEFER_SHARE", 2.0)
     circuit = Circuit(NOISY_DETECTORS)
     rng = np.random.default_rng(0)
     mask = np.zeros(150, dtype=bool)
@@ -174,6 +177,67 @@ def test_cuda_returns_the_outputs_outside_the_mask():
     expected = np.packbits(full_bits[passing][:, outside], axis=1, bitorder="little")
     assert discarded == 5_000 - passing.sum() > 0
     np.testing.assert_array_equal(rows, expected)
+
+
+# NOTE: GHZ_WITH_DIRECT_DETECTOR's component and direct detector, then four
+# noisy direct detectors that no mask below reads; one fault flips detectors 2
+# and 3 together, and the observable also reads the last noisy qubit.
+UNREAD_NOISE = """
+R 0 1 2 3 4 5 6 7
+H 0
+CNOT 0 1
+CNOT 1 2
+T 0 1 2
+H 0 1 2
+DEPOLARIZE1(0.05) 0 1 2
+T 0 1
+CZ 0 1
+H 0 1
+M 0 1 2
+DETECTOR rec[-3] rec[-2]
+DETECTOR rec[-2] rec[-1]
+OBSERVABLE_INCLUDE(0) rec[-1]
+X_ERROR(0.2) 3
+E(0.1) X3 X4
+X_ERROR(0.3) 4 5 6 7
+M 3 4 5 6 7
+DETECTOR rec[-5]
+DETECTOR rec[-4]
+DETECTOR rec[-3]
+DETECTOR rec[-2]
+DETECTOR rec[-1]
+OBSERVABLE_INCLUDE(0) rec[-1]
+"""
+
+
+def test_cuda_defers_the_noise_that_postselection_cannot_see():
+    circuit = Circuit(UNREAD_NOISE)
+    mask = np.zeros(circuit.num_detectors, dtype=bool)
+    mask[[0, 2]] = True
+    sampler = circuit.compile_detector_sampler(seed=12, device="cuda")
+    packed, _ = sampler.sample_postselected(200_000, postselection_mask=mask)
+    assert sampler._shots._module(mask).splits[False] is not None
+    bits = np.unpackbits(packed, axis=1, count=6, bitorder="little")
+    full = _accepted(circuit.compile_detector_sampler(seed=13), 200_000, mask)
+    assert abs(len(bits) - len(full)) <= 5 * np.sqrt(len(full))
+    outside = np.concatenate([~mask, [True]])
+    assert_counts_match(bits.astype(bool), full[:, outside])
+
+
+def test_deferred_noise_leaves_the_expectations_unbiased():
+    # NOTE: with expectations, the noise on the observable's direct qubit is not
+    # deferred: the tape reads the observable's bit for its sign.
+    circuit = Circuit(UNREAD_NOISE)
+    mask = np.zeros(circuit.num_detectors, dtype=bool)
+    mask[[0, 2]] = True
+    sampler = circuit.compile_detector_sampler(seed=14, device="cuda")
+    _, values, _ = sampler.sample_postselected(
+        200_000, postselection_mask=mask, observable_expectations=True
+    )
+    assert sampler._shots._module(mask).splits[True] is not None
+    full = _accepted(circuit.compile_detector_sampler(seed=15), 200_000, mask)
+    expected = np.mean(1 - 2 * full[:, -1].astype(float))
+    assert abs(values.mean() - expected) < 5 / np.sqrt(len(full))
 
 
 def test_observable_expectations_average_to_the_sampled_observable():
