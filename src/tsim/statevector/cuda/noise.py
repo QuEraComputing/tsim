@@ -21,8 +21,8 @@ record (and its alias's record):
     masks:  the first two flip masks
 
 A block then screens its shots (constants, postselected direct detectors),
-writes their rows (coalesced) and appends the surviving shots to a queue for
-the tape kernel. The samples follow ``ChannelSampler``'s distribution, not its
+writes their rows (coalesced; only the survivors' unless every row is asked
+for) and appends the surviving shots to a queue for the tape kernel. The samples follow ``ChannelSampler``'s distribution, not its
 streams: every block draws from its own counter-based stream.
 
 Under postselection the channels can be drawn in two passes. Those with an
@@ -125,11 +125,12 @@ extern "C" __global__ void __launch_bounds__(256) noise(
     const int2* __restrict__ channels, const Record* __restrict__ records,
     const int* __restrict__ overflow_word, const u64* __restrict__ overflow_mask,
     const u64* __restrict__ constant, const u64* __restrict__ screen, const u64* __restrict__ kept,
-    unsigned* __restrict__ queue, unsigned* __restrict__ count)
+    unsigned* __restrict__ queue, unsigned* __restrict__ count, int every_row)
 {{
     __shared__ u64 sw[{NW} * {S}];
     extern __shared__ uint2 events[];
     __shared__ int num_events;
+    __shared__ bool passed[{S}];
     long long base = (long long)blockIdx.x * {S};
     int ns = (int)min((long long){S}, shots - base);
     for (int i = threadIdx.x; i < {NW} * {S}; i += blockDim.x) sw[i] = 0;
@@ -155,6 +156,7 @@ extern "C" __global__ void __launch_bounds__(256) noise(
             }}
             alive = !hit;
         }}
+        if (s < {S}) passed[s] = alive;
         // NOTE: one atomic per warp: the leader reserves the survivors' slots.
         unsigned ballot = __ballot_sync(0xffffffffu, alive);
         if (ballot) {{
@@ -166,10 +168,11 @@ extern "C" __global__ void __launch_bounds__(256) noise(
         }}
     }}
     __syncthreads();
+    // NOTE: without ``every_row`` only the shots that pass the screen are read again.
     u64* rows = out + base * {NW};
     for (int i = threadIdx.x; i < ns * {NW}; i += blockDim.x) {{
         int s = i / {NW}, word = i - s * {NW};
-        rows[i] = sw[word * {S} + s];
+        if (every_row || passed[s]) rows[i] = sw[word * {S} + s];
     }}
 }}
 
