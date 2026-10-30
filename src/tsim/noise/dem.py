@@ -38,9 +38,9 @@ def get_detector_error_model(
             XZ surface code, single qubit depolarization has a Y error term which can be decomposed into simpler
             X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to
             decompose large errors into simple errors that affect at most two detectors.
-            When allow_non_deterministic_observables is set to true, the observables are analyzed as
-            detectors, so stim may choose a different (equally valid) decomposition than it would for the
-            same circuit with its observables kept as observables.
+            Decomposition keeps the logical observables as observables, as stim does, so it requires them
+            to be deterministic: stim raises a ValueError otherwise, even when
+            allow_non_deterministic_observables is set to true.
         flatten_loops: Defaults to false. When set to true, the output will not contain any `repeat` blocks.
             When set to false, the error analysis watches for loops in the circuit reaching a periodic steady
             state with respect to the detectors being introduced, the error mechanisms that affect them, and the
@@ -91,7 +91,9 @@ def get_detector_error_model(
     """
     obs: dict[int, list[int]] = defaultdict(list)
 
-    if not allow_non_deterministic_observables:
+    # Decomposition keeps the observables as observables: as detectors, they would
+    # count towards the two-symptom limit, and `D0 D1 L0` could no longer be graphlike.
+    if not allow_non_deterministic_observables or decompose_errors:
         return stim_circuit.detector_error_model(
             allow_gauge_detectors=allow_gauge_detectors,
             decompose_errors=decompose_errors,

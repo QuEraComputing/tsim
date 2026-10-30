@@ -607,8 +607,8 @@ class Circuit:
                 X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to
                 decompose large errors into simple errors that affect at most two detectors.
 
-                The observables are analyzed as detectors (so that they may be non-deterministic), so stim may
-                choose a different (equally valid) decomposition than it would for `self.stim_circuit`.
+                Decomposition keeps the logical observables as observables, as stim does, so it requires them
+                to be deterministic: stim raises a ValueError otherwise.
             flatten_loops: Defaults to false. When set to true, the output will not contain any `repeat` blocks.
                 When set to false, the error analysis watches for loops in the circuit reaching a periodic steady
                 state with respect to the detectors being introduced, the error mechanisms that affect them, and the

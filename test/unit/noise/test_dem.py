@@ -348,3 +348,36 @@ def test_get_detector_error_model_decompose_errors():
     assert decomposed.keys() == undecomposed.keys()
     for key, p in undecomposed.items():
         assert decomposed[key] == pytest.approx(p, abs=1e-12)
+
+    # It is stim's own decomposition.
+    assert dem == c.detector_error_model(decompose_errors=True)
+
+
+def test_get_detector_error_model_decompose_errors_keeps_observable_edges():
+    # An error flipping two detectors and an observable is already graphlike.
+    # With the observable turned into a detector it would have three symptoms
+    # and, with nothing to split it against, fail to decompose.
+    c = stim.Circuit("""
+        R 0 1 2 3
+        X_ERROR(0.1) 0
+        CX 0 1 0 2 0 3
+        M 1 2 3
+        DETECTOR rec[-3]
+        DETECTOR rec[-2]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    dem = get_detector_error_model(c, decompose_errors=True)
+    assert dem.approx_equals(stim.DetectorErrorModel("error(0.1) D0 D1 L0"), atol=1e-12)
+
+
+def test_get_detector_error_model_decompose_errors_needs_deterministic_observables():
+    c = stim.Circuit("""
+        R 0 1
+        H 0
+        X_ERROR(0.1) 1
+        M 0 1
+        DETECTOR rec[-1]
+        OBSERVABLE_INCLUDE(0) rec[-2]
+        """)
+    with pytest.raises(ValueError, match="non-deterministic observables"):
+        get_detector_error_model(c, decompose_errors=True)
