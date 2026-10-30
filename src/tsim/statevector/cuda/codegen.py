@@ -52,6 +52,14 @@ A longer tape loops over its amplitudes instead: they then live in local memory
 (cached in L1), but NVRTC compiles the tape in seconds instead of minutes.
 """
 
+BLOCK_AXES = 4
+"""Local axes that a looping tape's run of rotations may mix in one pass.
+
+A looping tape applies consecutive rotations whose X masks share these axes
+together, subcube by subcube, with the subcube's amplitudes in registers, so
+it reads and writes the amplitudes once per run instead of once per rotation.
+"""
+
 PRELUDE = r"""
 typedef unsigned long long u64;
 #define GOLDEN 0x9E3779B97F4A7C15ULL
@@ -112,11 +120,19 @@ def row_parity(row: np.ndarray) -> str:
 class _Tape:
     """Emits one component's actions for a thread group of ``2^tb`` threads."""
 
-    def __init__(self, program: LaneProgram, tb: int, emit: Callable[[str], None]):
+    def __init__(
+        self,
+        program: LaneProgram,
+        tb: int,
+        emit: Callable[[str], None],
+        name: str = "run",
+    ):
         self.p = program
         self.tb = tb
         self.T = 1 << tb
         self.emit = emit
+        self.name = name
+        self.helpers: list[str] = []
         spans = [self.span(a) for a in range(len(program.kind))]
         # NOTE: one runtime index puts the whole amplitude array in local memory,
         # so a tape either unrolls every action or loops every wide one.
@@ -146,15 +162,10 @@ class _Tape:
             emit(
                 f"      float2 h1 = ff ? make_float2({f32(g0.real)}, {f32(g0.imag)}) : make_float2({f32(g1.real)}, {f32(g1.imag)});"
             )
-            if self.loop:
+            for loc in range(self.span(a)):
                 emit(
-                    f"      #pragma unroll 1\n      for (int l = 0; l < {self.span(a)}; ++l) a[l] = cmul(a[l], par((u64)(l & {zl})) ? h1 : h0);"
+                    f"      a[{loc}] = cmul(a[{loc}], {'h1' if _par(loc & zl) else 'h0'});"
                 )
-            else:
-                for loc in range(self.span(a)):
-                    emit(
-                        f"      a[{loc}] = cmul(a[{loc}], {'h1' if _par(loc & zl) else 'h0'});"
-                    )
             emit("    }")
             return
         coupling = p.coupling[a]
@@ -168,9 +179,6 @@ class _Tape:
         def sign(loc: int) -> str:
             return "-s" if _par((loc ^ xl) & zl) else "s"
 
-        if self.loop:
-            self._rotation_loop(a, c, update)
-            return
         if xl:
             low = xl & -xl
             for loc in range(self.span(a)):
@@ -284,31 +292,112 @@ class _Tape:
     # NOTE: the loops index ``a`` at runtime, so wide tapes keep their
     # amplitudes in local memory (cached in L1) and compile quickly.
 
-    def _rotation_loop(self, a: int, c: str, update: str) -> None:
-        emit = self.emit
-        xt, xl, _, zl = self.masks(a)
-        span = self.span(a)
-        if xl:
-            low = xl & -xl
-            emit(f"    #pragma unroll 1\n    for (int u = 0; u < {span // 2}; ++u) {{")
-            emit(
-                f"      int l = ((u & ~{low - 1}) << 1) | (u & {low - 1}), m = l ^ {xl};"
-            )
-            emit(
-                f"      float2 ql = {self.shfl('a[m]', xt)}, qm = {self.shfl('a[l]', xt)};"
-            )
-            emit(
-                f"      float sl = par((u64)((l ^ {xl}) & {zl})) ? -s : s, sm = par((u64)((m ^ {xl}) & {zl})) ? -s : s;"
-            )
-            emit(
-                f"      a[l] = {update}(a[l], {c}, sl, ql); a[m] = {update}(a[m], {c}, sm, qm);"
-            )
-            emit("    }")
-        else:
-            emit(f"    #pragma unroll 1\n    for (int l = 0; l < {span}; ++l) {{")
-            emit(f"      float2 q = {self.shfl('a[l]', xt)};")
-            emit(f"      a[l] = {update}(a[l], {c}, par((u64)(l & {zl})) ? -s : s, q);")
-            emit("    }")
+    def run(self, a: int) -> tuple[list[int], int]:
+        """Return the rotations from ``a`` that one pass applies, and the next action.
+
+        The run ends at a splitting measurement or where its X masks would mix
+        more than ``BLOCK_AXES`` local axes; measurements that do not split
+        change no amplitude.
+        """
+        p, rotations, axes, b = self.p, [], 0, a
+        while b < len(p.kind):
+            kind = int(p.kind[b])
+            if kind in (ROTATE, ROTATE_DIAG):
+                joined = axes | (int(p.x_mask[b]) >> self.tb)
+                if rotations and bin(joined).count("1") > BLOCK_AXES:
+                    break
+                rotations.append(b)
+                axes = joined
+            elif p.splits[b]:
+                break
+            b += 1
+        return rotations, b
+
+    def rotation_run(self, rotations: list[int]) -> None:
+        """Apply ``rotations`` in one pass over the subcubes of their X axes.
+
+        The pass is a function of its own, so that NVRTC compiles a long tape's
+        runs one by one; the caller passes each rotation's signed strength (or
+        diagonal factors), which depend on the shot.
+        """
+        p, emit = self.p, self.emit
+        axes = 0
+        for a in rotations:
+            axes |= int(p.x_mask[a]) >> self.tb
+        bits = [i for i in range(axes.bit_length()) if axes >> i & 1]
+        # NOTE: the subcube's amplitude j is local base + offset[j].
+        offset = [
+            sum(1 << b for i, b in enumerate(bits) if j >> i & 1)
+            for j in range(1 << len(bits))
+        ]
+        index = {o: j for j, o in enumerate(offset)}
+        span = max(self.span(a) for a in rotations)
+        name = f"{self.name}_{rotations[0]}"
+        params, args = [], []
+        for a in rotations:
+            xt, xl, zt, zl = self.masks(a)
+            f = f"({row_parity(p.sign_row[a])} ^ {int(p.sign_const[a])})"
+            if int(p.kind[a]) == ROTATE_DIAG:
+                g0, g1 = p.factor[a]
+                tpar = f" ^ par((u64)(t & {zt}))" if zt else ""
+                params += [f"float2 h0_{a}", f"float2 h1_{a}"]
+                v0 = f"make_float2({f32(g0.real)}, {f32(g0.imag)})"
+                v1 = f"make_float2({f32(g1.real)}, {f32(g1.imag)})"
+                args += [f"({f}{tpar}) ? {v1} : {v0}", f"({f}{tpar}) ? {v0} : {v1}"]
+            else:
+                coupling = p.coupling[a]
+                strength = coupling.imag if coupling.real == 0 else coupling.real
+                tpar = f" ^ par((u64)((t ^ {xt}) & {zt}))" if zt else ""
+                params.append(f"float s{a}")
+                args.append(f"({f}{tpar}) ? {f32(-strength)} : {f32(strength)}")
+        body = [
+            f"__device__ __noinline__ void {name}(float2* a, int t, unsigned gmask, {', '.join(params)}) {{",
+            f"    #pragma unroll 1\n    for (int base = 0; base < {span}; base = ((base | {axes}) + 1) & ~{axes}) {{",
+            f"        float2 r[{len(offset)}];",
+        ]
+        body += [f"        r[{j}] = a[base + {o}];" for j, o in enumerate(offset)]
+        for a in rotations:
+            xt, xl, zt, zl = self.masks(a)
+            # NOTE: a local index's sign parity is its subcube's (base) and its offset's.
+            outside = zl & ~axes
+            pb = f"par((u64)(base & {outside}))" if outside else "0"
+            if int(p.kind[a]) == ROTATE_DIAG:
+                body.append(f"        {{ int pb = {pb};")
+                body += [
+                    f"          r[{j}] = cmul(r[{j}], (pb ^ {_par(o & zl)}) ? h1_{a} : h0_{a});"
+                    for j, o in enumerate(offset)
+                ]
+                body.append("        }")
+                continue
+            coupling = p.coupling[a]
+            update = "cmac_i" if coupling.real == 0 else "cmac"
+            c = f32(p.cos[a])
+            body.append(f"        {{ float sb = {pb} ? -s{a} : s{a};")
+            sign = ["-sb" if _par((o ^ xl) & zl) else "sb" for o in offset]
+            for j, o in enumerate(offset):
+                m = o ^ xl
+                if xl and m < o:
+                    continue
+                if xl:
+                    k = index[m]
+                    body.append(
+                        f"          {{ float2 ql = {self.shfl(f'r[{k}]', xt)}, qm = {self.shfl(f'r[{j}]', xt)};"
+                    )
+                    body.append(
+                        f"            r[{j}] = {update}(r[{j}], {c}, {sign[j]}, ql); r[{k}] = {update}(r[{k}], {c}, {sign[k]}, qm); }}"
+                    )
+                else:
+                    body.append(
+                        f"          {{ float2 q = {self.shfl(f'r[{j}]', xt)}; r[{j}] = {update}(r[{j}], {c}, {sign[j]}, q); }}"
+                    )
+            body.append("        }")
+        body += [f"        a[base + {o}] = r[{j}];" for j, o in enumerate(offset)]
+        body += ["    }", "}"]
+        self.helpers.append("\n".join(body))
+        emit(
+            f"    // actions {rotations[0]}-{rotations[-1]}: {len(rotations)} rotations on local axes {axes:#x}"
+        )
+        emit(f"    {name}(a, t, gmask, {', '.join(args)});")
 
     def _weights_loop(self, a: int) -> None:
         emit = self.emit
@@ -405,7 +494,7 @@ def tape_function(
     """
     lines: list[str] = []
     emit = lines.append
-    tape = _Tape(program, tb, emit)
+    tape = _Tape(program, tb, emit, f"run{index}")
     p = program
     A = len(p.kind)
     n = 1 << max(p.width - tb, 0)
@@ -440,8 +529,15 @@ def tape_function(
         emit(f"    float ev_{a} = 0.f; int b_{a} = 0;")
     if p.prune_first.any():
         tape.prune(p.prune_first, -1)
-    for a in range(A):
+    a = -1
+    while a + 1 < A:
+        a += 1
         kind = int(p.kind[a])
+        if kind in (ROTATE, ROTATE_DIAG) and tape.loop:
+            rotations, after = tape.run(a)
+            tape.rotation_run(rotations)
+            a = after - 1
+            continue
         emit(f"    // action {a}: kind {kind}")
         if kind in (ROTATE, ROTATE_DIAG):
             tape.rotation(a)
@@ -518,4 +614,4 @@ def tape_function(
         emit("    }")
     emit("    return grave;")
     emit("}")
-    return "\n".join(lines)
+    return "\n\n".join([*tape.helpers, "\n".join(lines)])

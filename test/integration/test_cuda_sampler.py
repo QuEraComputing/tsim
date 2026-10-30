@@ -8,6 +8,7 @@ import pytest
 
 from tsim.circuit import Circuit
 from tsim.statevector.cuda import available
+from tsim.statevector.cuda import codegen
 from tsim.statevector.cuda import sampler as cuda_sampler
 from tsim.statevector.program import StatevectorComponent
 
@@ -435,6 +436,36 @@ def test_cuda_wide_components_match_the_cpu_executor(width, layers):
     # NOTE: pairs of bits, which a wrong shuffle partner would scramble.
     for a, b in [(0, 1), (0, width - 1), (width // 2, width - 1)]:
         assert_counts_match(got[:, [a, b]], expected[:, [a, b]])
+
+
+@pytest.mark.parametrize(("width", "layers"), [(6, 6), (8, 8), (11, 6)])
+def test_cuda_looping_tapes_match_the_cpu_executor(monkeypatch, width, layers):
+    # NOTE: a tape past the unroll budget loops, applying runs of rotations together.
+    monkeypatch.setattr(codegen, "UNROLL_BUDGET", 0)
+    circuit = _random_unitary_circuit(width, layers, seed=width)
+    shots = 200_000
+    expected = circuit.compile_sampler(seed=1).sample(shots)
+    got = circuit.compile_sampler(seed=2, device="cuda").sample(shots)
+    np.testing.assert_allclose(
+        got.mean(axis=0), expected.mean(axis=0), atol=5 * 0.5 / np.sqrt(shots / 2)
+    )
+    for a, b in [(0, 1), (0, width - 1), (width // 2, width - 1)]:
+        assert_counts_match(got[:, [a, b]], expected[:, [a, b]])
+
+
+@pytest.mark.parametrize("name", sorted(CIRCUITS))
+def test_cuda_looping_tapes_match_stabilizer_rank(monkeypatch, name):
+    # NOTE: measurements, projections and pruning in looping tapes.
+    monkeypatch.setattr(codegen, "UNROLL_BUDGET", 0)
+    circuit = Circuit(CIRCUITS[name])
+    shots = 40_000
+    expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
+        shots, batch_size=10_000, append_observables=True
+    )
+    got = circuit.compile_detector_sampler(seed=2, device="cuda").sample(
+        shots, append_observables=True
+    )
+    assert_counts_match(got, expected)
 
 
 def test_cuda_rejects_components_wider_than_its_limit():
