@@ -181,7 +181,7 @@ extern "C" __global__ void gather_float(const float* __restrict__ values, long l
 
 @dataclass
 class _Launch:
-    """The device tables of one noise launch: its segments and channels."""
+    """The device tables of one noise launch: its segments and records."""
 
     args: list[Any]
     num_segments: int
@@ -318,11 +318,7 @@ class CudaShotSampler:
         self._channels = channels
         self._noise = noise_tables(channels, layout.noise, layout.num_words)
         n = self._noise
-        self._record_args = [
-            cp.asarray(n.records.view(np.uint8)),
-            cp.asarray(n.overflow_word),
-            cp.asarray(n.overflow_mask),
-        ]
+        self._record_args = [cp.asarray(n.overflow.view(np.uint8))]
         self._all = self._launch(n.groups)
         self._modules: dict[bytes, _Module] = {}
         self._buffers: dict[str, Any] = {}
@@ -447,12 +443,12 @@ class CudaShotSampler:
         return compiled
 
     def _launch(self, groups: NoiseGroups) -> _Launch:
-        """Upload a noise launch's segments and channels."""
+        """Upload a noise launch's segments and records."""
         cp = self._cp
         return _Launch(
             args=[
                 *(cp.asarray(a) for a in groups.segments),
-                cp.asarray(groups.channels),
+                cp.asarray(groups.records.view(np.uint8)),
             ],
             num_segments=len(groups.segments[0]),
             max_events=groups.max_events,

@@ -1,24 +1,28 @@
 """Noise sampling into shot words on the GPU.
 
 A block owns ``S`` consecutive shots and keeps their words in shared memory,
-word major. The channels with equal fire probability form a group, and within
-a block the group's channels make ``S * len(group)`` Bernoulli trials, channel
-major (trial ``i`` is channel ``group[i / S]`` on shot ``i % S``). The host cuts
-the groups into *segments* of about ``FAULTS_PER_SEGMENT`` expected faults. In
-phase 1 the threads walk the segments with geometric skips and record each
-fault as an *event* (its row, its channel and 32 random bits) in shared memory;
-phase 2 applies the events: it picks each fault's outcome with the channel's
-alias table and XORs its flips into the words. Recording first keeps the warps
-converged in phase 2, and many of its table reads in flight.
+word major. The channels with equal fire probability and equal numbers of
+outcomes form a group, and within a block the group's channels make
+``S * len(group)`` Bernoulli trials, channel major (trial ``i`` is channel
+``group[i / S]`` on shot ``i % S``). The host cuts the groups into *segments* of
+about ``FAULTS_PER_SEGMENT`` expected faults. In phase 1 the threads walk the
+segments with geometric skips and record each fault as an *event* in shared
+memory: its row, the record of the alias slot it draws and the draw's
+fraction; phase 2 applies the events: it keeps the slot's outcome or takes its
+alias and XORs the outcome's flips into the words. Recording first keeps the
+warps converged in phase 2, and many of its table reads in flight.
 
-Each fault outcome is one aligned 32-byte record, so a fault reads about two
-sectors of the tables: its channel's ``(first outcome, outcomes)`` pair and a
-record (and its alias's record):
+Each launch lays out its channels' outcomes in group order, so a group's
+channel ``c`` has its records at ``first + c * outcomes`` and a fault reads one
+aligned 32-byte record (and its alias's, in the same channel):
 
     alias:  bits 0-24 keep threshold (probability * 2^24), bits 25-31 alias slot
     words:  the first two flipped words (16 bits each)
     extra:  bits 0-7 number of flips, bits 8-31 start of the rest in the overflow
     masks:  the first two flip masks
+
+The flips past an outcome's first two are 16-byte ``(word, mask)`` pairs, in
+order.
 
 A block then screens its shots (constants, postselected direct detectors),
 writes their rows (coalesced; only the survivors' unless every row is asked
@@ -36,7 +40,7 @@ unchanged.
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -59,39 +63,39 @@ _RECORD = np.dtype(
     ],
     align=True,
 )
+_FLIP = np.dtype([("word", "<u4"), ("pad", "<u4"), ("mask", "<u8")], align=True)
 
 SOURCE = r"""
 struct __align__(32) Record {{ unsigned alias; unsigned words; unsigned extra; unsigned pad; u64 m0; u64 m1; }};
+struct __align__(16) Flip {{ unsigned word; unsigned pad; u64 mask; }};
 
-__device__ __forceinline__ void apply_fault(u64* sw, int row, int2 channel, unsigned bits,
-    const Record* __restrict__ records, const int* __restrict__ overflow_word,
-    const u64* __restrict__ overflow_mask)
+// The fault drawn at record ``rec`` (bits 0-23 of ``draw`` its fraction, bits
+// 24-31 its slot in the channel): the slot's outcome or its alias's.
+__device__ __forceinline__ void apply_fault(u64* sw, int row, unsigned rec, unsigned draw,
+    const Record* __restrict__ records, const Flip* __restrict__ overflow)
 {{
-    unsigned long long x = (unsigned long long)(bits >> 8) * (unsigned)channel.y;
-    int slot = (int)(x >> 24);
-    unsigned fraction = (unsigned)(x & 0xFFFFFF);
-    Record r = records[channel.x + slot];
-    if (fraction >= (r.alias & 0x1FFFFFF)) r = records[channel.x + (r.alias >> 25)];
+    Record r = records[rec];
+    if ((draw & 0xFFFFFF) >= (r.alias & 0x1FFFFFF)) r = records[rec - (draw >> 24) + (r.alias >> 25)];
     int flips = r.extra & 255;
     if (flips > 0) atomicXor(&sw[(r.words & 0xFFFF) * {S} + row], r.m0);
     if (flips > 1) atomicXor(&sw[(r.words >> 16) * {S} + row], r.m1);
     for (int j = 2; j < flips; ++j) {{
-        int o = (r.extra >> 8) + j - 2;
-        atomicXor(&sw[overflow_word[o] * {S} + row], overflow_mask[o]);
+        Flip f = overflow[(r.extra >> 8) + j - 2];
+        atomicXor(&sw[f.word * {S} + row], f.mask);
     }}
 }}
 
 // Phases 1 and 2: draw the segments' faults on the block's ``ns`` shots and XOR them into ``sw``.
 __device__ __forceinline__ void add_faults(u64* sw, uint2* events, int* num_events, int max_events,
     int ns, u64 stream, int num_segments,
-    const int* __restrict__ seg_first, const int* __restrict__ seg_begin,
-    const int* __restrict__ seg_end, const float* __restrict__ seg_log_keep,
-    const int2* __restrict__ channels, const Record* __restrict__ records,
-    const int* __restrict__ overflow_word, const u64* __restrict__ overflow_mask)
+    const int* __restrict__ seg_first, const int* __restrict__ seg_outcomes,
+    const int* __restrict__ seg_begin, const int* __restrict__ seg_end,
+    const float* __restrict__ seg_log_keep, const Record* __restrict__ records,
+    const Flip* __restrict__ overflow)
 {{
     for (int sg = threadIdx.x; sg < num_segments; sg += blockDim.x) {{
         float lk = seg_log_keep[sg];
-        int first = seg_first[sg], end = seg_end[sg];
+        int first = seg_first[sg], outcomes = seg_outcomes[sg], end = seg_end[sg];
         int idx = seg_begin[sg] - 1;
         u64 state = mix64(stream ^ ((u64)sg * GOLDEN));
         while (true) {{
@@ -102,28 +106,32 @@ __device__ __forceinline__ void add_faults(u64* sw, uint2* events, int* num_even
             idx += 1 + (int)skip;
             int ch = idx / {S}, row = idx - ch * {S};
             if (row >= ns) continue;  // the last block's missing shots
-            // NOTE: the skip reads the high 24 bits of r, the outcome its low 32.
-            unsigned bits = (unsigned)r;
+            // NOTE: the skip reads the high 24 bits of r, the outcome its low 32:
+            // a slot from the high 24 of those, the fraction of the slot below.
+            unsigned long long x = (unsigned long long)((unsigned)r >> 8) * (unsigned)outcomes;
+            unsigned slot = (unsigned)(x >> 24);
+            unsigned rec = (unsigned)(first + ch * outcomes) + slot;
+            unsigned draw = (unsigned)(x & 0xFFFFFF) | (slot << 24);
             int e = atomicAdd(num_events, 1);
-            if (e < max_events) events[e] = make_uint2((unsigned)row | ((unsigned)(first + ch) << 8), bits);
-            else apply_fault(sw, row, channels[first + ch], bits, records, overflow_word, overflow_mask);
+            if (e < max_events) events[e] = make_uint2((unsigned)row | (rec << 8), draw);
+            else apply_fault(sw, row, rec, draw, records, overflow);
         }}
     }}
     __syncthreads();
     int ne = min(*num_events, max_events);
     for (int e = threadIdx.x; e < ne; e += blockDim.x) {{
         uint2 v = events[e];
-        apply_fault(sw, v.x & 255, channels[v.x >> 8], v.y, records, overflow_word, overflow_mask);
+        apply_fault(sw, v.x & 255, v.x >> 8, v.y, records, overflow);
     }}
     __syncthreads();
 }}
 
 extern "C" __global__ void __launch_bounds__(256) noise(
     u64* __restrict__ out, long long shots, u64 seed, int num_segments, int max_events,
-    const int* __restrict__ seg_first, const int* __restrict__ seg_begin,
-    const int* __restrict__ seg_end, const float* __restrict__ seg_log_keep,
-    const int2* __restrict__ channels, const Record* __restrict__ records,
-    const int* __restrict__ overflow_word, const u64* __restrict__ overflow_mask,
+    const int* __restrict__ seg_first, const int* __restrict__ seg_outcomes,
+    const int* __restrict__ seg_begin, const int* __restrict__ seg_end,
+    const float* __restrict__ seg_log_keep, const Record* __restrict__ records,
+    const Flip* __restrict__ overflow,
     const u64* __restrict__ constant, const u64* __restrict__ screen, const u64* __restrict__ kept,
     unsigned* __restrict__ queue, unsigned* __restrict__ count, int every_row)
 {{
@@ -137,8 +145,8 @@ extern "C" __global__ void __launch_bounds__(256) noise(
     if (threadIdx.x == 0) num_events = 0;
     __syncthreads();
     add_faults(sw, events, &num_events, max_events, ns, seed ^ ((u64)blockIdx.x * 0xD1B54A32D192ED03ULL),
-               num_segments, seg_first, seg_begin, seg_end, seg_log_keep, channels, records,
-               overflow_word, overflow_mask);
+               num_segments, seg_first, seg_outcomes, seg_begin, seg_end, seg_log_keep, records,
+               overflow);
     for (int s0 = 0; s0 < {S}; s0 += blockDim.x) {{
         int s = s0 + threadIdx.x;
         bool alive = false;
@@ -183,10 +191,10 @@ extern "C" __global__ void __launch_bounds__(256) noise(
 extern "C" __global__ void __launch_bounds__(256) noise_kept(
     const u64* __restrict__ out, long long n, const unsigned* __restrict__ index, u64 seed,
     int num_segments, int max_events,
-    const int* __restrict__ seg_first, const int* __restrict__ seg_begin,
-    const int* __restrict__ seg_end, const float* __restrict__ seg_log_keep,
-    const int2* __restrict__ channels, const Record* __restrict__ records,
-    const int* __restrict__ overflow_word, const u64* __restrict__ overflow_mask,
+    const int* __restrict__ seg_first, const int* __restrict__ seg_outcomes,
+    const int* __restrict__ seg_begin, const int* __restrict__ seg_end,
+    const float* __restrict__ seg_log_keep, const Record* __restrict__ records,
+    const Flip* __restrict__ overflow,
     unsigned char* __restrict__ dst, int nb, const int* __restrict__ cols, int m,
     const unsigned char* __restrict__ run)
 {{
@@ -202,8 +210,8 @@ extern "C" __global__ void __launch_bounds__(256) noise_kept(
     if (threadIdx.x == 0) num_events = 0;
     __syncthreads();
     add_faults(sw, events, &num_events, max_events, ns, seed ^ ((u64)blockIdx.x * 0xD1B54A32D192ED03ULL),
-               num_segments, seg_first, seg_begin, seg_end, seg_log_keep, channels, records,
-               overflow_word, overflow_mask);
+               num_segments, seg_first, seg_outcomes, seg_begin, seg_end, seg_log_keep, records,
+               overflow);
     unsigned char* rows = dst + base * nb;
     for (int i = threadIdx.x; i < ns * nb; i += blockDim.x) {{
         int s = i / nb, b = i - s * nb;
@@ -231,16 +239,17 @@ class NoiseGroups:
 
     Attributes:
         max_events: Events a block records before it applies faults at once.
-        segments: ``(first, begin, end, log_keep)`` of each segment: its group's
-            first channel (in group order), its trial range and log(1 - p).
-        channels: Each channel's ``(first outcome, outcomes)``, in group order.
+        segments: ``(first, outcomes, begin, end, log_keep)`` of each segment:
+            its group's first record and outcomes per channel, its trial range
+            and log(1 - p).
+        records: The channels' outcome records, in group order.
         faults: Expected faults per shot.
 
     """
 
     max_events: int
-    segments: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-    channels: np.ndarray
+    segments: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+    records: np.ndarray
     faults: float
 
 
@@ -251,9 +260,8 @@ class NoiseTables:
     Attributes:
         block_shots: Shots per block (``S``).
         groups: Every channel's groups.
-        records: One 32-byte record per fault outcome.
-        overflow_word: Words of the flips past an outcome's first two.
-        overflow_mask: Masks of the flips past an outcome's first two.
+        records: One 32-byte record per fault outcome, in channel order.
+        overflow: The ``(word, mask)`` flips past an outcome's first two.
         p_fire: Each channel's fire probability.
         outcome_start: Each channel's first outcome (and the end).
         num_words: Words per shot.
@@ -263,8 +271,7 @@ class NoiseTables:
     block_shots: int
     groups: NoiseGroups
     records: np.ndarray
-    overflow_word: np.ndarray
-    overflow_mask: np.ndarray
+    overflow: np.ndarray
     p_fire: np.ndarray
     outcome_start: np.ndarray
     num_words: int
@@ -275,40 +282,40 @@ class NoiseTables:
 
     def subset(self, select: np.ndarray) -> NoiseGroups:
         """Return the groups of the channels ``select`` (a boolean mask)."""
-        return _groups(
-            self.p_fire, self.outcome_start, self.block_shots, self.num_words, select
-        )
+        return _groups(self, select)
 
 
-def _groups(
-    p_fire: np.ndarray,
-    outcome_start: np.ndarray,
-    block_shots: int,
-    num_words: int,
-    select: np.ndarray,
-) -> NoiseGroups:
+def _groups(tables: NoiseTables, select: np.ndarray) -> NoiseGroups:
+    p_fire, outcome_start, S = tables.p_fire, tables.outcome_start, tables.block_shots
+    outcomes = np.diff(outcome_start)
     faults = float(p_fire[select].sum())
     max_events = min(
-        max(256, int(2 * faults * block_shots + 256)),
-        (SHARED_BYTES - 8 * num_words * block_shots) // 8,
+        max(256, int(2 * faults * S + 256)),
+        (SHARED_BYTES - 8 * tables.num_words * S) // 8,
     )
-    # NOTE: channels of equal fire probability form a group.
+    # NOTE: channels of equal fire probability and outcomes form a group, so a
+    # group's channel c has its records at first + c * outcomes.
     chosen = np.flatnonzero(select)
-    order = chosen[np.argsort(p_fire[chosen], kind="stable")]
-    p_sorted = p_fire[order]
-    starts = np.flatnonzero(np.diff(p_sorted, prepend=-1.0) != 0)
+    order = chosen[np.lexsort((outcomes[chosen], p_fire[chosen]))]
+    p_sorted, n_sorted = p_fire[order], outcomes[order]
+    change = (np.diff(p_sorted, prepend=-1.0) != 0) | (
+        np.diff(n_sorted, prepend=-1) != 0
+    )
+    starts = np.flatnonzero(change)
     group_start = np.append(starts, len(order))
-    first, begin, end, log_keep = [], [], [], []
+    record_start = np.concatenate([[0], np.cumsum(n_sorted)])
+    first, per, begin, end, log_keep = [], [], [], [], []
     for g in range(len(starts)):
         lo, hi = int(group_start[g]), int(group_start[g + 1])
         p = float(p_sorted[lo])
         lk = -np.inf if p >= 1.0 else float(np.log1p(-p))
-        trials = block_shots * (hi - lo)
+        trials = S * (hi - lo)
         pieces = max(1, round(trials * min(p, 1.0) / FAULTS_PER_SEGMENT))
         cuts = np.linspace(0, trials, pieces + 1).astype(np.int64)
         for a, b in itertools.pairwise(cuts):
             if b > a:
-                first.append(lo)
+                first.append(int(record_start[lo]))
+                per.append(int(n_sorted[lo]))
                 begin.append(a)
                 end.append(b)
                 log_keep.append(lk)
@@ -318,16 +325,19 @@ def _groups(
     # take a second segment take short ones.
     expected = (np.array(end) - np.array(begin)) * -np.expm1(np.array(log_keep))
     by_work = np.argsort(-expected, kind="stable")
-    pairs = np.stack([outcome_start[order], np.diff(outcome_start)[order]], axis=1)
+    # NOTE: each chosen channel's outcomes, in group order.
+    within = np.arange(int(record_start[-1])) - np.repeat(record_start[:-1], n_sorted)
+    records = tables.records[np.repeat(outcome_start[order], n_sorted) + within]
     return NoiseGroups(
         max_events=max_events,
         segments=(
             np.asarray(first, np.int32)[by_work],
+            np.asarray(per, np.int32)[by_work],
             np.asarray(begin, np.int32)[by_work],
             np.asarray(end, np.int32)[by_work],
             np.asarray(log_keep, np.float32)[by_work],
         ),
-        channels=pairs.astype(np.int32).reshape(-1, 2),
+        records=records,
         faults=faults,
     )
 
@@ -363,9 +373,10 @@ def noise_tables(
             f"{num_words} shot words do not fit the noise kernel's shared memory"
         )
     outcome_start = fire.outcome_start
+    if len(fire.alias_prob) >= 1 << 24:
+        raise ValueError("the CUDA noise sampler supports fewer than 2^24 outcomes")
     records = np.zeros(len(fire.alias_prob), dtype=_RECORD)
-    overflow_word: list[int] = []
-    overflow_mask: list[int] = []
+    overflow: list[tuple[int, int]] = []
     for c in range(len(fire.p_fire)):
         lo, hi = int(outcome_start[c]), int(outcome_start[c + 1])
         if hi - lo > 127:
@@ -387,19 +398,22 @@ def noise_tables(
             )
             records[k]["m0"] = masks[0] if masks else 0
             records[k]["m1"] = masks[1] if len(masks) > 1 else 0
-            records[k]["extra"] = len(words) | (len(overflow_word) << 8)
-            overflow_word.extend(words[2:])
-            overflow_mask.extend(masks[2:])
-    if len(overflow_word) >= 1 << 24:
+            records[k]["extra"] = len(words) | (len(overflow) << 8)
+            overflow.extend(zip(words[2:], masks[2:], strict=True))
+    if len(overflow) >= 1 << 24:
         raise ValueError("too many noise flips for the CUDA noise sampler")
-    every = np.ones(len(fire.p_fire), dtype=bool)
-    return NoiseTables(
+    pairs = np.zeros(len(overflow) + 1, dtype=_FLIP)
+    if overflow:
+        pairs["word"][:-1] = [w for w, _ in overflow]
+        pairs["mask"][:-1] = [m for _, m in overflow]
+    tables = NoiseTables(
         block_shots=block_shots,
-        groups=_groups(fire.p_fire, outcome_start, block_shots, num_words, every),
+        groups=NoiseGroups(0, (np.empty(0, np.int32),) * 5, records[:0], 0.0),
         records=records,
-        overflow_word=np.asarray([*overflow_word, 0], np.int32),
-        overflow_mask=np.asarray([*overflow_mask, 0], np.uint64),
+        overflow=pairs,
         p_fire=fire.p_fire,
         outcome_start=outcome_start,
         num_words=num_words,
     )
+    every = np.ones(len(fire.p_fire), dtype=bool)
+    return replace(tables, groups=_groups(tables, every))
