@@ -33,7 +33,7 @@ import numpy as np
 from tsim.core.types import CompiledProgram
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.cuda import runtime
-from tsim.statevector.cuda.codegen import PRELUDE, tape_function
+from tsim.statevector.cuda.codegen import PRELUDE, hex64, tape_function
 from tsim.statevector.cuda.noise import NoiseGroups, deferred_channels, noise_tables
 from tsim.statevector.program import STABILIZER_RANK_HINT
 from tsim.statevector.shared import pack_bits
@@ -63,7 +63,7 @@ _KERNELS = r"""
 extern "C" __global__ void __launch_bounds__({block}) tape(
     u64* __restrict__ out, long long first_shot, const u64* __restrict__ seeds,
     const unsigned* __restrict__ queue, const unsigned* __restrict__ count,
-    const u64* __restrict__ psm, unsigned* __restrict__ acc_queue, unsigned* __restrict__ acc_count,
+    unsigned* __restrict__ acc_queue, unsigned* __restrict__ acc_count,
     float* __restrict__ expectations, unsigned* __restrict__ deviation)
 {{
     int t = threadIdx.x & {T1};
@@ -79,6 +79,7 @@ extern "C" __global__ void __launch_bounds__({block}) tape(
         u64 row_index = queue[valid ? q : n - 1];
         u64 shot = first_shot + row_index;
         u64* row = out + row_index * {NW};
+        // NOTE: the words that no component reads are dead loads, dropped.
         u64 w[{NW}];
         #pragma unroll
         for (int i = 0; i < {NW}; ++i) w[i] = row[i];
@@ -86,17 +87,15 @@ extern "C" __global__ void __launch_bounds__({block}) tape(
         int grave = 0x7fffffff;
 {calls}
         if (valid && t == 0) {{
-            #pragma unroll
-            for (int i = 0; i < {OW}; ++i) row[i] = w[i];
+{stores}
             if (expectations != nullptr) {{
                 #pragma unroll
                 for (int i = 0; i < {NO}; ++i) expectations[row_index * {NO} + i] = ev[i];
             }}
         }}
         if (acc_queue != nullptr) {{
-            u64 hit = 0;
-            #pragma unroll
-            for (int i = 0; i < {OW}; ++i) hit |= w[i] & psm[i];
+            // NOTE: the postselected direct outputs passed the screen already.
+            u64 hit = {hits};
             bool accepted = valid && t == 0 && hit == 0;
             unsigned ballot = __ballot_sync(0xffffffffu, accepted);
             if (ballot) {{
@@ -202,7 +201,6 @@ class _Module:
     publish: Any
     screen: Any
     kept: Any
-    psm: Any
     tape_blocks: int
     has_mask: bool
     columns: np.ndarray
@@ -383,6 +381,17 @@ class CudaShotSampler:
             if T == 32
             else f"((1u << {T}) - 1) << (threadIdx.x & 31 & ~{T - 1})"
         )
+        bits = np.zeros(64 * layout.output_words, dtype=bool)
+        if mask is not None:
+            bits[: len(mask)] = mask
+        psm_words = pack_bits(bits, layout.output_words)
+        # NOTE: the tapes write only their outputs' words, and test the
+        # postselected outputs among them.
+        written = sorted({int(w) for p in plan.programs for w in p.out_words})
+        stores = "\n".join(f"            row[{w}] = w[{w}];" for w in written)
+        hits = " | ".join(
+            f"(w[{w}] & {hex64(psm_words[w])})" for w in written if psm_words[w]
+        )
         source = (
             PRELUDE
             + self._noise.source(layout.output_words)
@@ -397,6 +406,8 @@ class CudaShotSampler:
                 NO=max(1, len(self._observables)),
                 NE=max(1, len(self._observables)),
                 calls=calls,
+                stores=stores,
+                hits=hits or "0",
             )
         )
         module = self._compile(source)
@@ -409,10 +420,6 @@ class CudaShotSampler:
                     tape.ptr, block, 0
                 ),
             )
-        bits = np.zeros(64 * layout.output_words, dtype=bool)
-        if mask is not None:
-            bits[: len(mask)] = mask
-        psm_words = pack_bits(bits, layout.output_words)
         columns = np.flatnonzero(~bits[: layout.num_outputs]).astype(np.int32)
         # NOTE: a byte of consecutive outputs is a shift of the row's words.
         octets = np.pad(columns, (0, -len(columns) % 8), constant_values=-1)
@@ -429,7 +436,6 @@ class CudaShotSampler:
             publish=module.get_function("publish"),
             screen=cp.asarray(plan.screen),
             kept=cp.asarray(plan.kept),
-            psm=cp.asarray(psm_words),
             tape_blocks=runtime.multiprocessors() * blocks_per_sm,
             has_mask=mask is not None,
             columns=columns,
@@ -590,7 +596,6 @@ class CudaShotSampler:
                     seeds,
                     queue,
                     counts[0:1],
-                    module.psm,
                     accepted if module.has_mask else np.uint64(0),
                     counts[1:2],
                     values if values is not None else np.uint64(0),
