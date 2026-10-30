@@ -295,3 +295,89 @@ def test_get_detector_error_model_mpp_measurement_counting():
         ValueError, match=r"The number of observables changed after conversion\."
     ):
         get_detector_error_model(c)
+
+
+def _merged_mechanisms(dem: stim.DetectorErrorModel) -> dict[frozenset, float]:
+    """Each error's full effect (its components XORed), equal effects merged."""
+    merged: dict[frozenset, float] = {}
+    for instruction in dem.flattened():
+        if instruction.type != "error":
+            continue
+        effect: set[tuple[bool, int]] = set()
+        for t in instruction.targets_copy():
+            if not t.is_separator():
+                effect ^= {(t.is_logical_observable_id(), t.val)}
+        p, key = instruction.args_copy()[0], frozenset(effect)
+        q = merged.get(key, 0.0)
+        merged[key] = p + q - 2 * p * q
+    return merged
+
+
+def test_get_detector_error_model_decompose_errors():
+    c = stim.Circuit.generated(
+        "surface_code:rotated_memory_x",
+        distance=3,
+        rounds=2,
+        after_clifford_depolarization=0.001,
+    )
+    dem = get_detector_error_model(c, decompose_errors=True)
+
+    # Every component is graphlike, and some mechanism was actually split.
+    components = []
+    for instruction in dem.flattened():
+        if instruction.type != "error":
+            continue
+        component: list[stim.DemTarget] = []
+        for t in [*instruction.targets_copy(), stim.target_separator()]:
+            if t.is_separator():
+                components.append(component)
+                component = []
+            else:
+                component.append(t)
+    assert all(sum(t.is_relative_detector_id() for t in k) <= 2 for k in components)
+    assert any(
+        t.is_separator()
+        for instruction in dem.flattened()
+        if instruction.type == "error"
+        for t in instruction.targets_copy()
+    )
+
+    # Recombining the components gives back the undecomposed model exactly.
+    decomposed = _merged_mechanisms(dem)
+    undecomposed = _merged_mechanisms(get_detector_error_model(c))
+    assert decomposed.keys() == undecomposed.keys()
+    for key, p in undecomposed.items():
+        assert decomposed[key] == pytest.approx(p, abs=1e-12)
+
+    # It is stim's own decomposition.
+    assert dem == c.detector_error_model(decompose_errors=True)
+
+
+def test_get_detector_error_model_decompose_errors_keeps_observable_edges():
+    # An error flipping two detectors and an observable is already graphlike.
+    # With the observable turned into a detector it would have three symptoms
+    # and, with nothing to split it against, fail to decompose.
+    c = stim.Circuit("""
+        R 0 1 2 3
+        X_ERROR(0.1) 0
+        CX 0 1 0 2 0 3
+        M 1 2 3
+        DETECTOR rec[-3]
+        DETECTOR rec[-2]
+        OBSERVABLE_INCLUDE(0) rec[-1]
+        """)
+    dem = get_detector_error_model(c, decompose_errors=True)
+    assert dem.approx_equals(stim.DetectorErrorModel("error(0.1) D0 D1 L0"), atol=1e-12)
+
+
+def test_get_detector_error_model_decompose_errors_needs_deterministic_observables():
+    c = stim.Circuit("""
+        R 0 1
+        H 0
+        X_ERROR(0.1) 1
+        M 0 1
+        DETECTOR rec[-1]
+        OBSERVABLE_INCLUDE(0) rec[-2]
+        """)
+    with pytest.raises(ValueError, match="non-deterministic observables"):
+        get_detector_error_model(c, decompose_errors=True)
