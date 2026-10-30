@@ -6,11 +6,14 @@ A batch of shots runs as these kernels on one stream:
            the screened survivors go to a queue
     tape   runs every component on the queued shots, a group of ``2^tb`` threads
            per shot with its amplitudes in registers (``codegen``); with a
-           postselection mask it queues the accepted shots, and with
+           postselection mask it clears the rejected shots from the screen's
+           bitmap of survivors, and with
            expectations it writes each observable's expectation
     kept   under postselection, draws the noise that cannot change whether a
            shot is kept on the accepted shots only (``noise_kept``), when that
            noise is at least ``DEFER_SHARE`` of the faults
+    list   lists the accepted shots in order from the bitmap (``count_bits``,
+           ``list_bits``)
     select gathers the rows (or the accepted rows) for the copy to the host
 
 ``sample_accepted`` runs a call as chunks of shots on two streams, so that a
@@ -63,7 +66,7 @@ _KERNELS = r"""
 extern "C" __global__ void __launch_bounds__({block}) tape(
     u64* __restrict__ out, long long first_shot, const u64* __restrict__ seeds,
     const unsigned* __restrict__ queue, const unsigned* __restrict__ count,
-    unsigned* __restrict__ acc_queue, unsigned* __restrict__ acc_count,
+    unsigned* __restrict__ survivors, unsigned* __restrict__ acc_count,
     float* __restrict__ expectations, unsigned* __restrict__ deviation)
 {{
     int t = threadIdx.x & {T1};
@@ -93,20 +96,59 @@ extern "C" __global__ void __launch_bounds__({block}) tape(
                 for (int i = 0; i < {NO}; ++i) expectations[row_index * {NO} + i] = ev[i];
             }}
         }}
-        if (acc_queue != nullptr) {{
-            // NOTE: the postselected direct outputs passed the screen already.
+        if (survivors != nullptr) {{
+            // NOTE: the postselected direct outputs passed the screen already;
+            // the shots that fail now leave the screen's bitmap.
             u64 hit = {hits};
-            bool accepted = valid && t == 0 && hit == 0;
-            unsigned ballot = __ballot_sync(0xffffffffu, accepted);
-            if (ballot) {{
-                int lane = threadIdx.x & 31, leader = __ffs(ballot) - 1;
-                unsigned b = 0;
-                if (lane == leader) b = atomicAdd(acc_count, __popc(ballot));
-                b = __shfl_sync(0xffffffffu, b, leader);
-                if (accepted) acc_queue[b + __popc(ballot & ((1u << lane) - 1))] = (unsigned)row_index;
-            }}
+            if (valid && t == 0 && hit) atomicAnd(&survivors[row_index >> 5], ~(1u << (row_index & 31)));
+            unsigned ballot = __ballot_sync(0xffffffffu, valid && t == 0 && hit == 0);
+            if (ballot && (threadIdx.x & 31) == __ffs(ballot) - 1) atomicAdd(acc_count, __popc(ballot));
         }}
     }}
+}}
+
+// The shots of the ``words`` words of ``bits`` set, in order, as indices into
+// ``index``: ``count_bits`` counts each block's 1024 words, ``list_bits`` lists
+// a block's shots after those of the blocks before it.
+__device__ __forceinline__ unsigned block_scan(unsigned v, unsigned* total) {{
+    __shared__ unsigned warps[32];
+    int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+    unsigned x = v;
+    #pragma unroll
+    for (int o = 1; o < 32; o <<= 1) {{ unsigned y = __shfl_up_sync(0xffffffffu, x, o); if (lane >= o) x += y; }}
+    if (lane == 31) warps[warp] = x;
+    __syncthreads();
+    if (warp == 0) {{
+        unsigned w = lane < (blockDim.x >> 5) ? warps[lane] : 0;
+        #pragma unroll
+        for (int o = 1; o < 32; o <<= 1) {{ unsigned y = __shfl_up_sync(0xffffffffu, w, o); if (lane >= o) w += y; }}
+        warps[lane] = w;
+    }}
+    __syncthreads();
+    unsigned before = (warp ? warps[warp - 1] : 0) + x - v;
+    *total = warps[31];
+    __syncthreads();
+    return before;
+}}
+
+extern "C" __global__ void __launch_bounds__(1024) count_bits(
+    const unsigned* __restrict__ bits, long long words, unsigned* __restrict__ totals) {{
+    long long i = (long long)blockIdx.x * 1024 + threadIdx.x;
+    unsigned total;
+    block_scan(i < words ? __popc(bits[i]) : 0, &total);
+    if (threadIdx.x == 0) totals[blockIdx.x] = total;
+}}
+
+extern "C" __global__ void __launch_bounds__(1024) list_bits(
+    const unsigned* __restrict__ bits, long long words, const unsigned* __restrict__ totals,
+    unsigned* __restrict__ index) {{
+    unsigned earlier = 0, total;
+    for (int b = threadIdx.x; b < blockIdx.x; b += blockDim.x) earlier += totals[b];
+    block_scan(earlier, &earlier);
+    long long i = (long long)blockIdx.x * 1024 + threadIdx.x;
+    unsigned w = i < words ? bits[i] : 0;
+    unsigned at = earlier + block_scan(__popc(w), &total);
+    for (; w; w &= w - 1) index[at++] = (unsigned)(32 * i + __ffs(w) - 1);
 }}
 
 // Rows ``index[j]`` (or every row) of their first ``ow`` words, densely.
@@ -199,6 +241,8 @@ class _Module:
     gather_columns: Any
     gather_float: Any
     publish: Any
+    count_bits: Any
+    list_bits: Any
     screen: Any
     kept: Any
     tape_blocks: int
@@ -434,6 +478,8 @@ class CudaShotSampler:
             gather_columns=module.get_function("gather_columns"),
             gather_float=module.get_function("gather_float"),
             publish=module.get_function("publish"),
+            count_bits=module.get_function("count_bits"),
+            list_bits=module.get_function("list_bits"),
             screen=cp.asarray(plan.screen),
             kept=cp.asarray(plan.kept),
             tape_blocks=runtime.multiprocessors() * blocks_per_sm,
@@ -540,6 +586,8 @@ class CudaShotSampler:
     ) -> tuple[Any, Any, Any, Any]:
         """Launch one batch on the current stream: ``(words, accepted, counts, values)``.
 
+        ``accepted`` is the bitmap of the accepted shots (with a mask).
+
         ``launch`` holds the channels that the noise kernel draws; without
         ``every_row`` only the rows of the shots that pass the screen are written.
         ``counts`` holds the screened survivors, the accepted shots and the norm
@@ -550,7 +598,7 @@ class CudaShotSampler:
         nw, no = layout.num_words, max(1, len(self._observables))
         words = self._buffer(f"words{slot}", (shots, nw), np.uint64)
         queue = self._buffer(f"queue{slot}", (shots,), np.uint32)
-        accepted = self._buffer(f"accepted{slot}", (shots,), np.uint32)
+        accepted = self._buffer(f"accepted{slot}", (-(-shots // 32),), np.uint32)
         counts = self._buffer(f"counts{slot}", (3,), np.uint32)
         values = (
             self._buffer(f"values{slot}", (shots, no), np.float32)
@@ -582,6 +630,7 @@ class CudaShotSampler:
                 module.kept,
                 queue,
                 counts[0:1],
+                accepted if module.has_mask else np.uint64(0),
                 np.int32(every_row),
             ),
             shared_mem=8 * launch.max_events,
@@ -604,7 +653,7 @@ class CudaShotSampler:
             )
         elif module.has_mask:
             # NOTE: without components the screened survivors are the accepted shots.
-            accepted, counts[1:2] = queue, counts[0:1]
+            counts[1:2] = counts[0:1]
         return words, accepted, counts, values
 
     def _pack(
@@ -680,6 +729,16 @@ class CudaShotSampler:
                 ),
             )
         return dst
+
+    def _list(self, module: _Module, bits, shots: int, count: int, slot: int) -> Any:
+        """Return the ``count`` shots of the bitmap ``bits`` of ``shots`` shots, in order."""
+        words = -(-shots // 32)
+        blocks = -(-words // 1024)
+        totals = self._buffer(f"totals{slot}", (blocks,), np.uint32)
+        index = self._buffer(f"index{slot}", (max(count, 1),), np.uint32)
+        module.count_bits((blocks,), (1024,), (bits, np.int64(words), totals))
+        module.list_bits((blocks,), (1024,), (bits, np.int64(words), totals, index))
+        return index[:count]
 
     def _deviation(self, counts: np.ndarray) -> float:
         """Return a batch's normalization deviation beyond float32 rounding, else 0."""
@@ -829,8 +888,11 @@ class CudaShotSampler:
                     self._synchronize()
                     out.grow(out.total + count + (shots - first - n))
                 rows_host, values_host = out.take(count)
-                # NOTE: the queue's order is the warps'; rows keep their shots'.
-                index = None if mask is None else cp.sort(accepted[:count])
+                index = (
+                    None
+                    if mask is None
+                    else self._list(module, accepted, n, count, slot)
+                )
                 stream = self._streams[slot]
                 # NOTE: a call of one chunk has nothing to overlap its copy with.
                 copy = stream if first + n == shots and not held else self._copies[slot]

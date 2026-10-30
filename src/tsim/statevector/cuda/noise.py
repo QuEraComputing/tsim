@@ -26,7 +26,8 @@ order.
 
 A block then screens its shots (constants, postselected direct detectors),
 writes their rows (coalesced; only the survivors' unless every row is asked
-for) and appends the surviving shots to a queue for the tape kernel. The samples follow ``ChannelSampler``'s distribution, not its
+for), appends the surviving shots to a queue for the tape kernel and marks
+them in a bitmap of the batch's shots. The samples follow ``ChannelSampler``'s distribution, not its
 streams: every block draws from its own counter-based stream.
 
 Under postselection the channels can be drawn in two passes. Those with an
@@ -133,7 +134,8 @@ extern "C" __global__ void __launch_bounds__(256) noise(
     const float* __restrict__ seg_log_keep, const Record* __restrict__ records,
     const Flip* __restrict__ overflow,
     const u64* __restrict__ constant, const u64* __restrict__ screen, const u64* __restrict__ kept,
-    unsigned* __restrict__ queue, unsigned* __restrict__ count, int every_row)
+    unsigned* __restrict__ queue, unsigned* __restrict__ count, unsigned* __restrict__ survivors,
+    int every_row)
 {{
     __shared__ u64 sw[{NW} * {S}];
     extern __shared__ uint2 events[];
@@ -167,6 +169,9 @@ extern "C" __global__ void __launch_bounds__(256) noise(
         if (s < {S}) passed[s] = alive;
         // NOTE: one atomic per warp: the leader reserves the survivors' slots.
         unsigned ballot = __ballot_sync(0xffffffffu, alive);
+        long long word = (base + s0 + (threadIdx.x & ~31)) >> 5;
+        if (survivors != nullptr && (threadIdx.x & 31) == 0 && s0 + (threadIdx.x & ~31) < ns)
+            survivors[word] = ballot;
         if (ballot) {{
             int lane = threadIdx.x & 31, leader = __ffs(ballot) - 1;
             unsigned b = 0;
