@@ -176,15 +176,19 @@ extern "C" __global__ void __launch_bounds__(256) noise(
     }}
 }}
 
-// The deferred channels' faults on the ``n`` kept shots ``index``: they flip
-// output words only, so a block loads and stores just those.
+// The deferred channels' faults on the ``n`` kept shots ``index``, then their
+// outputs ``cols`` bit-packed into ``nb`` bytes per row of ``dst`` (as
+// ``gather_columns``; ``run[b]`` marks the bytes of eight consecutive outputs).
+// The deferred channels flip output words only, so a block loads just those.
 extern "C" __global__ void __launch_bounds__(256) noise_kept(
-    u64* __restrict__ out, long long n, const unsigned* __restrict__ index, u64 seed,
+    const u64* __restrict__ out, long long n, const unsigned* __restrict__ index, u64 seed,
     int num_segments, int max_events,
     const int* __restrict__ seg_first, const int* __restrict__ seg_begin,
     const int* __restrict__ seg_end, const float* __restrict__ seg_log_keep,
     const int2* __restrict__ channels, const Record* __restrict__ records,
-    const int* __restrict__ overflow_word, const u64* __restrict__ overflow_mask)
+    const int* __restrict__ overflow_word, const u64* __restrict__ overflow_mask,
+    unsigned char* __restrict__ dst, int nb, const int* __restrict__ cols, int m,
+    const unsigned char* __restrict__ run)
 {{
     __shared__ u64 sw[{OW} * {S}];
     extern __shared__ uint2 events[];
@@ -200,9 +204,22 @@ extern "C" __global__ void __launch_bounds__(256) noise_kept(
     add_faults(sw, events, &num_events, max_events, ns, seed ^ ((u64)blockIdx.x * 0xD1B54A32D192ED03ULL),
                num_segments, seg_first, seg_begin, seg_end, seg_log_keep, channels, records,
                overflow_word, overflow_mask);
-    for (int i = threadIdx.x; i < ns * {OW}; i += blockDim.x) {{
-        int s = i / {OW}, word = i - s * {OW};
-        out[(long long)index[base + s] * {NW} + word] = sw[word * {S} + s];
+    unsigned char* rows = dst + base * nb;
+    for (int i = threadIdx.x; i < ns * nb; i += blockDim.x) {{
+        int s = i / nb, b = i - s * nb;
+        unsigned v = 0;
+        if (run[b]) {{
+            int c = cols[8 * b], w = c >> 6, shift = c & 63;
+            u64 bits = sw[w * {S} + s] >> shift;
+            if (shift > 56) bits |= sw[(w + 1) * {S} + s] << (64 - shift);
+            v = (unsigned)(bits & 0xffu);
+        }} else {{
+            for (int t = 0; t < 8 && 8 * b + t < m; ++t) {{
+                int c = cols[8 * b + t];
+                v |= (unsigned)((sw[(c >> 6) * {S} + s] >> (c & 63)) & 1u) << t;
+            }}
+        }}
+        rows[i] = (unsigned char)v;
     }}
 }}
 """

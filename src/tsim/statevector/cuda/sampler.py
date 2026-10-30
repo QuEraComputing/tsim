@@ -517,9 +517,15 @@ class CudaShotSampler:
 
     def _add_deferred(
         self, module: _Module, launch: _Launch, words, count: int, index
-    ) -> None:
-        """Draw the deferred channels' faults on the ``count`` kept rows ``index``."""
+    ) -> np.ndarray:
+        """Return the ``count`` kept rows ``index`` with the deferred channels' faults.
+
+        As ``_gather_columns``: their outputs ``module.columns``, bit-packed.
+        """
         S = self._noise.block_shots
+        m = len(module.columns)
+        nb = -(-m // 8)
+        dst = self._buffer("dst_bytes", (count, nb), np.uint8)
         seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
         module.noise_kept(
             ((count + S - 1) // S,),
@@ -533,9 +539,15 @@ class CudaShotSampler:
                 np.int32(launch.max_events),
                 *launch.args,
                 *self._record_args,
+                dst,
+                np.int32(nb),
+                module.columns_d,
+                np.int32(m),
+                module.runs_d,
             ),
             shared_mem=8 * launch.max_events,
         )
+        return self._to_host(dst, count, nb, np.uint8)
 
     def _to_host(self, device, rows: int, width: int, dtype) -> np.ndarray:
         """Copy ``device[:rows]`` to a new pinned host array (CuPy's pinned pool)."""
@@ -705,9 +717,10 @@ class CudaShotSampler:
                 count = int(counts[1:2].get()[0])
                 # NOTE: the queue's order is the warps'; rows keep their shots'.
                 index = cp.sort(accepted[:count])
-                if split is not None and count:
-                    self._add_deferred(module, split[1], words, count, index)
-            rows.append(self._gather_columns(module, words, count, index))
+            if split is not None and count and nb:
+                rows.append(self._add_deferred(module, split[1], words, count, index))
+            else:
+                rows.append(self._gather_columns(module, words, count, index))
             if expectations:
                 if no and layout.components:
                     if index is None:
