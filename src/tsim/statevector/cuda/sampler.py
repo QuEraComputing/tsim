@@ -359,7 +359,12 @@ class CudaShotSampler:
         self._buffers: dict[str, Any] = {}
         # NOTE: each buffer slot has a kernel stream and a copy stream, so that a
         # slot's next kernels need not wait for its copy to the host.
-        self._streams = [cp.cuda.Stream(non_blocking=True) for _ in range(2)]
+        # NOTE: a slot's noise kernel runs on a stream of the least priority, so the
+        # other slot's tape and packing, which the next copy waits for, go first.
+        self._streams = [
+            cp.cuda.Stream(non_blocking=True, priority=-1) for _ in range(2)
+        ]
+        self._noise_streams = [cp.cuda.Stream(non_blocking=True) for _ in range(2)]
         self._copies = [cp.cuda.Stream(non_blocking=True) for _ in range(2)]
         self._published = [_pinned_counts(cp) for _ in range(2)]
 
@@ -573,6 +578,7 @@ class CudaShotSampler:
         launch: _Launch,
         every_row: bool,
         slot: int = 0,
+        noise_stream: Any = None,
     ) -> tuple[Any, Any, Any, Any]:
         """Launch one batch on the current stream: ``(words, accepted, counts, values)``.
 
@@ -581,7 +587,8 @@ class CudaShotSampler:
         ``launch`` holds the channels that the noise kernel draws; without
         ``every_row`` only the rows of the shots that pass the screen are written.
         ``counts`` holds the screened survivors, the accepted shots and the norm
-        deviation's bits. ``slot`` names the device buffers.
+        deviation's bits. ``slot`` names the device buffers; ``noise_stream``, if
+        given, runs the noise kernel, after the current stream's work.
         """
         cp = self._cp
         layout = self.layout
@@ -595,6 +602,10 @@ class CudaShotSampler:
             if expectations
             else None
         )
+        current = cp.cuda.get_current_stream()
+        if noise_stream is not None:
+            noise_stream.wait_event(current.record())
+            noise_stream.use()
         counts.fill(0)
         seeds = cp.asarray(
             self._rng.integers(
@@ -625,6 +636,9 @@ class CudaShotSampler:
             ),
             shared_mem=8 * launch.max_events,
         )
+        if noise_stream is not None:
+            current.wait_event(noise_stream.record())
+            current.use()
         if layout.components:
             module.tape(
                 (module.tape_blocks,),
@@ -835,7 +849,15 @@ class CudaShotSampler:
             ready = None
             with self._streams[slot]:
                 launched = self._run_batch(
-                    module, n, first, constant, expectations, launch, False, slot
+                    module,
+                    n,
+                    first,
+                    constant,
+                    expectations,
+                    launch,
+                    False,
+                    slot,
+                    self._noise_streams[slot],
                 )
                 # NOTE: no copy is in flight when the first chunk finishes, so it
                 # reads its counts with a copy of its own.
