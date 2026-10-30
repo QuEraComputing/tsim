@@ -399,9 +399,9 @@ class CudaShotSampler:
     # -- compilation ----------------------------------------------------------
 
     def _threads_per_shot(self) -> int:
-        """Return log2 of the threads per shot: 64 amplitudes per thread at most."""
+        """Return log2 of the threads per shot: one per 32 amplitudes, at most 32."""
         width = max((c.width for c in self.layout.components), default=0)
-        return 0 if width <= 6 else min(5, width - 5)
+        return min(5, max(0, width - 5))
 
     def _module(self, mask: np.ndarray | None) -> _Module:
         key = b"" if mask is None else np.asarray(mask, bool).tobytes()

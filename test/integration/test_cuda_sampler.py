@@ -422,9 +422,9 @@ def _random_unitary_circuit(width, layers, seed=0):
     return Circuit("\n".join(lines))
 
 
-@pytest.mark.parametrize(("width", "layers"), [(8, 8), (9, 10), (11, 12)])
+@pytest.mark.parametrize(("width", "layers"), [(6, 8), (8, 8), (9, 10), (11, 12)])
 def test_cuda_wide_components_match_the_cpu_executor(width, layers):
-    # NOTE: widths 8, 9 and 11 run 8, 16 and 32 threads per shot.
+    # NOTE: widths 6, 8, 9 and 11 run 2, 8, 16 and 32 threads per shot.
     circuit = _random_unitary_circuit(width, layers)
     assert _widest(circuit) == width
     shots = 200_000
