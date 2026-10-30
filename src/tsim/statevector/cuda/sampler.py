@@ -64,13 +64,14 @@ MIN_CHUNK_SHOTS = 1 << 18
 
 _KERNELS = r"""
 extern "C" __global__ void __launch_bounds__({block}) tape(
-    u64* __restrict__ out, long long first_shot, const u64* __restrict__ seeds,
+    u64* __restrict__ out, long long first_shot, u64 seed,
     const unsigned* __restrict__ queue, const unsigned* __restrict__ count,
     unsigned* __restrict__ survivors, unsigned* __restrict__ acc_count,
     float* __restrict__ expectations, unsigned* __restrict__ deviation)
 {{
     int t = threadIdx.x & {T1};
     unsigned gmask = {gmask};
+{seeds}
     long long groups = ((long long)gridDim.x * blockDim.x) >> {tb};
     long long n = *count;
     // NOTE: whole warps leave the loop together, so the shuffles keep their groups.
@@ -357,6 +358,8 @@ class CudaShotSampler:
         self._all = self._launch(n.groups)
         self._modules: dict[bytes, _Module] = {}
         self._buffers: dict[str, Any] = {}
+        self._views: dict[tuple[str, tuple[int, ...]], Any] = {}
+        self._constants: dict[bytes, Any] = {}
         # NOTE: each buffer slot has a kernel stream and a copy stream, so that a
         # slot's next kernels need not wait for its copy to the host.
         # NOTE: a slot's noise kernel runs on a stream of the least priority, so the
@@ -415,7 +418,7 @@ class CudaShotSampler:
             for i, program in enumerate(plan.programs)
         )
         calls = "\n".join(
-            f"        grave = min(grave, component_{i}(w, shot, seeds[{i}], t, gmask, ev, deviation));"
+            f"        grave = min(grave, component_{i}(w, shot, seed_{i}, t, gmask, ev, deviation));"
             for i in range(len(plan.programs))
         )
         gmask = (
@@ -451,6 +454,11 @@ class CudaShotSampler:
                 S=self._noise.block_shots,
                 NB=max(-(-len(columns) // 8), 1),
                 calls=calls,
+                # NOTE: each component's stream, from the call's seed.
+                seeds="\n".join(
+                    f"    const u64 seed_{i} = mix64(seed + {i + 1} * GOLDEN);"
+                    for i in range(len(plan.programs))
+                ),
                 stores=stores,
                 hits=hits or "0",
             )
@@ -560,20 +568,33 @@ class CudaShotSampler:
 
     def _buffer(self, name: str, shape: tuple[int, ...], dtype) -> Any:
         """Return a device buffer of at least ``shape``, reused across calls."""
-        cp = self._cp
+        view = self._views.get((name, shape))
+        if view is not None and view.dtype == np.dtype(dtype):
+            return view
         size = int(np.prod(shape))
         held = self._buffers.get(name)
         if held is None or held.size < size or held.dtype != np.dtype(dtype):
-            held = cp.empty(size, dtype=dtype)
+            held = self._cp.empty(size, dtype=dtype)
             self._buffers[name] = held
-        return held[:size].reshape(shape)
+            # NOTE: views of the replaced buffer must not be handed out again.
+            self._views = {k: v for k, v in self._views.items() if k[0] != name}
+        view = held[:size].reshape(shape)
+        self._views[(name, shape)] = view
+        return view
+
+    def _constant(self, flip: np.ndarray | None) -> Any:
+        """Return the outputs' constants XOR the reference bits ``flip``, on the device."""
+        key = b"" if flip is None else np.asarray(flip, bool).tobytes()
+        if key not in self._constants:
+            self._constants[key] = self._cp.asarray(self._host._constant(flip))
+        return self._constants[key]
 
     def _run_batch(
         self,
         module: _Module,
         shots: int,
         first_shot: int,
-        constant: np.ndarray,
+        constant: Any,
         expectations: bool,
         launch: _Launch,
         every_row: bool,
@@ -607,13 +628,8 @@ class CudaShotSampler:
             noise_stream.wait_event(current.record())
             noise_stream.use()
         counts.fill(0)
-        seeds = cp.asarray(
-            self._rng.integers(
-                0, 2**64, size=max(1, len(layout.components)), dtype=np.uint64
-            )
-        )
+        seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
         noise_seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
-        constant_d = cp.asarray(constant)
         S = self._noise.block_shots
         module.noise(
             ((shots + S - 1) // S,),
@@ -626,7 +642,7 @@ class CudaShotSampler:
                 np.int32(launch.max_events),
                 *launch.args,
                 *self._record_args,
-                constant_d,
+                constant,
                 module.screen,
                 module.kept,
                 queue,
@@ -646,7 +662,7 @@ class CudaShotSampler:
                 (
                     words,
                     np.int64(first_shot),
-                    seeds,
+                    seed,
                     queue,
                     counts[0:1],
                     accepted if module.has_mask else np.uint64(0),
@@ -766,7 +782,7 @@ class CudaShotSampler:
         module = self._module(mask)
         layout = self.layout
         out = np.empty((shots, layout.num_words), dtype=np.uint64)
-        constant = self._host._constant(flip)
+        constant = self._constant(flip)
         batch = min(batch_size or BATCH_SHOTS, BATCH_SHOTS)
         deviation = 0.0
         for start in range(0, shots, batch):
@@ -829,7 +845,7 @@ class CudaShotSampler:
         module = self._module(mask)
         layout = self.layout
         nb, no = -(-len(module.columns) // 8), len(self._observables)
-        constant = self._host._constant(flip)
+        constant = self._constant(flip)
         split = self._split(module, expectations)
         launch = split[0] if split else self._all
         batch = min(batch_size or BATCH_SHOTS, BATCH_SHOTS)
