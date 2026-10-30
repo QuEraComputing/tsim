@@ -86,6 +86,36 @@ __device__ __forceinline__ void apply_fault(u64* sw, int row, unsigned rec, unsi
     }}
 }}
 
+// The returned outputs of the block's ``ns`` rows ``sw[w * S + s]``, bit-packed
+// into {NB} bytes per row, contiguously at ``dst``. Output word ``k`` of a row
+// is the pieces ``pieces[start[k] : start[k + 1]]``, each ``(word, bit | (length
+// - 1) << 6 | position << 12)``: ``length`` bits from ``bit`` of a shot word.
+// Consecutive threads pack one word of consecutive rows (one piece, distinct
+// banks) into ``stage``, from which the block's rows go out 16 bytes at a time.
+__device__ __forceinline__ void pack_rows(const u64* sw, int ns, const uint2* __restrict__ pieces,
+    const unsigned* __restrict__ start, unsigned char* stage, unsigned char* __restrict__ dst)
+{{
+    for (int i = threadIdx.x; i < {NK} * {S}; i += blockDim.x) {{
+        int k = i / {S}, s = i - k * {S};
+        if (s >= ns) continue;
+        u64 v = 0;
+        for (unsigned p = start[k]; p < start[k + 1]; ++p) {{
+            uint2 q = pieces[p];
+            u64 x = sw[q.x * {S} + s] >> (q.y & 63);
+            int length = ((q.y >> 6) & 63) + 1;
+            if (length < 64) x &= (1ULL << length) - 1;
+            v |= x << (q.y >> 12);
+        }}
+        unsigned char* at = stage + s * {NB} + 8 * k;
+        #pragma unroll
+        for (int j = 0; j < 8; ++j) if (8 * k + j < {NB}) at[j] = (unsigned char)(v >> (8 * j));
+    }}
+    __syncthreads();
+    int total = ns * {NB};
+    for (int i = threadIdx.x; i < total / 16; i += blockDim.x) ((uint4*)dst)[i] = ((const uint4*)stage)[i];
+    for (int i = total / 16 * 16 + threadIdx.x; i < total; i += blockDim.x) dst[i] = stage[i];
+}}
+
 // Phases 1 and 2: draw the segments' faults on the block's ``ns`` shots and XOR them into ``sw``.
 __device__ __forceinline__ void add_faults(u64* sw, uint2* events, int* num_events, int max_events,
     int ns, u64 stream, int num_segments,
@@ -190,9 +220,8 @@ extern "C" __global__ void __launch_bounds__(256) noise(
 }}
 
 // The deferred channels' faults on the ``n`` kept shots ``index``, then their
-// outputs ``cols`` bit-packed into ``nb`` bytes per row of ``dst`` (as
-// ``gather_columns``; ``run[b]`` marks the bytes of eight consecutive outputs).
-// The deferred channels flip output words only, so a block loads just those.
+// returned outputs bit-packed (``pack_rows``). The deferred channels flip output
+// words only, so a block loads just those.
 extern "C" __global__ void __launch_bounds__(256) noise_kept(
     const u64* __restrict__ out, long long n, const unsigned* __restrict__ index, u64 seed,
     int num_segments, int max_events,
@@ -200,11 +229,11 @@ extern "C" __global__ void __launch_bounds__(256) noise_kept(
     const int* __restrict__ seg_begin, const int* __restrict__ seg_end,
     const float* __restrict__ seg_log_keep, const Record* __restrict__ records,
     const Flip* __restrict__ overflow,
-    unsigned char* __restrict__ dst, int nb, const int* __restrict__ cols, int m,
-    const unsigned char* __restrict__ run)
+    unsigned char* __restrict__ dst, const uint2* __restrict__ pieces,
+    const unsigned* __restrict__ piece_start)
 {{
     __shared__ u64 sw[{OW} * {S}];
-    extern __shared__ uint2 events[];
+    extern __shared__ __align__(16) uint2 events[];
     __shared__ int num_events;
     long long base = (long long)blockIdx.x * {S};
     int ns = (int)min((long long){S}, n - base);
@@ -217,23 +246,8 @@ extern "C" __global__ void __launch_bounds__(256) noise_kept(
     add_faults(sw, events, &num_events, max_events, ns, seed ^ ((u64)blockIdx.x * 0xD1B54A32D192ED03ULL),
                num_segments, seg_first, seg_outcomes, seg_begin, seg_end, seg_log_keep, records,
                overflow);
-    unsigned char* rows = dst + base * nb;
-    for (int i = threadIdx.x; i < ns * nb; i += blockDim.x) {{
-        int s = i / nb, b = i - s * nb;
-        unsigned v = 0;
-        if (run[b]) {{
-            int c = cols[8 * b], w = c >> 6, shift = c & 63;
-            u64 bits = sw[w * {S} + s] >> shift;
-            if (shift > 56) bits |= sw[(w + 1) * {S} + s] << (64 - shift);
-            v = (unsigned)(bits & 0xffu);
-        }} else {{
-            for (int t = 0; t < 8 && 8 * b + t < m; ++t) {{
-                int c = cols[8 * b + t];
-                v |= (unsigned)((sw[(c >> 6) * {S} + s] >> (c & 63)) & 1u) << t;
-            }}
-        }}
-        rows[i] = (unsigned char)v;
-    }}
+    // NOTE: the events are applied, so their buffer stages the packed rows.
+    pack_rows(sw, ns, pieces, piece_start, (unsigned char*)events, dst + base * {NB});
 }}
 """
 
@@ -281,9 +295,18 @@ class NoiseTables:
     outcome_start: np.ndarray
     num_words: int
 
-    def source(self, output_words: int) -> str:
-        """Return the CUDA source of the ``noise`` and ``noise_kept`` kernels."""
-        return SOURCE.format(NW=self.num_words, OW=output_words, S=self.block_shots)
+    def source(self, output_words: int, packed_bytes: int) -> str:
+        """Return the CUDA source of the ``noise`` and ``noise_kept`` kernels.
+
+        ``noise_kept`` packs rows of ``packed_bytes`` bytes.
+        """
+        return SOURCE.format(
+            NW=self.num_words,
+            OW=output_words,
+            S=self.block_shots,
+            NB=max(packed_bytes, 1),
+            NK=max(-(-packed_bytes // 8), 1),
+        )
 
     def subset(self, select: np.ndarray) -> NoiseGroups:
         """Return the groups of the channels ``select`` (a boolean mask)."""

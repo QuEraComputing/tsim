@@ -151,54 +151,23 @@ extern "C" __global__ void __launch_bounds__(1024) list_bits(
     for (; w; w &= w - 1) index[at++] = (unsigned)(32 * i + __ffs(w) - 1);
 }}
 
-// Rows ``index[j]`` (or every row) of their first ``ow`` words, densely.
-extern "C" __global__ void gather(const u64* __restrict__ rows, long long n, int nw, int ow,
-                                  const unsigned* __restrict__ index, u64* __restrict__ dst) {{
-    for (long long k = (long long)blockIdx.x * blockDim.x + threadIdx.x; k < n * ow;
-         k += (long long)gridDim.x * blockDim.x) {{
-        long long j = k / ow; int w = (int)(k - j * ow);
-        long long i = index != nullptr ? (long long)index[j] : j;
-        dst[k] = rows[i * nw + w];
+// The returned outputs of rows ``index[j]`` (or every row), bit-packed densely
+// (``pack_rows``): a block packs {S} rows' output words.
+extern "C" __global__ void __launch_bounds__(256) gather_columns(
+    const u64* __restrict__ rows, long long n, const unsigned* __restrict__ index,
+    const uint2* __restrict__ pieces, const unsigned* __restrict__ start,
+    unsigned char* __restrict__ dst) {{
+    __shared__ u64 sw[{OW} * {S}];
+    extern __shared__ __align__(16) unsigned char stage[];
+    long long base = (long long)blockIdx.x * {S};
+    int ns = (int)min((long long){S}, n - base);
+    for (int i = threadIdx.x; i < ns * {OW}; i += blockDim.x) {{
+        int s = i / {OW}, w = i - s * {OW};
+        long long r = index != nullptr ? (long long)index[base + s] : base + s;
+        sw[w * {S} + s] = rows[r * {NW} + w];
     }}
-}}
-
-// The leading ``nb`` bytes of rows ``index[j]`` (or every row), densely: the
-// bit-packed outputs, as the words hold them in little-endian order.
-extern "C" __global__ void gather_bytes(const u64* __restrict__ rows, long long n, int nw, int nb,
-                                        const unsigned* __restrict__ index, unsigned char* __restrict__ dst) {{
-    for (long long k = (long long)blockIdx.x * blockDim.x + threadIdx.x; k < n * nb;
-         k += (long long)gridDim.x * blockDim.x) {{
-        long long j = k / nb; int b = (int)(k - j * nb);
-        long long i = index != nullptr ? (long long)index[j] : j;
-        dst[k] = (unsigned char)(rows[i * nw + (b >> 3)] >> (8 * (b & 7)));
-    }}
-}}
-
-// The outputs ``cols`` of rows ``index[j]``, bit-packed densely into ``nb`` bytes per
-// row; ``run[b]`` marks the bytes whose eight outputs are consecutive.
-extern "C" __global__ void gather_columns(const u64* __restrict__ rows, long long n, int nw, int nb,
-                                          const unsigned* __restrict__ index,
-                                          const int* __restrict__ cols, int m,
-                                          const unsigned char* __restrict__ run,
-                                          unsigned char* __restrict__ dst) {{
-    for (long long k = (long long)blockIdx.x * blockDim.x + threadIdx.x; k < n * nb;
-         k += (long long)gridDim.x * blockDim.x) {{
-        long long j = k / nb; int b = (int)(k - j * nb);
-        const u64* row = rows + (index != nullptr ? (long long)index[j] : j) * nw;
-        unsigned v = 0;
-        if (run[b]) {{
-            int c = cols[8 * b], w = c >> 6, s = c & 63;
-            u64 bits = row[w] >> s;
-            if (s > 56) bits |= row[w + 1] << (64 - s);
-            v = (unsigned)(bits & 0xffu);
-        }} else {{
-            for (int t = 0; t < 8 && 8 * b + t < m; ++t) {{
-                int c = cols[8 * b + t];
-                v |= (unsigned)((row[c >> 6] >> (c & 63)) & 1u) << t;
-            }}
-        }}
-        dst[k] = (unsigned char)v;
-    }}
+    __syncthreads();
+    pack_rows(sw, ns, pieces, start, stage, dst + base * {NB});
 }}
 
 // The batch's counts, stored into pinned host memory: a read that does not
@@ -236,8 +205,6 @@ class _Module:
     noise: Any
     noise_kept: Any
     tape: Any
-    gather: Any
-    gather_bytes: Any
     gather_columns: Any
     gather_float: Any
     publish: Any
@@ -249,8 +216,8 @@ class _Module:
     has_mask: bool
     columns: np.ndarray
     """The outputs that ``sample_accepted`` returns: those outside the mask."""
-    columns_d: Any
-    runs_d: Any
+    pieces: Any
+    piece_start: Any
     plan: ShotPlan
     psm_words: np.ndarray
     splits: dict[bool, tuple[_Launch, _Launch] | None]
@@ -266,6 +233,32 @@ def _pinned_counts(cp) -> tuple[np.ndarray, Any]:
     memory = cp.cuda.UnownedMemory(host.ctypes.data, host.nbytes, host)
     device = cp.ndarray((3,), np.uint32, cp.cuda.MemoryPointer(memory, 0))
     return host, device
+
+
+def _pieces(columns: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return how ``pack_rows`` packs the outputs ``columns``: ``(pieces, start)``.
+
+    Output word ``k`` holds ``columns[64 k : 64 k + 64]``; its pieces are
+    ``pieces[start[k] : start[k + 1]]``, each a run of them that is consecutive
+    in one shot word, as ``(word, bit | (length - 1) << 6 | position << 12)``.
+    """
+    pieces, start = [], [0]
+    for k in range(0, len(columns), 64):
+        word = columns[k : k + 64].tolist()
+        i = 0
+        while i < len(word):
+            j = i
+            while (
+                j + 1 < len(word)
+                and word[j + 1] == word[j] + 1
+                and word[j + 1] >> 6 == word[i] >> 6
+            ):
+                j += 1
+            c = word[i]
+            pieces.append((c >> 6, (c & 63) | (j - i) << 6 | i << 12))
+            i = j + 1
+        start.append(len(pieces))
+    return np.asarray(pieces or [(0, 0)], np.uint32), np.asarray(start, np.uint32)
 
 
 class _HostRows:
@@ -429,6 +422,7 @@ class CudaShotSampler:
         if mask is not None:
             bits[: len(mask)] = mask
         psm_words = pack_bits(bits, layout.output_words)
+        columns = np.flatnonzero(~bits[: layout.num_outputs]).astype(np.int32)
         # NOTE: the tapes write only their outputs' words, and test the
         # postselected outputs among them.
         written = sorted({int(w) for p in plan.programs for w in p.out_words})
@@ -438,7 +432,7 @@ class CudaShotSampler:
         )
         source = (
             PRELUDE
-            + self._noise.source(layout.output_words)
+            + self._noise.source(layout.output_words, -(-len(columns) // 8))
             + functions
             + _KERNELS.format(
                 block=block,
@@ -449,6 +443,8 @@ class CudaShotSampler:
                 OW=layout.output_words,
                 NO=max(1, len(self._observables)),
                 NE=max(1, len(self._observables)),
+                S=self._noise.block_shots,
+                NB=max(-(-len(columns) // 8), 1),
                 calls=calls,
                 stores=stores,
                 hits=hits or "0",
@@ -464,17 +460,11 @@ class CudaShotSampler:
                     tape.ptr, block, 0
                 ),
             )
-        columns = np.flatnonzero(~bits[: layout.num_outputs]).astype(np.int32)
-        # NOTE: a byte of consecutive outputs is a shift of the row's words.
-        octets = np.pad(columns, (0, -len(columns) % 8), constant_values=-1)
-        octets = octets.reshape(-1, 8)
-        runs = (octets[:, 7] >= 0) & (octets[:, 7] - octets[:, 0] == 7)
+        pieces, piece_start = _pieces(columns)
         compiled = _Module(
             noise=module.get_function("noise"),
             noise_kept=module.get_function("noise_kept"),
             tape=tape,
-            gather=module.get_function("gather"),
-            gather_bytes=module.get_function("gather_bytes"),
             gather_columns=module.get_function("gather_columns"),
             gather_float=module.get_function("gather_float"),
             publish=module.get_function("publish"),
@@ -485,8 +475,8 @@ class CudaShotSampler:
             tape_blocks=runtime.multiprocessors() * blocks_per_sm,
             has_mask=mask is not None,
             columns=columns,
-            columns_d=cp.asarray(columns if len(columns) else [0], dtype=np.int32),
-            runs_d=cp.asarray(runs if len(runs) else [0], dtype=np.uint8),
+            pieces=cp.asarray(pieces),
+            piece_start=cp.asarray(piece_start),
             plan=plan,
             psm_words=psm_words,
             splits={},
@@ -676,11 +666,12 @@ class CudaShotSampler:
         dst = self._cp.empty((max(count, 1), nb), dtype=np.uint8)
         if not count or not nb:
             return dst
+        blocks = (count + S - 1) // S
         if split is not None:
             launch = split[1]
             seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
             module.noise_kept(
-                ((count + S - 1) // S,),
+                (blocks,),
                 (256,),
                 (
                     words,
@@ -692,41 +683,24 @@ class CudaShotSampler:
                     *launch.args,
                     *self._record_args,
                     dst,
-                    np.int32(nb),
-                    module.columns_d,
-                    np.int32(m),
-                    module.runs_d,
+                    module.pieces,
+                    module.piece_start,
                 ),
-                shared_mem=8 * launch.max_events,
-            )
-        elif m == self.layout.num_outputs:
-            module.gather_bytes(
-                (runtime.multiprocessors() * 8,),
-                (256,),
-                (
-                    words,
-                    np.int64(count),
-                    np.int32(words.shape[1]),
-                    np.int32(nb),
-                    index if index is not None else np.uint64(0),
-                    dst,
-                ),
+                shared_mem=max(8 * launch.max_events, S * nb),
             )
         else:
             module.gather_columns(
-                (runtime.multiprocessors() * 8,),
+                (blocks,),
                 (256,),
                 (
                     words,
                     np.int64(count),
-                    np.int32(words.shape[1]),
-                    np.int32(nb),
-                    index,
-                    module.columns_d,
-                    np.int32(m),
-                    module.runs_d,
+                    index if index is not None else np.uint64(0),
+                    module.pieces,
+                    module.piece_start,
                     dst,
                 ),
+                shared_mem=S * nb,
             )
         return dst
 
