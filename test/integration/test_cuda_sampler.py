@@ -240,6 +240,38 @@ def test_deferred_noise_leaves_the_expectations_unbiased():
     assert abs(values.mean() - expected) < 5 / np.sqrt(len(full))
 
 
+@pytest.mark.parametrize("text", [NOISY_DETECTORS, UNREAD_NOISE])
+def test_cuda_chunks_return_the_rows_of_one_pass(monkeypatch, text):
+    # NOTE: 1000-shot chunks on both streams, and host rows that start with room
+    # for the first chunk only; without deferral, a masked and an unmasked run on
+    # the same chunks draw the same shots.
+    monkeypatch.setattr(cuda_sampler, "DEFER_SHARE", 2.0)
+    monkeypatch.setattr(
+        cuda_sampler.CudaShotSampler, "_chunk_shots", lambda self, *args: 1000
+    )
+    monkeypatch.setattr(
+        cuda_sampler._HostRows,
+        "allocate",
+        lambda self, passed, of, shots: self._resize(passed),
+    )
+    circuit = Circuit(text)
+    mask = np.zeros(circuit.num_detectors, dtype=bool)
+    mask[[0, 2]] = True
+    outputs = circuit.num_detectors + circuit.num_observables
+    full, _ = circuit.compile_detector_sampler(
+        seed=16, device="cuda"
+    ).sample_postselected(10_500)
+    rows, discarded = circuit.compile_detector_sampler(
+        seed=16, device="cuda"
+    ).sample_postselected(10_500, postselection_mask=mask)
+    full_bits = np.unpackbits(full, axis=1, count=outputs, bitorder="little")
+    passing = ~full_bits[:, : circuit.num_detectors][:, mask].any(axis=1)
+    outside = np.concatenate([~mask, np.ones(circuit.num_observables, dtype=bool)])
+    expected = np.packbits(full_bits[passing][:, outside], axis=1, bitorder="little")
+    assert discarded == 10_500 - passing.sum() > 0
+    np.testing.assert_array_equal(rows, expected)
+
+
 def test_observable_expectations_average_to_the_sampled_observable():
     circuit = Circuit(T_STATE_X)
     sampler = circuit.compile_detector_sampler(seed=6, device="cuda")

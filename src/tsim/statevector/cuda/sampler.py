@@ -13,6 +13,9 @@ A batch of shots runs as these kernels on one stream:
            noise is at least ``DEFER_SHARE`` of the faults
     select gathers the rows (or the accepted rows) for the copy to the host
 
+``sample_accepted`` runs a call as chunks of shots on two streams, so that a
+chunk's copy to the host overlaps the next chunk's kernels.
+
 The kernels are compiled with NVRTC once per postselection mask (CuPy caches
 them on disk). Amplitudes are complex64, so a sample follows the CPU executor's
 distribution to within float32 rounding of the outcome probabilities; the noise
@@ -48,6 +51,13 @@ DEVIATION_TOLERANCE = 1e-3
 DEFER_SHARE = 0.25
 """Share of the expected faults that postselection cannot see, from which they
 are drawn on the accepted shots only, after the tapes."""
+
+CHUNK_BYTES = 32 << 20
+"""Bytes of kept rows per chunk that a call's chunks aim at: each chunk's copy to
+the host overlaps the next chunk's kernels on the other stream."""
+
+MIN_CHUNK_SHOTS = 1 << 18
+"""Fewest shots of a chunk, so that a chunk's fixed costs stay small."""
 
 _KERNELS = r"""
 extern "C" __global__ void __launch_bounds__({block}) tape(
@@ -150,6 +160,13 @@ extern "C" __global__ void gather_columns(const u64* __restrict__ rows, long lon
     }}
 }}
 
+// The batch's counts, stored into pinned host memory: a read that does not
+// queue behind the copies to the host.
+extern "C" __global__ void publish(const unsigned* __restrict__ counts, volatile unsigned* host) {{
+    if (threadIdx.x < 3) host[threadIdx.x] = counts[threadIdx.x];
+    __threadfence_system();
+}}
+
 // Observable expectations of rows ``index[j]``, densely.
 extern "C" __global__ void gather_float(const float* __restrict__ values, long long n, int width,
                                         const unsigned* __restrict__ index, float* __restrict__ dst) {{
@@ -182,6 +199,7 @@ class _Module:
     gather_bytes: Any
     gather_columns: Any
     gather_float: Any
+    publish: Any
     screen: Any
     kept: Any
     psm: Any
@@ -195,6 +213,68 @@ class _Module:
     psm_words: np.ndarray
     splits: dict[bool, tuple[_Launch, _Launch] | None]
     """Each ``expectations`` value's noise passes (screened, deferred), or None."""
+
+
+def _pinned_counts(cp) -> tuple[np.ndarray, Any]:
+    """Return three pinned host counters and a device array over the same memory."""
+    import cupyx
+
+    host = cupyx.empty_pinned((3,), dtype=np.uint32)
+    # NOTE: with unified addressing a pinned host pointer is also a device pointer.
+    memory = cp.cuda.UnownedMemory(host.ctypes.data, host.nbytes, host)
+    device = cp.ndarray((3,), np.uint32, cp.cuda.MemoryPointer(memory, 0))
+    return host, device
+
+
+class _HostRows:
+    """A call's passing rows (and expectations) in pinned host memory, chunk by chunk."""
+
+    def __init__(self, nb: int, no: int | None) -> None:
+        self.nb, self.no = nb, no
+        self.capacity, self.total = 0, 0
+        self.rows: np.ndarray | None = None
+        self.values: np.ndarray | None = None
+
+    def allocate(self, passed: int, of: int, shots: int) -> None:
+        """Reserve the rows of a call of ``shots``, ``passed`` of its first ``of`` passing."""
+        rest = shots - of
+        share = passed / of
+        expected = rest * share
+        self._resize(
+            min(shots, passed + int(1.05 * expected + 6 * np.sqrt(expected) + 256))
+        )
+
+    def grow(self, capacity: int) -> None:
+        """Make room for ``capacity`` rows, keeping the copied ones (no copy may be pending)."""
+        rows, values, total = self.rows, self.values, self.total
+        self._resize(capacity)
+        assert self.rows is not None and rows is not None
+        self.rows[:total] = rows[:total]
+        if values is not None and self.values is not None:
+            self.values[:total] = values[:total]
+
+    def _resize(self, capacity: int) -> None:
+        import cupyx
+
+        self.capacity = capacity
+        self.rows = cupyx.empty_pinned((capacity, self.nb), dtype=np.uint8)
+        if self.no is not None:
+            self.values = cupyx.empty_pinned((capacity, self.no), dtype=np.float32)
+
+    def take(self, count: int) -> tuple[np.ndarray, np.ndarray | None]:
+        """Return the next ``count`` rows (and expectations) to fill."""
+        assert self.rows is not None and self.total + count <= self.capacity
+        lo, self.total = self.total, self.total + count
+        values = None if self.values is None else self.values[lo : self.total]
+        return self.rows[lo : self.total], values
+
+    def result(self) -> tuple[np.ndarray, np.ndarray | None]:
+        """Return the filled rows and expectations."""
+        if self.rows is None:
+            self._resize(0)
+        assert self.rows is not None
+        values = None if self.values is None else self.values[: self.total]
+        return self.rows[: self.total], values
 
 
 class CudaShotSampler:
@@ -246,6 +326,11 @@ class CudaShotSampler:
         self._all = self._launch(n.groups)
         self._modules: dict[bytes, _Module] = {}
         self._buffers: dict[str, Any] = {}
+        # NOTE: each buffer slot has a kernel stream and a copy stream, so that a
+        # slot's next kernels need not wait for its copy to the host.
+        self._streams = [cp.cuda.Stream(non_blocking=True) for _ in range(2)]
+        self._copies = [cp.cuda.Stream(non_blocking=True) for _ in range(2)]
+        self._published = [_pinned_counts(cp) for _ in range(2)]
 
     @property
     def layout(self):
@@ -345,6 +430,7 @@ class CudaShotSampler:
             gather_bytes=module.get_function("gather_bytes"),
             gather_columns=module.get_function("gather_columns"),
             gather_float=module.get_function("gather_float"),
+            publish=module.get_function("publish"),
             screen=cp.asarray(plan.screen),
             kept=cp.asarray(plan.kept),
             psm=cp.asarray(psm_words),
@@ -448,21 +534,26 @@ class CudaShotSampler:
         expectations: bool,
         launch: _Launch,
         every_row: bool,
+        slot: int = 0,
     ) -> tuple[Any, Any, Any, Any]:
-        """Sample one batch on the device: ``(words, accepted, count, values)``.
+        """Launch one batch on the current stream: ``(words, accepted, counts, values)``.
 
         ``launch`` holds the channels that the noise kernel draws; without
         ``every_row`` only the rows of the shots that pass the screen are written.
+        ``counts`` holds the screened survivors, the accepted shots and the norm
+        deviation's bits. ``slot`` names the device buffers.
         """
         cp = self._cp
         layout = self.layout
         nw, no = layout.num_words, max(1, len(self._observables))
-        words = self._buffer("words", (shots, nw), np.uint64)
-        queue = self._buffer("queue", (shots,), np.uint32)
-        accepted = self._buffer("accepted", (shots,), np.uint32)
-        counts = self._buffer("counts", (3,), np.uint32)
+        words = self._buffer(f"words{slot}", (shots, nw), np.uint64)
+        queue = self._buffer(f"queue{slot}", (shots,), np.uint32)
+        accepted = self._buffer(f"accepted{slot}", (shots,), np.uint32)
+        counts = self._buffer(f"counts{slot}", (3,), np.uint32)
         values = (
-            self._buffer("values", (shots, no), np.float32) if expectations else None
+            self._buffer(f"values{slot}", (shots, no), np.float32)
+            if expectations
+            else None
         )
         counts.fill(0)
         seeds = cp.asarray(
@@ -515,78 +606,63 @@ class CudaShotSampler:
             accepted, counts[1:2] = queue, counts[0:1]
         return words, accepted, counts, values
 
-    def _add_deferred(
-        self, module: _Module, launch: _Launch, words, count: int, index
-    ) -> np.ndarray:
-        """Return the ``count`` kept rows ``index`` with the deferred channels' faults.
+    def _pack(
+        self,
+        module: _Module,
+        split: tuple[_Launch, _Launch] | None,
+        words,
+        count: int,
+        index,
+    ) -> Any:
+        """Return the ``count`` rows ``index`` (or all) on the device, as copied to the host.
 
-        As ``_gather_columns``: their outputs ``module.columns``, bit-packed.
+        Their outputs ``module.columns``, bit-packed; with ``split`` the deferred
+        noise kernel adds the deferred channels' faults first.
         """
         S = self._noise.block_shots
         m = len(module.columns)
         nb = -(-m // 8)
-        dst = self._buffer("dst_bytes", (count, nb), np.uint8)
-        seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
-        module.noise_kept(
-            ((count + S - 1) // S,),
-            (256,),
-            (
-                words,
-                np.int64(count),
-                index,
-                seed,
-                np.int32(launch.num_segments),
-                np.int32(launch.max_events),
-                *launch.args,
-                *self._record_args,
-                dst,
-                np.int32(nb),
-                module.columns_d,
-                np.int32(m),
-                module.runs_d,
-            ),
-            shared_mem=8 * launch.max_events,
-        )
-        return self._to_host(dst, count, nb, np.uint8)
-
-    def _to_host(self, device, rows: int, width: int, dtype) -> np.ndarray:
-        """Copy ``device[:rows]`` to a new pinned host array (CuPy's pinned pool)."""
-        import cupyx
-
-        host = cupyx.empty_pinned((rows, width), dtype=dtype)
-        if rows:
-            device[:rows].get(out=host)
-        return host
-
-    def _gather_bytes(
-        self, module: _Module, words, count: int, index, nb: int
-    ) -> np.ndarray:
-        """Return the leading ``nb`` bytes of ``count`` rows (``index``, or all)."""
-        dst = self._buffer("dst_bytes", (max(count, 1), nb), np.uint8)
-        module.gather_bytes(
-            (runtime.multiprocessors() * 8,),
-            (256,),
-            (
-                words,
-                np.int64(count),
-                np.int32(words.shape[1]),
-                np.int32(nb),
-                index if index is not None else np.uint64(0),
-                dst,
-            ),
-        )
-        return self._to_host(dst, count, nb, np.uint8)
-
-    def _gather_columns(self, module: _Module, words, count: int, index) -> np.ndarray:
-        """Return the outputs ``module.columns`` of ``count`` rows ``index``, bit-packed."""
-        m = len(module.columns)
-        if m == self.layout.num_outputs:
-            return self._gather_bytes(module, words, count, index, -(-m // 8))
-        nb = -(-m // 8)
-        if not nb:
-            return np.empty((count, 0), np.uint8)
-        dst = self._buffer("dst_bytes", (max(count, 1), nb), np.uint8)
-        if count:
+        # NOTE: a new array per chunk, so that refilling it never waits for a copy.
+        dst = self._cp.empty((max(count, 1), nb), dtype=np.uint8)
+        if not count or not nb:
+            return dst
+        if split is not None:
+            launch = split[1]
+            seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
+            module.noise_kept(
+                ((count + S - 1) // S,),
+                (256,),
+                (
+                    words,
+                    np.int64(count),
+                    index,
+                    seed,
+                    np.int32(launch.num_segments),
+                    np.int32(launch.max_events),
+                    *launch.args,
+                    *self._record_args,
+                    dst,
+                    np.int32(nb),
+                    module.columns_d,
+                    np.int32(m),
+                    module.runs_d,
+                ),
+                shared_mem=8 * launch.max_events,
+            )
+        elif m == self.layout.num_outputs:
+            module.gather_bytes(
+                (runtime.multiprocessors() * 8,),
+                (256,),
+                (
+                    words,
+                    np.int64(count),
+                    np.int32(words.shape[1]),
+                    np.int32(nb),
+                    index if index is not None else np.uint64(0),
+                    dst,
+                ),
+            )
+        else:
             module.gather_columns(
                 (runtime.multiprocessors() * 8,),
                 (256,),
@@ -602,23 +678,11 @@ class CudaShotSampler:
                     dst,
                 ),
             )
-        return self._to_host(dst, count, nb, np.uint8)
+        return dst
 
-    def _gather_values(
-        self, module: _Module, values, count: int, index, width: int
-    ) -> np.ndarray:
-        """Return the expectations of ``count`` rows ``index``."""
-        dst = self._buffer("dst_float", (max(count, 1), width), np.float32)
-        module.gather_float(
-            (runtime.multiprocessors() * 8,),
-            (256,),
-            (values, np.int64(count), np.int32(width), index, dst),
-        )
-        return self._to_host(dst, count, width, np.float32)
-
-    def _deviation(self, counts) -> float:
-        """Return the batch's normalization deviation beyond float32 rounding, else 0."""
-        bits = np.asarray(counts[2:3].get(), dtype=np.uint32)
+    def _deviation(self, counts: np.ndarray) -> float:
+        """Return a batch's normalization deviation beyond float32 rounding, else 0."""
+        bits = np.asarray(counts[2:3], dtype=np.uint32)
         deviation = float(bits.view(np.float32)[0])
         return deviation if deviation > DEVIATION_TOLERANCE else 0.0
 
@@ -663,8 +727,24 @@ class CudaShotSampler:
                 module, n, start, constant, False, self._all, True
             )
             words.get(out=out[start : start + n])
-            deviation = max(deviation, self._deviation(counts))
+            deviation = max(deviation, self._deviation(counts.get()))
         return out, deviation
+
+    def _synchronize(self) -> None:
+        """Wait for every kernel and copy of ``sample_accepted``."""
+        for stream in (*self._streams, *self._copies):
+            stream.synchronize()
+
+    def _chunk_shots(self, batch: int, nb: int, passing: float) -> int:
+        """Return a chunk's shots: ``CHUNK_BYTES`` of rows of ``nb`` bytes, a share ``passing`` kept.
+
+        A power of two from ``MIN_CHUNK_SHOTS`` up to ``batch``.
+        """
+        per_shot = nb * max(passing, 1e-6)
+        if per_shot * batch <= CHUNK_BYTES:
+            return batch
+        size = 1 << int(np.floor(np.log2(max(CHUNK_BYTES / per_shot, 1.0))))
+        return int(min(batch, max(MIN_CHUNK_SHOTS, size)))
 
     def sample_accepted(
         self,
@@ -680,6 +760,11 @@ class CudaShotSampler:
         A shot passes when none of the ``mask``'s detectors is set (every shot
         passes without a mask). Rows keep their shots' order and hold only the
         outputs outside the mask, whose bits are known for a passing shot.
+
+        The shots run in chunks on two streams: each chunk's rows go to the host
+        while the next chunk's kernels run. The first chunk is sized as if every
+        shot passed, the others by the first chunk's share of passing shots, so
+        a seed's samples do not depend on earlier calls.
 
         Returns:
             ``(outputs, expectations, deviation)``: the passing shots' outputs
@@ -698,51 +783,98 @@ class CudaShotSampler:
         nb, no = -(-len(module.columns) // 8), len(self._observables)
         constant = self._host._constant(flip)
         split = self._split(module, expectations)
+        launch = split[0] if split else self._all
         batch = min(batch_size or BATCH_SHOTS, BATCH_SHOTS)
-        rows, values, deviation = [], [], 0.0
-        for start in range(0, shots, batch):
-            n = min(batch, shots - start)
-            words, accepted, counts, ev = self._run_batch(
-                module,
-                n,
-                start,
-                constant,
-                expectations,
-                split[0] if split else self._all,
-                False,
-            )
-            if mask is None:
-                count, index = n, None
+        out = _HostRows(nb, no if expectations else None)
+        state = {"start": 0, "slot": 0, "size": self._chunk_shots(batch, nb, 1.0)}
+        deviation = 0.0
+        pending: list[tuple[int, int, int, tuple[Any, Any, Any, Any], Any]] = []
+        # NOTE: the device rows in flight to the host, kept until the copies land,
+        # and the streams that copy them.
+        held: list[Any] = []
+        used: set[Any] = set()
+
+        def launch_next() -> None:
+            first, slot = state["start"], state["slot"]
+            n = min(state["size"], shots - first)
+            device = self._published[slot][1]
+            ready = None
+            with self._streams[slot]:
+                launched = self._run_batch(
+                    module, n, first, constant, expectations, launch, False, slot
+                )
+                # NOTE: no copy is in flight when the first chunk finishes, so it
+                # reads its counts with a copy of its own.
+                if first:
+                    module.publish((1,), (32,), (launched[2], device))
+                    ready = self._streams[slot].record()
+            pending.append((slot, first, n, launched, ready))
+            state["start"], state["slot"] = first + n, 1 - slot
+
+        def finish() -> float:
+            slot, first, n, (words, accepted, counts, values), ready = pending.pop(0)
+            if ready is None:
+                host_counts = counts.get(stream=self._streams[slot])
             else:
-                count = int(counts[1:2].get()[0])
+                ready.synchronize()
+                host_counts = self._published[slot][0].copy()
+            with self._streams[slot]:
+                count = n if mask is None else int(host_counts[1])
+                if first == 0:
+                    state["size"] = self._chunk_shots(batch, nb, count / n)
+                    out.allocate(count, n, shots)
+                elif out.total + count > out.capacity:
+                    # NOTE: a rare excess of passing shots: the copies in flight land first.
+                    self._synchronize()
+                    out.grow(out.total + count + (shots - first - n))
+                rows_host, values_host = out.take(count)
                 # NOTE: the queue's order is the warps'; rows keep their shots'.
-                index = cp.sort(accepted[:count])
-            if split is not None and count and nb:
-                rows.append(self._add_deferred(module, split[1], words, count, index))
-            else:
-                rows.append(self._gather_columns(module, words, count, index))
-            if expectations:
-                if no and layout.components:
-                    if index is None:
-                        index = cp.arange(n, dtype=cp.uint32)
-                    values.append(self._gather_values(module, ev, count, index, no))
-                else:
-                    values.append(np.zeros((count, no), dtype=np.float32))
-            deviation = max(deviation, self._deviation(counts))
-        out_rows = (
-            rows[0]
-            if len(rows) == 1
-            else np.concatenate(rows) if rows else np.empty((0, nb), np.uint8)
-        )
-        if not expectations:
-            return out_rows, None, deviation
-        out_values = (
-            values[0]
-            if len(values) == 1
-            else np.concatenate(values) if values else np.empty((0, no), np.float32)
-        )
-        self._direct_expectations(out_rows, out_values, module.columns)
-        return out_rows, out_values, deviation
+                index = None if mask is None else cp.sort(accepted[:count])
+                stream = self._streams[slot]
+                # NOTE: a call of one chunk has nothing to overlap its copy with.
+                copy = stream if first + n == shots and not held else self._copies[slot]
+                used.add(copy)
+                if count and nb:
+                    dst = self._pack(module, split, words, count, index)
+                    if copy is not stream:
+                        copy.wait_event(stream.record())
+                    dst[:count].get(stream=copy, out=rows_host, blocking=False)
+                    held.append(dst)
+                if values_host is not None and count:
+                    if no and layout.components:
+                        if index is None:
+                            index = cp.arange(n, dtype=cp.uint32)
+                        dst = cp.empty((count, no), dtype=np.float32)
+                        module.gather_float(
+                            (runtime.multiprocessors() * 8,),
+                            (256,),
+                            (values, np.int64(count), np.int32(no), index, dst),
+                        )
+                        if copy is not stream:
+                            copy.wait_event(stream.record())
+                        dst.get(stream=copy, out=values_host, blocking=False)
+                        held.append(dst)
+                    else:
+                        values_host[:] = 0
+            return self._deviation(host_counts)
+
+        # NOTE: the first chunk sizes the others; then each chunk is launched
+        # before the previous one is finished, so its kernels overlap that copy.
+        launch_next()
+        deviation = finish()
+        while state["start"] < shots:
+            launch_next()
+            if len(pending) == 2:
+                deviation = max(deviation, finish())
+        while pending:
+            deviation = max(deviation, finish())
+        for stream in used:
+            stream.synchronize()
+        rows, values = out.result()
+        if values is None:
+            return rows, None, deviation
+        self._direct_expectations(rows, values, module.columns)
+        return rows, values, deviation
 
     def _direct_expectations(
         self, rows: np.ndarray, values: np.ndarray, columns: np.ndarray
