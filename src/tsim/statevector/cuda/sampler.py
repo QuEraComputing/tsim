@@ -28,6 +28,7 @@ samples differ from the CPU's.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -37,7 +38,12 @@ from tsim.core.types import CompiledProgram
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.cuda import runtime
 from tsim.statevector.cuda.codegen import PRELUDE, hex64, tape_function
-from tsim.statevector.cuda.noise import NoiseGroups, deferred_channels, noise_tables
+from tsim.statevector.cuda.noise import (
+    NoiseGroups,
+    deferred_channels,
+    noise_tables,
+    pass_rate,
+)
 from tsim.statevector.program import STABILIZER_RANK_HINT
 from tsim.statevector.shared import pack_bits
 from tsim.statevector.shots import ShotPlan, ShotSampler, bool_outputs, read_outputs
@@ -55,12 +61,12 @@ DEFER_SHARE = 0.25
 """Share of the expected faults that postselection cannot see, from which they
 are drawn on the accepted shots only, after the tapes."""
 
-CHUNK_BYTES = 32 << 20
+CHUNK_BYTES = 6 << 20
 """Bytes of kept rows per chunk that a call's chunks aim at: each chunk's copy to
 the host overlaps the next chunk's kernels on the other stream."""
 
-MIN_CHUNK_SHOTS = 1 << 18
-"""Fewest shots of a chunk, so that a chunk's fixed costs stay small."""
+MAX_CHUNKS = 8
+"""Most chunks of a batch, so that a chunk's fixed costs stay small."""
 
 _KERNELS = r"""
 extern "C" __global__ void __launch_bounds__({block}) tape(
@@ -221,6 +227,8 @@ class _Module:
     piece_start: Any
     plan: ShotPlan
     psm_words: np.ndarray
+    passing: float
+    """Estimated share of shots that pass the screen."""
     splits: dict[bool, tuple[_Launch, _Launch] | None]
     """Each ``expectations`` value's noise passes (screened, deferred), or None."""
 
@@ -492,10 +500,18 @@ class CudaShotSampler:
             piece_start=cp.asarray(piece_start),
             plan=plan,
             psm_words=psm_words,
+            passing=self._passing(plan),
             splits={},
         )
         self._modules[key] = compiled
         return compiled
+
+    def _passing(self, plan: ShotPlan) -> float:
+        """Return the estimated share of shots that pass the screen of ``plan``."""
+        layout = self.layout
+        screen = np.zeros(layout.num_words, dtype=np.uint64)
+        screen[: layout.output_words] = plan.screen
+        return pass_rate(self._channels, layout.noise, screen) if screen.any() else 1.0
 
     def _launch(self, groups: NoiseGroups) -> _Launch:
         """Upload a noise launch's segments and records."""
@@ -799,16 +815,14 @@ class CudaShotSampler:
         for stream in (*self._streams, *self._copies):
             stream.synchronize()
 
-    def _chunk_shots(self, batch: int, nb: int, passing: float) -> int:
-        """Return a chunk's shots: ``CHUNK_BYTES`` of rows of ``nb`` bytes, a share ``passing`` kept.
+    def _chunk_shots(self, shots: int, nb: int, passing: float) -> int:
+        """Return a chunk's shots: about ``CHUNK_BYTES`` of rows of ``nb`` bytes.
 
-        A power of two from ``MIN_CHUNK_SHOTS`` up to ``batch``.
+        ``passing`` is the share of shots kept, and a batch of ``shots`` shots
+        splits into at most ``MAX_CHUNKS`` chunks.
         """
-        per_shot = nb * max(passing, 1e-6)
-        if per_shot * batch <= CHUNK_BYTES:
-            return batch
-        size = 1 << int(np.floor(np.log2(max(CHUNK_BYTES / per_shot, 1.0))))
-        return int(min(batch, max(MIN_CHUNK_SHOTS, size)))
+        chunks = min(MAX_CHUNKS, max(1, math.ceil(nb * passing * shots / CHUNK_BYTES)))
+        return -(-shots // chunks)
 
     def sample_accepted(
         self,
@@ -826,9 +840,9 @@ class CudaShotSampler:
         outputs outside the mask, whose bits are known for a passing shot.
 
         The shots run in chunks on two streams: each chunk's rows go to the host
-        while the next chunk's kernels run. The first chunk is sized as if every
-        shot passed, the others by the first chunk's share of passing shots, so
-        a seed's samples do not depend on earlier calls.
+        while the next chunk's kernels run. The chunks hold about ``CHUNK_BYTES``
+        of rows, by the screen's estimated share of passing shots, so a seed's
+        samples do not depend on earlier calls.
 
         Returns:
             ``(outputs, expectations, deviation)``: the passing shots' outputs
@@ -850,7 +864,8 @@ class CudaShotSampler:
         launch = split[0] if split else self._all
         batch = min(batch_size or BATCH_SHOTS, BATCH_SHOTS)
         out = _HostRows(nb, no if expectations else None)
-        state = {"start": 0, "slot": 0, "size": self._chunk_shots(batch, nb, 1.0)}
+        state = {"start": 0, "slot": 0}
+        size = self._chunk_shots(min(batch, shots), nb, module.passing)
         deviation = 0.0
         pending: list[tuple[int, int, int, tuple[Any, Any, Any, Any], Any]] = []
         # NOTE: the device rows in flight to the host, kept until the copies land,
@@ -860,7 +875,7 @@ class CudaShotSampler:
 
         def launch_next() -> None:
             first, slot = state["start"], state["slot"]
-            n = min(state["size"], shots - first)
+            n = min(size, shots - first)
             device = self._published[slot][1]
             ready = None
             with self._streams[slot]:
@@ -893,7 +908,6 @@ class CudaShotSampler:
             with self._streams[slot]:
                 count = n if mask is None else int(host_counts[1])
                 if first == 0:
-                    state["size"] = self._chunk_shots(batch, nb, count / n)
                     out.allocate(count, n, shots)
                 elif out.total + count > out.capacity:
                     # NOTE: a rare excess of passing shots: the copies in flight land first.
@@ -933,10 +947,9 @@ class CudaShotSampler:
                         values_host[:] = 0
             return self._deviation(host_counts)
 
-        # NOTE: the first chunk sizes the others; then each chunk is launched
-        # before the previous one is finished, so its kernels overlap that copy.
+        # NOTE: each chunk is launched before the previous one is finished, so its
+        # kernels overlap that copy.
         launch_next()
-        deviation = finish()
         while state["start"] < shots:
             launch_next()
             if len(pending) == 2:

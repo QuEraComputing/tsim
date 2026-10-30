@@ -370,18 +370,39 @@ def _groups(tables: NoiseTables, select: np.ndarray) -> NoiseGroups:
     )
 
 
+def _outcome_hits(flips: WordTables, read: np.ndarray) -> np.ndarray:
+    """Return which outcomes flip a bit of ``read`` (as shot words)."""
+    hit = (read[flips.word] & flips.mask) != 0
+    # NOTE: hits per outcome as differences of running counts.
+    per_flip = np.concatenate([[0], np.cumsum(hit)])
+    return per_flip[flips.start[1:]] - per_flip[flips.start[:-1]] > 0
+
+
 def deferred_channels(
     channels: ChannelSampler, flips: WordTables, read: np.ndarray
 ) -> np.ndarray:
     """Return which channels flip none of the bits ``read`` (as shot words)."""
+    hits = np.concatenate([[0], np.cumsum(_outcome_hits(flips, read))])
+    start = channels._tables.outcome_start
+    return hits[start[1:]] == hits[start[:-1]]
+
+
+def pass_rate(channels: ChannelSampler, flips: WordTables, read: np.ndarray) -> float:
+    """Return the share of shots whose faults flip no bit of ``read``, to first order.
+
+    Each channel's chance to flip one is its fire probability times its hitting
+    outcomes' probabilities (from its alias table); flips that cancel are not
+    counted.
+    """
     fire = channels._tables
-    hit = (read[flips.word] & flips.mask) != 0
-    # NOTE: hits per outcome, then per channel, as differences of running counts.
-    per_flip = np.concatenate([[0], np.cumsum(hit)])
-    per_outcome = per_flip[flips.start[1:]] - per_flip[flips.start[:-1]] > 0
-    per_outcome = np.concatenate([[0], np.cumsum(per_outcome)])
+    n = np.diff(fire.outcome_start)
+    per = np.repeat(n, n).astype(np.float64)
+    q = fire.alias_prob / per
+    np.add.at(q, fire.alias_index, (1 - fire.alias_prob) / per)
+    hits = np.concatenate([[0.0], np.cumsum(q * _outcome_hits(flips, read))])
     start = fire.outcome_start
-    return per_outcome[start[1:]] == per_outcome[start[:-1]]
+    p = np.clip(fire.p_fire * (hits[start[1:]] - hits[start[:-1]]), 0.0, 1.0)
+    return float(np.exp(np.log1p(-np.minimum(p, 1 - 1e-12)).sum()))
 
 
 def noise_tables(
