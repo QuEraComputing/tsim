@@ -407,10 +407,14 @@ def _widest(circuit):
     return max(c.width for c in components if isinstance(c, StatevectorComponent))
 
 
-def _random_unitary_circuit(width, layers, seed=0):
-    """Layers of random U3 pairs and CX gates, then every qubit measured."""
+def _random_unitary_circuit(width, layers, seed=0, noise=True):
+    """Layers of random U3 pairs and CX gates, then every qubit measured.
+
+    With ``noise``, X errors come first, so that every rotation reads the shot's
+    f-bits and none of them runs before the shots split (``common_prefix``).
+    """
     rng = np.random.default_rng(seed)
-    lines = []
+    lines = ["X_ERROR(0.2) " + " ".join(map(str, range(width)))] if noise else []
     for _ in range(layers):
         perm = rng.permutation(width)
         for a, b in zip(perm[::2], perm[1::2], strict=False):
@@ -443,6 +447,21 @@ def test_cuda_looping_tapes_match_the_cpu_executor(monkeypatch, width, layers):
     # NOTE: a tape past the unroll budget loops, applying runs of rotations together.
     monkeypatch.setattr(codegen, "UNROLL_BUDGET", 0)
     circuit = _random_unitary_circuit(width, layers, seed=width)
+    shots = 200_000
+    expected = circuit.compile_sampler(seed=1).sample(shots)
+    got = circuit.compile_sampler(seed=2, device="cuda").sample(shots)
+    np.testing.assert_allclose(
+        got.mean(axis=0), expected.mean(axis=0), atol=5 * 0.5 / np.sqrt(shots / 2)
+    )
+    for a, b in [(0, 1), (0, width - 1), (width // 2, width - 1)]:
+        assert_counts_match(got[:, [a, b]], expected[:, [a, b]])
+
+
+@pytest.mark.parametrize("width", [6, 9, 11])
+def test_cuda_shots_start_after_the_common_prefix(width):
+    # NOTE: without noise the rotations before the first measurement run once,
+    # on the host; the shots load their amplitudes and run the rest.
+    circuit = _random_unitary_circuit(width, width + 2, seed=width, noise=False)
     shots = 200_000
     expected = circuit.compile_sampler(seed=1).sample(shots)
     got = circuit.compile_sampler(seed=2, device="cuda").sample(shots)

@@ -14,6 +14,9 @@ lane symbols are the key, the postselected f-parts and its branch bits; it draws
 a measurement's outcome as the CPU executor does, by its seed, shot and action;
 a postselected output that reads 1 ends it (its *grave* is that action); at the
 end it adds its branch parts, coins and hidden outputs to the shot's words.
+The actions before the first one that reads a lane symbol run alike for every
+shot (``shared.common_prefix``): they run once, on the host, and every shot
+starts from the amplitudes they leave.
 
 With ``expectations``, the tape also returns, for each observable output, the
 expectation of ``(-1)^output`` given the shot's history before the measurement
@@ -33,7 +36,7 @@ from collections.abc import Callable
 import numpy as np
 
 from tsim.statevector.program import MEASURE_DORMANT, ROTATE, ROTATE_DIAG
-from tsim.statevector.shared import LaneProgram
+from tsim.statevector.shared import LaneProgram, common_prefix
 
 TINY = 1e-30
 
@@ -135,6 +138,7 @@ class _Tape:
         tb: int,
         emit: Callable[[str], None],
         name: str = "run",
+        start: int = 0,
     ):
         self.p = program
         self.tb = tb
@@ -142,7 +146,7 @@ class _Tape:
         self.emit = emit
         self.name = name
         self.helpers: list[str] = []
-        spans = [self.span(a) for a in range(len(program.kind))]
+        spans = [self.span(a) for a in range(start, len(program.kind))]
         # NOTE: one runtime index puts the whole amplitude array in local memory,
         # so a tape either unrolls every action or loops every wide one.
         self.loop = sum(spans) > UNROLL_BUDGET
@@ -503,10 +507,21 @@ def tape_function(
     """
     lines: list[str] = []
     emit = lines.append
-    tape = _Tape(program, tb, emit, f"run{index}")
     p = program
     A = len(p.kind)
     n = 1 << max(p.width - tb, 0)
+    start, amps = common_prefix(p)
+    tape = _Tape(p, tb, emit, f"run{index}", start)
+    loaded = 0
+    if start:
+        # NOTE: the prefix leaves amplitudes outside its last action's span zero.
+        loaded = tape.span(start - 1)
+        values = ", ".join(
+            f"{{{f32(v.real)}, {f32(v.imag)}}}" for v in amps[: loaded << tb]
+        )
+        tape.helpers.append(
+            f"__device__ const float2 start{index}[{loaded << tb}] = {{{values}}};"
+        )
     num_coins = p.coin_pattern.shape[0]
     slots = A + (num_coins + 63) // 64
     ready = p.ready
@@ -529,16 +544,21 @@ def tape_function(
         emit(f"    sym[{w}] = 0;")
     emit(f"    float2 a[{n}];")
     emit(
-        f"    #pragma unroll\n    for (int i = 0; i < {n}; ++i) a[i] = make_float2(0.f, 0.f);"
+        f"    #pragma unroll\n    for (int i = {loaded}; i < {n}; ++i) a[i] = make_float2(0.f, 0.f);"
     )
-    emit("    if (t == 0) a[0].x = 1.f;")
+    if start:
+        emit(
+            f"    #pragma unroll\n    for (int i = 0; i < {loaded}; ++i) a[i] = start{index}[(i << {tb}) | t];"
+        )
+    else:
+        emit("    if (t == 0) a[0].x = 1.f;")
     emit("    int grave = 0x7fffffff;")
     emit("    float w0, w1, total, weight, scale, s; int outcome, f;")
     for a in sorted(watched):
         emit(f"    float ev_{a} = 0.f; int b_{a} = 0;")
     if p.prune_first.any():
         tape.prune(p.prune_first, -1)
-    a = -1
+    a = start - 1
     while a + 1 < A:
         a += 1
         kind = int(p.kind[a])
