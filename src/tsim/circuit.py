@@ -85,6 +85,43 @@ def _pauli_product_targets(
     return out
 
 
+def _signed_pauli_targets(
+    name: str,
+    targets: (
+        int
+        | stim.GateTarget
+        | stim.PauliString
+        | Iterable[int | stim.GateTarget | stim.PauliString]
+    ),
+) -> list[int | stim.GateTarget]:
+    """Expand PauliString targets, keeping a ``-1`` sign as an inverted target.
+
+    Stim drops the sign of a PauliString when appending it, which would flip the
+    direction of a rotation about it.
+    """
+    if isinstance(targets, int | stim.GateTarget | stim.PauliString):
+        items: list[int | stim.GateTarget | stim.PauliString] = [targets]
+    else:
+        items = list(targets)
+    out: list[int | stim.GateTarget] = []
+    for item in items:
+        if not isinstance(item, stim.PauliString):
+            out.append(item)
+            continue
+        if item.sign not in (1, -1):
+            raise ValueError(
+                f"For {name} gates, a PauliString must have sign +1 or -1, "
+                f"got {item.sign}."
+            )
+        support = [(q, "XYZ"[item[q] - 1]) for q in range(len(item)) if item[q]]
+        for i, (qubit, pauli) in enumerate(support):
+            if i:
+                out.append(stim.target_combiner())
+            invert = i == 0 and item.sign == -1
+            out.append(stim.target_pauli(qubit, pauli, invert=invert))
+    return out
+
+
 def _bare_qubit_targets(
     gate_name: str,
     targets: (
@@ -291,6 +328,7 @@ class Circuit:
                 arg = None
             elif name == "R_PAULI":
                 alpha = _single_angle(name, arg)
+                targets = _signed_pauli_targets(name, targets)
                 tag = f"R_PAULI(theta={alpha}*pi)"
                 name = "SPP"
                 arg = None

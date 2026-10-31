@@ -1228,3 +1228,53 @@ def test_diagram_zx_names_parameters_by_kind_and_index(
     else:  # two error bits, so error-basis bit j has ID 2 + 2j
         expected = {p: f"f{(p - 2) // 2}" for p in g.parameters()}
     assert names == expected
+
+
+def _rotation_unitary(pauli: stim.PauliString, alpha: float) -> np.ndarray:
+    """Return exp(-i * alpha * pi / 2 * P), with the sign of ``pauli`` included."""
+    p = np.array([[1]], dtype=complex)
+    for k in range(len(pauli)):
+        p = np.kron(p, pauli[k : k + 1].to_unitary_matrix(endian="big"))
+    p = pauli.sign * p
+    angle = alpha * np.pi / 2
+    return np.cos(angle) * np.eye(len(p)) - 1j * np.sin(angle) * p
+
+
+@pytest.mark.parametrize(
+    "pauli", ["X", "-X", "-Y", "-Z", "+XZ", "-XZ", "-YZ", "-ZZ", "-XYZ"]
+)
+def test_append_r_pauli_pauli_string_sign(pauli: str):
+    """A -1 PauliString rotates by exp(-i a pi/2 (-P)), i.e. in the opposite direction."""
+    ps = stim.PauliString(pauli)
+    c = Circuit()
+    c.append("R_PAULI", ps, 0.3)
+    expected = channel(_rotation_unitary(ps, 0.3))
+    np.testing.assert_allclose(c.to_tensor(), expected, atol=1e-9)
+    if ps.sign == -1:
+        opposite = channel(_rotation_unitary(-ps, 0.3))
+        assert not np.allclose(c.to_tensor(), opposite, atol=1e-6)
+
+
+def test_append_r_pauli_negative_string_matches_negated_angle():
+    c = Circuit()
+    c.append("R_PAULI", stim.PauliString("-XY"), 0.3)
+    assert c == Circuit("SPP[R_PAULI(theta=0.3*pi)] !X0*Y1")
+    np.testing.assert_allclose(
+        c.to_tensor(), Circuit("R_PAULI(-0.3) X0*Y1").to_tensor(), atol=1e-9
+    )
+
+
+def test_append_r_pauli_sign_applies_per_pauli_string():
+    c = Circuit()
+    c.append("R_PAULI", [stim.PauliString("-X"), stim.PauliString("Z1")], 0.3)
+    np.testing.assert_allclose(
+        c.to_tensor(),
+        Circuit("R_PAULI(-0.3) X0\nR_PAULI(0.3) Z1").to_tensor(),
+        atol=1e-9,
+    )
+
+
+@pytest.mark.parametrize("pauli", ["iX", "-iXY"])
+def test_append_r_pauli_anti_hermitian_pauli_string_rejected(pauli: str):
+    with pytest.raises(ValueError, match="sign"):
+        Circuit().append("R_PAULI", stim.PauliString(pauli), 0.3)
