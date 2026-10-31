@@ -52,6 +52,28 @@ def test_plans_match_stabilizer_rank(name, sample_detectors):
             )
 
 
+def test_measurements_that_free_no_reused_axis_run_after_every_rotation():
+    # NOTE: random two-qubit layers, then every qubit measured: measuring early
+    # would free no axis that a later rotation reuses, so the measurements stay
+    # at the end and every rotation runs before the shots split.
+    rng = np.random.default_rng(0)
+    lines = []
+    for _ in range(8):
+        perm = rng.permutation(6)
+        for a, b in zip(perm[::2], perm[1::2], strict=True):
+            lines += [
+                f"U3({t[0]},{t[1]},{t[2]}) {q}"
+                for q in (a, b)
+                for t in [rng.uniform(-1, 1, 3)]
+            ]
+            lines.append(f"CX {a} {b}")
+    lines.append("M " + " ".join(map(str, range(6))))
+    (component,), layout = quantum_components("\n".join(lines), sample_detectors=False)
+    planned, _ = plan_component(component, output_indices(component), layout)
+    rotations = [isinstance(action, Rotate) for action in planned.actions]
+    assert rotations == sorted(rotations, reverse=True)
+
+
 def test_lower_encodes_every_action():
     planned = Plan(
         width=2,
