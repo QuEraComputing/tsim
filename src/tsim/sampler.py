@@ -381,7 +381,7 @@ class _CompiledSamplerBase:
         mask: np.ndarray | None = None,
         referenced: np.ndarray | None = None,
     ) -> list[np.ndarray]:
-        """Return the output bits ``columns`` of ``shots`` shots, one array per list.
+        """Return the output bits of ``shots`` shots, an array per entry of ``columns``.
 
         Args:
             shots: Number of shots.

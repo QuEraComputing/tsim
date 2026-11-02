@@ -599,8 +599,8 @@ def _lane_pattern(symbols, r, branch_row, output_word, output_bit, num_words):
     return pattern
 
 
-# NOTE: _finish_shot runs once per shot, so, like _lane_key, it takes only the
-# arrays it reads and not the LaneProgram.
+# NOTE: _finish_shot runs once per pruned shot, so, like _lane_key, it takes only
+# the arrays it reads and not the LaneProgram.
 @jit
 def _finish_shot(
     words, shot, pattern, hidden, out_words, coin_pattern, seed, index, slots, first
@@ -932,21 +932,19 @@ def run_lanes(
             program.output_bit,
             len(out_words),
         )
-    hidden = np.zeros(len(out_words), dtype=np.uint64)
+    # NOTE: inline rather than _finish_shot: this loop runs once per live shot,
+    # and the call costs about 1.7x on one thread when lanes are shared.
     for i in range(n):
-        shot = live[i]
-        _finish_shot(
-            words,
-            shot,
-            pattern[code_row[row[i]]],
-            hidden,
-            out_words,
-            program.coin_pattern,
-            seed,
-            first_shot + shot,
-            slots,
-            num_actions,
-        )
+        shot, e = live[i], code_row[row[i]]
+        for w in range(len(out_words)):
+            words[shot, out_words[w]] ^= pattern[e, w]
+        coins = np.uint64(0)
+        for j in range(num_coins):
+            if j % 64 == 0:
+                coins = _draw(seed, first_shot + shot, slots, num_actions + j // 64)
+            if (coins >> np.uint64(j % 64)) & np.uint64(1):
+                for w in range(len(out_words)):
+                    words[shot, out_words[w]] ^= program.coin_pattern[j, w]
     return deviation, groups, peak, size, dead
 
 
