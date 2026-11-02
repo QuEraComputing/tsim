@@ -900,8 +900,8 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 ``False`` in every other column, observables included. With
                 ``strategy="active_statevector"`` a masked component detector
                 also discards a shot: its row keeps the direct detectors and the
-                outputs that component set up to that detector, and reads
-                ``False`` elsewhere. Re-apply the mask to the returned detector
+                outputs of that component already determined when that detector
+                fired, and reads ``False`` elsewhere. Re-apply the mask to the returned detector
                 columns to recover surviving shots.
 
         Returns:

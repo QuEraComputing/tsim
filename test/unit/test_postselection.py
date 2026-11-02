@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from test.helpers.statevector import shot_sampler
 from unittest.mock import patch
 
 import numpy as np
@@ -759,36 +758,44 @@ OBSERVABLE_INCLUDE(0) rec[-4]
 
 @pytest.mark.parametrize("share", [True, False])
 @pytest.mark.parametrize("masked", [1, 2])
-def test_a_component_discard_skips_and_clears_the_other_components(share, masked):
+def test_a_component_discard_skips_and_clears_the_other_components(
+    monkeypatch, share, masked
+):
     """A shot a component prunes reads False in the other components' outputs.
 
     That holds for the components that run before the pruning one and after
-    it, and the survivors are the shots of the unmasked call.
+    it, which skip it, and the survivors are the shots of the unmasked call.
     """
     circuit = Circuit(TWO_COMPONENTS_CIRCUIT)
+    shots = 5_000
     mask = np.zeros(circuit.num_detectors, dtype=bool)
     mask[masked] = True
     others = [c for c in (1, 2, 3) if c != masked]
 
-    def sample(postselection_mask):
+    def sample(postselection_mask, batch_size=None):
         sampler = circuit.compile_detector_sampler(
             strategy="active_statevector", seed=8, trajectory_sharing=share
         )
         components = sampler._program.components
         assert [c.output_indices for c in components] == [(1,), (2,), (3,)]
-        samples = sampler.sample(
-            5_000, append_observables=True, postselection_mask=postselection_mask
-        )
-        return samples, sum(
-            stat["groups"] for stat in shot_sampler(sampler).sharing_stats
+        return sampler.sample(
+            shots,
+            batch_size=batch_size,
+            append_observables=True,
+            postselection_mask=postselection_mask,
         )
 
-    (free, _), (kept, lanes) = sample(None), sample(mask)
+    free = sample(None)
+    live: list[int] = []
+    with monkeypatch.context() as patch_rows:
+        _record_rows(patch_rows, live)
+        kept = sample(mask)
     discarded = kept[:, masked]
-    if not share and masked == 1:
-        # NOTE: without sharing each live shot starts its own lane, so the later
-        # components start lanes for the survivors alone.
-        assert lanes == len(kept) + 2 * int((~discarded).sum())
+    survivors = int((~discarded).sum())
+    # NOTE: the components before the pruning one see every shot, those after
+    # it the survivors alone.
+    assert sum(live) == masked * shots + (3 - masked) * survivors
+    assert np.array_equal(sample(mask, batch_size=7), kept)
     assert discarded.any() and (~discarded).any()
     assert np.array_equal(kept[~discarded], free[~discarded])
     assert np.array_equal(kept[:, 0], free[:, 0])

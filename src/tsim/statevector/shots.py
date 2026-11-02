@@ -130,14 +130,15 @@ class ShotPlan:
         kept: The outputs a discarded shot keeps (its direct detectors), as words.
         pruned_kept: The outputs a shot that component ``k`` prunes keeps, as
             words: ``kept`` and component ``k``'s outputs, which it clears
-            itself past the pruning.
+            itself past the pruning. None for a component without postselected
+            outputs, which prunes no shot.
         programs: Each component's lane program.
 
     """
 
     screen: np.ndarray
     kept: np.ndarray
-    pruned_kept: tuple[np.ndarray, ...]
+    pruned_kept: tuple[np.ndarray | None, ...]
     programs: tuple[LaneProgram, ...]
 
 
@@ -158,15 +159,20 @@ def shot_plan(
             layout.components, layout.keys, layout.key_starts, strict=True
         )
     )
-    kept = layout.direct & is_detector
+    kept = shared.pack_bits(layout.direct & is_detector, words)
     pruned_kept = []
     for component in layout.components:
-        own = np.zeros(num_outputs, dtype=bool)
-        own[list(component.output_indices)] = True
-        pruned_kept.append(shared.pack_bits(kept | own, words))
+        outputs = list(component.output_indices)
+        if not postselected[outputs].any():
+            pruned_kept.append(None)
+            continue
+        own = kept.copy()
+        for o in outputs:
+            own[o >> 6] |= np.uint64(1) << np.uint64(o & 63)
+        pruned_kept.append(own)
     return ShotPlan(
         screen=shared.pack_bits(postselected & layout.direct, words),
-        kept=shared.pack_bits(kept, words),
+        kept=kept,
         pruned_kept=tuple(pruned_kept),
         programs=programs,
     )
@@ -557,7 +563,7 @@ class ShotSampler:
         ):
             if not alive.any():
                 break
-            before = alive.copy()
+            before = None if kept is None else alive.copy()
             stats.append(
                 shared.run_lanes(
                     len(rows) << component.width,
@@ -572,9 +578,11 @@ class ShotSampler:
                     threads,
                 )
             )
-            pruned = before & ~alive
-            if pruned.any():
-                rows[pruned, : len(kept)] &= kept
+            if kept is not None:
+                assert before is not None
+                pruned = before & ~alive
+                if pruned.any():
+                    rows[pruned, : len(kept)] &= kept
         return stats
 
     def _record(self, stats: list[tuple]) -> float:
