@@ -338,9 +338,11 @@ def test_relations_eliminate_and_reduce_like_brute_force(seed):
         assert not all(representable(total) for total in weights)
         return
     # NOTE: reduced echelon form, pivots taken in ``kept`` order.
+    pivots = [p for p, _, _ in rows]
+    assert pivots == sorted(set(pivots), key=kept.index)
     for p, mask, _ in rows:
-        assert mask >> p & 1
-        assert min((v for v in kept if mask >> v & 1), key=kept.index) == p
+        terms = [v for v in range(num_vars) if mask >> v & 1]
+        assert set(terms) <= set(kept) and min(terms, key=kept.index) == p
         assert not any(m >> p & 1 for q, m, _ in rows if q != p)
     for f, total in enumerate(weights):
         assert representable(total)
