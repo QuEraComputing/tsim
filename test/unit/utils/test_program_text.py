@@ -214,6 +214,8 @@ def test_parse_error_ignores_shorthand_in_comments():
         ("I[U3(0.3, 0.24, 0.49)] 0", "U3(0.3, 0.24, 0.49) 0"),
         ("SPP[R_PAULI(0.1)] X0*X1", "R_XX(0.1) 0 1"),
         ("SPP[R_PAULI(0.1)] X0*Y1", "R_PAULI(0.1) X0*Y1"),
+        ("SPP[R_PAULI(0.1)] !X0*Y1", "R_PAULI(0.1) !X0*Y1"),
+        ("SPP[R_PAULI(0.1)] X0*!X1", "R_PAULI(0.1) X0*!X1"),
     ],
 )
 def test_positional_tag_matches_shorthand(tagged, shorthand):
@@ -221,3 +223,18 @@ def test_positional_tag_matches_shorthand(tagged, shorthand):
     assert circuit == Circuit(shorthand)
     assert str(circuit) == str(Circuit(shorthand))
     assert Circuit(str(circuit)) == circuit
+
+
+@pytest.mark.parametrize(
+    "shorthand, stim_text",
+    [
+        ("R_PAULI(0.3) !X0*Y1", "SPP[R_PAULI(theta=0.3*pi)] !X0*Y1"),
+        ("R_PAULI(0.3) X0*!Y1", "SPP[R_PAULI(theta=0.3*pi)] X0*!Y1"),
+        ("R_PAULI(0.3) !X0*X1", "SPP[R_PAULI(theta=0.3*pi)] !X0*X1"),
+        ("R_PAULI(0.3) !X0 !Z1", "SPP[R_PAULI(theta=0.3*pi)] !X0 !Z1"),
+    ],
+)
+def test_shorthand_r_pauli_inverted_targets(shorthand, stim_text):
+    assert shorthand_to_stim(shorthand) == stim_text
+    assert stim_to_shorthand(stim_text) == shorthand
+    assert str(Circuit(shorthand)) == shorthand

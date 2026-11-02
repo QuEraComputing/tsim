@@ -286,9 +286,11 @@ class Circuit:
                 return
 
             if name == "TPP":
+                targets = _signed_pauli_targets(name, targets)
                 name = "SPP"
                 tag = encode_t_tag(tag)
             elif name == "TPP_DAG":
+                targets = _signed_pauli_targets(name, targets)
                 name = "SPP_DAG"
                 tag = encode_t_tag(tag)
             elif name == "T":

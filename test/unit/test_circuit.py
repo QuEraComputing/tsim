@@ -1259,6 +1259,7 @@ def test_append_r_pauli_negative_string_matches_negated_angle():
     c = Circuit()
     c.append("R_PAULI", stim.PauliString("-XY"), 0.3)
     assert c == Circuit("SPP[R_PAULI(theta=0.3*pi)] !X0*Y1")
+    assert str(c) == "R_PAULI(0.3) !X0*Y1"
     np.testing.assert_allclose(
         c.to_tensor(), Circuit("R_PAULI(-0.3) X0*Y1").to_tensor(), atol=1e-9
     )
@@ -1278,3 +1279,25 @@ def test_append_r_pauli_sign_applies_per_pauli_string():
 def test_append_r_pauli_anti_hermitian_pauli_string_rejected(pauli: str):
     with pytest.raises(ValueError, match="sign"):
         Circuit().append("R_PAULI", stim.PauliString(pauli), 0.3)
+
+
+@pytest.mark.parametrize(
+    "name, pauli, expected",
+    [
+        ("TPP", "-Z", "T_DAG 0"),
+        ("TPP_DAG", "-Z", "T 0"),
+        ("TPP", "-XZ", "TPP_DAG X0*Z1"),
+        ("TPP_DAG", "-XZ", "TPP X0*Z1"),
+    ],
+)
+def test_append_tpp_pauli_string_sign(name: str, pauli: str, expected: str):
+    c = Circuit()
+    c.append(name, stim.PauliString(pauli))
+    np.testing.assert_allclose(c.to_tensor(), Circuit(expected).to_tensor(), atol=1e-9)
+    assert Circuit(str(c)) == c
+
+
+@pytest.mark.parametrize("name", ["TPP", "TPP_DAG"])
+def test_append_tpp_anti_hermitian_pauli_string_rejected(name: str):
+    with pytest.raises(ValueError, match="sign"):
+        Circuit().append(name, stim.PauliString("iX"))
