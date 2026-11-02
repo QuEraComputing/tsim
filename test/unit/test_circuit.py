@@ -1243,8 +1243,8 @@ def test_detector_error_model_decompose_errors():
     dem = c.detector_error_model(decompose_errors=True)
     assert dem.num_detectors == stim_circuit.num_detectors
     assert any(
-        t.is_separator()
+        isinstance(t, stim.DemTarget) and t.is_separator()
         for instruction in dem.flattened()
-        if instruction.type == "error"
+        if isinstance(instruction, stim.DemInstruction)
         for t in instruction.targets_copy()
     )

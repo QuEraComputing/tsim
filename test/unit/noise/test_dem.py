@@ -297,17 +297,27 @@ def test_get_detector_error_model_mpp_measurement_counting():
         get_detector_error_model(c)
 
 
+def _errors(dem: stim.DetectorErrorModel) -> list[tuple[float, list[stim.DemTarget]]]:
+    """The probability and targets of each error in the flattened model."""
+    errors = []
+    for instruction in dem.flattened():
+        if isinstance(instruction, stim.DemInstruction) and instruction.type == "error":
+            targets = [
+                t for t in instruction.targets_copy() if isinstance(t, stim.DemTarget)
+            ]
+            errors.append((instruction.args_copy()[0], targets))
+    return errors
+
+
 def _merged_mechanisms(dem: stim.DetectorErrorModel) -> dict[frozenset, float]:
     """Each error's full effect (its components XORed), equal effects merged."""
     merged: dict[frozenset, float] = {}
-    for instruction in dem.flattened():
-        if instruction.type != "error":
-            continue
+    for p, targets in _errors(dem):
         effect: set[tuple[bool, int]] = set()
-        for t in instruction.targets_copy():
+        for t in targets:
             if not t.is_separator():
                 effect ^= {(t.is_logical_observable_id(), t.val)}
-        p, key = instruction.args_copy()[0], frozenset(effect)
+        key = frozenset(effect)
         q = merged.get(key, 0.0)
         merged[key] = p + q - 2 * p * q
     return merged
@@ -324,23 +334,16 @@ def test_get_detector_error_model_decompose_errors():
 
     # Every component is graphlike, and some mechanism was actually split.
     components = []
-    for instruction in dem.flattened():
-        if instruction.type != "error":
-            continue
+    for _, targets in _errors(dem):
         component: list[stim.DemTarget] = []
-        for t in [*instruction.targets_copy(), stim.target_separator()]:
+        for t in [*targets, stim.target_separator()]:
             if t.is_separator():
                 components.append(component)
                 component = []
             else:
                 component.append(t)
     assert all(sum(t.is_relative_detector_id() for t in k) <= 2 for k in components)
-    assert any(
-        t.is_separator()
-        for instruction in dem.flattened()
-        if instruction.type == "error"
-        for t in instruction.targets_copy()
-    )
+    assert any(t.is_separator() for _, targets in _errors(dem) for t in targets)
 
     # Recombining the components gives back the undecomposed model exactly.
     decomposed = _merged_mechanisms(dem)
