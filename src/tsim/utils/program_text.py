@@ -212,7 +212,7 @@ def _expand_rotation_shorthand(instruction: str) -> str:
         return f"SPP[R_PAULI(theta={alpha}*pi)] {m.group(2)}"
 
     instruction = re.sub(
-        rf"^R_PAULI\(({FLOAT_RE})\)\s+((?:[XYZ]\d+)(?:\*[XYZ]\d+)*)",
+        rf"^R_PAULI\(({FLOAT_RE})\)\s+(!?[XYZ]\d+(?:\*!?[XYZ]\d+)*)",
         replace_pauli,
         instruction,
     )
@@ -276,7 +276,7 @@ def stim_to_shorthand(text: str) -> str:
         return f"R_PAULI({alpha}) {product}"
 
     text = re.sub(
-        rf"\bSPP\[R_PAULI\(theta=({FLOAT_RE})\*pi\)\] ((?:[XYZ]\d+)(?:\*[XYZ]\d+)*)",
+        rf"\bSPP\[R_PAULI\(theta=({FLOAT_RE})\*pi\)\] (!?[XYZ]\d+(?:\*!?[XYZ]\d+)*)",
         replace_pauli,
         text,
     )

@@ -878,6 +878,22 @@ def test_r_pauli_duplicate_target_in_product_rejected():
         Circuit("R_PAULI(0.25) X0*X0").get_graph()
 
 
+def test_r_pauli_qubit_limit_is_per_product():
+    """Stim merges same-angle R_ZZ lines into one SPP; each 2-qubit product is in range."""
+    n = 33
+    text = "".join(f"R_ZZ(0.1) {2 * i} {2 * i + 1}\n" for i in range(n))
+    c = Circuit(text)
+    assert len(c._stim_circ) == 1
+    c.get_graph()
+
+
+def test_r_pauli_rejects_product_over_qubit_limit():
+    """A single Pauli product over the limit is still rejected."""
+    product = "*".join(f"Z{q}" for q in range(65))
+    with pytest.raises(ValueError, match="at most 64 qubits per Pauli product, got 65"):
+        Circuit(f"R_PAULI(0.25) {product}").get_graph()
+
+
 def test_r_pauli_long_product_roundtrip():
     """A same-axis product with >2 factors round-trips as R_PAULI, not a mangled R_XX."""
     c = Circuit("R_PAULI(0.3) X0*X1*X2")
@@ -1247,4 +1263,62 @@ def test_detector_error_model_decompose_errors():
         for instruction in dem.flattened()
         if isinstance(instruction, stim.DemInstruction)
         for t in instruction.targets_copy()
+    )
+
+
+def _rotation_unitary(pauli: stim.PauliString, alpha: float) -> np.ndarray:
+    """Return exp(-i * alpha * pi / 2 * P), with the sign of ``pauli`` included."""
+    p = np.array([[1]], dtype=complex)
+    for k in range(len(pauli)):
+        p = np.kron(p, pauli[k : k + 1].to_unitary_matrix(endian="big"))
+    p = pauli.sign * p
+    angle = alpha * np.pi / 2
+    return np.cos(angle) * np.eye(len(p)) - 1j * np.sin(angle) * p
+
+
+@pytest.mark.parametrize(
+    "pauli", ["X", "-X", "-Y", "-Z", "+XZ", "-XZ", "-YZ", "-ZZ", "-XYZ"]
+)
+def test_append_r_pauli_pauli_string_sign(pauli: str):
+    """A -1 PauliString rotates by exp(-i a pi/2 (-P)), i.e. in the opposite direction."""
+    ps = stim.PauliString(pauli)
+    c = Circuit()
+    c.append("R_PAULI", ps, 0.3)
+    expected = channel(_rotation_unitary(ps, 0.3))
+    np.testing.assert_allclose(c.to_tensor(), expected, atol=1e-9)
+    if ps.sign == -1:
+        opposite = channel(_rotation_unitary(-ps, 0.3))
+        assert not np.allclose(c.to_tensor(), opposite, atol=1e-6)
+
+
+def test_append_r_pauli_negative_string_matches_negated_angle():
+    c = Circuit()
+    c.append("R_PAULI", stim.PauliString("-XY"), 0.3)
+    assert c == Circuit("SPP[R_PAULI(theta=0.3*pi)] !X0*Y1")
+    np.testing.assert_allclose(
+        c.to_tensor(), Circuit("R_PAULI(-0.3) X0*Y1").to_tensor(), atol=1e-9
+    )
+
+
+def test_append_r_pauli_sign_applies_per_pauli_string():
+    c = Circuit()
+    c.append("R_PAULI", [stim.PauliString("-X"), stim.PauliString("Z1")], 0.3)
+    np.testing.assert_allclose(
+        c.to_tensor(),
+        Circuit("R_PAULI(-0.3) X0\nR_PAULI(0.3) Z1").to_tensor(),
+        atol=1e-9,
+    )
+
+
+@pytest.mark.parametrize("pauli", ["iX", "-iXY"])
+def test_append_r_pauli_anti_hermitian_pauli_string_rejected(pauli: str):
+    with pytest.raises(ValueError, match="sign"):
+        Circuit().append("R_PAULI", stim.PauliString(pauli), 0.3)
+
+
+@pytest.mark.parametrize("product", ["!X0*Y1", "X0*!Y1"])
+def test_r_pauli_shorthand_inverted_target_matches_negated_angle(product: str):
+    c = Circuit(f"R_PAULI(0.3) {product}")
+    np.testing.assert_allclose(
+        c.to_tensor(), Circuit("R_PAULI(-0.3) X0*Y1").to_tensor(), atol=1e-9
     )

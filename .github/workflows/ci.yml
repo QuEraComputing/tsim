@@ -30,10 +30,12 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
       - name: Install the project
-        run: uv sync --dev
+        run: uv sync --python ${{ matrix.python-version }} --dev
+      - name: Show test interpreter
+        run: uv run --python ${{ matrix.python-version }} python --version
       - name: Run tests
         # For example, using `pytest`
-        run: uv run just coverage
+        run: uv run --python ${{ matrix.python-version }} just coverage
       - name: Upload Coverage to Codecov
         if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v7

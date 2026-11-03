@@ -29,7 +29,7 @@ pip install "bloqade-tsim[cuda13]"
 
 
 ## Quick Start
-An introductory tutorial is available [here](https://tsim.mintlify.app/tutorials/encoding_demo). Please also refer to the [documentation](https://tsim.mintlify.app/).
+An introductory tutorial is available [here](docs/demos/encoding_demo.ipynb). Please also refer to the [documentation](https://tsim.mintlify.app/).
 
 For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and currently supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference).
 

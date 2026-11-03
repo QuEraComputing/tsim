@@ -71,17 +71,12 @@ def _validate_r_pauli_targets(instruction: stim.CircuitInstruction) -> None:
     """Validate an ``R_PAULI``-tagged SPP instruction's raw targets.
 
     Rejects duplicate target qubits within a single Pauli product (before any
-    algebraic simplification) and enforces the per-instruction qubit limit, both
-    checked on the raw (un-reduced) target list.
+    algebraic simplification) and enforces the per-product qubit limit, both
+    checked on the raw (un-reduced) target list. Stim merges consecutive
+    ``SPP`` lines with the same tag into one instruction, so the limit applies
+    to each product rather than to the whole instruction.
     """
     targets = instruction.targets_copy()
-    total_qubits = sum(1 for t in targets if not t.is_combiner)
-    if total_qubits > R_PAULI_MAX_QUBITS:
-        raise ValueError(
-            f"R_PAULI supports at most {R_PAULI_MAX_QUBITS} qubits per instruction, "
-            f"got {total_qubits}."
-        )
-
     seen: set[int] = set()
     for i, target in enumerate(targets):
         if target.is_combiner:
@@ -94,6 +89,11 @@ def _validate_r_pauli_targets(instruction: stim.CircuitInstruction) -> None:
         seen.add(target.value)
         next_idx = i + 1
         if next_idx >= len(targets) or not targets[next_idx].is_combiner:
+            if len(seen) > R_PAULI_MAX_QUBITS:
+                raise ValueError(
+                    f"R_PAULI supports at most {R_PAULI_MAX_QUBITS} qubits per "
+                    f"Pauli product, got {len(seen)}."
+                )
             seen = set()
 
 
