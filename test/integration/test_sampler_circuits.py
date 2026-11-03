@@ -15,7 +15,7 @@ def test_sample_bell_state():
         M 0 1
         DETECTOR rec[-1] rec[-2]
         """)
-    sampler = c.compile_sampler(seed=0)
+    sampler = c.compile_sampler(strategy="cat5", seed=0)
     m = sampler.sample(100)
 
     assert np.array_equal(m[:, 0], m[:, 1])
@@ -33,8 +33,9 @@ def test_detector_sampler_bell_state_with_measurement_error():
         """)
     sampler = c.compile_detector_sampler(seed=1)
 
-    d = sampler.sample(10)
-    assert np.count_nonzero(d) == 4
+    shots = 100_000
+    d = sampler.sample(shots)
+    assert abs(np.count_nonzero(d) / shots - 0.3) < 5 * np.sqrt(0.3 * 0.7 / shots)
 
 
 def test_t_gate():
@@ -44,7 +45,7 @@ def test_t_gate():
         H 0
         M 0
         """)
-    sampler = c.compile_sampler(seed=0)
+    sampler = c.compile_sampler(strategy="cat5", seed=0)
     m = sampler.sample(100)
     assert np.count_nonzero(m) == 9
 
@@ -56,7 +57,7 @@ def test_s_gate():
         H 0
         M 0
         """)
-    sampler = c.compile_sampler(seed=0)
+    sampler = c.compile_sampler(strategy="cat5", seed=0)
     m = sampler.sample(100)
     assert np.count_nonzero(m) == 48
 
@@ -98,13 +99,13 @@ def test_r_gate():
         R 0
         M 0
         """)
-    sampler = c.compile_sampler(seed=0)
+    sampler = c.compile_sampler(strategy="cat5", seed=0)
     m = sampler.sample(10)
     assert np.count_nonzero(m[:, 0]) == 7
     assert np.count_nonzero(m[:, 1]) == 4
     assert np.count_nonzero(m[:, 2]) == 0
 
-    det_sampler = c.compile_detector_sampler(seed=0)
+    det_sampler = c.compile_detector_sampler(strategy="cat5", seed=0)
     d = det_sampler.sample(10)
     assert np.count_nonzero(d) == 7
 

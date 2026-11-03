@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -11,20 +13,22 @@ from typing import (
     overload,
 )
 
-import pyzx_param as zx
+import numpy as np
 import stim
-from pyzx_param.graph.base import BaseGraph
-from pyzx_param.simulate import DecompositionStrategy
+import zxparam as zx
+from zxparam import Graph
+from zxparam.phase import Bit
 
 if TYPE_CHECKING:
     from tsim.sampler import CompiledDetectorSampler, CompiledMeasurementSampler
 
-from tsim.core.graph import build_sampling_graph
+from tsim.core.graph import transform_error_basis
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.core.tags import encode_t_tag
+from tsim.core.types import SamplingStrategy
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
-from tsim.utils.diagram import render_pyzx_d3, render_svg
+from tsim.utils.diagram import draw_zx, render_svg
 from tsim.utils.program_text import (
     controlled_gate_decomposition_lines,
     enriched_stim_error,
@@ -33,6 +37,16 @@ from tsim.utils.program_text import (
 )
 
 _PAULI_TARGET = {"X": stim.target_x, "Y": stim.target_y, "Z": stim.target_z}
+
+_PAULI_PRODUCT_GATES = frozenset(
+    {"MPP", "SPP", "SPP_DAG", "OBSERVABLE_INCLUDE", "TPP", "TPP_DAG", "R_PAULI"}
+)
+
+_DEPRECATED_DIAGRAM_TYPES: dict[str, Literal["zx", "zx-dets", "zx-meas"]] = {
+    "pyzx": "zx",
+    "pyzx-dets": "zx-dets",
+    "pyzx-meas": "zx-meas",
+}
 
 
 def _single_angle(name: str, arg: float | Iterable[float] | None) -> float:
@@ -75,6 +89,39 @@ def _pauli_product_targets(
     return out
 
 
+def _signed_pauli_targets(
+    targets: (
+        int
+        | stim.GateTarget
+        | stim.PauliString
+        | Iterable[int | stim.GateTarget | stim.PauliString]
+    ),
+    combined: bool = True,
+) -> list[int | stim.GateTarget]:
+    """Expand PauliString targets, keeping a ``-1`` sign as an inverted target.
+
+    NOTE: Stim drops the sign of a PauliString when appending it
+    (quantumlib/Stim#1134), which would flip a measurement result or the direction
+    of a rotation. ``stim.target_combined_paulis`` keeps it, and rejects imaginary
+    signs and identity strings. Stim also accepts target strings such as ``"X0"``,
+    which are passed through whole. With ``combined=False`` the factors of each
+    PauliString are left as separate targets, as ``OBSERVABLE_INCLUDE`` requires.
+    """
+    if isinstance(targets, str | stim.PauliString) or not isinstance(targets, Iterable):
+        items: list[int | stim.GateTarget | stim.PauliString] = [targets]
+    else:
+        items = list(targets)
+    out: list[int | stim.GateTarget] = []
+    for item in items:
+        if isinstance(item, stim.PauliString):
+            # NOTE: stim's stub types the returned list as a single GateTarget.
+            paulis = cast(list[stim.GateTarget], stim.target_combined_paulis(item))
+            out.extend(p for p in paulis if combined or not p.is_combiner)
+        else:
+            out.append(item)
+    return out
+
+
 def _bare_qubit_targets(
     gate_name: str,
     targets: (
@@ -93,7 +140,11 @@ def _bare_qubit_targets(
     for target in target_items:
         if isinstance(target, int):
             qubits.append(target)
-        elif isinstance(target, stim.GateTarget) and target.is_qubit_target:
+        elif (
+            isinstance(target, stim.GateTarget)
+            and target.is_qubit_target
+            and not target.is_inverted_result_target
+        ):
             qubits.append(target.value)
         else:
             raise ValueError(f"{gate_name} only supports bare qubit targets.")
@@ -237,6 +288,11 @@ class Circuit:
                     )
                 )
                 return
+
+            if name.upper() in _PAULI_PRODUCT_GATES:
+                targets = _signed_pauli_targets(
+                    targets, combined=name.upper() != "OBSERVABLE_INCLUDE"
+                )
 
             if name == "TPP":
                 name = "SPP"
@@ -555,7 +611,11 @@ class Circuit:
             for instr in circuit:
                 if isinstance(instr, stim.CircuitRepeatBlock):
                     stripped = strip(instr.body_copy())
-                    result.append(stim.CircuitRepeatBlock(instr.repeat_count, stripped))
+                    result.append(
+                        stim.CircuitRepeatBlock(
+                            instr.repeat_count, stripped, tag=instr.tag
+                        )
+                    )
                     continue
                 if instr.name in ["OBSERVABLE_INCLUDE", "DETECTOR"]:
                     continue
@@ -579,6 +639,12 @@ class Circuit:
         Unlike the stim.Circuit.detector_error_model() method, this method allows for non-deterministic observables
         when `allow_gauge_detectors` is set to true.
 
+        Warning:
+            By default (`decompose_errors=False`) the model is not decomposed. Matching decoders such as
+            PyMatching build their graph only from error mechanisms that flip at most two detectors, and silently
+            ignore the rest, which can raise the logical error rate substantially. Set `decompose_errors=True`
+            when the model is meant for a matching decoder.
+
         Args:
             decompose_errors: Defaults to false. When set to true, the error analysis attempts to decompose the
                 components of composite error mechanisms (such as depolarization errors) into simpler errors, and
@@ -587,8 +653,8 @@ class Circuit:
                 X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to
                 decompose large errors into simple errors that affect at most two detectors.
 
-                This is not supported by tsim and setting it to true will raise an error. The argument is present
-                for compatibility with stim.
+                Decomposition keeps the logical observables as observables, as stim does, so it requires them
+                to be deterministic: stim raises a ValueError otherwise.
             flatten_loops: Defaults to false. When set to true, the output will not contain any `repeat` blocks.
                 When set to false, the error analysis watches for loops in the circuit reaching a periodic steady
                 state with respect to the detectors being introduced, the error mechanisms that affect them, and the
@@ -647,11 +713,15 @@ class Circuit:
     def diagram(
         self,
         type: Literal[
+            "zx",
+            "zx-dets",
+            "zx-meas",
             "pyzx",
             "pyzx-dets",
             "pyzx-meas",
             "timeline-svg",
             "timeslice-svg",
+            "timeline-text",
         ] = "timeline-svg",
         tick: int | range | None = None,
         filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),),
@@ -665,11 +735,14 @@ class Circuit:
 
         Args:
             type: The type of diagram. Available types are:
-                "pyzx": A pyzx SVG of the ZX diagram of the circuit.
-                "pyzx-dets": A pyzx SVG of the ZX diagram that is used to compute
-                    probabilities of detectors and observables.
-                "pyzx-meas": A pyzx SVG of the ZX diagram that is used to compute
-                    probabilities of measurements.
+                "zx": A zxparam D3 drawing of the circuit's quantum/classical
+                    ZX graph.
+                "zx-dets": A zxparam D3 drawing of the reduced ZX graph that is
+                    used to compute probabilities of detectors and observables.
+                "zx-meas": A zxparam D3 drawing of the reduced ZX graph that is
+                    used to compute probabilities of measurements.
+                "pyzx", "pyzx-dets", "pyzx-meas": Deprecated aliases for
+                    "zx", "zx-dets" and "zx-meas".
                 "timeline-svg": An SVG image of the operations applied by
                     the circuit over time. Includes annotations showing the
                     measurement record index that each measurement writes
@@ -677,6 +750,10 @@ class Circuit:
                 "timeslice-svg": An SVG image of the operations applied
                     between two TICK instructions in the circuit, with the
                     operations laid out in 2d.
+                "timeline-text": An ASCII text diagram of the operations
+                    applied by the circuit over time, with tsim's custom
+                    gates rendered under their logical names rather than
+                    the Clifford placeholders used to store them.
             tick: Required for time slice diagrams. Specifies
                 which TICK instruction, or range of TICK instructions, to
                 slice at. Note that the first TICK instruction in the
@@ -722,6 +799,14 @@ class Circuit:
             viewer instead of as raw text.
 
         """
+        if type in _DEPRECATED_DIAGRAM_TYPES:
+            replacement = _DEPRECATED_DIAGRAM_TYPES[type]
+            warnings.warn(
+                f"Diagram type {type!r} is deprecated; use {replacement!r} instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            type = replacement
         if type in [
             "timeline-svg",
             "timeslice-svg",
@@ -738,65 +823,84 @@ class Circuit:
                 height=height,
                 zoomable=zoomable,
             )
-        elif type == "pyzx":
-            return render_pyzx_d3(self._stim_circ, kwargs)
-        elif type in ["pyzx-dets", "pyzx-meas"]:
-            from tsim.core.graph import (
-                scale_horizontally,
-                squash_graph,
-                transform_error_basis,
-            )
+        elif type == "zx":
+            builder = parse_stim_circuit(self._stim_circ)
+            g = builder.build(closed=False, outputs="detectors")
+            return draw_zx(g, builder.num_error_bits, kwargs)
+        elif type in ("zx-dets", "zx-meas"):
+            builder = parse_stim_circuit(self._stim_circ)
+            outputs = "detectors" if type == "zx-dets" else "records"
+            g = builder.build(closed=True, outputs=outputs)
+            zx.full_reduce(g)
+            g, _ = transform_error_basis(g, builder.num_error_bits)
+            g.to_rg()
+            return draw_zx(g, builder.num_error_bits, kwargs, layout="outputs")
+        elif type == "timeline-text":
+            from stim_timeline_text import render_timeline_text
 
-            g = self.get_sampling_graph(sample_detectors=type == "pyzx-dets")
-            zx.full_reduce(g, paramSafe=True)
-            g, _ = transform_error_basis(g)
-            squash_graph(g)
-            if kwargs.get("scale_horizontally", False):
-                scale_horizontally(g, kwargs.pop("scale_horizontally", 1.0))
-            zx.draw(g, **kwargs)
-            return g
+            return render_timeline_text(str(self._stim_circ))
         else:
             return self._stim_circ.diagram(type=type, **kwargs)  # pragma: no cover
 
-    def to_tensor(self) -> Any:
-        """Convert circuit to tensor representation."""
-        built = parse_stim_circuit(self._stim_circ)
-        g = built.graph.copy()
-        g.normalize()
-        return g.to_tensor()
+    def to_tensor(self, bindings: Mapping[int, int] | None = None) -> np.ndarray:
+        """Return the circuit's doubled tensor (its channel, U ⊗ Ū for unitaries).
 
-    def to_matrix(self) -> Any:
-        """Convert circuit to matrix representation."""
-        built = parse_stim_circuit(self._stim_circ)
-        g = built.graph.copy()
-        g.normalize()
-        return g.to_matrix()
+        Axes follow zxparam's ``Graph.to_tensor``: outputs then inputs, by qubit,
+        each with a copy and a conjugate axis. Only qubits that some instruction
+        targets get axes, in increasing index order; qubits that no instruction
+        names are left out, so ``H 1`` gives a one-qubit tensor (add ``I q`` to
+        keep qubit ``q``). Error bits default to 0 (the noiseless circuit);
+        ``bindings`` maps error indices to bits and raises ``ValueError`` for any
+        other key. Detector and observable annotations are left out. Needs
+        ``zxparam[quimb]``.
+        """
+        builder = parse_stim_circuit(self._stim_circ)
+        values: dict[int, Bit] = {j: 0 for j in range(builder.num_error_bits)}
+        for j, bit in (bindings or {}).items():
+            if j not in values:
+                raise ValueError(
+                    f"{j!r} is not an error index of this circuit, which has "
+                    f"{builder.num_error_bits} error bit(s)"
+                )
+            values[j] = 1 if bit else 0
+        return builder.build(closed=False, outputs="none").to_tensor(values)
 
     def tcount(self) -> int:
-        """Count the number of T gates in the circuit."""
-        built = parse_stim_circuit(self._stim_circ)
-        return zx.tcount(built.graph)
+        """Count the spiders whose angle is not a multiple of π/2."""
+        builder = parse_stim_circuit(self._stim_circ)
+        return zx.tcount(builder.build(closed=False, outputs="none"))
 
-    def get_graph(self) -> BaseGraph:
-        """Construct the ZX graph."""
-        built = parse_stim_circuit(self._stim_circ)
-        return built.graph
+    def get_graph(self) -> Graph:
+        """Construct the circuit's quantum/classical ZX graph, with qubit ports.
 
-    def get_sampling_graph(self, sample_detectors: bool = False) -> BaseGraph:
+        Error parameters have the error index as their ID. Each detector and
+        observable is a classical XOR spider with its own classical output
+        boundary; their ports follow the qubit outputs (detectors, then
+        observables), so the graph's tensor is the circuit's channel together
+        with the detector and observable bits. ``Circuit.to_tensor`` returns the
+        channel alone.
+        """
+        builder = parse_stim_circuit(self._stim_circ)
+        return builder.build(closed=False, outputs="detectors")
+
+    def get_sampling_graph(self, sample_detectors: bool = False) -> Graph:
         """Get a ZX graph that can be used to compute probabilities.
 
-        This graph will be constructed as follows:
+        The graph is not doubled: qubit wires are quantum and measurement records
+        are classical spiders. It is constructed as follows:
 
-        1. Double the ZX-diagram by composing it with its adjoint.
-        2. Connect all rec[i] vertices to their corresponding adjoint rec[i] vertices.
-        3. Add outputs:
+        1. Wire starts become ``|0⟩`` and wire ends are discarded.
+        2. Add outputs, which are classical boundaries:
         (a) When sampling measurements (i.e. `sample_detectors` is False),
-            add output nodes for each measurement. Detectors and observables are
+            add an output for each measurement. Detectors and observables are
             removed since they are ignored when sampling measurements.
         (b) When sampling detectors and observables (i.e. `sample_detectors` is True),
-            add output nodes for each detector and observable. Only one set of detector
-            and observable nodes is kept, i.e., detectors and observables are not
-            composed with their adjoints.
+            add an output for each detector, then for each observable.
+
+        Error parameters have the error index as their ID, so the graph's
+        ``to_tensor`` needs a bit for every error index in its bindings (unbound
+        parameters raise); its tensor is then the joint distribution of the
+        outputs.
 
         Args:
             sample_detectors: If True, sample detectors and observables instead of
@@ -806,24 +910,29 @@ class Circuit:
             A ZX graph for sampling.
 
         """
-        built = parse_stim_circuit(self._stim_circ)
-        return build_sampling_graph(built, sample_detectors=sample_detectors)
+        builder = parse_stim_circuit(self._stim_circ)
+        return builder.build(
+            closed=True, outputs="detectors" if sample_detectors else "records"
+        )
 
     def compile_sampler(
         self,
         *,
-        strategy: DecompositionStrategy = "cat5",
+        strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
     ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
         Args:
-            strategy: Stabilizer rank decomposition strategy.
-                Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
-                only produce deterministic samples for fixed batch size. If
-                deterministic samples are needed, the batch size should be set
-                manually.
+            strategy: "active_statevector" (the default) to simulate each
+                non-direct component on a dense state vector over its active
+                qubits, or a stabilizer rank decomposition strategy ("cat5",
+                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                ``numba.get_num_threads()`` threads.
+            seed: Random seed for the sampler. With "active_statevector" the samples
+                of a seed depend on neither the batch size nor the thread count;
+                with a stabilizer-rank strategy they are only deterministic for a
+                fixed batch size.
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
@@ -836,23 +945,26 @@ class Circuit:
     def compile_detector_sampler(
         self,
         *,
-        strategy: DecompositionStrategy = "cat5",
+        strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
     ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
 
         Connected components whose single output is deterministically given by
-        one f-variable are handled via a fast direct path (no compilation or
-        autoregressive sampling).  Remaining components go through the full
-        compilation pipeline.
+        one f-variable, or is a constant, are handled via a fast direct path (no
+        compilation or autoregressive sampling).  Remaining components go
+        through the full compilation pipeline.
 
         Args:
-            strategy: Stabilizer rank decomposition strategy.
-                Must be one of "cat5", "bss", "cutting".
-            seed: Random seed for the sampler. IMPORTANT: Currently, the sampler will
-                only produce deterministic samples for fixed batch size. If
-                deterministic samples are needed, the batch size should be set
-                manually.
+            strategy: "active_statevector" (the default) to simulate each
+                non-direct component on a dense state vector over its active
+                qubits, or a stabilizer rank decomposition strategy ("cat5",
+                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                ``numba.get_num_threads()`` threads.
+            seed: Random seed for the sampler. With "active_statevector" the samples
+                of a seed depend on neither the batch size nor the thread count;
+                with a stabilizer-rank strategy they are only deterministic for a
+                fixed batch size.
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.
@@ -881,7 +993,11 @@ class Circuit:
             for instr in circuit:
                 if isinstance(instr, stim.CircuitRepeatBlock):
                     fixed = fix_tags(instr.body_copy())
-                    result.append(stim.CircuitRepeatBlock(instr.repeat_count, fixed))
+                    result.append(
+                        stim.CircuitRepeatBlock(
+                            instr.repeat_count, fixed, tag=instr.tag
+                        )
+                    )
                     continue
 
                 name = instr.name

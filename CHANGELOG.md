@@ -7,12 +7,180 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+- `CompiledDetectorSampler.sample(postselection_mask=...)` returns only the
+  shots that no masked detector discards, so it can return fewer than `shots`
+  rows, possibly none, and `len(result) / shots` is the acceptance rate. It used
+  to return all `shots` rows, with the discarded ones partly filled with
+  `False`, for the caller to filter. Filtering the result with the mask again
+  still works but no longer does anything. Code that assumes
+  `len(result) == shots` must change, and code that computes the acceptance
+  rate as the mean of the re-applied mask now silently gets 1.0; use
+  `len(result) / shots` instead. The
+  rule is now the same for every strategy, including masked component detectors
+  with a stabilizer-rank strategy. Without a mask, exactly `shots`
+  rows are returned. `sample` warns when a masked detector is a constant 1,
+  which discards every shot. (#252)
+
 ### Added
-- `R_XX`, `R_YY`, `R_ZZ`, and `R_PAULI` parametric Pauli-product rotation gates. `R_XX(alpha) q0 q1` applies `exp(-i * alpha * pi/2 * XX)` (and likewise for `YY`/`ZZ`), while `R_PAULI(alpha) X0*Y1*Z2` applies the rotation for an arbitrary Pauli product (up to 64 qubits per instruction). The `alpha` parameter is in half-turns, matching the existing `R_X`/`R_Y`/`R_Z` convention. Duplicate target qubits are rejected at parse time. (#142)
-- Fast path in the detector sampler for components whose output is deterministically given by a single error variable. These components now skip the JAX compilation and autoregressive sampling pipeline, significantly speeding up detector sampling for surface-code circuits at low physical error rates.
-- `CompiledDetectorSampler.sample` now accepts an optional `postselection_mask` argument for postselected simulations (#41). The mask has length `num_detectors`; a shot is discarded when any masked detector fires. When a discarded shot is flagged by a direct detector, the expensive JAX autoregressive loop is skipped for that draw while still returning one row per requested shot. Discarded rows retain their direct detector columns and fill all other columns with zero; callers recover surviving shots by re-applying the mask to the returned detector columns. Masks that only target non-direct detectors, or that mask no direct detectors, fall back to the standard sampling path. Fully-direct circuits continue to use the NumPy fast path.
+- `Circuit.detector_error_model(decompose_errors=True)` is supported. The
+  argument is passed on to stim, with the logical observables kept as
+  observables, so the observables must be deterministic. The docstring now warns
+  that the default, undecomposed model loses every error mechanism that flips
+  more than two detectors when it is given to a matching decoder such as
+  PyMatching. (#232)
+- `"timeline-text"` diagram type. Renders tsim's custom gates under their
+  logical names instead of the Clifford placeholders used to store them, so
+  `T` prints as `T` rather than `S`. Covers `T`, `T_DAG`, `TPP`, `TPP_DAG`,
+  `R_X`, `R_Y`, `R_Z`, and `U3`. `R_XX`, `R_YY`, and `R_ZZ` share `R_PAULI`'s
+  metadata tag and render as `R_PAULI(alpha)`. Rendering is provided by the
+  `stim-timeline-text` package. (#171)
+- `strategy="active_statevector"` for `compile_sampler`, `compile_detector_sampler`
+  and the sampler classes. Each non-direct component is read off the reduced ZX
+  diagram, without circuit extraction, as Pauli rotations and measurements on
+  `|0…0⟩`, and simulated on a dense state vector over its active qubits, so the
+  cost grows as `2^W` in the active width `W`. It only samples: it cannot compute
+  probabilities, and it raises `ValueError` for components it cannot read, for
+  components wider than 30 active qubits, and when one shot needs more than half
+  of the available memory. (#203)
+- Trajectory sharing for `strategy="active_statevector"`: shots with
+  equal histories share one state vector, which splits at measurements, and
+  shots that a postselected component detector discards stop being simulated
+  there. It is always on and has no option. (#198)
+- Parametric tags accept positional angles in units of pi, as in the shorthand:
+  `I[R_X(0.1)] 0` is `R_X(0.1) 0`, `I[U3(0.3, 0.24, 0.49)] 0` is
+  `U3(0.3, 0.24, 0.49) 0`, and `SPP[R_PAULI(0.1)] X0*Y1` is
+  `R_PAULI(0.1) X0*Y1`. The keyword form (`R_X(theta=0.1*pi)`) still works;
+  program text is canonicalized to it. Empty angle fields, as in
+  `R_X(theta=0.1*pi,)`, are now rejected in both forms. (#202)
 
+### Changed
+- The samplers now default to `strategy="active_statevector"`; pass
+  `strategy="cat5"` for the previous stabilizer-rank default.
+  `CompiledStateProbs` keeps `"cat5"`. (#203)
+- `strategy="active_statevector"` no longer uses JAX: it samples on the CPU
+  with numba kernels, also when JAX has a GPU. Amplitudes are complex128. Postselected
+  detectors of a component prune its shots with sharing off as well, and also
+  when no direct detector is postselected. (#199)
+- A statevector call samples its noise, then runs its components on one chunk
+  of shots per numba thread, each of at least 256 and at most 2^16 shots, or
+  `batch_size`. The samples of a seed depend on neither `batch_size`, the
+  thread count nor trajectory sharing: the noise and every measurement
+  outcome are drawn from counter-based streams by shot index. Seeded samples
+  differ from earlier versions. (#199, #207, #212)
+- Noise sampling runs in numba kernels, so the samples for a given seed
+  differ from earlier versions; `numba>=0.61` is now a dependency. (#199)
+- Constant outputs now use the existing direct-output path, skipping component
+  compilation and sampling. Postselection treats them as direct detectors.
+  Samples for a fixed seed can differ from earlier versions. (#201)
+- Compiling a sampler does less work in channel validation and
+  simplification, the noise sampling tables, the GF(2) error basis
+  (`find_basis`), detector placement while parsing, and, for
+  `strategy="active_statevector"`, graph-state stabilizers and op scheduling;
+  `cultivation_d5_end2end` compiles about 2.5x faster. Compiled programs are
+  unchanged. Postselection also writes direct detectors faster. (#207)
+- The noise sampler picks each fault's outcome from an alias table and takes
+  the logarithm of its geometric skips inline instead of calling libm, so it
+  draws faults faster; the sampled distribution is unchanged, but seeded
+  samples differ from earlier versions. (#211)
+- `CompiledDetectorSampler.sample(bit_packed=True)` packs the outputs straight
+  from the noise sampler when every output is a noise bit, as in typical
+  surface-code memory circuits, instead of packing a boolean array. (#211)
+- `strategy="active_statevector"` samples into *shot words*: the noise sampler
+  XORs each fault into the packed bits of its shot's outputs and component
+  keys, and the components add their branch parts in place, so no f-parameter
+  matrix is built and `bit_packed=True` returns the words' bytes for any circuit
+  whose outputs are in order; circuits of noise bits alone still get boolean
+  samples straight from the noise sampler. Each component runs in one numba kernel per
+  chunk, on parallel amplitude loops when a call is one chunk; single-component
+  circuits such as distillation and cultivation sample about 3-4x faster on
+  one thread. (#212)
+- The statevector rotation and measurement kernels take each amplitude pair's
+  parity with one popcount and mix pairs with real products (the coupling of
+  a Pauli rotation is real or imaginary), so wide components such as
+  `cultivation_d5` without postselection and `coherent_d5_r5` sample about
+  1.6x faster. Samples are unchanged. (#213)
+- Tsim now uses zxparam instead of pyzx-param. Circuits are built directly as quantum/classical ZX diagrams (no more composing with the adjoint), and reduction and stabilizer-rank decomposition run in zxparam.
+- `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`.
+- In `Circuit.get_graph()` (and the `"zx"` diagram), every detector and observable has a classical output boundary, with ports after the qubit outputs, so the graph's tensor is the circuit's channel together with the detector and observable bits.
+- `Circuit.to_tensor()` returns the doubled tensor (the circuit's channel, `U ⊗ Ū` for unitaries), with error parameters set to 0 unless bound.
+- `Circuit.to_tensor()` needs quimb, which is not a Tsim runtime dependency: install `zxparam[quimb]`, otherwise it raises `ImportError`.
+- `Circuit.get_sampling_graph()` is no longer doubled: qubit wires are quantum and measurement records are classical spiders. Its `to_tensor()` raises on unbound error parameters (pyzx treated them as 0); bind them by error index. With all errors bound, the tensor is the joint distribution of the outputs.
+- `repr()` of a sampler shows only the statistics of the backends it uses: with `strategy="active_statevector"` it drops the graph, parameter and A–E term counts, which were always zero.
+- The ZX diagram types are now `"zx"`, `"zx-dets"` and `"zx-meas"`. They return zxparam's HTML drawing object instead of a graph.
+- Internals: `GraphRepresentation` (`tsim.core.instructions`) is now `GraphBuilder` in the new `tsim.core.builder`, and `parse_stim_circuit` returns it. Its bookkeeping functions became methods: `detector` is now `add_detector` and `observable_include` is now `include_observable`; `tick`, `correlated_error` and `finalize_correlated_error` keep their names; `ensure_lane`, `add_lane`, `add_quantum_boundary`, `last_col` and `last_edge` are now private. Its fields are private behind read-only properties (`rec` is now `records`). `ANNOTATION_ROW`, `HELPER_LANE` and `_error_phase` (now `error_phase`) moved to `tsim.core.builder`. `build_sampling_graph` (`tsim.core.graph`) is replaced by `GraphBuilder.build(closed=..., outputs=...)`.
+- Internals moved or removed: `classify_direct` moved from `tsim.core.graph` to `tsim.compile.pipeline`; `tsim.utils.diagram.render_pyzx_d3`, `squash_graph` and `scale_horizontally` are gone, since ZX diagrams use zxparam's `draw` layout and scale options.
+- Internals of `strategy="active_statevector"`: a component's tape keeps a
+  boolean column per symbol instead of uint32 words, `run_lanes` writes a pruned
+  shot's outputs when its lane dies instead of keeping graves, and both samplers
+  pick their backend in one `_sample_outputs` method. Samples are unchanged.
+  (#223)
 
+### Deprecated
+- The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types. They still work as aliases for `"zx"`, `"zx-dets"` and `"zx-meas"` but emit a `DeprecationWarning`.
+
+### Removed
+- `Circuit.to_matrix()` (compare `to_tensor()` with `U ⊗ Ū` instead).
+- The `pyzx-param` dependency.
+- Internals: the `track_classical_wires` argument of `parse_stim_circuit`, the `tsim.compile.stabrank` module, and `ConnectedComponent`, `connected_components`, `get_params` and `evaluate_graph` from `tsim.core.graph`.
+
+### Fixed
+- An `E`/`ELSE_CORRELATED_ERROR` chain whose links repeat Pauli components now
+  compiles to one error bit per component (X or Z on a qubit) instead of one
+  per link, so a general 3-qubit Pauli channel, a 63-link chain, is a 6-bit
+  channel instead of failing with `Maximum allowed dimension exceeded`. Links
+  share a component while nothing else acts on its wire between them (a
+  `SWAP` moves the wire to the other qubit). Chains with fewer components than
+  links get fewer error bits, numbered by component, so
+  `Circuit.to_tensor(bindings)` and `get_graph` change for them, and their
+  seeded samples can differ. A chain builds the same graph as before if all its
+  links have targets and it never flips a component of a wire twice, also not
+  within one link: `E X0 Z1; ELSE_CORRELATED_ERROR Y2` does, but `E X0 X0` and
+  `E X0; SWAP 0 1; ELSE_CORRELATED_ERROR X1` do not. A chain that would need
+  more than 2^20 outcomes raises `ValueError`. (#248)
+- `Circuit.append("R_PAULI", pauli_string, angle)` no longer drops the sign of a
+  `stim.PauliString`: a `-1` sign now reverses the rotation, and a sign of `±i`
+  raises `ValueError`. (#228)
+- `Circuit.append` no longer drops the sign of a `stim.PauliString` target of
+  `MPP`, `SPP`, `SPP_DAG`, `OBSERVABLE_INCLUDE`, `TPP` or `TPP_DAG` either, so
+  `MPP` about `-Z` flips the result and `TPP` about `-Z` is `T_DAG`. Stim itself
+  drops the sign (quantumlib/Stim#1134). For all these gates and `R_PAULI`, a
+  PauliString with a sign of `±i` or no Paulis raises `ValueError`. (#240)
+- `Circuit.append("CCZ", targets)` and `"CCX"` reject inverted targets such as
+  `stim.target_inv(0)` instead of ignoring the inversion. (#240)
+- `R_PAULI` program text accepts inverted targets such as `R_PAULI(0.3) !X0*Y1`,
+  and circuits print them in that form instead of
+  `SPP[R_PAULI(theta=0.3*pi)] !X0*Y1`. (#244)
+- `CompiledDetectorSampler.sample` ignored `postselection_mask` for circuits
+  without non-direct components, so their discarded rows kept their direct
+  observables. A discarded row now keeps its direct detectors and reads `False`
+  elsewhere for every circuit. With `strategy="active_statevector"`, a shot that a
+  component's postselected detector discards is no longer simulated by the
+  other components, and reads `False` in their outputs and in the direct
+  observables, whatever the order of the components. (#222)
+- With a `postselection_mask` and no `batch_size`, the last survivors of a call,
+  split into a batch per thread, ran one batch at a time for components so wide
+  that only one of the largest batches fits in memory. They now run on as many
+  threads as batches of their size allow. (#207)
+- Program text no longer rewrites shorthand inside tags or comments, so tags
+  such as `I[R_X(0.1)]`, `X[U3(0.1, 0.2, 0.3)]` or `H[my T tag]` no longer
+  fail to parse or change. (#202)
+- `SPP` and `SPP_DAG` with a parametric tag other than `R_PAULI` (e.g.
+  `SPP[R_X(theta=0.1*pi)] X0`) now raise instead of acting as a plain `SPP`.
+  (#202)
+
+## [0.1.5] - 2026-07-21
+
+### Added
+- `CCX` (Toffoli) and `CCZ` gates in circuit text and `Circuit.append`, implemented using Clifford+T decompositions. (#150)
+- `R_XX`, `R_YY`, `R_ZZ`, and `R_PAULI` parametric Pauli-product rotation gates. `R_XX(alpha) q0 q1` applies `exp(-i * alpha * pi/2 * XX)` (and likewise for `YY`/`ZZ`), while `R_PAULI(alpha) X0*Y1*Z2` applies the rotation for an arbitrary Pauli product (up to 64 qubits per instruction). The `alpha` parameter is in half-turns, matching the existing `R_X`/`R_Y`/`R_Z` convention. Duplicate target qubits are rejected at parse time. (#152)
+- Global-rotation quantum error-correction tutorial covering color-code state preparation, noise, postselection, and logical-error analysis. (#156)
+- Fast path in the detector sampler for components whose output is deterministically given by a single error variable. These components now skip the JAX compilation and autoregressive sampling pipeline, significantly speeding up detector sampling for surface-code circuits at low physical error rates. (#78)
+- `CompiledDetectorSampler.sample` now accepts an optional `postselection_mask` argument for postselected simulations. The mask has length `num_detectors`; a shot is discarded when any masked detector fires. When a discarded shot is flagged by a direct detector, the expensive JAX autoregressive loop is skipped for that draw while still returning one row per requested shot. Discarded rows retain their direct detector columns and fill all other columns with zero; callers recover surviving shots by re-applying the mask to the returned detector columns. Masks that only target non-direct detectors, or that mask no direct detectors, fall back to the standard sampling path. Fully-direct circuits continue to use the NumPy fast path. (#157)
+
+### Changed
+- Exact-scalar reductions and device-to-host transfers now use lower-memory JAX and CUDA paths, reducing sampling memory use and transfer overhead for large detector-sampling workloads. (#149)
+- `ipywidgets` is now installed as a runtime dependency so notebook circuit diagrams work in clean installations. (#179)
 
 ## [0.1.4] - 2026-04-28
 

@@ -4,8 +4,19 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from itertools import combinations
+from typing import NamedTuple
 
+import numba
 import numpy as np
+
+from tsim.utils.kernels import jit, kernel
+from tsim.utils.rng import next_skip, next_uniform
+
+# NOTE: shots are sampled in blocks of this many rows, in parallel, each block
+# from its own random stream; a block's rows stay in cache while every channel
+# visits them.
+_BLOCK_SHOTS = 4096
 
 
 @dataclass
@@ -29,10 +40,14 @@ class Channel:
 
     def __post_init__(self) -> None:
         """Validate channel probabilities."""
+        # NOTE: NumPy's overhead dominates for a channel's few outcomes, and
+        # simplification makes many channels, so the range is checked in plain
+        # Python and the sum without np.isclose, with its tolerance.
         tol = 1e-6
-        if np.any(self.probs < -tol) or np.any(self.probs > 1.0 + tol):
+        values = self.probs.tolist()
+        if min(values, default=0.0) < -tol or max(values, default=0.0) > 1.0 + tol:
             raise ValueError(f"Probabilities must lie in [0, 1], but got: {self.probs}")
-        if not np.isclose(np.sum(self.probs), 1.0):
+        if not abs(float(self.probs.sum()) - 1.0) <= 1e-8 + 1e-5:
             raise ValueError(
                 f"Probabilities must sum to 1, but got: {self.probs} "
                 f"(sum {np.sum(self.probs)})"
@@ -41,7 +56,20 @@ class Channel:
     @property
     def num_bits(self) -> int:
         """Number of bits in the channel (k where probs has shape 2^k)."""
-        return int(np.log2(len(self.probs)))
+        return channel_num_bits(self.probs)
+
+
+def channel_num_bits(probs: np.ndarray) -> int:
+    """Return the number of bits ``k`` of a channel with ``2^k`` outcomes.
+
+    Raises:
+        ValueError: If the number of outcomes is not a power of two.
+
+    """
+    num_bits = len(probs).bit_length() - 1
+    if num_bits < 0 or len(probs) != 1 << num_bits:
+        raise ValueError(f"a channel has 2^k outcomes, but got {len(probs)}")
+    return num_bits
 
 
 def error_probs(p: float) -> np.ndarray:
@@ -187,14 +215,34 @@ def correlated_error_probs(probabilities: list[float]) -> np.ndarray:
 
     """
     k = len(probabilities)
-    probs = np.zeros(2**k, dtype=np.float64)
+    return chain_error_probs([1 << i for i in range(k)], probabilities, k)
 
+
+def chain_error_probs(
+    masks: list[int], probabilities: list[float], num_bits: int
+) -> np.ndarray:
+    """Build the distribution of a correlated error chain whose links set given bits.
+
+    Link ``j`` fires, after all previous links did not, with probability
+    ``p_j · ∏_{i<j} (1 − p_i)``, and then sets the bits of ``masks[j]``. Links
+    with equal masks add up, and ``probs[0]`` also holds the probability that no
+    link fires.
+
+    Args:
+        masks: Bit pattern of each link, below ``2^num_bits``.
+        probabilities: Conditional probability of each link.
+        num_bits: Number of bits of the channel.
+
+    Returns:
+        Array of shape ``(2^num_bits,)`` with probabilities for each outcome.
+
+    """
+    probs = np.zeros(2**num_bits, dtype=np.float64)
     no_error_so_far = 1.0
-    for i, p in enumerate(probabilities):
-        probs[1 << i] = no_error_so_far * p
+    for mask, p in zip(masks, probabilities, strict=True):
+        probs[mask] += no_error_so_far * p
         no_error_so_far *= 1 - p
-
-    probs[0] = no_error_so_far
+    probs[0] += no_error_so_far
     return probs
 
 
@@ -440,11 +488,19 @@ def absorb_subset_channels(channels: list[Channel], max_bits: int = 4) -> list[C
         max_bits: Maximum number of bits allowed per channel
 
     Returns:
-        List with no channel being a strict subset of another
+        List in which no channel is a strict subset of another of at most
+        ``max_bits`` signatures
 
     """
-    # Sort by number of bits (largest first) for efficient processing
+    # NOTE: largest first, so that every channel is absorbed into the first
+    # channel that contains it.
     channels = sorted(channels, key=lambda c: -len(c.unique_col_ids))
+
+    # NOTE: a channel of at most max_bits signatures has few strict subsets, so
+    # they are looked up instead of compared with every other channel.
+    by_signatures: dict[frozenset[int], list[int]] = defaultdict(list)
+    for j, channel in enumerate(channels):
+        by_signatures[frozenset(channel.unique_col_ids)].append(j)
 
     result: list[Channel] = []
     absorbed: set[int] = set()
@@ -453,22 +509,25 @@ def absorb_subset_channels(channels: list[Channel], max_bits: int = 4) -> list[C
         if i in absorbed:
             continue
 
-        set_i = set(channel_i.unique_col_ids)
-
-        # Try to absorb smaller channels into this one
+        signatures = sorted(set(channel_i.unique_col_ids))
         current_probs = channel_i.probs.copy()
         current_col_ids = channel_i.unique_col_ids
 
-        for j, channel_j in enumerate(channels):
-            if j <= i or j in absorbed:
-                continue
-
-            set_j = set(channel_j.unique_col_ids)
-
-            # Check if j is a strict subset of i
-            if set_j < set_i and len(set_i) <= max_bits:
+        if len(signatures) <= max_bits:
+            subsets = (
+                frozenset(subset)
+                for size in range(len(signatures))
+                for subset in combinations(signatures, size)
+            )
+            subset_channels = sorted(
+                j
+                for subset in subsets
+                for j in by_signatures.get(subset, ())
+                if j > i and j not in absorbed
+            )
+            for j in subset_channels:
                 # Expand channel_j to match channel_i's signatures and convolve
-                expanded_j = expand_channel(channel_j, current_col_ids)
+                expanded_j = expand_channel(channels[j], current_col_ids)
                 current_probs = xor_convolve(current_probs, expanded_j.probs)
                 absorbed.add(j)
 
@@ -500,6 +559,47 @@ def simplify_channels(
     return channels
 
 
+def unique_columns(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``np.unique(matrix, axis=1, return_inverse=True)``, with a 1-D inverse.
+
+    ``np.unique`` sorts every column, comparing whole columns, which is slow for
+    a large sparse matrix. Here a dict over the bit-packed columns finds the
+    distinct ones, and only those are sorted, as bytes. Big-endian packing keeps
+    the lexicographic order of the columns, so the result is the same.
+
+    Args:
+        matrix: Binary matrix with entries 0 or 1 (nonzero entries count as 1).
+
+    Returns:
+        The distinct columns in lexicographic order, and the index of each
+        column of ``matrix`` among them.
+
+    """
+    nonzero = (np.asarray(matrix) != 0).view(np.uint8)
+    # NOTE: np.packbits along axis 0 reads the matrix column by column; OR-ing
+    # every eighth row into the bytes reads it row by row, which is faster.
+    packed = np.zeros((-(-nonzero.shape[0] // 8), nonzero.shape[1]), dtype=np.uint8)
+    for bit in range(8):
+        rows = nonzero[bit::8]
+        packed[: len(rows)] |= rows << np.uint8(7 - bit)
+    packed = np.ascontiguousarray(packed.T)
+    ids: dict[bytes, int] = {}
+    first_list: list[int] = []
+    column_ids = np.empty(len(packed), dtype=np.int64)
+    for i, column in enumerate(packed):
+        key = column.tobytes()
+        if key not in ids:
+            ids[key] = len(first_list)
+            first_list.append(i)
+        column_ids[i] = ids[key]
+    first = np.array(first_list, dtype=np.int64)
+    keys = list(ids)
+    order = np.array(sorted(range(len(keys)), key=keys.__getitem__), dtype=np.int64)
+    rank = np.empty_like(order)
+    rank[order] = np.arange(len(order))
+    return matrix[:, first[order]], rank[column_ids]
+
+
 class ChannelSampler:
     """Samples from multiple error channels and transforms to a reduced basis.
 
@@ -515,9 +615,9 @@ class ChannelSampler:
     Channels are automatically simplified by:
     1. Removing bits e_i that do not affect any f-variable (i.e. all-zero columns in error_transform)
     2. Folding duplicate column IDs, i.e. channels whose column signatures contain duplicate IDs.
-    2. Merging channels with identical column signatures, i.e. channels whose corresponding
+    3. Merging channels with identical column signatures, i.e. channels whose corresponding
         columns in error_transform are identical.
-    3. Absorbing channels whose signatures are subsets of others, i.e. channels whose corresponding
+    4. Absorbing channels whose signatures are subsets of others, i.e. channels whose corresponding
         columns in error_transform are a strict subset of another channel's columns.
 
     Example:
@@ -547,7 +647,7 @@ class ChannelSampler:
             seed: Random seed for sampling. If None, a random seed is generated.
 
         """
-        unique_cols, inverse = np.unique(error_transform, axis=1, return_inverse=True)
+        unique_cols, inverse = unique_columns(error_transform)
 
         # Signature matrix: each row is a unique column signature
         signature_matrix = unique_cols.T  # shape (num_signatures, num_f)
@@ -560,7 +660,7 @@ class ChannelSampler:
         channels: list[Channel] = []
         e_offset = 0
         for probs in channel_probs:
-            num_bits = int(np.log2(len(probs)))
+            num_bits = channel_num_bits(probs)
             col_ids = tuple(int(inverse[e_offset + i]) for i in range(num_bits))
             channels.append(Channel(probs=probs, unique_col_ids=col_ids))
             e_offset += num_bits
@@ -571,88 +671,281 @@ class ChannelSampler:
         self._rng = np.random.default_rng(
             seed if seed is not None else np.random.default_rng().integers(0, 2**30)
         )
-        self._sparse_data = self._precompute_sparse(
-            self.channels, self.signature_matrix
-        )
+        self._tables = _fire_tables(self.channels, self.signature_matrix)
 
-    @staticmethod
-    def _precompute_sparse(
-        channels: list[Channel], signature_matrix: np.ndarray
-    ) -> list[tuple[float, np.ndarray, np.ndarray]]:
-        """Precompute per-channel data for geometric-skip sampling.
+    def block_seeds(self, num_samples: int) -> np.ndarray:
+        """Draw the seeds of the blocks of the next ``num_samples`` samples."""
+        num_blocks = -(-num_samples // _BLOCK_SHOTS)
+        return self._rng.integers(0, 2**64, size=num_blocks, dtype=np.uint64)
 
-        For each channel with non-trivial fire probability, computes:
-        - p_fire: probability of any non-identity outcome
-        - cond_cdf: conditional CDF over non-identity outcomes
-        - xor_patterns: precomputed XOR output patterns per outcome
-
-        Args:
-            channels: List of noise channels to precompute data for.
-            signature_matrix: Binary matrix of shape (num_e, num_f) mapping
-                error-variable columns to output f-variables.
-
-        Returns:
-            List of (p_fire, cond_cdf, xor_patterns) tuples, one per channel
-            with non-trivial fire probability. ``p_fire`` is a float,
-            ``cond_cdf`` is a float64 array of shape (n_outcomes - 1,), and
-            ``xor_patterns`` is a uint8 array of shape (n_outcomes - 1, num_f).
-
-        """
-        data: list[tuple[float, np.ndarray, np.ndarray]] = []
-        for ch in channels:
-            probs = ch.probs.astype(np.float64)
-            p_fire = 1.0 - float(probs[0])
-            n_outcomes = len(probs)
-
-            if p_fire <= 1e-15 or n_outcomes <= 1:
-                continue
-
-            cond_cdf = np.cumsum(probs[1:] / p_fire, dtype=np.float64)
-            cond_cdf /= cond_cdf[-1]
-
-            col_ids = np.asarray(ch.unique_col_ids)
-            num_bits = len(col_ids)
-            outcomes = np.arange(1, n_outcomes)
-            bits_mask = ((outcomes[:, None] >> np.arange(num_bits)) & 1).astype(
-                np.uint8
-            )
-            xor_patterns = (bits_mask @ signature_matrix[col_ids] % 2).astype(np.uint8)
-
-            data.append((p_fire, cond_cdf, xor_patterns))
-        return data
-
-    def sample(self, num_samples: int = 1) -> np.ndarray:
+    def sample(
+        self, num_samples: int = 1, seeds: np.ndarray | None = None
+    ) -> np.ndarray:
         """Sample from all error channels and transform to new error basis.
 
         Uses geometric-skip sampling, optimized for low-noise regimes where
-        P(non-identity) << 1 per channel.
+        P(non-identity) << 1 per channel. Blocks of shots are sampled in
+        parallel, each from its own random stream, so the samples depend on the
+        seed and ``num_samples`` but not on the number of threads.
 
         Args:
             num_samples: Number of samples to draw.
+            seeds: The blocks' seeds from ``block_seeds(num_samples)``; drawn
+                here if ``None``.
 
         Returns:
             NumPy array of shape (num_samples, num_f) with uint8 values indicating
             which f-variables are set for each sample.
 
         """
-        num_outputs = self.signature_matrix.shape[1]
-        result = np.zeros((num_samples, num_outputs), dtype=np.uint8)
-
-        for p_fire, cond_cdf, xor_pats in self._sparse_data:
-            expected = num_samples * p_fire
-            sigma = np.sqrt(expected * (1.0 - p_fire))
-            # At 7 sigma, we undersample in about 1 out of 1e12 cases
-            n_draws = int(expected + 7.0 * sigma) + 100
-
-            positions = np.cumsum(self._rng.geometric(p_fire, size=n_draws)) - 1
-            positions = positions[positions < num_samples]
-
-            if len(positions) == 0:
-                continue
-
-            outcome_idx = np.searchsorted(
-                cond_cdf, self._rng.uniform(size=len(positions))
-            )
-            result[positions] ^= xor_pats[outcome_idx]
-
+        num_f = self.signature_matrix.shape[1]
+        result = np.empty((num_samples, num_f), dtype=np.uint8)
+        self.sample_words(result, self._tables.flips, seeds)
         return result
+
+    def word_tables(
+        self, f_index: np.ndarray, bit: np.ndarray, *, bits: int = 64
+    ) -> WordTables:
+        """Return the fault outcomes' flips on rows of words of ``bits`` bits.
+
+        F-variable ``f_index[j]`` flips bit ``bit[j]`` of a row (bit ``b`` is bit
+        ``b % bits`` of word ``b // bits``), so a row holds the XOR of its set
+        f-variables' bits. The pairs must be distinct. Rows are of uint64 words
+        for ``bits=64`` and of a uint8 per bit for ``bits=1``.
+        """
+        flips = self._tables.flips
+        num_f = self.signature_matrix.shape[1]
+        order = np.argsort(f_index, kind="stable")
+        targets = np.asarray(bit, dtype=np.int64)[order]
+        column_start = np.searchsorted(np.asarray(f_index)[order], np.arange(num_f + 1))
+        # NOTE: each outcome's flipped f-variables expand into their bits; a bit
+        # that an even number of them flip cancels.
+        first = column_start[flips.word]
+        count = column_start[flips.word + 1] - first
+        entry = np.arange(count.sum()) + np.repeat(
+            first - np.cumsum(count) + count, count
+        )
+        num_outcomes = len(flips.start) - 1
+        outcome = np.repeat(
+            np.repeat(np.arange(num_outcomes), np.diff(flips.start)), count
+        )
+        span = int(targets.max(initial=0)) + 1
+        flat, parity = np.unique(outcome * span + targets[entry], return_counts=True)
+        flat = flat[parity % 2 == 1]
+        outcome, flipped = flat // span, flat % span
+        word = flipped // bits
+        runs = np.flatnonzero(
+            np.diff(outcome, prepend=-1).astype(bool)
+            | np.diff(word, prepend=-1).astype(bool)
+        )
+        ones = np.left_shift(np.uint64(1), (flipped % bits).astype(np.uint64))
+        mask = np.bitwise_or.reduceat(ones, runs) if len(runs) else ones
+        start = np.searchsorted(outcome[runs], np.arange(num_outcomes + 1))
+        if bits == 1:
+            mask = mask.astype(np.uint8)
+        return WordTables(start.astype(np.int64), word[runs].astype(np.int64), mask)
+
+    def sample_words(
+        self, out: np.ndarray, flips: WordTables, seeds: np.ndarray | None = None
+    ) -> None:
+        """Write ``len(out)`` rows of noise into ``out``, as ``flips`` sets their words.
+
+        Row ``r`` is drawn as ``sample`` draws row ``r``: block by block from
+        ``seeds``, so every layout of the rows holds the same faults.
+        """
+        num_samples = len(out)
+        if seeds is None:
+            seeds = self.block_seeds(num_samples)
+        num_blocks = -(-num_samples // _BLOCK_SHOTS)
+        if len(seeds) != num_blocks:
+            raise ValueError(
+                f"{num_samples} samples need {num_blocks} block seeds, "
+                f"got {len(seeds)}"
+            )
+        t = self._tables
+        _sample_blocks(
+            num_samples * len(t.p_fire),
+            out,
+            seeds,
+            t.p_fire,
+            t.outcome_start,
+            t.alias_prob,
+            t.alias_index,
+            *flips,
+        )
+
+
+class WordTables(NamedTuple):
+    """The words each fault outcome XORs into a row.
+
+    Outcome ``k`` XORs ``mask[j]`` into word ``word[j]`` of its row, for ``j`` in
+    ``start[k] … start[k+1] - 1``.
+    """
+
+    start: np.ndarray
+    word: np.ndarray
+    mask: np.ndarray
+
+
+class _FireTables(NamedTuple):
+    """Geometric-skip sampling tables of the channels that can fire.
+
+    Channel ``c`` fires with probability ``p_fire[c]``. Its non-identity
+    outcomes are ``outcome_start[c] … outcome_start[c+1] - 1``, and outcome
+    ``k`` flips the f-variables ``flips.word[flips.start[k] : flips.start[k+1]]``:
+    ``flips`` writes rows of one uint8 per f-variable.
+
+    The samplers pick outcomes with Walker alias tables: among a channel's ``n``
+    outcomes from ``first``, slot ``i`` is outcome ``first + i`` with probability
+    ``alias_prob[first + i]`` and otherwise ``alias_index[first + i]``.
+    """
+
+    p_fire: np.ndarray
+    outcome_start: np.ndarray
+    flips: WordTables
+    alias_prob: np.ndarray
+    alias_index: np.ndarray
+
+
+def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _FireTables:
+    """Return the sampling tables of ``channels``.
+
+    A channel fires with the total probability of its non-identity outcomes,
+    clipped to [0, 1]: ``1 - probs[0]`` can exceed 1 by a rounding error, and it
+    loses precision for small probabilities.
+
+    Args:
+        channels: The noise channels.
+        signature_matrix: Binary matrix of shape (num_signatures, num_f) mapping
+            each column ID to the f-variables it flips.
+
+    """
+    p_fire: list[float] = []
+    cdf: list[float] = []
+    flip_cols: list[int] = []
+    outcome_start, flip_start = [0], [0]
+    # NOTE: signatures are sparse, so an outcome's flips are built as sets: those
+    # of its lowest bit XOR those of the outcome without that bit.
+    supports: dict[int, frozenset[int]] = {}
+    for channel in channels:
+        probs = channel.probs.astype(np.float64)
+        conditional = np.cumsum(np.clip(probs[1:], 0, None))
+        fire = min(float(conditional[-1]), 1.0) if len(conditional) else 0.0
+        if fire <= 1e-15:
+            continue
+        p_fire.append(fire)
+        cdf.extend(conditional / conditional[-1])
+        outcome_start.append(len(cdf))
+        for col_id in channel.unique_col_ids:
+            if col_id not in supports:
+                supports[col_id] = frozenset(
+                    np.flatnonzero(signature_matrix[col_id]).tolist()
+                )
+        bit_supports = [supports[col_id] for col_id in channel.unique_col_ids]
+        flips: list[frozenset[int]] = [frozenset()]
+        for outcome in range(1, len(probs)):
+            lowest = outcome & -outcome
+            bit = lowest.bit_length() - 1
+            flips.append(flips[outcome ^ lowest] ^ bit_supports[bit])
+            flip_cols.extend(sorted(flips[outcome]))
+            flip_start.append(len(flip_cols))
+    starts = np.array(outcome_start, dtype=np.int64)
+    alias_prob, alias_index = _alias_tables(starts, np.array(cdf, dtype=np.float64))
+    return _FireTables(
+        p_fire=np.array(p_fire, dtype=np.float64),
+        outcome_start=starts,
+        flips=WordTables(
+            np.array(flip_start, dtype=np.int64),
+            np.array(flip_cols, dtype=np.int64),
+            np.ones(len(flip_cols), dtype=np.uint8),
+        ),
+        alias_prob=alias_prob,
+        alias_index=alias_index,
+    )
+
+
+def _alias_tables(
+    outcome_start: np.ndarray, cdf: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return Vose's alias tables of every channel's conditional outcomes."""
+    alias_prob = np.ones(len(cdf))
+    alias_index = np.arange(len(cdf), dtype=np.int64)
+    for c in range(len(outcome_start) - 1):
+        first, last = int(outcome_start[c]), int(outcome_start[c + 1])
+        count = last - first
+        if count == 1:
+            continue
+        scaled = np.diff(cdf[first:last], prepend=0.0) * count
+        small = [i for i in range(count) if scaled[i] < 1.0]
+        large = [i for i in range(count) if scaled[i] >= 1.0]
+        while small and large:
+            low, high = small.pop(), large.pop()
+            alias_prob[first + low] = scaled[low]
+            alias_index[first + low] = first + high
+            scaled[high] -= 1.0 - scaled[low]
+            (small if scaled[high] < 1.0 else large).append(high)
+        # NOTE: the slots left over have probability 1 up to rounding.
+        for i in small + large:
+            alias_prob[first + i] = 1.0
+    return alias_prob, alias_index
+
+
+@jit
+def _pick_outcome(state, first, last, alias_prob, alias_index):
+    """Return the advanced state and an outcome among ``first … last - 1``."""
+    count = last - first
+    if count == 1:
+        return state, first
+    state, u = next_uniform(state)
+    x = u * count
+    slot = int(x)
+    k = first + slot
+    # NOTE: a select, not a branch: which one applies is random, so a branch
+    # would often be mispredicted.
+    keep = np.int64(x - slot < alias_prob[k])
+    alias = alias_index[k]
+    return state, alias ^ ((alias ^ k) & -keep)
+
+
+@jit
+def _sample_block(
+    out, state, p_fire, outcome_start, alias_prob, alias_index, flip_start, word, mask
+):
+    """Clear the rows of ``out``, then XOR in every channel's outcomes.
+
+    Outcome ``k`` XORs ``mask[j]`` into ``out[row, word[j]]`` for ``j`` in
+    ``flip_start[k] … flip_start[k+1] - 1`` (``WordTables``).
+    """
+    out[:] = 0
+    for c in range(len(p_fire)):
+        log_keep = np.log1p(-p_fire[c])
+        first, last = outcome_start[c], outcome_start[c + 1]
+        row = -1.0
+        while True:
+            state, skip = next_skip(state, log_keep)
+            row += 1.0 + skip
+            if row >= out.shape[0]:
+                break
+            state, k = _pick_outcome(state, first, last, alias_prob, alias_index)
+            for j in range(flip_start[k], flip_start[k + 1]):
+                out[int(row), word[j]] ^= mask[j]
+
+
+@kernel
+def _sample_blocks(
+    out, seeds, p_fire, outcome_start, alias_prob, alias_index, flip_start, word, mask
+):
+    """Sample block ``b`` of ``_BLOCK_SHOTS`` rows from the stream ``seeds[b]``."""
+    for b in numba.prange(len(seeds)):
+        rows = out[b * _BLOCK_SHOTS : (b + 1) * _BLOCK_SHOTS]
+        _sample_block(
+            rows,
+            seeds[b],
+            p_fire,
+            outcome_start,
+            alias_prob,
+            alias_index,
+            flip_start,
+            word,
+            mask,
+        )

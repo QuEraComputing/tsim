@@ -3,9 +3,13 @@ import pytest
 from numpy.testing import assert_allclose
 
 from tsim.noise.channels import (
+    _BLOCK_SHOTS,
     Channel,
     ChannelSampler,
+    _alias_tables,
+    _fire_tables,
     absorb_subset_channels,
+    channel_num_bits,
     correlated_error_probs,
     error_probs,
     expand_channel,
@@ -17,6 +21,7 @@ from tsim.noise.channels import (
     pauli_channel_2_probs,
     reduce_null_bits,
     simplify_channels,
+    unique_columns,
     xor_convolve,
 )
 
@@ -188,6 +193,48 @@ class TestChannelValidation:
         with pytest.raises(ValueError):
             Channel(probs=pauli_channel_1_probs(0.6, 0.6, 0.6), unique_col_ids=(0, 1))
 
+    def test_accepts_what_numpy_comparisons_accept(self):
+        """The checks keep NumPy's semantics, tolerances, NaN and infinities too."""
+
+        def accepted_by_numpy(probs: np.ndarray) -> bool:
+            if np.any(probs < -1e-6) or np.any(probs > 1 + 1e-6):
+                return False
+            return bool(np.isclose(np.sum(probs), 1.0))
+
+        edge_cases = [
+            [1.0],
+            [1 + 1e-6, -1e-6],
+            [1 + 2e-6, -2e-6],
+            [0.5, 0.5 + 1e-5],
+            [0.5, 0.5 + 1.1e-5],
+            [0.5, 0.5 - 1.1e-5],
+            [np.nan, 1.0],
+            [np.nan, -1.0],
+            [np.inf, 0.0],
+            [-np.inf, 1.0],
+        ]
+        cases = [np.array(case) for case in edge_cases]
+        rng = np.random.default_rng(0)
+        for _ in range(2000):
+            probs = rng.dirichlet(np.ones(2 ** int(rng.integers(0, 5))))
+            scale = rng.choice([0, 1e-7, 1e-6, 4e-6, 1e-5, 3e-5])
+            cases.append(probs + scale * rng.standard_normal(len(probs)))
+            # NOTE: sums at np.isclose's tolerance, where rounding decides.
+            cases.append(probs * (1 + rng.uniform(-1.02e-5, 1.02e-5)))
+        cases += [case.astype(np.float32) for case in cases]
+        outcomes = []
+        for probs in cases:
+            try:
+                Channel(
+                    probs=probs, unique_col_ids=tuple(range(channel_num_bits(probs)))
+                )
+                accepted = True
+            except ValueError:
+                accepted = False
+            assert accepted == accepted_by_numpy(probs), probs
+            outcomes.append(accepted)
+        assert 0 < sum(outcomes) < len(outcomes)
+
     def test_channel_sampler_rejects_invalid_channel(self):
         # ChannelSampler wraps probs in a Channel, so invalid distributions
         # get caught at construction time rather than silently dropped.
@@ -196,6 +243,15 @@ class TestChannelValidation:
         with pytest.raises(ValueError):
             ChannelSampler([bad_probs], transform, seed=42)
 
+    @pytest.mark.parametrize("size, num_bits", [(1, 0), (2, 1), (8, 3), (16, 4)])
+    def test_channel_num_bits(self, size: int, num_bits: int):
+        assert channel_num_bits(np.zeros(size)) == num_bits
+
+    @pytest.mark.parametrize("size", [0, 3, 6])
+    def test_channel_num_bits_rejects_non_power_of_two(self, size: int):
+        with pytest.raises(ValueError, match="2\\^k outcomes"):
+            channel_num_bits(np.zeros(size))
+
 
 def _sample_channels(channels, matrix, n_samples, seed=42):
     """Sample from channels using the ChannelSampler infrastructure."""
@@ -203,9 +259,7 @@ def _sample_channels(channels, matrix, n_samples, seed=42):
     sampler.channels = channels
     sampler.signature_matrix = np.asarray(matrix, dtype=np.uint8)
     sampler._rng = np.random.default_rng(seed)
-    sampler._sparse_data = ChannelSampler._precompute_sparse(
-        channels, sampler.signature_matrix
-    )
+    sampler._tables = _fire_tables(channels, sampler.signature_matrix)
     return sampler.sample(n_samples)
 
 
@@ -741,6 +795,70 @@ class TestAbsorbSubsetChannels:
         assert_allclose(absorbed[0].probs, [1.0, 0.0, 0.0, 0.0])
 
 
+def _absorb_by_comparing_every_pair(channels, max_bits):
+    """The original quadratic ``absorb_subset_channels``, as a reference."""
+    channels = sorted(channels, key=lambda c: -len(c.unique_col_ids))
+    result, absorbed = [], set()
+    for i, channel_i in enumerate(channels):
+        if i in absorbed:
+            continue
+        set_i = set(channel_i.unique_col_ids)
+        probs = channel_i.probs.copy()
+        for j, channel_j in enumerate(channels):
+            if j <= i or j in absorbed:
+                continue
+            if set(channel_j.unique_col_ids) < set_i and len(set_i) <= max_bits:
+                expanded = expand_channel(channel_j, channel_i.unique_col_ids)
+                probs = xor_convolve(probs, expanded.probs)
+                absorbed.add(j)
+        result.append(Channel(probs=probs, unique_col_ids=channel_i.unique_col_ids))
+    return result
+
+
+class TestAbsorbMatchesPairwiseComparison:
+    """The indexed absorption gives the pairwise algorithm's channels bitwise."""
+
+    @pytest.mark.parametrize("max_bits", [2, 4])
+    @pytest.mark.parametrize("seed", range(5))
+    def test_random_channels(self, seed, max_bits):
+        rng = np.random.default_rng(seed)
+        channels = []
+        for _ in range(60):
+            size = int(rng.integers(0, 6))
+            col_ids = tuple(sorted(rng.choice(7, size=size, replace=False).tolist()))
+            probs = rng.random(2**size)
+            channels.append(Channel(probs=probs / probs.sum(), unique_col_ids=col_ids))
+        got = absorb_subset_channels(channels, max_bits)
+        expected = _absorb_by_comparing_every_pair(channels, max_bits)
+        assert [c.unique_col_ids for c in got] == [c.unique_col_ids for c in expected]
+        for a, b in zip(got, expected, strict=True):
+            np.testing.assert_array_equal(a.probs, b.probs)
+
+
+class TestUniqueColumns:
+    """unique_columns returns exactly what np.unique(axis=1) returns."""
+
+    @pytest.mark.parametrize("rows", [0, 1, 7, 8, 9, 15, 17, 64, 100])
+    @pytest.mark.parametrize("cols", [0, 1, 5, 200])
+    @pytest.mark.parametrize("density", [0.2, 0.6])
+    def test_matches_numpy(self, rows, cols, density):
+        rng = np.random.default_rng(rows * 1000 + cols)
+        distinct = (rng.random((rows, max(1, cols // 3))) < density).astype(np.uint8)
+        matrix = distinct[:, rng.integers(0, distinct.shape[1], cols)]
+        got_cols, got_inverse = unique_columns(matrix)
+        expected_cols, expected_inverse = np.unique(matrix, axis=1, return_inverse=True)
+        np.testing.assert_array_equal(got_cols, expected_cols)
+        np.testing.assert_array_equal(got_inverse, np.ravel(expected_inverse))
+
+    def test_accepts_float_matrices(self):
+        matrix = np.array([[1.0, 0.0, 1.0], [0.0, 2.0, 0.0]])
+        got_cols, got_inverse = unique_columns(matrix)
+        np.testing.assert_array_equal(got_cols, [[0.0, 1.0], [2.0, 0.0]])
+        np.testing.assert_array_equal(got_inverse, [1, 0, 1])
+        sampler = ChannelSampler([error_probs(1)], np.eye(1))
+        np.testing.assert_array_equal(sampler.sample(3), np.ones((3, 1)))
+
+
 class TestSimplifyChannels:
     """Tests for the full simplify_channels function."""
 
@@ -984,6 +1102,42 @@ class TestReduceNullBits:
         assert_allclose(np.sum(result[0].probs), 1.0, rtol=1e-5)
 
 
+class TestFireTables:
+    """The sampling tables of channels, against dense products over GF(2)."""
+
+    @pytest.mark.parametrize("seed", range(6))
+    def test_flips_match_dense_products(self, seed):
+        rng = np.random.default_rng(seed)
+        num_signatures, num_f = int(rng.integers(1, 20)), int(rng.integers(0, 40))
+        density = rng.choice([0.05, 0.3, 0.8])
+        signature_matrix = (rng.random((num_signatures, num_f)) < density).astype(
+            np.uint8
+        )
+        channels = [Channel(probs=np.array([1.0, 0.0]), unique_col_ids=(0,))]
+        for _ in range(60):
+            num_bits = int(rng.integers(0, 6))
+            # NOTE: repeated column IDs are allowed and cancel in pairs.
+            col_ids = tuple(rng.integers(0, num_signatures, num_bits).tolist())
+            probs = rng.random(2**num_bits) * (rng.random(2**num_bits) < 0.6)
+            probs[0] += 1e-3
+            channels.append(Channel(probs=probs / probs.sum(), unique_col_ids=col_ids))
+        tables = _fire_tables(channels, signature_matrix)
+
+        flip_start, flip_cols = [0], []
+        for channel in channels:
+            if np.clip(channel.probs[1:], 0, None).sum() <= 1e-15:
+                continue
+            for outcome in range(1, len(channel.probs)):
+                bits = [(outcome >> i) & 1 for i in range(channel.num_bits)]
+                flips = np.array(bits) @ signature_matrix[list(channel.unique_col_ids)]
+                flip_cols.extend(np.flatnonzero(flips % 2).tolist())
+                flip_start.append(len(flip_cols))
+        np.testing.assert_array_equal(tables.flips.start, flip_start)
+        np.testing.assert_array_equal(tables.flips.word, flip_cols)
+        assert len(tables.outcome_start) == len(tables.p_fire) + 1
+        assert tables.outcome_start[-1] == len(flip_start) - 1
+
+
 class TestChannelSampler:
     """Tests for ChannelSampler with simplification."""
 
@@ -1037,6 +1191,61 @@ class TestChannelSampler:
         expected = 3 * 0.1 * 0.9**2 + 0.1**3
         assert_allclose(freq, expected, rtol=0.05)
 
+    def test_two_bit_channel_joint_distribution_across_blocks(self):
+        """Every outcome of a 2-bit channel has its probability, in every block."""
+        probs = np.array([0.5, 0.2, 0.25, 0.05])
+        transform = np.eye(2, dtype=np.uint8)
+        sampler = ChannelSampler([probs], transform, seed=3)
+        num_samples = 5 * _BLOCK_SHOTS + 123
+        samples = sampler.sample(num_samples)
+        outcome = samples[:, 0] + 2 * samples[:, 1]
+        counts = np.bincount(outcome, minlength=4)
+        sigma = np.sqrt(num_samples * probs * (1 - probs))
+        assert np.all(np.abs(counts - num_samples * probs) <= 5 * sigma)
+
+    def test_blocks_draw_independent_streams(self):
+        """Every block of shots has its own random stream."""
+        sampler = ChannelSampler(
+            [error_probs(0.5)], np.ones((1, 1), dtype=np.uint8), seed=1
+        )
+        blocks = sampler.sample(3 * _BLOCK_SHOTS).reshape(3, _BLOCK_SHOTS)
+        assert not np.array_equal(blocks[0], blocks[1])
+        assert not np.array_equal(blocks[1], blocks[2])
+
+    def test_identity_rounded_below_zero_still_fires_every_row(self):
+        """``1 - probs[0]`` above 1 by a rounding error means a certain error."""
+        probs = np.array([-1.25e-16, 0.33, 0.11, 0.56])
+        sampler = ChannelSampler([probs], np.eye(2, dtype=np.uint8), seed=2)
+        num_samples = 100_000
+        rates = sampler.sample(num_samples).mean(axis=0)
+        expected = np.array([0.33 + 0.56, 0.11 + 0.56])
+        sigma = np.sqrt(expected * (1 - expected) / num_samples)
+        assert np.all(np.abs(rates - expected) <= 5 * sigma)
+
+    def test_certain_error_flips_every_row(self):
+        """A channel that always fires reaches every row, last partial block too."""
+        sampler = ChannelSampler(
+            [error_probs(1.0)], np.ones((1, 1), dtype=np.uint8), seed=0
+        )
+        assert np.all(sampler.sample(2 * _BLOCK_SHOTS + 7) == 1)
+
+    def test_seed_reproduces_samples(self):
+        """Equal seeds give equal samples; consecutive calls differ."""
+        probs = [error_probs(0.1), error_probs(0.2)]
+        transform = np.array([[1, 0], [1, 1]], dtype=np.uint8)
+        first = ChannelSampler(probs, transform, seed=5)
+        second = ChannelSampler(probs, transform, seed=5)
+        a, b = first.sample(10_000), second.sample(10_000)
+        assert np.array_equal(a, b)
+        assert not np.array_equal(first.sample(10_000), a)
+
+    def test_zero_samples(self):
+        """Sampling no shots returns an empty array with one column per f."""
+        sampler = ChannelSampler(
+            [error_probs(0.1)], np.ones((1, 1), dtype=np.uint8), seed=0
+        )
+        assert sampler.sample(0).shape == (0, 1)
+
     def test_empty_transform(self):
         """Test with no f-variables (empty transform)."""
         probs = [error_probs(0.1)]
@@ -1046,3 +1255,89 @@ class TestChannelSampler:
         samples = sampler.sample(100)
 
         assert samples.shape == (100, 0)
+
+    def test_drawn_block_seeds_reproduce_samples(self):
+        """sample(n) equals sample(n, block_seeds(n)), and seed draws split freely."""
+        probs = [error_probs(0.1), error_probs(0.2)]
+        transform = np.array([[1, 0], [1, 1]], dtype=np.uint8)
+        num_samples = 3 * _BLOCK_SHOTS + 5
+        expected = ChannelSampler(probs, transform, seed=8).sample(num_samples)
+        drawn = ChannelSampler(probs, transform, seed=8)
+        seeds = drawn.block_seeds(num_samples)
+        assert np.array_equal(drawn.sample(num_samples, seeds), expected)
+
+        whole = ChannelSampler(probs, transform, seed=9).block_seeds(5 * _BLOCK_SHOTS)
+        split = ChannelSampler(probs, transform, seed=9)
+        parts = [
+            split.block_seeds(2 * _BLOCK_SHOTS),
+            split.block_seeds(3 * _BLOCK_SHOTS),
+        ]
+        assert np.array_equal(np.concatenate(parts), whole)
+
+    def test_wrong_number_of_block_seeds_raises(self):
+        sampler = ChannelSampler(
+            [error_probs(0.1)], np.ones((1, 1), dtype=np.uint8), seed=0
+        )
+        with pytest.raises(ValueError, match="block seeds"):
+            sampler.sample(_BLOCK_SHOTS + 1, sampler.block_seeds(_BLOCK_SHOTS))
+
+    def test_alias_tables_give_each_outcome_its_probability(self):
+        """Each slot's own outcome and alias add up to the conditional outcome probabilities."""
+        rng = np.random.default_rng(5)
+        weights = [rng.random(n) for n in (1, 3, 7, 15)] + [np.array([1.0, 0.0, 2.0])]
+        outcome_start = np.cumsum([0] + [len(w) for w in weights])
+        cdf = np.concatenate([np.cumsum(w) / w.sum() for w in weights])
+        alias_prob, alias_index = _alias_tables(outcome_start, cdf)
+        for c, w in enumerate(weights):
+            first, last = outcome_start[c], outcome_start[c + 1]
+            count = last - first
+            got = np.zeros(count)
+            for slot in range(first, last):
+                got[slot - first] += alias_prob[slot] / count
+                got[alias_index[slot] - first] += (1 - alias_prob[slot]) / count
+            assert_allclose(got, w / w.sum(), atol=1e-15)
+
+    def test_word_tables_put_each_rows_parities_in_its_words(self):
+        """A row's words are the XOR of its f-variables' columns, block by block."""
+        probs = [
+            pauli_channel_2_probs(*([0.01] * 15)),
+            error_probs(0.2),
+            error_probs(0.05),
+        ]
+        rng = np.random.default_rng(8)
+        transform = rng.integers(0, 2, size=(70, 6), dtype=np.uint8)
+        sampler = ChannelSampler(probs, transform, seed=6)
+        num_f = sampler.signature_matrix.shape[1]
+        num_samples = 2 * _BLOCK_SHOTS + 77
+        seeds = sampler.block_seeds(num_samples)
+        rows = sampler.sample(num_samples, seeds)
+        # NOTE: 70 parities over two words, among them a few single f-variables.
+        parities = rng.integers(0, 2, size=(70, num_f)).astype(bool)
+        parities[: min(num_f, 8)] = np.eye(num_f, dtype=bool)[:8]
+        bit, f_index = np.nonzero(parities)
+        words = np.ones((num_samples, 2), dtype=np.uint64)
+        sampler.sample_words(words, sampler.word_tables(f_index, bit), seeds)
+        bits = np.unpackbits(words.view(np.uint8), axis=1, bitorder="little")
+        expected = (rows @ parities.T.astype(np.uint8)) % 2
+        assert np.array_equal(bits[:, :70], expected)
+        assert not bits[:, 70:].any()
+
+    def test_zero_probability_outcomes_never_occur(self):
+        """An outcome of probability 0 is never drawn, from any alias slot."""
+        probs = np.array([0.4, 0.0, 0.35, 0.25])
+        sampler = ChannelSampler([probs], np.eye(2, dtype=np.uint8), seed=12)
+        samples = sampler.sample(200_000)
+        assert not np.any((samples[:, 0] == 1) & (samples[:, 1] == 0))
+        assert_allclose(np.mean(samples[:, 1] & ~samples[:, 0]), 0.35, rtol=0.02)
+
+    def test_sampled_blocks_clear_their_rows(self):
+        """Sampling overwrites whatever the output array held before."""
+        probs = [error_probs(0.1), error_probs(0.2)]
+        transform = np.array([[1, 0], [1, 1]], dtype=np.uint8)
+        num_samples = 2 * _BLOCK_SHOTS + 9
+        sampler = ChannelSampler(probs, transform, seed=4)
+        seeds = sampler.block_seeds(num_samples)
+        expected = sampler.sample(num_samples, seeds)
+        out = np.ones_like(expected)
+        sampler.sample_words(out, sampler._tables.flips, seeds)
+        assert np.array_equal(out, expected)

@@ -22,6 +22,15 @@ Ion.toml
 docs/demos/msd_circuits2/
 scratch*
 
+# Local scratch, notes, and generated artifacts
+/outputs/
+/output/
+/tmp/
+/lean/
+/benchmark_instructions.md
+/clifft_noise_transparent_squeeze.md
+/zx_pbc_explainer.html
+
 # NOTE: Mintlify-generated output (docs/api-reference/, docs/tutorials/*.mdx,
 # docs/images/tutorials/) is intentionally committed. Mintlify's hosted
 # builder does not run Python, so the CI workflow (.github/workflows/docs.yml)

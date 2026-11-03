@@ -3,7 +3,10 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+import tsim.sampler as sampler_module
+import tsim.statevector.shared as shared
 from tsim.circuit import Circuit
+from tsim.utils.kernels import PARALLEL_WORK
 
 
 def test_detector_sampler_args():
@@ -168,6 +171,94 @@ def test_detector_sampler_no_detectors_bit_packed():
     assert result.shape == (5, 0)
 
 
+# NOTE: noise bits only, and a T component next to them.
+PACKED_CIRCUITS = [
+    "X_ERROR(0.1) 0 1 2 3\nM 0 1 2 3\n"
+    "DETECTOR rec[-4]\nDETECTOR rec[-3]\nDETECTOR rec[-2]\n"
+    "OBSERVABLE_INCLUDE(0) rec[-1]\n",
+    "X_ERROR(0.1) 0 1\nH 2\nT 2\nH 2\nM 0 1 2\n"
+    "DETECTOR rec[-3]\nDETECTOR rec[-2]\nDETECTOR rec[-1]\n"
+    "OBSERVABLE_INCLUDE(0) rec[-1] rec[-3]\n",
+]
+
+
+@pytest.mark.parametrize("text", PACKED_CIRCUITS)
+@pytest.mark.parametrize(
+    "layout",
+    [{}, {"append_observables": True}, {"prepend_observables": True}],
+)
+def test_bit_packed_outputs_are_the_packed_bool_outputs(text, layout):
+    unpacked = Circuit(text).compile_detector_sampler(seed=5)
+    packed = Circuit(text).compile_detector_sampler(seed=5)
+    expected = unpacked.sample(9000, **layout)
+    result = packed.sample(9000, bit_packed=True, **layout)
+    assert result.dtype == np.uint8
+    assert np.array_equal(result, np.packbits(expected, axis=1, bitorder="little"))
+
+
+# NOTE: noise outputs only, one of them constant, so bool samples come straight
+# from the noise sampler and packed ones from the shot words.
+DIRECT_ONLY = """
+X 1
+X_ERROR(0.2) 0 2 3
+M 0 1 2 3
+DETECTOR rec[-4]
+DETECTOR rec[-3]
+DETECTOR rec[-2]
+OBSERVABLE_INCLUDE(0) rec[-1]
+OBSERVABLE_INCLUDE(1) rec[-4] rec[-1]
+"""
+
+
+@pytest.mark.parametrize("reference", [False, True])
+@pytest.mark.parametrize(
+    "layout",
+    [
+        {},
+        {"append_observables": True},
+        {"prepend_observables": True},
+        {"prepend_observables": True, "append_observables": True},
+        {"separate_observables": True},
+    ],
+)
+def test_bool_noise_outputs_are_the_shot_word_outputs(layout, reference):
+    def sample(bit_packed):
+        sampler = Circuit(DIRECT_ONLY).compile_detector_sampler(seed=3)
+        result = sampler.sample(
+            5000,
+            bit_packed=bit_packed,
+            use_detector_reference_sample=reference,
+            use_observable_reference_sample=reference,
+            **layout,
+        )
+        return result if isinstance(result, tuple) else (result,)
+
+    for bools, packed in zip(sample(False), sample(True), strict=True):
+        assert bools.dtype == np.bool_
+        expected = np.packbits(bools, axis=1, bitorder="little")
+        np.testing.assert_array_equal(packed, expected)
+
+
+@pytest.mark.parametrize("shots", [0, 5000])
+def test_bit_packed_direct_outputs_span_several_words(shots):
+    """72 detectors over two words: whole last byte, a later observable, and no shots."""
+    n = 72
+    targets = " ".join(map(str, range(n + 1)))
+    text = f"X_ERROR(0.02) {targets}\nM {targets}\n"
+    text += "".join(f"DETECTOR rec[-{n + 1 - i}]\n" for i in range(n))
+    text += "OBSERVABLE_INCLUDE(0) rec[-1]\n"
+    unpacked = Circuit(text).compile_detector_sampler(seed=2)
+    packed = Circuit(text).compile_detector_sampler(seed=2)
+    for append_observables in (False, True):
+        expected = unpacked.sample(shots, append_observables=append_observables)
+        result = packed.sample(
+            shots, append_observables=append_observables, bit_packed=True
+        )
+        expected = np.packbits(expected, axis=1, bitorder="little")
+        assert result.shape == expected.shape
+        assert np.array_equal(result, expected)
+
+
 def test_detector_sampler_no_detectors_with_reference_sample():
     """Detector sampler with use_detector_reference_sample=True and no detectors returns (shots, 0)."""
     c = Circuit("H 0\nM 0")
@@ -226,7 +317,7 @@ def test_seed():
         M 0
         """)
     for _ in range(2):
-        sampler = c.compile_sampler(seed=0)
+        sampler = c.compile_sampler(strategy="cat5", seed=0)
         assert np.count_nonzero(sampler.sample(100)) == 48
         assert np.count_nonzero(sampler.sample(100)) == 53
         assert np.count_nonzero(sampler.sample(100)) == 52
@@ -244,6 +335,23 @@ def test_sampler_repr():
     assert "2 error channel bits" in repr_str
 
 
+def test_sampler_repr_shows_only_used_backends():
+    c = Circuit("""
+        H 0
+        T 0
+        H 0
+        M 0
+        """)
+    statevector = repr(c.compile_sampler())
+    assert "statevector components" in statevector
+    assert "graphs" not in statevector
+    assert "A terms" not in statevector
+    zx = repr(c.compile_sampler(strategy="cat5"))
+    assert "statevector" not in zx
+    assert "graphs" in zx
+    assert "A terms" in zx
+
+
 @pytest.mark.parametrize(
     ("shots", "expected_batch_size"),
     [(100, 25), (101, 26)],
@@ -253,7 +361,7 @@ def test_auto_batch(shots, expected_batch_size):
         H 0
         M 0
         """)
-    sampler = c.compile_sampler(seed=42)
+    sampler = c.compile_sampler(strategy="cat5", seed=42)
 
     # Mock _estimate_batch_size to return a small value so auto-batching kicks in.
     with (
@@ -279,7 +387,7 @@ def make_sampler():
 
     def _make(max_batch_size: int = 30):
         c = Circuit("H 0\nM 0")
-        sampler = c.compile_sampler(seed=0)
+        sampler = c.compile_sampler(strategy="cat5", seed=0)
         return sampler, max_batch_size
 
     return _make
@@ -330,16 +438,12 @@ def test_batch_size_with_reference(
             wraps=sampler._channel_sampler.sample,
         ) as spy,
     ):
+        referenced = np.ones(1, dtype=np.bool_) if compute_ref else None
         result = sampler._sample_batches(
-            shots, batch_size=batch_size, compute_reference=compute_ref
+            shots, batch_size=batch_size, referenced=referenced
         )
 
-    if compute_ref:
-        samples, ref = result
-        assert samples.shape == (shots, 1)
-        assert ref.shape == (1,)
-    else:
-        assert result.shape == (shots, 1)
+    assert result.shape == (shots, 1)
 
     batch_sizes = [call.args[0] for call in spy.call_args_list]
     assert all(bs == expected_bs for bs in batch_sizes)
@@ -509,3 +613,59 @@ def test_detector_sampler_out_of_order_observable_indices():
     assert not np.any(obs[:, 0])
     assert not np.any(obs[:, 1])
     assert np.all(obs[:, 2])
+
+
+def test_a_nan_normalization_deviation_warns(monkeypatch):
+    sampler = Circuit("R 0\nH 0\nT 0\nH 0\nM 0").compile_sampler(
+        strategy="active_statevector", seed=0
+    )
+    original = shared.run_lanes
+
+    def nan_deviation(*args):
+        return (float("nan"), *original(*args)[1:])
+
+    monkeypatch.setattr(shared, "run_lanes", nan_deviation)
+    with pytest.warns(UserWarning, match="not normalized"):
+        sampler.sample(10)
+
+
+def test_direct_detectors_overwrite_every_column_of_their_rows():
+    f = np.array([[1, 0], [0, 1], [1, 1]], dtype=np.uint8)
+    out = np.ones((3, 4), dtype=np.bool_)
+    discarded = sampler_module._write_direct_detectors(
+        0,
+        f,
+        np.array([1, 0]),
+        np.array([False, True]),
+        np.array([3, 0]),
+        np.array([True, False]),
+        out,
+    )
+    expected = np.zeros((3, 4), dtype=np.bool_)
+    expected[:, 3] = f[:, 1] != 0
+    expected[:, 0] = (f[:, 0] != 0) ^ True
+    assert np.array_equal(out, expected)
+    assert np.array_equal(discarded, f[:, 1] != 0)
+
+
+@pytest.mark.parametrize("work", [0, PARALLEL_WORK])
+def test_direct_detectors_match_a_reference(work):
+    rng = np.random.default_rng(3)
+    rows, num_f, num_outputs, num_direct = 500, 30, 50, 40
+    f = (rng.random((rows, num_f)) < 0.05).astype(np.uint8)
+    f_indices = rng.integers(-1, num_f, num_direct)
+    flips = rng.random(num_direct) < 0.1
+    f_indices[:2], flips[:2] = -1, [True, False]
+    columns = rng.permutation(num_outputs)[:num_direct]
+    # NOTE: postselected detectors are unflipped, so that only some rows go.
+    postselect = (rng.random(num_direct) < 0.3) & ~flips
+    out = np.ones((rows, num_outputs), dtype=np.bool_)
+    discarded = sampler_module._write_direct_detectors(
+        work, f, f_indices, flips, columns, postselect, out
+    )
+    bits = np.where(f_indices >= 0, f[:, f_indices] != 0, False) ^ flips
+    expected = np.zeros((rows, num_outputs), dtype=np.bool_)
+    expected[:, columns] = bits
+    np.testing.assert_array_equal(out, expected)
+    np.testing.assert_array_equal(discarded, (bits & postselect).any(axis=1))
+    assert 0 < discarded.sum() < rows

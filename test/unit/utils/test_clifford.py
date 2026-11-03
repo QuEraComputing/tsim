@@ -9,6 +9,7 @@ import stim
 from tsim.circuit import Circuit
 from tsim.utils.clifford import (
     _to_half_pi_index,
+    expand_clifford_rotations,
     parametric_to_clifford_gates,
 )
 
@@ -177,13 +178,68 @@ class TestStimCircuitProperty:
     def test_mixed_circuit_unitary(self):
         c = Circuit("H 0\nR_Z(0.5) 0\nCNOT 0 1")
         expected = Circuit("H 0\nS 0\nCNOT 0 1")
-        assert _unitaries_equal_up_to_global_phase(c.to_matrix(), expected.to_matrix())
+        np.testing.assert_allclose(c.to_tensor(), expected.to_tensor(), atol=1e-9)
 
     def test_multi_target_rotation(self):
         c = Circuit("R_Z(1.0) 0 1 2")
         stim_str = str(c.stim_circuit)
         assert "I[" not in stim_str
         assert "Z 0 1 2" in stim_str
+
+    def test_multi_target_u3_stays_compact(self):
+        c = Circuit("U3(0.5, 0.5, 1.0) 0 1")
+        assert str(c.stim_circuit) == "S_DAG 0 1\nSQRT_X_DAG 0 1"
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            # stim merges these into one instruction with repeated targets.
+            "U3(-1.5, -1.5, -1.0) 0\nU3(-1.5, -1.5, -1.0) 0",
+            "U3(0.5, 0.5, 1.0) 0 1\nU3(0.5, 0.5, 1.0) 1 0",
+            "R_PAULI(1.0) X0\nR_PAULI(1.0) Z0",
+            "R_PAULI(0.5) X0*Z1\nR_PAULI(0.5) Z0*X1\nR_PAULI(0.5) Y2",
+            "R_PAULI(-0.5) X0*Y1 Z2\nR_PAULI(-0.5) Z0 X1*X2",
+            "R_PAULI(0.5) X0*!Z1\nR_PAULI(0.5) Z0",
+        ],
+    )
+    def test_merged_rotations_preserve_unitary(self, program):
+        c = Circuit(program)
+        assert c.is_clifford
+        ref = stim.Circuit()
+        for line in program.splitlines():
+            ref += Circuit(line).stim_circuit
+        assert c.stim_circuit.to_tableau() == ref.to_tableau()
+
+    def test_merged_spp_dag(self):
+        merged = stim.Circuit("SPP_DAG[R_PAULI(theta=1.0*pi)] X0 Z0*Y1")
+        expanded = expand_clifford_rotations(merged)
+        assert expanded.to_tableau() == stim.Circuit("X 0\nZ 0\nY 1").to_tableau()
+
+    def test_merged_rotation_in_repeat_block(self):
+        line = "U3(0.5, 0.5, 1.0) 0"
+        c = Circuit(f"REPEAT 2 {{\n{line}\n{line}\n}}")
+        ref = Circuit(line).stim_circuit * 4
+        assert c.stim_circuit.flattened().to_tableau() == ref.to_tableau()
+
+    @pytest.mark.parametrize("theta_idx", range(4))
+    @pytest.mark.parametrize("phi_idx", range(4))
+    @pytest.mark.parametrize("lam_idx", range(4))
+    def test_merged_u3_all_half_pi(self, theta_idx, phi_idx, lam_idx):
+        line = f"U3({theta_idx / 2}, {phi_idx / 2}, {lam_idx / 2}) 0"
+        c = Circuit(f"{line}\n{line}")
+        gates = parametric_to_clifford_gates(
+            "U3",
+            {
+                "theta": Fraction(theta_idx, 2),
+                "phi": Fraction(phi_idx, 2),
+                "lambda": Fraction(lam_idx, 2),
+            },
+        )
+        assert gates is not None
+        ref = stim.Circuit()
+        for g in gates + gates:
+            ref.append(g, [0])  # type: ignore
+        assert c.stim_circuit.to_tableau() == ref.to_tableau()
 
 
 class TestIsCliffordUserTags:

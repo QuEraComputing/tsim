@@ -1,13 +1,13 @@
 [project]
 name = "bloqade-tsim"
-version = "0.2.0-dev"
+version = "0.1.5"
 description = "A low-magic universal quantum circuit sampler based on ZX stabilizer rank decomposition"
 authors = [
     { name = "Rafael Haenel", email = "rhaenel@quera.com" },
     { name = "Chen Zhao", email = "czhao@quera.com" },
 ]
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 keywords = [
     "quantum",
@@ -24,10 +24,10 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Physics",
     "Typing :: Typed",
 ]
@@ -37,10 +37,13 @@ dependencies = [
     "ipywidgets>=8.0.0",
     "jax>=0.4.38",
     "lxml>=5.0.0",
+    "numba>=0.61",
     "numpy>=1.25.0",
     "psutil>=5.9.0",
-    "pyzx-param>=0.9.3",
     "stim>=1.0.0",
+    "stim-timeline-text>=0.1.0",
+    "stim-timeline-text>=0.1.0",
+    "zxparam>=0.1.0",
 ]
 
 [project.urls]
@@ -81,6 +84,7 @@ dev = [
     "tqdm>=4.67.1",
     "vulture>=2.16",
     "radon>=6.0.1",
+    "zxparam[quimb]",
 ]
 doc = [
     "griffe>=2.0.2",
@@ -91,9 +95,6 @@ doc = [
     "nbformat>=5.10.4",
     "jupytext>=1.17.2",
 ]
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tsim"]
@@ -106,7 +107,7 @@ src_paths = ["src/tsim"]
 
 [tool.black]
 line-length = 88
-target-version = ["py310"]
+target-version = ["py311"]
 exclude = '''
 /(
     \.eggs
@@ -123,7 +124,7 @@ exclude = '''
 '''
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 include = ["src/**/*.py", "test/**/*.py"]
 extend-exclude = ["src/tsim/external"]
 
@@ -154,6 +155,7 @@ ignore_notebooks = true
 extend_exclude = [
     "^accel-cutting-magic-state-main/",
     "^benchmarks/",
+    "^scripts/",
     "^docs/",
     "^test/",
 ]

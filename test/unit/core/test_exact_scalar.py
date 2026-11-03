@@ -82,3 +82,13 @@ def test_sum_reduces_while_adding():
     assert jnp.allclose(
         summed.to_complex(), jnp.sum(dyadic_array.to_complex(), axis=-1)
     )
+
+
+@pytest.mark.parametrize("gap", [30, 31, 32, 40])
+@pytest.mark.parametrize("zero_first", [True, False])
+def test_sum_ignores_the_power_of_a_zero_term(gap, zero_first):
+    coeffs = jnp.array([[0, 0, 0, 0], [1, 0, 0, 0]], dtype=jnp.int32)
+    power = jnp.array([-gap, 0], dtype=jnp.int32)
+    if not zero_first:
+        coeffs, power = coeffs[::-1], power[::-1]
+    assert ExactScalarArray(coeffs, power).sum().to_complex() == pytest.approx(1)

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 else:
     try:
         from cuda.bindings import runtime as cudart
+
         _CUDA_BINDINGS_AVAILABLE = True
     except Exception:
         cudart = None

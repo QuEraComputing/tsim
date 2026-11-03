@@ -11,16 +11,21 @@ stages of circuit compilation:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import equinox as eqx
 import numpy as np
 from jax import Array
 
 if TYPE_CHECKING:
-    from pyzx_param.graph.base import BaseGraph
+    from zxparam import Graph
 
     from tsim.compile.compile import CompiledScalarGraphs
+    from tsim.core.params import ParamLayout
+    from tsim.statevector.program import StatevectorComponent
+
+SamplingStrategy = Literal["active_statevector", "cat5", "bss", "cutting"]
+"""``"active_statevector"``, or a stabilizer-rank decomposition strategy."""
 
 
 @dataclass(frozen=True)
@@ -29,27 +34,30 @@ class SamplingGraph:
 
     Contains all data structures needed for sampling. This represents a circuit
     that has been:
-    1. Parsed from stim format
-    2. Converted to a ZX graph
-    3. Doubled (composed with adjoint)
-    4. Reduced via zx.full_reduce
-    5. Had its error basis transformed (Gaussian elimination: e → f)
+    1. Parsed from stim format into a quantum/classical ZX graph (quantum
+       wires, classical measurement records)
+    2. Closed into a sampling graph with classical output boundaries
+    3. Reduced via zxparam's full_reduce
+    4. Had its error basis transformed (Gaussian elimination: e → f)
 
     Attributes:
-        graph: The prepared ZX graph with f-parameters on vertices.
+        graph: The prepared quantum/classical ZX graph; its vertex parameters
+            are error-basis bit IDs (``layout.basis(j)``).
         error_transform: Binary matrix of shape (num_f, num_e) where entry [i, j] = 1
             means f_i depends on e_j (i.e., f_i = XOR of e_j where matrix[i,j] = 1).
         channel_probs: List of probability arrays for error channels.
         num_outputs: Number of output vertices (measurements or detectors).
         num_detectors: Number of detector vertices.
+        layout: Parameter IDs of the error, error-basis and output bits.
 
     """
 
-    graph: BaseGraph
+    graph: Graph
     error_transform: np.ndarray
     channel_probs: list[np.ndarray]
     num_outputs: int
     num_detectors: int
+    layout: ParamLayout
 
 
 class CompiledComponent(eqx.Module):
@@ -76,6 +84,9 @@ class CompiledComponent(eqx.Module):
     f_selection: Array
     compiled_scalar_graphs: tuple[CompiledScalarGraphs, ...]
 
+    norm_warning_threshold: ClassVar[float] = 1e-5
+    """Largest normalization deviation that sampling tolerates without a warning."""
+
 
 @dataclass(frozen=True)
 class CompiledProgram:
@@ -85,8 +96,10 @@ class CompiledProgram:
     needed to sample from the circuit.
 
     Attributes:
-        components: The compiled components, sorted by number of outputs.
-        direct_f_indices: Precomputed f-parameter indices for direct components.
+        components: The compiled components, sorted by number of outputs:
+            stabilizer-rank ``CompiledComponent``s or ``StatevectorComponent``s.
+        direct_f_indices: Precomputed f-parameter indices for direct components;
+            -1 denotes a constant output whose value is its direct flip.
         direct_flips: Precomputed flip flags for direct components.
         output_order: Maps concatenated position to original output index.
             The first ``len(direct_f_indices)`` entries correspond to direct
@@ -98,10 +111,10 @@ class CompiledProgram:
 
     """
 
-    components: tuple[CompiledComponent, ...]
-    direct_f_indices: Array
-    direct_flips: Array
-    output_order: Array
-    output_reindex: Array | None
+    components: tuple[CompiledComponent | StatevectorComponent, ...]
+    direct_f_indices: np.ndarray
+    direct_flips: np.ndarray
+    output_order: np.ndarray
+    output_reindex: np.ndarray | None
     num_outputs: int
     num_detectors: int

@@ -1,176 +1,71 @@
-"""ZX graph representations of quantum gates and instructions."""
+"""ZX graph representations of quantum gates and instructions.
+
+Each gate is a function that builds onto a ``GraphBuilder`` through its methods
+(``tsim.core.builder``); ``GATE_TABLE`` maps Stim gate names to them.
+
+Gates are built up to a global phase: every graph is a doubled diagram (a
+channel, ``U ⊗ Ū`` for a unitary), where global phases cancel, so none are
+tracked.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from enum import IntEnum
 from fractions import Fraction
 from typing import Callable, Literal
 
-import numpy as np
-from pyzx_param.graph.graph_s import GraphS
-from pyzx_param.utils import EdgeType, VertexType
+from zxparam import VertexType
 
+from tsim.core.builder import HELPER_LANE, GraphBuilder, error_phase
 from tsim.noise.channels import (
-    correlated_error_probs,
     error_probs,
     heralded_pauli_channel_1_probs,
     pauli_channel_1_probs,
     pauli_channel_2_probs,
 )
 
-
-class _EdgeTypeBold(IntEnum):
-    SIMPLE = 4
-    HADAMARD = 5
-
-
-class _VertexTypeBold(IntEnum):
-    Z = 7
-    X = 8
-
-
-@dataclass
-class GraphRepresentation:
-    """ZX graph built from a stim circuit.
-
-    Contains the graph and all auxiliary data needed for sampling.
-    """
-
-    graph: GraphS = field(default_factory=GraphS)
-    rec: list[int] = field(default_factory=list)
-    silent_rec: list[int] = field(default_factory=list)
-    detectors: list[int] = field(default_factory=list)
-    observables_dict: dict[int, int] = field(default_factory=dict)
-    first_vertex: dict[int, int] = field(default_factory=dict)
-    last_vertex: dict[int, int] = field(default_factory=dict)
-    channel_probs: list[np.ndarray] = field(default_factory=list)
-    correlated_error_probs: list[float] = field(default_factory=list)
-    num_error_bits: int = 0
-    num_correlated_error_bits: int = 0
-    track_classical_wires: bool = False
-
-    @property
-    def edge_type(self):
-        """Edge type enum."""
-        return _EdgeTypeBold if self.track_classical_wires else EdgeType
-
-    @property
-    def vertex_type(self):
-        """Vertex type enum."""
-        return _VertexTypeBold if self.track_classical_wires else VertexType
-
-    @property
-    def observables(self) -> list[int]:
-        """Get list of observable vertices sorted by index."""
-        return [self.observables_dict[i] for i in sorted(self.observables_dict)]
-
-
-def last_row(b: GraphRepresentation, qubit: int) -> float:
-    """Get the row of the last vertex for a qubit."""
-    return b.graph.row(b.last_vertex[qubit])
-
-
-def last_edge(b: GraphRepresentation, qubit: int):
-    """Get the last edge for a qubit."""
-    edges = b.graph.incident_edges(b.last_vertex[qubit])
-    assert len(edges) == 1
-    return edges[0]
-
-
-def add_dummy(
-    b: GraphRepresentation, qubit: int, row: float | int | None = None
-) -> int:
-    """Add a dummy boundary vertex for a qubit."""
-    if row is None:
-        row = last_row(b, qubit) + 1
-    v1 = b.graph.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=row)
-    b.last_vertex[qubit] = v1
-    return v1
-
-
-def add_lane(b: GraphRepresentation, qubit: int) -> int:
-    """Initialize a qubit lane if it doesn't exist."""
-    v1 = b.graph.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=0)
-    v2 = b.graph.add_vertex(VertexType.BOUNDARY, qubit=qubit, row=1)
-    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
-    b.first_vertex[qubit] = v1
-    b.last_vertex[qubit] = v2
-    return v1
-
-
-def ensure_lane(b: GraphRepresentation, qubit: int) -> None:
-    """Ensure qubit lane exists."""
-    if qubit not in b.last_vertex:
-        add_lane(b, qubit)
-
-
 # =============================================================================
 # Non-Clifford Gates
 # =============================================================================
 
 
-def x_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
-    """Apply X-axis rotation to qubit. This is equivalent to `r_x` up to a phase."""
-    ensure_lane(b, qubit)
-    v1 = b.last_vertex[qubit]
-    b.graph.set_type(v1, b.vertex_type.X)
-    b.graph.set_phase(v1, phase)
-    v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
-
-
-def z_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
-    """Apply Z-axis phase rotation to qubit. This is equivalent to `r_z` up to a phase."""
-    ensure_lane(b, qubit)
-    v1 = b.last_vertex[qubit]
-    b.graph.set_type(v1, b.vertex_type.Z)
-    b.graph.set_phase(v1, phase)
-    v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
-
-
-def t(b: GraphRepresentation, qubit: int) -> None:
+def t(builder: GraphBuilder, qubit: int) -> None:
     """Apply T gate (π/4 Z rotation)."""
-    z_phase(b, qubit, Fraction(1, 4))
+    r_z(builder, qubit, Fraction(1, 4))
 
 
-def t_dag(b: GraphRepresentation, qubit: int) -> None:
+def t_dag(builder: GraphBuilder, qubit: int) -> None:
     """Apply T† gate (-π/4 Z rotation)."""
-    z_phase(b, qubit, Fraction(-1, 4))
+    r_z(builder, qubit, Fraction(-1, 4))
 
 
-def r_z(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
+def r_z(builder: GraphBuilder, qubit: int, phase: Fraction) -> None:
     """Apply R_Z rotation gate with given phase (in units of π)."""
-    z_phase(b, qubit, phase)
-    b.graph.scalar.add_phase(-phase / 2)
+    builder.spider(qubit, VertexType.Z, phase)
 
 
-def r_x(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
+def r_x(builder: GraphBuilder, qubit: int, phase: Fraction) -> None:
     """Apply R_X rotation gate with given phase (in units of π)."""
-    x_phase(b, qubit, phase)
-    b.graph.scalar.add_phase(-phase / 2)
+    builder.spider(qubit, VertexType.X, phase)
 
 
-def r_y(b: GraphRepresentation, qubit: int, phase: Fraction) -> None:
+def r_y(builder: GraphBuilder, qubit: int, phase: Fraction) -> None:
     """Apply R_Y rotation gate with given phase (in units of π)."""
-    h_yz(b, qubit)
-    r_z(b, qubit, phase)
-    h_yz(b, qubit)
+    h_yz(builder, qubit)
+    r_z(builder, qubit, phase)
+    h_yz(builder, qubit)
 
 
 def u3(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     qubit: int,
     theta: Fraction,
     phi: Fraction,
     lambda_: Fraction,
 ) -> None:
     """Apply U3 gate: U3(θ,φ,λ) = R_Z(φ)·R_Y(θ)·R_Z(λ)."""
-    r_z(b, qubit, lambda_)
-    r_y(b, qubit, theta)
-    r_z(b, qubit, phi)
-    b.graph.scalar.add_phase((phi + lambda_) / 2)
+    r_z(builder, qubit, lambda_)
+    r_y(builder, qubit, theta)
+    r_z(builder, qubit, phi)
 
 
 # =============================================================================
@@ -178,34 +73,31 @@ def u3(
 # =============================================================================
 
 
-def i(b: GraphRepresentation, qubit: int, *_args: float) -> None:
-    """Apply identity (advances the row)."""
-    ensure_lane(b, qubit)
-    v = b.last_vertex[qubit]
-    b.graph.set_row(v, last_row(b, qubit) + 1)
+def i(builder: GraphBuilder, qubit: int, *_args: float) -> None:
+    """Apply identity (advances the column)."""
+    builder.advance(qubit)
 
 
-def ii(b: GraphRepresentation, qubit1: int, qubit2: int, *_args: float) -> None:
-    """Apply two-qubit identity (advances the row on both qubits)."""
-    i(b, qubit1)
-    i(b, qubit2)
+def ii(builder: GraphBuilder, qubit1: int, qubit2: int, *_args: float) -> None:
+    """Apply two-qubit identity (advances the column on both qubits)."""
+    i(builder, qubit1)
+    i(builder, qubit2)
 
 
-def x(b: GraphRepresentation, qubit: int) -> None:
+def x(builder: GraphBuilder, qubit: int) -> None:
     """Apply Pauli X gate."""
-    x_phase(b, qubit, Fraction(1, 1))
+    r_x(builder, qubit, Fraction(1, 1))
 
 
-def y(b: GraphRepresentation, qubit: int) -> None:
+def y(builder: GraphBuilder, qubit: int) -> None:
     """Apply Pauli Y gate."""
-    z(b, qubit)
-    x(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 2))
+    z(builder, qubit)
+    x(builder, qubit)
 
 
-def z(b: GraphRepresentation, qubit: int) -> None:
+def z(builder: GraphBuilder, qubit: int) -> None:
     """Apply Pauli Z gate."""
-    z_phase(b, qubit, Fraction(1, 1))
+    r_z(builder, qubit, Fraction(1, 1))
 
 
 # =============================================================================
@@ -213,151 +105,119 @@ def z(b: GraphRepresentation, qubit: int) -> None:
 # =============================================================================
 
 
-def c_xyz(b: GraphRepresentation, qubit: int) -> None:
+def c_xyz(builder: GraphBuilder, qubit: int) -> None:
     """Right handed period 3 axis cycling gate, sending X -> Y -> Z -> X."""
-    s_dag(b, qubit)
-    h(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
+    s_dag(builder, qubit)
+    h(builder, qubit)
 
 
-def c_nxyz(b: GraphRepresentation, qubit: int) -> None:
+def c_nxyz(builder: GraphBuilder, qubit: int) -> None:
     """Period 3 axis cycling gate, sending -X -> Y -> Z -> -X."""
-    s_dag(b, qubit)
-    sqrt_y_dag(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 4))
+    s_dag(builder, qubit)
+    sqrt_y_dag(builder, qubit)
 
 
-def c_xnyz(b: GraphRepresentation, qubit: int) -> None:
+def c_xnyz(builder: GraphBuilder, qubit: int) -> None:
     """Period 3 axis cycling gate, sending X -> -Y -> Z -> X."""
-    s(b, qubit)
-    h(b, qubit)
+    s(builder, qubit)
+    h(builder, qubit)
 
 
-def c_xynz(b: GraphRepresentation, qubit: int) -> None:
+def c_xynz(builder: GraphBuilder, qubit: int) -> None:
     """Period 3 axis cycling gate, sending X -> Y -> -Z -> X."""
-    s(b, qubit)
-    sqrt_y_dag(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 4))
+    s(builder, qubit)
+    sqrt_y_dag(builder, qubit)
 
 
-def c_zyx(b: GraphRepresentation, qubit: int) -> None:
+def c_zyx(builder: GraphBuilder, qubit: int) -> None:
     """Left handed period 3 axis cycling gate, sending Z -> Y -> X -> Z."""
-    h(b, qubit)
-    s(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 4))
+    h(builder, qubit)
+    s(builder, qubit)
 
 
-def c_nzyx(b: GraphRepresentation, qubit: int) -> None:
+def c_nzyx(builder: GraphBuilder, qubit: int) -> None:
     """Period 3 axis cycling gate, sending -Z -> Y -> X -> -Z."""
-    s_dag(b, qubit)
-    sqrt_x(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
+    s_dag(builder, qubit)
+    sqrt_x(builder, qubit)
 
 
-def c_znyx(b: GraphRepresentation, qubit: int) -> None:
+def c_znyx(builder: GraphBuilder, qubit: int) -> None:
     """Period 3 axis cycling gate, sending Z -> -Y -> X -> Z."""
-    s(b, qubit)
-    sqrt_x(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
+    s(builder, qubit)
+    sqrt_x(builder, qubit)
 
 
-def c_zynx(b: GraphRepresentation, qubit: int) -> None:
+def c_zynx(builder: GraphBuilder, qubit: int) -> None:
     """Period 3 axis cycling gate, sending Z -> Y -> -X -> Z."""
-    s(b, qubit)
-    sqrt_x_dag(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 4))
+    s(builder, qubit)
+    sqrt_x_dag(builder, qubit)
 
 
-def h(b: GraphRepresentation, qubit: int) -> None:
+def h(builder: GraphBuilder, qubit: int) -> None:
     """Apply Hadamard gate."""
-    ensure_lane(b, qubit)
-    e = last_edge(b, qubit)
-    b.graph.set_edge_type(
-        e,
-        (
-            b.edge_type.HADAMARD
-            if b.graph.edge_type(e) == b.edge_type.SIMPLE
-            else b.edge_type.SIMPLE
-        ),
-    )
+    builder.hadamard(qubit)
 
 
-def h_xy(b: GraphRepresentation, qubit: int) -> None:
+def h_xy(builder: GraphBuilder, qubit: int) -> None:
     """Apply variant of Hadamard gate that swaps the X and Y axes (instead of X and Z)."""
-    x(b, qubit)
-    s(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
+    x(builder, qubit)
+    s(builder, qubit)
 
 
-def h_nxy(b: GraphRepresentation, qubit: int) -> None:
+def h_nxy(builder: GraphBuilder, qubit: int) -> None:
     """Apply Hadamard-like gate that sends -X <-> Y, Z -> -Z."""
-    x(b, qubit)
-    s_dag(b, qubit)
+    x(builder, qubit)
+    s_dag(builder, qubit)
 
 
-def h_nxz(b: GraphRepresentation, qubit: int) -> None:
+def h_nxz(builder: GraphBuilder, qubit: int) -> None:
     """Apply Hadamard-like gate that sends -X <-> Z."""
-    z(b, qubit)
-    sqrt_y_dag(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 4))
+    z(builder, qubit)
+    sqrt_y_dag(builder, qubit)
 
 
-def h_yz(b: GraphRepresentation, qubit: int) -> None:
+def h_yz(builder: GraphBuilder, qubit: int) -> None:
     """Apply variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z)."""
-    sqrt_x(b, qubit)
-    z(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
+    sqrt_x(builder, qubit)
+    z(builder, qubit)
 
 
-def h_nyz(b: GraphRepresentation, qubit: int) -> None:
+def h_nyz(builder: GraphBuilder, qubit: int) -> None:
     """Apply Hadamard-like gate that sends -Y <-> Z, X -> -X."""
-    z(b, qubit)
-    sqrt_x(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
+    z(builder, qubit)
+    sqrt_x(builder, qubit)
 
 
-def s(b: GraphRepresentation, qubit: int) -> None:
+def s(builder: GraphBuilder, qubit: int) -> None:
     """Apply S gate (π/2 Z rotation)."""
-    z_phase(b, qubit, Fraction(1, 2))
+    r_z(builder, qubit, Fraction(1, 2))
 
 
-def sqrt_x(b: GraphRepresentation, qubit: int) -> None:
+def sqrt_x(builder: GraphBuilder, qubit: int) -> None:
     """Apply √X gate (π/2 X rotation)."""
-    x_phase(b, qubit, Fraction(1, 2))
+    r_x(builder, qubit, Fraction(1, 2))
 
 
-def sqrt_x_dag(b: GraphRepresentation, qubit: int) -> None:
+def sqrt_x_dag(builder: GraphBuilder, qubit: int) -> None:
     """Apply √X† gate (-π/2 X rotation)."""
-    x_phase(b, qubit, Fraction(-1, 2))
+    r_x(builder, qubit, Fraction(-1, 2))
 
 
-def sqrt_y(b: GraphRepresentation, qubit: int) -> None:
+def sqrt_y(builder: GraphBuilder, qubit: int) -> None:
     """Apply √Y gate (π/2 Y rotation)."""
-    z(b, qubit)
-    h(b, qubit)
-    b.graph.scalar.add_phase(Fraction(1, 4))
+    z(builder, qubit)
+    h(builder, qubit)
 
 
-def sqrt_y_dag(b: GraphRepresentation, qubit: int) -> None:
+def sqrt_y_dag(builder: GraphBuilder, qubit: int) -> None:
     """Apply √Y† gate (-π/2 Y rotation)."""
-    h(b, qubit)
-    z(b, qubit)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
+    h(builder, qubit)
+    z(builder, qubit)
 
 
-def sqrt_z(b: GraphRepresentation, qubit: int) -> None:
-    """Apply √Z gate (alias for S gate)."""
-    s(b, qubit)
-
-
-def sqrt_z_dag(b: GraphRepresentation, qubit: int) -> None:
-    """Apply √Z† gate (alias for S† gate)."""
-    s_dag(b, qubit)
-
-
-def s_dag(b: GraphRepresentation, qubit: int) -> None:
+def s_dag(builder: GraphBuilder, qubit: int) -> None:
     """Apply S† gate (-π/2 Z rotation)."""
-    z_phase(b, qubit, Fraction(-1, 2))
+    r_z(builder, qubit, Fraction(-1, 2))
 
 
 # =============================================================================
@@ -365,247 +225,185 @@ def s_dag(b: GraphRepresentation, qubit: int) -> None:
 # =============================================================================
 
 
-def _cx_cz(
-    b: GraphRepresentation,
-    is_cx: bool,
-    control: int,
-    target: int,
-    classically_controlled: list[bool] | None = None,
-) -> None:
-    """Implement CNOT or CZ gate depending on is_cx flag."""
-    edge_type = b.edge_type.SIMPLE if is_cx else b.edge_type.HADAMARD
-    vertex_type = b.vertex_type.X if is_cx else b.vertex_type.Z
-
-    m_vertex = 0
-    if classically_controlled:
-        assert len(classically_controlled) == 2
-        if classically_controlled[1] and not is_cx:
-            # Only control is allowed to be classically controlled, swap control and target for symmetric CZ gate
-            classically_controlled = classically_controlled[::-1]
-            control, target = target, control
-        if classically_controlled[1]:
-            raise ValueError("Measurement record editing is not supported.")
-        m_vertex = b.rec[control]
-        control = b.graph.qubit(m_vertex)
-    ensure_lane(b, control)
-    ensure_lane(b, target)
-
-    lr1 = last_row(b, control)
-    lr2 = last_row(b, target)
-    row = max(lr1, lr2)
-
-    v1 = b.last_vertex[control]
-    b.graph.set_type(v1, b.vertex_type.Z)
-    b.graph.set_row(v1, row)
-    v3 = add_dummy(b, control, int(row + 1))
-    b.graph.add_edge((v1, v3), b.edge_type.SIMPLE)
-
-    if control == target:
-        row += 1
-
-    v2 = b.last_vertex[target]
-    b.graph.set_type(v2, vertex_type)
-    b.graph.set_row(v2, row)
-    v4 = add_dummy(b, target, int(row + 1))
-    b.graph.add_edge((v2, v4), b.edge_type.SIMPLE)
-
-    if classically_controlled:
-        b.graph.add_edge((m_vertex, v2), edge_type)
-    else:
-        b.graph.add_edge((v1, v2), edge_type)
-    b.graph.scalar.add_power(1)
-
-
 def cnot(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     control: int,
     target: int,
     classically_controlled: list[bool] | None = None,
 ) -> None:
     """Apply CNOT (controlled-X) gate."""
-    _cx_cz(b, True, control, target, classically_controlled)
+    builder.cx(control, target, classically_controlled)
 
 
 def cy(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     control: int,
     target: int,
     classically_controlled: list[bool] | None = None,
 ) -> None:
     """Apply controlled-Y gate."""
-    s_dag(b, target)
-    cnot(b, control, target, classically_controlled)
-    s(b, target)
+    s_dag(builder, target)
+    cnot(builder, control, target, classically_controlled)
+    s(builder, target)
 
 
 def cz(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     control: int,
     target: int,
     classically_controlled: list[bool] | None = None,
 ) -> None:
     """Apply controlled-Z gate."""
-    _cx_cz(b, False, control, target, classically_controlled)
+    builder.cz(control, target, classically_controlled)
 
 
-def swap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def swap(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Apply SWAP gate."""
-    ensure_lane(b, qubit1)
-    ensure_lane(b, qubit2)
-
-    v1 = b.last_vertex[qubit1]
-    v2 = b.last_vertex[qubit2]
-    b.last_vertex[qubit1] = v2
-    b.last_vertex[qubit2] = v1
-
-    b.graph.set_qubit(v1, qubit2)
-    b.graph.set_qubit(v2, qubit1)
+    builder.swap(qubit1, qubit2)
 
 
-def cxswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def cxswap(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Apply CX then SWAP."""
-    cnot(b, qubit1, qubit2)
-    swap(b, qubit1, qubit2)
+    cnot(builder, qubit1, qubit2)
+    swap(builder, qubit1, qubit2)
 
 
-def czswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def czswap(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Apply CZ then SWAP."""
-    cz(b, qubit1, qubit2)
-    swap(b, qubit1, qubit2)
+    cz(builder, qubit1, qubit2)
+    swap(builder, qubit1, qubit2)
 
 
-def swapcx(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def swapcx(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Apply SWAP then CX."""
-    swap(b, qubit1, qubit2)
-    cnot(b, qubit1, qubit2)
+    swap(builder, qubit1, qubit2)
+    cnot(builder, qubit1, qubit2)
 
 
-def swapcz(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def swapcz(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Apply SWAP then CZ."""
-    swap(b, qubit1, qubit2)
-    cz(b, qubit1, qubit2)
+    swap(builder, qubit1, qubit2)
+    cz(builder, qubit1, qubit2)
 
 
-def iswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def iswap(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Swap two qubits and phase the -1 eigenspace of the ZZ observable by i."""
-    cnot(b, qubit1, qubit2)
-    s(b, qubit2)
-    cnot(b, qubit1, qubit2)
-    swap(b, qubit1, qubit2)
+    cnot(builder, qubit1, qubit2)
+    s(builder, qubit2)
+    cnot(builder, qubit1, qubit2)
+    swap(builder, qubit1, qubit2)
 
 
-def iswap_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def iswap_dag(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Swap two qubits and phase the -1 eigenspace of the ZZ observable by -i."""
-    cnot(b, qubit1, qubit2)
-    s_dag(b, qubit2)
-    cnot(b, qubit1, qubit2)
-    swap(b, qubit1, qubit2)
+    cnot(builder, qubit1, qubit2)
+    s_dag(builder, qubit2)
+    cnot(builder, qubit1, qubit2)
+    swap(builder, qubit1, qubit2)
 
 
-def sqrt_xx(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def sqrt_xx(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Phases the -1 eigenspace of the XX observable by i."""
-    cnot(b, qubit1, qubit2)
-    sqrt_x(b, qubit1)
-    cnot(b, qubit1, qubit2)
+    cnot(builder, qubit1, qubit2)
+    sqrt_x(builder, qubit1)
+    cnot(builder, qubit1, qubit2)
 
 
-def sqrt_xx_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def sqrt_xx_dag(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Phases the -1 eigenspace of the XX observable by -i."""
-    cnot(b, qubit1, qubit2)
-    sqrt_x_dag(b, qubit1)
-    cnot(b, qubit1, qubit2)
+    cnot(builder, qubit1, qubit2)
+    sqrt_x_dag(builder, qubit1)
+    cnot(builder, qubit1, qubit2)
 
 
-def sqrt_yy(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def sqrt_yy(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Phases the -1 eigenspace of the YY observable by i."""
-    s(b, qubit1)
-    cnot(b, qubit2, qubit1)
-    z(b, qubit1)
-    h(b, qubit2)
-    cnot(b, qubit2, qubit1)
-    s(b, qubit1)
-    b.graph.scalar.add_phase(Fraction(1, 4))
+    s(builder, qubit1)
+    cnot(builder, qubit2, qubit1)
+    z(builder, qubit1)
+    h(builder, qubit2)
+    cnot(builder, qubit2, qubit1)
+    s(builder, qubit1)
 
 
-def sqrt_yy_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def sqrt_yy_dag(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Phases the -1 eigenspace of the YY observable by -i."""
-    s_dag(b, qubit1)
-    cnot(b, qubit2, qubit1)
-    h(b, qubit2)
-    z(b, qubit1)
-    cnot(b, qubit2, qubit1)
-    s_dag(b, qubit1)
-    b.graph.scalar.add_phase(Fraction(-1, 4))
+    s_dag(builder, qubit1)
+    cnot(builder, qubit2, qubit1)
+    h(builder, qubit2)
+    z(builder, qubit1)
+    cnot(builder, qubit2, qubit1)
+    s_dag(builder, qubit1)
 
 
-def sqrt_zz(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def sqrt_zz(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Phases the -1 eigenspace of the ZZ observable by i."""
-    cnot(b, qubit1, qubit2)
-    s(b, qubit2)
-    cnot(b, qubit1, qubit2)
+    cnot(builder, qubit1, qubit2)
+    s(builder, qubit2)
+    cnot(builder, qubit1, qubit2)
 
 
-def sqrt_zz_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None:
+def sqrt_zz_dag(builder: GraphBuilder, qubit1: int, qubit2: int) -> None:
     """Phases the -1 eigenspace of the ZZ observable by -i."""
-    h(b, qubit2)
-    cnot(b, qubit1, qubit2)
-    h(b, qubit2)
-    s_dag(b, qubit1)
-    s_dag(b, qubit2)
+    h(builder, qubit2)
+    cnot(builder, qubit1, qubit2)
+    h(builder, qubit2)
+    s_dag(builder, qubit1)
+    s_dag(builder, qubit2)
 
 
-def xcx(b: GraphRepresentation, control: int, target: int) -> None:
+def xcx(builder: GraphBuilder, control: int, target: int) -> None:
     """X-controlled X gate. Applies X to target if control is in |-> state."""
-    h(b, control)
-    cnot(b, control, target)
-    h(b, control)
+    h(builder, control)
+    cnot(builder, control, target)
+    h(builder, control)
 
 
-def xcy(b: GraphRepresentation, control: int, target: int) -> None:
+def xcy(builder: GraphBuilder, control: int, target: int) -> None:
     """X-controlled Y gate. Applies Y to target if control is in |-> state."""
-    h(b, control)
-    cy(b, control, target)
-    h(b, control)
+    h(builder, control)
+    cy(builder, control, target)
+    h(builder, control)
 
 
 def xcz(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     control: int,
     target: int,
     classically_controlled: list[bool] | None = None,
 ) -> None:
     """X-controlled Z gate. Applies Z to target if control is in |-> state."""
     cnot(
-        b,
+        builder,
         target,
         control,
         classically_controlled[::-1] if classically_controlled else None,
     )
 
 
-def ycx(b: GraphRepresentation, control: int, target: int) -> None:
+def ycx(builder: GraphBuilder, control: int, target: int) -> None:
     """Y-controlled X gate. Applies X to target if control is in |-i> state."""
-    h_yz(b, control)
-    cnot(b, control, target)
-    h_yz(b, control)
+    h_yz(builder, control)
+    cnot(builder, control, target)
+    h_yz(builder, control)
 
 
-def ycy(b: GraphRepresentation, control: int, target: int) -> None:
+def ycy(builder: GraphBuilder, control: int, target: int) -> None:
     """Y-controlled Y gate. Applies Y to target if control is in |-i> state."""
-    h_yz(b, control)
-    cy(b, control, target)
-    h_yz(b, control)
+    h_yz(builder, control)
+    cy(builder, control, target)
+    h_yz(builder, control)
 
 
 def ycz(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     control: int,
     target: int,
     classically_controlled: list[bool] | None = None,
 ) -> None:
     """Y-controlled Z gate. Applies Z to target if control is in |-i> state."""
     cy(
-        b,
+        builder,
         target,
         control,
         classically_controlled[::-1] if classically_controlled else None,
@@ -617,29 +415,17 @@ def ycz(
 # =============================================================================
 
 
-def _error(b: GraphRepresentation, qubit: int, error_type: int, phase: str) -> None:
-    """Insert a parametrized error vertex for noise modeling."""
-    ensure_lane(b, qubit)
-    v1 = b.last_vertex[qubit]
-    v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
-
-    b.graph.set_type(v1, error_type)
-    b.graph.set_phase(v1, phase)
-
-
 def pauli_channel_1(
-    b: GraphRepresentation, qubit: int, px: float, py: float, pz: float
+    builder: GraphBuilder, qubit: int, px: float, py: float, pz: float
 ) -> None:
     """Apply single-qubit Pauli channel with given X, Y, Z error probabilities."""
-    b.channel_probs.append(pauli_channel_1_probs(px, py, pz))
-    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits}")
-    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits + 1}")
-    b.num_error_bits += 2
+    bit = builder.add_channel(pauli_channel_1_probs(px, py, pz))
+    builder.spider(qubit, VertexType.Z, error_phase(bit))
+    builder.spider(qubit, VertexType.X, error_phase(bit + 1))
 
 
 def pauli_channel_2(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     qubit_i: int,
     qubit_j: int,
     pix: float,
@@ -659,27 +445,26 @@ def pauli_channel_2(
     pzz: float,
 ) -> None:
     """Apply two-qubit Pauli channel with given error probabilities for all 15 Pauli pairs."""
-    b.channel_probs.append(
+    bit = builder.add_channel(
         pauli_channel_2_probs(
             pix, piy, piz, pxi, pxx, pxy, pxz, pyi, pyx, pyy, pyz, pzi, pzx, pzy, pzz
         )
     )
-    _error(b, qubit_i, b.vertex_type.Z, f"e{b.num_error_bits}")
-    _error(b, qubit_i, b.vertex_type.X, f"e{b.num_error_bits + 1}")
-    _error(b, qubit_j, b.vertex_type.Z, f"e{b.num_error_bits + 2}")
-    _error(b, qubit_j, b.vertex_type.X, f"e{b.num_error_bits + 3}")
-    b.num_error_bits += 4
+    builder.spider(qubit_i, VertexType.Z, error_phase(bit))
+    builder.spider(qubit_i, VertexType.X, error_phase(bit + 1))
+    builder.spider(qubit_j, VertexType.Z, error_phase(bit + 2))
+    builder.spider(qubit_j, VertexType.X, error_phase(bit + 3))
 
 
-def depolarize1(b: GraphRepresentation, qubit: int, p: float) -> None:
+def depolarize1(builder: GraphBuilder, qubit: int, p: float) -> None:
     """Apply single-qubit depolarizing channel with total error probability p."""
-    pauli_channel_1(b, qubit, p / 3, p / 3, p / 3)
+    pauli_channel_1(builder, qubit, p / 3, p / 3, p / 3)
 
 
-def depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) -> None:
+def depolarize2(builder: GraphBuilder, qubit_i: int, qubit_j: int, p: float) -> None:
     """Apply two-qubit depolarizing channel with total error probability p."""
     pauli_channel_2(
-        b,
+        builder,
         qubit_i,
         qubit_j,
         p / 15,
@@ -700,31 +485,28 @@ def depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) ->
     )
 
 
-def x_error(b: GraphRepresentation, qubit: int, p: float) -> None:
+def x_error(builder: GraphBuilder, qubit: int, p: float) -> None:
     """Apply X error with probability p."""
-    b.channel_probs.append(error_probs(p))
-    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits}")
-    b.num_error_bits += 1
+    bit = builder.add_channel(error_probs(p))
+    builder.spider(qubit, VertexType.X, error_phase(bit))
 
 
-def y_error(b: GraphRepresentation, qubit: int, p: float) -> None:
+def y_error(builder: GraphBuilder, qubit: int, p: float) -> None:
     """Apply Y error with probability p."""
-    b.channel_probs.append(error_probs(p))
+    bit = builder.add_channel(error_probs(p))
     # Y = X·Z, so both vertices use the same error bit
-    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits}")
-    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits}")
-    b.num_error_bits += 1
+    builder.spider(qubit, VertexType.Z, error_phase(bit))
+    builder.spider(qubit, VertexType.X, error_phase(bit))
 
 
-def z_error(b: GraphRepresentation, qubit: int, p: float) -> None:
+def z_error(builder: GraphBuilder, qubit: int, p: float) -> None:
     """Apply Z error with probability p."""
-    b.channel_probs.append(error_probs(p))
-    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits}")
-    b.num_error_bits += 1
+    bit = builder.add_channel(error_probs(p))
+    builder.spider(qubit, VertexType.Z, error_phase(bit))
 
 
 def heralded_pauli_channel_1(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     qubit: int,
     pi: float,
     px: float,
@@ -737,77 +519,22 @@ def heralded_pauli_channel_1(
     (with total probability pi+px+py+pz), the herald is 1 and one of I/X/Y/Z
     is applied. When it doesn't fire, the herald is 0 and nothing happens.
     """
-    b.channel_probs.append(heralded_pauli_channel_1_probs(pi, px, py, pz))
-    aux = -2
-    r(b, aux)
-    _error(b, aux, b.vertex_type.X, f"e{b.num_error_bits}")  # herald bit flip
-    m(b, aux)
-    _error(b, qubit, b.vertex_type.Z, f"e{b.num_error_bits + 1}")  # Z error bit
-    _error(b, qubit, b.vertex_type.X, f"e{b.num_error_bits + 2}")  # X error bit
-    b.num_error_bits += 3
+    bit = builder.add_channel(heralded_pauli_channel_1_probs(pi, px, py, pz))
+    aux = HELPER_LANE
+    r(builder, aux)
+    builder.spider(aux, VertexType.X, error_phase(bit))  # herald bit flip
+    m(builder, aux)
+    builder.spider(qubit, VertexType.Z, error_phase(bit + 1))  # Z error bit
+    builder.spider(qubit, VertexType.X, error_phase(bit + 2))  # X error bit
 
 
-def heralded_erase(b: GraphRepresentation, qubit: int, p: float) -> None:
+def heralded_erase(builder: GraphBuilder, qubit: int, p: float) -> None:
     """Apply heralded erasure channel.
 
     Special case of heralded_pauli_channel_1 with equal probabilities p/4
     for each of I, X, Y, Z when the channel fires.
     """
-    heralded_pauli_channel_1(b, qubit, p / 4, p / 4, p / 4, p / 4)
-
-
-def finalize_correlated_error(b: GraphRepresentation) -> None:
-    """Finalize the current correlated error channel.
-
-    1. Rename all "c{i}" phases to "e{num_error_bits + i}" in the graph
-    2. Compute and append the 2^k probability array to channel_probs
-    3. Increment num_error_bits by k
-    4. Reset num_correlated_error_bits to 0 and correlated_error_probs to []
-    """
-    k = b.num_correlated_error_bits
-
-    if k == 0:
-        return
-
-    # Rename "c{i}" phases to "e{num_error_bits + i}" in the graph
-    for v in b.graph.vertices():
-        phase_vars = b.graph._phaseVars.get(v, set())
-        new_phase_vars = set()
-        for var in phase_vars:
-            if isinstance(var, str) and var.startswith("c"):
-                # Extract the bit index from "c{i}"
-                bit_idx = int(var[1:])
-                new_phase_vars.add(f"e{b.num_error_bits + bit_idx}")
-            else:
-                new_phase_vars.add(var)
-        b.graph._phaseVars[v] = new_phase_vars
-
-    # Compute probability array from conditional probabilities
-    probs = correlated_error_probs(b.correlated_error_probs)
-    b.channel_probs.append(probs)
-
-    b.num_error_bits += k
-
-    # Reset correlated error state
-    b.num_correlated_error_bits = 0
-    b.correlated_error_probs = []
-
-
-def correlated_error(
-    b: GraphRepresentation,
-    qubits: list[int],
-    types: list[Literal["X", "Y", "Z"]],
-    p: float,
-) -> None:
-    """Add a correlated error term affecting multiple qubits with given Pauli types."""
-    for qubit, type_ in zip(qubits, types, strict=True):
-        if type_ == "X" or type_ == "Y":
-            _error(b, qubit, b.vertex_type.X, f"c{b.num_correlated_error_bits}")
-        if type_ == "Z" or type_ == "Y":
-            _error(b, qubit, b.vertex_type.Z, f"c{b.num_correlated_error_bits}")
-
-    b.correlated_error_probs.append(p)
-    b.num_correlated_error_bits += 1
+    heralded_pauli_channel_1(builder, qubit, p / 4, p / 4, p / 4, p / 4)
 
 
 # =============================================================================
@@ -815,67 +542,25 @@ def correlated_error(
 # =============================================================================
 
 
-def _m(b: GraphRepresentation, qubit: int, p: float = 0, silent: bool = False) -> None:
-    """Perform measurement on qubit with optional error probability."""
-    error_var = ""
-    if p > 0:
-        b.channel_probs.append(error_probs(p))
-        error_var = f"e{b.num_error_bits}"
-        _error(b, qubit, b.vertex_type.X, error_var)
-        b.num_error_bits += 1
-    ensure_lane(b, qubit)
-    v1 = b.last_vertex[qubit]
-    b.graph.set_type(v1, VertexType.Z)
-    if not silent:
-        b.graph.set_phase(v1, f"rec[{len(b.rec)}]")
-        b.rec.append(v1)
-    else:
-        b.graph.set_phase(v1, f"m[{len(b.silent_rec)}]")
-        b.silent_rec.append(v1)
-    v2 = add_dummy(b, qubit)
-    b.graph.add_edge((v1, v2), b.edge_type.SIMPLE)
-    if p > 0:
-        _error(b, qubit, b.vertex_type.X, error_var)
-    b.graph.scalar.add_power(-1)
-
-
-def _r(b: GraphRepresentation, qubit: int) -> None:
-    """Perform reset on qubit.
-
-    If the qubit does not yet have a lane, create one in the reset state.
-    Otherwise, silently measure the existing lane to trace out the previous
-    state before reconnecting the qubit in the reset state.
-    """
-    if qubit not in b.last_vertex:
-        v1 = add_lane(b, qubit)
-        b.graph.set_type(v1, b.vertex_type.X)
-        b.graph.scalar.add_power(-1)
-    else:
-        v = b.last_vertex[qubit]
-        neighbors = list(b.graph.neighbors(v))
-        assert len(neighbors) == 1
-        _m(b, qubit, silent=True)
-        row = last_row(b, qubit)
-        v1 = b.last_vertex[qubit]
-        b.graph.set_type(v1, b.vertex_type.X)
-        v2 = next(iter(b.graph.neighbors(v1)))
-        b.graph.remove_edge((v1, v2))
-        v3 = add_dummy(b, qubit, row + 1)
-        b.graph.add_edge((v1, v3), b.edge_type.SIMPLE)
-        b.graph.scalar.add_power(-1)
-
-
-def m(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+def m(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None:
     """Measure qubit in Z basis with optional bit-flip error probability p."""
     if invert:
-        x(b, qubit)
-    _m(b, qubit, p, silent=False)
+        x(builder, qubit)
+    if p > 0:
+        # NOTE: the same X error before and after the measurement flips the
+        # record but not the state.
+        flip = error_phase(builder.add_channel(error_probs(p)))
+        builder.spider(qubit, VertexType.X, flip)
+        builder.measure(qubit)
+        builder.spider(qubit, VertexType.X, flip)
+    else:
+        builder.measure(qubit)
     if invert:
-        x(b, qubit)
+        x(builder, qubit)
 
 
 def mpp(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     paulis: list[tuple[Literal["X", "Y", "Z"], int]],
     invert: bool = False,
     p: float = 0,
@@ -883,42 +568,42 @@ def mpp(
     """Measure a single Pauli product.
 
     Args:
-        b: The graph representation to modify.
+        builder: The graph builder to modify.
         paulis: List of (pauli_type, qubit) pairs defining the Pauli product.
         invert: Whether to invert the measurement result.
         p: Measurement flip error probability.
 
     """
-    aux = -2
-    r(b, aux)
-    h(b, aux)
-    _apply_pauli_controls(b, aux, paulis)
-    h(b, aux)
-    m(b, aux, p=p, invert=invert)
+    aux = HELPER_LANE
+    r(builder, aux)
+    h(builder, aux)
+    _apply_pauli_controls(builder, aux, paulis)
+    h(builder, aux)
+    m(builder, aux, p=p, invert=invert)
 
 
 def _apply_pauli_controls(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     aux: int,
     paulis: list[tuple[Literal["X", "Y", "Z"], int]],
 ) -> None:
     """Apply controlled-Pauli operations between aux and target qubits."""
     for pauli_type, qubit in paulis:
         if pauli_type == "X":
-            cnot(b, aux, qubit)
+            cnot(builder, aux, qubit)
         elif pauli_type == "Z":
-            cz(b, aux, qubit)
+            cz(builder, aux, qubit)
         elif pauli_type == "Y":
-            cy(b, aux, qubit)
+            cy(builder, aux, qubit)
         else:
             raise ValueError(f"Invalid Pauli operator: {pauli_type}")
 
 
 def _pauli_product_phase(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     paulis: list[tuple[Literal["X", "Y", "Z"], int]],
-    phase_gate: Callable[[GraphRepresentation, int], None],
-    phase_gate_dag: Callable[[GraphRepresentation, int], None],
+    phase_gate: Callable[[GraphBuilder, int], None],
+    phase_gate_dag: Callable[[GraphBuilder, int], None],
     dagger: bool,
 ) -> None:
     """Apply exp(-i theta P) (up to global phase) for a Pauli product P.
@@ -934,37 +619,37 @@ def _pauli_product_phase(
     # Rotate each qubit so its Pauli eigenvalue maps to Z
     for pauli_type, qubit in paulis:
         if pauli_type == "X":
-            h(b, qubit)
+            h(builder, qubit)
         elif pauli_type == "Y":
-            s_dag(b, qubit)
-            h(b, qubit)
+            s_dag(builder, qubit)
+            h(builder, qubit)
 
     # Accumulate Z-parity into the last qubit
     _, last_qubit = paulis[-1]
     for _, qubit in paulis[:-1]:
-        cnot(b, qubit, last_qubit)
+        cnot(builder, qubit, last_qubit)
 
     # Phase the parity
     if dagger:
-        phase_gate_dag(b, last_qubit)
+        phase_gate_dag(builder, last_qubit)
     else:
-        phase_gate(b, last_qubit)
+        phase_gate(builder, last_qubit)
 
     # Uncompute parity accumulation
     for _, qubit in reversed(paulis[:-1]):
-        cnot(b, qubit, last_qubit)
+        cnot(builder, qubit, last_qubit)
 
     # Undo basis rotations
     for pauli_type, qubit in paulis:
         if pauli_type == "X":
-            h(b, qubit)
+            h(builder, qubit)
         elif pauli_type == "Y":
-            h(b, qubit)
-            s(b, qubit)
+            h(builder, qubit)
+            s(builder, qubit)
 
 
 def spp(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     paulis: list[tuple[Literal["X", "Y", "Z"], int]],
     dagger: bool = False,
 ) -> None:
@@ -974,16 +659,16 @@ def spp(
     ``SPP Z0`` is the S gate and ``SPP_DAG Z0`` is S_DAG.
 
     Args:
-        b: The graph representation to modify.
+        builder: The graph builder to modify.
         paulis: List of (pauli_type, qubit) pairs defining the Pauli product P.
         dagger: If True, apply exp(+i pi/4 P) (phase by -i) instead.
 
     """
-    _pauli_product_phase(b, paulis, s, s_dag, dagger)
+    _pauli_product_phase(builder, paulis, s, s_dag, dagger)
 
 
 def tpp(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     paulis: list[tuple[Literal["X", "Y", "Z"], int]],
     dagger: bool = False,
 ) -> None:
@@ -993,16 +678,16 @@ def tpp(
     For a single qubit, ``TPP Z0`` is the T gate and ``TPP_DAG Z0`` is T_DAG.
 
     Args:
-        b: The graph representation to modify.
+        builder: The graph builder to modify.
         paulis: List of (pauli_type, qubit) pairs defining the Pauli product P.
         dagger: If True, apply exp(+i pi/8 P) (phase by exp(-i pi/4)) instead.
 
     """
-    _pauli_product_phase(b, paulis, t, t_dag, dagger)
+    _pauli_product_phase(builder, paulis, t, t_dag, dagger)
 
 
 def r_pauli(
-    b: GraphRepresentation,
+    builder: GraphBuilder,
     paulis: list[tuple[Literal["X", "Y", "Z"], int]],
     theta: Fraction,
     dagger: bool = False,
@@ -1015,193 +700,133 @@ def r_pauli(
     exp(+i theta pi/2 P) instead.
 
     Args:
-        b: The graph representation to modify.
+        builder: The graph builder to modify.
         paulis: List of (pauli_type, qubit) pairs defining the Pauli product P.
         theta: Rotation angle in half-turns (units of pi).
         dagger: If True, negate the rotation angle.
 
     """
     _pauli_product_phase(
-        b,
+        builder,
         paulis,
-        lambda b, qubit: r_z(b, qubit, theta),
-        lambda b, qubit: r_z(b, qubit, -theta),
+        lambda builder, qubit: r_z(builder, qubit, theta),
+        lambda builder, qubit: r_z(builder, qubit, -theta),
         dagger,
     )
 
 
-def mpad(b: GraphRepresentation, value: int, p: float = 0) -> None:
+def mpad(builder: GraphBuilder, value: int, p: float = 0) -> None:
     """Pad measurement record with a fixed bit value.
 
     Args:
-        b: The graph representation to modify.
+        builder: The graph builder to modify.
         value: The bit value to record (0 or 1).
         p: Error probability for the recorded bit.
 
     """
-    aux = -2
-    r(b, aux)
+    aux = HELPER_LANE
+    r(builder, aux)
     if value == 1:
-        x(b, aux)
-    m(b, aux, p=p)
+        x(builder, aux)
+    m(builder, aux, p=p)
 
 
-def mr(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+def mr(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None:
     """Z-basis demolition measurement (optionally noisy).
 
     Projects each target qubit into |0> or |1>, reports its value (false=|0>, true=|1>),
     then resets to |0>.
     """
-    m(b, qubit, p=p, invert=invert)
-    _r(b, qubit)
+    m(builder, qubit, p=p, invert=invert)
+    r(builder, qubit)
 
 
-def mrx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+def mrx(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None:
     """X-basis demolition measurement (optionally noisy).
 
     Projects each target qubit into |+> or |->, reports its value (false=|+>, true=|->),
     then resets to |+>.
     """
-    h(b, qubit)
-    m(b, qubit, p=p, invert=invert)
-    _r(b, qubit)
-    h(b, qubit)
+    h(builder, qubit)
+    m(builder, qubit, p=p, invert=invert)
+    r(builder, qubit)
+    h(builder, qubit)
 
 
-def mry(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+def mry(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None:
     """Y-basis demolition measurement (optionally noisy).
 
     Projects each target qubit into |i> or |-i>, reports its value (false=|i>, true=|-i>),
     then resets to |i>.
     """
-    h_yz(b, qubit)
-    m(b, qubit, p=p, invert=invert)
-    _r(b, qubit)
-    h_yz(b, qubit)
+    h_yz(builder, qubit)
+    m(builder, qubit, p=p, invert=invert)
+    r(builder, qubit)
+    h_yz(builder, qubit)
 
 
-def mx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+def mx(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None:
     """Measure qubit in X basis."""
-    h(b, qubit)
-    m(b, qubit, p=p, invert=invert)
-    h(b, qubit)
+    h(builder, qubit)
+    m(builder, qubit, p=p, invert=invert)
+    h(builder, qubit)
 
 
-def my(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None:
+def my(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None:
     """Measure qubit in Y basis."""
-    h_yz(b, qubit)
-    m(b, qubit, p=p, invert=invert)
-    h_yz(b, qubit)
+    h_yz(builder, qubit)
+    m(builder, qubit, p=p, invert=invert)
+    h_yz(builder, qubit)
 
 
 def mxx(
-    b: GraphRepresentation, q0: int, q1: int, p: float = 0, invert: bool = False
+    builder: GraphBuilder, q0: int, q1: int, p: float = 0, invert: bool = False
 ) -> None:
     """Measure two qubits in XX basis."""
-    mpp(b, [("X", q0), ("X", q1)], invert, p=p)
+    mpp(builder, [("X", q0), ("X", q1)], invert, p=p)
 
 
 def myy(
-    b: GraphRepresentation, q0: int, q1: int, p: float = 0, invert: bool = False
+    builder: GraphBuilder, q0: int, q1: int, p: float = 0, invert: bool = False
 ) -> None:
     """Measure two qubits in YY basis."""
-    mpp(b, [("Y", q0), ("Y", q1)], invert, p=p)
+    mpp(builder, [("Y", q0), ("Y", q1)], invert, p=p)
 
 
 def mzz(
-    b: GraphRepresentation, q0: int, q1: int, p: float = 0, invert: bool = False
+    builder: GraphBuilder, q0: int, q1: int, p: float = 0, invert: bool = False
 ) -> None:
     """Measure two qubits in ZZ basis."""
-    mpp(b, [("Z", q0), ("Z", q1)], invert, p=p)
+    mpp(builder, [("Z", q0), ("Z", q1)], invert, p=p)
 
 
-def r(b: GraphRepresentation, qubit: int) -> None:
+def r(builder: GraphBuilder, qubit: int) -> None:
     """Z-basis reset.
 
     Forces each target qubit into the |0> state by silently measuring it in the Z basis
     and applying an X gate if it ended up in the |1> state.
     """
-    _r(b, qubit)
+    builder.reset(qubit)
 
 
-def rx(b: GraphRepresentation, qubit: int) -> None:
+def rx(builder: GraphBuilder, qubit: int) -> None:
     """X-basis reset.
 
-    Forces each target qubit into the |+> state by silently measuring it in the X basis
-    and applying a Z gate if it ended up in the |-> state.
+    Forces the qubit into the |+> state: a Z-basis reset followed by H. The reset
+    traces out the old state, which does not depend on the basis.
     """
-    if qubit in b.last_vertex:
-        h(b, qubit)
-    r(b, qubit)
-    h(b, qubit)
+    r(builder, qubit)
+    h(builder, qubit)
 
 
-def ry(b: GraphRepresentation, qubit: int) -> None:
+def ry(builder: GraphBuilder, qubit: int) -> None:
     """Y-basis reset.
 
-    Forces each target qubit into the |i> state by silently measuring it in the Y basis
-    and applying an X gate if it ended up in the |-i> state.
+    Forces the qubit into the |i> state: a Z-basis reset followed by H_YZ. The
+    reset traces out the old state, which does not depend on the basis.
     """
-    if qubit in b.last_vertex:
-        h_yz(b, qubit)
-    r(b, qubit)
-    h_yz(b, qubit)
-
-
-# =============================================================================
-# Annotations
-# =============================================================================
-
-
-def _annotation_row(b: GraphRepresentation, rec: list[int]) -> float:
-    """Pick a fresh row for a detector/observable vertex.
-
-    Empty `rec` is valid Stim and represents a deterministic-zero annotation;
-    fall back to a row above existing annotations rather than `min()` on an
-    empty set.
-    """
-    d_rows = {b.graph.row(d) for d in b.detectors + b.observables}
-    if rec:
-        row: float = min(b.graph.row(b.rec[r]) for r in rec) - 0.5
-    else:
-        row = (max(d_rows) + 1) if d_rows else 0
-    while row in d_rows:
-        row += 1
-    return row
-
-
-def detector(b: GraphRepresentation, rec: list[int], *args) -> None:
-    """Add detector annotation that XORs the given measurement record bits."""
-    row = _annotation_row(b, rec)
-    v0 = b.graph.add_vertex(
-        VertexType.X, qubit=-1, row=row, phase=f"det[{len(b.detectors)}]"
-    )
-    for rec_ in rec:
-        b.graph.add_edge((v0, b.rec[rec_]))
-    b.detectors.append(v0)
-
-
-def observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None:
-    """Add observable annotation that XORs the given measurement record bits."""
-    idx = int(idx)
-
-    if idx not in b.observables_dict:
-        row = _annotation_row(b, rec)
-        v0 = b.graph.add_vertex(VertexType.X, qubit=-1, row=row, phase=f"obs[{idx}]")
-        b.observables_dict[idx] = v0
-
-    v0 = b.observables_dict[idx]
-    for rec_ in rec:
-        b.graph.add_edge((v0, b.rec[rec_]))
-
-
-def tick(b: GraphRepresentation) -> None:
-    """Add a tick to the circuit (align all qubits to same row)."""
-    if len(b.last_vertex) == 0:
-        return
-    row = max(last_row(b, q) for q in b.last_vertex)
-    for q in b.last_vertex:
-        b.graph.set_row(b.last_vertex[q], row)
+    r(builder, qubit)
+    h_yz(builder, qubit)
 
 
 # =============================================================================
