@@ -168,8 +168,9 @@ def expand_clifford_rotations(source: stim.Circuit) -> stim.Circuit:
         expansion = _try_clifford_expansion(instr)
         if expansion is not None:
             gates, targets = expansion
-            for gate in gates:
-                out.append(gate, targets, [])
+            for layer in _disjoint_layers([[t] for t in targets]):
+                for gate in gates:
+                    out.append(gate, [targets[i] for i in layer], [])
         else:
             out.append(instr)
     return out
@@ -193,13 +194,49 @@ def _expand_clifford_spp(instr: stim.CircuitInstruction, out: stim.Circuit) -> b
     if idx is None:
         return False
 
-    targets = instr.targets_copy()
     if instr.name == "SPP_DAG":
         idx = (4 - idx) % 4
     repeats = {0: [], 1: ["SPP"], 2: ["SPP", "SPP"], 3: ["SPP_DAG"]}[idx]
-    for gate in repeats:
-        out.append(gate, targets, [])
+    products = _split_products(instr.targets_copy())
+    for layer in _disjoint_layers(
+        [[t.value for t in p if not t.is_combiner] for p in products]
+    ):
+        flat = [t for i in layer for t in products[i]]
+        for gate in repeats:
+            out.append(gate, flat, [])
     return True
+
+
+def _split_products(targets: list[stim.GateTarget]) -> list[list[stim.GateTarget]]:
+    """Split an SPP target list into Pauli products, keeping the combiners."""
+    products: list[list[stim.GateTarget]] = []
+    joined = False
+    for t in targets:
+        if t.is_combiner or joined:
+            products[-1].append(t)
+            joined = t.is_combiner
+        else:
+            products.append([t])
+    return products
+
+
+def _disjoint_layers(supports: list[list[int]]) -> list[list[int]]:
+    """Group consecutive indices into ``supports`` into runs acting on disjoint qubits.
+
+    A merged instruction like ``I[U3(...)] 0 0`` or ``SPP[R_PAULI(...)] X0 Z0``
+    applies its rotation once per target (or product), in order. A multi-gate
+    expansion must therefore be emitted once per run of disjoint supports, so
+    that operations on a shared qubit are not regrouped.
+    """
+    layers: list[list[int]] = []
+    used: set[int] = set()
+    for i, support in enumerate(supports):
+        if not layers or used.intersection(support):
+            layers.append([])
+            used = set()
+        layers[-1].append(i)
+        used.update(support)
+    return layers
 
 
 def _try_clifford_expansion(

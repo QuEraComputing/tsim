@@ -185,6 +185,49 @@ class TestStimCircuitProperty:
         assert "I[" not in stim_str
         assert "Z 0 1 2" in stim_str
 
+    def test_multi_target_u3_stays_compact(self):
+        c = Circuit("U3(0.5, 0.5, 1.0) 0 1")
+        assert str(c.stim_circuit) == "S_DAG 0 1\nSQRT_X_DAG 0 1"
+
+    @pytest.mark.parametrize(
+        "program",
+        [
+            # stim merges these into one instruction with repeated targets.
+            "U3(-1.5, -1.5, -1.0) 0\nU3(-1.5, -1.5, -1.0) 0",
+            "U3(0.5, 0.5, 1.0) 0 1\nU3(0.5, 0.5, 1.0) 1 0",
+            "R_PAULI(1.0) X0\nR_PAULI(1.0) Z0",
+            "R_PAULI(0.5) X0*Z1\nR_PAULI(0.5) Z0*X1\nR_PAULI(0.5) Y2",
+            "R_PAULI(-0.5) X0*Y1 Z2\nR_PAULI(-0.5) Z0 X1*X2",
+        ],
+    )
+    def test_merged_rotations_preserve_unitary(self, program):
+        c = Circuit(program)
+        assert c.is_clifford
+        ref = stim.Circuit()
+        for line in program.splitlines():
+            ref += Circuit(line).stim_circuit
+        assert c.stim_circuit.to_tableau() == ref.to_tableau()
+
+    @pytest.mark.parametrize("theta_idx", range(4))
+    @pytest.mark.parametrize("phi_idx", range(4))
+    @pytest.mark.parametrize("lam_idx", range(4))
+    def test_merged_u3_all_half_pi(self, theta_idx, phi_idx, lam_idx):
+        line = f"U3({theta_idx / 2}, {phi_idx / 2}, {lam_idx / 2}) 0"
+        c = Circuit(f"{line}\n{line}")
+        gates = parametric_to_clifford_gates(
+            "U3",
+            {
+                "theta": Fraction(theta_idx, 2),
+                "phi": Fraction(phi_idx, 2),
+                "lambda": Fraction(lam_idx, 2),
+            },
+        )
+        assert gates is not None
+        ref = stim.Circuit()
+        for g in gates + gates:
+            ref.append(g, [0])  # type: ignore
+        assert c.stim_circuit.to_tableau() == ref.to_tableau()
+
 
 class TestIsCliffordUserTags:
     """Identity instructions with non-parametric user tags (e.g. ``I[mytag]``)
