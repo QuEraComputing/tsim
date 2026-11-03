@@ -228,6 +228,8 @@ def test_parse_error_ignores_shorthand_in_comments():
         ("I[U3(0.3, 0.24, 0.49)] 0", "U3(0.3, 0.24, 0.49) 0"),
         ("SPP[R_PAULI(0.1)] X0*X1", "R_XX(0.1) 0 1"),
         ("SPP[R_PAULI(0.1)] X0*Y1", "R_PAULI(0.1) X0*Y1"),
+        ("SPP[R_PAULI(0.1)] !X0*Y1", "R_PAULI(0.1) !X0*Y1"),
+        ("SPP[R_PAULI(0.1)] X0*!X1", "R_PAULI(0.1) X0*!X1"),
         ("SPP[R_PAULI(0.1)] !X0", "R_PAULI(0.1) !X0"),
         ("SPP[R_PAULI(0.1)] !X0*X1", "R_PAULI(0.1) !X0*X1"),
         ("SPP[R_PAULI(0.1)] X0*!Y1 !Z2", "R_PAULI(0.1) X0*!Y1 !Z2"),

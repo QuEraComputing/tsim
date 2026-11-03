@@ -149,6 +149,7 @@ def shorthand_to_stim(text: str) -> str:
         R_YY(0.5) 0 1       → SPP[R_PAULI(theta=0.5*pi)] Y0*Y1
         R_ZZ(0.5) 0 1       → SPP[R_PAULI(theta=0.5*pi)] Z0*Z1
         R_PAULI(0.3) X0*Y1  → SPP[R_PAULI(theta=0.3*pi)] X0*Y1
+        R_PAULI(0.3) !X0*Y1 → SPP[R_PAULI(theta=0.3*pi)] !X0*Y1
         U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0
 
     Tags and comments are left untouched, except that parametric tags on ``I``,
@@ -242,6 +243,7 @@ def stim_to_shorthand(text: str) -> str:
     - I[R_X(theta=α*pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α)
     - SPP[R_PAULI(theta=α*pi)] P0*P1 → R_PP(α) 0 1 (P ∈ {X, Y, Z})
     - SPP[R_PAULI(theta=α*pi)] X0*Y1 → R_PAULI(α) X0*Y1
+    - SPP[R_PAULI(theta=α*pi)] !X0*Y1 → R_PAULI(α) !X0*Y1
     - SPP[T] → TPP
     - SPP_DAG[T] → TPP_DAG
     - S[T] → T
