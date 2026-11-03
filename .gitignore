@@ -6,6 +6,15 @@
 .vscode
 experiments/
 
+# Local scratch, notes, and generated artifacts
+/outputs/
+/output/
+/tmp/
+/lean/
+/benchmark_instructions.md
+/clifft_noise_transparent_squeeze.md
+/zx_pbc_explainer.html
+
 # mkdocs
 site/
 docs/reference/
