@@ -96,6 +96,7 @@ def _signed_pauli_targets(
         | stim.PauliString
         | Iterable[int | stim.GateTarget | stim.PauliString]
     ),
+    combined: bool = True,
 ) -> list[int | stim.GateTarget]:
     """Expand PauliString targets, keeping a ``-1`` sign as an inverted target.
 
@@ -103,7 +104,8 @@ def _signed_pauli_targets(
     (quantumlib/Stim#1134), which would flip a measurement result or the direction
     of a rotation. ``stim.target_combined_paulis`` keeps it, and rejects imaginary
     signs and identity strings. Stim also accepts target strings such as ``"X0"``,
-    which are passed through whole.
+    which are passed through whole. With ``combined=False`` the factors of each
+    PauliString are left as separate targets, as ``OBSERVABLE_INCLUDE`` requires.
     """
     if isinstance(targets, str | stim.PauliString) or not isinstance(targets, Iterable):
         items: list[int | stim.GateTarget | stim.PauliString] = [targets]
@@ -113,7 +115,8 @@ def _signed_pauli_targets(
     for item in items:
         if isinstance(item, stim.PauliString):
             # NOTE: stim's stub types the returned list as a single GateTarget.
-            out.extend(cast(list[stim.GateTarget], stim.target_combined_paulis(item)))
+            paulis = cast(list[stim.GateTarget], stim.target_combined_paulis(item))
+            out.extend(p for p in paulis if combined or not p.is_combiner)
         else:
             out.append(item)
     return out
@@ -287,7 +290,9 @@ class Circuit:
                 return
 
             if name.upper() in _PAULI_PRODUCT_GATES:
-                targets = _signed_pauli_targets(targets)
+                targets = _signed_pauli_targets(
+                    targets, combined=name.upper() != "OBSERVABLE_INCLUDE"
+                )
 
             if name == "TPP":
                 name = "SPP"

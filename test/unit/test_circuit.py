@@ -1314,6 +1314,8 @@ def test_append_tpp_anti_hermitian_pauli_string_rejected(name: str):
         ("SPP", "-Z", None, "T", "TPP !Z0"),
         ("SPP", "-XY", None, "R_PAULI(theta=0.3*pi)", "R_PAULI(0.3) !X0*Y1"),
         ("OBSERVABLE_INCLUDE", "-Z", 0, "", "OBSERVABLE_INCLUDE(0) !Z0"),
+        ("OBSERVABLE_INCLUDE", "XZ", 0, "", "OBSERVABLE_INCLUDE(0) X0 Z1"),
+        ("OBSERVABLE_INCLUDE", "-XZ", 0, "", "OBSERVABLE_INCLUDE(0) !X0 Z1"),
     ],
 )
 def test_append_pauli_product_gate_keeps_sign(
