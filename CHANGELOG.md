@@ -121,7 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seeded samples can differ. Chains whose links share no component and all
   have targets, such as `E X0 Z1; ELSE_CORRELATED_ERROR Y2`, build the same
   graph as before. A chain that would need more than 2^24 outcomes raises
-  `ValueError`. (#PR)
+  `ValueError`. (#248)
 - `Circuit.append("R_PAULI", pauli_string, angle)` no longer drops the sign of a
   `stim.PauliString`: a `-1` sign now reverses the rotation, and a sign of `±i`
   raises `ValueError`. (#228)
