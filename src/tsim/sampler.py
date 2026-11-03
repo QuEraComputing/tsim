@@ -181,21 +181,9 @@ def sample_program(
     return combined
 
 
-@jax.jit
-def _compact(
-    samples: jax.Array, flip: jax.Array, postselect: jax.Array, valid: jax.Array
-) -> tuple[jax.Array, jax.Array]:
-    """Move the kept rows of ``samples ^ flip`` to its start; return it and their count.
-
-    A row is kept when it is one of the first ``valid`` rows and every
-    ``postselect`` output of it is 0. The shapes do not depend on the count, so
-    the compilations are few.
-    """
-    samples = samples ^ flip
-    rows = samples.shape[0]
-    keep = ~jnp.any(samples & postselect, axis=1) & (jnp.arange(rows) < valid)
-    (indices,) = jnp.nonzero(keep, size=rows, fill_value=0)
-    return samples[indices], jnp.sum(keep)
+def _survivors(samples: np.ndarray, postselect: np.ndarray) -> np.ndarray:
+    """Return the rows of ``samples`` where every ``postselect`` output is 0."""
+    return samples[~np.any(samples & postselect, axis=1)]
 
 
 @kernel
@@ -270,50 +258,26 @@ class _StabilizerRankBackend:
         *,
         flip: np.ndarray | None = None,
         pad_to: int | None = None,
-        trim: bool = True,
     ) -> jax.Array:
         """Sample the batch, padded with its first row to ``pad_to`` rows.
 
-        Padding keeps the batch shapes, and so JAX's compilations, few. The
-        padding rows are dropped unless ``trim`` is False.
+        Padding keeps the batch shapes, and so JAX's compilations, few.
         """
         count = len(f_params)
         if pad_to is not None and count < pad_to:
             padding = np.repeat(f_params[:1], pad_to - count, axis=0)
             f_params = np.concatenate([f_params, padding])
         samples = sample_program(self._program, jnp.asarray(f_params), seed)
-        if trim and len(f_params) > count:
+        if len(f_params) > count:
             samples = samples[:count]
         return samples if flip is None else samples ^ flip
-
-    @staticmethod
-    def survivors(
-        samples: jax.Array,
-        postselect: np.ndarray,
-        valid: int,
-        flip: jax.Array | np.ndarray | None = None,
-    ) -> np.ndarray:
-        """Return, on the host, the kept rows of the first ``valid`` of ``samples``.
-
-        A row is kept when every ``postselect`` output of ``samples ^ flip``
-        is 0. Only the kept rows are copied from the device.
-        """
-        if flip is None:
-            flip = np.zeros(samples.shape[1], dtype=np.bool_)
-        compacted, count = _compact(samples, flip, postselect, valid)
-        jax.block_until_ready(compacted)
-        return copy_d2h(compacted, rows=int(count))
 
     def concatenate(self, batches: list) -> np.ndarray:
         # NOTE: one device-to-host copy of the concatenation is much faster than
         # one per batch for large outputs.
-        combined = self.combine(batches)
+        combined = batches[0] if len(batches) == 1 else jnp.concatenate(batches)
         jax.block_until_ready(combined)
         return copy_d2h(combined)
-
-    @staticmethod
-    def combine(batches: list) -> jax.Array:
-        return batches[0] if len(batches) == 1 else jnp.concatenate(batches)
 
 
 def _check_sizes(shots: int, batch_size: int | None) -> None:
@@ -462,7 +426,7 @@ class _CompiledSamplerBase:
 
         The arguments are those of ``_sample_outputs``. Only the shots that a
         mask keeps are returned. Direct detectors that can fire are tested
-        before the components run, and the other masked detectors on the device.
+        before the components run, and the other masked detectors after.
         """
         postselect = None
         screen = False
@@ -582,16 +546,15 @@ class _CompiledSamplerBase:
             if compute_reference and index == 0:
                 f_params[0] = 0
             batches.append(backend.sample(f_params, backend.next_seed()))
-        flip = None
+        reference: np.ndarray | None = None
         if referenced is not None:
-            flip = batches[0][0] & referenced
+            reference = np.asarray(batches[0][0])
             batches[0] = batches[0][1:]
-        if postselect is not None:
-            return backend.survivors(backend.combine(batches), postselect, shots, flip)
         result = backend.concatenate(batches)[:shots]
-        if flip is not None:
-            result ^= np.asarray(flip)
-        return result
+        if referenced is not None:
+            assert reference is not None
+            result ^= reference & referenced
+        return result if postselect is None else _survivors(result, postselect)
 
     def _sample_batches_with_postselection(
         self,
@@ -605,8 +568,8 @@ class _CompiledSamplerBase:
 
         Only the shots where every masked detector reads 0 are returned. A shot
         that a masked direct detector discards skips the components. The other
-        shots are sampled in batches of ``batch_size``, whose other masked
-        detectors are tested on the device. Without a ``batch_size``, batches
+        shots are sampled in batches of ``batch_size``, and then tested for the
+        other masked detectors. Without a ``batch_size``, batches
         are as large as memory allows, and the last survivors are split into
         equal batches.
 
@@ -633,12 +596,12 @@ class _CompiledSamplerBase:
         if flip is not None:
             flips = flips ^ flip[columns]
         postselect = postselection_mask[columns]
-        # NOTE: the screen has tested the direct detectors, so the device tests
-        # only the others.
+        # NOTE: the screen has tested the direct detectors, so the samples are
+        # tested for the others alone.
         postselect_outputs = np.zeros(num_outputs, dtype=np.bool_)
         postselect_outputs[: self._num_detectors] = postselection_mask
         postselect_outputs[columns] = False
-        test_on_device = bool(postselect_outputs.any())
+        test_samples = bool(postselect_outputs.any())
         backend = self._backend
         assert backend is not None
         chunk = min(batch_size, SCREEN_SHOTS)
@@ -682,18 +645,15 @@ class _CompiledSamplerBase:
                 rows = min(batch_size, 1 << (size - 1).bit_length())
             all_f = np.concatenate(pending_f)
             for start in range(0, ready, size):
-                batch = all_f[start : start + size]
                 samples = backend.sample(
-                    batch,
+                    all_f[start : start + size],
                     backend.next_seed(),
                     flip=flip,
                     pad_to=rows,
-                    trim=not test_on_device,
                 )
-                if test_on_device:
-                    kept = backend.survivors(samples, postselect_outputs, len(batch))
-                else:
-                    kept = np.asarray(samples)
+                kept = np.asarray(samples)
+                if test_samples:
+                    kept = _survivors(kept, postselect_outputs)
                 result[filled : filled + len(kept)] = kept
                 filled += len(kept)
             pending_f = [all_f[ready:]]
@@ -980,8 +940,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 detector (an error bit or a constant) discards skips the
                 components; with ``strategy="active_statevector"`` a masked
                 component detector also stops a shot's simulation, while
-                stabilizer-rank components are computed in full and their
-                discarded shots dropped on the device.
+                stabilizer-rank components are computed in full.
 
         Returns:
             A numpy array or tuple of numpy arrays containing the samples. With

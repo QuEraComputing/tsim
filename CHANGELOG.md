@@ -18,8 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rate as the mean of the re-applied mask now silently gets 1.0; use
   `len(result) / shots` instead. The
   rule is now the same for every strategy, including masked component detectors
-  with a stabilizer-rank strategy, which are tested on the device so that
-  discarded shots are not copied to the host. Without a mask, exactly `shots`
+  with a stabilizer-rank strategy. Without a mask, exactly `shots`
   rows are returned. `sample` warns when a masked detector is a constant 1,
   which discards every shot. (#252)
 

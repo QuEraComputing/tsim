@@ -6,7 +6,6 @@ import warnings
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from test.helpers.statevector import set_sharing
-from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -849,19 +848,3 @@ def test_stabilizer_rank_survivors_are_the_unmasked_samples_kept(
         np.testing.assert_array_equal(survivors, unmasked[_keep(unmasked[:, :3], mask)])
     assert 0 < len(survivors) < 300
     assert not np.any(survivors[:, :3] & mask)
-
-
-@pytest.mark.parametrize("masked", [[0], [0, 2]])
-def test_stabilizer_rank_postselection_compiles_once(masked):
-    """Survivor counts vary between calls, but the compiled shapes do not."""
-    circuit = Circuit(COMPONENT_DETECTORS_CIRCUIT)
-    sampler = circuit.compile_detector_sampler(strategy="cat5", seed=0)
-    mask = np.zeros(circuit.num_detectors, dtype=np.bool_)
-    mask[masked] = True
-    compact: Any = sampler_module._compact
-    counts = {len(sampler.sample(500, batch_size=128, postselection_mask=mask))}
-    compiled = compact._cache_size()
-    for _ in range(5):
-        counts.add(len(sampler.sample(500, batch_size=128, postselection_mask=mask)))
-    assert len(counts) > 1
-    assert compact._cache_size() == compiled

@@ -120,8 +120,7 @@ exactly `shots` rows. With `separate_observables`, both arrays hold the same
 shots. Shots discarded by a **direct** postselected detector (one that is a
 single error bit or a constant) skip the remaining component sampling. With
 `strategy="active_statevector"`, a shot discarded by a component detector also
-stops being simulated. With a stabilizer-rank strategy, discarded shots are
-dropped on the device, so they are never copied to the host.
+stops being simulated, while stabilizer-rank components are computed in full.
 
 The mask tests the values that `sample` returns: with
 `use_detector_reference_sample`, a shot is kept when its masked detectors match
