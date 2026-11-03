@@ -117,111 +117,128 @@
     <span class=n>use_observable_reference_sample</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>False</span><span class=p>,</span>
     <span class=n>postselection_mask</span><span class=p>:</span> <span class=n>ndarray</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span> <span class=o>|</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return detector samples from the circuit.</p> <p>The circuit must define the detectors using DETECTOR instructions. Observables defined by OBSERVABLE_INCLUDE instructions can also be included in the results as honorary detectors.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>shots</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The number of times to sample every detector in the circuit.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>The number of samples to process at once. Defaults to None, which chooses it from the available memory. With <code>strategy="active_statevector"</code> it bounds the shots a thread holds and does not change the samples. With a stabilizer-rank strategy on a GPU, setting this explicitly can help fully utilize VRAM; it changes the samples of a seed.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>separate_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When set to True, the return value is a (detection_events, observable_flips) tuple instead of a flat detection_events array.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>prepend_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, observables are included with the detectors and are placed at the start of the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>append_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, observables are included with the detectors and are placed at the end of the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>bit_packed</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, results are bit-packed. The packed rows may be a strided view of a wider array.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_detector_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When True, a noiseless reference sample is computed and XORed with detector outcomes so that results represent deviations from the noiseless baseline. This should only be used when detectors are deterministic. Otherwise, it can unpredictably change the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_observable_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When True, a noiseless reference sample is computed and XORed with observable outcomes so that results represent deviations from the noiseless baseline. This should only be used when observables are deterministic. Otherwise, it can unpredictably change the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>postselection_mask</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span> | None</code> </td> <td> <div class=doc-md-description> <p>Optional boolean array of length <code>num_detectors</code>. When set, shots where any masked direct detector (an error bit or a constant) fires are not sampled further. All <code>shots</code> rows are still returned: survivors contain the full sample, while discarded rows keep their direct detector columns and read <code>False</code> in every other column, observables included. With <code>strategy="active_statevector"</code> a masked component detector also discards a shot: its row keeps the direct detectors and the outputs of that component already determined when that detector fired, and reads <code>False</code> elsewhere. Re-apply the mask to the returned detector columns to recover surviving shots.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p>A numpy array or tuple of numpy arrays containing the samples.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=ValueError>ValueError</span></code> </td> <td> <div class=doc-md-description> <p>If <code>separate_observables</code> is combined with <code>prepend_observables</code> or <code>append_observables</code>.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>892</span>
-<span class=normal>893</span>
-<span class=normal>894</span>
-<span class=normal>895</span>
-<span class=normal>896</span>
-<span class=normal>897</span>
-<span class=normal>898</span>
-<span class=normal>899</span>
-<span class=normal>900</span>
-<span class=normal>901</span>
-<span class=normal>902</span>
-<span class=normal>903</span>
-<span class=normal>904</span>
-<span class=normal>905</span>
-<span class=normal>906</span>
-<span class=normal>907</span>
-<span class=normal>908</span>
-<span class=normal>909</span>
-<span class=normal>910</span>
-<span class=normal>911</span>
-<span class=normal>912</span>
-<span class=normal>913</span>
-<span class=normal>914</span>
-<span class=normal>915</span>
-<span class=normal>916</span>
-<span class=normal>917</span>
-<span class=normal>918</span>
-<span class=normal>919</span>
-<span class=normal>920</span>
-<span class=normal>921</span>
-<span class=normal>922</span>
-<span class=normal>923</span>
-<span class=normal>924</span>
-<span class=normal>925</span>
-<span class=normal>926</span>
-<span class=normal>927</span>
-<span class=normal>928</span>
-<span class=normal>929</span>
-<span class=normal>930</span>
-<span class=normal>931</span>
-<span class=normal>932</span>
-<span class=normal>933</span>
-<span class=normal>934</span>
-<span class=normal>935</span>
-<span class=normal>936</span>
-<span class=normal>937</span>
-<span class=normal>938</span>
-<span class=normal>939</span>
-<span class=normal>940</span>
-<span class=normal>941</span>
-<span class=normal>942</span>
-<span class=normal>943</span>
-<span class=normal>944</span>
-<span class=normal>945</span>
-<span class=normal>946</span>
-<span class=normal>947</span>
-<span class=normal>948</span>
-<span class=normal>949</span>
-<span class=normal>950</span>
-<span class=normal>951</span>
-<span class=normal>952</span>
-<span class=normal>953</span>
-<span class=normal>954</span>
-<span class=normal>955</span>
-<span class=normal>956</span>
-<span class=normal>957</span>
-<span class=normal>958</span>
-<span class=normal>959</span>
-<span class=normal>960</span>
-<span class=normal>961</span>
-<span class=normal>962</span>
-<span class=normal>963</span>
-<span class=normal>964</span>
-<span class=normal>965</span>
-<span class=normal>966</span>
-<span class=normal>967</span>
-<span class=normal>968</span>
-<span class=normal>969</span>
-<span class=normal>970</span>
-<span class=normal>971</span>
-<span class=normal>972</span>
-<span class=normal>973</span>
-<span class=normal>974</span>
-<span class=normal>975</span>
-<span class=normal>976</span>
-<span class=normal>977</span>
-<span class=normal>978</span>
-<span class=normal>979</span>
-<span class=normal>980</span>
-<span class=normal>981</span>
-<span class=normal>982</span>
-<span class=normal>983</span>
-<span class=normal>984</span>
-<span class=normal>985</span>
-<span class=normal>986</span>
-<span class=normal>987</span>
-<span class=normal>988</span>
-<span class=normal>989</span>
-<span class=normal>990</span>
-<span class=normal>991</span>
-<span class=normal>992</span>
-<span class=normal>993</span>
-<span class=normal>994</span>
-<span class=normal>995</span>
-<span class=normal>996</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample</span><span class=p>(</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return detector samples from the circuit.</p> <p>The circuit must define the detectors using DETECTOR instructions. Observables defined by OBSERVABLE_INCLUDE instructions can also be included in the results as honorary detectors.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>shots</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>The number of times to sample every detector in the circuit.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>The number of samples to process at once. Defaults to None, which chooses it from the available memory. With <code>strategy="active_statevector"</code> it bounds the shots a thread holds and does not change the samples. With a stabilizer-rank strategy on a GPU, setting this explicitly can help fully utilize VRAM; it changes the samples of a seed.</p> </div> </td> <td> <code>None</code> </td> </tr> <tr class=doc-section-item> <td> <code>separate_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When set to True, the return value is a (detection_events, observable_flips) tuple instead of a flat detection_events array.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>prepend_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, observables are included with the detectors and are placed at the start of the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>append_observables</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, observables are included with the detectors and are placed at the end of the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>bit_packed</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to false. When set, results are bit-packed. The packed rows may be a strided view of a wider array.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_detector_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When True, a noiseless reference sample is computed and XORed with detector outcomes so that results represent deviations from the noiseless baseline. This should only be used when detectors are deterministic. Otherwise, it can unpredictably change the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>use_observable_reference_sample</code> </td> <td> <code><span title=bool>bool</span></code> </td> <td> <div class=doc-md-description> <p>Defaults to False. When True, a noiseless reference sample is computed and XORed with observable outcomes so that results represent deviations from the noiseless baseline. This should only be used when observables are deterministic. Otherwise, it can unpredictably change the results.</p> </div> </td> <td> <code>False</code> </td> </tr> <tr class=doc-section-item> <td> <code>postselection_mask</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span> | None</code> </td> <td> <div class=doc-md-description> <p>Optional boolean array of length <code>num_detectors</code>. When set, only the shots in which every masked detector reads 0 in the returned sample (after the reference sample is XOR-ed in, with <code>use_detector_reference_sample</code>) are returned, so the result can have fewer than <code>shots</code> rows, and <code>len(result) / shots</code> is the acceptance rate. Without a mask, exactly <code>shots</code> rows are returned. A shot that a masked direct detector (an error bit or a constant) discards skips the components; with <code>strategy="active_statevector"</code> a masked component detector also stops a shot's simulation, while stabilizer-rank components are computed in full.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p>A numpy array or tuple of numpy arrays containing the samples. With</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span> | <span title=tuple>tuple</span>[<span title=numpy.ndarray>ndarray</span>, <span title=numpy.ndarray>ndarray</span>]</code> </td> <td> <div class=doc-md-description> <p><code>separate_observables</code>, both arrays hold the same shots.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Warns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>UserWarning</code> </td> <td> <div class=doc-md-description> <p>If a masked direct detector is a constant 1, without <code>use_detector_reference_sample</code>, so that every shot is discarded.</p> </div> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Raises:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=ValueError>ValueError</span></code> </td> <td> <div class=doc-md-description> <p>If <code>separate_observables</code> is combined with <code>prepend_observables</code> or <code>append_observables</code>.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal> 892</span>
+<span class=normal> 893</span>
+<span class=normal> 894</span>
+<span class=normal> 895</span>
+<span class=normal> 896</span>
+<span class=normal> 897</span>
+<span class=normal> 898</span>
+<span class=normal> 899</span>
+<span class=normal> 900</span>
+<span class=normal> 901</span>
+<span class=normal> 902</span>
+<span class=normal> 903</span>
+<span class=normal> 904</span>
+<span class=normal> 905</span>
+<span class=normal> 906</span>
+<span class=normal> 907</span>
+<span class=normal> 908</span>
+<span class=normal> 909</span>
+<span class=normal> 910</span>
+<span class=normal> 911</span>
+<span class=normal> 912</span>
+<span class=normal> 913</span>
+<span class=normal> 914</span>
+<span class=normal> 915</span>
+<span class=normal> 916</span>
+<span class=normal> 917</span>
+<span class=normal> 918</span>
+<span class=normal> 919</span>
+<span class=normal> 920</span>
+<span class=normal> 921</span>
+<span class=normal> 922</span>
+<span class=normal> 923</span>
+<span class=normal> 924</span>
+<span class=normal> 925</span>
+<span class=normal> 926</span>
+<span class=normal> 927</span>
+<span class=normal> 928</span>
+<span class=normal> 929</span>
+<span class=normal> 930</span>
+<span class=normal> 931</span>
+<span class=normal> 932</span>
+<span class=normal> 933</span>
+<span class=normal> 934</span>
+<span class=normal> 935</span>
+<span class=normal> 936</span>
+<span class=normal> 937</span>
+<span class=normal> 938</span>
+<span class=normal> 939</span>
+<span class=normal> 940</span>
+<span class=normal> 941</span>
+<span class=normal> 942</span>
+<span class=normal> 943</span>
+<span class=normal> 944</span>
+<span class=normal> 945</span>
+<span class=normal> 946</span>
+<span class=normal> 947</span>
+<span class=normal> 948</span>
+<span class=normal> 949</span>
+<span class=normal> 950</span>
+<span class=normal> 951</span>
+<span class=normal> 952</span>
+<span class=normal> 953</span>
+<span class=normal> 954</span>
+<span class=normal> 955</span>
+<span class=normal> 956</span>
+<span class=normal> 957</span>
+<span class=normal> 958</span>
+<span class=normal> 959</span>
+<span class=normal> 960</span>
+<span class=normal> 961</span>
+<span class=normal> 962</span>
+<span class=normal> 963</span>
+<span class=normal> 964</span>
+<span class=normal> 965</span>
+<span class=normal> 966</span>
+<span class=normal> 967</span>
+<span class=normal> 968</span>
+<span class=normal> 969</span>
+<span class=normal> 970</span>
+<span class=normal> 971</span>
+<span class=normal> 972</span>
+<span class=normal> 973</span>
+<span class=normal> 974</span>
+<span class=normal> 975</span>
+<span class=normal> 976</span>
+<span class=normal> 977</span>
+<span class=normal> 978</span>
+<span class=normal> 979</span>
+<span class=normal> 980</span>
+<span class=normal> 981</span>
+<span class=normal> 982</span>
+<span class=normal> 983</span>
+<span class=normal> 984</span>
+<span class=normal> 985</span>
+<span class=normal> 986</span>
+<span class=normal> 987</span>
+<span class=normal> 988</span>
+<span class=normal> 989</span>
+<span class=normal> 990</span>
+<span class=normal> 991</span>
+<span class=normal> 992</span>
+<span class=normal> 993</span>
+<span class=normal> 994</span>
+<span class=normal> 995</span>
+<span class=normal> 996</span>
+<span class=normal> 997</span>
+<span class=normal> 998</span>
+<span class=normal> 999</span>
+<span class=normal>1000</span>
+<span class=normal>1001</span>
+<span class=normal>1002</span>
+<span class=normal>1003</span>
+<span class=normal>1004</span>
+<span class=normal>1005</span>
+<span class=normal>1006</span>
+<span class=normal>1007</span>
+<span class=normal>1008</span>
+<span class=normal>1009</span>
+<span class=normal>1010</span>
+<span class=normal>1011</span>
+<span class=normal>1012</span>
+<span class=normal>1013</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>sample</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>shots</span><span class=p>:</span> <span class=nb>int</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
@@ -268,19 +285,25 @@
 <span class=sd>            only be used when observables are deterministic. Otherwise, it can</span>
 <span class=sd>            unpredictably change the results.</span>
 <span class=sd>        postselection_mask: Optional boolean array of length ``num_detectors``.</span>
-<span class=sd>            When set, shots where any masked direct detector (an error bit</span>
-<span class=sd>            or a constant) fires are not sampled further. All ``shots`` rows</span>
-<span class=sd>            are still returned: survivors contain the full sample, while</span>
-<span class=sd>            discarded rows keep their direct detector columns and read</span>
-<span class=sd>            ``False`` in every other column, observables included. With</span>
-<span class=sd>            ``strategy=&quot;active_statevector&quot;`` a masked component detector</span>
-<span class=sd>            also discards a shot: its row keeps the direct detectors and the</span>
-<span class=sd>            outputs of that component already determined when that detector</span>
-<span class=sd>            fired, and reads ``False`` elsewhere. Re-apply the mask to the returned detector</span>
-<span class=sd>            columns to recover surviving shots.</span>
+<span class=sd>            When set, only the shots in which every masked detector reads 0</span>
+<span class=sd>            in the returned sample (after the reference sample is XOR-ed</span>
+<span class=sd>            in, with ``use_detector_reference_sample``) are returned, so the</span>
+<span class=sd>            result can have fewer than ``shots`` rows, and</span>
+<span class=sd>            ``len(result) / shots`` is the acceptance rate. Without a mask,</span>
+<span class=sd>            exactly ``shots`` rows are returned. A shot that a masked direct</span>
+<span class=sd>            detector (an error bit or a constant) discards skips the</span>
+<span class=sd>            components; with ``strategy=&quot;active_statevector&quot;`` a masked</span>
+<span class=sd>            component detector also stops a shot&#39;s simulation, while</span>
+<span class=sd>            stabilizer-rank components are computed in full.</span>
 
 <span class=sd>    Returns:</span>
-<span class=sd>        A numpy array or tuple of numpy arrays containing the samples.</span>
+<span class=sd>        A numpy array or tuple of numpy arrays containing the samples. With</span>
+<span class=sd>        ``separate_observables``, both arrays hold the same shots.</span>
+
+<span class=sd>    Warns:</span>
+<span class=sd>        UserWarning: If a masked direct detector is a constant 1, without</span>
+<span class=sd>            ``use_detector_reference_sample``, so that every shot is</span>
+<span class=sd>            discarded.</span>
 
 <span class=sd>    Raises:</span>
 <span class=sd>        ValueError: If ``separate_observables`` is combined with</span>
@@ -302,6 +325,17 @@
                 <span class=sa>f</span><span class=s2>&quot;postselection_mask must have shape (</span><span class=si>{</span><span class=n>num_detectors</span><span class=si>}</span><span class=s2>,), &quot;</span>
                 <span class=sa>f</span><span class=s2>&quot;got </span><span class=si>{</span><span class=n>mask</span><span class=o>.</span><span class=n>shape</span><span class=si>}</span><span class=s2>&quot;</span>
             <span class=p>)</span>
+        <span class=k>if</span> <span class=ow>not</span> <span class=n>use_detector_reference_sample</span><span class=p>:</span>
+            <span class=n>indices</span><span class=p>,</span> <span class=n>flips</span><span class=p>,</span> <span class=n>direct_columns</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_direct_detectors</span>
+            <span class=n>always</span> <span class=o>=</span> <span class=n>direct_columns</span><span class=p>[(</span><span class=n>indices</span> <span class=o>&lt;</span> <span class=mi>0</span><span class=p>)</span> <span class=o>&amp;</span> <span class=n>flips</span><span class=p>]</span>
+            <span class=n>always</span> <span class=o>=</span> <span class=n>always</span><span class=p>[</span><span class=n>mask</span><span class=p>[</span><span class=n>always</span><span class=p>]]</span>
+            <span class=k>if</span> <span class=nb>len</span><span class=p>(</span><span class=n>always</span><span class=p>):</span>
+                <span class=n>warnings</span><span class=o>.</span><span class=n>warn</span><span class=p>(</span>
+                    <span class=sa>f</span><span class=s2>&quot;The postselected detectors </span><span class=si>{</span><span class=n>always</span><span class=o>.</span><span class=n>tolist</span><span class=p>()</span><span class=si>}</span><span class=s2> always &quot;</span>
+                    <span class=s2>&quot;read 1, so every shot is discarded. Did you mean &quot;</span>
+                    <span class=s2>&quot;use_detector_reference_sample=True?&quot;</span><span class=p>,</span>
+                    <span class=n>stacklevel</span><span class=o>=</span><span class=mi>2</span><span class=p>,</span>
+                <span class=p>)</span>
     <span class=n>num_outputs</span> <span class=o>=</span> <span class=bp>self</span><span class=o>.</span><span class=n>_program</span><span class=o>.</span><span class=n>num_outputs</span>
     <span class=n>referenced</span> <span class=o>=</span> <span class=kc>None</span>
     <span class=k>if</span> <span class=n>use_detector_reference_sample</span> <span class=ow>or</span> <span class=n>use_observable_reference_sample</span><span class=p>:</span>
@@ -478,24 +512,7 @@
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-module-attribute"><code>module-attribute</code></small>
-  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy ("cat5", "bss", "cutting"); "active_statevector" cannot compute probabilities.</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed. If None, a random seed is generated. Note that deterministic results are only guaranteed for a fixed batch size.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1007</span>
-<span class=normal>1008</span>
-<span class=normal>1009</span>
-<span class=normal>1010</span>
-<span class=normal>1011</span>
-<span class=normal>1012</span>
-<span class=normal>1013</span>
-<span class=normal>1014</span>
-<span class=normal>1015</span>
-<span class=normal>1016</span>
-<span class=normal>1017</span>
-<span class=normal>1018</span>
-<span class=normal>1019</span>
-<span class=normal>1020</span>
-<span class=normal>1021</span>
-<span class=normal>1022</span>
-<span class=normal>1023</span>
-<span class=normal>1024</span>
+  </span> (<code>tsim.core.types.SamplingStrategy</code>)' href=../core/types/#tsim.core.types.SamplingStrategy>SamplingStrategy</a></code> </td> <td> <div class=doc-md-description> <p>Stabilizer rank decomposition strategy ("cat5", "bss", "cutting"); "active_statevector" cannot compute probabilities.</p> </div> </td> <td> <code>&#39;cat5&#39;</code> </td> </tr> <tr class=doc-section-item> <td> <code>seed</code> </td> <td> <code><span title=int>int</span> | None</code> </td> <td> <div class=doc-md-description> <p>Random seed. If None, a random seed is generated. Note that deterministic results are only guaranteed for a fixed batch size.</p> </div> </td> <td> <code>None</code> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1024</span>
 <span class=normal>1025</span>
 <span class=normal>1026</span>
 <span class=normal>1027</span>
@@ -503,7 +520,24 @@
 <span class=normal>1029</span>
 <span class=normal>1030</span>
 <span class=normal>1031</span>
-<span class=normal>1032</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
+<span class=normal>1032</span>
+<span class=normal>1033</span>
+<span class=normal>1034</span>
+<span class=normal>1035</span>
+<span class=normal>1036</span>
+<span class=normal>1037</span>
+<span class=normal>1038</span>
+<span class=normal>1039</span>
+<span class=normal>1040</span>
+<span class=normal>1041</span>
+<span class=normal>1042</span>
+<span class=normal>1043</span>
+<span class=normal>1044</span>
+<span class=normal>1045</span>
+<span class=normal>1046</span>
+<span class=normal>1047</span>
+<span class=normal>1048</span>
+<span class=normal>1049</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=fm>__init__</span><span class=p>(</span>
     <span class=bp>self</span><span class=p>,</span>
     <span class=n>circuit</span><span class=p>:</span> <span class=n>Circuit</span><span class=p>,</span>
     <span class=o>*</span><span class=p>,</span>
@@ -532,24 +566,7 @@
 </code></pre></div></td></tr></table></div> </details> <div class="doc doc-children"> <div class="doc doc-object doc-function"> <h3 id=tsim.sampler.CompiledStateProbs.probability_of class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-method"></code> <span class="doc doc-object-name doc-function-name">probability_of</span> </h3> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>probability_of</span><span class=p>(</span>
     <span class=n>state</span><span class=p>:</span> <span class=n>ndarray</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Compute probabilities for a batch of error samples given a measurement state.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>state</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>The measurement outcome state to compute probability for.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>Number of error samples to use for estimation.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>Array of probabilities P(state | error_sample) for each error sample.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1034</span>
-<span class=normal>1035</span>
-<span class=normal>1036</span>
-<span class=normal>1037</span>
-<span class=normal>1038</span>
-<span class=normal>1039</span>
-<span class=normal>1040</span>
-<span class=normal>1041</span>
-<span class=normal>1042</span>
-<span class=normal>1043</span>
-<span class=normal>1044</span>
-<span class=normal>1045</span>
-<span class=normal>1046</span>
-<span class=normal>1047</span>
-<span class=normal>1048</span>
-<span class=normal>1049</span>
-<span class=normal>1050</span>
-<span class=normal>1051</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Compute probabilities for a batch of error samples given a measurement state.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>state</code> </td> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>The measurement outcome state to compute probability for.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>batch_size</code> </td> <td> <code><span title=int>int</span></code> </td> <td> <div class=doc-md-description> <p>Number of error samples to use for estimation.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=numpy.ndarray>ndarray</span></code> </td> <td> <div class=doc-md-description> <p>Array of probabilities P(state | error_sample) for each error sample.</p> </div> </td> </tr> </tbody> </table> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/sampler.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>1051</span>
 <span class=normal>1052</span>
 <span class=normal>1053</span>
 <span class=normal>1054</span>
@@ -577,7 +594,24 @@
 <span class=normal>1076</span>
 <span class=normal>1077</span>
 <span class=normal>1078</span>
-<span class=normal>1079</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>probability_of</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>state</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>:</span>
+<span class=normal>1079</span>
+<span class=normal>1080</span>
+<span class=normal>1081</span>
+<span class=normal>1082</span>
+<span class=normal>1083</span>
+<span class=normal>1084</span>
+<span class=normal>1085</span>
+<span class=normal>1086</span>
+<span class=normal>1087</span>
+<span class=normal>1088</span>
+<span class=normal>1089</span>
+<span class=normal>1090</span>
+<span class=normal>1091</span>
+<span class=normal>1092</span>
+<span class=normal>1093</span>
+<span class=normal>1094</span>
+<span class=normal>1095</span>
+<span class=normal>1096</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>probability_of</span><span class=p>(</span><span class=bp>self</span><span class=p>,</span> <span class=n>state</span><span class=p>:</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>,</span> <span class=o>*</span><span class=p>,</span> <span class=n>batch_size</span><span class=p>:</span> <span class=nb>int</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>np</span><span class=o>.</span><span class=n>ndarray</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Compute probabilities for a batch of error samples given a measurement state.</span>
 
 <span class=sd>    Args:</span>
