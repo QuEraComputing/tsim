@@ -38,6 +38,10 @@ from tsim.utils.program_text import (
 
 _PAULI_TARGET = {"X": stim.target_x, "Y": stim.target_y, "Z": stim.target_z}
 
+_PAULI_PRODUCT_GATES = frozenset(
+    {"MPP", "SPP", "SPP_DAG", "OBSERVABLE_INCLUDE", "TPP", "TPP_DAG", "R_PAULI"}
+)
+
 _DEPRECATED_DIAGRAM_TYPES: dict[str, Literal["zx", "zx-dets", "zx-meas"]] = {
     "pyzx": "zx",
     "pyzx-dets": "zx-dets",
@@ -86,7 +90,6 @@ def _pauli_product_targets(
 
 
 def _signed_pauli_targets(
-    name: str,
     targets: (
         int
         | stim.GateTarget
@@ -96,29 +99,23 @@ def _signed_pauli_targets(
 ) -> list[int | stim.GateTarget]:
     """Expand PauliString targets, keeping a ``-1`` sign as an inverted target.
 
-    Stim drops the sign of a PauliString when appending it, which would flip the
-    direction of a rotation about it.
+    NOTE: Stim drops the sign of a PauliString when appending it
+    (quantumlib/Stim#1134), which would flip a measurement result or the direction
+    of a rotation. ``stim.target_combined_paulis`` keeps it, and rejects imaginary
+    signs and identity strings. Stim also accepts target strings such as ``"X0"``,
+    which are passed through whole.
     """
-    if isinstance(targets, int | stim.GateTarget | stim.PauliString):
+    if isinstance(targets, str | stim.PauliString) or not isinstance(targets, Iterable):
         items: list[int | stim.GateTarget | stim.PauliString] = [targets]
     else:
         items = list(targets)
     out: list[int | stim.GateTarget] = []
     for item in items:
-        if not isinstance(item, stim.PauliString):
+        if isinstance(item, stim.PauliString):
+            # NOTE: stim's stub types the returned list as a single GateTarget.
+            out.extend(cast(list[stim.GateTarget], stim.target_combined_paulis(item)))
+        else:
             out.append(item)
-            continue
-        if item.sign not in (1, -1):
-            raise ValueError(
-                f"For {name} gates, a PauliString must have sign +1 or -1, "
-                f"got {item.sign}."
-            )
-        support = [(q, "XYZ"[item[q] - 1]) for q in range(len(item)) if item[q]]
-        for i, (qubit, pauli) in enumerate(support):
-            if i:
-                out.append(stim.target_combiner())
-            invert = i == 0 and item.sign == -1
-            out.append(stim.target_pauli(qubit, pauli, invert=invert))
     return out
 
 
@@ -140,7 +137,11 @@ def _bare_qubit_targets(
     for target in target_items:
         if isinstance(target, int):
             qubits.append(target)
-        elif isinstance(target, stim.GateTarget) and target.is_qubit_target:
+        elif (
+            isinstance(target, stim.GateTarget)
+            and target.is_qubit_target
+            and not target.is_inverted_result_target
+        ):
             qubits.append(target.value)
         else:
             raise ValueError(f"{gate_name} only supports bare qubit targets.")
@@ -285,12 +286,13 @@ class Circuit:
                 )
                 return
 
+            if name.upper() in _PAULI_PRODUCT_GATES:
+                targets = _signed_pauli_targets(targets)
+
             if name == "TPP":
-                targets = _signed_pauli_targets(name, targets)
                 name = "SPP"
                 tag = encode_t_tag(tag)
             elif name == "TPP_DAG":
-                targets = _signed_pauli_targets(name, targets)
                 name = "SPP_DAG"
                 tag = encode_t_tag(tag)
             elif name == "T":
@@ -330,7 +332,6 @@ class Circuit:
                 arg = None
             elif name == "R_PAULI":
                 alpha = _single_angle(name, arg)
-                targets = _signed_pauli_targets(name, targets)
                 tag = f"R_PAULI(theta={alpha}*pi)"
                 name = "SPP"
                 arg = None

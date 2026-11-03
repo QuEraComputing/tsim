@@ -1301,3 +1301,73 @@ def test_append_tpp_pauli_string_sign(name: str, pauli: str, expected: str):
 def test_append_tpp_anti_hermitian_pauli_string_rejected(name: str):
     with pytest.raises(ValueError, match="sign"):
         Circuit().append(name, stim.PauliString("iX"))
+
+
+@pytest.mark.parametrize(
+    "name, pauli, arg, tag, expected",
+    [
+        ("MPP", "-Z", None, "", "MPP !Z0"),
+        ("MPP", "-XZ", None, "", "MPP !X0*Z1"),
+        ("mpp", "-Z", None, "", "MPP !Z0"),
+        ("SPP", "-Z", None, "", "SPP !Z0"),
+        ("SPP_DAG", "-XZ", None, "", "SPP_DAG !X0*Z1"),
+        ("SPP", "-Z", None, "T", "TPP !Z0"),
+        ("SPP", "-XY", None, "R_PAULI(theta=0.3*pi)", "R_PAULI(0.3) !X0*Y1"),
+        ("OBSERVABLE_INCLUDE", "-Z", 0, "", "OBSERVABLE_INCLUDE(0) !Z0"),
+    ],
+)
+def test_append_pauli_product_gate_keeps_sign(
+    name: str, pauli: str, arg: float | None, tag: str, expected: str
+):
+    c = Circuit()
+    c.append(name, stim.PauliString(pauli), arg, tag=tag)
+    assert c == Circuit(expected)
+
+
+def test_append_mpp_negative_pauli_string_flips_result():
+    c = Circuit()
+    c.append("MPP", [stim.PauliString("-Z"), stim.PauliString("Z")])
+    samples = np.asarray(c.compile_sampler(seed=0).sample(10))
+    assert samples[:, 0].all()
+    assert not samples[:, 1].any()
+
+
+def test_append_spp_negative_pauli_string_is_dagger():
+    c = Circuit()
+    c.append("SPP", stim.PauliString("-Z"))
+    np.testing.assert_allclose(c.to_tensor(), Circuit("S_DAG 0").to_tensor(), atol=1e-9)
+
+
+@pytest.mark.parametrize(
+    "name, arg", [("MPP", None), ("SPP", None), ("SPP_DAG", None), ("R_PAULI", 0.3)]
+)
+@pytest.mark.parametrize(
+    "pauli, match", [("iX", "Imaginary sign"), ("-II", "Identity")]
+)
+def test_append_pauli_product_gate_rejects_invalid_pauli_string(
+    name: str, arg: float | None, pauli: str, match: str
+):
+    with pytest.raises(ValueError, match=match):
+        Circuit().append(name, stim.PauliString(pauli), arg)
+
+
+@pytest.mark.parametrize(
+    "name, arg, expected",
+    [
+        ("MPP", None, "MPP !X0"),
+        ("TPP", None, "TPP !X0"),
+        ("R_PAULI", 0.3, "R_PAULI(0.3) !X0"),
+    ],
+)
+def test_append_pauli_product_gate_accepts_string_target(
+    name: str, arg: float | None, expected: str
+):
+    c = Circuit()
+    c.append(name, "!X0", arg)  # type: ignore
+    assert c == Circuit(expected)
+
+
+@pytest.mark.parametrize("name", ["CCZ", "CCX"])
+def test_append_ccz_ccx_rejects_inverted_target(name: str):
+    with pytest.raises(ValueError, match="bare qubit targets"):
+        Circuit().append(name, [stim.target_inv(0), 1, 2])

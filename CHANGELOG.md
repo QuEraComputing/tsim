@@ -103,10 +103,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Circuit.append("R_PAULI", pauli_string, angle)` no longer drops the sign of a
   `stim.PauliString`: a `-1` sign now reverses the rotation, and a sign of `±i`
   raises `ValueError`. (#228)
-- `Circuit.append("TPP", pauli_string)` and `"TPP_DAG"` no longer drop the sign
-  of a `stim.PauliString` either, so `TPP` about `-Z` is `T_DAG`. `R_PAULI`
-  program text accepts inverted targets such as `R_PAULI(0.3) !X0*Y1`, and
-  circuits print them in that form instead of
+- `Circuit.append` no longer drops the sign of a `stim.PauliString` target of
+  `MPP`, `SPP`, `SPP_DAG`, `OBSERVABLE_INCLUDE`, `TPP` or `TPP_DAG` either, so
+  `MPP` about `-Z` flips the result and `TPP` about `-Z` is `T_DAG`. Stim itself
+  drops the sign (quantumlib/Stim#1134). For all these gates and `R_PAULI`, a
+  PauliString with a sign of `±i` or no Paulis raises `ValueError`. (#240)
+- `Circuit.append("CCZ", targets)` and `"CCX"` reject inverted targets such as
+  `stim.target_inv(0)` instead of ignoring the inversion. (#240)
+- `R_PAULI` program text accepts inverted targets such as `R_PAULI(0.3) !X0*Y1`,
+  and circuits print them in that form instead of
   `SPP[R_PAULI(theta=0.3*pi)] !X0*Y1`. (#240)
 - With a `postselection_mask` and no `batch_size`, the last survivors of a call,
   split into a batch per thread, ran one batch at a time for components so wide
