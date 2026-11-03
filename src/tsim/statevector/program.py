@@ -8,9 +8,8 @@ outputs as parities of the symbols the tape leaves behind.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from math import ceil
 from typing import ClassVar, NamedTuple
 
 import numpy as np
@@ -49,9 +48,9 @@ class Tape(NamedTuple):
             ``2^extent`` and above are zero before and after it.
         branch: Symbol a measurement sets, -1 for a rotation.
         sign_const: Constant of each rotation's sign.
-        sign_row: Symbol bits of each rotation's sign, shape ``(A, num_words)``.
+        sign_row: Symbols of each rotation's sign, shape ``(A, num_symbols)``.
         output_const: Constant of each output, shape ``(num_outputs,)``.
-        output_row: Symbol bits of each output, shape ``(num_outputs, num_words)``.
+        output_row: Symbols of each output, shape ``(num_outputs, num_symbols)``.
 
     """
 
@@ -98,8 +97,8 @@ class StatevectorComponent:
         return int(self.tape.kind.shape[0])
 
     @property
-    def num_words(self) -> int:
-        """Return the number of uint32 words that hold the tape's symbols."""
+    def num_symbols(self) -> int:
+        """Return the number of f-bit and branch symbols the tape reads."""
         return int(self.tape.sign_row.shape[1])
 
     @property
@@ -137,18 +136,9 @@ def plan_component(
     return plan(ops, scheduled), component_layout
 
 
-def _pack(terms: Iterable[int], num_words: int) -> np.ndarray:
-    """Return symbol bits as uint32 words: symbol s is bit s % 32 of word s // 32."""
-    row = np.zeros(num_words, dtype=np.uint32)
-    for term in terms:
-        row[term // 32] |= np.uint32(1) << np.uint32(term % 32)
-    return row
-
-
 def lower(plan: Plan, layout: ComponentLayout) -> StatevectorComponent:
     """Return the action tape of ``plan``."""
     num_actions = len(plan.actions)
-    num_words = max(1, ceil(plan.num_symbols / 32))
     kind = np.zeros(num_actions, dtype=np.int32)
     x_mask = np.zeros(num_actions, dtype=np.uint32)
     z_mask = np.zeros(num_actions, dtype=np.uint32)
@@ -157,14 +147,14 @@ def lower(plan: Plan, layout: ComponentLayout) -> StatevectorComponent:
     extent = np.zeros(num_actions, dtype=np.int32)
     branch = np.full(num_actions, -1, dtype=np.int32)
     sign_const = np.zeros(num_actions, dtype=bool)
-    sign_row = np.zeros((num_actions, num_words), dtype=np.uint32)
+    sign_row = np.zeros((num_actions, plan.num_symbols), dtype=bool)
     active = 0
     for a, action in enumerate(plan.actions):
         if isinstance(action, Rotate):
             kind[a] = ROTATE if action.x else ROTATE_DIAG
             x_mask[a], z_mask[a], angle[a] = action.x, action.z, action.angle
             sign_const[a] = action.sign.constant
-            sign_row[a] = _pack(action.sign.terms, num_words)
+            sign_row[a, list(action.sign.terms)] = True
             active |= action.x | action.z
         elif isinstance(action, MeasureActive):
             kind[a] = MEASURE if action.x else MEASURE_DIAG
@@ -176,9 +166,9 @@ def lower(plan: Plan, layout: ComponentLayout) -> StatevectorComponent:
         extent[a] = active.bit_length()
         if isinstance(action, MeasureActive):
             active &= ~(1 << action.pivot)
-    output_row = np.zeros((len(plan.outputs), num_words), dtype=np.uint32)
+    output_row = np.zeros((len(plan.outputs), plan.num_symbols), dtype=bool)
     for slot, output in enumerate(plan.outputs):
-        output_row[slot] = _pack(output.terms, num_words)
+        output_row[slot, list(output.terms)] = True
     tape = Tape(
         f_selection=np.array(layout.f_selection, dtype=np.int32),
         kind=kind,
