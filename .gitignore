@@ -35,6 +35,7 @@ scratch*
 # docs/images/tutorials/) is intentionally committed. Mintlify's hosted
 # builder does not run Python, so the CI workflow (.github/workflows/docs.yml)
 # rebuilds these deterministically and commits them to the deploy branch.
+!docs/images/tutorials/**/*.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
