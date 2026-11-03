@@ -48,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   masked component detectors with a stabilizer-rank strategy, which are tested
   on the device so that discarded shots are not copied to the host. Without a
   mask, exactly `shots` rows are returned. `sample` warns when a masked detector
-  is a constant 1, which discards every shot.
+  is a constant 1, which discards every shot. (#252)
 - The samplers now default to `strategy="active_statevector"`; pass
   `strategy="cat5"` for the previous stabilizer-rank default.
   `CompiledStateProbs` keeps `"cat5"`. (#203)
