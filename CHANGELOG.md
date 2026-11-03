@@ -110,6 +110,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Internals: the `track_classical_wires` argument of `parse_stim_circuit`, the `tsim.compile.stabrank` module, and `ConnectedComponent`, `connected_components`, `get_params` and `evaluate_graph` from `tsim.core.graph`.
 
 ### Fixed
+- An `E`/`ELSE_CORRELATED_ERROR` chain whose links repeat Pauli components now
+  compiles to one error bit per component (X or Z on a qubit) instead of one
+  per link, so a general 3-qubit Pauli channel, a 63-link chain, is a 6-bit
+  channel instead of failing with `Maximum allowed dimension exceeded`. Links
+  share a component while nothing else acts on its wire between them (a
+  `SWAP` moves the wire to the other qubit). Chains with fewer components than
+  links get fewer error bits, numbered by component, so
+  `Circuit.to_tensor(bindings)` and `get_graph` change for them, and their
+  seeded samples can differ. A chain builds the same graph as before if all its
+  links have targets and it never flips a component of a wire twice, also not
+  within one link: `E X0 Z1; ELSE_CORRELATED_ERROR Y2` does, but `E X0 X0` and
+  `E X0; SWAP 0 1; ELSE_CORRELATED_ERROR X1` do not. A chain that would need
+  more than 2^20 outcomes raises `ValueError`. (#248)
 - `Circuit.append("R_PAULI", pauli_string, angle)` no longer drops the sign of a
   `stim.PauliString`: a `-1` sign now reverses the rotation, and a sign of `±i`
   raises `ValueError`. (#228)

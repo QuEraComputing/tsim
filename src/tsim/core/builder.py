@@ -16,16 +16,28 @@ classical domain, so wire vertices are only ever added here.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from fractions import Fraction
 from typing import Literal, get_args
 
 import numpy as np
 from zxparam import Domain, EdgeType, Graph, Phase, Vertex, VertexType
 
-from tsim.noise.channels import channel_num_bits, correlated_error_probs
+from tsim.noise.channels import (
+    chain_error_probs,
+    channel_num_bits,
+    correlated_error_probs,
+)
 
 HELPER_LANE = -1
 """Qubit index, and row, of the helper wire used by MPP, MPAD and heralded channels."""
+
+MAX_CORRELATED_ERROR_BITS = 20
+"""Most error bits of an E/ELSE_CORRELATED_ERROR chain's channel (``2^20`` outcomes).
+
+NOTE: channel simplification and the sampling tables visit every outcome of a
+channel, so compiling a 22-bit chain takes about a minute and 5 GB.
+"""
 
 ANNOTATION_ROW = -2.0
 """Row of the detector and observable spiders, above the helper wire."""
@@ -37,6 +49,20 @@ Outputs = Literal["detectors", "records", "none"]
 def error_phase(error_bit: int) -> Phase:
     """Return the phase of a noise spider for error bit ``error_bit`` (ID = bit)."""
     return Phase(Fraction(0), frozenset({error_bit}))
+
+
+@dataclass
+class _ChainRun:
+    """The pending chain's noise spiders on a wire since anything else acted on it.
+
+    Attributes:
+        newest: The last of the spiders, joined to the wire's trailing boundary.
+        spiders: The chain's spider index of each spider type, at most one each.
+
+    """
+
+    newest: Vertex
+    spiders: dict[VertexType, int]
 
 
 def _move_label(g: Graph, source: Vertex, target: Vertex) -> None:
@@ -66,7 +92,9 @@ class GraphBuilder:
         self._channel_probs: list[np.ndarray] = []
         self._num_error_bits = 0
         self._correlated_error_probs: list[float] = []
-        self._pending_correlated: list[tuple[Vertex, int]] = []
+        self._chain_spiders: list[Vertex] = []
+        self._chain_toggles: list[set[int]] = []
+        self._chain_runs: dict[Vertex, _ChainRun] = {}
 
     @property
     def graph(self) -> Graph:
@@ -341,36 +369,95 @@ class GraphBuilder:
     ) -> None:
         """Add a correlated error term affecting multiple qubits with given Pauli types.
 
-        Its noise spiders get their error bit in ``finalize_correlated_error``,
-        which must run before the graph is built. Raises ``ValueError``, and
-        changes nothing, if ``qubits`` and ``types`` differ in length.
+        The term is the next link of the pending chain. It flips one noise spider
+        per Pauli component (X or Z on a qubit), reusing the chain's spider of
+        that component while nothing else has acted on the wire since (see
+        ``_chain_spider``). The spiders get their error bits in
+        ``finalize_correlated_error``, which must run before the graph is built.
+        Raises ``ValueError``, and changes nothing, if ``qubits`` and ``types``
+        differ in length.
         """
         targets = list(zip(qubits, types, strict=True))
         term = len(self._correlated_error_probs)
         for qubit, type_ in targets:
             if type_ == "X" or type_ == "Y":
-                self._pending_correlated.append(
-                    (self.spider(qubit, VertexType.X), term)
-                )
+                self._chain_toggles[self._chain_spider(qubit, VertexType.X)] ^= {term}
             if type_ == "Z" or type_ == "Y":
-                self._pending_correlated.append(
-                    (self.spider(qubit, VertexType.Z), term)
-                )
+                self._chain_toggles[self._chain_spider(qubit, VertexType.Z)] ^= {term}
         self._correlated_error_probs.append(p)
+
+    def _chain_spider(self, qubit: int, vertex_type: VertexType) -> int:
+        """Return the index of the pending chain's noise spider for a component.
+
+        A chain shares a spider between its links while the wire still ends in
+        the same boundary behind a plain edge: same-colour Pauli spiders there
+        fuse, adding their phases, and an X and a Z one commute up to a sign,
+        which cancels in the doubled diagram. NOTE: this relies on gates only
+        changing a wire at its trailing boundary, which they replace (``spider``,
+        ``measure``, ``reset``) or exchange (``swap``), or at its trailing edge,
+        which ``hadamard`` toggles; and on vertex IDs never being reused.
+        """
+        self._ensure_lane(qubit)
+        boundary = self._last_vertex[qubit]
+        run = self._chain_runs.pop(boundary, None)
+        if run is not None:
+            assert self._graph.has_edge(run.newest, boundary)
+            if self._graph.edge_type(run.newest, boundary) != EdgeType.SIMPLE:
+                run = None
+        if run is not None and vertex_type in run.spiders:
+            self._chain_runs[boundary] = run
+            return run.spiders[vertex_type]
+        v = self.spider(qubit, vertex_type)
+        index = len(self._chain_spiders)
+        self._chain_spiders.append(v)
+        self._chain_toggles.append(set())
+        spiders = {} if run is None else run.spiders
+        spiders[vertex_type] = index
+        self._chain_runs[self._last_vertex[qubit]] = _ChainRun(v, spiders)
+        return index
 
     def finalize_correlated_error(self) -> None:
         """Finalize the current correlated error channel.
 
-        Adds the channel (``2^k`` outcomes for its ``k`` terms), gives each
-        pending noise spider its term's error bit, and clears the pending state.
+        A chain of ``k`` links on ``c`` live noise spiders (those that some link
+        flips) becomes a channel over ``min(c, k)`` error bits: one bit per
+        spider if ``c < k``, so that link ``j`` sets the bits of the spiders it
+        flips, and one bit per link otherwise, so that a spider's phase is the
+        parity of the links that flip it. Clears the pending chain, also when it
+        raises ``ValueError`` because the channel would have more than
+        ``MAX_CORRELATED_ERROR_BITS`` bits.
         """
-        if not self._correlated_error_probs:
+        probabilities = self._correlated_error_probs
+        if not probabilities:
             return
-        first = self.add_channel(correlated_error_probs(self._correlated_error_probs))
-        for v, term in self._pending_correlated:
-            self._graph.set_phase(v, error_phase(first + term))
-        self._pending_correlated = []
+        spiders, toggles = self._chain_spiders, self._chain_toggles
+        self._chain_spiders = []
+        self._chain_toggles = []
+        self._chain_runs = {}
         self._correlated_error_probs = []
+        live = [i for i, links in enumerate(toggles) if links]
+        k, c = len(probabilities), len(live)
+        if min(c, k) > MAX_CORRELATED_ERROR_BITS:
+            raise ValueError(
+                f"an E/ELSE_CORRELATED_ERROR chain of {k} links on {c} Pauli "
+                f"components needs 2^{min(c, k)} outcomes, more than the "
+                f"2^{MAX_CORRELATED_ERROR_BITS} tsim supports; independent E "
+                "instructions approximate it to first order in p"
+            )
+        # NOTE: a chain that flips no spider, such as E(p) X0 X0, has no channel.
+        if 0 < c < k:
+            masks = [0] * k
+            for bit, i in enumerate(live):
+                for term in toggles[i]:
+                    masks[term] |= 1 << bit
+            first = self.add_channel(chain_error_probs(masks, probabilities, c))
+            for bit, i in enumerate(live):
+                self._graph.set_phase(spiders[i], error_phase(first + bit))
+        elif c > 0:
+            first = self.add_channel(correlated_error_probs(probabilities))
+            for i in live:
+                bits = frozenset(first + term for term in toggles[i])
+                self._graph.set_phase(spiders[i], Phase(Fraction(0), bits))
 
     # -------------------------------------------------------------------------
     # Detectors and observables

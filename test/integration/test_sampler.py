@@ -1,3 +1,4 @@
+import itertools
 from test.helpers.gen import gen_stim_circuit
 
 import jax
@@ -257,6 +258,16 @@ def test_rotated_surface_code_single_noise_channel_matches_stim(
     assert rel_diff <= 0.005
 
 
+# A general 3-qubit Pauli channel, written as an E/ELSE_CORRELATED_ERROR chain.
+_THREE_QUBIT_PAULI_CHANNEL = "\n".join(
+    f"{'E' if j == 0 else 'ELSE_CORRELATED_ERROR'}(0.012) "
+    + " ".join(f"{c}{q}" for q, c in enumerate(pauli) if c != "I")
+    for j, pauli in enumerate(
+        "".join(p) for p in itertools.product("IXYZ", repeat=3) if set(p) != {"I"}
+    )
+)
+
+
 @pytest.mark.parametrize(
     "stim_program",
     [
@@ -285,12 +296,26 @@ def test_rotated_surface_code_single_noise_channel_matches_stim(
         ELSE_CORRELATED_ERROR(0.3) Y2
         M 0 1 2
         """,
+        """
+        H 0
+        CORRELATED_ERROR(0.1) X0 Z1
+        H 0
+        ELSE_CORRELATED_ERROR(0.2) X0
+        ELSE_CORRELATED_ERROR(0.3) Y0 X1
+        CX 0 1
+        ELSE_CORRELATED_ERROR(0.25) X1
+        ELSE_CORRELATED_ERROR(0.2) X0 X1
+        M 0 1
+        """,
+        f"H 1\n{_THREE_QUBIT_PAULI_CHANNEL}\nH 1\nM 0 1 2",
     ],
     ids=[
         "single_correlated_error",
         "mixed_else_and_h",
         "two_correlated_errors",
         "two_correlated_errors_with_else",
+        "shared_components_with_gates_between_links",
+        "three_qubit_pauli_channel",
     ],
 )
 @pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])

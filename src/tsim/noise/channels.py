@@ -215,14 +215,34 @@ def correlated_error_probs(probabilities: list[float]) -> np.ndarray:
 
     """
     k = len(probabilities)
-    probs = np.zeros(2**k, dtype=np.float64)
+    return chain_error_probs([1 << i for i in range(k)], probabilities, k)
 
+
+def chain_error_probs(
+    masks: list[int], probabilities: list[float], num_bits: int
+) -> np.ndarray:
+    """Build the distribution of a correlated error chain whose links set given bits.
+
+    Link ``j`` fires, after all previous links did not, with probability
+    ``p_j · ∏_{i<j} (1 − p_i)``, and then sets the bits of ``masks[j]``. Links
+    with equal masks add up, and ``probs[0]`` also holds the probability that no
+    link fires.
+
+    Args:
+        masks: Bit pattern of each link, below ``2^num_bits``.
+        probabilities: Conditional probability of each link.
+        num_bits: Number of bits of the channel.
+
+    Returns:
+        Array of shape ``(2^num_bits,)`` with probabilities for each outcome.
+
+    """
+    probs = np.zeros(2**num_bits, dtype=np.float64)
     no_error_so_far = 1.0
-    for i, p in enumerate(probabilities):
-        probs[1 << i] = no_error_so_far * p
+    for mask, p in zip(masks, probabilities, strict=True):
+        probs[mask] += no_error_so_far * p
         no_error_so_far *= 1 - p
-
-    probs[0] = no_error_so_far
+    probs[0] += no_error_so_far
     return probs
 
 
