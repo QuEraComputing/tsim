@@ -32,8 +32,12 @@ from tsim.noise.channels import (
 HELPER_LANE = -1
 """Qubit index, and row, of the helper wire used by MPP, MPAD and heralded channels."""
 
-MAX_CORRELATED_ERROR_BITS = 24
-"""Most error bits of an E/ELSE_CORRELATED_ERROR chain's channel (``2^24`` outcomes)."""
+MAX_CORRELATED_ERROR_BITS = 20
+"""Most error bits of an E/ELSE_CORRELATED_ERROR chain's channel (``2^20`` outcomes).
+
+NOTE: channel simplification and the sampling tables visit every outcome of a
+channel, so compiling a 22-bit chain takes about a minute and 5 GB.
+"""
 
 ANNOTATION_ROW = -2.0
 """Row of the detector and observable spiders, above the helper wire."""
@@ -419,14 +423,19 @@ class GraphBuilder:
         flips) becomes a channel over ``min(c, k)`` error bits: one bit per
         spider if ``c < k``, so that link ``j`` sets the bits of the spiders it
         flips, and one bit per link otherwise, so that a spider's phase is the
-        parity of the links that flip it. Clears the pending chain. Raises
-        ``ValueError`` if the channel would have more than
+        parity of the links that flip it. Clears the pending chain, also when it
+        raises ``ValueError`` because the channel would have more than
         ``MAX_CORRELATED_ERROR_BITS`` bits.
         """
         probabilities = self._correlated_error_probs
         if not probabilities:
             return
-        live = [i for i, toggles in enumerate(self._chain_toggles) if toggles]
+        spiders, toggles = self._chain_spiders, self._chain_toggles
+        self._chain_spiders = []
+        self._chain_toggles = []
+        self._chain_runs = {}
+        self._correlated_error_probs = []
+        live = [i for i, links in enumerate(toggles) if links]
         k, c = len(probabilities), len(live)
         if min(c, k) > MAX_CORRELATED_ERROR_BITS:
             raise ValueError(
@@ -439,20 +448,16 @@ class GraphBuilder:
         if 0 < c < k:
             masks = [0] * k
             for bit, i in enumerate(live):
-                for term in self._chain_toggles[i]:
+                for term in toggles[i]:
                     masks[term] |= 1 << bit
             first = self.add_channel(chain_error_probs(masks, probabilities, c))
             for bit, i in enumerate(live):
-                self._graph.set_phase(self._chain_spiders[i], error_phase(first + bit))
+                self._graph.set_phase(spiders[i], error_phase(first + bit))
         elif c > 0:
             first = self.add_channel(correlated_error_probs(probabilities))
             for i in live:
-                bits = frozenset(first + term for term in self._chain_toggles[i])
-                self._graph.set_phase(self._chain_spiders[i], Phase(Fraction(0), bits))
-        self._chain_spiders = []
-        self._chain_toggles = []
-        self._chain_runs = {}
-        self._correlated_error_probs = []
+                bits = frozenset(first + term for term in toggles[i])
+                self._graph.set_phase(spiders[i], Phase(Fraction(0), bits))
 
     # -------------------------------------------------------------------------
     # Detectors and observables

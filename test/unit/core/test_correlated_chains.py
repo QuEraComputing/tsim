@@ -8,7 +8,7 @@ import stim
 from numpy.testing import assert_allclose
 
 from tsim.circuit import Circuit
-from tsim.core.builder import MAX_CORRELATED_ERROR_BITS
+from tsim.core.builder import MAX_CORRELATED_ERROR_BITS, GraphBuilder
 from tsim.core.parse import parse_stim_circuit
 from tsim.noise.channels import correlated_error_probs
 
@@ -250,10 +250,52 @@ def test_chain_that_flips_nothing_has_no_channel():
     assert builder.num_error_bits == 0
 
 
-def test_too_many_chain_bits_raise():
-    k = MAX_CORRELATED_ERROR_BITS + 1
-    text = "E(0.01) X0\n" + "\n".join(
-        f"ELSE_CORRELATED_ERROR(0.01) X{j}" for j in range(1, k)
-    )
-    with pytest.raises(ValueError, match=f"needs 2\\^{k} outcomes"):
-        parse_stim_circuit(stim.Circuit(text))
+@pytest.mark.parametrize(
+    "text, num_bits",
+    [
+        # NOTE: SWAP moves the wire, and its spider, to qubit 1.
+        ("E(0.1) X0\nSWAP 0 1\nELSE_CORRELATED_ERROR(0.2) X1", 1),
+        # NOTE: the X spider of the first link is dead and gets no bit.
+        (
+            "E(0.1) X0 X0\nELSE_CORRELATED_ERROR(0.2) X1\nELSE_CORRELATED_ERROR(0.3) X1",
+            1,
+        ),
+        (
+            "E(0.1) X0 Z0\nELSE_CORRELATED_ERROR(0.2) Z0\n"
+            "ELSE_CORRELATED_ERROR(0.3) X0\nELSE_CORRELATED_ERROR(0.4) Y0",
+            2,
+        ),
+    ],
+    ids=["across_swap", "after_dead_spider", "x_and_z"],
+)
+def test_links_share_spiders(text: str, num_bits: int):
+    builder = parse_stim_circuit(stim.Circuit(text))
+    assert builder.num_error_bits == num_bits
+
+
+def test_wide_link_has_one_bit():
+    targets = " ".join(f"X{q}" for q in range(MAX_CORRELATED_ERROR_BITS + 5))
+    builder = parse_stim_circuit(stim.Circuit(f"E(0.1) {targets}"))
+    assert builder.num_error_bits == 1
+
+
+@pytest.mark.parametrize(
+    "links",
+    [
+        # NOTE: one bit per link, for more links than the limit.
+        [f"X{q}" for q in range(MAX_CORRELATED_ERROR_BITS + 1)],
+        # NOTE: one bit per component, for more components than the limit.
+        [f"X{q}" for q in range(MAX_CORRELATED_ERROR_BITS + 1)] + ["X0"],
+    ],
+)
+def test_too_many_chain_bits_raise_and_drop_the_chain(links: list[str]):
+    builder = GraphBuilder()
+    for link in links:
+        builder.correlated_error([int(link[1:])], ["X"], 0.01)
+    bits = MAX_CORRELATED_ERROR_BITS + 1
+    with pytest.raises(ValueError, match=f"needs 2\\^{bits} outcomes"):
+        builder.finalize_correlated_error()
+    assert builder.num_error_bits == 0
+    builder.correlated_error([0], ["Z"], 0.1)
+    builder.finalize_correlated_error()
+    assert builder.num_error_bits == 1
