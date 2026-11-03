@@ -173,6 +173,7 @@ class TransversalEncoder:
         assert self.encoding_program_text is not None
         return stim.Circuit(self.encoding_program_text).flow_generators()
 
+
 class SteaneEncoder(TransversalEncoder):
     """Transversal encoder for the [[7,1,3]] Steane code."""
 

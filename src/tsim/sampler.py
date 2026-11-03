@@ -293,7 +293,6 @@ class _CompiledSamplerBase:
         mode: Literal["sequential", "joint"],
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        trajectory_sharing: bool | None = None,
     ):
         """Initialize the sampler by compiling the circuit.
 
@@ -311,22 +310,10 @@ class _CompiledSamplerBase:
                 components, the samples of a seed depend on neither the batch
                 size nor the thread count; with a stabilizer-rank strategy they
                 are only deterministic for a fixed batch size.
-            trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane. Defaults to True for
-                ``"active_statevector"`` and False otherwise.
-
-        Raises:
-            ValueError: If ``trajectory_sharing`` is combined with a
-                stabilizer-rank strategy.
 
         """
-        if trajectory_sharing is None:
-            trajectory_sharing = strategy == "active_statevector"
-        if trajectory_sharing and strategy != "active_statevector":
-            raise ValueError("trajectory_sharing needs strategy='active_statevector'")
         if seed is None:
             seed = int(np.random.default_rng().integers(0, 2**30))
-        self._trajectory_sharing = trajectory_sharing
 
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
         self._program = compile_program(prepared, mode=mode, strategy=strategy)
@@ -351,7 +338,6 @@ class _CompiledSamplerBase:
                 self._channel_sampler,
                 self._num_detectors,
                 seed,
-                share=trajectory_sharing,
             )
         else:
             self._backend = _StabilizerRankBackend(program, seed)
@@ -765,7 +751,6 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        trajectory_sharing: bool | None = None,
     ):
         """Create a measurement sampler.
 
@@ -773,9 +758,6 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
-            trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane. Defaults to True for
-                ``"active_statevector"`` and False otherwise.
             seed: Random seed for the sampler. With "active_statevector" the samples
                 of a seed do not depend on the batch size; with a stabilizer-rank
                 strategy they are only deterministic for a fixed batch size.
@@ -787,7 +769,6 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             mode="sequential",
             seed=seed,
             strategy=strategy,
-            trajectory_sharing=trajectory_sharing,
         )
 
     def sample(self, shots: int, *, batch_size: int | None = None) -> np.ndarray:
@@ -852,7 +833,6 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        trajectory_sharing: bool | None = None,
     ):
         """Create a detector sampler.
 
@@ -860,9 +840,6 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
-            trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane. Defaults to True for
-                ``"active_statevector"`` and False otherwise.
             seed: Random seed for the sampler. With "active_statevector" the samples
                 of a seed do not depend on the batch size; with a stabilizer-rank
                 strategy they are only deterministic for a fixed batch size and
@@ -875,7 +852,6 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             mode="sequential",
             seed=seed,
             strategy=strategy,
-            trajectory_sharing=trajectory_sharing,
         )
 
     @overload

@@ -1,7 +1,12 @@
-"""trajectory_sharing=True end to end, against the stabilizer-rank strategy."""
+"""Trajectory sharing end to end, against the stabilizer-rank strategy."""
 
 from test.helpers.gen import gen_stim_circuit
-from test.helpers.statevector import CIRCUITS, assert_counts_match, shot_sampler
+from test.helpers.statevector import (
+    CIRCUITS,
+    assert_counts_match,
+    set_sharing,
+    shot_sampler,
+)
 
 import numba
 import numpy as np
@@ -65,16 +70,15 @@ def test_pruning_through_the_sampler_keeps_the_accepted_distribution(reference):
                 break
     # NOTE: the baseline needs this sampler's reference bits, so it only stops sharing.
     rate, expected = _accepted(
-        circuit.compile_detector_sampler(
-            strategy="active_statevector", seed=seed, trajectory_sharing=False
+        set_sharing(
+            circuit.compile_detector_sampler(strategy="active_statevector", seed=seed),
+            False,
         ),
         shots,
         mask,
         reference=reference,
     )
-    sampler = circuit.compile_detector_sampler(
-        strategy="active_statevector", seed=seed, trajectory_sharing=True
-    )
+    sampler = circuit.compile_detector_sampler(strategy="active_statevector", seed=seed)
     shared_rate, got = _accepted(sampler, shots, mask, reference=reference)
     assert any(stats["dead"] > 0 for stats in _sharing_stats(sampler))
     sigma = np.sqrt(rate * (1 - rate) * 2 / shots)
@@ -89,9 +93,7 @@ def test_shared_detector_sampling_matches_stabilizer_rank(name):
     expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
         shots, batch_size=5_000, append_observables=True
     )
-    sampler = circuit.compile_detector_sampler(
-        strategy="active_statevector", seed=2, trajectory_sharing=True
-    )
+    sampler = circuit.compile_detector_sampler(strategy="active_statevector", seed=2)
     got = sampler.sample(shots, batch_size=5_000, append_observables=True)
     assert_counts_match(got, expected)
 
@@ -103,9 +105,7 @@ def test_shared_measurement_sampling_matches_stabilizer_rank(name):
     expected = circuit.compile_sampler(strategy="cat5", seed=1).sample(
         shots, batch_size=5_000
     )
-    sampler = circuit.compile_sampler(
-        strategy="active_statevector", seed=2, trajectory_sharing=True
-    )
+    sampler = circuit.compile_sampler(strategy="active_statevector", seed=2)
     assert_counts_match(sampler.sample(shots, batch_size=5_000), expected)
 
 
@@ -120,9 +120,7 @@ def test_pruned_postselection_keeps_the_accepted_distribution(name):
         circuit.compile_detector_sampler(strategy="cat5", seed=1), shots, mask
     )
     shared_rate, got = _accepted(
-        circuit.compile_detector_sampler(
-            strategy="active_statevector", seed=2, trajectory_sharing=True
-        ),
+        circuit.compile_detector_sampler(strategy="active_statevector", seed=2),
         shots,
         mask,
     )
@@ -140,9 +138,7 @@ def test_shared_sampling_of_random_noisy_circuits(seed):
     expected = circuit.compile_sampler(strategy="cat5", seed=seed).sample(
         shots, batch_size=shots
     )
-    sampler = circuit.compile_sampler(
-        strategy="active_statevector", seed=seed + 10, trajectory_sharing=True
-    )
+    sampler = circuit.compile_sampler(strategy="active_statevector", seed=seed + 10)
     assert_counts_match(sampler.sample(shots, batch_size=shots), expected)
 
 
@@ -170,8 +166,9 @@ M 1
 @pytest.mark.parametrize("sharing", [False, True])
 def test_components_draw_independent_random_numbers(sharing):
     batch, batches = 64, 1_500
-    sampler = Circuit(TWO_COMPONENTS).compile_sampler(
-        strategy="active_statevector", seed=3, trajectory_sharing=sharing
+    sampler = set_sharing(
+        Circuit(TWO_COMPONENTS).compile_sampler(strategy="active_statevector", seed=3),
+        sharing,
     )
     assert len(sampler._program.components) == 2
     m = sampler.sample(batch * batches, batch_size=batch).astype(int)
@@ -187,18 +184,10 @@ def test_components_draw_independent_random_numbers(sharing):
     assert abs(correlation) < 5 / np.sqrt(batches)
 
 
-def test_trajectory_sharing_is_the_statevector_default():
+def test_trajectory_sharing_is_on_by_default():
     circuit = Circuit(CIRCUITS["t_ghz"])
-    assert circuit.compile_detector_sampler()._trajectory_sharing
-    assert circuit.compile_sampler()._trajectory_sharing
-    assert not circuit.compile_detector_sampler(strategy="cat5")._trajectory_sharing
-
-
-def test_trajectory_sharing_needs_the_statevector_strategy():
-    with pytest.raises(ValueError, match="trajectory_sharing"):
-        Circuit(CIRCUITS["t_ghz"]).compile_detector_sampler(
-            strategy="cat5", trajectory_sharing=True
-        )
+    assert shot_sampler(circuit.compile_detector_sampler())._share
+    assert shot_sampler(circuit.compile_sampler())._share
 
 
 # NOTE: numba's most threads, which it sets as a config attribute at import.
@@ -232,8 +221,9 @@ def test_samples_depend_on_neither_threads_nor_batches_nor_sharing(
 
     def sample(count, batch_size, sharing):
         threads(count)
-        sampler = circuit.compile_detector_sampler(
-            strategy="active_statevector", seed=3, trajectory_sharing=sharing
+        sampler = set_sharing(
+            circuit.compile_detector_sampler(strategy="active_statevector", seed=3),
+            sharing,
         )
         return [
             sampler.sample(
@@ -332,8 +322,9 @@ def test_reference_bits_leave_the_outputs_of_pruned_shots_false(sharing, monkeyp
     mask = np.ones(circuit.num_detectors, dtype=bool)
 
     def sample(reference):
-        sampler = circuit.compile_detector_sampler(
-            strategy="active_statevector", seed=4, trajectory_sharing=sharing
+        sampler = set_sharing(
+            circuit.compile_detector_sampler(strategy="active_statevector", seed=4),
+            sharing,
         )
         monkeypatch.setattr(sampler, "_reference_sample", lambda: reference)
         return sampler.sample(

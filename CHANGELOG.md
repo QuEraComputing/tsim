@@ -28,10 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   probabilities, and it raises `ValueError` for components it cannot read, for
   components wider than 30 active qubits, and when one shot needs more than half
   of the available memory. (#203)
-- `trajectory_sharing=True` for `strategy="active_statevector"`: shots with
+- Trajectory sharing for `strategy="active_statevector"`: shots with
   equal histories share one state vector, which splits at measurements, and
   shots that a postselected component detector discards stop being simulated
-  there. (#198)
+  there. It is always on and has no option. (#198)
 - Parametric tags accept positional angles in units of pi, as in the shorthand:
   `I[R_X(0.1)] 0` is `R_X(0.1) 0`, `I[U3(0.3, 0.24, 0.49)] 0` is
   `U3(0.3, 0.24, 0.49) 0`, and `SPP[R_PAULI(0.1)] X0*Y1` is
@@ -44,15 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `strategy="cat5"` for the previous stabilizer-rank default.
   `CompiledStateProbs` keeps `"cat5"`. (#203)
 - `strategy="active_statevector"` no longer uses JAX: it samples on the CPU
-  with numba kernels, also when JAX has a GPU, and trajectory sharing is on
-  by default (`trajectory_sharing=None` means True for this strategy and
-  False for the others). Amplitudes are complex128. Postselected
+  with numba kernels, also when JAX has a GPU. Amplitudes are complex128. Postselected
   detectors of a component prune its shots with sharing off as well, and also
   when no direct detector is postselected. (#199)
 - A statevector call samples its noise, then runs its components on one chunk
   of shots per numba thread, each of at least 256 and at most 2^16 shots, or
   `batch_size`. The samples of a seed depend on neither `batch_size`, the
-  thread count nor `trajectory_sharing`: the noise and every measurement
+  thread count nor trajectory sharing: the noise and every measurement
   outcome are drawn from counter-based streams by shot index. Seeded samples
   differ from earlier versions. (#199, #207, #212)
 - Noise sampling runs in numba kernels, so the samples for a given seed
