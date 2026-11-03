@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from test.helpers.statevector import set_sharing
 from unittest.mock import patch
 
 import numpy as np
@@ -773,8 +774,9 @@ def test_a_component_discard_skips_and_clears_the_other_components(
     others = [c for c in (1, 2, 3) if c != masked]
 
     def sample(postselection_mask, batch_size=None):
-        sampler = circuit.compile_detector_sampler(
-            strategy="active_statevector", seed=8, trajectory_sharing=share
+        sampler = set_sharing(
+            circuit.compile_detector_sampler(strategy="active_statevector", seed=8),
+            share,
         )
         components = sampler._program.components
         assert [c.output_indices for c in components] == [(1,), (2,), (3,)]

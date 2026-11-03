@@ -430,6 +430,12 @@ def shot_sampler(sampler) -> ShotSampler:
     return sampler._shots
 
 
+def set_sharing(sampler, share: bool):
+    """Turn a sampler's trajectory sharing on or off, and return the sampler."""
+    shot_sampler(sampler)._share = share
+    return sampler
+
+
 def component_program(compiled, postselected=None):
     """Return a component's key basis and lane program, outputs at bits 0, 1, …."""
     local = replace(compiled, output_indices=tuple(range(compiled.num_outputs)))

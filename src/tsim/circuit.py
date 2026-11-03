@@ -920,7 +920,6 @@ class Circuit:
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        trajectory_sharing: bool | None = None,
     ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
@@ -930,9 +929,6 @@ class Circuit:
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
                 ``numba.get_num_threads()`` threads.
-            trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane. Defaults to True for
-                ``"active_statevector"`` and False otherwise.
             seed: Random seed for the sampler. With "active_statevector" the samples
                 of a seed depend on neither the batch size nor the thread count;
                 with a stabilizer-rank strategy they are only deterministic for a
@@ -944,16 +940,13 @@ class Circuit:
         """
         from tsim.sampler import CompiledMeasurementSampler
 
-        return CompiledMeasurementSampler(
-            self, seed=seed, strategy=strategy, trajectory_sharing=trajectory_sharing
-        )
+        return CompiledMeasurementSampler(self, seed=seed, strategy=strategy)
 
     def compile_detector_sampler(
         self,
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        trajectory_sharing: bool | None = None,
     ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
 
@@ -968,9 +961,6 @@ class Circuit:
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
                 ``numba.get_num_threads()`` threads.
-            trajectory_sharing: With ``strategy="active_statevector"``, simulate shots
-                with equal histories on one lane. Defaults to True for
-                ``"active_statevector"`` and False otherwise.
             seed: Random seed for the sampler. With "active_statevector" the samples
                 of a seed depend on neither the batch size nor the thread count;
                 with a stabilizer-rank strategy they are only deterministic for a
@@ -982,9 +972,7 @@ class Circuit:
         """
         from tsim.sampler import CompiledDetectorSampler
 
-        return CompiledDetectorSampler(
-            self, seed=seed, strategy=strategy, trajectory_sharing=trajectory_sharing
-        )
+        return CompiledDetectorSampler(self, seed=seed, strategy=strategy)
 
     def cast_to_stim(self) -> stim.Circuit:
         """Return self with type cast to `stim.Circuit`.

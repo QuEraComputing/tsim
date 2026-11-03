@@ -290,10 +290,8 @@ class ShotSampler:
         channels: ChannelSampler,
         num_detectors: int,
         seed: int,
-        *,
-        share: bool,
     ) -> None:
-        """Lay out the program's shot words; ``share`` lets shots share lanes.
+        """Lay out the program's shot words.
 
         Raises:
             NotImplementedError: On a big-endian host.
@@ -307,7 +305,8 @@ class ShotSampler:
         self._layout = shot_layout(program, channels)
         self._channels = channels
         self._num_detectors = num_detectors
-        self._share = share
+        # NOTE: private switch for tests and benchmarks; samples do not depend on it.
+        self._share = True
         self._seeds = np.random.default_rng([seed, 1])
         # NOTE: reference samples draw from their own stream, so that asking for
         # one leaves the samples of a seed alone.
