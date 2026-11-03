@@ -61,7 +61,8 @@ parse_parametric_tag(instruction: stim.CircuitInstruction) -> tuple[str, dict[st
 
 Parse the parametric tag on an instruction (e.g. ``I[R_Z(theta=0.3*pi)]``).
 
-Supports gates: R_Z, R_X, R_Y, U3.
+Supports gates: R_Z, R_X, R_Y, R_PAULI, U3. Angles are in units of pi and may
+be given by keyword (``R_Z(theta=0.3*pi)``) or by position (``R_Z(0.3)``).
 
 **Parameters:**
 
@@ -75,4 +76,4 @@ Supports gates: R_Z, R_X, R_Y, U3.
 
 **Raises:**
 
-- `ValueError` — When the tag looks parametric (matches ``name(...)``) but is malformed: a parameter value does not parse, the gate name is unknown, or the parameter keys do not match the expected set for the gate.
+- `ValueError` — When the tag looks parametric (matches ``name(...)``) but is malformed: a parameter value does not parse, the gate name is unknown, or the parameters do not match the expected set for the gate.

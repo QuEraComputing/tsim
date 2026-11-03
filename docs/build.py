@@ -295,6 +295,63 @@ def _extract_pyzx_iframes(body: str, placeholders: dict[str, str]) -> str:
     return pattern.sub(replacer, body)
 
 
+def _extract_zxparam_iframes(body: str, placeholders: dict[str, str]) -> str:
+    """Replace zxparam D3 diagram blocks with placeholder tokens.
+
+    ``c.diagram("zx")`` emits a ``<div id="zxp-…">`` followed by a
+    ``<script type="module">`` that imports D3 and ends with a
+    ``renderZx(document.getElementById("zxp-…"), {…graph json…});`` call.
+    Like pyzx output, it is inlined into an ``<iframe srcDoc>``. The iframe
+    height mirrors the viewer's own sizing: ``2 * pad + row_span * scale_y``
+    (floored at ``minHeight``), plus a line for a non-trivial scalar.
+    """
+    pattern = re.compile(
+        r'(<div\b[^>]*id="zxp-[^"]*"[^>]*>\s*</div>)\s*'
+        r'(<script\b[^>]*type="module"[^>]*>.*?</script>)',
+        re.DOTALL | re.IGNORECASE,
+    )
+    payload_re = re.compile(r"renderZx\([^,]+,\s*(\{.*\})\);\s*</script>", re.DOTALL)
+    counter = [0]
+
+    def diagram_height(script: str) -> int:
+        m = payload_re.search(script)
+        if not m:
+            return 400
+        graph = json.loads(m.group(1))
+        rows = [node["row"] for node in graph.get("nodes", [])] or [0.0]
+        scale_y = (graph.get("scale") or [40, 40])[1]
+        height = max(60 + (max(rows) - min(rows)) * scale_y, 60)
+        if graph.get("scalar") not in (None, "", "1"):
+            height += 22
+        return int(height) + 12
+
+    def replacer(m: re.Match) -> str:
+        counter[0] += 1
+        block = m.group(1) + m.group(2)
+        gid_m = re.search(r'id="(zxp-[^"]+)"', block)
+        if gid_m:
+            block = block.replace(gid_m.group(1), f"zxp-{counter[0]:03d}")
+        html = (
+            '<!doctype html><html><head><meta charset="utf-8">'
+            "<style>html,body{margin:0;padding:0;height:100%;"
+            "overflow:hidden;}"
+            '[id^="zxp-"]{display:block !important;width:100%;height:100%;'
+            "overflow:auto;box-sizing:border-box;}</style>"
+            f"</head><body>{block}</body></html>"
+        )
+        iframe = (
+            f'<iframe srcDoc="{_srcdoc_attr(html)}" width="100%" '
+            f'height="{diagram_height(m.group(2))}" '
+            f'style={{{{border: "1px solid #eee", borderRadius: "0.5rem"}}}} '
+            f'title="ZX diagram {counter[0]}" loading="lazy" />'
+        )
+        token = f"MINTLIFYIFRAMEZXP{counter[0]:03d}"
+        placeholders[token] = iframe
+        return f"\n\n{token}\n\n"
+
+    return pattern.sub(replacer, body)
+
+
 def _strip_script_and_pyzx(body: str) -> str:
     """Strip any remaining ``<script>`` tags and empty graph placeholder divs.
 
@@ -310,7 +367,7 @@ def _strip_script_and_pyzx(body: str) -> str:
         flags=re.DOTALL | re.IGNORECASE,
     )
     body = re.sub(
-        r'<div\b[^>]*id="graph-output-[^"]*"[^>]*>\s*</div>',
+        r'<div\b[^>]*id="(?:graph-output|zxp)-[^"]*"[^>]*>\s*</div>',
         "",
         body,
         flags=re.IGNORECASE,
@@ -714,7 +771,8 @@ def build_api() -> int:
             out.write_text(_render_module(module))
             rendered.append(out)
         for child in module.modules.values():
-            walk(child)
+            if not child.is_alias:
+                walk(child)
 
     walk(pkg)
     _patch_docs_json(_build_api_groups(rendered))
@@ -837,6 +895,7 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
     iframes: dict[str, str] = {}
     body = _extract_diagram_svgs(body, iframes)
     body = _extract_pyzx_iframes(body, iframes)
+    body = _extract_zxparam_iframes(body, iframes)
 
     # Strip any orphaned <script> tags or empty graph placeholders that
     # didn't pair up above.
@@ -853,7 +912,7 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
     # Replace bare "![svg](...)" alt text (nbconvert's default) with something
     # more descriptive for accessibility.
     body = re.sub(
-        r"!\[svg\]\(",
+        r"!\[(?:svg|png)\]\(",
         "![Notebook output figure](",
         body,
     )

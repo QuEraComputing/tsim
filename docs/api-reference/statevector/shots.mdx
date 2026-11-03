@@ -1,0 +1,387 @@
+---
+title: "shots"
+description: "Shot words: each shot's outputs and component keys as packed bits, without f-bits."
+---
+
+A statevector program needs a shot's noise only as parities of its f-bits: each
+direct output is one f-bit (or a constant), each component output has an f-part,
+and each component reads its key (``shared.KeyBasis``). So each f-variable gets a
+column of bits in the *shot words*, and the noise sampler XORs a fault's columns
+straight into its shot's words: no f matrix is built. The outputs come first, in
+their original order, so the first ``num_outputs`` bits of a shot's words become
+its sample once the constants are XOR-ed in and the components have added their
+branch parts (``shared``).
+
+``ShotSampler`` samples a call's noise, then runs its components on a chunk of
+shots per thread. The noise blocks and every per-shot draw are seeded by the call
+and the shot's index, so the samples depend on neither the chunks nor the threads.
+
+## class `ChannelSampler`
+
+```python
+ChannelSampler(channel_probs: list[np.ndarray], error_transform: np.ndarray, seed: int | None = None)
+```
+
+Samples from multiple error channels and transforms to a reduced basis.
+
+This class combines multiple error channels (each producing error bits e0, e1, ...)
+and applies a linear transformation over GF(2) to convert samples from the original
+"e" basis to a reduced "f" basis using geometric-skip sampling optimized for
+low-noise regimes.
+
+``f_i = error_transform_ij * e_j mod 2``. Within each channel,
+probability-array bit 0 corresponds to the first produced error bit, bit 1
+to the second, and so on.
+
+Channels are automatically simplified by:
+1. Removing bits e_i that do not affect any f-variable (i.e. all-zero columns in error_transform)
+2. Folding duplicate column IDs, i.e. channels whose column signatures contain duplicate IDs.
+3. Merging channels with identical column signatures, i.e. channels whose corresponding
+    columns in error_transform are identical.
+4. Absorbing channels whose signatures are subsets of others, i.e. channels whose corresponding
+    columns in error_transform are a strict subset of another channel's columns.
+
+**Example:**
+
+\>\>\> probs = [error_probs(0.1), error_probs(0.2)]  # two 1-bit channels
+\>\>\> transform = np.array([[1, 1]])  # f0 = e0 XOR e1
+\>\>\> sampler = ChannelSampler(probs, transform)
+\>\>\> samples = sampler.sample(1000)  # shape (1000, 1)
+
+
+### `block_seeds`
+
+```python
+block_seeds(num_samples: int) -> np.ndarray
+```
+
+Draw the seeds of the blocks of the next ``num_samples`` samples.
+
+
+### `sample`
+
+```python
+sample(num_samples: int = 1, seeds: np.ndarray | None = None) -> np.ndarray
+```
+
+Sample from all error channels and transform to new error basis.
+
+Uses geometric-skip sampling, optimized for low-noise regimes where
+P(non-identity) \<\< 1 per channel. Blocks of shots are sampled in
+parallel, each from its own random stream, so the samples depend on the
+seed and ``num_samples`` but not on the number of threads.
+
+**Parameters:**
+
+- `num_samples` (`int`) — Number of samples to draw.
+- `seeds` (`np.ndarray | None`) — The blocks' seeds from ``block_seeds(num_samples)``; drawn here if ``None``.
+
+**Returns:**
+
+- `np.ndarray` — NumPy array of shape (num_samples, num_f) with uint8 values indicating
+- `np.ndarray` — which f-variables are set for each sample.
+
+
+### `sample_words`
+
+```python
+sample_words(out: np.ndarray, flips: WordTables, seeds: np.ndarray | None = None) -> None
+```
+
+Write ``len(out)`` rows of noise into ``out``, as ``flips`` sets their words.
+
+Row ``r`` is drawn as ``sample`` draws row ``r``: block by block from
+``seeds``, so every layout of the rows holds the same faults.
+
+
+### `word_tables`
+
+```python
+word_tables(f_index: np.ndarray, bit: np.ndarray, bits: int = 64) -> WordTables
+```
+
+Return the fault outcomes' flips on rows of words of ``bits`` bits.
+
+F-variable ``f_index[j]`` flips bit ``bit[j]`` of a row (bit ``b`` is bit
+``b % bits`` of word ``b // bits``), so a row holds the XOR of its set
+f-variables' bits. The pairs must be distinct. Rows are of uint64 words
+for ``bits=64`` and of a uint8 per bit for ``bits=1``.
+
+
+## class `CompiledProgram`
+
+```python
+CompiledProgram(components: tuple[CompiledComponent | StatevectorComponent, ...], direct_f_indices: np.ndarray, direct_flips: np.ndarray, output_order: np.ndarray, output_reindex: np.ndarray | None, num_outputs: int, num_detectors: int)
+```
+
+A fully compiled circuit program ready for sampling.
+
+This is the result of compiling a SamplingGraph and contains everything
+needed to sample from the circuit.
+
+
+## class `KeyBasis`
+
+```python
+KeyBasis()
+```
+
+A component's key: parities of its f-bits that its rotation signs read.
+
+
+## class `LaneProgram`
+
+```python
+LaneProgram()
+```
+
+A component's tape over lane symbols, for one postselection mask.
+
+Lane symbols are ``lane_words`` uint64 words: the key's words, then the shot
+words that hold postselected outputs, masked to them (so they hold their
+f-parts), then the branch bits of the measurements that split lanes.
+
+
+## class `ShotLayout`
+
+```python
+ShotLayout(num_outputs: int, output_words: int, num_words: int, constant: np.ndarray, direct: np.ndarray, direct_f: np.ndarray, components: tuple[StatevectorComponent, ...], keys: tuple[KeyBasis, ...], key_starts: tuple[int, ...], noise: WordTables)
+```
+
+Where a program's outputs and component keys live in the shot words.
+
+
+## class `ShotPlan`
+
+```python
+ShotPlan(screen: np.ndarray, kept: np.ndarray, pruned_kept: tuple[np.ndarray | None, ...], programs: tuple[LaneProgram, ...], rejected: np.ndarray)
+```
+
+How to finish a layout's shots under a postselection mask.
+
+
+## class `ShotSampler`
+
+```python
+ShotSampler(program: CompiledProgram, channels: ChannelSampler, num_detectors: int, seed: int)
+```
+
+Samples shot words of a program whose components are statevector ones.
+
+
+### `bytes_per_shot`
+
+```python
+bytes_per_shot() -> int
+```
+
+Return the peak memory of one shot.
+
+That is its words, its own lane at worst, and 32 bytes for its place in
+the executor's shot lists.
+
+
+### `direct_bools`
+
+```python
+direct_bools(shots: int, flip: np.ndarray | None = None) -> np.ndarray
+```
+
+Return every output bit of a program without components, as booleans.
+
+The noise sampler writes them straight into the rows. The samples equal
+those of ``sample``. ``flip`` is as in ``sample``.
+
+
+### `plan`
+
+```python
+plan(mask: np.ndarray | None) -> ShotPlan
+```
+
+Return the plan for a postselection ``mask``.
+
+
+### `reference`
+
+```python
+reference() -> tuple[np.ndarray, float]
+```
+
+Return a noiseless sample of every output and its largest norm deviation.
+
+
+### `sample`
+
+```python
+sample(shots: int, columns: list[np.ndarray], bit_packed: bool, batch_size: int | None = None, mask: np.ndarray | None = None, flip: np.ndarray | None = None) -> tuple[list[np.ndarray], float]
+```
+
+Return the output bits ``columns`` of ``shots`` shots and the largest norm deviation.
+
+Each list of columns gives an array, as ``read_outputs`` reads it. A call
+whose shot words do not fit in a quarter of the free memory runs in parts
+of whole noise blocks, which draw the samples of the whole call.
+
+**Parameters:**
+
+- `shots` (`int`) — Number of shots.
+- `columns` (`list[np.ndarray]`) — The output columns of each array.
+- `bit_packed` (`bool`) — Whether the arrays are bit-packed.
+- `batch_size` (`int | None`) — The most shots a thread runs at once; it bounds memory and does not change the samples.
+- `mask` (`np.ndarray | None`) — The postselected detectors: only shots where they all read 0 are returned. A shot with a postselected direct detector of 1 skips the components, and the components prune shots at their postselected outputs.
+- `flip` (`np.ndarray | None`) — A reference bit per output, XOR-ed in before the tests.
+
+
+## class `StatevectorComponent`
+
+```python
+StatevectorComponent(output_indices: tuple[int, ...], width: int, tape: Tape)
+```
+
+A component compiled for ``strategy="active_statevector"``.
+
+Its lanes hold ``2^width`` complex128 amplitudes.
+
+
+## class `WordTables`
+
+```python
+WordTables()
+```
+
+The words each fault outcome XORs into a row.
+
+Outcome ``k`` XORs ``mask[j]`` into word ``word[j]`` of its row, for ``j`` in
+``start[k] … start[k+1] - 1``.
+
+
+## `bool_outputs`
+
+```python
+bool_outputs(words: np.ndarray, columns: np.ndarray) -> np.ndarray
+```
+
+Return the output bits ``columns`` of every shot as booleans.
+
+
+## `jit`
+
+```python
+jit(function: Callable | None = None, parallel: bool = False, contract: bool = False) -> Callable
+```
+
+Compile ``function`` with numba, cached on disk where numba can write.
+
+The compiled function releases the GIL, so Python threads can run it at once.
+Numba refuses to define a cached function when no cache directory is
+writable (e.g. a read-only install without ``NUMBA_CACHE_DIR``), so such
+installs compile in every process instead. With ``contract``, LLVM may fuse
+the function's multiplies and adds.
+
+
+## `kernel`
+
+```python
+kernel(function: Callable) -> Callable
+```
+
+Compile ``function`` serially and in parallel; ``run(work, *args)`` picks one.
+
+``work`` estimates the call's cost in simple operations; calls below
+``PARALLEL_WORK`` run serially, and so do calls on the worker threads of
+``run_tasks`` and calls while numba has one thread. In the serial
+compilation every ``numba.prange`` is a plain range, so both compute the
+same result.
+
+
+## `key_basis`
+
+```python
+key_basis(component: StatevectorComponent) -> KeyBasis
+```
+
+Return a basis of the f-parts of the component's rotation signs.
+
+
+## `lane_program`
+
+```python
+lane_program(component: StatevectorComponent, key: KeyBasis, key_start: int, postselected: np.ndarray) -> LaneProgram
+```
+
+Return the component's tape over lane symbols.
+
+**Parameters:**
+
+- `component` (`StatevectorComponent`) — The compiled component.
+- `key` (`KeyBasis`) — Its key basis.
+- `key_start` (`int`) — First word of the key in the shot words.
+- `postselected` (`np.ndarray`) — Whether each output slot is postselected, ``(O,)``.
+
+
+## `memory_budget`
+
+```python
+memory_budget() -> int
+```
+
+Return the memory sampling may use: half of the free memory.
+
+
+## `packed_outputs`
+
+```python
+packed_outputs(words: np.ndarray, count: int, num_outputs: int) -> np.ndarray
+```
+
+Return the first ``count`` of ``num_outputs`` output bits as ``np.packbits`` does.
+
+Bits are in little order. The bits past the outputs are zero, so with all of
+them, or whole bytes, of words that hold only outputs the result is a view of
+``words``; else a copy, masked past ``count``. A view of words that also hold
+component keys would keep the keys alive.
+
+
+## `read_outputs`
+
+```python
+read_outputs(words: np.ndarray, columns: np.ndarray, num_outputs: int, bit_packed: bool) -> np.ndarray
+```
+
+Return the output bits ``columns`` of shot words, as booleans or bit-packed.
+
+Leading outputs in order are packed straight from the words.
+
+
+## `run_tasks`
+
+```python
+run_tasks(function: Callable[[_Task], _Result], tasks: Iterable[_Task], threads: int) -> list[_Result]
+```
+
+Return ``[function(task) for task in tasks]``, on up to ``threads`` threads.
+
+With more than one thread the tasks run on worker threads, and every kernel
+in them runs serially: the tasks keep the cores busy, and independent tasks
+scale far better than numba's threads inside each kernel. Otherwise, and in
+a task, the tasks run in the calling thread. Every task finishes before the
+first error, if any, is raised.
+
+
+## `shot_layout`
+
+```python
+shot_layout(program: CompiledProgram, channels: ChannelSampler) -> ShotLayout
+```
+
+Return the shot-word layout of a program whose components are statevector ones.
+
+
+## `shot_plan`
+
+```python
+shot_plan(layout: ShotLayout, num_detectors: int, mask: np.ndarray | None) -> ShotPlan
+```
+
+Return the plan of ``layout`` for a postselection ``mask`` over the detectors.

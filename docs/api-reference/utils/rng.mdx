@@ -1,0 +1,72 @@
+---
+title: "rng"
+description: "SplitMix64 random numbers for numba kernels."
+---
+
+A kernel threads a uint64 state through these functions. Seeding each block of
+work with its own 64-bit seed makes its numbers independent of how the blocks
+are scheduled across threads.
+
+## `jit`
+
+```python
+jit(function: Callable | None = None, parallel: bool = False, contract: bool = False) -> Callable
+```
+
+Compile ``function`` with numba, cached on disk where numba can write.
+
+The compiled function releases the GIL, so Python threads can run it at once.
+Numba refuses to define a cached function when no cache directory is
+writable (e.g. a read-only install without ``NUMBA_CACHE_DIR``), so such
+installs compile in every process instead. With ``contract``, LLVM may fuse
+the function's multiplies and adds.
+
+
+## `log1m`
+
+```python
+log1m(x: float) -> float
+```
+
+Return log(1 - x) for x in [0, 1), within a few ulp of ``np.log1p(-x)``.
+
+It is inlined, unlike libm's log1p. With 1 - x = 2^e m, m in (sqrt(1/2),
+sqrt(2)], log(1 - x) = e log 2 + 2 atanh(s) with s = (m - 1)/(m + 1), summed
+to s^21 (|s| \< 0.172). When e = 0, s = -x/(2 - x) is taken from x itself, so
+a small x keeps its precision. For x = 1 it returns about -709, not -inf.
+
+
+## `next_skip`
+
+```python
+next_skip(state: np.uint64, log_keep: float) -> tuple[np.uint64, float]
+```
+
+Return the advanced state and the failures before the next success.
+
+The trials succeed with probability p and ``log_keep = log1p(-p)``. The
+uniform behind the draw has 64-bit resolution near 0, so the chance of no
+failure is exact for p down to about 2^-64. The count is a float, so callers
+compare it before converting it; when the uniform rounds to 1 (chance 2^-54)
+it is ``709 / -log_keep`` rather than inf.
+
+
+## `next_uniform`
+
+```python
+next_uniform(state: np.uint64) -> tuple[np.uint64, float]
+```
+
+Return the advanced state and a uniform float in [0, 1) with 53 bits.
+
+
+## `splitmix64`
+
+```python
+splitmix64(state: np.uint64) -> tuple[np.uint64, np.uint64]
+```
+
+Advance a SplitMix64 state; return it and the next 64-bit output.
+
+``splitmix64(seed + n * GOLDEN)`` is the stream's ``n + 1``-th output, so a
+kernel can also read the stream at any index.

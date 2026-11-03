@@ -49,16 +49,17 @@
               "api-reference/compile/compile",
               "api-reference/compile/evaluate",
               "api-reference/compile/pipeline",
-              "api-reference/compile/stabrank",
               "api-reference/compile/terms"
             ]
           },
           {
             "group": "core",
             "pages": [
+              "api-reference/core/builder",
               "api-reference/core/exact_scalar",
               "api-reference/core/graph",
               "api-reference/core/instructions",
+              "api-reference/core/params",
               "api-reference/core/parse",
               "api-reference/core/tags",
               "api-reference/core/types"
@@ -72,14 +73,27 @@
             ]
           },
           {
+            "group": "statevector",
+            "pages": [
+              "api-reference/statevector/pbc",
+              "api-reference/statevector/plan",
+              "api-reference/statevector/program",
+              "api-reference/statevector/schedule",
+              "api-reference/statevector/shared",
+              "api-reference/statevector/shots"
+            ]
+          },
+          {
             "group": "utils",
             "pages": [
               "api-reference/utils/clifford",
               "api-reference/utils/cuda_helpers",
               "api-reference/utils/diagram",
               "api-reference/utils/encoder",
+              "api-reference/utils/kernels",
               "api-reference/utils/linalg",
-              "api-reference/utils/program_text"
+              "api-reference/utils/program_text",
+              "api-reference/utils/rng"
             ]
           }
         ]

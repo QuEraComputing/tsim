@@ -21,6 +21,15 @@ encode_t_tag(user_tag: str = '') -> str
 Encode a T-family gate tag while preserving an optional user tag.
 
 
+## `format_parametric_tag`
+
+```python
+format_parametric_tag(gate_name: str, params: dict[str, Fraction]) -> str
+```
+
+Format a parametric gate tag in its canonical keyword form.
+
+
 ## `is_t_tag`
 
 ```python
@@ -28,3 +37,29 @@ is_t_tag(tag: str) -> bool
 ```
 
 Return whether a Stim tag encodes a tsim T-family gate.
+
+
+## `parse_parametric_tag_text`
+
+```python
+parse_parametric_tag_text(tag: str) -> tuple[str, dict[str, Fraction]] | None
+```
+
+Parse a parametric gate tag such as ``R_Z(theta=0.3*pi)`` or ``R_Z(0.3)``.
+
+Angles are in units of pi. They are given either all by keyword with an
+explicit ``*pi`` suffix, or all by position (``U3`` takes theta, phi, lambda
+in that order, as in the shorthand).
+
+**Parameters:**
+
+- `tag` (`str`) — The stim instruction tag.
+
+**Returns:**
+
+- `tuple[str, dict[str, Fraction]] | None` — Tuple of (gate_name, params_dict), or ``None`` when the tag does not have
+- `tuple[str, dict[str, Fraction]] | None` — the ``name(...)`` shape.
+
+**Raises:**
+
+- `ValueError` — When the tag has the ``name(...)`` shape but is malformed: an unknown gate name, an unparsable angle, or the wrong parameters.

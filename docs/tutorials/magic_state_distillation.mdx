@@ -114,7 +114,7 @@ c.diagram("timeline-svg", height=100)
 ```
 
 ```text title="Output"
-Infidelity: 0.0325
+Infidelity: 0.03342
 ```
 
 
@@ -415,7 +415,7 @@ We can simulate this using Tsim. To measure the fidelity, we undo the magic stat
 
 ```python
 sampler = c.compile_sampler(seed=0)
-samples = sampler.sample(50_000, batch_size=10_000)
+samples = sampler.sample(1_000_000)
 
 
 def post_select(samples: np.ndarray):
@@ -435,8 +435,8 @@ print(
 ```
 
 ```text title="Output"
-Infidelity: 0.00616
-Percentage of post-selected samples: 14.28%
+Infidelity: 0.00595
+Percentage of post-selected samples: 14.13%
 ```
 
 
@@ -447,13 +447,13 @@ With Tsim, we can study other properties of the distillation circuit. For exampl
 
 
 ```python
-angles = np.linspace(-0.4, 0.4, 7) + theta
+angles = np.linspace(-0.4, 0.4, 31) + theta
 fidelities = []
 post_selection_rate = []
 for angle in angles:
     c = make_logical_distillation_circuit(angle)
     sampler = c.compile_sampler(seed=0)
-    samples = sampler.sample(4_096, batch_size=4_096)
+    samples = sampler.sample(300_000)
 
     post_selected_samples = post_select(samples)
     post_selection_rate.append(len(post_selected_samples) / len(samples))
@@ -486,7 +486,7 @@ ax2.legend(handles=[line1, line2], loc="lower right");
 ```
 
 
-![Notebook output figure](/images/tutorials/magic_state_distillation/cell_14_0.svg)
+![Notebook output figure](/images/tutorials/magic_state_distillation/cell_14_0.png)
 
 
 We see that the output fidelity and post-selection rate are peaked at the distillation angle $\theta^*$.
@@ -536,7 +536,7 @@ R_X({-theta}) 0
 
 M 0 1 2 3 4
 """)
-samples = c.compile_sampler(seed=0).sample(shots=40_000, batch_size=10_000)
+samples = c.compile_sampler(seed=0).sample(shots=400_000)
 
 
 def post_select(samples: np.ndarray):
@@ -556,8 +556,8 @@ print(
 ```
 
 ```text title="Output"
-Infidelity: 0.04152
-Percentage of post-selected samples: 12.83%
+Infidelity: 0.04050
+Percentage of post-selected samples: 12.69%
 ```
 
 
@@ -4256,7 +4256,7 @@ Let us summarize the protocol we are going to simulate:
 
 
 ```python
-def sample_and_post_select(circ: tsim.Circuit, shots: int = 35_000):
+def sample_and_post_select(circ: tsim.Circuit, shots: int = 2_000_000):
     sampler = circ.compile_detector_sampler(seed=42)
 
     det_samples, obs_samples = sampler.sample(
@@ -4289,13 +4289,9 @@ vz = sample_and_post_select(circ_z)
 ```
 
 ```text title="Output"
-Expectation value: 0.5935, percentage kept: 1.05%
-
-
-Expectation value: 0.5625, percentage kept: 1.19%
-
-
-Expectation value: 0.5869, percentage kept: 1.13%
+Expectation value: 0.5722, percentage kept: 1.13%
+Expectation value: 0.5735, percentage kept: 1.24%
+Expectation value: 0.5703, percentage kept: 1.13%
 ```
 
 
@@ -4335,7 +4331,7 @@ print(f"Infidelity: {1 - fidelity.real:.5f}")
 ```
 
 ```text title="Output"
-Infidelity: -0.00313
+Infidelity: 0.00460
 ```
 
 

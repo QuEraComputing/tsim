@@ -3,39 +3,226 @@ title: "instructions"
 description: "ZX graph representations of quantum gates and instructions."
 ---
 
-## class `GraphRepresentation`
+Each gate is a function that builds onto a ``GraphBuilder`` through its methods
+(``tsim.core.builder``); ``GATE_TABLE`` maps Stim gate names to them.
+
+Gates are built up to a global phase: every graph is a doubled diagram (a
+channel, ``U ⊗ Ū`` for a unitary), where global phases cancel, so none are
+tracked.
+
+## class `GraphBuilder`
 
 ```python
-GraphRepresentation(graph: GraphS = GraphS(), rec: list[int] = list(), silent_rec: list[int] = list(), detectors: list[int] = list(), observables_dict: dict[int, int] = dict(), first_vertex: dict[int, int] = dict(), last_vertex: dict[int, int] = dict(), channel_probs: list[np.ndarray] = list(), correlated_error_probs: list[float] = list(), num_error_bits: int = 0, num_correlated_error_bits: int = 0, track_classical_wires: bool = False)
+GraphBuilder()
 ```
 
-ZX graph built from a stim circuit.
+Builds the ZX graph of a stim circuit, with quantum wires and classical records.
 
-Contains the graph and all auxiliary data needed for sampling.
+Qubit wires are quantum; measurement records, detectors and observables are
+classical spiders, read through the properties below (their labels are only
+for display). ``build`` returns the finished open or closed graph.
 
 
-## `add_dummy`
+### `add_channel`
 
 ```python
-add_dummy(b: GraphRepresentation, qubit: int, row: float | int | None = None) -> int
+add_channel(probs: np.ndarray) -> int
 ```
 
-Add a dummy boundary vertex for a qubit.
+Record a noise channel and allocate its error bits.
+
+``probs`` is the channel's distribution over its ``k`` error bits, so it
+has ``2^k`` entries. Returns the first bit; the channel owns bits
+``first … first + k − 1``. Raises ``ValueError`` if the number of
+entries is not a power of two.
 
 
-## `add_lane`
+### `add_detector`
 
 ```python
-add_lane(b: GraphRepresentation, qubit: int) -> int
+add_detector(record_indices: list[int]) -> None
 ```
 
-Initialize a qubit lane if it doesn't exist.
+Add a detector that XORs the given measurement records.
+
+
+### `advance`
+
+```python
+advance(qubit: int) -> None
+```
+
+Move the wire's end one column (the identity gate).
+
+
+### `build`
+
+```python
+build(closed: bool, outputs: Outputs) -> Graph
+```
+
+Return the circuit's graph with its wires closed or given ports.
+
+With ``closed=False``, qubit ``q``'s wire start, if it is still a
+boundary, gets input port ``-(q + 1)`` and its end gets output port
+``q``. With ``closed=True``, wire starts that are still boundaries become
+``|0⟩`` (a quantum X(0) spider) and wire ends are discarded. Helper lanes
+(negative indices, used by MPP, MPAD and heralded channels) are always
+discarded at the end.
+
+``outputs`` picks the classical output boundaries, whose ports follow the
+qubit outputs (from 0 when closed):
+
+- ``"detectors"``: one per detector, then one per observable; the
+  ``det[i]`` / ``obs[k]`` labels move to them.
+- ``"records"``: one per measurement record; the ``rec[i]`` labels move
+  to them.
+- ``"none"``: no classical outputs.
+
+Detector and observable spiders are removed unless they are the outputs.
+In open graphs, measurement spiders that are not outputs keep their
+``rec[i]`` / ``m[i]`` labels; closed graphs are meant to be reduced, so
+only their output boundaries carry labels, which survive reduction.
+
+An open graph's tensor is the circuit's channel together with the output
+bits; for bound error parameters, a closed graph's tensor is the joint
+distribution of its outputs. The builder is unchanged, so it can build
+again.
+
+
+### `correlated_error`
+
+```python
+correlated_error(qubits: list[int], types: list[Literal['X', 'Y', 'Z']], p: float) -> None
+```
+
+Add a correlated error term affecting multiple qubits with given Pauli types.
+
+The term is the next link of the pending chain. It flips one noise spider
+per Pauli component (X or Z on a qubit), reusing the chain's spider of
+that component while nothing else has acted on the wire since (see
+``_chain_spider``). The spiders get their error bits in
+``finalize_correlated_error``, which must run before the graph is built.
+Raises ``ValueError``, and changes nothing, if ``qubits`` and ``types``
+differ in length.
+
+
+### `cx`
+
+```python
+cx(control: int, target: int, classically_controlled: list[bool] | None = None) -> None
+```
+
+Apply CNOT; ``classically_controlled`` marks record targets (``rec[-k]``).
+
+
+### `cz`
+
+```python
+cz(control: int, target: int, classically_controlled: list[bool] | None = None) -> None
+```
+
+Apply CZ; ``classically_controlled`` marks record targets (``rec[-k]``).
+
+
+### `finalize_correlated_error`
+
+```python
+finalize_correlated_error() -> None
+```
+
+Finalize the current correlated error channel.
+
+A chain of ``k`` links on ``c`` live noise spiders (those that some link
+flips) becomes a channel over ``min(c, k)`` error bits: one bit per
+spider if ``c \< k``, so that link ``j`` sets the bits of the spiders it
+flips, and one bit per link otherwise, so that a spider's phase is the
+parity of the links that flip it. Clears the pending chain, also when it
+raises ``ValueError`` because the channel would have more than
+``MAX_CORRELATED_ERROR_BITS`` bits.
+
+
+### `hadamard`
+
+```python
+hadamard(qubit: int) -> None
+```
+
+Apply a Hadamard gate by toggling the wire's trailing edge.
+
+
+### `include_observable`
+
+```python
+include_observable(record_indices: list[int], index: int) -> None
+```
+
+XOR the given measurement records into observable ``index``.
+
+The observable is created on first use, as in Stim's
+``OBSERVABLE_INCLUDE``; with no records, that is all this does.
+
+
+### `measure`
+
+```python
+measure(qubit: int, silent: bool = False) -> Vertex
+```
+
+Measure a qubit in the Z basis and record it as ``rec[i]``.
+
+A silent measurement is not recorded; it is labelled ``m[i]``. Returns
+the measurement's classical spider.
+
+
+### `reset`
+
+```python
+reset(qubit: int) -> None
+```
+
+Reset a qubit to ``|0⟩``.
+
+If the qubit does not yet have a lane, create one in the reset state.
+Otherwise, silently measure the existing lane to trace out the previous
+state before reconnecting the qubit in the reset state.
+
+
+### `spider`
+
+```python
+spider(qubit: int, vertex_type: VertexType, phase: Phase | Fraction | None = None, col: float | None = None) -> Vertex
+```
+
+Turn the trailing boundary of a qubit's wire into a quantum spider.
+
+The spider keeps the boundary's quantum domain, moves to column ``col``
+if given, and a new quantum boundary is appended after it. Returns the
+spider.
+
+
+### `swap`
+
+```python
+swap(qubit1: int, qubit2: int) -> None
+```
+
+Swap two wires by exchanging their ends (and rows).
+
+
+### `tick`
+
+```python
+tick() -> None
+```
+
+Align all wire ends to the same column.
 
 
 ## `c_nxyz`
 
 ```python
-c_nxyz(b: GraphRepresentation, qubit: int) -> None
+c_nxyz(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Period 3 axis cycling gate, sending -X -\> Y -\> Z -\> -X.
@@ -44,7 +231,7 @@ Period 3 axis cycling gate, sending -X -\> Y -\> Z -\> -X.
 ## `c_nzyx`
 
 ```python
-c_nzyx(b: GraphRepresentation, qubit: int) -> None
+c_nzyx(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Period 3 axis cycling gate, sending -Z -\> Y -\> X -\> -Z.
@@ -53,7 +240,7 @@ Period 3 axis cycling gate, sending -Z -\> Y -\> X -\> -Z.
 ## `c_xnyz`
 
 ```python
-c_xnyz(b: GraphRepresentation, qubit: int) -> None
+c_xnyz(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Period 3 axis cycling gate, sending X -\> -Y -\> Z -\> X.
@@ -62,7 +249,7 @@ Period 3 axis cycling gate, sending X -\> -Y -\> Z -\> X.
 ## `c_xynz`
 
 ```python
-c_xynz(b: GraphRepresentation, qubit: int) -> None
+c_xynz(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Period 3 axis cycling gate, sending X -\> Y -\> -Z -\> X.
@@ -71,7 +258,7 @@ Period 3 axis cycling gate, sending X -\> Y -\> -Z -\> X.
 ## `c_xyz`
 
 ```python
-c_xyz(b: GraphRepresentation, qubit: int) -> None
+c_xyz(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Right handed period 3 axis cycling gate, sending X -\> Y -\> Z -\> X.
@@ -80,7 +267,7 @@ Right handed period 3 axis cycling gate, sending X -\> Y -\> Z -\> X.
 ## `c_znyx`
 
 ```python
-c_znyx(b: GraphRepresentation, qubit: int) -> None
+c_znyx(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Period 3 axis cycling gate, sending Z -\> -Y -\> X -\> Z.
@@ -89,7 +276,7 @@ Period 3 axis cycling gate, sending Z -\> -Y -\> X -\> Z.
 ## `c_zynx`
 
 ```python
-c_zynx(b: GraphRepresentation, qubit: int) -> None
+c_zynx(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Period 3 axis cycling gate, sending Z -\> Y -\> -X -\> Z.
@@ -98,7 +285,7 @@ Period 3 axis cycling gate, sending Z -\> Y -\> -X -\> Z.
 ## `c_zyx`
 
 ```python
-c_zyx(b: GraphRepresentation, qubit: int) -> None
+c_zyx(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Left handed period 3 axis cycling gate, sending Z -\> Y -\> X -\> Z.
@@ -107,52 +294,16 @@ Left handed period 3 axis cycling gate, sending Z -\> Y -\> X -\> Z.
 ## `cnot`
 
 ```python
-cnot(b: GraphRepresentation, control: int, target: int, classically_controlled: list[bool] | None = None) -> None
+cnot(builder: GraphBuilder, control: int, target: int, classically_controlled: list[bool] | None = None) -> None
 ```
 
 Apply CNOT (controlled-X) gate.
 
 
-## `correlated_error`
-
-```python
-correlated_error(b: GraphRepresentation, qubits: list[int], types: list[Literal['X', 'Y', 'Z']], p: float) -> None
-```
-
-Add a correlated error term affecting multiple qubits with given Pauli types.
-
-
-## `correlated_error_probs`
-
-```python
-correlated_error_probs(probabilities: list[float]) -> np.ndarray
-```
-
-Build probability distribution for correlated error chain.
-
-Given conditional probabilities [p1, p2, ..., pk] from a chain of
-CORRELATED_ERROR(p1) ELSE_CORRELATED_ERROR(p2) ... ELSE_CORRELATED_ERROR(pk),
-computes the joint probability distribution over 2^k outcomes.
-
-Since errors are mutually exclusive, only outcomes with at most one bit set
-have non-zero probability.
-- ``probs[0]`` is the probability that no branch fires.
-- ``probs[1 \<\< i]`` is the probability that branch ``i`` fires after all
-  previous branches did not fire.
-
-**Parameters:**
-
-- `probabilities` (`list[float]`) — List of conditional probabilities [p1, p2, ..., pk]
-
-**Returns:**
-
-- `np.ndarray` — Array of shape (2^k,) with probabilities for each outcome.
-
-
 ## `cxswap`
 
 ```python
-cxswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+cxswap(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Apply CX then SWAP.
@@ -161,7 +312,7 @@ Apply CX then SWAP.
 ## `cy`
 
 ```python
-cy(b: GraphRepresentation, control: int, target: int, classically_controlled: list[bool] | None = None) -> None
+cy(builder: GraphBuilder, control: int, target: int, classically_controlled: list[bool] | None = None) -> None
 ```
 
 Apply controlled-Y gate.
@@ -170,7 +321,7 @@ Apply controlled-Y gate.
 ## `cz`
 
 ```python
-cz(b: GraphRepresentation, control: int, target: int, classically_controlled: list[bool] | None = None) -> None
+cz(builder: GraphBuilder, control: int, target: int, classically_controlled: list[bool] | None = None) -> None
 ```
 
 Apply controlled-Z gate.
@@ -179,7 +330,7 @@ Apply controlled-Z gate.
 ## `czswap`
 
 ```python
-czswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+czswap(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Apply CZ then SWAP.
@@ -188,7 +339,7 @@ Apply CZ then SWAP.
 ## `depolarize1`
 
 ```python
-depolarize1(b: GraphRepresentation, qubit: int, p: float) -> None
+depolarize1(builder: GraphBuilder, qubit: int, p: float) -> None
 ```
 
 Apply single-qubit depolarizing channel with total error probability p.
@@ -197,28 +348,19 @@ Apply single-qubit depolarizing channel with total error probability p.
 ## `depolarize2`
 
 ```python
-depolarize2(b: GraphRepresentation, qubit_i: int, qubit_j: int, p: float) -> None
+depolarize2(builder: GraphBuilder, qubit_i: int, qubit_j: int, p: float) -> None
 ```
 
 Apply two-qubit depolarizing channel with total error probability p.
 
 
-## `detector`
+## `error_phase`
 
 ```python
-detector(b: GraphRepresentation, rec: list[int], args = ()) -> None
+error_phase(error_bit: int) -> Phase
 ```
 
-Add detector annotation that XORs the given measurement record bits.
-
-
-## `ensure_lane`
-
-```python
-ensure_lane(b: GraphRepresentation, qubit: int) -> None
-```
-
-Ensure qubit lane exists.
+Return the phase of a noise spider for error bit ``error_bit`` (ID = bit).
 
 
 ## `error_probs`
@@ -232,24 +374,10 @@ Single-bit error channel.
 Returns ``[P(bit0=0), P(bit0=1)]``.
 
 
-## `finalize_correlated_error`
-
-```python
-finalize_correlated_error(b: GraphRepresentation) -> None
-```
-
-Finalize the current correlated error channel.
-
-1. Rename all "c\{i\}" phases to "e\{num_error_bits + i\}" in the graph
-2. Compute and append the 2^k probability array to channel_probs
-3. Increment num_error_bits by k
-4. Reset num_correlated_error_bits to 0 and correlated_error_probs to []
-
-
 ## `h`
 
 ```python
-h(b: GraphRepresentation, qubit: int) -> None
+h(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply Hadamard gate.
@@ -258,7 +386,7 @@ Apply Hadamard gate.
 ## `h_nxy`
 
 ```python
-h_nxy(b: GraphRepresentation, qubit: int) -> None
+h_nxy(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply Hadamard-like gate that sends -X \<-\> Y, Z -\> -Z.
@@ -267,7 +395,7 @@ Apply Hadamard-like gate that sends -X \<-\> Y, Z -\> -Z.
 ## `h_nxz`
 
 ```python
-h_nxz(b: GraphRepresentation, qubit: int) -> None
+h_nxz(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply Hadamard-like gate that sends -X \<-\> Z.
@@ -276,7 +404,7 @@ Apply Hadamard-like gate that sends -X \<-\> Z.
 ## `h_nyz`
 
 ```python
-h_nyz(b: GraphRepresentation, qubit: int) -> None
+h_nyz(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply Hadamard-like gate that sends -Y \<-\> Z, X -\> -X.
@@ -285,7 +413,7 @@ Apply Hadamard-like gate that sends -Y \<-\> Z, X -\> -X.
 ## `h_xy`
 
 ```python
-h_xy(b: GraphRepresentation, qubit: int) -> None
+h_xy(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply variant of Hadamard gate that swaps the X and Y axes (instead of X and Z).
@@ -294,7 +422,7 @@ Apply variant of Hadamard gate that swaps the X and Y axes (instead of X and Z).
 ## `h_yz`
 
 ```python
-h_yz(b: GraphRepresentation, qubit: int) -> None
+h_yz(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z).
@@ -303,7 +431,7 @@ Apply variant of Hadamard gate that swaps the Y and Z axes (instead of X and Z).
 ## `heralded_erase`
 
 ```python
-heralded_erase(b: GraphRepresentation, qubit: int, p: float) -> None
+heralded_erase(builder: GraphBuilder, qubit: int, p: float) -> None
 ```
 
 Apply heralded erasure channel.
@@ -315,7 +443,7 @@ for each of I, X, Y, Z when the channel fires.
 ## `heralded_pauli_channel_1`
 
 ```python
-heralded_pauli_channel_1(b: GraphRepresentation, qubit: int, pi: float, px: float, py: float, pz: float) -> None
+heralded_pauli_channel_1(builder: GraphBuilder, qubit: int, pi: float, px: float, py: float, pz: float) -> None
 ```
 
 Apply heralded single-qubit Pauli channel.
@@ -349,25 +477,25 @@ The non-zero outcomes are:
 ## `i`
 
 ```python
-i(b: GraphRepresentation, qubit: int, _args: float = ()) -> None
+i(builder: GraphBuilder, qubit: int, _args: float = ()) -> None
 ```
 
-Apply identity (advances the row).
+Apply identity (advances the column).
 
 
 ## `ii`
 
 ```python
-ii(b: GraphRepresentation, qubit1: int, qubit2: int, _args: float = ()) -> None
+ii(builder: GraphBuilder, qubit1: int, qubit2: int, _args: float = ()) -> None
 ```
 
-Apply two-qubit identity (advances the row on both qubits).
+Apply two-qubit identity (advances the column on both qubits).
 
 
 ## `iswap`
 
 ```python
-iswap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+iswap(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Swap two qubits and phase the -1 eigenspace of the ZZ observable by i.
@@ -376,34 +504,16 @@ Swap two qubits and phase the -1 eigenspace of the ZZ observable by i.
 ## `iswap_dag`
 
 ```python
-iswap_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+iswap_dag(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Swap two qubits and phase the -1 eigenspace of the ZZ observable by -i.
 
 
-## `last_edge`
-
-```python
-last_edge(b: GraphRepresentation, qubit: int)
-```
-
-Get the last edge for a qubit.
-
-
-## `last_row`
-
-```python
-last_row(b: GraphRepresentation, qubit: int) -> float
-```
-
-Get the row of the last vertex for a qubit.
-
-
 ## `m`
 
 ```python
-m(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None
+m(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None
 ```
 
 Measure qubit in Z basis with optional bit-flip error probability p.
@@ -412,14 +522,14 @@ Measure qubit in Z basis with optional bit-flip error probability p.
 ## `mpad`
 
 ```python
-mpad(b: GraphRepresentation, value: int, p: float = 0) -> None
+mpad(builder: GraphBuilder, value: int, p: float = 0) -> None
 ```
 
 Pad measurement record with a fixed bit value.
 
 **Parameters:**
 
-- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `builder` (`GraphBuilder`) — The graph builder to modify.
 - `value` (`int`) — The bit value to record (0 or 1).
 - `p` (`float`) — Error probability for the recorded bit.
 
@@ -427,14 +537,14 @@ Pad measurement record with a fixed bit value.
 ## `mpp`
 
 ```python
-mpp(b: GraphRepresentation, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], invert: bool = False, p: float = 0) -> None
+mpp(builder: GraphBuilder, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], invert: bool = False, p: float = 0) -> None
 ```
 
 Measure a single Pauli product.
 
 **Parameters:**
 
-- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `builder` (`GraphBuilder`) — The graph builder to modify.
 - `paulis` (`list[tuple[Literal['X', 'Y', 'Z'], int]]`) — List of (pauli_type, qubit) pairs defining the Pauli product.
 - `invert` (`bool`) — Whether to invert the measurement result.
 - `p` (`float`) — Measurement flip error probability.
@@ -443,7 +553,7 @@ Measure a single Pauli product.
 ## `mr`
 
 ```python
-mr(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None
+mr(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None
 ```
 
 Z-basis demolition measurement (optionally noisy).
@@ -455,7 +565,7 @@ then resets to |0\>.
 ## `mrx`
 
 ```python
-mrx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None
+mrx(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None
 ```
 
 X-basis demolition measurement (optionally noisy).
@@ -467,7 +577,7 @@ then resets to |+\>.
 ## `mry`
 
 ```python
-mry(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None
+mry(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None
 ```
 
 Y-basis demolition measurement (optionally noisy).
@@ -479,7 +589,7 @@ then resets to |i\>.
 ## `mx`
 
 ```python
-mx(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None
+mx(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None
 ```
 
 Measure qubit in X basis.
@@ -488,7 +598,7 @@ Measure qubit in X basis.
 ## `mxx`
 
 ```python
-mxx(b: GraphRepresentation, q0: int, q1: int, p: float = 0, invert: bool = False) -> None
+mxx(builder: GraphBuilder, q0: int, q1: int, p: float = 0, invert: bool = False) -> None
 ```
 
 Measure two qubits in XX basis.
@@ -497,7 +607,7 @@ Measure two qubits in XX basis.
 ## `my`
 
 ```python
-my(b: GraphRepresentation, qubit: int, p: float = 0, invert: bool = False) -> None
+my(builder: GraphBuilder, qubit: int, p: float = 0, invert: bool = False) -> None
 ```
 
 Measure qubit in Y basis.
@@ -506,7 +616,7 @@ Measure qubit in Y basis.
 ## `myy`
 
 ```python
-myy(b: GraphRepresentation, q0: int, q1: int, p: float = 0, invert: bool = False) -> None
+myy(builder: GraphBuilder, q0: int, q1: int, p: float = 0, invert: bool = False) -> None
 ```
 
 Measure two qubits in YY basis.
@@ -515,25 +625,16 @@ Measure two qubits in YY basis.
 ## `mzz`
 
 ```python
-mzz(b: GraphRepresentation, q0: int, q1: int, p: float = 0, invert: bool = False) -> None
+mzz(builder: GraphBuilder, q0: int, q1: int, p: float = 0, invert: bool = False) -> None
 ```
 
 Measure two qubits in ZZ basis.
 
 
-## `observable_include`
-
-```python
-observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None
-```
-
-Add observable annotation that XORs the given measurement record bits.
-
-
 ## `pauli_channel_1`
 
 ```python
-pauli_channel_1(b: GraphRepresentation, qubit: int, px: float, py: float, pz: float) -> None
+pauli_channel_1(builder: GraphBuilder, qubit: int, px: float, py: float, pz: float) -> None
 ```
 
 Apply single-qubit Pauli channel with given X, Y, Z error probabilities.
@@ -561,7 +662,7 @@ The outcomes are:
 ## `pauli_channel_2`
 
 ```python
-pauli_channel_2(b: GraphRepresentation, qubit_i: int, qubit_j: int, pix: float, piy: float, piz: float, pxi: float, pxx: float, pxy: float, pxz: float, pyi: float, pyx: float, pyy: float, pyz: float, pzi: float, pzx: float, pzy: float, pzz: float) -> None
+pauli_channel_2(builder: GraphBuilder, qubit_i: int, qubit_j: int, pix: float, piy: float, piz: float, pxi: float, pxx: float, pxy: float, pxz: float, pyi: float, pyx: float, pyy: float, pyz: float, pzi: float, pzx: float, pzy: float, pzz: float) -> None
 ```
 
 Apply two-qubit Pauli channel with given error probabilities for all 15 Pauli pairs.
@@ -590,7 +691,7 @@ follow Stim's naming convention: ``pix`` is I on ``qubit_i`` and X on
 ## `r`
 
 ```python
-r(b: GraphRepresentation, qubit: int) -> None
+r(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Z-basis reset.
@@ -602,7 +703,7 @@ and applying an X gate if it ended up in the |1\> state.
 ## `r_pauli`
 
 ```python
-r_pauli(b: GraphRepresentation, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], theta: Fraction, dagger: bool = False) -> None
+r_pauli(builder: GraphBuilder, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], theta: Fraction, dagger: bool = False) -> None
 ```
 
 Apply exp(-i theta pi/2 P) for a Pauli product P, with theta in half-turns.
@@ -614,7 +715,7 @@ exp(+i theta pi/2 P) instead.
 
 **Parameters:**
 
-- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `builder` (`GraphBuilder`) — The graph builder to modify.
 - `paulis` (`list[tuple[Literal['X', 'Y', 'Z'], int]]`) — List of (pauli_type, qubit) pairs defining the Pauli product P.
 - `theta` (`Fraction`) — Rotation angle in half-turns (units of pi).
 - `dagger` (`bool`) — If True, negate the rotation angle.
@@ -623,7 +724,7 @@ exp(+i theta pi/2 P) instead.
 ## `r_x`
 
 ```python
-r_x(b: GraphRepresentation, qubit: int, phase: Fraction) -> None
+r_x(builder: GraphBuilder, qubit: int, phase: Fraction) -> None
 ```
 
 Apply R_X rotation gate with given phase (in units of π).
@@ -632,7 +733,7 @@ Apply R_X rotation gate with given phase (in units of π).
 ## `r_y`
 
 ```python
-r_y(b: GraphRepresentation, qubit: int, phase: Fraction) -> None
+r_y(builder: GraphBuilder, qubit: int, phase: Fraction) -> None
 ```
 
 Apply R_Y rotation gate with given phase (in units of π).
@@ -641,7 +742,7 @@ Apply R_Y rotation gate with given phase (in units of π).
 ## `r_z`
 
 ```python
-r_z(b: GraphRepresentation, qubit: int, phase: Fraction) -> None
+r_z(builder: GraphBuilder, qubit: int, phase: Fraction) -> None
 ```
 
 Apply R_Z rotation gate with given phase (in units of π).
@@ -650,31 +751,31 @@ Apply R_Z rotation gate with given phase (in units of π).
 ## `rx`
 
 ```python
-rx(b: GraphRepresentation, qubit: int) -> None
+rx(builder: GraphBuilder, qubit: int) -> None
 ```
 
 X-basis reset.
 
-Forces each target qubit into the |+\> state by silently measuring it in the X basis
-and applying a Z gate if it ended up in the |-\> state.
+Forces the qubit into the |+\> state: a Z-basis reset followed by H. The reset
+traces out the old state, which does not depend on the basis.
 
 
 ## `ry`
 
 ```python
-ry(b: GraphRepresentation, qubit: int) -> None
+ry(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Y-basis reset.
 
-Forces each target qubit into the |i\> state by silently measuring it in the Y basis
-and applying an X gate if it ended up in the |-i\> state.
+Forces the qubit into the |i\> state: a Z-basis reset followed by H_YZ. The
+reset traces out the old state, which does not depend on the basis.
 
 
 ## `s`
 
 ```python
-s(b: GraphRepresentation, qubit: int) -> None
+s(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply S gate (π/2 Z rotation).
@@ -683,7 +784,7 @@ Apply S gate (π/2 Z rotation).
 ## `s_dag`
 
 ```python
-s_dag(b: GraphRepresentation, qubit: int) -> None
+s_dag(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply S† gate (-π/2 Z rotation).
@@ -692,7 +793,7 @@ Apply S† gate (-π/2 Z rotation).
 ## `spp`
 
 ```python
-spp(b: GraphRepresentation, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], dagger: bool = False) -> None
+spp(builder: GraphBuilder, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], dagger: bool = False) -> None
 ```
 
 Apply exp(-i pi/4 P) (up to global phase) for a Pauli product P.
@@ -702,7 +803,7 @@ Phases the -1 eigenspace of P by i (or -i if dagger). For a single qubit,
 
 **Parameters:**
 
-- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `builder` (`GraphBuilder`) — The graph builder to modify.
 - `paulis` (`list[tuple[Literal['X', 'Y', 'Z'], int]]`) — List of (pauli_type, qubit) pairs defining the Pauli product P.
 - `dagger` (`bool`) — If True, apply exp(+i pi/4 P) (phase by -i) instead.
 
@@ -710,7 +811,7 @@ Phases the -1 eigenspace of P by i (or -i if dagger). For a single qubit,
 ## `sqrt_x`
 
 ```python
-sqrt_x(b: GraphRepresentation, qubit: int) -> None
+sqrt_x(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply √X gate (π/2 X rotation).
@@ -719,7 +820,7 @@ Apply √X gate (π/2 X rotation).
 ## `sqrt_x_dag`
 
 ```python
-sqrt_x_dag(b: GraphRepresentation, qubit: int) -> None
+sqrt_x_dag(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply √X† gate (-π/2 X rotation).
@@ -728,7 +829,7 @@ Apply √X† gate (-π/2 X rotation).
 ## `sqrt_xx`
 
 ```python
-sqrt_xx(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+sqrt_xx(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Phases the -1 eigenspace of the XX observable by i.
@@ -737,7 +838,7 @@ Phases the -1 eigenspace of the XX observable by i.
 ## `sqrt_xx_dag`
 
 ```python
-sqrt_xx_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+sqrt_xx_dag(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Phases the -1 eigenspace of the XX observable by -i.
@@ -746,7 +847,7 @@ Phases the -1 eigenspace of the XX observable by -i.
 ## `sqrt_y`
 
 ```python
-sqrt_y(b: GraphRepresentation, qubit: int) -> None
+sqrt_y(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply √Y gate (π/2 Y rotation).
@@ -755,7 +856,7 @@ Apply √Y gate (π/2 Y rotation).
 ## `sqrt_y_dag`
 
 ```python
-sqrt_y_dag(b: GraphRepresentation, qubit: int) -> None
+sqrt_y_dag(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply √Y† gate (-π/2 Y rotation).
@@ -764,7 +865,7 @@ Apply √Y† gate (-π/2 Y rotation).
 ## `sqrt_yy`
 
 ```python
-sqrt_yy(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+sqrt_yy(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Phases the -1 eigenspace of the YY observable by i.
@@ -773,34 +874,16 @@ Phases the -1 eigenspace of the YY observable by i.
 ## `sqrt_yy_dag`
 
 ```python
-sqrt_yy_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+sqrt_yy_dag(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Phases the -1 eigenspace of the YY observable by -i.
 
 
-## `sqrt_z`
-
-```python
-sqrt_z(b: GraphRepresentation, qubit: int) -> None
-```
-
-Apply √Z gate (alias for S gate).
-
-
-## `sqrt_z_dag`
-
-```python
-sqrt_z_dag(b: GraphRepresentation, qubit: int) -> None
-```
-
-Apply √Z† gate (alias for S† gate).
-
-
 ## `sqrt_zz`
 
 ```python
-sqrt_zz(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+sqrt_zz(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Phases the -1 eigenspace of the ZZ observable by i.
@@ -809,7 +892,7 @@ Phases the -1 eigenspace of the ZZ observable by i.
 ## `sqrt_zz_dag`
 
 ```python
-sqrt_zz_dag(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+sqrt_zz_dag(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Phases the -1 eigenspace of the ZZ observable by -i.
@@ -818,7 +901,7 @@ Phases the -1 eigenspace of the ZZ observable by -i.
 ## `swap`
 
 ```python
-swap(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+swap(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Apply SWAP gate.
@@ -827,7 +910,7 @@ Apply SWAP gate.
 ## `swapcx`
 
 ```python
-swapcx(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+swapcx(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Apply SWAP then CX.
@@ -836,7 +919,7 @@ Apply SWAP then CX.
 ## `swapcz`
 
 ```python
-swapcz(b: GraphRepresentation, qubit1: int, qubit2: int) -> None
+swapcz(builder: GraphBuilder, qubit1: int, qubit2: int) -> None
 ```
 
 Apply SWAP then CZ.
@@ -845,7 +928,7 @@ Apply SWAP then CZ.
 ## `t`
 
 ```python
-t(b: GraphRepresentation, qubit: int) -> None
+t(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply T gate (π/4 Z rotation).
@@ -854,25 +937,16 @@ Apply T gate (π/4 Z rotation).
 ## `t_dag`
 
 ```python
-t_dag(b: GraphRepresentation, qubit: int) -> None
+t_dag(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply T† gate (-π/4 Z rotation).
 
 
-## `tick`
-
-```python
-tick(b: GraphRepresentation) -> None
-```
-
-Add a tick to the circuit (align all qubits to same row).
-
-
 ## `tpp`
 
 ```python
-tpp(b: GraphRepresentation, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], dagger: bool = False) -> None
+tpp(builder: GraphBuilder, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], dagger: bool = False) -> None
 ```
 
 Apply exp(-i pi/8 P) (up to global phase) for a Pauli product P.
@@ -882,7 +956,7 @@ For a single qubit, ``TPP Z0`` is the T gate and ``TPP_DAG Z0`` is T_DAG.
 
 **Parameters:**
 
-- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `builder` (`GraphBuilder`) — The graph builder to modify.
 - `paulis` (`list[tuple[Literal['X', 'Y', 'Z'], int]]`) — List of (pauli_type, qubit) pairs defining the Pauli product P.
 - `dagger` (`bool`) — If True, apply exp(+i pi/8 P) (phase by exp(-i pi/4)) instead.
 
@@ -890,7 +964,7 @@ For a single qubit, ``TPP Z0`` is the T gate and ``TPP_DAG Z0`` is T_DAG.
 ## `u3`
 
 ```python
-u3(b: GraphRepresentation, qubit: int, theta: Fraction, phi: Fraction, lambda_: Fraction) -> None
+u3(builder: GraphBuilder, qubit: int, theta: Fraction, phi: Fraction, lambda_: Fraction) -> None
 ```
 
 Apply U3 gate: U3(θ,φ,λ) = R_Z(φ)·R_Y(θ)·R_Z(λ).
@@ -899,7 +973,7 @@ Apply U3 gate: U3(θ,φ,λ) = R_Z(φ)·R_Y(θ)·R_Z(λ).
 ## `x`
 
 ```python
-x(b: GraphRepresentation, qubit: int) -> None
+x(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply Pauli X gate.
@@ -908,25 +982,16 @@ Apply Pauli X gate.
 ## `x_error`
 
 ```python
-x_error(b: GraphRepresentation, qubit: int, p: float) -> None
+x_error(builder: GraphBuilder, qubit: int, p: float) -> None
 ```
 
 Apply X error with probability p.
 
 
-## `x_phase`
-
-```python
-x_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None
-```
-
-Apply X-axis rotation to qubit. This is equivalent to `r_x` up to a phase.
-
-
 ## `xcx`
 
 ```python
-xcx(b: GraphRepresentation, control: int, target: int) -> None
+xcx(builder: GraphBuilder, control: int, target: int) -> None
 ```
 
 X-controlled X gate. Applies X to target if control is in |-\> state.
@@ -935,7 +1000,7 @@ X-controlled X gate. Applies X to target if control is in |-\> state.
 ## `xcy`
 
 ```python
-xcy(b: GraphRepresentation, control: int, target: int) -> None
+xcy(builder: GraphBuilder, control: int, target: int) -> None
 ```
 
 X-controlled Y gate. Applies Y to target if control is in |-\> state.
@@ -944,7 +1009,7 @@ X-controlled Y gate. Applies Y to target if control is in |-\> state.
 ## `xcz`
 
 ```python
-xcz(b: GraphRepresentation, control: int, target: int, classically_controlled: list[bool] | None = None) -> None
+xcz(builder: GraphBuilder, control: int, target: int, classically_controlled: list[bool] | None = None) -> None
 ```
 
 X-controlled Z gate. Applies Z to target if control is in |-\> state.
@@ -953,7 +1018,7 @@ X-controlled Z gate. Applies Z to target if control is in |-\> state.
 ## `y`
 
 ```python
-y(b: GraphRepresentation, qubit: int) -> None
+y(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply Pauli Y gate.
@@ -962,7 +1027,7 @@ Apply Pauli Y gate.
 ## `y_error`
 
 ```python
-y_error(b: GraphRepresentation, qubit: int, p: float) -> None
+y_error(builder: GraphBuilder, qubit: int, p: float) -> None
 ```
 
 Apply Y error with probability p.
@@ -971,7 +1036,7 @@ Apply Y error with probability p.
 ## `ycx`
 
 ```python
-ycx(b: GraphRepresentation, control: int, target: int) -> None
+ycx(builder: GraphBuilder, control: int, target: int) -> None
 ```
 
 Y-controlled X gate. Applies X to target if control is in |-i\> state.
@@ -980,7 +1045,7 @@ Y-controlled X gate. Applies X to target if control is in |-i\> state.
 ## `ycy`
 
 ```python
-ycy(b: GraphRepresentation, control: int, target: int) -> None
+ycy(builder: GraphBuilder, control: int, target: int) -> None
 ```
 
 Y-controlled Y gate. Applies Y to target if control is in |-i\> state.
@@ -989,7 +1054,7 @@ Y-controlled Y gate. Applies Y to target if control is in |-i\> state.
 ## `ycz`
 
 ```python
-ycz(b: GraphRepresentation, control: int, target: int, classically_controlled: list[bool] | None = None) -> None
+ycz(builder: GraphBuilder, control: int, target: int, classically_controlled: list[bool] | None = None) -> None
 ```
 
 Y-controlled Z gate. Applies Z to target if control is in |-i\> state.
@@ -998,7 +1063,7 @@ Y-controlled Z gate. Applies Z to target if control is in |-i\> state.
 ## `z`
 
 ```python
-z(b: GraphRepresentation, qubit: int) -> None
+z(builder: GraphBuilder, qubit: int) -> None
 ```
 
 Apply Pauli Z gate.
@@ -1007,16 +1072,7 @@ Apply Pauli Z gate.
 ## `z_error`
 
 ```python
-z_error(b: GraphRepresentation, qubit: int, p: float) -> None
+z_error(builder: GraphBuilder, qubit: int, p: float) -> None
 ```
 
 Apply Z error with probability p.
-
-
-## `z_phase`
-
-```python
-z_phase(b: GraphRepresentation, qubit: int, phase: Fraction) -> None
-```
-
-Apply Z-axis phase rotation to qubit. This is equivalent to `r_z` up to a phase.

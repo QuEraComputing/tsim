@@ -3,47 +3,213 @@ title: "parse"
 description: "Parser for converting stim circuits to ZX graph representations."
 ---
 
-## class `GraphRepresentation`
+## class `GraphBuilder`
 
 ```python
-GraphRepresentation(graph: GraphS = GraphS(), rec: list[int] = list(), silent_rec: list[int] = list(), detectors: list[int] = list(), observables_dict: dict[int, int] = dict(), first_vertex: dict[int, int] = dict(), last_vertex: dict[int, int] = dict(), channel_probs: list[np.ndarray] = list(), correlated_error_probs: list[float] = list(), num_error_bits: int = 0, num_correlated_error_bits: int = 0, track_classical_wires: bool = False)
+GraphBuilder()
 ```
 
-ZX graph built from a stim circuit.
+Builds the ZX graph of a stim circuit, with quantum wires and classical records.
 
-Contains the graph and all auxiliary data needed for sampling.
+Qubit wires are quantum; measurement records, detectors and observables are
+classical spiders, read through the properties below (their labels are only
+for display). ``build`` returns the finished open or closed graph.
 
 
-## `correlated_error`
+### `add_channel`
 
 ```python
-correlated_error(b: GraphRepresentation, qubits: list[int], types: list[Literal['X', 'Y', 'Z']], p: float) -> None
+add_channel(probs: np.ndarray) -> int
+```
+
+Record a noise channel and allocate its error bits.
+
+``probs`` is the channel's distribution over its ``k`` error bits, so it
+has ``2^k`` entries. Returns the first bit; the channel owns bits
+``first … first + k − 1``. Raises ``ValueError`` if the number of
+entries is not a power of two.
+
+
+### `add_detector`
+
+```python
+add_detector(record_indices: list[int]) -> None
+```
+
+Add a detector that XORs the given measurement records.
+
+
+### `advance`
+
+```python
+advance(qubit: int) -> None
+```
+
+Move the wire's end one column (the identity gate).
+
+
+### `build`
+
+```python
+build(closed: bool, outputs: Outputs) -> Graph
+```
+
+Return the circuit's graph with its wires closed or given ports.
+
+With ``closed=False``, qubit ``q``'s wire start, if it is still a
+boundary, gets input port ``-(q + 1)`` and its end gets output port
+``q``. With ``closed=True``, wire starts that are still boundaries become
+``|0⟩`` (a quantum X(0) spider) and wire ends are discarded. Helper lanes
+(negative indices, used by MPP, MPAD and heralded channels) are always
+discarded at the end.
+
+``outputs`` picks the classical output boundaries, whose ports follow the
+qubit outputs (from 0 when closed):
+
+- ``"detectors"``: one per detector, then one per observable; the
+  ``det[i]`` / ``obs[k]`` labels move to them.
+- ``"records"``: one per measurement record; the ``rec[i]`` labels move
+  to them.
+- ``"none"``: no classical outputs.
+
+Detector and observable spiders are removed unless they are the outputs.
+In open graphs, measurement spiders that are not outputs keep their
+``rec[i]`` / ``m[i]`` labels; closed graphs are meant to be reduced, so
+only their output boundaries carry labels, which survive reduction.
+
+An open graph's tensor is the circuit's channel together with the output
+bits; for bound error parameters, a closed graph's tensor is the joint
+distribution of its outputs. The builder is unchanged, so it can build
+again.
+
+
+### `correlated_error`
+
+```python
+correlated_error(qubits: list[int], types: list[Literal['X', 'Y', 'Z']], p: float) -> None
 ```
 
 Add a correlated error term affecting multiple qubits with given Pauli types.
 
+The term is the next link of the pending chain. It flips one noise spider
+per Pauli component (X or Z on a qubit), reusing the chain's spider of
+that component while nothing else has acted on the wire since (see
+``_chain_spider``). The spiders get their error bits in
+``finalize_correlated_error``, which must run before the graph is built.
+Raises ``ValueError``, and changes nothing, if ``qubits`` and ``types``
+differ in length.
 
-## `detector`
+
+### `cx`
 
 ```python
-detector(b: GraphRepresentation, rec: list[int], args = ()) -> None
+cx(control: int, target: int, classically_controlled: list[bool] | None = None) -> None
 ```
 
-Add detector annotation that XORs the given measurement record bits.
+Apply CNOT; ``classically_controlled`` marks record targets (``rec[-k]``).
 
 
-## `finalize_correlated_error`
+### `cz`
 
 ```python
-finalize_correlated_error(b: GraphRepresentation) -> None
+cz(control: int, target: int, classically_controlled: list[bool] | None = None) -> None
+```
+
+Apply CZ; ``classically_controlled`` marks record targets (``rec[-k]``).
+
+
+### `finalize_correlated_error`
+
+```python
+finalize_correlated_error() -> None
 ```
 
 Finalize the current correlated error channel.
 
-1. Rename all "c\{i\}" phases to "e\{num_error_bits + i\}" in the graph
-2. Compute and append the 2^k probability array to channel_probs
-3. Increment num_error_bits by k
-4. Reset num_correlated_error_bits to 0 and correlated_error_probs to []
+A chain of ``k`` links on ``c`` live noise spiders (those that some link
+flips) becomes a channel over ``min(c, k)`` error bits: one bit per
+spider if ``c \< k``, so that link ``j`` sets the bits of the spiders it
+flips, and one bit per link otherwise, so that a spider's phase is the
+parity of the links that flip it. Clears the pending chain, also when it
+raises ``ValueError`` because the channel would have more than
+``MAX_CORRELATED_ERROR_BITS`` bits.
+
+
+### `hadamard`
+
+```python
+hadamard(qubit: int) -> None
+```
+
+Apply a Hadamard gate by toggling the wire's trailing edge.
+
+
+### `include_observable`
+
+```python
+include_observable(record_indices: list[int], index: int) -> None
+```
+
+XOR the given measurement records into observable ``index``.
+
+The observable is created on first use, as in Stim's
+``OBSERVABLE_INCLUDE``; with no records, that is all this does.
+
+
+### `measure`
+
+```python
+measure(qubit: int, silent: bool = False) -> Vertex
+```
+
+Measure a qubit in the Z basis and record it as ``rec[i]``.
+
+A silent measurement is not recorded; it is labelled ``m[i]``. Returns
+the measurement's classical spider.
+
+
+### `reset`
+
+```python
+reset(qubit: int) -> None
+```
+
+Reset a qubit to ``|0⟩``.
+
+If the qubit does not yet have a lane, create one in the reset state.
+Otherwise, silently measure the existing lane to trace out the previous
+state before reconnecting the qubit in the reset state.
+
+
+### `spider`
+
+```python
+spider(qubit: int, vertex_type: VertexType, phase: Phase | Fraction | None = None, col: float | None = None) -> Vertex
+```
+
+Turn the trailing boundary of a qubit's wire into a quantum spider.
+
+The spider keeps the boundary's quantum domain, moves to column ``col``
+if given, and a new quantum boundary is appended after it. Returns the
+spider.
+
+
+### `swap`
+
+```python
+swap(qubit1: int, qubit2: int) -> None
+```
+
+Swap two wires by exchanging their ends (and rows).
+
+
+### `tick`
+
+```python
+tick() -> None
+```
+
+Align all wire ends to the same column.
 
 
 ## `is_t_tag`
@@ -58,14 +224,14 @@ Return whether a Stim tag encodes a tsim T-family gate.
 ## `mpad`
 
 ```python
-mpad(b: GraphRepresentation, value: int, p: float = 0) -> None
+mpad(builder: GraphBuilder, value: int, p: float = 0) -> None
 ```
 
 Pad measurement record with a fixed bit value.
 
 **Parameters:**
 
-- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `builder` (`GraphBuilder`) — The graph builder to modify.
 - `value` (`int`) — The bit value to record (0 or 1).
 - `p` (`float`) — Error probability for the recorded bit.
 
@@ -73,26 +239,17 @@ Pad measurement record with a fixed bit value.
 ## `mpp`
 
 ```python
-mpp(b: GraphRepresentation, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], invert: bool = False, p: float = 0) -> None
+mpp(builder: GraphBuilder, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], invert: bool = False, p: float = 0) -> None
 ```
 
 Measure a single Pauli product.
 
 **Parameters:**
 
-- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `builder` (`GraphBuilder`) — The graph builder to modify.
 - `paulis` (`list[tuple[Literal['X', 'Y', 'Z'], int]]`) — List of (pauli_type, qubit) pairs defining the Pauli product.
 - `invert` (`bool`) — Whether to invert the measurement result.
 - `p` (`float`) — Measurement flip error probability.
-
-
-## `observable_include`
-
-```python
-observable_include(b: GraphRepresentation, rec: list[int], idx: int) -> None
-```
-
-Add observable annotation that XORs the given measurement record bits.
 
 
 ## `parse_parametric_tag`
@@ -103,7 +260,8 @@ parse_parametric_tag(instruction: stim.CircuitInstruction) -> tuple[str, dict[st
 
 Parse the parametric tag on an instruction (e.g. ``I[R_Z(theta=0.3*pi)]``).
 
-Supports gates: R_Z, R_X, R_Y, U3.
+Supports gates: R_Z, R_X, R_Y, R_PAULI, U3. Angles are in units of pi and may
+be given by keyword (``R_Z(theta=0.3*pi)``) or by position (``R_Z(0.3)``).
 
 **Parameters:**
 
@@ -117,31 +275,56 @@ Supports gates: R_Z, R_X, R_Y, U3.
 
 **Raises:**
 
-- `ValueError` — When the tag looks parametric (matches ``name(...)``) but is malformed: a parameter value does not parse, the gate name is unknown, or the parameter keys do not match the expected set for the gate.
+- `ValueError` — When the tag looks parametric (matches ``name(...)``) but is malformed: a parameter value does not parse, the gate name is unknown, or the parameters do not match the expected set for the gate.
+
+
+## `parse_parametric_tag_text`
+
+```python
+parse_parametric_tag_text(tag: str) -> tuple[str, dict[str, Fraction]] | None
+```
+
+Parse a parametric gate tag such as ``R_Z(theta=0.3*pi)`` or ``R_Z(0.3)``.
+
+Angles are in units of pi. They are given either all by keyword with an
+explicit ``*pi`` suffix, or all by position (``U3`` takes theta, phi, lambda
+in that order, as in the shorthand).
+
+**Parameters:**
+
+- `tag` (`str`) — The stim instruction tag.
+
+**Returns:**
+
+- `tuple[str, dict[str, Fraction]] | None` — Tuple of (gate_name, params_dict), or ``None`` when the tag does not have
+- `tuple[str, dict[str, Fraction]] | None` — the ``name(...)`` shape.
+
+**Raises:**
+
+- `ValueError` — When the tag has the ``name(...)`` shape but is malformed: an unknown gate name, an unparsable angle, or the wrong parameters.
 
 
 ## `parse_stim_circuit`
 
 ```python
-parse_stim_circuit(stim_circuit: stim.Circuit, track_classical_wires: bool = False) -> GraphRepresentation
+parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder
 ```
 
-Parse a stim circuit into a GraphRepresentation.
+Parse a stim circuit into a GraphBuilder.
 
 **Parameters:**
 
 - `stim_circuit` (`stim.Circuit`) — The stim circuit to convert.
-- `track_classical_wires` (`bool`) — Whether to track classical wires.
 
 **Returns:**
 
-- `GraphRepresentation` — A GraphRepresentation containing the ZX graph and all auxiliary data.
+- `GraphBuilder` — A GraphBuilder containing the ZX graph and all auxiliary data.
 
 
 ## `r_pauli`
 
 ```python
-r_pauli(b: GraphRepresentation, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], theta: Fraction, dagger: bool = False) -> None
+r_pauli(builder: GraphBuilder, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], theta: Fraction, dagger: bool = False) -> None
 ```
 
 Apply exp(-i theta pi/2 P) for a Pauli product P, with theta in half-turns.
@@ -153,7 +336,7 @@ exp(+i theta pi/2 P) instead.
 
 **Parameters:**
 
-- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `builder` (`GraphBuilder`) — The graph builder to modify.
 - `paulis` (`list[tuple[Literal['X', 'Y', 'Z'], int]]`) — List of (pauli_type, qubit) pairs defining the Pauli product P.
 - `theta` (`Fraction`) — Rotation angle in half-turns (units of pi).
 - `dagger` (`bool`) — If True, negate the rotation angle.
@@ -162,7 +345,7 @@ exp(+i theta pi/2 P) instead.
 ## `r_x`
 
 ```python
-r_x(b: GraphRepresentation, qubit: int, phase: Fraction) -> None
+r_x(builder: GraphBuilder, qubit: int, phase: Fraction) -> None
 ```
 
 Apply R_X rotation gate with given phase (in units of π).
@@ -171,7 +354,7 @@ Apply R_X rotation gate with given phase (in units of π).
 ## `r_y`
 
 ```python
-r_y(b: GraphRepresentation, qubit: int, phase: Fraction) -> None
+r_y(builder: GraphBuilder, qubit: int, phase: Fraction) -> None
 ```
 
 Apply R_Y rotation gate with given phase (in units of π).
@@ -180,7 +363,7 @@ Apply R_Y rotation gate with given phase (in units of π).
 ## `r_z`
 
 ```python
-r_z(b: GraphRepresentation, qubit: int, phase: Fraction) -> None
+r_z(builder: GraphBuilder, qubit: int, phase: Fraction) -> None
 ```
 
 Apply R_Z rotation gate with given phase (in units of π).
@@ -189,7 +372,7 @@ Apply R_Z rotation gate with given phase (in units of π).
 ## `spp`
 
 ```python
-spp(b: GraphRepresentation, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], dagger: bool = False) -> None
+spp(builder: GraphBuilder, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], dagger: bool = False) -> None
 ```
 
 Apply exp(-i pi/4 P) (up to global phase) for a Pauli product P.
@@ -199,24 +382,15 @@ Phases the -1 eigenspace of P by i (or -i if dagger). For a single qubit,
 
 **Parameters:**
 
-- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `builder` (`GraphBuilder`) — The graph builder to modify.
 - `paulis` (`list[tuple[Literal['X', 'Y', 'Z'], int]]`) — List of (pauli_type, qubit) pairs defining the Pauli product P.
 - `dagger` (`bool`) — If True, apply exp(+i pi/4 P) (phase by -i) instead.
-
-
-## `tick`
-
-```python
-tick(b: GraphRepresentation) -> None
-```
-
-Add a tick to the circuit (align all qubits to same row).
 
 
 ## `tpp`
 
 ```python
-tpp(b: GraphRepresentation, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], dagger: bool = False) -> None
+tpp(builder: GraphBuilder, paulis: list[tuple[Literal['X', 'Y', 'Z'], int]], dagger: bool = False) -> None
 ```
 
 Apply exp(-i pi/8 P) (up to global phase) for a Pauli product P.
@@ -226,7 +400,7 @@ For a single qubit, ``TPP Z0`` is the T gate and ``TPP_DAG Z0`` is T_DAG.
 
 **Parameters:**
 
-- `b` (`GraphRepresentation`) — The graph representation to modify.
+- `builder` (`GraphBuilder`) — The graph builder to modify.
 - `paulis` (`list[tuple[Literal['X', 'Y', 'Z'], int]]`) — List of (pauli_type, qubit) pairs defining the Pauli product P.
 - `dagger` (`bool`) — If True, apply exp(+i pi/8 P) (phase by exp(-i pi/4)) instead.
 
@@ -234,7 +408,7 @@ For a single qubit, ``TPP Z0`` is the T gate and ``TPP_DAG Z0`` is T_DAG.
 ## `u3`
 
 ```python
-u3(b: GraphRepresentation, qubit: int, theta: Fraction, phi: Fraction, lambda_: Fraction) -> None
+u3(builder: GraphBuilder, qubit: int, theta: Fraction, phi: Fraction, lambda_: Fraction) -> None
 ```
 
 Apply U3 gate: U3(θ,φ,λ) = R_Z(φ)·R_Y(θ)·R_Z(λ).

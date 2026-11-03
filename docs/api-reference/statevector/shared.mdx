@@ -1,0 +1,209 @@
+---
+title: "shared"
+description: "Trajectory-sharing executor for statevector components, on the CPU with numba."
+---
+
+A shot reaches a component's amplitudes only through its rotation signs, which
+read parities of its f-bits (the component's *key*) and the outcomes of earlier
+measurements. A postselected output prunes a shot through its f-part and its
+outcomes. The noise sampler writes each shot's key and output f-parts into the
+shot's words (``tsim.statevector.shots``), so this executor never sees f-bits.
+
+Lanes. The shots of a chunk with equal keys and equal f-parts of the
+postselected outputs share a lane: its amplitudes and its *lane symbols*, the key
+bits, then those f-parts, then the branch bits of the lane's outcomes.
+``lane_program`` rewrites the rotation signs, the pruning tests and the outputs'
+branch parts over lane symbols.
+
+Outcomes. At a measurement every live shot compares its own random number, drawn
+from a counter-based stream by its index and the action, with its lane's chance
+of outcome 1. A lane splits into one lane per outcome its shots drew. A shot's
+outcomes so depend only on the seed, its index and its key: not on the other
+shots, the chunk, the threads or whether lanes are shared at all.
+
+Pruning. After the action that sets a postselected output's last branch bit (or
+before the first action, for an output of f-bits only) the lanes in which it reads
+1 die. Their shots get their outputs there, from the outcomes drawn so far, and
+those that need a later branch bit read False.
+
+Outputs. Each shot XORs the branch part of its outputs, from its last lane, and
+its own fair coins: the dormant measurements that no sign and no postselected
+output reads, drawn per shot.
+
+## class `KeyBasis`
+
+```python
+KeyBasis()
+```
+
+A component's key: parities of its f-bits that its rotation signs read.
+
+
+## class `LaneProgram`
+
+```python
+LaneProgram()
+```
+
+A component's tape over lane symbols, for one postselection mask.
+
+Lane symbols are ``lane_words`` uint64 words: the key's words, then the shot
+words that hold postselected outputs, masked to them (so they hold their
+f-parts), then the branch bits of the measurements that split lanes.
+
+
+## class `StatevectorComponent`
+
+```python
+StatevectorComponent(output_indices: tuple[int, ...], width: int, tape: Tape)
+```
+
+A component compiled for ``strategy="active_statevector"``.
+
+Its lanes hold ``2^width`` complex128 amplitudes.
+
+
+## `find_basis`
+
+```python
+find_basis(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]
+```
+
+Decompose a set of binary vectors into a basis subset and a transformation matrix over GF(2).
+
+Given a set of vectors V, this function finds a maximal linearly independent subset B
+(the basis) and computes a transformation matrix T such that the original vectors can be
+reconstructed from the basis via matrix multiplication over GF(2):
+
+V = T @ B (mod 2)
+
+**Parameters:**
+
+- `vectors` (`np.ndarray`) — Input binary vectors of shape `(N, D)`. Can be a list of lists or a numpy array. Elements should be 0 or 1 (or convertible to them).
+
+**Returns:**
+
+- `tuple[np.ndarray, np.ndarray]` — A tuple `(basis, transform)` where: basis: The subset of independent vectors, shape `(K, D)`, where `K` is the rank. transform: The transformation matrix, shape `(N, K)`.
+
+
+## `jit`
+
+```python
+jit(function: Callable | None = None, parallel: bool = False, contract: bool = False) -> Callable
+```
+
+Compile ``function`` with numba, cached on disk where numba can write.
+
+The compiled function releases the GIL, so Python threads can run it at once.
+Numba refuses to define a cached function when no cache directory is
+writable (e.g. a read-only install without ``NUMBA_CACHE_DIR``), so such
+installs compile in every process instead. With ``contract``, LLVM may fuse
+the function's multiplies and adds.
+
+
+## `kernel`
+
+```python
+kernel(function: Callable) -> Callable
+```
+
+Compile ``function`` serially and in parallel; ``run(work, *args)`` picks one.
+
+``work`` estimates the call's cost in simple operations; calls below
+``PARALLEL_WORK`` run serially, and so do calls on the worker threads of
+``run_tasks`` and calls while numba has one thread. In the serial
+compilation every ``numba.prange`` is a plain range, so both compute the
+same result.
+
+
+## `key_basis`
+
+```python
+key_basis(component: StatevectorComponent) -> KeyBasis
+```
+
+Return a basis of the f-parts of the component's rotation signs.
+
+
+## `lane_bytes`
+
+```python
+lane_bytes(component: StatevectorComponent, key: KeyBasis) -> int
+```
+
+Return the peak memory of one lane of ``run_lanes``.
+
+That is three rows of amplitudes (the old and the new array while lanes grow),
+two rows of lane symbols (its own, and its output pattern while it is
+pruned) and 64 bytes of per-lane scratch.
+
+
+## `lane_program`
+
+```python
+lane_program(component: StatevectorComponent, key: KeyBasis, key_start: int, postselected: np.ndarray) -> LaneProgram
+```
+
+Return the component's tape over lane symbols.
+
+**Parameters:**
+
+- `component` (`StatevectorComponent`) — The compiled component.
+- `key` (`KeyBasis`) — Its key basis.
+- `key_start` (`int`) — First word of the key in the shot words.
+- `postselected` (`np.ndarray`) — Whether each output slot is postselected, ``(O,)``.
+
+
+## `max_lane_words`
+
+```python
+max_lane_words(component: StatevectorComponent, key: KeyBasis) -> int
+```
+
+Return the most words of lane symbols that ``lane_program`` gives a component.
+
+That is under any mask: the key's words, every word of its outputs, and a bit
+per measurement.
+
+
+## `pack_bits`
+
+```python
+pack_bits(bits: np.ndarray, num_words: int) -> np.ndarray
+```
+
+Return booleans as uint64 words: bit i is bit i % 64 of word i // 64.
+
+
+## `run_lanes`
+
+```python
+run_lanes(words, alive, first_shot, seed, share, program, poison, parallel_work, threads)
+```
+
+Run one component on the alive shots of a chunk and add its outputs.
+
+``words`` holds the chunk's shot words (row ``s`` is shot ``first_shot + s``)
+and ``program`` is the component's ``LaneProgram``. The shots' output bits get
+the component's branch parts and coins, and those that a pruning hides are
+cleared. A pruned shot leaves ``alive``, so later components skip it. The
+amplitude loops run in up to ``4 * threads`` parallel chunks once their work
+reaches ``parallel_work``.
+
+**Returns:**
+
+- ``(deviation, groups, peak, size, dead)``: the largest normalization
+- deviation, the first lanes, the most lanes at once, the live lanes at the
+- end and the pruned ones.
+
+
+## `splitmix64`
+
+```python
+splitmix64(state: np.uint64) -> tuple[np.uint64, np.uint64]
+```
+
+Advance a SplitMix64 state; return it and the next 64-bit output.
+
+``splitmix64(seed + n * GOLDEN)`` is the stream's ``n + 1``-th output, so a
+kernel can also read the stream at any index.

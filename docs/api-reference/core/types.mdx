@@ -25,7 +25,7 @@ are then combined according to output_indices.
 ## class `CompiledProgram`
 
 ```python
-CompiledProgram(components: tuple[CompiledComponent, ...], direct_f_indices: Array, direct_flips: Array, output_order: Array, output_reindex: Array | None, num_outputs: int, num_detectors: int)
+CompiledProgram(components: tuple[CompiledComponent | StatevectorComponent, ...], direct_f_indices: np.ndarray, direct_flips: np.ndarray, output_order: np.ndarray, output_reindex: np.ndarray | None, num_outputs: int, num_detectors: int)
 ```
 
 A fully compiled circuit program ready for sampling.
@@ -42,24 +42,114 @@ CompiledScalarGraphs()
 
 JAX-compatible compiled representation of a list of scalar ZX graphs.
 
-The scalar for each graph is a product of four term families, multiplied by
-a per-graph ``ScalarPrefactor`` (global phase, floatfactor, ``2^power2``,
-optional approximate complex floatfactor). All arrays are static-shaped so
-the whole struct can be traced under ``jax.jit``.
+The scalar for each graph is a product of four exact term families and the
+floating-point ``FloatTerms`` family, multiplied by a per-graph
+``ScalarPrefactor`` (an exact Dyadic factor with its ``2^power2``, and an
+approximate complex factor for angles that are not multiples of π/4). All
+arrays are static-shaped so the whole struct can be traced under ``jax.jit``.
+
+
+## class `ParamLayout`
+
+```python
+ParamLayout(num_errors: int)
+```
+
+Integer IDs for Tsim's parameters, fixed by the number of error bits.
+
+Error bit ``j`` has ID ``j``, so error IDs are error indices. Above them,
+error-basis and output bits are interleaved: basis bit ``j`` has ID
+``num_errors + 2j`` and output bit ``i`` has ID ``num_errors + 2i + 1``. An
+ID therefore means the same thing at every pipeline stage, whatever the
+numbers of basis and output bits; names exist only for drawing.
+
+
+### `basis`
+
+```python
+basis(j: int) -> int
+```
+
+Return the ID of error-basis bit ``j``.
+
+
+### `basis_index`
+
+```python
+basis_index(param: int) -> int
+```
+
+Return ``j`` for the error-basis bit whose ID is ``param``.
+
+
+### `error`
+
+```python
+error(j: int) -> int
+```
+
+Return the ID of error bit ``j``.
+
+
+### `kind`
+
+```python
+kind(param: int) -> tuple[ParamKind, int]
+```
+
+Return the kind of the bit with ID ``param`` and its index.
+
+
+### `name`
+
+```python
+name(param: int) -> str
+```
+
+Return the display name ``e\{j\}``, ``f\{j\}`` or ``m\{i\}`` of ``param``.
+
+
+### `names`
+
+```python
+names(params: Iterable[int]) -> dict[int, str]
+```
+
+Return the display names of ``params``, by ID.
+
+
+### `output`
+
+```python
+output(i: int) -> int
+```
+
+Return the ID of output bit ``i``.
 
 
 ## class `SamplingGraph`
 
 ```python
-SamplingGraph(graph: BaseGraph, error_transform: np.ndarray, channel_probs: list[np.ndarray], num_outputs: int, num_detectors: int)
+SamplingGraph(graph: Graph, error_transform: np.ndarray, channel_probs: list[np.ndarray], num_outputs: int, num_detectors: int, layout: ParamLayout)
 ```
 
 Result of the graph preparation phase for sampling.
 
 Contains all data structures needed for sampling. This represents a circuit
 that has been:
-1. Parsed from stim format
-2. Converted to a ZX graph
-3. Doubled (composed with adjoint)
-4. Reduced via zx.full_reduce
-5. Had its error basis transformed (Gaussian elimination: e → f)
+1. Parsed from stim format into a quantum/classical ZX graph (quantum
+   wires, classical measurement records)
+2. Closed into a sampling graph with classical output boundaries
+3. Reduced via zxparam's full_reduce
+4. Had its error basis transformed (Gaussian elimination: e → f)
+
+
+## class `StatevectorComponent`
+
+```python
+StatevectorComponent(output_indices: tuple[int, ...], width: int, tape: Tape)
+```
+
+A component compiled for ``strategy="active_statevector"``.
+
+Its lanes hold ``2^width`` complex128 amplitudes.

@@ -1,0 +1,81 @@
+---
+title: "params"
+description: "Integer parameter IDs for error bits, error-basis bits and output bits."
+---
+
+## class `ParamLayout`
+
+```python
+ParamLayout(num_errors: int)
+```
+
+Integer IDs for Tsim's parameters, fixed by the number of error bits.
+
+Error bit ``j`` has ID ``j``, so error IDs are error indices. Above them,
+error-basis and output bits are interleaved: basis bit ``j`` has ID
+``num_errors + 2j`` and output bit ``i`` has ID ``num_errors + 2i + 1``. An
+ID therefore means the same thing at every pipeline stage, whatever the
+numbers of basis and output bits; names exist only for drawing.
+
+
+### `basis`
+
+```python
+basis(j: int) -> int
+```
+
+Return the ID of error-basis bit ``j``.
+
+
+### `basis_index`
+
+```python
+basis_index(param: int) -> int
+```
+
+Return ``j`` for the error-basis bit whose ID is ``param``.
+
+
+### `error`
+
+```python
+error(j: int) -> int
+```
+
+Return the ID of error bit ``j``.
+
+
+### `kind`
+
+```python
+kind(param: int) -> tuple[ParamKind, int]
+```
+
+Return the kind of the bit with ID ``param`` and its index.
+
+
+### `name`
+
+```python
+name(param: int) -> str
+```
+
+Return the display name ``e\{j\}``, ``f\{j\}`` or ``m\{i\}`` of ``param``.
+
+
+### `names`
+
+```python
+names(params: Iterable[int]) -> dict[int, str]
+```
+
+Return the display names of ``params``, by ID.
+
+
+### `output`
+
+```python
+output(i: int) -> int
+```
+
+Return the ID of output bit ``i``.

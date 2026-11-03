@@ -1,0 +1,130 @@
+---
+title: "plan"
+description: "Fixed-width sampling plans."
+---
+
+``plan`` walks scheduled Pauli ops with a Clifford frame ``F``: a
+``stim.Tableau`` that maps Paulis of the ``|0…0⟩`` frame to virtual
+coordinates. Virtual coordinates ``0 … W-1`` are the axes of a dense array of
+``2^W`` amplitudes, each active or free (in ``|0⟩``); coordinates ``W … n-1``
+stay dormant (in ``|0⟩``). Each op becomes at most one action, and every sign an
+``AffineRow`` over the symbols: the component f-bits, then the branch bits of
+random measurements. A random measurement keeps the reference state on its
+``b = 0`` branch; its ``b = 1`` branch differs by a correction Pauli, which
+flips the sign of every later op it anticommutes with. Each output is an
+``AffineRow`` too: the measurement's sign, XOR its branch bit if it is random.
+
+## class `AffineRow`
+
+```python
+AffineRow(constant: bool, terms: frozenset[int])
+```
+
+The parity ``constant ⊕ (XOR of the symbols in terms)``.
+
+
+### `evaluate`
+
+```python
+evaluate(symbols: Sequence[int]) -> int
+```
+
+Return the parity's value for the given symbol bits.
+
+
+## class `MeasureActive`
+
+```python
+MeasureActive(x: int, z: int, pivot: int, branch: int)
+```
+
+Measure the Pauli ``x``, ``z`` on the array, then reset ``pivot`` to ``|0⟩``.
+
+The sampled eigenvalue bit becomes symbol ``branch``.
+
+
+## class `MeasureDormant`
+
+```python
+MeasureDormant(branch: int)
+```
+
+Sample a fair bit into symbol ``branch``.
+
+
+## class `PauliOps`
+
+```python
+PauliOps(kind: np.ndarray, x: np.ndarray, z: np.ndarray, angle: np.ndarray, sign: np.ndarray, slot: np.ndarray)
+```
+
+Rotations and measurements in the frame of the initial ``|0…0⟩`` state.
+
+Op ``j`` is the rotation ``exp(-iθ (-1)^s P)`` or the measurement of
+``(-1)^s P``, where ``P`` has the bit rows ``x[j]`` and ``z[j]`` (``Y``
+where both are set) and ``s`` is the parity of ``sign[j]`` against
+``[1, f_0, f_1, …]``. A measurement records its eigenvalue bit.
+
+
+### `take`
+
+```python
+take(order: np.ndarray) -> PauliOps
+```
+
+Return the operations in the given order.
+
+The result describes the same distribution when ``order`` keeps every
+pair of anticommuting operations in their original order.
+
+
+## class `Plan`
+
+```python
+Plan(width: int, num_f: int, actions: tuple[Action, ...], outputs: tuple[AffineRow, ...])
+```
+
+Actions on ``2^width`` amplitudes, and outputs over the symbols.
+
+
+## class `Rotate`
+
+```python
+Rotate(x: int, z: int, angle: float, sign: AffineRow)
+```
+
+Apply ``exp(-iθ (-1)^sign P)`` for the Pauli with W-bit masks ``x``, ``z``.
+
+
+## class `Schedule`
+
+```python
+Schedule(order: np.ndarray, width: int)
+```
+
+An order of the operations and the largest active width it reaches.
+
+
+## `anticommute`
+
+```python
+anticommute(x1: np.ndarray, z1: np.ndarray, x2: np.ndarray, z2: np.ndarray) -> np.ndarray
+```
+
+Return which Paulis ``(x1, z1)`` anticommute with which Paulis ``(x2, z2)``.
+
+Each row of an argument is a Pauli; a 1-D argument is one Pauli, whose axis
+the result drops.
+
+
+## `plan`
+
+```python
+plan(ops: PauliOps, schedule: Schedule) -> Plan
+```
+
+Return the fixed-width plan of ``ops`` in schedule order.
+
+**Raises:**
+
+- `RuntimeError` — If the ops need more than ``schedule.width`` active axes.

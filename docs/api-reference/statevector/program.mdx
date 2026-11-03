@@ -1,0 +1,228 @@
+---
+title: "program"
+description: "Compilation of one component for ``strategy='active_statevector'``."
+---
+
+``plan_component`` reads the Pauli ops off the component, schedules and
+plans them; ``lower`` turns the plan into the NumPy arrays of a
+``StatevectorComponent``: an action tape that ``shared.run_lanes`` runs, and the
+outputs as parities of the symbols the tape leaves behind.
+
+## class `ComponentLayout`
+
+```python
+ComponentLayout(f_selection: tuple[int, ...], f_position: Mapping[int, int], output_indices: tuple[int, ...])
+```
+
+Where a component's parameters and outputs go.
+
+
+### `of`
+
+```python
+of(cls, component: Graph, output_indices: Sequence[int], layout: ParamLayout) -> ComponentLayout
+```
+
+Return the layout of ``component``, whose outputs are ``output_indices``.
+
+
+## class `MeasureActive`
+
+```python
+MeasureActive(x: int, z: int, pivot: int, branch: int)
+```
+
+Measure the Pauli ``x``, ``z`` on the array, then reset ``pivot`` to ``|0⟩``.
+
+The sampled eigenvalue bit becomes symbol ``branch``.
+
+
+## class `ParamLayout`
+
+```python
+ParamLayout(num_errors: int)
+```
+
+Integer IDs for Tsim's parameters, fixed by the number of error bits.
+
+Error bit ``j`` has ID ``j``, so error IDs are error indices. Above them,
+error-basis and output bits are interleaved: basis bit ``j`` has ID
+``num_errors + 2j`` and output bit ``i`` has ID ``num_errors + 2i + 1``. An
+ID therefore means the same thing at every pipeline stage, whatever the
+numbers of basis and output bits; names exist only for drawing.
+
+
+### `basis`
+
+```python
+basis(j: int) -> int
+```
+
+Return the ID of error-basis bit ``j``.
+
+
+### `basis_index`
+
+```python
+basis_index(param: int) -> int
+```
+
+Return ``j`` for the error-basis bit whose ID is ``param``.
+
+
+### `error`
+
+```python
+error(j: int) -> int
+```
+
+Return the ID of error bit ``j``.
+
+
+### `kind`
+
+```python
+kind(param: int) -> tuple[ParamKind, int]
+```
+
+Return the kind of the bit with ID ``param`` and its index.
+
+
+### `name`
+
+```python
+name(param: int) -> str
+```
+
+Return the display name ``e\{j\}``, ``f\{j\}`` or ``m\{i\}`` of ``param``.
+
+
+### `names`
+
+```python
+names(params: Iterable[int]) -> dict[int, str]
+```
+
+Return the display names of ``params``, by ID.
+
+
+### `output`
+
+```python
+output(i: int) -> int
+```
+
+Return the ID of output bit ``i``.
+
+
+## class `Plan`
+
+```python
+Plan(width: int, num_f: int, actions: tuple[Action, ...], outputs: tuple[AffineRow, ...])
+```
+
+Actions on ``2^width`` amplitudes, and outputs over the symbols.
+
+
+## class `Rotate`
+
+```python
+Rotate(x: int, z: int, angle: float, sign: AffineRow)
+```
+
+Apply ``exp(-iθ (-1)^sign P)`` for the Pauli with W-bit masks ``x``, ``z``.
+
+
+## class `StatevectorComponent`
+
+```python
+StatevectorComponent(output_indices: tuple[int, ...], width: int, tape: Tape)
+```
+
+A component compiled for ``strategy="active_statevector"``.
+
+Its lanes hold ``2^width`` complex128 amplitudes.
+
+
+## class `Tape`
+
+```python
+Tape()
+```
+
+A component's actions and outputs as NumPy arrays, one row per action.
+
+
+## `compile_statevector_component`
+
+```python
+compile_statevector_component(component: Graph, output_indices: Sequence[int], layout: ParamLayout) -> StatevectorComponent
+```
+
+Compile one non-direct component for ``strategy="active_statevector"``.
+
+**Parameters:**
+
+- `component` (`Graph`) — A connected component of the prepared sampling graph.
+- `output_indices` (`Sequence[int]`) — Global output index of each of the component's outputs.
+- `layout` (`ParamLayout`) — The prepared graph's parameter layout.
+
+
+## `lower`
+
+```python
+lower(plan: Plan, layout: ComponentLayout) -> StatevectorComponent
+```
+
+Return the action tape of ``plan``.
+
+
+## `plan`
+
+```python
+plan(ops: PauliOps, schedule: Schedule) -> Plan
+```
+
+Return the fixed-width plan of ``ops`` in schedule order.
+
+**Raises:**
+
+- `RuntimeError` — If the ops need more than ``schedule.width`` active axes.
+
+
+## `plan_component`
+
+```python
+plan_component(component: Graph, output_indices: Sequence[int], layout: ParamLayout) -> tuple[Plan, ComponentLayout]
+```
+
+Read the Pauli ops of one non-direct component, schedule and plan them.
+
+**Raises:**
+
+- `ValueError` — If the component cannot be read as Pauli ops or the plan needs more than ``MAX_WIDTH`` array axes.
+
+
+## `read_pauli_ops`
+
+```python
+read_pauli_ops(component: Graph, layout: ComponentLayout) -> PauliOps
+```
+
+Return the operations of a component of the reduced sampling graph.
+
+Forgotten measurements of Paulis that commute with every op come first,
+then the rotations, then one measurement per output slot.
+
+**Raises:**
+
+- `ValueError` — If the component is not a graph-like diagram of Z spiders with classical outputs, its classical part does not describe probabilities, or no rotation order exists.
+
+
+## `schedule`
+
+```python
+schedule(ops: PauliOps) -> Schedule
+```
+
+Return an order of ``ops`` that keeps the active width small.

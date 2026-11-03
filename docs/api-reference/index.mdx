@@ -11,8 +11,9 @@ The package is organized as follows:
 
 - `circuit.py`: The thin `Circuit` wrapper around `stim.Circuit`.
 - `sampler.py`: Orchestrates compilation and evaluation to sample measurements or detectors.
-- `core/`: ZX graph construction, parsing, and data types.
-- `compile/`: JAX compilation pipeline including stabilizer rank decomposition.
+- `core/`: Builds quantum/classical ZX graphs with zxparam; parsing and data types.
+- `compile/`: Compiles zxparam's stabilizer-rank decompositions to JAX.
+- `statevector/`: Samples non-direct components as Pauli rotations and measurements on a dense state vector (`strategy="active_statevector"`).
 - `noise/`: Pauli noise channels and detector error models.
 - `utils/`: Utility functions for visualization and linear algebra.
 
@@ -101,20 +102,20 @@ This is useful for passing the circuit to functions that expect a
 ### `compile_detector_sampler`
 
 ```python
-compile_detector_sampler(strategy: DecompositionStrategy = 'cat5', seed: int | None = None) -> CompiledDetectorSampler
+compile_detector_sampler(strategy: SamplingStrategy = 'active_statevector', seed: int | None = None) -> CompiledDetectorSampler
 ```
 
 Compile circuit into a detector sampler.
 
 Connected components whose single output is deterministically given by
-one f-variable are handled via a fast direct path (no compilation or
-autoregressive sampling).  Remaining components go through the full
-compilation pipeline.
+one f-variable, or is a constant, are handled via a fast direct path (no
+compilation or autoregressive sampling).  Remaining components go
+through the full compilation pipeline.
 
 **Parameters:**
 
-- `strategy` (`DecompositionStrategy`) — Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".
-- `seed` (`int | None`) — Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size. If deterministic samples are needed, the batch size should be set manually.
+- `strategy` (`SamplingStrategy`) — "active_statevector" (the default) to simulate each non-direct component on a dense state vector over its active qubits, or a stabilizer rank decomposition strategy ("cat5", "bss", "cutting"). "active_statevector" samples on the CPU, on ``numba.get_num_threads()`` threads.
+- `seed` (`int | None`) — Random seed for the sampler. With "active_statevector" the samples of a seed depend on neither the batch size nor the thread count; with a stabilizer-rank strategy they are only deterministic for a fixed batch size.
 
 **Returns:**
 
@@ -153,15 +154,15 @@ sample for a given circuit.
 ### `compile_sampler`
 
 ```python
-compile_sampler(strategy: DecompositionStrategy = 'cat5', seed: int | None = None) -> CompiledMeasurementSampler
+compile_sampler(strategy: SamplingStrategy = 'active_statevector', seed: int | None = None) -> CompiledMeasurementSampler
 ```
 
 Compile circuit into a measurement sampler.
 
 **Parameters:**
 
-- `strategy` (`DecompositionStrategy`) — Stabilizer rank decomposition strategy. Must be one of "cat5", "bss", "cutting".
-- `seed` (`int | None`) — Random seed for the sampler. IMPORTANT: Currently, the sampler will only produce deterministic samples for fixed batch size. If deterministic samples are needed, the batch size should be set manually.
+- `strategy` (`SamplingStrategy`) — "active_statevector" (the default) to simulate each non-direct component on a dense state vector over its active qubits, or a stabilizer rank decomposition strategy ("cat5", "bss", "cutting"). "active_statevector" samples on the CPU, on ``numba.get_num_threads()`` threads.
+- `seed` (`int | None`) — Random seed for the sampler. With "active_statevector" the samples of a seed depend on neither the batch size nor the thread count; with a stabilizer-rank strategy they are only deterministic for a fixed batch size.
 
 **Returns:**
 
@@ -188,9 +189,16 @@ Return a stim.DetectorErrorModel describing the error processes in the circuit.
 Unlike the stim.Circuit.detector_error_model() method, this method allows for non-deterministic observables
 when `allow_gauge_detectors` is set to true.
 
+**Warning:**
+
+By default (`decompose_errors=False`) the model is not decomposed. Matching decoders such as
+PyMatching build their graph only from error mechanisms that flip at most two detectors, and silently
+ignore the rest, which can raise the logical error rate substantially. Set `decompose_errors=True`
+when the model is meant for a matching decoder.
+
 **Parameters:**
 
-- `decompose_errors` (`bool`) — Defaults to false. When set to true, the error analysis attempts to decompose the components of composite error mechanisms (such as depolarization errors) into simpler errors, and suggest this decomposition via `stim.target_separator()` between the components. For example, in an XZ surface code, single qubit depolarization has a Y error term which can be decomposed into simpler X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to decompose large errors into simple errors that affect at most two detectors. This is not supported by tsim and setting it to true will raise an error. The argument is present for compatibility with stim.
+- `decompose_errors` (`bool`) — Defaults to false. When set to true, the error analysis attempts to decompose the components of composite error mechanisms (such as depolarization errors) into simpler errors, and suggest this decomposition via `stim.target_separator()` between the components. For example, in an XZ surface code, single qubit depolarization has a Y error term which can be decomposed into simpler X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to decompose large errors into simple errors that affect at most two detectors. Decomposition keeps the logical observables as observables, as stim does, so it requires them to be deterministic: stim raises a ValueError otherwise.
 - `flatten_loops` (`bool`) — Defaults to false. When set to true, the output will not contain any `repeat` blocks. When set to false, the error analysis watches for loops in the circuit reaching a periodic steady state with respect to the detectors being introduced, the error mechanisms that affect them, and the locations of the logical observables. When it identifies such a steady state, it outputs a repeat block. This is massively more efficient than flattening for circuits that contain loops, but creates a more complex output. Irrelevant unless allow_gauge_detectors=False.
 - `allow_gauge_detectors` (`bool`) — Defaults to false. When set to false, the error analysis verifies that detectors in the circuit are actually deterministic under noiseless execution of the circuit. Note that, unlike in stim, logical observables are also allowed to be non-deterministic.
 - `approximate_disjoint_errors` (`bool`) — Defaults to false. When set to false, composite error mechanisms with disjoint components (such as `PAULI_CHANNEL_1(0.1, 0.2, 0.0)`) can cause the error analysis to throw exceptions (because detector error models can only contain independent error mechanisms). When set to true, the probabilities of the disjoint cases are instead assumed to be independent probabilities. For example, a `PAULI_CHANNEL_1(0.1, 0.2, 0.0)` becomes equivalent to an `X_ERROR(0.1)` followed by a `Z_ERROR(0.2)`. This assumption is an approximation, but it is a good approximation for small probabilities. This argument can also be set to a probability between 0 and 1, setting a threshold below which the approximation is acceptable. Any error mechanisms that have a component probability above the threshold will cause an exception to be thrown.
@@ -201,14 +209,14 @@ when `allow_gauge_detectors` is set to true.
 ### `diagram`
 
 ```python
-diagram(type: Literal['pyzx', 'pyzx-dets', 'pyzx-meas', 'timeline-svg', 'timeslice-svg'] = 'timeline-svg', tick: int | range | None = None, filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),), rows: int | None = None, height: float | None = None, width: float | None = None, zoomable: bool = True, kwargs: Any = {}) -> Any
+diagram(type: Literal['zx', 'zx-dets', 'zx-meas', 'pyzx', 'pyzx-dets', 'pyzx-meas', 'timeline-svg', 'timeslice-svg', 'timeline-text'] = 'timeline-svg', tick: int | range | None = None, filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),), rows: int | None = None, height: float | None = None, width: float | None = None, zoomable: bool = True, kwargs: Any = {}) -> Any
 ```
 
 Return a diagram of the circuit, from a variety of options.
 
 **Parameters:**
 
-- `type` (`Literal['pyzx', 'pyzx-dets', 'pyzx-meas', 'timeline-svg', 'timeslice-svg']`) — The type of diagram. Available types are: "pyzx": A pyzx SVG of the ZX diagram of the circuit. "pyzx-dets": A pyzx SVG of the ZX diagram that is used to compute probabilities of detectors and observables. "pyzx-meas": A pyzx SVG of the ZX diagram that is used to compute probabilities of measurements. "timeline-svg": An SVG image of the operations applied by the circuit over time. Includes annotations showing the measurement record index that each measurement writes to, and the measurements used by detectors. "timeslice-svg": An SVG image of the operations applied between two TICK instructions in the circuit, with the operations laid out in 2d.
+- `type` (`Literal['zx', 'zx-dets', 'zx-meas', 'pyzx', 'pyzx-dets', 'pyzx-meas', 'timeline-svg', 'timeslice-svg', 'timeline-text']`) — The type of diagram. Available types are: "zx": A zxparam D3 drawing of the circuit's quantum/classical ZX graph. "zx-dets": A zxparam D3 drawing of the reduced ZX graph that is used to compute probabilities of detectors and observables. "zx-meas": A zxparam D3 drawing of the reduced ZX graph that is used to compute probabilities of measurements. "pyzx", "pyzx-dets", "pyzx-meas": Deprecated aliases for "zx", "zx-dets" and "zx-meas". "timeline-svg": An SVG image of the operations applied by the circuit over time. Includes annotations showing the measurement record index that each measurement writes to, and the measurements used by detectors. "timeslice-svg": An SVG image of the operations applied between two TICK instructions in the circuit, with the operations laid out in 2d. "timeline-text": An ASCII text diagram of the operations applied by the circuit over time, with tsim's custom gates rendered under their logical names rather than the Clifford placeholders used to store them.
 - `tick` (`int | range | None`) — Required for time slice diagrams. Specifies which TICK instruction, or range of TICK instructions, to slice at. Note that the first TICK instruction in the circuit corresponds tick=1. The value tick=0 refers to the very start of the circuit. Passing `range(A, B)` for a detector slice will show the slices for ticks A through B including A but excluding B. Passing `range(A, B)` for a time slice will show the operations between tick A and tick B.
 - `rows` (`int | None`) — In diagrams that have multiple separate pieces, such as timeslice diagrams and detslice diagrams, this controls how many rows of pieces there will be. If not specified, a number of rows that creates a roughly square layout will be chosen.
 - `filter_coords` (`Iterable[Iterable[float] | stim.DemTarget]`) — A list of things to include in the diagram. Different effects depending on the diagram. For detslice diagrams, the filter defaults to showing all detectors and no observables. When specified, each list entry can be a collection of floats (detectors whose coordinates start with the same numbers will be included), a stim.DemTarget (specifying a detector or observable to include), a string like "D5" or "L0" specifying a detector or observable to include.
@@ -272,32 +280,42 @@ Create a Circuit from a stim.Circuit object.
 ### `get_graph`
 
 ```python
-get_graph() -> BaseGraph
+get_graph() -> Graph
 ```
 
-Construct the ZX graph.
+Construct the circuit's quantum/classical ZX graph, with qubit ports.
+
+Error parameters have the error index as their ID. Each detector and
+observable is a classical XOR spider with its own classical output
+boundary; their ports follow the qubit outputs (detectors, then
+observables), so the graph's tensor is the circuit's channel together
+with the detector and observable bits. ``Circuit.to_tensor`` returns the
+channel alone.
 
 
 ### `get_sampling_graph`
 
 ```python
-get_sampling_graph(sample_detectors: bool = False) -> BaseGraph
+get_sampling_graph(sample_detectors: bool = False) -> Graph
 ```
 
 Get a ZX graph that can be used to compute probabilities.
 
-This graph will be constructed as follows:
+The graph is not doubled: qubit wires are quantum and measurement records
+are classical spiders. It is constructed as follows:
 
-1. Double the ZX-diagram by composing it with its adjoint.
-2. Connect all rec[i] vertices to their corresponding adjoint rec[i] vertices.
-3. Add outputs:
+1. Wire starts become ``|0⟩`` and wire ends are discarded.
+2. Add outputs, which are classical boundaries:
 (a) When sampling measurements (i.e. `sample_detectors` is False),
-    add output nodes for each measurement. Detectors and observables are
+    add an output for each measurement. Detectors and observables are
     removed since they are ignored when sampling measurements.
 (b) When sampling detectors and observables (i.e. `sample_detectors` is True),
-    add output nodes for each detector and observable. Only one set of detector
-    and observable nodes is kept, i.e., detectors and observables are not
-    composed with their adjoints.
+    add an output for each detector, then for each observable.
+
+Error parameters have the error index as their ID, so the graph's
+``to_tensor`` needs a bit for every error index in its bindings (unbound
+parameters raise); its tensor is then the joint distribution of the
+outputs.
 
 **Parameters:**
 
@@ -305,7 +323,7 @@ This graph will be constructed as follows:
 
 **Returns:**
 
-- `BaseGraph` — A ZX graph for sampling.
+- `Graph` — A ZX graph for sampling.
 
 
 ### `inverse`
@@ -344,25 +362,25 @@ Pops an operation from the end of the circuit, or at the given index.
 tcount() -> int
 ```
 
-Count the number of T gates in the circuit.
-
-
-### `to_matrix`
-
-```python
-to_matrix() -> Any
-```
-
-Convert circuit to matrix representation.
+Count the spiders whose angle is not a multiple of π/2.
 
 
 ### `to_tensor`
 
 ```python
-to_tensor() -> Any
+to_tensor(bindings: Mapping[int, int] | None = None) -> np.ndarray
 ```
 
-Convert circuit to tensor representation.
+Return the circuit's doubled tensor (its channel, U ⊗ Ū for unitaries).
+
+Axes follow zxparam's ``Graph.to_tensor``: outputs then inputs, by qubit,
+each with a copy and a conjugate axis. Only qubits that some instruction
+targets get axes, in increasing index order; qubits that no instruction
+names are left out, so ``H 1`` gives a one-qubit tensor (add ``I q`` to
+keep qubit ``q``). Error bits default to 0 (the noiseless circuit);
+``bindings`` maps error indices to bits and raises ``ValueError`` for any
+other key. Detector and observable annotations are left out. Needs
+``zxparam[quimb]``.
 
 
 ### `without_annotations`
@@ -386,7 +404,7 @@ Return a copy of the circuit with all noise removed.
 ## class `CompiledDetectorSampler`
 
 ```python
-CompiledDetectorSampler(circuit: Circuit, strategy: DecompositionStrategy = 'cat5', seed: int | None = None)
+CompiledDetectorSampler(circuit: Circuit, strategy: SamplingStrategy = 'active_statevector', seed: int | None = None)
 ```
 
 Samples detector and observable outcomes from a quantum circuit.
@@ -407,18 +425,23 @@ as honorary detectors.
 **Parameters:**
 
 - `shots` (`int`) — The number of times to sample every detector in the circuit.
-- `batch_size` (`int | None`) — The number of samples to process in each batch. Defaults to None, which automatically chooses a batch size based on available memory. When using a GPU, setting this explicitly can help fully utilize VRAM for maximum performance. NOTE: Changing the batch size will affect reproducibility even with a fixed seed.
+- `batch_size` (`int | None`) — The number of samples to process at once. Defaults to None, which chooses it from the available memory. With ``strategy="active_statevector"`` it bounds the shots a thread holds and does not change the samples. With a stabilizer-rank strategy on a GPU, setting this explicitly can help fully utilize VRAM; it changes the samples of a seed.
 - `separate_observables` (`bool`) — Defaults to False. When set to True, the return value is a (detection_events, observable_flips) tuple instead of a flat detection_events array.
 - `prepend_observables` (`bool`) — Defaults to false. When set, observables are included with the detectors and are placed at the start of the results.
 - `append_observables` (`bool`) — Defaults to false. When set, observables are included with the detectors and are placed at the end of the results.
-- `bit_packed` (`bool`) — Defaults to false. When set, results are bit-packed.
+- `bit_packed` (`bool`) — Defaults to false. When set, results are bit-packed. The packed rows may be a strided view of a wider array.
 - `use_detector_reference_sample` (`bool`) — Defaults to False. When True, a noiseless reference sample is computed and XORed with detector outcomes so that results represent deviations from the noiseless baseline. This should only be used when detectors are deterministic. Otherwise, it can unpredictably change the results.
 - `use_observable_reference_sample` (`bool`) — Defaults to False. When True, a noiseless reference sample is computed and XORed with observable outcomes so that results represent deviations from the noiseless baseline. This should only be used when observables are deterministic. Otherwise, it can unpredictably change the results.
-- `postselection_mask` (`np.ndarray | None`) — Optional boolean array of length ``num_detectors``. When set, shots where any masked direct detector fires skip the JAX sampling loop. All ``shots`` rows are still returned: survivors contain the full sample, while discarded rows retain direct detector columns and fill component columns with ``False``. Re-apply the mask to the returned detector columns to recover surviving shots.
+- `postselection_mask` (`np.ndarray | None`) — Optional boolean array of length ``num_detectors``. When set, only the shots in which every masked detector reads 0 in the returned sample (after the reference sample is XOR-ed in, with ``use_detector_reference_sample``) are returned, so the result can have fewer than ``shots`` rows, and ``len(result) / shots`` is the acceptance rate. Without a mask, exactly ``shots`` rows are returned. A shot that a masked direct detector (an error bit or a constant) discards skips the components; with ``strategy="active_statevector"`` a masked component detector also stops a shot's simulation, while stabilizer-rank components are computed in full.
 
 **Returns:**
 
-- `np.ndarray | tuple[np.ndarray, np.ndarray]` — A numpy array or tuple of numpy arrays containing the samples.
+- `np.ndarray | tuple[np.ndarray, np.ndarray]` — A numpy array or tuple of numpy arrays containing the samples. With
+- `np.ndarray | tuple[np.ndarray, np.ndarray]` — ``separate_observables``, both arrays hold the same shots.
+
+**Warns:**
+
+- `UserWarning` — If a masked direct detector is a constant 1, without ``use_detector_reference_sample``, so that every shot is discarded.
 
 **Raises:**
 
@@ -428,7 +451,7 @@ as honorary detectors.
 ## class `CompiledMeasurementSampler`
 
 ```python
-CompiledMeasurementSampler(circuit: Circuit, strategy: DecompositionStrategy = 'cat5', seed: int | None = None)
+CompiledMeasurementSampler(circuit: Circuit, strategy: SamplingStrategy = 'active_statevector', seed: int | None = None)
 ```
 
 Samples measurement outcomes from a quantum circuit.
@@ -449,7 +472,7 @@ Sample measurement outcomes from the circuit.
 **Parameters:**
 
 - `shots` (`int`) — The number of times to sample every measurement in the circuit.
-- `batch_size` (`int | None`) — The number of samples to process in each batch. Defaults to None, which automatically chooses a batch size based on available memory. When using a GPU, setting this explicitly can help fully utilize VRAM for maximum performance. NOTE: Changing the batch size will affect reproducibility even with a fixed seed.
+- `batch_size` (`int | None`) — The number of samples to process at once. Defaults to None, which chooses it from the available memory. With ``strategy="active_statevector"`` it bounds the shots a thread holds and does not change the samples. With a stabilizer-rank strategy on a GPU, setting this explicitly can help fully utilize VRAM; it changes the samples of a seed.
 
 **Returns:**
 

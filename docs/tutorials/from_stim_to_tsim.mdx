@@ -157,8 +157,6 @@ Without reference sample:
  [ True  True]
  [ True  True]]
 
-
-
 With reference sample:
 [[False False]
  [False False]
@@ -198,9 +196,9 @@ array([[ True],
 
 Tsim uses `jax` just-in-time compilation, which is triggered upon first execution of the `sample` function. This means that subsequent calls to `sample` with the same parameters will be faster. Note that recompilation is triggered whenever the `batch_size` is changed.
 
-### Decomposition strategies
+### Sampling strategies
 
-Tsim supports three stabilizer rank decomposition strategies: `"cat5"` (default), `"bss"`, and `"cutting"`. The strategy can be passed to `compile_sampler` or `compile_detector_sampler`:
+By default (`"active_statevector"`), Tsim simulates each connected component of the circuit's ZX diagram on a dense state vector over its active qubits. Tsim also supports three stabilizer rank decomposition strategies: `"cat5"`, `"bss"`, and `"cutting"`. The strategy can be passed to `compile_sampler` or `compile_detector_sampler`:
 
 
 ```python
@@ -211,7 +209,7 @@ c.compile_detector_sampler(strategy="cutting")
 
 
 ```text title="Output"
-CompiledDetectorSampler(0 direct, 4 graphs, 0 error channel bits, 1 outputs for largest cc, ≤ 1 parameters, 2 A terms, 0 B terms, 0 C terms, 0 D terms, 152 B)
+CompiledDetectorSampler(2 direct, 0 error channel bits, 0 outputs for largest cc, 0 B)
 ```
 
 
@@ -219,9 +217,41 @@ CompiledDetectorSampler(0 direct, 4 graphs, 0 error channel bits, 1 outputs for 
 
 Different strategies can yield different performance depending on the circuit structure. If sampling is slow, it can be worth trying an alternative strategy.
 
+### Postselection
+
+Stim has no built-in postselection. In Tsim, pass a boolean `postselection_mask` over the detectors to `sample`. Only the shots in which every masked detector reads 0 are returned, so the result can have fewer than `shots` rows. Tsim stops simulating a shot as soon as a masked detector fires.
+
+
+```python
+import numpy as np
+
+c = tsim.Circuit("""
+    R 0 1
+    X_ERROR(0.1) 0
+    T 1
+    H 1
+    M 0 1
+    DETECTOR rec[-2]
+    OBSERVABLE_INCLUDE(0) rec[-1]
+""")
+shots = 10_000
+detectors, observables = c.compile_detector_sampler(seed=0).sample(
+    shots, postselection_mask=np.array([True]), separate_observables=True
+)
+print(f"acceptance rate: {len(detectors) / shots:.3f}")
+print(f"observable mean: {observables.mean():.3f}")
+```
+
+```text title="Output"
+acceptance rate: 0.900
+observable mean: 0.496
+```
+
+
+
 ### Visualization methods
 
-Tsim supports a subset of Stim's visualization methods. Since Tsim is based on ZX diagrams, it also provides visualization via `pyzx`.
+Tsim supports a subset of Stim's visualization methods. Since Tsim is based on ZX diagrams, it also provides visualization via `zxparam`.
 
 
 ```python
@@ -420,413 +450,556 @@ c.diagram("timeslice-svg", height=80, rows=1)
 
 
 ```python
-c.diagram("pyzx");
+c.diagram("zx")
 ```
 
 
 
 
-<iframe srcDoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;html,body{margin:0;padding:0;height:100%;overflow:hidden;}[id^=&quot;graph-output-&quot;]{width:100%;height:100%;overflow:auto;box-sizing:border-box;}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;div style=&quot;overflow:auto; background-color: white&quot; id=&quot;graph-output-001&quot;&gt;&lt;/div&gt;&lt;script type=&quot;module&quot;&gt;
-var d3;
-if (d3 == null) { d3 = await import(&quot;https://esm.sh/d3@5&quot;); }
-var _settings_colors = JSON.parse('{&quot;edge&quot;: &quot;#000000&quot;, &quot;Hedge&quot;: &quot;#0088ff&quot;, &quot;Xedge&quot;: &quot;#999999&quot;, &quot;Bedge&quot;: &quot;#000000&quot;, &quot;HBedge&quot;: &quot;#0088ff&quot;, &quot;boundary&quot;: &quot;#000000&quot;, &quot;X&quot;: &quot;#ff8888&quot;, &quot;Y&quot;: &quot;#aabbff&quot;, &quot;Z&quot;: &quot;#ccffcc&quot;, &quot;H&quot;: &quot;#ffff66&quot;, &quot;W&quot;: &quot;#000000&quot;, &quot;Zalt&quot;: &quot;#ccffcc&quot;, &quot;Walt&quot;: &quot;#000000&quot;, &quot;Zbold&quot;: &quot;#ccffcc&quot;, &quot;Xbold&quot;: &quot;#ff8888&quot;, &quot;Xdark&quot;: &quot;#ff8888&quot;, &quot;Ydark&quot;: &quot;#aabbff&quot;, &quot;Zdark&quot;: &quot;#99dd99&quot;}');
-// PyZX - Python library for quantum circuit rewriting 
-//        and optimisation using the ZX-calculus
-// Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-// Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
 
-//    http://www.apache.org/licenses/LICENSE-2.0
+<iframe srcDoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;html,body{margin:0;padding:0;height:100%;overflow:hidden;}[id^=&quot;zxp-&quot;]{display:block !important;width:100%;height:100%;overflow:auto;box-sizing:border-box;}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;div id=&quot;zxp-001&quot; style=&quot;display:inline-block;&quot;&gt;&lt;/div&gt;&lt;script type=&quot;module&quot;&gt;
+var d3 = await import(&quot;https://esm.sh/d3@7&quot;);
+window.d3 = d3;
+// zxparam D3 viewer
+// Simplified from pyzx's zx_viewer.inline.js.
+//
+// Originally:
+//   PyZX - Python library for quantum circuit rewriting and optimisation using
+//   the ZX-calculus. Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
+//   Licensed under the Apache License, Version 2.0.
+//
+// This version supports only the features kept by zxparam:
+//   - Vertex types: Z, X, BOUNDARY
+//   - Edge types:   simple, hadamard
+//   - Vertex/edge domains: classical, quantum
+//   - Phase label drawn above each spider
+//   - Optional vertex label drawn over the node
+//   - Optional vertex index drawn above the node
+//   - Drag-and-drop vertex positioning
+//
+// Expects d3 v7 loaded globally.
 
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+(function (global) {
+    &quot;use strict&quot;;
 
-// styling functions
-function nodeColor(t) {
-    if (t == 0) return _settings_colors['boundary'];
-    else if (t == 1) return _settings_colors['Z']; // &quot;#ccffcc&quot;;
-    else if (t == 2) return _settings_colors['X']; // &quot;#ff8888&quot;;
-    else if (t == 3) return _settings_colors['H']; // &quot;yellow&quot;;
-    else if (t == 4) return _settings_colors['W']; // &quot;black&quot;;
-    else if (t == 5) return _settings_colors['Walt']; // &quot;black&quot;;
-    else if (t == 6) return _settings_colors['Zalt']; // &quot;#ccffcc&quot;;
-    else if (t == 7) return _settings_colors['Zbold']; // &quot;#ccffcc&quot; bold Z
-    else if (t == 8) return _settings_colors['Xbold']; // &quot;#ff8888&quot; bold X
-}
+    const COLORS = {
+        Z: &quot;#ccffcc&quot;,
+        X: &quot;#ff8888&quot;,
+        BOUNDARY: &quot;#000000&quot;,
+        outline: &quot;black&quot;,
+        edge: &quot;black&quot;,
+        hedge: &quot;#0088ff&quot;,
+        scalarText: &quot;#444&quot;,
+        labelText: &quot;#000&quot;,
+        phaseText: &quot;#00d&quot;,
+        indexText: &quot;#999&quot;,
+    };
 
-function edgeColor(t) {
-    if (t == 1) return _settings_colors['edge']; //&quot;black&quot;;
-    else if (t == 2) return _settings_colors['Hedge']; // &quot;#08f&quot;;
-    else if (t == 3) return _settings_colors['Xedge']; // &quot;gray&quot;;
-    else if (t == 4) return _settings_colors['Bedge']; // &quot;black&quot; bold
-    else if (t == 5) return _settings_colors['HBedge']; // &quot;#0088ff&quot; bold hadamard
-}
+    const LAYOUT = {
+        // Pixels per unit of (col, row) when the payload sets none. Matches
+        // pyzx's default scale.
+        scale: [40, 40],
+        // Padding around the graph in pixels.
+        pad: 30,
+        minWidth: 80,
+        minHeight: 60,
+    };
 
-function isBoldEdge(t) {
-    return t == 4 || t == 5;
-}
+    const NODE_STYLE = {
+        radius: 8,
+        boundaryRadiusScale: {
+            classical: 0.5,
+            quantum: 0.75,
+        },
+        strokeWidth: {
+            classical: 1.5,
+            quantum: 3,
+        },
+        obstructionPadding: 4,
+    };
 
-function webColor(t) {
-    if (t == 'X') return _settings_colors['Xdark'];
-    else if (t == 'Y') return _settings_colors['Ydark'];
-    else if (t == 'Z') return _settings_colors['Zdark'];
-    else if (t == 'I') return '#dddddd';
-}
+    const EDGE_STYLE = {
+        fill: &quot;none&quot;,
+        strokeWidth: {
+            classical: 1.5,
+            quantum: 3.5,
+        },
+        obstructionRange: {
+            min: 0.1,
+            max: 0.9,
+        },
+        curveOffset: 12,
+        zeroLengthEpsilon: 1e-6,
+        followTransitionMs: 90,
+    };
 
-function nodeStyle(selected, t) {
-    var bold = (t == 7 || t == 8);
-    if (selected) return &quot;stroke-width: &quot; + (bold ? &quot;4&quot; : &quot;2&quot;) + &quot;px; stroke: #00f&quot;;
-    return &quot;stroke-width: &quot; + (bold ? &quot;3&quot; : &quot;1.5&quot;) + &quot;px&quot;;
-}
+    const TEXT_STYLE = {
+        fontFamily: &quot;monospace&quot;,
+        interaction: &quot;pointer-events: none; user-select: none;&quot;,
+        label: {
+            fontSize: &quot;11px&quot;,
+            fontWeight: &quot;600&quot;,
+            offset: 4,
+        },
+        phase: {
+            fontSize: &quot;12px&quot;,
+            stackOffset: 18,
+            offset: 4,
+            maxInlineParameters: 3,
+        },
+        index: {
+            fontSize: &quot;10px&quot;,
+            offset: 4,
+            stackStep: 14,
+        },
+        scalar: {
+            fontSize: &quot;11px&quot;,
+            overflowX: &quot;auto&quot;,
+            whiteSpace: &quot;nowrap&quot;,
+            padding: &quot;2px 0&quot;,
+            marginBottom: &quot;4px&quot;,
+        },
+    };
 
-var symbolGround = {
-    draw: function(context, size){
-        let s = size/2;
+    const SVG_STYLE = &quot;max-width: none; max-height: none; display: block;&quot;;
 
-        context.moveTo(0,-s);
-        context.lineTo(0,0);
+    const INTERACTION_STYLE = {
+        idleCursor: &quot;cursor: grab;&quot;,
+        activeCursor: &quot;cursor: grabbing;&quot;,
+    };
 
-        context.moveTo(-s,0);
-        context.lineTo(s,0);
-
-        context.moveTo(-2*s/3,s/3);
-        context.lineTo(2*s/3,s/3);
-
-        context.moveTo(-s/3,2*s/3);
-        context.lineTo(s/3,2*s/3);
+    function nodeFill(t) {
+        if (t === &quot;Z&quot;) return COLORS.Z;
+        if (t === &quot;X&quot;) return COLORS.X;
+        return COLORS.BOUNDARY;
     }
-}
 
-function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_labels, scalar_str) {
-    var ntab = {};
+    function edgeColor(t) {
+        return t === &quot;hadamard&quot; ? COLORS.hedge : COLORS.edge;
+    }
 
-    var groundOffset = 2.5 * node_size;
+    function isQuantumDomain(domain) {
+        return domain === &quot;quantum&quot;;
+    }
 
-    graph.nodes.forEach(function(d) {
-        ntab[d.name] = d;
-        d.selected = false;
-        d.previouslySelected = false;
-        d.nhd = [];
-    });
+    function nodeRadius(node, nodeSize) {
+        if (node.t !== &quot;BOUNDARY&quot;) return nodeSize;
+        return isQuantumDomain(node.domain) ? 0.75 * nodeSize : 0.5 * nodeSize;
+    }
 
-    var spiders_and_boundaries = graph.nodes.filter(function(d) {
-        return d.t != 3;
-    });
+    function phaseParts(phase) {
+        const suffix = &quot;π&quot;;
+        if (!phase || !phase.endsWith(suffix)) {
+            return null;
+        }
 
-    graph.links.forEach(function(d) {
-        var s = ntab[d.source];
-        var t = ntab[d.target];
-        d.source = s;
-        d.target = t;
-        s.nhd.push(t);
-        t.nhd.push(s);
-    });
+        const parenthesizedEnd = &quot;)π&quot;;
+        if (phase.endsWith(parenthesizedEnd)) {
+            const closeIndex = phase.length - parenthesizedEnd.length;
+            const openIndex = phase.lastIndexOf(&quot;(&quot;, closeIndex);
+            if (openIndex &gt;= 0) {
+                const inner = phase.slice(openIndex + 1, closeIndex);
+                const parameters = inner.split(&quot;⊕&quot;).filter(function (p) { return p.length &gt; 0; });
+                const concretePrefix = phase.slice(0, openIndex);
+                return { concretePrefix: concretePrefix, parameters: parameters };
+            }
+        }
 
-    graph.pauli_web.forEach(function(d) {
-        var s = ntab[d.source];
-        var t = ntab[d.target];
-        d.source = s;
-        d.target = t;
-    });
+        const plusIndex = phase.lastIndexOf(&quot; + &quot;);
+        if (plusIndex &gt;= 0) {
+            return {
+                concretePrefix: phase.slice(0, plusIndex + 3),
+                parameters: [phase.slice(plusIndex + 3, phase.length - suffix.length)],
+            };
+        }
+        return { concretePrefix: &quot;&quot;, parameters: [phase.slice(0, phase.length - suffix.length)] };
+    }
 
-    var shiftKey;
+    function collapsedPhaseText(phase) {
+        const parts = phaseParts(phase);
+        if (!parts || parts.parameters.length &lt;= TEXT_STYLE.phase.maxInlineParameters) {
+            return phase;
+        }
+        const parameters = parts.parameters;
+        return (
+            parts.concretePrefix +
+            parameters[0] +
+            &quot;⊕...⊕&quot; +
+            parameters[parameters.length - 1] +
+            &quot;π&quot;
+        );
+    }
 
-    // SETUP SVG ITEMS
+    // Concrete angles keep their π (&quot;π/4&quot;, &quot;3π/4&quot;, &quot;π&quot;). A parameter always
+    // stands for a multiple of π, so parameter terms drop it (&quot;e1π&quot; -&gt; &quot;e1&quot;,
+    // &quot;(e1⊕f0)π&quot; -&gt; &quot;e1⊕f0&quot;).
+    function displayedPhaseTerm(term) {
+        if (!term || !term.endsWith(&quot;π&quot;)) {
+            return term;
+        }
+        const withoutPi = term.slice(0, -1);
+        if (/^~?\d*$/.test(withoutPi)) {
+            return term;
+        }
+        if (withoutPi.startsWith(&quot;(&quot;) &amp;&amp; withoutPi.endsWith(&quot;)&quot;)) {
+            return withoutPi.slice(1, -1);
+        }
+        return withoutPi;
+    }
 
-    var svg = d3.select(tag)
-    //.attr(&quot;tabindex&quot;, 1)
-        .on(&quot;keydown.brush&quot;, function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
-        .on(&quot;keyup.brush&quot;, function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
-    //.each(function() { this.focus(); })
-        .append(&quot;svg&quot;)
-        .attr(&quot;style&quot;, &quot;max-width: none; max-height: none&quot;)
-        .attr(&quot;width&quot;, width)
-        .attr(&quot;height&quot;, height);
+    function displayedPhaseText(phase, expanded) {
+        return (expanded ? phase : collapsedPhaseText(phase))
+            .split(&quot; + &quot;)
+            .map(displayedPhaseTerm)
+            .join(&quot;+&quot;);
+    }
 
-    var web = svg.append(&quot;g&quot;)
-        .attr(&quot;class&quot;, &quot;web&quot;)
-        .selectAll(&quot;line&quot;)
-        .data(graph.pauli_web)
-        .enter().append(&quot;path&quot;)
-        .attr(&quot;stroke&quot;, function(d) { return webColor(d.t); })
-        .attr(&quot;fill&quot;, &quot;transparent&quot;)
-        .attr(&quot;style&quot;, &quot;stroke-width: 7px&quot;);
+    function isCollapsedPhase(phase) {
+        return collapsedPhaseText(phase) !== phase;
+    }
 
-    var link = svg.append(&quot;g&quot;)
-        .attr(&quot;class&quot;, &quot;link&quot;)
-        .selectAll(&quot;line&quot;)
-        .data(graph.links)
-        .enter().append(&quot;path&quot;)
-        .attr(&quot;stroke&quot;, function(d) { return edgeColor(d.t); })
-        .attr(&quot;fill&quot;, &quot;transparent&quot;)
-        .attr(&quot;style&quot;, function(d) { return isBoldEdge(d.t) ? &quot;stroke-width: 3.5px&quot; : &quot;stroke-width: 1.5px&quot;; });
+    // Map graph-space (col, row) to SVG pixel coords, with `scale` pixels per
+    // unit as [x, y]. col → x, row → y. `topPad` is the vertical offset that
+    // accommodates an optional scalar label at the top of the SVG.
+    function project(node, minCol, minRow, topPad, scale) {
+        return {
+            x: LAYOUT.pad + (node.col - minCol) * scale[0],
+            y: topPad + (node.row - minRow) * scale[1],
+        };
+    }
 
-    var brush = svg.append(&quot;g&quot;)
-        .attr(&quot;class&quot;, &quot;brush&quot;);
+    function renderZx(containerEl, graphJson) {
+        if (!containerEl) throw new Error(&quot;renderZx: containerEl is required&quot;);
+        if (!graphJson) throw new Error(&quot;renderZx: graphJson is required&quot;);
+        const nodeSize = NODE_STYLE.radius;
 
-    var node = svg.append(&quot;g&quot;)
-        .attr(&quot;class&quot;, &quot;node&quot;)
-        .selectAll(&quot;g&quot;)
-        .data(graph.nodes)
-        .enter().append(&quot;g&quot;)
-        .attr(&quot;transform&quot;, function(d) {
-            return &quot;translate(&quot; + d.x + &quot;,&quot; + d.y +&quot;)&quot;;
+        // Clear prior content.
+        while (containerEl.firstChild) {
+            containerEl.removeChild(containerEl.firstChild);
+        }
+
+        const nodes = (graphJson.nodes || []).map(function (n) {
+            return Object.assign({}, n);
+        });
+        const rawLinks = graphJson.links || [];
+        const scale = graphJson.scale || LAYOUT.scale;
+
+        // Positions arrive already disambiguated (see viz/layout.py), so we
+        // render (col, row) as-is — no JS-side staggering needed.
+
+        // Compute (col, row) range.
+        let minCol = Infinity, maxCol = -Infinity;
+        let minRow = Infinity, maxRow = -Infinity;
+        nodes.forEach(function (n) {
+            if (n.col &lt; minCol) minCol = n.col;
+            if (n.col &gt; maxCol) maxCol = n.col;
+            if (n.row &lt; minRow) minRow = n.row;
+            if (n.row &gt; maxRow) maxRow = n.row;
+        });
+        if (!isFinite(minCol)) { minCol = 0; maxCol = 0; minRow = 0; maxRow = 0; }
+
+        // Scalar is rendered as a scrollable HTML div above the SVG, so we
+        // no longer reserve vertical space for it inside the SVG itself.
+        const showScalar = graphJson.scalar &amp;&amp; graphJson.scalar !== &quot;1&quot; &amp;&amp; graphJson.scalar !== &quot;&quot;;
+        const topPad = LAYOUT.pad;
+
+        // Size SVG strictly to content (with small minimum floors so a single
+        // node still has visible area).
+        const contentW = 2 * LAYOUT.pad + (maxCol - minCol) * scale[0];
+        const contentH = topPad + LAYOUT.pad + (maxRow - minRow) * scale[1];
+        const w = Math.max(contentW, LAYOUT.minWidth);
+        const h = Math.max(contentH, LAYOUT.minHeight);
+
+        // Initial pixel positions.
+        const byId = {};
+        nodes.forEach(function (n) {
+            const p = project(n, minCol, minRow, topPad, scale);
+            n.x = p.x;
+            n.y = p.y;
+            byId[n.id] = n;
         });
 
-    // Draw a ground symbol connected to the node.
-    node.filter(function(d) { return d.ground; })
-        .append(&quot;path&quot;)
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;style&quot;, &quot;stroke-width: 1.5px&quot;)
-        .attr(&quot;fill&quot;, &quot;none&quot;)
-        .attr(&quot;d&quot;, &quot;M 0 0 L 0 &quot;+(groundOffset))
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
-    node.filter(function(d) { return d.ground; })
-        .append(&quot;path&quot;)
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;style&quot;, &quot;stroke-width: 1.5px&quot;)
-        .attr(&quot;fill&quot;, &quot;none&quot;)
-        .attr(&quot;d&quot;, d3.symbol().type(symbolGround).size(node_size*1.5))
-        .attr(&quot;transform&quot;, &quot;translate(0,&quot;+groundOffset+&quot;)&quot;)
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
+        // Resolve link endpoints to node references.
+        const links = rawLinks
+            .map(function (l) {
+                const s = byId[l.source];
+                const t = byId[l.target];
+                if (!s || !t) return null;
+                return { source: s, target: t, t: l.t, domain: l.domain };
+            })
+            .filter(function (l) { return l !== null; });
 
-    node.filter(function(d) { return d.t != 3 &amp;&amp; d.t != 5 &amp;&amp; d.t != 6; })
-        .append(&quot;circle&quot;)
-        .attr(&quot;r&quot;, function(d) {
-            if (d.t == 0) return 0.5 * node_size;
-            else if (d.t == 4) return 0.25 * node_size;
-            else return node_size;
-        })
-        .attr(&quot;fill&quot;, function(d) { return nodeColor(d.t); })
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;stroke-width&quot;, function(d) { return (d.t == 7 || d.t == 8) ? 3 : 1.5; })
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
+        // Scalar rendered as an HTML div above the SVG. Bounding its width to
+        // the SVG width and enabling `overflow-x: auto` means long scalars
+        // scroll horizontally instead of being clipped by the SVG viewport.
+        if (showScalar) {
+            const scalarDiv = document.createElement(&quot;div&quot;);
+            scalarDiv.textContent = &quot;scalar: &quot; + graphJson.scalar;
+            scalarDiv.style.fontFamily = TEXT_STYLE.fontFamily;
+            scalarDiv.style.fontSize = TEXT_STYLE.scalar.fontSize;
+            scalarDiv.style.color = COLORS.scalarText;
+            scalarDiv.style.maxWidth = w + &quot;px&quot;;
+            scalarDiv.style.overflowX = TEXT_STYLE.scalar.overflowX;
+            scalarDiv.style.whiteSpace = TEXT_STYLE.scalar.whiteSpace;
+            scalarDiv.style.padding = TEXT_STYLE.scalar.padding;
+            scalarDiv.style.marginBottom = TEXT_STYLE.scalar.marginBottom;
+            containerEl.appendChild(scalarDiv);
+        }
 
-    var hbox = node.filter(function(d) { return d.t == 3; });
+        const svg = d3.select(containerEl)
+            .append(&quot;svg&quot;)
+            .attr(&quot;style&quot;, SVG_STYLE)
+            .attr(&quot;width&quot;, w)
+            .attr(&quot;height&quot;, h);
 
-    hbox.append(&quot;rect&quot;)
-        .attr(&quot;x&quot;, -0.75 * node_size).attr(&quot;y&quot;, -0.75 * node_size)
-        .attr(&quot;width&quot;, node_size * 1.5).attr(&quot;height&quot;, node_size * 1.5)
-        .attr(&quot;fill&quot;, function(d) { return nodeColor(d.t); })
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
+        // Bend edges that would pass visually through a non-endpoint vertex
+        // so it stays unambiguous which vertices an edge actually connects.
+        const obstructRadius = nodeSize + NODE_STYLE.obstructionPadding;
 
-    // draw a triangle for d.t == 5
-    node.filter(function(d) { return d.t == 5; })
-        .append(&quot;path&quot;)
-        .attr(&quot;d&quot;, &quot;M 0 0 L &quot;+node_size+&quot; &quot;+node_size+&quot; L -&quot;+node_size+&quot; &quot;+node_size+&quot; Z&quot;)
-        .attr(&quot;fill&quot;, function(d) { return nodeColor(d.t); })
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;class&quot;, &quot;selectable&quot;)
-        .attr(&quot;transform&quot;, &quot;translate(&quot; + (-node_size/2) + &quot;, 0) rotate(-90)&quot;);
+        // Spatial index over nodes: each edge queries candidates within its
+        // inflated bounding box, cutting obstruction scans from O(N) to O(log N)
+        // on average. Kept in sync with node moves by the drag handler.
+        const nodeTree = d3.quadtree()
+            .x(function (n) { return n.x; })
+            .y(function (n) { return n.y; })
+            .addAll(nodes);
 
-    // draw a square for Z box: d.t == 6
-    node.filter(function(d) { return d.t == 6; })
-        .append(&quot;rect&quot;)
-        .attr(&quot;x&quot;, -0.75 * node_size).attr(&quot;y&quot;, -0.75 * node_size)
-        .attr(&quot;width&quot;, node_size * 1.5).attr(&quot;height&quot;, node_size * 1.5)
-        .attr(&quot;fill&quot;, function(d) { return nodeColor(d.t); })
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
+        // Always emit a quadratic-bezier path (with midpoint control when
+        // straight) so d3's default string interpolator can smoothly animate
+        // straight ↔ curved transitions during drag.
+        function edgePath(edge) {
+            const sx = edge.source.x, sy = edge.source.y;
+            const tx = edge.target.x, ty = edge.target.y;
+            const dx = tx - sx, dy = ty - sy;
+            const midX = (sx + tx) / 2, midY = (sy + ty) / 2;
+            const L2 = dx * dx + dy * dy;
+            if (L2 &lt; EDGE_STYLE.zeroLengthEpsilon) {
+                return &quot;M &quot; + sx + &quot;,&quot; + sy + &quot; Q &quot; + midX + &quot;,&quot; + midY + &quot; &quot; + tx + &quot;,&quot; + ty;
+            }
+            const L = Math.sqrt(L2);
 
-    node.filter(function(d) { return d.phase != '' &amp;&amp; d.phase.indexOf('[') === -1; })
-        .append(&quot;text&quot;)
-        .attr(&quot;y&quot;, 0.7 * node_size + 14)
-        .text(function (d) { return d.phase })
-        .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-        .attr(&quot;font-size&quot;, &quot;12px&quot;)
-        .attr(&quot;font-family&quot;, &quot;monospace&quot;)
-        .attr(&quot;fill&quot;, &quot;#00d&quot;)
-        .attr('style', 'pointer-events: none; user-select: none;');
+            // Segment AABB inflated by obstructRadius — any obstructing node
+            // must fall inside this box.
+            const bxMin = Math.min(sx, tx) - obstructRadius;
+            const bxMax = Math.max(sx, tx) + obstructRadius;
+            const byMin = Math.min(sy, ty) - obstructRadius;
+            const byMax = Math.max(sy, ty) + obstructRadius;
 
-    node.filter(function(d) { return d.phase != '' &amp;&amp; d.phase.indexOf('[') !== -1; })
-        .append(&quot;text&quot;)
-        .attr(&quot;y&quot;, -0.7 * node_size - 8)
-        .text(function (d) { return d.phase })
-        .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-        .attr(&quot;font-size&quot;, &quot;12px&quot;)
-        .attr(&quot;font-family&quot;, &quot;monospace&quot;)
-        .attr(&quot;fill&quot;, &quot;black&quot;)
-        .attr('style', 'pointer-events: none; user-select: none;');
-
-    if (show_labels) {
-        node.append(&quot;text&quot;)
-            .attr(&quot;y&quot;, -0.7 * node_size - 8)
-            .text(function (d) { return d.name; })
-            .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-            .attr(&quot;font-size&quot;, &quot;10px&quot;)
-            .attr(&quot;font-family&quot;, &quot;monospace&quot;)
-            .attr(&quot;fill&quot;, &quot;#999&quot;)
-            .attr('style', 'pointer-events: none; user-select: none;');
-    }
-
-    // Display the chosen data fields over the node.
-    node.filter(d =&gt; d.vdata.length &gt; 0)
-        .append(&quot;text&quot;)
-        .attr(&quot;y&quot;, d =&gt; -0.7 * node_size - 14 - 10 * d.vdata.length)
-        .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-        .attr(&quot;font-size&quot;, &quot;8px&quot;)
-        .attr(&quot;font-family&quot;, &quot;monospace&quot;)
-        .attr(&quot;fill&quot;, &quot;#c66&quot;)
-        .attr('style', 'pointer-events: none; user-select: none;')
-        .selectAll(&quot;tspan&quot;)
-        .data(d =&gt; d.vdata)
-        .enter()
-        .append(&quot;tspan&quot;)
-        .attr(&quot;x&quot;, &quot;0&quot;)
-        .attr(&quot;dy&quot;, &quot;1.2em&quot;)
-        .text(x =&gt; x.join(&quot;: &quot;));
-
-    if (scalar_str != &quot;&quot;) {
-        svg.append(&quot;text&quot;)
-            .text(scalar_str)
-            .attr(&quot;x&quot;, 60).attr(&quot;y&quot;, 40)
-            .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-    }
-
-    function update_hboxes() {
-        if (auto_hbox) {
-            var pos = {};
-            hbox.attr(&quot;transform&quot;, function(d) {
-                // calculate barycenter of non-hbox neighbours, then nudge a bit
-                // to the NE.
-                var x=0,y=0,sz=0;
-                for (var i = 0; i &lt; d.nhd.length; ++i) {
-                    if (d.nhd[i].t != 3) {
-                        sz++;
-                        x += d.nhd[i].x;
-                        y += d.nhd[i].y;
-                    }
+            let sumSigned = 0;
+            let count = 0;
+            nodeTree.visit(function (qnode, qx0, qy0, qx1, qy1) {
+                if (qx0 &gt; bxMax || qx1 &lt; bxMin || qy0 &gt; byMax || qy1 &lt; byMin) {
+                    return true;  // quadrant can't contain a candidate — prune
                 }
-
-                offset = 0.25 * scale;
-
-                if (sz != 0) {
-                    x = (x/sz) + offset;
-                    y = (y/sz) - offset;
-
-                    while (pos[[x,y]]) {
-                        x += offset;
-                    }
-                    d.x = x;
-                    d.y = y;
-                    pos[[x,y]] = true;
+                if (!qnode.length) {
+                    // Leaf: walk the coincident-points linked list.
+                    let leaf = qnode;
+                    do {
+                        const n = leaf.data;
+                        if (n !== edge.source &amp;&amp; n !== edge.target) {
+                            const along = ((n.x - sx) * dx + (n.y - sy) * dy) / L2;
+                            if (
+                                along &gt;= EDGE_STYLE.obstructionRange.min &amp;&amp;
+                                along &lt;= EDGE_STYLE.obstructionRange.max
+                            ) {
+                                const perp = (dx * (n.y - sy) - dy * (n.x - sx)) / L;
+                                if (Math.abs(perp) &lt; obstructRadius) {
+                                    sumSigned += perp;
+                                    count++;
+                                }
+                            }
+                        }
+                        leaf = leaf.next;
+                    } while (leaf);
                 }
-
-                return &quot;translate(&quot;+d.x+&quot;,&quot;+d.y+&quot;)&quot;;
+                return false;
             });
+
+            let cx = midX, cy = midY;
+            if (count &gt; 0) {
+                // Offset the control point perpendicular to the segment,
+                // away from the side with the heaviest obstruction.
+                const sign = sumSigned &gt; 0 ? -1 : 1;
+                const offsetMag = obstructRadius + EDGE_STYLE.curveOffset;
+                cx = midX + (-dy / L) * sign * offsetMag;
+                cy = midY + (dx / L) * sign * offsetMag;
+            }
+            return &quot;M &quot; + sx + &quot;,&quot; + sy + &quot; Q &quot; + cx + &quot;,&quot; + cy + &quot; &quot; + tx + &quot;,&quot; + ty;
         }
+
+        // Edges. Hadamard edges are drawn as solid blue paths (physics
+        // convention); simple edges are solid black.
+        const link = svg.append(&quot;g&quot;)
+            .attr(&quot;class&quot;, &quot;link&quot;)
+            .attr(&quot;fill&quot;, EDGE_STYLE.fill)
+            .selectAll(&quot;path&quot;)
+            .data(links)
+            .enter()
+            .append(&quot;path&quot;)
+            .attr(&quot;d&quot;, edgePath)
+            .attr(&quot;stroke&quot;, function (d) { return edgeColor(d.t); })
+            .attr(&quot;stroke-width&quot;, function (d) {
+                return isQuantumDomain(d.domain)
+                    ? EDGE_STYLE.strokeWidth.quantum
+                    : EDGE_STYLE.strokeWidth.classical;
+            });
+
+        const node = svg.append(&quot;g&quot;)
+            .attr(&quot;class&quot;, &quot;node&quot;)
+            .selectAll(&quot;g&quot;)
+            .data(nodes)
+            .enter()
+            .append(&quot;g&quot;)
+            .attr(&quot;transform&quot;, function (d) {
+                return &quot;translate(&quot; + d.x + &quot;,&quot; + d.y + &quot;)&quot;;
+            })
+            .attr(&quot;style&quot;, INTERACTION_STYLE.idleCursor);
+
+        // Vertex body.
+        node.append(&quot;circle&quot;)
+            .attr(&quot;r&quot;, function (d) {
+                return nodeRadius(d, nodeSize);
+            })
+            .attr(&quot;fill&quot;, function (d) { return nodeFill(d.t); })
+            .attr(&quot;stroke&quot;, COLORS.outline)
+            .attr(&quot;stroke-width&quot;, function (d) {
+                return isQuantumDomain(d.domain)
+                    ? NODE_STYLE.strokeWidth.quantum
+                    : NODE_STYLE.strokeWidth.classical;
+            });
+
+        // Label sits just above the node (baseline above the circle's top
+        // edge). Non-boundary nodes with a phase will stack the phase above
+        // the label; see the phase block below.
+        node.filter(function (d) { return d.label; })
+            .append(&quot;text&quot;)
+            .attr(&quot;y&quot;, function (d) {
+                return -nodeRadius(d, nodeSize) - TEXT_STYLE.label.offset;
+            })
+            .text(function (d) { return d.label; })
+            .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
+            .attr(&quot;font-size&quot;, TEXT_STYLE.label.fontSize)
+            .attr(&quot;font-family&quot;, TEXT_STYLE.fontFamily)
+            .attr(&quot;font-weight&quot;, TEXT_STYLE.label.fontWeight)
+            .attr(&quot;fill&quot;, COLORS.labelText)
+            .attr(&quot;style&quot;, TEXT_STYLE.interaction);
+
+        // Phase label above the node — stacks above the label text when both
+        // are present.
+        function hasLabel(d) { return !!d.label; }
+        function hasPhase(d) { return d.t !== &quot;BOUNDARY&quot; &amp;&amp; d.phase &amp;&amp; d.phase !== &quot;0&quot;; }
+
+        node.filter(hasPhase)
+            .append(&quot;text&quot;)
+            .attr(&quot;y&quot;, function (d) {
+                const radius = nodeRadius(d, nodeSize);
+                return hasLabel(d)
+                    ? -radius - TEXT_STYLE.phase.stackOffset
+                    : -radius - TEXT_STYLE.phase.offset;
+            })
+            .text(function (d) { return displayedPhaseText(d.phase, false); })
+            .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
+            .attr(&quot;font-size&quot;, TEXT_STYLE.phase.fontSize)
+            .attr(&quot;font-family&quot;, TEXT_STYLE.fontFamily)
+            .attr(&quot;fill&quot;, COLORS.phaseText)
+            .attr(&quot;style&quot;, function (d) {
+                return isCollapsedPhase(d.phase) ? &quot;cursor: default; user-select: none;&quot; : TEXT_STYLE.interaction;
+            })
+            .on(&quot;mouseenter&quot;, function (event, d) {
+                if (isCollapsedPhase(d.phase)) {
+                    d3.select(this).text(displayedPhaseText(d.phase, true));
+                }
+            })
+            .on(&quot;mouseleave&quot;, function (event, d) {
+                if (isCollapsedPhase(d.phase)) {
+                    d3.select(this).text(displayedPhaseText(d.phase, false));
+                }
+            });
+
+        if (graphJson.show_indices) {
+            node.append(&quot;text&quot;)
+                .attr(&quot;y&quot;, function (d) {
+                    const stacks = (hasPhase(d) ? 1 : 0) + (hasLabel(d) ? 1 : 0);
+                    return (
+                        -nodeRadius(d, nodeSize) -
+                        TEXT_STYLE.index.offset -
+                        stacks * TEXT_STYLE.index.stackStep
+                    );
+                })
+                .text(function (d) { return String(d.id); })
+                .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
+                .attr(&quot;font-size&quot;, TEXT_STYLE.index.fontSize)
+                .attr(&quot;font-family&quot;, TEXT_STYLE.fontFamily)
+                .attr(&quot;fill&quot;, COLORS.indexText)
+                .attr(&quot;style&quot;, TEXT_STYLE.interaction);
+        }
+
+        // Drag: update node position and re-render edges. d3 v7 passes
+        // (event, datum) to the callback (unlike v5's d3.event).
+        //
+        // Incident edges are recomputed every tick — their endpoints must
+        // track the cursor. Non-incident edges only change because the
+        // dragged node may newly obstruct / un-obstruct them, so we batch
+        // their refresh through requestAnimationFrame, bounding the cost to
+        // one sweep per frame regardless of drag event rate.
+        let nonIncidentPending = false;
+        let dragTarget = null;
+
+        const drag = d3.drag()
+            .on(&quot;start&quot;, function (event, d) {
+                d3.select(this).attr(&quot;style&quot;, INTERACTION_STYLE.activeCursor);
+                dragTarget = d;
+            })
+            .on(&quot;drag&quot;, function (event, d) {
+                // Keep the spatial index coherent: remove uses the OLD (x, y).
+                nodeTree.remove(d);
+                d.x += event.dx;
+                d.y += event.dy;
+                nodeTree.add(d);
+                d3.select(this).attr(&quot;transform&quot;, &quot;translate(&quot; + d.x + &quot;,&quot; + d.y + &quot;)&quot;);
+
+                link.filter(function (l) { return l.source === d || l.target === d; })
+                    .transition(&quot;edge-follow&quot;)
+                    .duration(EDGE_STYLE.followTransitionMs)
+                    .ease(d3.easeCubicOut)
+                    .attr(&quot;d&quot;, edgePath);
+
+                if (!nonIncidentPending) {
+                    nonIncidentPending = true;
+                    requestAnimationFrame(function () {
+                        nonIncidentPending = false;
+                        const target = dragTarget;
+                        if (!target) return;
+                        link.filter(function (l) { return l.source !== target &amp;&amp; l.target !== target; })
+                            .transition(&quot;edge-follow&quot;)
+                            .duration(EDGE_STYLE.followTransitionMs)
+                            .ease(d3.easeCubicOut)
+                            .attr(&quot;d&quot;, edgePath);
+                    });
+                }
+            })
+            .on(&quot;end&quot;, function () {
+                d3.select(this).attr(&quot;style&quot;, INTERACTION_STYLE.idleCursor);
+                dragTarget = null;
+            });
+
+        node.call(drag);
+
+        return svg.node();
     }
 
-    update_hboxes();
-
-    var link_curve = function(d) {
-        var x1 = d.source.x, x2 = d.target.x, y1 = d.source.y, y2 = d.target.y;
-        if (x1 == x2 &amp;&amp; y1 == y2 &amp;&amp; d.num_parallel == 1) {
-            var cx1 = x1 - 40;
-            var cy1 = y1 - 40;
-            var cx2 = x1 + 40;
-            var cy2 = y1 - 40;
-            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
-        } else if (x1 == x2 &amp;&amp; y1 == y2) {
-            var pos = d.index + 1;
-            var cx1 = x1 - 20 - pos * 10;
-            var cy1 = y1 - 20 - pos * 10;
-            var cx2 = x1 + 20 + pos * 10;
-            var cy2 = y1 - 20 - pos * 10;
-            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
-        } else if (d.num_parallel == 1) {
-            return `M ${x1} ${y1} L ${x2} ${y2}`;
-        } else {
-            var dx = x2 - x1, dy = y2 - y1;
-            var midx = 0.5 * (x1 + x2), midy = 0.5 * (y1 + y2);
-            var pos = (d.index / (d.num_parallel-1)) - 0.5;
-            var cx = midx - pos * dy;
-            var cy = midy + pos * dx;
-            return `M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`;
-            // return `M ${x1} ${y1} L ${x2} ${y2}`;
-        }
-    };
-    link.attr(&quot;d&quot;, link_curve);
-
-
-    var web_curve = function(d) {
-        var x1 = d.source.x, x2 = (x1 + d.target.x)/2, y1 = d.source.y, y2 = (y1 + d.target.y)/2;
-        return `M ${x1} ${y1} L ${x2} ${y2}`;
+    // Expose renderZx both globally (for inline &lt;script&gt; usage) and as a
+    // CommonJS-style export for bundlers/tests.
+    global.renderZx = renderZx;
+    if (typeof module !== &quot;undefined&quot; &amp;&amp; module.exports) {
+        module.exports = { renderZx: renderZx, displayedPhaseText: displayedPhaseText };
     }
-    web.attr(&quot;d&quot;, web_curve);
+})(typeof window !== &quot;undefined&quot; ? window : globalThis);
 
-    // EVENTS FOR DRAGGING AND SELECTION
+renderZx(document.getElementById(&quot;zxp-001&quot;), {&quot;nodes&quot;: [{&quot;id&quot;: 0, &quot;t&quot;: &quot;X&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 0.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 1, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;col&quot;: 1.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 2, &quot;t&quot;: &quot;X&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 0.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 3, &quot;t&quot;: &quot;X&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 2.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 4, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 2.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 5, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 10.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;classical&quot;, &quot;label&quot;: &quot;rec[0]&quot;, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 6, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;3\u03c0/10&quot;, &quot;col&quot;: 3.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 7, &quot;t&quot;: &quot;X&quot;, &quot;phase&quot;: &quot;\u03c0/2&quot;, &quot;col&quot;: 4.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 8, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0&quot;, &quot;col&quot;: 5.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 9, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/10&quot;, &quot;col&quot;: 6.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 10, &quot;t&quot;: &quot;X&quot;, &quot;phase&quot;: &quot;\u03c0/2&quot;, &quot;col&quot;: 7.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 11, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0&quot;, &quot;col&quot;: 8.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 12, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/5&quot;, &quot;col&quot;: 9.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 13, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 10.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;classical&quot;, &quot;label&quot;: &quot;rec[1]&quot;, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 14, &quot;t&quot;: &quot;BOUNDARY&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 11.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: true, &quot;port&quot;: 0}, {&quot;id&quot;: 15, &quot;t&quot;: &quot;BOUNDARY&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 11.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: true, &quot;port&quot;: 1}], &quot;links&quot;: [{&quot;source&quot;: 0, &quot;target&quot;: 1, &quot;t&quot;: &quot;hadamard&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 1, &quot;target&quot;: 4, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 2, &quot;target&quot;: 3, &quot;t&quot;: &quot;hadamard&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 3, &quot;target&quot;: 6, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 3, &quot;target&quot;: 4, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 4, &quot;target&quot;: 5, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 5, &quot;target&quot;: 14, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 6, &quot;target&quot;: 7, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 7, &quot;target&quot;: 8, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 8, &quot;target&quot;: 9, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 9, &quot;target&quot;: 10, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 10, &quot;target&quot;: 11, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 11, &quot;target&quot;: 12, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 12, &quot;target&quot;: 13, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 13, &quot;target&quot;: 15, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}], &quot;show_indices&quot;: false, &quot;scalar&quot;: &quot;(1)\u00b72^-1&quot;, &quot;scale&quot;: [40.0, 40.0]});
+&lt;/script&gt;&lt;/body&gt;&lt;/html&gt;" width="100%" height="134" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="ZX diagram 1" loading="lazy" />
 
-    node.on(&quot;mousedown&quot;, function(d) {
-        if (shiftKey) {
-            d3.select(this).selectAll(&quot;.selectable&quot;).attr(&quot;style&quot;, nodeStyle(d.selected = !d.selected, d.t));
-            d3.event.stopImmediatePropagation();
-        } else if (!d.selected) {
-            node.selectAll(&quot;.selectable&quot;).attr(&quot;style&quot;, function(p) { return nodeStyle(p.selected = d === p, p.t); });
-        }
-    })
-        .call(d3.drag().on(&quot;drag&quot;, function(d) {
-            var dx = d3.event.dx;
-            var dy = d3.event.dy;
-            // node.filter(function(d) { return d.selected; })
-            //     .attr(&quot;cx&quot;, function(d) { return d.x += dx; })
-            //     .attr(&quot;cy&quot;, function(d) { return d.y += dy; });
-            node.filter(function(d) { return d.selected; })
-                .attr(&quot;transform&quot;, function(d) {
-                    d.x += dx;
-                    d.y += dy;
-                    return &quot;translate(&quot; + d.x + &quot;,&quot; + d.y +&quot;)&quot;;
-                });
-
-            update_hboxes();
-
-            link.filter(function(d) { return d.source.selected || d.target.selected ||
-                    (auto_hbox &amp;&amp; d.source.t == 3); })
-                .attr(&quot;d&quot;, link_curve);
-            web.filter(function(d) { return d.source.selected || d.target.selected; })
-                .attr(&quot;d&quot;, web_curve);
-        }));
-
-    brush.call(d3.brush().keyModifiers(false)
-        .extent([[0, 0], [width, height]])
-        .on(&quot;start&quot;, function() {
-            if (d3.event.sourceEvent.type !== &quot;end&quot;) {
-                node.selectAll(&quot;.selectable&quot;).attr(&quot;style&quot;, function(d) {
-                    return nodeStyle(
-                        d.selected = d.previouslySelected = shiftKey &amp;&amp;
-                        d.selected, d.t);
-                });
-            }
-        })
-        .on(&quot;brush&quot;, function() {
-            if (d3.event.sourceEvent.type !== &quot;end&quot;) {
-                var selection = d3.event.selection;
-                node.selectAll(&quot;.selectable&quot;).attr(&quot;style&quot;, function(d) {
-                    return nodeStyle(d.selected = d.previouslySelected ^
-                        (selection != null
-                            &amp;&amp; selection[0][0] &lt;= d.x &amp;&amp; d.x &lt; selection[1][0]
-                            &amp;&amp; selection[0][1] &lt;= d.y &amp;&amp; d.y &lt; selection[1][1]), d.t);
-                });
-            }
-        })
-        .on(&quot;end&quot;, function() {
-            if (d3.event.selection != null) {
-                d3.select(this).call(d3.event.target.move, null);
-            }
-        }));
-}
-
-
-showGraph('#graph-output-001',
-  JSON.parse('{&quot;nodes&quot;: [{&quot;name&quot;: &quot;0&quot;, &quot;x&quot;: 50.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 8, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;1&quot;, &quot;x&quot;: 100.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;2&quot;, &quot;x&quot;: 50.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 8, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;3&quot;, &quot;x&quot;: 150.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 8, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;4&quot;, &quot;x&quot;: 150.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;5&quot;, &quot;x&quot;: 550.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 1, &quot;phase&quot;: &quot;rec[0]&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;6&quot;, &quot;x&quot;: 200.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;3\u03c0/10&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;7&quot;, &quot;x&quot;: 250.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 8, &quot;phase&quot;: &quot;\u03c0/2&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;8&quot;, &quot;x&quot;: 300.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;9&quot;, &quot;x&quot;: 350.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/10&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;10&quot;, &quot;x&quot;: 400.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 8, &quot;phase&quot;: &quot;\u03c0/2&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;11&quot;, &quot;x&quot;: 450.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;12&quot;, &quot;x&quot;: 500.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/5&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;13&quot;, &quot;x&quot;: 550.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 1, &quot;phase&quot;: &quot;rec[1]&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;14&quot;, &quot;x&quot;: 600.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 0, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;15&quot;, &quot;x&quot;: 600.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 0, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}], &quot;links&quot;: [{&quot;source&quot;: &quot;0&quot;, &quot;target&quot;: &quot;1&quot;, &quot;t&quot;: 5, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;1&quot;, &quot;target&quot;: &quot;4&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;2&quot;, &quot;target&quot;: &quot;3&quot;, &quot;t&quot;: 5, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;3&quot;, &quot;target&quot;: &quot;6&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;3&quot;, &quot;target&quot;: &quot;4&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;4&quot;, &quot;target&quot;: &quot;5&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;5&quot;, &quot;target&quot;: &quot;14&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;6&quot;, &quot;target&quot;: &quot;7&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;7&quot;, &quot;target&quot;: &quot;8&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;8&quot;, &quot;target&quot;: &quot;9&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;9&quot;, &quot;target&quot;: &quot;10&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;10&quot;, &quot;target&quot;: &quot;11&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;11&quot;, &quot;target&quot;: &quot;12&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;12&quot;, &quot;target&quot;: &quot;13&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;13&quot;, &quot;target&quot;: &quot;15&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}], &quot;pauli_web&quot;: []}'), 650, 200, 50,
-  10.0, false, false, '');
-&lt;/script&gt;&lt;/body&gt;&lt;/html&gt;" width="100%" height="212" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="ZX diagram 1" loading="lazy" />
 
 
 
@@ -838,413 +1011,556 @@ It can be interesting to look at the ZX diagram of more advanced Stim programs. 
 tsim.Circuit("""
 M !0
 CNOT rec[-1] 1
-""").diagram("pyzx");
+""").diagram("zx")
 ```
 
 
 
 
-<iframe srcDoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;html,body{margin:0;padding:0;height:100%;overflow:hidden;}[id^=&quot;graph-output-&quot;]{width:100%;height:100%;overflow:auto;box-sizing:border-box;}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;div style=&quot;overflow:auto; background-color: white&quot; id=&quot;graph-output-002&quot;&gt;&lt;/div&gt;&lt;script type=&quot;module&quot;&gt;
-var d3;
-if (d3 == null) { d3 = await import(&quot;https://esm.sh/d3@5&quot;); }
-var _settings_colors = JSON.parse('{&quot;edge&quot;: &quot;#000000&quot;, &quot;Hedge&quot;: &quot;#0088ff&quot;, &quot;Xedge&quot;: &quot;#999999&quot;, &quot;Bedge&quot;: &quot;#000000&quot;, &quot;HBedge&quot;: &quot;#0088ff&quot;, &quot;boundary&quot;: &quot;#000000&quot;, &quot;X&quot;: &quot;#ff8888&quot;, &quot;Y&quot;: &quot;#aabbff&quot;, &quot;Z&quot;: &quot;#ccffcc&quot;, &quot;H&quot;: &quot;#ffff66&quot;, &quot;W&quot;: &quot;#000000&quot;, &quot;Zalt&quot;: &quot;#ccffcc&quot;, &quot;Walt&quot;: &quot;#000000&quot;, &quot;Zbold&quot;: &quot;#ccffcc&quot;, &quot;Xbold&quot;: &quot;#ff8888&quot;, &quot;Xdark&quot;: &quot;#ff8888&quot;, &quot;Ydark&quot;: &quot;#aabbff&quot;, &quot;Zdark&quot;: &quot;#99dd99&quot;}');
-// PyZX - Python library for quantum circuit rewriting 
-//        and optimisation using the ZX-calculus
-// Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-// Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
 
-//    http://www.apache.org/licenses/LICENSE-2.0
+<iframe srcDoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;html,body{margin:0;padding:0;height:100%;overflow:hidden;}[id^=&quot;zxp-&quot;]{display:block !important;width:100%;height:100%;overflow:auto;box-sizing:border-box;}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;div id=&quot;zxp-002&quot; style=&quot;display:inline-block;&quot;&gt;&lt;/div&gt;&lt;script type=&quot;module&quot;&gt;
+var d3 = await import(&quot;https://esm.sh/d3@7&quot;);
+window.d3 = d3;
+// zxparam D3 viewer
+// Simplified from pyzx's zx_viewer.inline.js.
+//
+// Originally:
+//   PyZX - Python library for quantum circuit rewriting and optimisation using
+//   the ZX-calculus. Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
+//   Licensed under the Apache License, Version 2.0.
+//
+// This version supports only the features kept by zxparam:
+//   - Vertex types: Z, X, BOUNDARY
+//   - Edge types:   simple, hadamard
+//   - Vertex/edge domains: classical, quantum
+//   - Phase label drawn above each spider
+//   - Optional vertex label drawn over the node
+//   - Optional vertex index drawn above the node
+//   - Drag-and-drop vertex positioning
+//
+// Expects d3 v7 loaded globally.
 
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+(function (global) {
+    &quot;use strict&quot;;
 
-// styling functions
-function nodeColor(t) {
-    if (t == 0) return _settings_colors['boundary'];
-    else if (t == 1) return _settings_colors['Z']; // &quot;#ccffcc&quot;;
-    else if (t == 2) return _settings_colors['X']; // &quot;#ff8888&quot;;
-    else if (t == 3) return _settings_colors['H']; // &quot;yellow&quot;;
-    else if (t == 4) return _settings_colors['W']; // &quot;black&quot;;
-    else if (t == 5) return _settings_colors['Walt']; // &quot;black&quot;;
-    else if (t == 6) return _settings_colors['Zalt']; // &quot;#ccffcc&quot;;
-    else if (t == 7) return _settings_colors['Zbold']; // &quot;#ccffcc&quot; bold Z
-    else if (t == 8) return _settings_colors['Xbold']; // &quot;#ff8888&quot; bold X
-}
+    const COLORS = {
+        Z: &quot;#ccffcc&quot;,
+        X: &quot;#ff8888&quot;,
+        BOUNDARY: &quot;#000000&quot;,
+        outline: &quot;black&quot;,
+        edge: &quot;black&quot;,
+        hedge: &quot;#0088ff&quot;,
+        scalarText: &quot;#444&quot;,
+        labelText: &quot;#000&quot;,
+        phaseText: &quot;#00d&quot;,
+        indexText: &quot;#999&quot;,
+    };
 
-function edgeColor(t) {
-    if (t == 1) return _settings_colors['edge']; //&quot;black&quot;;
-    else if (t == 2) return _settings_colors['Hedge']; // &quot;#08f&quot;;
-    else if (t == 3) return _settings_colors['Xedge']; // &quot;gray&quot;;
-    else if (t == 4) return _settings_colors['Bedge']; // &quot;black&quot; bold
-    else if (t == 5) return _settings_colors['HBedge']; // &quot;#0088ff&quot; bold hadamard
-}
+    const LAYOUT = {
+        // Pixels per unit of (col, row) when the payload sets none. Matches
+        // pyzx's default scale.
+        scale: [40, 40],
+        // Padding around the graph in pixels.
+        pad: 30,
+        minWidth: 80,
+        minHeight: 60,
+    };
 
-function isBoldEdge(t) {
-    return t == 4 || t == 5;
-}
+    const NODE_STYLE = {
+        radius: 8,
+        boundaryRadiusScale: {
+            classical: 0.5,
+            quantum: 0.75,
+        },
+        strokeWidth: {
+            classical: 1.5,
+            quantum: 3,
+        },
+        obstructionPadding: 4,
+    };
 
-function webColor(t) {
-    if (t == 'X') return _settings_colors['Xdark'];
-    else if (t == 'Y') return _settings_colors['Ydark'];
-    else if (t == 'Z') return _settings_colors['Zdark'];
-    else if (t == 'I') return '#dddddd';
-}
+    const EDGE_STYLE = {
+        fill: &quot;none&quot;,
+        strokeWidth: {
+            classical: 1.5,
+            quantum: 3.5,
+        },
+        obstructionRange: {
+            min: 0.1,
+            max: 0.9,
+        },
+        curveOffset: 12,
+        zeroLengthEpsilon: 1e-6,
+        followTransitionMs: 90,
+    };
 
-function nodeStyle(selected, t) {
-    var bold = (t == 7 || t == 8);
-    if (selected) return &quot;stroke-width: &quot; + (bold ? &quot;4&quot; : &quot;2&quot;) + &quot;px; stroke: #00f&quot;;
-    return &quot;stroke-width: &quot; + (bold ? &quot;3&quot; : &quot;1.5&quot;) + &quot;px&quot;;
-}
+    const TEXT_STYLE = {
+        fontFamily: &quot;monospace&quot;,
+        interaction: &quot;pointer-events: none; user-select: none;&quot;,
+        label: {
+            fontSize: &quot;11px&quot;,
+            fontWeight: &quot;600&quot;,
+            offset: 4,
+        },
+        phase: {
+            fontSize: &quot;12px&quot;,
+            stackOffset: 18,
+            offset: 4,
+            maxInlineParameters: 3,
+        },
+        index: {
+            fontSize: &quot;10px&quot;,
+            offset: 4,
+            stackStep: 14,
+        },
+        scalar: {
+            fontSize: &quot;11px&quot;,
+            overflowX: &quot;auto&quot;,
+            whiteSpace: &quot;nowrap&quot;,
+            padding: &quot;2px 0&quot;,
+            marginBottom: &quot;4px&quot;,
+        },
+    };
 
-var symbolGround = {
-    draw: function(context, size){
-        let s = size/2;
+    const SVG_STYLE = &quot;max-width: none; max-height: none; display: block;&quot;;
 
-        context.moveTo(0,-s);
-        context.lineTo(0,0);
+    const INTERACTION_STYLE = {
+        idleCursor: &quot;cursor: grab;&quot;,
+        activeCursor: &quot;cursor: grabbing;&quot;,
+    };
 
-        context.moveTo(-s,0);
-        context.lineTo(s,0);
-
-        context.moveTo(-2*s/3,s/3);
-        context.lineTo(2*s/3,s/3);
-
-        context.moveTo(-s/3,2*s/3);
-        context.lineTo(s/3,2*s/3);
+    function nodeFill(t) {
+        if (t === &quot;Z&quot;) return COLORS.Z;
+        if (t === &quot;X&quot;) return COLORS.X;
+        return COLORS.BOUNDARY;
     }
-}
 
-function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_labels, scalar_str) {
-    var ntab = {};
+    function edgeColor(t) {
+        return t === &quot;hadamard&quot; ? COLORS.hedge : COLORS.edge;
+    }
 
-    var groundOffset = 2.5 * node_size;
+    function isQuantumDomain(domain) {
+        return domain === &quot;quantum&quot;;
+    }
 
-    graph.nodes.forEach(function(d) {
-        ntab[d.name] = d;
-        d.selected = false;
-        d.previouslySelected = false;
-        d.nhd = [];
-    });
+    function nodeRadius(node, nodeSize) {
+        if (node.t !== &quot;BOUNDARY&quot;) return nodeSize;
+        return isQuantumDomain(node.domain) ? 0.75 * nodeSize : 0.5 * nodeSize;
+    }
 
-    var spiders_and_boundaries = graph.nodes.filter(function(d) {
-        return d.t != 3;
-    });
+    function phaseParts(phase) {
+        const suffix = &quot;π&quot;;
+        if (!phase || !phase.endsWith(suffix)) {
+            return null;
+        }
 
-    graph.links.forEach(function(d) {
-        var s = ntab[d.source];
-        var t = ntab[d.target];
-        d.source = s;
-        d.target = t;
-        s.nhd.push(t);
-        t.nhd.push(s);
-    });
+        const parenthesizedEnd = &quot;)π&quot;;
+        if (phase.endsWith(parenthesizedEnd)) {
+            const closeIndex = phase.length - parenthesizedEnd.length;
+            const openIndex = phase.lastIndexOf(&quot;(&quot;, closeIndex);
+            if (openIndex &gt;= 0) {
+                const inner = phase.slice(openIndex + 1, closeIndex);
+                const parameters = inner.split(&quot;⊕&quot;).filter(function (p) { return p.length &gt; 0; });
+                const concretePrefix = phase.slice(0, openIndex);
+                return { concretePrefix: concretePrefix, parameters: parameters };
+            }
+        }
 
-    graph.pauli_web.forEach(function(d) {
-        var s = ntab[d.source];
-        var t = ntab[d.target];
-        d.source = s;
-        d.target = t;
-    });
+        const plusIndex = phase.lastIndexOf(&quot; + &quot;);
+        if (plusIndex &gt;= 0) {
+            return {
+                concretePrefix: phase.slice(0, plusIndex + 3),
+                parameters: [phase.slice(plusIndex + 3, phase.length - suffix.length)],
+            };
+        }
+        return { concretePrefix: &quot;&quot;, parameters: [phase.slice(0, phase.length - suffix.length)] };
+    }
 
-    var shiftKey;
+    function collapsedPhaseText(phase) {
+        const parts = phaseParts(phase);
+        if (!parts || parts.parameters.length &lt;= TEXT_STYLE.phase.maxInlineParameters) {
+            return phase;
+        }
+        const parameters = parts.parameters;
+        return (
+            parts.concretePrefix +
+            parameters[0] +
+            &quot;⊕...⊕&quot; +
+            parameters[parameters.length - 1] +
+            &quot;π&quot;
+        );
+    }
 
-    // SETUP SVG ITEMS
+    // Concrete angles keep their π (&quot;π/4&quot;, &quot;3π/4&quot;, &quot;π&quot;). A parameter always
+    // stands for a multiple of π, so parameter terms drop it (&quot;e1π&quot; -&gt; &quot;e1&quot;,
+    // &quot;(e1⊕f0)π&quot; -&gt; &quot;e1⊕f0&quot;).
+    function displayedPhaseTerm(term) {
+        if (!term || !term.endsWith(&quot;π&quot;)) {
+            return term;
+        }
+        const withoutPi = term.slice(0, -1);
+        if (/^~?\d*$/.test(withoutPi)) {
+            return term;
+        }
+        if (withoutPi.startsWith(&quot;(&quot;) &amp;&amp; withoutPi.endsWith(&quot;)&quot;)) {
+            return withoutPi.slice(1, -1);
+        }
+        return withoutPi;
+    }
 
-    var svg = d3.select(tag)
-    //.attr(&quot;tabindex&quot;, 1)
-        .on(&quot;keydown.brush&quot;, function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
-        .on(&quot;keyup.brush&quot;, function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
-    //.each(function() { this.focus(); })
-        .append(&quot;svg&quot;)
-        .attr(&quot;style&quot;, &quot;max-width: none; max-height: none&quot;)
-        .attr(&quot;width&quot;, width)
-        .attr(&quot;height&quot;, height);
+    function displayedPhaseText(phase, expanded) {
+        return (expanded ? phase : collapsedPhaseText(phase))
+            .split(&quot; + &quot;)
+            .map(displayedPhaseTerm)
+            .join(&quot;+&quot;);
+    }
 
-    var web = svg.append(&quot;g&quot;)
-        .attr(&quot;class&quot;, &quot;web&quot;)
-        .selectAll(&quot;line&quot;)
-        .data(graph.pauli_web)
-        .enter().append(&quot;path&quot;)
-        .attr(&quot;stroke&quot;, function(d) { return webColor(d.t); })
-        .attr(&quot;fill&quot;, &quot;transparent&quot;)
-        .attr(&quot;style&quot;, &quot;stroke-width: 7px&quot;);
+    function isCollapsedPhase(phase) {
+        return collapsedPhaseText(phase) !== phase;
+    }
 
-    var link = svg.append(&quot;g&quot;)
-        .attr(&quot;class&quot;, &quot;link&quot;)
-        .selectAll(&quot;line&quot;)
-        .data(graph.links)
-        .enter().append(&quot;path&quot;)
-        .attr(&quot;stroke&quot;, function(d) { return edgeColor(d.t); })
-        .attr(&quot;fill&quot;, &quot;transparent&quot;)
-        .attr(&quot;style&quot;, function(d) { return isBoldEdge(d.t) ? &quot;stroke-width: 3.5px&quot; : &quot;stroke-width: 1.5px&quot;; });
+    // Map graph-space (col, row) to SVG pixel coords, with `scale` pixels per
+    // unit as [x, y]. col → x, row → y. `topPad` is the vertical offset that
+    // accommodates an optional scalar label at the top of the SVG.
+    function project(node, minCol, minRow, topPad, scale) {
+        return {
+            x: LAYOUT.pad + (node.col - minCol) * scale[0],
+            y: topPad + (node.row - minRow) * scale[1],
+        };
+    }
 
-    var brush = svg.append(&quot;g&quot;)
-        .attr(&quot;class&quot;, &quot;brush&quot;);
+    function renderZx(containerEl, graphJson) {
+        if (!containerEl) throw new Error(&quot;renderZx: containerEl is required&quot;);
+        if (!graphJson) throw new Error(&quot;renderZx: graphJson is required&quot;);
+        const nodeSize = NODE_STYLE.radius;
 
-    var node = svg.append(&quot;g&quot;)
-        .attr(&quot;class&quot;, &quot;node&quot;)
-        .selectAll(&quot;g&quot;)
-        .data(graph.nodes)
-        .enter().append(&quot;g&quot;)
-        .attr(&quot;transform&quot;, function(d) {
-            return &quot;translate(&quot; + d.x + &quot;,&quot; + d.y +&quot;)&quot;;
+        // Clear prior content.
+        while (containerEl.firstChild) {
+            containerEl.removeChild(containerEl.firstChild);
+        }
+
+        const nodes = (graphJson.nodes || []).map(function (n) {
+            return Object.assign({}, n);
+        });
+        const rawLinks = graphJson.links || [];
+        const scale = graphJson.scale || LAYOUT.scale;
+
+        // Positions arrive already disambiguated (see viz/layout.py), so we
+        // render (col, row) as-is — no JS-side staggering needed.
+
+        // Compute (col, row) range.
+        let minCol = Infinity, maxCol = -Infinity;
+        let minRow = Infinity, maxRow = -Infinity;
+        nodes.forEach(function (n) {
+            if (n.col &lt; minCol) minCol = n.col;
+            if (n.col &gt; maxCol) maxCol = n.col;
+            if (n.row &lt; minRow) minRow = n.row;
+            if (n.row &gt; maxRow) maxRow = n.row;
+        });
+        if (!isFinite(minCol)) { minCol = 0; maxCol = 0; minRow = 0; maxRow = 0; }
+
+        // Scalar is rendered as a scrollable HTML div above the SVG, so we
+        // no longer reserve vertical space for it inside the SVG itself.
+        const showScalar = graphJson.scalar &amp;&amp; graphJson.scalar !== &quot;1&quot; &amp;&amp; graphJson.scalar !== &quot;&quot;;
+        const topPad = LAYOUT.pad;
+
+        // Size SVG strictly to content (with small minimum floors so a single
+        // node still has visible area).
+        const contentW = 2 * LAYOUT.pad + (maxCol - minCol) * scale[0];
+        const contentH = topPad + LAYOUT.pad + (maxRow - minRow) * scale[1];
+        const w = Math.max(contentW, LAYOUT.minWidth);
+        const h = Math.max(contentH, LAYOUT.minHeight);
+
+        // Initial pixel positions.
+        const byId = {};
+        nodes.forEach(function (n) {
+            const p = project(n, minCol, minRow, topPad, scale);
+            n.x = p.x;
+            n.y = p.y;
+            byId[n.id] = n;
         });
 
-    // Draw a ground symbol connected to the node.
-    node.filter(function(d) { return d.ground; })
-        .append(&quot;path&quot;)
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;style&quot;, &quot;stroke-width: 1.5px&quot;)
-        .attr(&quot;fill&quot;, &quot;none&quot;)
-        .attr(&quot;d&quot;, &quot;M 0 0 L 0 &quot;+(groundOffset))
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
-    node.filter(function(d) { return d.ground; })
-        .append(&quot;path&quot;)
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;style&quot;, &quot;stroke-width: 1.5px&quot;)
-        .attr(&quot;fill&quot;, &quot;none&quot;)
-        .attr(&quot;d&quot;, d3.symbol().type(symbolGround).size(node_size*1.5))
-        .attr(&quot;transform&quot;, &quot;translate(0,&quot;+groundOffset+&quot;)&quot;)
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
+        // Resolve link endpoints to node references.
+        const links = rawLinks
+            .map(function (l) {
+                const s = byId[l.source];
+                const t = byId[l.target];
+                if (!s || !t) return null;
+                return { source: s, target: t, t: l.t, domain: l.domain };
+            })
+            .filter(function (l) { return l !== null; });
 
-    node.filter(function(d) { return d.t != 3 &amp;&amp; d.t != 5 &amp;&amp; d.t != 6; })
-        .append(&quot;circle&quot;)
-        .attr(&quot;r&quot;, function(d) {
-            if (d.t == 0) return 0.5 * node_size;
-            else if (d.t == 4) return 0.25 * node_size;
-            else return node_size;
-        })
-        .attr(&quot;fill&quot;, function(d) { return nodeColor(d.t); })
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;stroke-width&quot;, function(d) { return (d.t == 7 || d.t == 8) ? 3 : 1.5; })
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
+        // Scalar rendered as an HTML div above the SVG. Bounding its width to
+        // the SVG width and enabling `overflow-x: auto` means long scalars
+        // scroll horizontally instead of being clipped by the SVG viewport.
+        if (showScalar) {
+            const scalarDiv = document.createElement(&quot;div&quot;);
+            scalarDiv.textContent = &quot;scalar: &quot; + graphJson.scalar;
+            scalarDiv.style.fontFamily = TEXT_STYLE.fontFamily;
+            scalarDiv.style.fontSize = TEXT_STYLE.scalar.fontSize;
+            scalarDiv.style.color = COLORS.scalarText;
+            scalarDiv.style.maxWidth = w + &quot;px&quot;;
+            scalarDiv.style.overflowX = TEXT_STYLE.scalar.overflowX;
+            scalarDiv.style.whiteSpace = TEXT_STYLE.scalar.whiteSpace;
+            scalarDiv.style.padding = TEXT_STYLE.scalar.padding;
+            scalarDiv.style.marginBottom = TEXT_STYLE.scalar.marginBottom;
+            containerEl.appendChild(scalarDiv);
+        }
 
-    var hbox = node.filter(function(d) { return d.t == 3; });
+        const svg = d3.select(containerEl)
+            .append(&quot;svg&quot;)
+            .attr(&quot;style&quot;, SVG_STYLE)
+            .attr(&quot;width&quot;, w)
+            .attr(&quot;height&quot;, h);
 
-    hbox.append(&quot;rect&quot;)
-        .attr(&quot;x&quot;, -0.75 * node_size).attr(&quot;y&quot;, -0.75 * node_size)
-        .attr(&quot;width&quot;, node_size * 1.5).attr(&quot;height&quot;, node_size * 1.5)
-        .attr(&quot;fill&quot;, function(d) { return nodeColor(d.t); })
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
+        // Bend edges that would pass visually through a non-endpoint vertex
+        // so it stays unambiguous which vertices an edge actually connects.
+        const obstructRadius = nodeSize + NODE_STYLE.obstructionPadding;
 
-    // draw a triangle for d.t == 5
-    node.filter(function(d) { return d.t == 5; })
-        .append(&quot;path&quot;)
-        .attr(&quot;d&quot;, &quot;M 0 0 L &quot;+node_size+&quot; &quot;+node_size+&quot; L -&quot;+node_size+&quot; &quot;+node_size+&quot; Z&quot;)
-        .attr(&quot;fill&quot;, function(d) { return nodeColor(d.t); })
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;class&quot;, &quot;selectable&quot;)
-        .attr(&quot;transform&quot;, &quot;translate(&quot; + (-node_size/2) + &quot;, 0) rotate(-90)&quot;);
+        // Spatial index over nodes: each edge queries candidates within its
+        // inflated bounding box, cutting obstruction scans from O(N) to O(log N)
+        // on average. Kept in sync with node moves by the drag handler.
+        const nodeTree = d3.quadtree()
+            .x(function (n) { return n.x; })
+            .y(function (n) { return n.y; })
+            .addAll(nodes);
 
-    // draw a square for Z box: d.t == 6
-    node.filter(function(d) { return d.t == 6; })
-        .append(&quot;rect&quot;)
-        .attr(&quot;x&quot;, -0.75 * node_size).attr(&quot;y&quot;, -0.75 * node_size)
-        .attr(&quot;width&quot;, node_size * 1.5).attr(&quot;height&quot;, node_size * 1.5)
-        .attr(&quot;fill&quot;, function(d) { return nodeColor(d.t); })
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
+        // Always emit a quadratic-bezier path (with midpoint control when
+        // straight) so d3's default string interpolator can smoothly animate
+        // straight ↔ curved transitions during drag.
+        function edgePath(edge) {
+            const sx = edge.source.x, sy = edge.source.y;
+            const tx = edge.target.x, ty = edge.target.y;
+            const dx = tx - sx, dy = ty - sy;
+            const midX = (sx + tx) / 2, midY = (sy + ty) / 2;
+            const L2 = dx * dx + dy * dy;
+            if (L2 &lt; EDGE_STYLE.zeroLengthEpsilon) {
+                return &quot;M &quot; + sx + &quot;,&quot; + sy + &quot; Q &quot; + midX + &quot;,&quot; + midY + &quot; &quot; + tx + &quot;,&quot; + ty;
+            }
+            const L = Math.sqrt(L2);
 
-    node.filter(function(d) { return d.phase != '' &amp;&amp; d.phase.indexOf('[') === -1; })
-        .append(&quot;text&quot;)
-        .attr(&quot;y&quot;, 0.7 * node_size + 14)
-        .text(function (d) { return d.phase })
-        .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-        .attr(&quot;font-size&quot;, &quot;12px&quot;)
-        .attr(&quot;font-family&quot;, &quot;monospace&quot;)
-        .attr(&quot;fill&quot;, &quot;#00d&quot;)
-        .attr('style', 'pointer-events: none; user-select: none;');
+            // Segment AABB inflated by obstructRadius — any obstructing node
+            // must fall inside this box.
+            const bxMin = Math.min(sx, tx) - obstructRadius;
+            const bxMax = Math.max(sx, tx) + obstructRadius;
+            const byMin = Math.min(sy, ty) - obstructRadius;
+            const byMax = Math.max(sy, ty) + obstructRadius;
 
-    node.filter(function(d) { return d.phase != '' &amp;&amp; d.phase.indexOf('[') !== -1; })
-        .append(&quot;text&quot;)
-        .attr(&quot;y&quot;, -0.7 * node_size - 8)
-        .text(function (d) { return d.phase })
-        .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-        .attr(&quot;font-size&quot;, &quot;12px&quot;)
-        .attr(&quot;font-family&quot;, &quot;monospace&quot;)
-        .attr(&quot;fill&quot;, &quot;black&quot;)
-        .attr('style', 'pointer-events: none; user-select: none;');
-
-    if (show_labels) {
-        node.append(&quot;text&quot;)
-            .attr(&quot;y&quot;, -0.7 * node_size - 8)
-            .text(function (d) { return d.name; })
-            .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-            .attr(&quot;font-size&quot;, &quot;10px&quot;)
-            .attr(&quot;font-family&quot;, &quot;monospace&quot;)
-            .attr(&quot;fill&quot;, &quot;#999&quot;)
-            .attr('style', 'pointer-events: none; user-select: none;');
-    }
-
-    // Display the chosen data fields over the node.
-    node.filter(d =&gt; d.vdata.length &gt; 0)
-        .append(&quot;text&quot;)
-        .attr(&quot;y&quot;, d =&gt; -0.7 * node_size - 14 - 10 * d.vdata.length)
-        .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-        .attr(&quot;font-size&quot;, &quot;8px&quot;)
-        .attr(&quot;font-family&quot;, &quot;monospace&quot;)
-        .attr(&quot;fill&quot;, &quot;#c66&quot;)
-        .attr('style', 'pointer-events: none; user-select: none;')
-        .selectAll(&quot;tspan&quot;)
-        .data(d =&gt; d.vdata)
-        .enter()
-        .append(&quot;tspan&quot;)
-        .attr(&quot;x&quot;, &quot;0&quot;)
-        .attr(&quot;dy&quot;, &quot;1.2em&quot;)
-        .text(x =&gt; x.join(&quot;: &quot;));
-
-    if (scalar_str != &quot;&quot;) {
-        svg.append(&quot;text&quot;)
-            .text(scalar_str)
-            .attr(&quot;x&quot;, 60).attr(&quot;y&quot;, 40)
-            .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-    }
-
-    function update_hboxes() {
-        if (auto_hbox) {
-            var pos = {};
-            hbox.attr(&quot;transform&quot;, function(d) {
-                // calculate barycenter of non-hbox neighbours, then nudge a bit
-                // to the NE.
-                var x=0,y=0,sz=0;
-                for (var i = 0; i &lt; d.nhd.length; ++i) {
-                    if (d.nhd[i].t != 3) {
-                        sz++;
-                        x += d.nhd[i].x;
-                        y += d.nhd[i].y;
-                    }
+            let sumSigned = 0;
+            let count = 0;
+            nodeTree.visit(function (qnode, qx0, qy0, qx1, qy1) {
+                if (qx0 &gt; bxMax || qx1 &lt; bxMin || qy0 &gt; byMax || qy1 &lt; byMin) {
+                    return true;  // quadrant can't contain a candidate — prune
                 }
-
-                offset = 0.25 * scale;
-
-                if (sz != 0) {
-                    x = (x/sz) + offset;
-                    y = (y/sz) - offset;
-
-                    while (pos[[x,y]]) {
-                        x += offset;
-                    }
-                    d.x = x;
-                    d.y = y;
-                    pos[[x,y]] = true;
+                if (!qnode.length) {
+                    // Leaf: walk the coincident-points linked list.
+                    let leaf = qnode;
+                    do {
+                        const n = leaf.data;
+                        if (n !== edge.source &amp;&amp; n !== edge.target) {
+                            const along = ((n.x - sx) * dx + (n.y - sy) * dy) / L2;
+                            if (
+                                along &gt;= EDGE_STYLE.obstructionRange.min &amp;&amp;
+                                along &lt;= EDGE_STYLE.obstructionRange.max
+                            ) {
+                                const perp = (dx * (n.y - sy) - dy * (n.x - sx)) / L;
+                                if (Math.abs(perp) &lt; obstructRadius) {
+                                    sumSigned += perp;
+                                    count++;
+                                }
+                            }
+                        }
+                        leaf = leaf.next;
+                    } while (leaf);
                 }
-
-                return &quot;translate(&quot;+d.x+&quot;,&quot;+d.y+&quot;)&quot;;
+                return false;
             });
+
+            let cx = midX, cy = midY;
+            if (count &gt; 0) {
+                // Offset the control point perpendicular to the segment,
+                // away from the side with the heaviest obstruction.
+                const sign = sumSigned &gt; 0 ? -1 : 1;
+                const offsetMag = obstructRadius + EDGE_STYLE.curveOffset;
+                cx = midX + (-dy / L) * sign * offsetMag;
+                cy = midY + (dx / L) * sign * offsetMag;
+            }
+            return &quot;M &quot; + sx + &quot;,&quot; + sy + &quot; Q &quot; + cx + &quot;,&quot; + cy + &quot; &quot; + tx + &quot;,&quot; + ty;
         }
+
+        // Edges. Hadamard edges are drawn as solid blue paths (physics
+        // convention); simple edges are solid black.
+        const link = svg.append(&quot;g&quot;)
+            .attr(&quot;class&quot;, &quot;link&quot;)
+            .attr(&quot;fill&quot;, EDGE_STYLE.fill)
+            .selectAll(&quot;path&quot;)
+            .data(links)
+            .enter()
+            .append(&quot;path&quot;)
+            .attr(&quot;d&quot;, edgePath)
+            .attr(&quot;stroke&quot;, function (d) { return edgeColor(d.t); })
+            .attr(&quot;stroke-width&quot;, function (d) {
+                return isQuantumDomain(d.domain)
+                    ? EDGE_STYLE.strokeWidth.quantum
+                    : EDGE_STYLE.strokeWidth.classical;
+            });
+
+        const node = svg.append(&quot;g&quot;)
+            .attr(&quot;class&quot;, &quot;node&quot;)
+            .selectAll(&quot;g&quot;)
+            .data(nodes)
+            .enter()
+            .append(&quot;g&quot;)
+            .attr(&quot;transform&quot;, function (d) {
+                return &quot;translate(&quot; + d.x + &quot;,&quot; + d.y + &quot;)&quot;;
+            })
+            .attr(&quot;style&quot;, INTERACTION_STYLE.idleCursor);
+
+        // Vertex body.
+        node.append(&quot;circle&quot;)
+            .attr(&quot;r&quot;, function (d) {
+                return nodeRadius(d, nodeSize);
+            })
+            .attr(&quot;fill&quot;, function (d) { return nodeFill(d.t); })
+            .attr(&quot;stroke&quot;, COLORS.outline)
+            .attr(&quot;stroke-width&quot;, function (d) {
+                return isQuantumDomain(d.domain)
+                    ? NODE_STYLE.strokeWidth.quantum
+                    : NODE_STYLE.strokeWidth.classical;
+            });
+
+        // Label sits just above the node (baseline above the circle's top
+        // edge). Non-boundary nodes with a phase will stack the phase above
+        // the label; see the phase block below.
+        node.filter(function (d) { return d.label; })
+            .append(&quot;text&quot;)
+            .attr(&quot;y&quot;, function (d) {
+                return -nodeRadius(d, nodeSize) - TEXT_STYLE.label.offset;
+            })
+            .text(function (d) { return d.label; })
+            .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
+            .attr(&quot;font-size&quot;, TEXT_STYLE.label.fontSize)
+            .attr(&quot;font-family&quot;, TEXT_STYLE.fontFamily)
+            .attr(&quot;font-weight&quot;, TEXT_STYLE.label.fontWeight)
+            .attr(&quot;fill&quot;, COLORS.labelText)
+            .attr(&quot;style&quot;, TEXT_STYLE.interaction);
+
+        // Phase label above the node — stacks above the label text when both
+        // are present.
+        function hasLabel(d) { return !!d.label; }
+        function hasPhase(d) { return d.t !== &quot;BOUNDARY&quot; &amp;&amp; d.phase &amp;&amp; d.phase !== &quot;0&quot;; }
+
+        node.filter(hasPhase)
+            .append(&quot;text&quot;)
+            .attr(&quot;y&quot;, function (d) {
+                const radius = nodeRadius(d, nodeSize);
+                return hasLabel(d)
+                    ? -radius - TEXT_STYLE.phase.stackOffset
+                    : -radius - TEXT_STYLE.phase.offset;
+            })
+            .text(function (d) { return displayedPhaseText(d.phase, false); })
+            .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
+            .attr(&quot;font-size&quot;, TEXT_STYLE.phase.fontSize)
+            .attr(&quot;font-family&quot;, TEXT_STYLE.fontFamily)
+            .attr(&quot;fill&quot;, COLORS.phaseText)
+            .attr(&quot;style&quot;, function (d) {
+                return isCollapsedPhase(d.phase) ? &quot;cursor: default; user-select: none;&quot; : TEXT_STYLE.interaction;
+            })
+            .on(&quot;mouseenter&quot;, function (event, d) {
+                if (isCollapsedPhase(d.phase)) {
+                    d3.select(this).text(displayedPhaseText(d.phase, true));
+                }
+            })
+            .on(&quot;mouseleave&quot;, function (event, d) {
+                if (isCollapsedPhase(d.phase)) {
+                    d3.select(this).text(displayedPhaseText(d.phase, false));
+                }
+            });
+
+        if (graphJson.show_indices) {
+            node.append(&quot;text&quot;)
+                .attr(&quot;y&quot;, function (d) {
+                    const stacks = (hasPhase(d) ? 1 : 0) + (hasLabel(d) ? 1 : 0);
+                    return (
+                        -nodeRadius(d, nodeSize) -
+                        TEXT_STYLE.index.offset -
+                        stacks * TEXT_STYLE.index.stackStep
+                    );
+                })
+                .text(function (d) { return String(d.id); })
+                .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
+                .attr(&quot;font-size&quot;, TEXT_STYLE.index.fontSize)
+                .attr(&quot;font-family&quot;, TEXT_STYLE.fontFamily)
+                .attr(&quot;fill&quot;, COLORS.indexText)
+                .attr(&quot;style&quot;, TEXT_STYLE.interaction);
+        }
+
+        // Drag: update node position and re-render edges. d3 v7 passes
+        // (event, datum) to the callback (unlike v5's d3.event).
+        //
+        // Incident edges are recomputed every tick — their endpoints must
+        // track the cursor. Non-incident edges only change because the
+        // dragged node may newly obstruct / un-obstruct them, so we batch
+        // their refresh through requestAnimationFrame, bounding the cost to
+        // one sweep per frame regardless of drag event rate.
+        let nonIncidentPending = false;
+        let dragTarget = null;
+
+        const drag = d3.drag()
+            .on(&quot;start&quot;, function (event, d) {
+                d3.select(this).attr(&quot;style&quot;, INTERACTION_STYLE.activeCursor);
+                dragTarget = d;
+            })
+            .on(&quot;drag&quot;, function (event, d) {
+                // Keep the spatial index coherent: remove uses the OLD (x, y).
+                nodeTree.remove(d);
+                d.x += event.dx;
+                d.y += event.dy;
+                nodeTree.add(d);
+                d3.select(this).attr(&quot;transform&quot;, &quot;translate(&quot; + d.x + &quot;,&quot; + d.y + &quot;)&quot;);
+
+                link.filter(function (l) { return l.source === d || l.target === d; })
+                    .transition(&quot;edge-follow&quot;)
+                    .duration(EDGE_STYLE.followTransitionMs)
+                    .ease(d3.easeCubicOut)
+                    .attr(&quot;d&quot;, edgePath);
+
+                if (!nonIncidentPending) {
+                    nonIncidentPending = true;
+                    requestAnimationFrame(function () {
+                        nonIncidentPending = false;
+                        const target = dragTarget;
+                        if (!target) return;
+                        link.filter(function (l) { return l.source !== target &amp;&amp; l.target !== target; })
+                            .transition(&quot;edge-follow&quot;)
+                            .duration(EDGE_STYLE.followTransitionMs)
+                            .ease(d3.easeCubicOut)
+                            .attr(&quot;d&quot;, edgePath);
+                    });
+                }
+            })
+            .on(&quot;end&quot;, function () {
+                d3.select(this).attr(&quot;style&quot;, INTERACTION_STYLE.idleCursor);
+                dragTarget = null;
+            });
+
+        node.call(drag);
+
+        return svg.node();
     }
 
-    update_hboxes();
-
-    var link_curve = function(d) {
-        var x1 = d.source.x, x2 = d.target.x, y1 = d.source.y, y2 = d.target.y;
-        if (x1 == x2 &amp;&amp; y1 == y2 &amp;&amp; d.num_parallel == 1) {
-            var cx1 = x1 - 40;
-            var cy1 = y1 - 40;
-            var cx2 = x1 + 40;
-            var cy2 = y1 - 40;
-            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
-        } else if (x1 == x2 &amp;&amp; y1 == y2) {
-            var pos = d.index + 1;
-            var cx1 = x1 - 20 - pos * 10;
-            var cy1 = y1 - 20 - pos * 10;
-            var cx2 = x1 + 20 + pos * 10;
-            var cy2 = y1 - 20 - pos * 10;
-            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
-        } else if (d.num_parallel == 1) {
-            return `M ${x1} ${y1} L ${x2} ${y2}`;
-        } else {
-            var dx = x2 - x1, dy = y2 - y1;
-            var midx = 0.5 * (x1 + x2), midy = 0.5 * (y1 + y2);
-            var pos = (d.index / (d.num_parallel-1)) - 0.5;
-            var cx = midx - pos * dy;
-            var cy = midy + pos * dx;
-            return `M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`;
-            // return `M ${x1} ${y1} L ${x2} ${y2}`;
-        }
-    };
-    link.attr(&quot;d&quot;, link_curve);
-
-
-    var web_curve = function(d) {
-        var x1 = d.source.x, x2 = (x1 + d.target.x)/2, y1 = d.source.y, y2 = (y1 + d.target.y)/2;
-        return `M ${x1} ${y1} L ${x2} ${y2}`;
+    // Expose renderZx both globally (for inline &lt;script&gt; usage) and as a
+    // CommonJS-style export for bundlers/tests.
+    global.renderZx = renderZx;
+    if (typeof module !== &quot;undefined&quot; &amp;&amp; module.exports) {
+        module.exports = { renderZx: renderZx, displayedPhaseText: displayedPhaseText };
     }
-    web.attr(&quot;d&quot;, web_curve);
+})(typeof window !== &quot;undefined&quot; ? window : globalThis);
 
-    // EVENTS FOR DRAGGING AND SELECTION
+renderZx(document.getElementById(&quot;zxp-002&quot;), {&quot;nodes&quot;: [{&quot;id&quot;: 0, &quot;t&quot;: &quot;BOUNDARY&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 0.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: true, &quot;is_output&quot;: false, &quot;port&quot;: -1}, {&quot;id&quot;: 1, &quot;t&quot;: &quot;X&quot;, &quot;phase&quot;: &quot;\u03c0&quot;, &quot;col&quot;: 1.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 2, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 2.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;classical&quot;, &quot;label&quot;: &quot;rec[0]&quot;, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 3, &quot;t&quot;: &quot;X&quot;, &quot;phase&quot;: &quot;\u03c0&quot;, &quot;col&quot;: 3.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 4, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 4.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 5, &quot;t&quot;: &quot;BOUNDARY&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 0.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: true, &quot;is_output&quot;: false, &quot;port&quot;: -2}, {&quot;id&quot;: 6, &quot;t&quot;: &quot;X&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 4.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 7, &quot;t&quot;: &quot;BOUNDARY&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 5.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: true, &quot;port&quot;: 0}, {&quot;id&quot;: 8, &quot;t&quot;: &quot;BOUNDARY&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 5.0, &quot;row&quot;: 1.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: true, &quot;port&quot;: 1}], &quot;links&quot;: [{&quot;source&quot;: 0, &quot;target&quot;: 1, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 1, &quot;target&quot;: 2, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 2, &quot;target&quot;: 3, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 2, &quot;target&quot;: 6, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 3, &quot;target&quot;: 4, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 4, &quot;target&quot;: 7, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 5, &quot;target&quot;: 6, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 6, &quot;target&quot;: 8, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}], &quot;show_indices&quot;: false, &quot;scalar&quot;: &quot;(1)\u00b72^1&quot;, &quot;scale&quot;: [40.0, 40.0]});
+&lt;/script&gt;&lt;/body&gt;&lt;/html&gt;" width="100%" height="134" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="ZX diagram 2" loading="lazy" />
 
-    node.on(&quot;mousedown&quot;, function(d) {
-        if (shiftKey) {
-            d3.select(this).selectAll(&quot;.selectable&quot;).attr(&quot;style&quot;, nodeStyle(d.selected = !d.selected, d.t));
-            d3.event.stopImmediatePropagation();
-        } else if (!d.selected) {
-            node.selectAll(&quot;.selectable&quot;).attr(&quot;style&quot;, function(p) { return nodeStyle(p.selected = d === p, p.t); });
-        }
-    })
-        .call(d3.drag().on(&quot;drag&quot;, function(d) {
-            var dx = d3.event.dx;
-            var dy = d3.event.dy;
-            // node.filter(function(d) { return d.selected; })
-            //     .attr(&quot;cx&quot;, function(d) { return d.x += dx; })
-            //     .attr(&quot;cy&quot;, function(d) { return d.y += dy; });
-            node.filter(function(d) { return d.selected; })
-                .attr(&quot;transform&quot;, function(d) {
-                    d.x += dx;
-                    d.y += dy;
-                    return &quot;translate(&quot; + d.x + &quot;,&quot; + d.y +&quot;)&quot;;
-                });
-
-            update_hboxes();
-
-            link.filter(function(d) { return d.source.selected || d.target.selected ||
-                    (auto_hbox &amp;&amp; d.source.t == 3); })
-                .attr(&quot;d&quot;, link_curve);
-            web.filter(function(d) { return d.source.selected || d.target.selected; })
-                .attr(&quot;d&quot;, web_curve);
-        }));
-
-    brush.call(d3.brush().keyModifiers(false)
-        .extent([[0, 0], [width, height]])
-        .on(&quot;start&quot;, function() {
-            if (d3.event.sourceEvent.type !== &quot;end&quot;) {
-                node.selectAll(&quot;.selectable&quot;).attr(&quot;style&quot;, function(d) {
-                    return nodeStyle(
-                        d.selected = d.previouslySelected = shiftKey &amp;&amp;
-                        d.selected, d.t);
-                });
-            }
-        })
-        .on(&quot;brush&quot;, function() {
-            if (d3.event.sourceEvent.type !== &quot;end&quot;) {
-                var selection = d3.event.selection;
-                node.selectAll(&quot;.selectable&quot;).attr(&quot;style&quot;, function(d) {
-                    return nodeStyle(d.selected = d.previouslySelected ^
-                        (selection != null
-                            &amp;&amp; selection[0][0] &lt;= d.x &amp;&amp; d.x &lt; selection[1][0]
-                            &amp;&amp; selection[0][1] &lt;= d.y &amp;&amp; d.y &lt; selection[1][1]), d.t);
-                });
-            }
-        })
-        .on(&quot;end&quot;, function() {
-            if (d3.event.selection != null) {
-                d3.select(this).call(d3.event.target.move, null);
-            }
-        }));
-}
-
-
-showGraph('#graph-output-002',
-  JSON.parse('{&quot;nodes&quot;: [{&quot;name&quot;: &quot;0&quot;, &quot;x&quot;: 50.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 0, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;1&quot;, &quot;x&quot;: 100.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 8, &quot;phase&quot;: &quot;\u03c0&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;2&quot;, &quot;x&quot;: 150.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 1, &quot;phase&quot;: &quot;rec[0]&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;3&quot;, &quot;x&quot;: 200.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 8, &quot;phase&quot;: &quot;\u03c0&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;4&quot;, &quot;x&quot;: 250.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;5&quot;, &quot;x&quot;: 50.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 0, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;6&quot;, &quot;x&quot;: 250.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 8, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;7&quot;, &quot;x&quot;: 300.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 0, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;8&quot;, &quot;x&quot;: 300.0, &quot;y&quot;: 150.0, &quot;z&quot;: 0.0, &quot;t&quot;: 0, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}], &quot;links&quot;: [{&quot;source&quot;: &quot;0&quot;, &quot;target&quot;: &quot;1&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;1&quot;, &quot;target&quot;: &quot;2&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;2&quot;, &quot;target&quot;: &quot;3&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;2&quot;, &quot;target&quot;: &quot;6&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;3&quot;, &quot;target&quot;: &quot;4&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;4&quot;, &quot;target&quot;: &quot;7&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;5&quot;, &quot;target&quot;: &quot;6&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;6&quot;, &quot;target&quot;: &quot;8&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}], &quot;pauli_web&quot;: []}'), 350, 200, 50,
-  10.0, false, false, '');
-&lt;/script&gt;&lt;/body&gt;&lt;/html&gt;" width="100%" height="212" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="ZX diagram 2" loading="lazy" />
 
 
 
@@ -1260,410 +1576,552 @@ c = tsim.Circuit("""
         T 0
     }
 """)
-c.diagram("pyzx");
+c.diagram("zx")
 ```
 
 
 
 
-<iframe srcDoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;html,body{margin:0;padding:0;height:100%;overflow:hidden;}[id^=&quot;graph-output-&quot;]{width:100%;height:100%;overflow:auto;box-sizing:border-box;}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;div style=&quot;overflow:auto; background-color: white&quot; id=&quot;graph-output-003&quot;&gt;&lt;/div&gt;&lt;script type=&quot;module&quot;&gt;
-var d3;
-if (d3 == null) { d3 = await import(&quot;https://esm.sh/d3@5&quot;); }
-var _settings_colors = JSON.parse('{&quot;edge&quot;: &quot;#000000&quot;, &quot;Hedge&quot;: &quot;#0088ff&quot;, &quot;Xedge&quot;: &quot;#999999&quot;, &quot;Bedge&quot;: &quot;#000000&quot;, &quot;HBedge&quot;: &quot;#0088ff&quot;, &quot;boundary&quot;: &quot;#000000&quot;, &quot;X&quot;: &quot;#ff8888&quot;, &quot;Y&quot;: &quot;#aabbff&quot;, &quot;Z&quot;: &quot;#ccffcc&quot;, &quot;H&quot;: &quot;#ffff66&quot;, &quot;W&quot;: &quot;#000000&quot;, &quot;Zalt&quot;: &quot;#ccffcc&quot;, &quot;Walt&quot;: &quot;#000000&quot;, &quot;Zbold&quot;: &quot;#ccffcc&quot;, &quot;Xbold&quot;: &quot;#ff8888&quot;, &quot;Xdark&quot;: &quot;#ff8888&quot;, &quot;Ydark&quot;: &quot;#aabbff&quot;, &quot;Zdark&quot;: &quot;#99dd99&quot;}');
-// PyZX - Python library for quantum circuit rewriting 
-//        and optimisation using the ZX-calculus
-// Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-// Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
 
-//    http://www.apache.org/licenses/LICENSE-2.0
+<iframe srcDoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;html,body{margin:0;padding:0;height:100%;overflow:hidden;}[id^=&quot;zxp-&quot;]{display:block !important;width:100%;height:100%;overflow:auto;box-sizing:border-box;}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;div id=&quot;zxp-003&quot; style=&quot;display:inline-block;&quot;&gt;&lt;/div&gt;&lt;script type=&quot;module&quot;&gt;
+var d3 = await import(&quot;https://esm.sh/d3@7&quot;);
+window.d3 = d3;
+// zxparam D3 viewer
+// Simplified from pyzx's zx_viewer.inline.js.
+//
+// Originally:
+//   PyZX - Python library for quantum circuit rewriting and optimisation using
+//   the ZX-calculus. Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
+//   Licensed under the Apache License, Version 2.0.
+//
+// This version supports only the features kept by zxparam:
+//   - Vertex types: Z, X, BOUNDARY
+//   - Edge types:   simple, hadamard
+//   - Vertex/edge domains: classical, quantum
+//   - Phase label drawn above each spider
+//   - Optional vertex label drawn over the node
+//   - Optional vertex index drawn above the node
+//   - Drag-and-drop vertex positioning
+//
+// Expects d3 v7 loaded globally.
 
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+(function (global) {
+    &quot;use strict&quot;;
 
-// styling functions
-function nodeColor(t) {
-    if (t == 0) return _settings_colors['boundary'];
-    else if (t == 1) return _settings_colors['Z']; // &quot;#ccffcc&quot;;
-    else if (t == 2) return _settings_colors['X']; // &quot;#ff8888&quot;;
-    else if (t == 3) return _settings_colors['H']; // &quot;yellow&quot;;
-    else if (t == 4) return _settings_colors['W']; // &quot;black&quot;;
-    else if (t == 5) return _settings_colors['Walt']; // &quot;black&quot;;
-    else if (t == 6) return _settings_colors['Zalt']; // &quot;#ccffcc&quot;;
-    else if (t == 7) return _settings_colors['Zbold']; // &quot;#ccffcc&quot; bold Z
-    else if (t == 8) return _settings_colors['Xbold']; // &quot;#ff8888&quot; bold X
-}
+    const COLORS = {
+        Z: &quot;#ccffcc&quot;,
+        X: &quot;#ff8888&quot;,
+        BOUNDARY: &quot;#000000&quot;,
+        outline: &quot;black&quot;,
+        edge: &quot;black&quot;,
+        hedge: &quot;#0088ff&quot;,
+        scalarText: &quot;#444&quot;,
+        labelText: &quot;#000&quot;,
+        phaseText: &quot;#00d&quot;,
+        indexText: &quot;#999&quot;,
+    };
 
-function edgeColor(t) {
-    if (t == 1) return _settings_colors['edge']; //&quot;black&quot;;
-    else if (t == 2) return _settings_colors['Hedge']; // &quot;#08f&quot;;
-    else if (t == 3) return _settings_colors['Xedge']; // &quot;gray&quot;;
-    else if (t == 4) return _settings_colors['Bedge']; // &quot;black&quot; bold
-    else if (t == 5) return _settings_colors['HBedge']; // &quot;#0088ff&quot; bold hadamard
-}
+    const LAYOUT = {
+        // Pixels per unit of (col, row) when the payload sets none. Matches
+        // pyzx's default scale.
+        scale: [40, 40],
+        // Padding around the graph in pixels.
+        pad: 30,
+        minWidth: 80,
+        minHeight: 60,
+    };
 
-function isBoldEdge(t) {
-    return t == 4 || t == 5;
-}
+    const NODE_STYLE = {
+        radius: 8,
+        boundaryRadiusScale: {
+            classical: 0.5,
+            quantum: 0.75,
+        },
+        strokeWidth: {
+            classical: 1.5,
+            quantum: 3,
+        },
+        obstructionPadding: 4,
+    };
 
-function webColor(t) {
-    if (t == 'X') return _settings_colors['Xdark'];
-    else if (t == 'Y') return _settings_colors['Ydark'];
-    else if (t == 'Z') return _settings_colors['Zdark'];
-    else if (t == 'I') return '#dddddd';
-}
+    const EDGE_STYLE = {
+        fill: &quot;none&quot;,
+        strokeWidth: {
+            classical: 1.5,
+            quantum: 3.5,
+        },
+        obstructionRange: {
+            min: 0.1,
+            max: 0.9,
+        },
+        curveOffset: 12,
+        zeroLengthEpsilon: 1e-6,
+        followTransitionMs: 90,
+    };
 
-function nodeStyle(selected, t) {
-    var bold = (t == 7 || t == 8);
-    if (selected) return &quot;stroke-width: &quot; + (bold ? &quot;4&quot; : &quot;2&quot;) + &quot;px; stroke: #00f&quot;;
-    return &quot;stroke-width: &quot; + (bold ? &quot;3&quot; : &quot;1.5&quot;) + &quot;px&quot;;
-}
+    const TEXT_STYLE = {
+        fontFamily: &quot;monospace&quot;,
+        interaction: &quot;pointer-events: none; user-select: none;&quot;,
+        label: {
+            fontSize: &quot;11px&quot;,
+            fontWeight: &quot;600&quot;,
+            offset: 4,
+        },
+        phase: {
+            fontSize: &quot;12px&quot;,
+            stackOffset: 18,
+            offset: 4,
+            maxInlineParameters: 3,
+        },
+        index: {
+            fontSize: &quot;10px&quot;,
+            offset: 4,
+            stackStep: 14,
+        },
+        scalar: {
+            fontSize: &quot;11px&quot;,
+            overflowX: &quot;auto&quot;,
+            whiteSpace: &quot;nowrap&quot;,
+            padding: &quot;2px 0&quot;,
+            marginBottom: &quot;4px&quot;,
+        },
+    };
 
-var symbolGround = {
-    draw: function(context, size){
-        let s = size/2;
+    const SVG_STYLE = &quot;max-width: none; max-height: none; display: block;&quot;;
 
-        context.moveTo(0,-s);
-        context.lineTo(0,0);
+    const INTERACTION_STYLE = {
+        idleCursor: &quot;cursor: grab;&quot;,
+        activeCursor: &quot;cursor: grabbing;&quot;,
+    };
 
-        context.moveTo(-s,0);
-        context.lineTo(s,0);
-
-        context.moveTo(-2*s/3,s/3);
-        context.lineTo(2*s/3,s/3);
-
-        context.moveTo(-s/3,2*s/3);
-        context.lineTo(s/3,2*s/3);
+    function nodeFill(t) {
+        if (t === &quot;Z&quot;) return COLORS.Z;
+        if (t === &quot;X&quot;) return COLORS.X;
+        return COLORS.BOUNDARY;
     }
-}
 
-function showGraph(tag, graph, width, height, scale, node_size, auto_hbox, show_labels, scalar_str) {
-    var ntab = {};
+    function edgeColor(t) {
+        return t === &quot;hadamard&quot; ? COLORS.hedge : COLORS.edge;
+    }
 
-    var groundOffset = 2.5 * node_size;
+    function isQuantumDomain(domain) {
+        return domain === &quot;quantum&quot;;
+    }
 
-    graph.nodes.forEach(function(d) {
-        ntab[d.name] = d;
-        d.selected = false;
-        d.previouslySelected = false;
-        d.nhd = [];
-    });
+    function nodeRadius(node, nodeSize) {
+        if (node.t !== &quot;BOUNDARY&quot;) return nodeSize;
+        return isQuantumDomain(node.domain) ? 0.75 * nodeSize : 0.5 * nodeSize;
+    }
 
-    var spiders_and_boundaries = graph.nodes.filter(function(d) {
-        return d.t != 3;
-    });
+    function phaseParts(phase) {
+        const suffix = &quot;π&quot;;
+        if (!phase || !phase.endsWith(suffix)) {
+            return null;
+        }
 
-    graph.links.forEach(function(d) {
-        var s = ntab[d.source];
-        var t = ntab[d.target];
-        d.source = s;
-        d.target = t;
-        s.nhd.push(t);
-        t.nhd.push(s);
-    });
+        const parenthesizedEnd = &quot;)π&quot;;
+        if (phase.endsWith(parenthesizedEnd)) {
+            const closeIndex = phase.length - parenthesizedEnd.length;
+            const openIndex = phase.lastIndexOf(&quot;(&quot;, closeIndex);
+            if (openIndex &gt;= 0) {
+                const inner = phase.slice(openIndex + 1, closeIndex);
+                const parameters = inner.split(&quot;⊕&quot;).filter(function (p) { return p.length &gt; 0; });
+                const concretePrefix = phase.slice(0, openIndex);
+                return { concretePrefix: concretePrefix, parameters: parameters };
+            }
+        }
 
-    graph.pauli_web.forEach(function(d) {
-        var s = ntab[d.source];
-        var t = ntab[d.target];
-        d.source = s;
-        d.target = t;
-    });
+        const plusIndex = phase.lastIndexOf(&quot; + &quot;);
+        if (plusIndex &gt;= 0) {
+            return {
+                concretePrefix: phase.slice(0, plusIndex + 3),
+                parameters: [phase.slice(plusIndex + 3, phase.length - suffix.length)],
+            };
+        }
+        return { concretePrefix: &quot;&quot;, parameters: [phase.slice(0, phase.length - suffix.length)] };
+    }
 
-    var shiftKey;
+    function collapsedPhaseText(phase) {
+        const parts = phaseParts(phase);
+        if (!parts || parts.parameters.length &lt;= TEXT_STYLE.phase.maxInlineParameters) {
+            return phase;
+        }
+        const parameters = parts.parameters;
+        return (
+            parts.concretePrefix +
+            parameters[0] +
+            &quot;⊕...⊕&quot; +
+            parameters[parameters.length - 1] +
+            &quot;π&quot;
+        );
+    }
 
-    // SETUP SVG ITEMS
+    // Concrete angles keep their π (&quot;π/4&quot;, &quot;3π/4&quot;, &quot;π&quot;). A parameter always
+    // stands for a multiple of π, so parameter terms drop it (&quot;e1π&quot; -&gt; &quot;e1&quot;,
+    // &quot;(e1⊕f0)π&quot; -&gt; &quot;e1⊕f0&quot;).
+    function displayedPhaseTerm(term) {
+        if (!term || !term.endsWith(&quot;π&quot;)) {
+            return term;
+        }
+        const withoutPi = term.slice(0, -1);
+        if (/^~?\d*$/.test(withoutPi)) {
+            return term;
+        }
+        if (withoutPi.startsWith(&quot;(&quot;) &amp;&amp; withoutPi.endsWith(&quot;)&quot;)) {
+            return withoutPi.slice(1, -1);
+        }
+        return withoutPi;
+    }
 
-    var svg = d3.select(tag)
-    //.attr(&quot;tabindex&quot;, 1)
-        .on(&quot;keydown.brush&quot;, function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
-        .on(&quot;keyup.brush&quot;, function() {shiftKey = d3.event.shiftKey || d3.event.metaKey;})
-    //.each(function() { this.focus(); })
-        .append(&quot;svg&quot;)
-        .attr(&quot;style&quot;, &quot;max-width: none; max-height: none&quot;)
-        .attr(&quot;width&quot;, width)
-        .attr(&quot;height&quot;, height);
+    function displayedPhaseText(phase, expanded) {
+        return (expanded ? phase : collapsedPhaseText(phase))
+            .split(&quot; + &quot;)
+            .map(displayedPhaseTerm)
+            .join(&quot;+&quot;);
+    }
 
-    var web = svg.append(&quot;g&quot;)
-        .attr(&quot;class&quot;, &quot;web&quot;)
-        .selectAll(&quot;line&quot;)
-        .data(graph.pauli_web)
-        .enter().append(&quot;path&quot;)
-        .attr(&quot;stroke&quot;, function(d) { return webColor(d.t); })
-        .attr(&quot;fill&quot;, &quot;transparent&quot;)
-        .attr(&quot;style&quot;, &quot;stroke-width: 7px&quot;);
+    function isCollapsedPhase(phase) {
+        return collapsedPhaseText(phase) !== phase;
+    }
 
-    var link = svg.append(&quot;g&quot;)
-        .attr(&quot;class&quot;, &quot;link&quot;)
-        .selectAll(&quot;line&quot;)
-        .data(graph.links)
-        .enter().append(&quot;path&quot;)
-        .attr(&quot;stroke&quot;, function(d) { return edgeColor(d.t); })
-        .attr(&quot;fill&quot;, &quot;transparent&quot;)
-        .attr(&quot;style&quot;, function(d) { return isBoldEdge(d.t) ? &quot;stroke-width: 3.5px&quot; : &quot;stroke-width: 1.5px&quot;; });
+    // Map graph-space (col, row) to SVG pixel coords, with `scale` pixels per
+    // unit as [x, y]. col → x, row → y. `topPad` is the vertical offset that
+    // accommodates an optional scalar label at the top of the SVG.
+    function project(node, minCol, minRow, topPad, scale) {
+        return {
+            x: LAYOUT.pad + (node.col - minCol) * scale[0],
+            y: topPad + (node.row - minRow) * scale[1],
+        };
+    }
 
-    var brush = svg.append(&quot;g&quot;)
-        .attr(&quot;class&quot;, &quot;brush&quot;);
+    function renderZx(containerEl, graphJson) {
+        if (!containerEl) throw new Error(&quot;renderZx: containerEl is required&quot;);
+        if (!graphJson) throw new Error(&quot;renderZx: graphJson is required&quot;);
+        const nodeSize = NODE_STYLE.radius;
 
-    var node = svg.append(&quot;g&quot;)
-        .attr(&quot;class&quot;, &quot;node&quot;)
-        .selectAll(&quot;g&quot;)
-        .data(graph.nodes)
-        .enter().append(&quot;g&quot;)
-        .attr(&quot;transform&quot;, function(d) {
-            return &quot;translate(&quot; + d.x + &quot;,&quot; + d.y +&quot;)&quot;;
+        // Clear prior content.
+        while (containerEl.firstChild) {
+            containerEl.removeChild(containerEl.firstChild);
+        }
+
+        const nodes = (graphJson.nodes || []).map(function (n) {
+            return Object.assign({}, n);
+        });
+        const rawLinks = graphJson.links || [];
+        const scale = graphJson.scale || LAYOUT.scale;
+
+        // Positions arrive already disambiguated (see viz/layout.py), so we
+        // render (col, row) as-is — no JS-side staggering needed.
+
+        // Compute (col, row) range.
+        let minCol = Infinity, maxCol = -Infinity;
+        let minRow = Infinity, maxRow = -Infinity;
+        nodes.forEach(function (n) {
+            if (n.col &lt; minCol) minCol = n.col;
+            if (n.col &gt; maxCol) maxCol = n.col;
+            if (n.row &lt; minRow) minRow = n.row;
+            if (n.row &gt; maxRow) maxRow = n.row;
+        });
+        if (!isFinite(minCol)) { minCol = 0; maxCol = 0; minRow = 0; maxRow = 0; }
+
+        // Scalar is rendered as a scrollable HTML div above the SVG, so we
+        // no longer reserve vertical space for it inside the SVG itself.
+        const showScalar = graphJson.scalar &amp;&amp; graphJson.scalar !== &quot;1&quot; &amp;&amp; graphJson.scalar !== &quot;&quot;;
+        const topPad = LAYOUT.pad;
+
+        // Size SVG strictly to content (with small minimum floors so a single
+        // node still has visible area).
+        const contentW = 2 * LAYOUT.pad + (maxCol - minCol) * scale[0];
+        const contentH = topPad + LAYOUT.pad + (maxRow - minRow) * scale[1];
+        const w = Math.max(contentW, LAYOUT.minWidth);
+        const h = Math.max(contentH, LAYOUT.minHeight);
+
+        // Initial pixel positions.
+        const byId = {};
+        nodes.forEach(function (n) {
+            const p = project(n, minCol, minRow, topPad, scale);
+            n.x = p.x;
+            n.y = p.y;
+            byId[n.id] = n;
         });
 
-    // Draw a ground symbol connected to the node.
-    node.filter(function(d) { return d.ground; })
-        .append(&quot;path&quot;)
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;style&quot;, &quot;stroke-width: 1.5px&quot;)
-        .attr(&quot;fill&quot;, &quot;none&quot;)
-        .attr(&quot;d&quot;, &quot;M 0 0 L 0 &quot;+(groundOffset))
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
-    node.filter(function(d) { return d.ground; })
-        .append(&quot;path&quot;)
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;style&quot;, &quot;stroke-width: 1.5px&quot;)
-        .attr(&quot;fill&quot;, &quot;none&quot;)
-        .attr(&quot;d&quot;, d3.symbol().type(symbolGround).size(node_size*1.5))
-        .attr(&quot;transform&quot;, &quot;translate(0,&quot;+groundOffset+&quot;)&quot;)
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
+        // Resolve link endpoints to node references.
+        const links = rawLinks
+            .map(function (l) {
+                const s = byId[l.source];
+                const t = byId[l.target];
+                if (!s || !t) return null;
+                return { source: s, target: t, t: l.t, domain: l.domain };
+            })
+            .filter(function (l) { return l !== null; });
 
-    node.filter(function(d) { return d.t != 3 &amp;&amp; d.t != 5 &amp;&amp; d.t != 6; })
-        .append(&quot;circle&quot;)
-        .attr(&quot;r&quot;, function(d) {
-            if (d.t == 0) return 0.5 * node_size;
-            else if (d.t == 4) return 0.25 * node_size;
-            else return node_size;
-        })
-        .attr(&quot;fill&quot;, function(d) { return nodeColor(d.t); })
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;stroke-width&quot;, function(d) { return (d.t == 7 || d.t == 8) ? 3 : 1.5; })
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
+        // Scalar rendered as an HTML div above the SVG. Bounding its width to
+        // the SVG width and enabling `overflow-x: auto` means long scalars
+        // scroll horizontally instead of being clipped by the SVG viewport.
+        if (showScalar) {
+            const scalarDiv = document.createElement(&quot;div&quot;);
+            scalarDiv.textContent = &quot;scalar: &quot; + graphJson.scalar;
+            scalarDiv.style.fontFamily = TEXT_STYLE.fontFamily;
+            scalarDiv.style.fontSize = TEXT_STYLE.scalar.fontSize;
+            scalarDiv.style.color = COLORS.scalarText;
+            scalarDiv.style.maxWidth = w + &quot;px&quot;;
+            scalarDiv.style.overflowX = TEXT_STYLE.scalar.overflowX;
+            scalarDiv.style.whiteSpace = TEXT_STYLE.scalar.whiteSpace;
+            scalarDiv.style.padding = TEXT_STYLE.scalar.padding;
+            scalarDiv.style.marginBottom = TEXT_STYLE.scalar.marginBottom;
+            containerEl.appendChild(scalarDiv);
+        }
 
-    var hbox = node.filter(function(d) { return d.t == 3; });
+        const svg = d3.select(containerEl)
+            .append(&quot;svg&quot;)
+            .attr(&quot;style&quot;, SVG_STYLE)
+            .attr(&quot;width&quot;, w)
+            .attr(&quot;height&quot;, h);
 
-    hbox.append(&quot;rect&quot;)
-        .attr(&quot;x&quot;, -0.75 * node_size).attr(&quot;y&quot;, -0.75 * node_size)
-        .attr(&quot;width&quot;, node_size * 1.5).attr(&quot;height&quot;, node_size * 1.5)
-        .attr(&quot;fill&quot;, function(d) { return nodeColor(d.t); })
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
+        // Bend edges that would pass visually through a non-endpoint vertex
+        // so it stays unambiguous which vertices an edge actually connects.
+        const obstructRadius = nodeSize + NODE_STYLE.obstructionPadding;
 
-    // draw a triangle for d.t == 5
-    node.filter(function(d) { return d.t == 5; })
-        .append(&quot;path&quot;)
-        .attr(&quot;d&quot;, &quot;M 0 0 L &quot;+node_size+&quot; &quot;+node_size+&quot; L -&quot;+node_size+&quot; &quot;+node_size+&quot; Z&quot;)
-        .attr(&quot;fill&quot;, function(d) { return nodeColor(d.t); })
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;class&quot;, &quot;selectable&quot;)
-        .attr(&quot;transform&quot;, &quot;translate(&quot; + (-node_size/2) + &quot;, 0) rotate(-90)&quot;);
+        // Spatial index over nodes: each edge queries candidates within its
+        // inflated bounding box, cutting obstruction scans from O(N) to O(log N)
+        // on average. Kept in sync with node moves by the drag handler.
+        const nodeTree = d3.quadtree()
+            .x(function (n) { return n.x; })
+            .y(function (n) { return n.y; })
+            .addAll(nodes);
 
-    // draw a square for Z box: d.t == 6
-    node.filter(function(d) { return d.t == 6; })
-        .append(&quot;rect&quot;)
-        .attr(&quot;x&quot;, -0.75 * node_size).attr(&quot;y&quot;, -0.75 * node_size)
-        .attr(&quot;width&quot;, node_size * 1.5).attr(&quot;height&quot;, node_size * 1.5)
-        .attr(&quot;fill&quot;, function(d) { return nodeColor(d.t); })
-        .attr(&quot;stroke&quot;, &quot;black&quot;)
-        .attr(&quot;class&quot;, &quot;selectable&quot;);
+        // Always emit a quadratic-bezier path (with midpoint control when
+        // straight) so d3's default string interpolator can smoothly animate
+        // straight ↔ curved transitions during drag.
+        function edgePath(edge) {
+            const sx = edge.source.x, sy = edge.source.y;
+            const tx = edge.target.x, ty = edge.target.y;
+            const dx = tx - sx, dy = ty - sy;
+            const midX = (sx + tx) / 2, midY = (sy + ty) / 2;
+            const L2 = dx * dx + dy * dy;
+            if (L2 &lt; EDGE_STYLE.zeroLengthEpsilon) {
+                return &quot;M &quot; + sx + &quot;,&quot; + sy + &quot; Q &quot; + midX + &quot;,&quot; + midY + &quot; &quot; + tx + &quot;,&quot; + ty;
+            }
+            const L = Math.sqrt(L2);
 
-    node.filter(function(d) { return d.phase != '' &amp;&amp; d.phase.indexOf('[') === -1; })
-        .append(&quot;text&quot;)
-        .attr(&quot;y&quot;, 0.7 * node_size + 14)
-        .text(function (d) { return d.phase })
-        .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-        .attr(&quot;font-size&quot;, &quot;12px&quot;)
-        .attr(&quot;font-family&quot;, &quot;monospace&quot;)
-        .attr(&quot;fill&quot;, &quot;#00d&quot;)
-        .attr('style', 'pointer-events: none; user-select: none;');
+            // Segment AABB inflated by obstructRadius — any obstructing node
+            // must fall inside this box.
+            const bxMin = Math.min(sx, tx) - obstructRadius;
+            const bxMax = Math.max(sx, tx) + obstructRadius;
+            const byMin = Math.min(sy, ty) - obstructRadius;
+            const byMax = Math.max(sy, ty) + obstructRadius;
 
-    node.filter(function(d) { return d.phase != '' &amp;&amp; d.phase.indexOf('[') !== -1; })
-        .append(&quot;text&quot;)
-        .attr(&quot;y&quot;, -0.7 * node_size - 8)
-        .text(function (d) { return d.phase })
-        .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-        .attr(&quot;font-size&quot;, &quot;12px&quot;)
-        .attr(&quot;font-family&quot;, &quot;monospace&quot;)
-        .attr(&quot;fill&quot;, &quot;black&quot;)
-        .attr('style', 'pointer-events: none; user-select: none;');
-
-    if (show_labels) {
-        node.append(&quot;text&quot;)
-            .attr(&quot;y&quot;, -0.7 * node_size - 8)
-            .text(function (d) { return d.name; })
-            .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-            .attr(&quot;font-size&quot;, &quot;10px&quot;)
-            .attr(&quot;font-family&quot;, &quot;monospace&quot;)
-            .attr(&quot;fill&quot;, &quot;#999&quot;)
-            .attr('style', 'pointer-events: none; user-select: none;');
-    }
-
-    // Display the chosen data fields over the node.
-    node.filter(d =&gt; d.vdata.length &gt; 0)
-        .append(&quot;text&quot;)
-        .attr(&quot;y&quot;, d =&gt; -0.7 * node_size - 14 - 10 * d.vdata.length)
-        .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-        .attr(&quot;font-size&quot;, &quot;8px&quot;)
-        .attr(&quot;font-family&quot;, &quot;monospace&quot;)
-        .attr(&quot;fill&quot;, &quot;#c66&quot;)
-        .attr('style', 'pointer-events: none; user-select: none;')
-        .selectAll(&quot;tspan&quot;)
-        .data(d =&gt; d.vdata)
-        .enter()
-        .append(&quot;tspan&quot;)
-        .attr(&quot;x&quot;, &quot;0&quot;)
-        .attr(&quot;dy&quot;, &quot;1.2em&quot;)
-        .text(x =&gt; x.join(&quot;: &quot;));
-
-    if (scalar_str != &quot;&quot;) {
-        svg.append(&quot;text&quot;)
-            .text(scalar_str)
-            .attr(&quot;x&quot;, 60).attr(&quot;y&quot;, 40)
-            .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
-    }
-
-    function update_hboxes() {
-        if (auto_hbox) {
-            var pos = {};
-            hbox.attr(&quot;transform&quot;, function(d) {
-                // calculate barycenter of non-hbox neighbours, then nudge a bit
-                // to the NE.
-                var x=0,y=0,sz=0;
-                for (var i = 0; i &lt; d.nhd.length; ++i) {
-                    if (d.nhd[i].t != 3) {
-                        sz++;
-                        x += d.nhd[i].x;
-                        y += d.nhd[i].y;
-                    }
+            let sumSigned = 0;
+            let count = 0;
+            nodeTree.visit(function (qnode, qx0, qy0, qx1, qy1) {
+                if (qx0 &gt; bxMax || qx1 &lt; bxMin || qy0 &gt; byMax || qy1 &lt; byMin) {
+                    return true;  // quadrant can't contain a candidate — prune
                 }
-
-                offset = 0.25 * scale;
-
-                if (sz != 0) {
-                    x = (x/sz) + offset;
-                    y = (y/sz) - offset;
-
-                    while (pos[[x,y]]) {
-                        x += offset;
-                    }
-                    d.x = x;
-                    d.y = y;
-                    pos[[x,y]] = true;
+                if (!qnode.length) {
+                    // Leaf: walk the coincident-points linked list.
+                    let leaf = qnode;
+                    do {
+                        const n = leaf.data;
+                        if (n !== edge.source &amp;&amp; n !== edge.target) {
+                            const along = ((n.x - sx) * dx + (n.y - sy) * dy) / L2;
+                            if (
+                                along &gt;= EDGE_STYLE.obstructionRange.min &amp;&amp;
+                                along &lt;= EDGE_STYLE.obstructionRange.max
+                            ) {
+                                const perp = (dx * (n.y - sy) - dy * (n.x - sx)) / L;
+                                if (Math.abs(perp) &lt; obstructRadius) {
+                                    sumSigned += perp;
+                                    count++;
+                                }
+                            }
+                        }
+                        leaf = leaf.next;
+                    } while (leaf);
                 }
-
-                return &quot;translate(&quot;+d.x+&quot;,&quot;+d.y+&quot;)&quot;;
+                return false;
             });
+
+            let cx = midX, cy = midY;
+            if (count &gt; 0) {
+                // Offset the control point perpendicular to the segment,
+                // away from the side with the heaviest obstruction.
+                const sign = sumSigned &gt; 0 ? -1 : 1;
+                const offsetMag = obstructRadius + EDGE_STYLE.curveOffset;
+                cx = midX + (-dy / L) * sign * offsetMag;
+                cy = midY + (dx / L) * sign * offsetMag;
+            }
+            return &quot;M &quot; + sx + &quot;,&quot; + sy + &quot; Q &quot; + cx + &quot;,&quot; + cy + &quot; &quot; + tx + &quot;,&quot; + ty;
         }
+
+        // Edges. Hadamard edges are drawn as solid blue paths (physics
+        // convention); simple edges are solid black.
+        const link = svg.append(&quot;g&quot;)
+            .attr(&quot;class&quot;, &quot;link&quot;)
+            .attr(&quot;fill&quot;, EDGE_STYLE.fill)
+            .selectAll(&quot;path&quot;)
+            .data(links)
+            .enter()
+            .append(&quot;path&quot;)
+            .attr(&quot;d&quot;, edgePath)
+            .attr(&quot;stroke&quot;, function (d) { return edgeColor(d.t); })
+            .attr(&quot;stroke-width&quot;, function (d) {
+                return isQuantumDomain(d.domain)
+                    ? EDGE_STYLE.strokeWidth.quantum
+                    : EDGE_STYLE.strokeWidth.classical;
+            });
+
+        const node = svg.append(&quot;g&quot;)
+            .attr(&quot;class&quot;, &quot;node&quot;)
+            .selectAll(&quot;g&quot;)
+            .data(nodes)
+            .enter()
+            .append(&quot;g&quot;)
+            .attr(&quot;transform&quot;, function (d) {
+                return &quot;translate(&quot; + d.x + &quot;,&quot; + d.y + &quot;)&quot;;
+            })
+            .attr(&quot;style&quot;, INTERACTION_STYLE.idleCursor);
+
+        // Vertex body.
+        node.append(&quot;circle&quot;)
+            .attr(&quot;r&quot;, function (d) {
+                return nodeRadius(d, nodeSize);
+            })
+            .attr(&quot;fill&quot;, function (d) { return nodeFill(d.t); })
+            .attr(&quot;stroke&quot;, COLORS.outline)
+            .attr(&quot;stroke-width&quot;, function (d) {
+                return isQuantumDomain(d.domain)
+                    ? NODE_STYLE.strokeWidth.quantum
+                    : NODE_STYLE.strokeWidth.classical;
+            });
+
+        // Label sits just above the node (baseline above the circle's top
+        // edge). Non-boundary nodes with a phase will stack the phase above
+        // the label; see the phase block below.
+        node.filter(function (d) { return d.label; })
+            .append(&quot;text&quot;)
+            .attr(&quot;y&quot;, function (d) {
+                return -nodeRadius(d, nodeSize) - TEXT_STYLE.label.offset;
+            })
+            .text(function (d) { return d.label; })
+            .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
+            .attr(&quot;font-size&quot;, TEXT_STYLE.label.fontSize)
+            .attr(&quot;font-family&quot;, TEXT_STYLE.fontFamily)
+            .attr(&quot;font-weight&quot;, TEXT_STYLE.label.fontWeight)
+            .attr(&quot;fill&quot;, COLORS.labelText)
+            .attr(&quot;style&quot;, TEXT_STYLE.interaction);
+
+        // Phase label above the node — stacks above the label text when both
+        // are present.
+        function hasLabel(d) { return !!d.label; }
+        function hasPhase(d) { return d.t !== &quot;BOUNDARY&quot; &amp;&amp; d.phase &amp;&amp; d.phase !== &quot;0&quot;; }
+
+        node.filter(hasPhase)
+            .append(&quot;text&quot;)
+            .attr(&quot;y&quot;, function (d) {
+                const radius = nodeRadius(d, nodeSize);
+                return hasLabel(d)
+                    ? -radius - TEXT_STYLE.phase.stackOffset
+                    : -radius - TEXT_STYLE.phase.offset;
+            })
+            .text(function (d) { return displayedPhaseText(d.phase, false); })
+            .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
+            .attr(&quot;font-size&quot;, TEXT_STYLE.phase.fontSize)
+            .attr(&quot;font-family&quot;, TEXT_STYLE.fontFamily)
+            .attr(&quot;fill&quot;, COLORS.phaseText)
+            .attr(&quot;style&quot;, function (d) {
+                return isCollapsedPhase(d.phase) ? &quot;cursor: default; user-select: none;&quot; : TEXT_STYLE.interaction;
+            })
+            .on(&quot;mouseenter&quot;, function (event, d) {
+                if (isCollapsedPhase(d.phase)) {
+                    d3.select(this).text(displayedPhaseText(d.phase, true));
+                }
+            })
+            .on(&quot;mouseleave&quot;, function (event, d) {
+                if (isCollapsedPhase(d.phase)) {
+                    d3.select(this).text(displayedPhaseText(d.phase, false));
+                }
+            });
+
+        if (graphJson.show_indices) {
+            node.append(&quot;text&quot;)
+                .attr(&quot;y&quot;, function (d) {
+                    const stacks = (hasPhase(d) ? 1 : 0) + (hasLabel(d) ? 1 : 0);
+                    return (
+                        -nodeRadius(d, nodeSize) -
+                        TEXT_STYLE.index.offset -
+                        stacks * TEXT_STYLE.index.stackStep
+                    );
+                })
+                .text(function (d) { return String(d.id); })
+                .attr(&quot;text-anchor&quot;, &quot;middle&quot;)
+                .attr(&quot;font-size&quot;, TEXT_STYLE.index.fontSize)
+                .attr(&quot;font-family&quot;, TEXT_STYLE.fontFamily)
+                .attr(&quot;fill&quot;, COLORS.indexText)
+                .attr(&quot;style&quot;, TEXT_STYLE.interaction);
+        }
+
+        // Drag: update node position and re-render edges. d3 v7 passes
+        // (event, datum) to the callback (unlike v5's d3.event).
+        //
+        // Incident edges are recomputed every tick — their endpoints must
+        // track the cursor. Non-incident edges only change because the
+        // dragged node may newly obstruct / un-obstruct them, so we batch
+        // their refresh through requestAnimationFrame, bounding the cost to
+        // one sweep per frame regardless of drag event rate.
+        let nonIncidentPending = false;
+        let dragTarget = null;
+
+        const drag = d3.drag()
+            .on(&quot;start&quot;, function (event, d) {
+                d3.select(this).attr(&quot;style&quot;, INTERACTION_STYLE.activeCursor);
+                dragTarget = d;
+            })
+            .on(&quot;drag&quot;, function (event, d) {
+                // Keep the spatial index coherent: remove uses the OLD (x, y).
+                nodeTree.remove(d);
+                d.x += event.dx;
+                d.y += event.dy;
+                nodeTree.add(d);
+                d3.select(this).attr(&quot;transform&quot;, &quot;translate(&quot; + d.x + &quot;,&quot; + d.y + &quot;)&quot;);
+
+                link.filter(function (l) { return l.source === d || l.target === d; })
+                    .transition(&quot;edge-follow&quot;)
+                    .duration(EDGE_STYLE.followTransitionMs)
+                    .ease(d3.easeCubicOut)
+                    .attr(&quot;d&quot;, edgePath);
+
+                if (!nonIncidentPending) {
+                    nonIncidentPending = true;
+                    requestAnimationFrame(function () {
+                        nonIncidentPending = false;
+                        const target = dragTarget;
+                        if (!target) return;
+                        link.filter(function (l) { return l.source !== target &amp;&amp; l.target !== target; })
+                            .transition(&quot;edge-follow&quot;)
+                            .duration(EDGE_STYLE.followTransitionMs)
+                            .ease(d3.easeCubicOut)
+                            .attr(&quot;d&quot;, edgePath);
+                    });
+                }
+            })
+            .on(&quot;end&quot;, function () {
+                d3.select(this).attr(&quot;style&quot;, INTERACTION_STYLE.idleCursor);
+                dragTarget = null;
+            });
+
+        node.call(drag);
+
+        return svg.node();
     }
 
-    update_hboxes();
-
-    var link_curve = function(d) {
-        var x1 = d.source.x, x2 = d.target.x, y1 = d.source.y, y2 = d.target.y;
-        if (x1 == x2 &amp;&amp; y1 == y2 &amp;&amp; d.num_parallel == 1) {
-            var cx1 = x1 - 40;
-            var cy1 = y1 - 40;
-            var cx2 = x1 + 40;
-            var cy2 = y1 - 40;
-            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
-        } else if (x1 == x2 &amp;&amp; y1 == y2) {
-            var pos = d.index + 1;
-            var cx1 = x1 - 20 - pos * 10;
-            var cy1 = y1 - 20 - pos * 10;
-            var cx2 = x1 + 20 + pos * 10;
-            var cy2 = y1 - 20 - pos * 10;
-            return `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`;
-        } else if (d.num_parallel == 1) {
-            return `M ${x1} ${y1} L ${x2} ${y2}`;
-        } else {
-            var dx = x2 - x1, dy = y2 - y1;
-            var midx = 0.5 * (x1 + x2), midy = 0.5 * (y1 + y2);
-            var pos = (d.index / (d.num_parallel-1)) - 0.5;
-            var cx = midx - pos * dy;
-            var cy = midy + pos * dx;
-            return `M ${x1} ${y1} Q ${cx} ${cy}, ${x2} ${y2}`;
-            // return `M ${x1} ${y1} L ${x2} ${y2}`;
-        }
-    };
-    link.attr(&quot;d&quot;, link_curve);
-
-
-    var web_curve = function(d) {
-        var x1 = d.source.x, x2 = (x1 + d.target.x)/2, y1 = d.source.y, y2 = (y1 + d.target.y)/2;
-        return `M ${x1} ${y1} L ${x2} ${y2}`;
+    // Expose renderZx both globally (for inline &lt;script&gt; usage) and as a
+    // CommonJS-style export for bundlers/tests.
+    global.renderZx = renderZx;
+    if (typeof module !== &quot;undefined&quot; &amp;&amp; module.exports) {
+        module.exports = { renderZx: renderZx, displayedPhaseText: displayedPhaseText };
     }
-    web.attr(&quot;d&quot;, web_curve);
+})(typeof window !== &quot;undefined&quot; ? window : globalThis);
 
-    // EVENTS FOR DRAGGING AND SELECTION
-
-    node.on(&quot;mousedown&quot;, function(d) {
-        if (shiftKey) {
-            d3.select(this).selectAll(&quot;.selectable&quot;).attr(&quot;style&quot;, nodeStyle(d.selected = !d.selected, d.t));
-            d3.event.stopImmediatePropagation();
-        } else if (!d.selected) {
-            node.selectAll(&quot;.selectable&quot;).attr(&quot;style&quot;, function(p) { return nodeStyle(p.selected = d === p, p.t); });
-        }
-    })
-        .call(d3.drag().on(&quot;drag&quot;, function(d) {
-            var dx = d3.event.dx;
-            var dy = d3.event.dy;
-            // node.filter(function(d) { return d.selected; })
-            //     .attr(&quot;cx&quot;, function(d) { return d.x += dx; })
-            //     .attr(&quot;cy&quot;, function(d) { return d.y += dy; });
-            node.filter(function(d) { return d.selected; })
-                .attr(&quot;transform&quot;, function(d) {
-                    d.x += dx;
-                    d.y += dy;
-                    return &quot;translate(&quot; + d.x + &quot;,&quot; + d.y +&quot;)&quot;;
-                });
-
-            update_hboxes();
-
-            link.filter(function(d) { return d.source.selected || d.target.selected ||
-                    (auto_hbox &amp;&amp; d.source.t == 3); })
-                .attr(&quot;d&quot;, link_curve);
-            web.filter(function(d) { return d.source.selected || d.target.selected; })
-                .attr(&quot;d&quot;, web_curve);
-        }));
-
-    brush.call(d3.brush().keyModifiers(false)
-        .extent([[0, 0], [width, height]])
-        .on(&quot;start&quot;, function() {
-            if (d3.event.sourceEvent.type !== &quot;end&quot;) {
-                node.selectAll(&quot;.selectable&quot;).attr(&quot;style&quot;, function(d) {
-                    return nodeStyle(
-                        d.selected = d.previouslySelected = shiftKey &amp;&amp;
-                        d.selected, d.t);
-                });
-            }
-        })
-        .on(&quot;brush&quot;, function() {
-            if (d3.event.sourceEvent.type !== &quot;end&quot;) {
-                var selection = d3.event.selection;
-                node.selectAll(&quot;.selectable&quot;).attr(&quot;style&quot;, function(d) {
-                    return nodeStyle(d.selected = d.previouslySelected ^
-                        (selection != null
-                            &amp;&amp; selection[0][0] &lt;= d.x &amp;&amp; d.x &lt; selection[1][0]
-                            &amp;&amp; selection[0][1] &lt;= d.y &amp;&amp; d.y &lt; selection[1][1]), d.t);
-                });
-            }
-        })
-        .on(&quot;end&quot;, function() {
-            if (d3.event.selection != null) {
-                d3.select(this).call(d3.event.target.move, null);
-            }
-        }));
-}
-
-
-showGraph('#graph-output-003',
-  JSON.parse('{&quot;nodes&quot;: [{&quot;name&quot;: &quot;0&quot;, &quot;x&quot;: 50.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 0, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;1&quot;, &quot;x&quot;: 100.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;2&quot;, &quot;x&quot;: 150.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;3&quot;, &quot;x&quot;: 200.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;4&quot;, &quot;x&quot;: 250.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;5&quot;, &quot;x&quot;: 300.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;6&quot;, &quot;x&quot;: 350.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;7&quot;, &quot;x&quot;: 400.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;8&quot;, &quot;x&quot;: 450.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;9&quot;, &quot;x&quot;: 500.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;10&quot;, &quot;x&quot;: 550.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 7, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}, {&quot;name&quot;: &quot;11&quot;, &quot;x&quot;: 600.0, &quot;y&quot;: 100.0, &quot;z&quot;: 0.0, &quot;t&quot;: 0, &quot;phase&quot;: &quot;&quot;, &quot;ground&quot;: false, &quot;vdata&quot;: []}], &quot;links&quot;: [{&quot;source&quot;: &quot;0&quot;, &quot;target&quot;: &quot;1&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;1&quot;, &quot;target&quot;: &quot;2&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;2&quot;, &quot;target&quot;: &quot;3&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;3&quot;, &quot;target&quot;: &quot;4&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;4&quot;, &quot;target&quot;: &quot;5&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;5&quot;, &quot;target&quot;: &quot;6&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;6&quot;, &quot;target&quot;: &quot;7&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;7&quot;, &quot;target&quot;: &quot;8&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;8&quot;, &quot;target&quot;: &quot;9&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;9&quot;, &quot;target&quot;: &quot;10&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}, {&quot;source&quot;: &quot;10&quot;, &quot;target&quot;: &quot;11&quot;, &quot;t&quot;: 4, &quot;index&quot;: 0, &quot;num_parallel&quot;: 1}], &quot;pauli_web&quot;: []}'), 650, 150, 50,
-  10.0, false, false, '');
-&lt;/script&gt;&lt;/body&gt;&lt;/html&gt;" width="100%" height="162" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="ZX diagram 3" loading="lazy" />
+renderZx(document.getElementById(&quot;zxp-003&quot;), {&quot;nodes&quot;: [{&quot;id&quot;: 0, &quot;t&quot;: &quot;BOUNDARY&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 0.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: true, &quot;is_output&quot;: false, &quot;port&quot;: -1}, {&quot;id&quot;: 1, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;col&quot;: 1.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 2, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;col&quot;: 2.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 3, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;col&quot;: 3.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 4, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;col&quot;: 4.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 5, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;col&quot;: 5.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 6, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;col&quot;: 6.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 7, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;col&quot;: 7.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 8, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;col&quot;: 8.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 9, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;col&quot;: 9.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 10, &quot;t&quot;: &quot;Z&quot;, &quot;phase&quot;: &quot;\u03c0/4&quot;, &quot;col&quot;: 10.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: false, &quot;port&quot;: null}, {&quot;id&quot;: 11, &quot;t&quot;: &quot;BOUNDARY&quot;, &quot;phase&quot;: &quot;0&quot;, &quot;col&quot;: 11.0, &quot;row&quot;: 0.0, &quot;domain&quot;: &quot;quantum&quot;, &quot;label&quot;: null, &quot;is_input&quot;: false, &quot;is_output&quot;: true, &quot;port&quot;: 0}], &quot;links&quot;: [{&quot;source&quot;: 0, &quot;target&quot;: 1, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 1, &quot;target&quot;: 2, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 2, &quot;target&quot;: 3, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 3, &quot;target&quot;: 4, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 4, &quot;target&quot;: 5, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 5, &quot;target&quot;: 6, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 6, &quot;target&quot;: 7, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 7, &quot;target&quot;: 8, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 8, &quot;target&quot;: 9, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 9, &quot;target&quot;: 10, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}, {&quot;source&quot;: 10, &quot;target&quot;: 11, &quot;t&quot;: &quot;simple&quot;, &quot;domain&quot;: &quot;quantum&quot;}], &quot;show_indices&quot;: false, &quot;scalar&quot;: &quot;1&quot;, &quot;scale&quot;: [40.0, 40.0]});
+&lt;/script&gt;&lt;/body&gt;&lt;/html&gt;" width="100%" height="72" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="ZX diagram 3" loading="lazy" />

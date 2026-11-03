@@ -11,10 +11,11 @@ CompiledScalarGraphs()
 
 JAX-compatible compiled representation of a list of scalar ZX graphs.
 
-The scalar for each graph is a product of four term families, multiplied by
-a per-graph ``ScalarPrefactor`` (global phase, floatfactor, ``2^power2``,
-optional approximate complex floatfactor). All arrays are static-shaped so
-the whole struct can be traced under ``jax.jit``.
+The scalar for each graph is a product of four exact term families and the
+floating-point ``FloatTerms`` family, multiplied by a per-graph
+``ScalarPrefactor`` (an exact Dyadic factor with its ``2^power2``, and an
+approximate complex factor for angles that are not multiples of π/4). All
+arrays are static-shaped so the whole struct can be traced under ``jax.jit``.
 
 
 ## class `ExactScalarArray`
@@ -82,16 +83,20 @@ evaluate(circuit: CompiledScalarGraphs, param_vals: Array) -> Array
 
 Evaluate compiled circuit with batched parameter values.
 
-Each term family (``NodePhases``, ``HalfPiPhases``, ``PiProducts``,
+Each exact term family (``NodePhases``, ``PhaseTerms``, ``PiProducts``,
 ``PhasePairs``) computes its own contribution via ``.evaluate(param_vals)``.
 This function multiplies those together with the per-graph
-``ScalarPrefactor`` and folds in ``power2`` / any approximate floatfactor.
+``ScalarPrefactor`` and merges ``power2`` into the exponent of the exact
+product before converting to floating point, so the powers of two cannot
+overflow or underflow separately. Any approximate floatfactor is multiplied
+in afterwards. The floating-point ``FloatTerms`` family (angles that are not
+multiples of π/4) is multiplied in only when the circuit has float terms.
 
 **Parameters:**
 
 - `circuit` (`CompiledScalarGraphs`) — Compiled circuit representation.
-- `param_vals` (`Array`) — Binary parameter values (error bits + measurement/detector outcomes), shape ``(batch_size, n_params)``.
+- `param_vals` (`Array`) — Bits of the compiled parameters (error-basis bits, then output bits), shape ``(batch_size, n_params)``.
 
 **Returns:**
 
-- `Array` — Complex array of shape ``(batch_size,)`` — the per-sample amplitude.
+- `Array` — Complex array of shape ``(batch_size,)``: the summed scalars per sample.
