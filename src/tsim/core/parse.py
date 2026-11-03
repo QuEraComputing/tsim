@@ -77,29 +77,24 @@ def _validate_r_pauli_targets(instruction: stim.CircuitInstruction) -> None:
     to each product rather than to the whole instruction.
     """
     targets = instruction.targets_copy()
-    products: list[list[int]] = [[]]
+    seen: set[int] = set()
     for i, target in enumerate(targets):
         if target.is_combiner:
             continue
-        products[-1].append(target.value)
-        next_idx = i + 1
-        if next_idx < len(targets) and not targets[next_idx].is_combiner:
-            products.append([])
-
-    for qubits in products:
-        if len(qubits) > R_PAULI_MAX_QUBITS:
+        if target.value in seen:
             raise ValueError(
-                f"R_PAULI supports at most {R_PAULI_MAX_QUBITS} qubits per Pauli "
-                f"product, got {len(qubits)}."
+                f"R_PAULI target qubits must be distinct within a product, "
+                f"got repeated qubit {target.value} in {str(instruction)!r}."
             )
-        seen: set[int] = set()
-        for qubit in qubits:
-            if qubit in seen:
+        seen.add(target.value)
+        next_idx = i + 1
+        if next_idx >= len(targets) or not targets[next_idx].is_combiner:
+            if len(seen) > R_PAULI_MAX_QUBITS:
                 raise ValueError(
-                    f"R_PAULI target qubits must be distinct within a product, "
-                    f"got repeated qubit {qubit} in {str(instruction)!r}."
+                    f"R_PAULI supports at most {R_PAULI_MAX_QUBITS} qubits per "
+                    f"Pauli product, got {len(seen)}."
                 )
-            seen.add(qubit)
+            seen = set()
 
 
 def _iter_pauli_products(
