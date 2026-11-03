@@ -103,7 +103,9 @@ def alloc_pinned_numpy(nbytes: int, dtype, shape) -> np.ndarray:
     return np.frombuffer(carr, dtype=np.uint8).view(dtype).reshape(shape)
 
 
-def copy_d2h(src, *, dst: np.ndarray | None = None) -> np.ndarray:
+def copy_d2h(
+    src, *, dst: np.ndarray | None = None, rows: int | None = None
+) -> np.ndarray:
     """Device-to-host copy, pinned-destination fast path when available.
 
     Args:
@@ -112,12 +114,15 @@ def copy_d2h(src, *, dst: np.ndarray | None = None) -> np.ndarray:
             The caller must sync to the source's stream before invocation
             (``jax.block_until_ready(src)`` for a jax.Array).
         dst: Optional pre-allocated pinned ndarray to write into. Must have
-            at least ``src.nbytes`` bytes.
+            at least the copied bytes.
+        rows: Copy only the first ``rows`` rows of ``src``, if set.
 
     Returns:
-        ndarray with the same shape and dtype as ``src``.
+        ndarray with the dtype of ``src``, and its shape or its first ``rows``
+        rows.
 
     """
+    shape = tuple(src.shape) if rows is None else (rows, *src.shape[1:])
     if not _CUDA_BINDINGS_AVAILABLE or _src_on_host(src):
         # Fallback path. Two cases:
         #   1. cuda.bindings isn't importable
@@ -126,15 +131,18 @@ def copy_d2h(src, *, dst: np.ndarray | None = None) -> np.ndarray:
         #      pointer, so ``cudaMemcpy(..., DeviceToHost)`` would fail.
         # ``np.asarray(jax.Array)`` returns a read-only zero-copy view in
         # newer JAX, so allocate fresh and copy in to a writable buffer.
-        out = np.empty(src.shape, dtype=src.dtype)
-        out[:] = src
+        out = np.empty(shape, dtype=src.dtype)
+        out[:] = src if rows is None else np.asarray(src)[:rows]
         return out
+    nbytes = int(np.prod(shape)) * np.dtype(src.dtype).itemsize
+    if nbytes == 0:
+        return np.empty(shape, dtype=src.dtype)
     if dst is None:
-        dst = alloc_pinned_numpy(src.nbytes, src.dtype, src.shape)
+        dst = alloc_pinned_numpy(nbytes, src.dtype, shape)
     err = cudart.cudaMemcpy(
         dst.ctypes.data,
         src.unsafe_buffer_pointer(),
-        src.nbytes,
+        nbytes,
         cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
     )[0]
     if err != cudart.cudaError_t.cudaSuccess:

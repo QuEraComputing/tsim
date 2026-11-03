@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `R_X(theta=0.1*pi,)`, are now rejected in both forms. (#202)
 
 ### Changed
+- **Breaking:** `CompiledDetectorSampler.sample(postselection_mask=...)` returns
+  only the shots that no masked detector discards, so it can return fewer than
+  `shots` rows and `len(result) / shots` is the acceptance rate. It used to
+  return every shot, with the discarded ones partly filled with `False`, for the
+  caller to filter. The rule is now the same for every strategy, including
+  masked component detectors with a stabilizer-rank strategy, which are tested
+  on the device so that discarded shots are not copied to the host. Without a
+  mask, exactly `shots` rows are returned. `sample` warns when a masked detector
+  is a constant 1, which discards every shot.
 - The samplers now default to `strategy="active_statevector"`; pass
   `strategy="cat5"` for the previous stabilizer-rank default.
   `CompiledStateProbs` keeps `"cat5"`. (#203)

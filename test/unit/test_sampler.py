@@ -421,16 +421,12 @@ def test_batch_size_with_reference(
             wraps=sampler._channel_sampler.sample,
         ) as spy,
     ):
+        referenced = np.ones(1, dtype=np.bool_) if compute_ref else None
         result = sampler._sample_batches(
-            shots, batch_size=batch_size, compute_reference=compute_ref
+            shots, batch_size=batch_size, referenced=referenced
         )
 
-    if compute_ref:
-        samples, ref = result
-        assert samples.shape == (shots, 1)
-        assert ref.shape == (1,)
-    else:
-        assert result.shape == (shots, 1)
+    assert result.shape == (shots, 1)
 
     batch_sizes = [call.args[0] for call in spy.call_args_list]
     assert all(bs == expected_bs for bs in batch_sizes)

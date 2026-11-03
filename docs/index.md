@@ -88,7 +88,8 @@ Note that this feature should be used carefully. If detectors or observables are
 
 For postselected QEC experiments, pass a boolean mask to
 `CompiledDetectorSampler.sample`. The mask has length `num_detectors`; a shot is
-*discarded* when any masked detector fires.
+*discarded* when any masked detector fires, and only the other shots are
+returned.
 
 ```python
 import numpy as np
@@ -105,33 +106,28 @@ c = tsim.Circuit(
 sampler = c.compile_detector_sampler()
 mask = np.array([True, False])  # postselect on detector 0
 
-samples = sampler.sample(
-    shots=10_000,
+shots = 10_000
+survivors = sampler.sample(
+    shots=shots,
     postselection_mask=mask,
     append_observables=True,
 )
-keep = ~np.any(samples[:, : c.num_detectors] & mask, axis=1)
-survivors = samples[keep]
+acceptance_rate = len(survivors) / shots
 ```
 
-`sample` always returns exactly `shots` rows. Shots discarded by a **direct**
-postselected detector (one that is a single error bit or a constant, such as a
-deterministic detector of a noiseless circuit) skip the remaining component
-sampling; their direct detector columns are still correct, and all other columns
-are filled with `False`. With `strategy="active_statevector"`, a shot discarded
-by a component detector also stops being simulated, and outputs set after that
-detector are filled with `False`. Re-apply the mask to the detector columns (as
-above) to recover the surviving shots. Stabilizer-rank components are always
-computed in full for shots that pass direct postselection.
+With a mask, `sample` returns at most `shots` rows, possibly none; without one,
+exactly `shots` rows. With `separate_observables`, both arrays hold the same
+shots. Shots discarded by a **direct** postselected detector (one that is a
+single error bit or a constant) skip the remaining component sampling. With
+`strategy="active_statevector"`, a shot discarded by a component detector also
+stops being simulated. With a stabilizer-rank strategy, discarded shots are
+dropped on the device, so they are never copied to the host.
 
-This is independent of `prepend_observables`, `append_observables`,
-`separate_observables`, and `bit_packed`. When combined with
-`use_detector_reference_sample`, the reference XOR is applied before the
-postselection discard check. On surviving rows it is applied to every detector
-column; on direct-discarded partial rows it is applied only to direct detector
-columns (component columns stay `False`). When combined with
-`use_observable_reference_sample`, returned observable values include the
-reference XOR; outputs skipped by postselection remain `False`.
+The mask tests the values that `sample` returns: with
+`use_detector_reference_sample`, a shot is kept when its masked detectors match
+the noiseless reference sample, and otherwise when their raw parities are 0. A
+masked detector that is a constant 1, such as one of a noiseless circuit whose
+measurements have parity 1, discards every shot; `sample` warns about it.
 
 ## Benchmarks
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from test.helpers.statevector import set_sharing
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -155,13 +157,15 @@ def test_postselection_none_matches_default():
     assert np.array_equal(a, b)
 
 
-def test_postselection_return_shape_preserved():
-    """Always return exactly (shots, num_detectors)."""
+def test_postselection_returns_only_survivors():
+    """Return at most ``shots`` rows, none of which fires a masked detector."""
     sampler = _make(MIXED_DIRECT_CIRCUIT, seed=0)
     mask = np.array([True, False])
     assert sampler.sample(0, postselection_mask=mask).shape == (0, 2)
-    assert sampler.sample(1, postselection_mask=mask).shape == (1, 2)
-    assert sampler.sample(17, batch_size=4, postselection_mask=mask).shape == (17, 2)
+    samples = sampler.sample(17, batch_size=4, postselection_mask=mask)
+    assert 0 < len(samples) < 17
+    assert samples.shape[1] == 2
+    assert not np.any(samples & mask)
 
 
 def test_postselection_zero_shots():
@@ -183,29 +187,35 @@ def test_postselection_all_false_mask_matches_default():
 # ────────────────────────── discard / partial-row semantics ──────────────────
 
 
-def test_postselection_discarded_rows_component_cols_false():
-    """Discarded rows: direct col truthful, component cols all False."""
-    sampler = _make(ALWAYS_DISCARD_CIRCUIT, seed=0)
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize("bit_packed", [False, True])
+def test_postselection_all_discarded_returns_no_rows(strategy, bit_packed):
+    sampler = Circuit(ALWAYS_DISCARD_OBS_CIRCUIT).compile_detector_sampler(
+        strategy=strategy, seed=0
+    )
     mask = np.array([True, False])
-    samples = sampler.sample(20, batch_size=4, postselection_mask=mask)
+    dets, obs = sampler.sample(
+        20,
+        batch_size=4,
+        postselection_mask=mask,
+        separate_observables=True,
+        bit_packed=bit_packed,
+    )
+    assert dets.shape == (0, 1 if bit_packed else 2)
+    assert obs.shape == (0, 1)
 
-    # All shots discarded because det0 always fires.
-    assert np.all(samples[:, 0])
-    assert np.all(~samples[:, 1])
 
-
-def test_postselection_discarded_and_surviving_rows():
-    """With 50% noise, both discarded and surviving rows appear."""
-    sampler = _make(MIXED_DIRECT_CIRCUIT, seed=2)
-    mask = np.array([True, False])
-    samples = sampler.sample(64, batch_size=8, postselection_mask=mask)
-
-    discarded = samples[:, 0] & mask[0]
-    assert discarded.any(), "expected some discards with 50% noise"
-    assert (~discarded).any(), "expected some survivors"
-
-    # Component col False for every discarded row.
-    assert np.all(~samples[discarded, 1])
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+def test_postselection_acceptance_rate(strategy):
+    sampler = Circuit(MIXED_DIRECT_CIRCUIT).compile_detector_sampler(
+        strategy=strategy, seed=2
+    )
+    shots = 4_000
+    samples = sampler.sample(
+        shots, batch_size=512, postselection_mask=np.array([True, False])
+    )
+    assert abs(len(samples) / shots - 0.5) < 5 * np.sqrt(0.25 / shots)
+    assert not samples[:, 0].any()
 
 
 # Detector 0 is postselected; direct detector 2 and observable 0 are not, so a
@@ -243,10 +253,8 @@ def test_survivors_keep_their_own_direct_outputs(shots, batch_size, reference):
     expected = _direct_outputs(sampler, drawn()[:shots])
     if reference:
         expected[:, :3] ^= sampler._reference_sample()[:3]
-    discarded = expected[:, 0]
-    assert np.array_equal(samples[:, [0, 2]], expected[:, [0, 2]])
-    assert np.array_equal(samples[~discarded, 3], expected[~discarded, 3])
-    assert not samples[discarded][:, [1, 3]].any()
+    expected = expected[~expected[:, 0]]
+    assert np.array_equal(samples[:, [0, 2, 3]], expected[:, [0, 2, 3]])
 
 
 def test_postselection_direct_cols_always_equal_numpy():
@@ -257,6 +265,7 @@ def test_postselection_direct_cols_always_equal_numpy():
         samples = sampler.sample(8, batch_size=4, postselection_mask=mask)
 
     expected_direct = _direct_outputs(sampler, drawn()[:8])
+    expected_direct = expected_direct[~expected_direct[:, 0]]
     direct_det = sampler._direct_detector_mask
     assert np.array_equal(
         samples[:, : sampler._num_detectors] & direct_det,
@@ -309,20 +318,26 @@ def test_postselection_on_a_constant_detector(monkeypatch, use_reference, strate
     calls: list[int] = []
 
     _record_rows(monkeypatch, calls)
-    samples = sampler.sample(
-        16,
-        batch_size=4,
-        postselection_mask=mask,
-        use_detector_reference_sample=use_reference,
-    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        samples = sampler.sample(
+            16,
+            batch_size=4,
+            postselection_mask=mask,
+            use_detector_reference_sample=use_reference,
+        )
+    always_read_1 = [w for w in caught if "always read 1" in str(w.message)]
     if use_reference:
+        assert always_read_1 == []
         assert sum(calls) >= 16
+        assert samples.shape == (16, 2)
         assert not samples[:, 0].any()
         assert samples[:, 1].any()
     else:
+        assert len(always_read_1) == 1
+        assert "[0]" in str(always_read_1[0].message)
         assert calls == []
-        assert samples[:, 0].all()
-        assert not samples[:, 1].any()
+        assert samples.shape == (0, 2)
 
 
 @pytest.mark.parametrize("constant,use_reference", [(0, False), (0, True), (1, True)])
@@ -374,10 +389,11 @@ def test_constant_outputs_with_component_postselection(strategy, use_reference):
         separate_observables=True,
         use_observable_reference_sample=use_reference,
     )
-    survivors = ~detectors[:, :2].any(axis=1)
-    assert survivors.any()
-    assert detectors[survivors, 2].all()
-    assert (observables[survivors, 0] == (not use_reference)).all()
+    assert 0 < len(detectors) < 128
+    assert len(observables) == len(detectors)
+    assert not detectors[:, :2].any()
+    assert detectors[:, 2].all()
+    assert (observables[:, 0] == (not use_reference)).all()
 
 
 def test_components_run_on_fewer_shots_than_sampled():
@@ -390,9 +406,8 @@ def test_components_run_on_fewer_shots_than_sampled():
         _record_rows(monkeypatch, rows)
         samples = sampler.sample(32, batch_size=8, postselection_mask=mask)
 
-    discarded = np.any(samples[:, : sampler._num_detectors] & mask, axis=1)
     assert sum(rows) < 32
-    assert sum(rows) >= int((~discarded).sum())
+    assert sum(rows) >= len(samples)
 
 
 def test_postselection_jax_batch_size_fixed(monkeypatch):
@@ -429,10 +444,8 @@ def test_postselection_mixed_mask_skips_jax_only_on_direct_discard(monkeypatch):
 
     _record_rows(monkeypatch, rows)
     samples = sampler.sample(32, batch_size=8, postselection_mask=mask)
-    direct_discarded = samples[:, 0] & mask[0]
-    assert direct_discarded.any()
     assert sum(rows) < 32
-    assert sum(rows) >= int((~direct_discarded).sum())
+    assert sum(rows) >= len(samples)
 
 
 def test_postselection_detector_reference_xor_before_discard_check(monkeypatch):
@@ -472,7 +485,7 @@ def test_postselection_detector_reference_xor_before_discard_check(monkeypatch):
 def test_postselection_observable_reference_flips_every_sampled_row(
     strategy, monkeypatch
 ):
-    """The observable reference flips every row that was sampled, but no direct discard."""
+    """The observable reference flips the observable of every returned row."""
     circuit = """
     X 0
     X_ERROR(0.5) 0
@@ -498,10 +511,9 @@ def test_postselection_observable_reference_flips_every_sampled_row(
 
     dets, raw = observables(np.zeros(3, dtype=np.bool_))
     _, flipped = observables(np.array([False, False, True]))
-    direct_discarded = dets[:, 0]
-    assert direct_discarded.any() and (~direct_discarded).any()
-    np.testing.assert_array_equal(flipped[~direct_discarded], ~raw[~direct_discarded])
-    assert not flipped[direct_discarded].any() and not raw[direct_discarded].any()
+    assert 0 < len(dets) < 128
+    assert not dets[:, 0].any()
+    np.testing.assert_array_equal(flipped, ~raw)
 
 
 # ────────────────────────── fully-direct fast path ───────────────────────────
@@ -514,7 +526,8 @@ def test_postselection_fully_direct_no_jax(monkeypatch):
     spy: list[int] = []
     _record_rows(monkeypatch, spy)
     result = sampler.sample(10, postselection_mask=mask)
-    assert result.shape == (10, 1)
+    assert len(result) <= 10
+    assert not result.any()
     assert spy == []
 
 
@@ -528,7 +541,7 @@ def test_postselection_fully_direct_matches_default():
 
 
 def test_postselection_fully_direct_detector_reference():
-    """Fully-direct circuits fall back to the standard path, including detector ref."""
+    """With a detector reference, fully-direct survivors are the unmasked samples."""
     mask = np.array([True])
     with_mask = _make(FULLY_DIRECT_CIRCUIT, seed=0).sample(
         12, postselection_mask=mask, use_detector_reference_sample=True
@@ -536,7 +549,7 @@ def test_postselection_fully_direct_detector_reference():
     without = _make(FULLY_DIRECT_CIRCUIT, seed=0).sample(
         12, use_detector_reference_sample=True
     )
-    assert np.array_equal(with_mask, without)
+    assert np.array_equal(with_mask, without[~without[:, 0]])
 
 
 # ────────────────────────── reference sample interaction ─────────────────────
@@ -563,18 +576,15 @@ def test_postselection_detector_reference_matches_unmasked():
     assert np.array_equal(with_ref, without)
 
 
-def test_postselection_detector_reference_survivors_and_discarded():
-    """Detector ref XOR applies to both survivor and discarded rows."""
+def test_postselection_detector_reference_survivors():
+    """The masked detectors of every returned row read 0 after the reference XOR."""
     mask = np.array([True, False])
     kwargs = {"batch_size": 8, "use_detector_reference_sample": True}
     samples = _make(MIXED_DIRECT_CIRCUIT, seed=3).sample(
         64, postselection_mask=mask, **kwargs
     )
-    keep = _keep(samples, mask)
-    assert keep.any() and (~keep).any()
-    assert not np.any(samples[keep] & mask)
-    assert np.all(samples[~keep, 0])
-    assert np.all(~samples[~keep, 1])
+    assert 0 < len(samples) < 64
+    assert not np.any(samples & mask)
 
 
 @pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
@@ -611,8 +621,7 @@ def test_postselection_with_observable_reference():
     assert obs.shape == (8, 1)
 
 
-def test_postselection_observable_reference_skipped_on_discarded():
-    """Observable ref XOR must not fill discarded rows' uncomputed obs columns."""
+def test_postselection_observable_reference_with_all_discarded():
     mask = np.array([True, False])
     dets, obs = _make(ALWAYS_DISCARD_OBS_CIRCUIT, seed=1).sample(
         16,
@@ -621,9 +630,8 @@ def test_postselection_observable_reference_skipped_on_discarded():
         separate_observables=True,
         use_observable_reference_sample=True,
     )
-    discarded = np.any(dets & mask, axis=1)
-    assert np.all(discarded)
-    assert not np.any(obs)
+    assert dets.shape == (0, 2)
+    assert obs.shape == (0, 1)
 
 
 # ────────────────────────── output-layout flags ──────────────────────────────
@@ -683,8 +691,8 @@ def test_postselection_surface_code_fully_direct_unchanged():
     assert np.array_equal(a, b)
 
 
-def test_postselection_surface_code_caller_filter():
-    """After postselection, caller filters survivors via mask; they have no fired detectors."""
+def test_postselection_surface_code_survivors():
+    """Postselection returns the shots in which no masked detector fires."""
     circ = stim.Circuit.generated(
         "surface_code:rotated_memory_x",
         distance=3,
@@ -696,12 +704,13 @@ def test_postselection_surface_code_caller_filter():
     mask = np.zeros(num_det, dtype=np.bool_)
     mask[0] = True
 
+    unmasked = c.compile_detector_sampler(seed=0).sample(200, batch_size=32)
     samples = c.compile_detector_sampler(seed=0).sample(
         200, batch_size=32, postselection_mask=mask
     )
-    survivors = _keep(samples[:, :num_det], mask)
-    assert survivors.any()
-    assert not np.any(samples[survivors] & mask)
+    assert 0 < len(samples) < 200
+    assert not np.any(samples & mask)
+    np.testing.assert_array_equal(samples, unmasked[_keep(unmasked, mask)])
 
 
 # Detector 0 and observable 0 are direct, with no statevector component.
@@ -715,8 +724,8 @@ OBSERVABLE_INCLUDE(0) rec[-1]
 
 @pytest.mark.parametrize("strategy", ["active_statevector", "cat5"])
 @pytest.mark.parametrize("bit_packed", [False, True])
-def test_direct_only_discards_read_false_in_their_observables(strategy, bit_packed):
-    """Without components a discarded row reads False past its direct detectors too."""
+def test_direct_only_postselection_returns_survivors(strategy, bit_packed):
+    """Without components the survivors keep their own observables."""
     sampler = Circuit(DIRECT_ONLY_OBS_CIRCUIT).compile_detector_sampler(
         strategy=strategy, seed=4
     )
@@ -729,10 +738,9 @@ def test_direct_only_discards_read_false_in_their_observables(strategy, bit_pack
     )
     if bit_packed:
         samples = np.unpackbits(samples, axis=1, bitorder="little")[:, :2] == 1
-    discarded = samples[:, 0]
-    assert discarded.any() and (~discarded).any()
-    assert not samples[discarded, 1].any()
-    assert samples[~discarded, 1].any()
+    assert 0 < len(samples) < 2_000
+    assert not samples[:, 0].any()
+    assert samples[:, 1].any() and not samples[:, 1].all()
 
 
 # Detector 0 is direct; detector 1, detector 2 and observable 0 are statevector
@@ -759,19 +767,15 @@ OBSERVABLE_INCLUDE(0) rec[-4]
 
 @pytest.mark.parametrize("share", [True, False])
 @pytest.mark.parametrize("masked", [1, 2])
-def test_a_component_discard_skips_and_clears_the_other_components(
-    monkeypatch, share, masked
-):
-    """A shot a component prunes reads False in the other components' outputs.
+def test_a_component_discard_skips_the_later_components(monkeypatch, share, masked):
+    """The components after a pruning one skip its shots.
 
-    That holds for the components that run before the pruning one and after
-    it, which skip it, and the survivors are the shots of the unmasked call.
+    The survivors are the shots of the unmasked call that the mask keeps.
     """
     circuit = Circuit(TWO_COMPONENTS_CIRCUIT)
     shots = 5_000
     mask = np.zeros(circuit.num_detectors, dtype=bool)
     mask[masked] = True
-    others = [c for c in (1, 2, 3) if c != masked]
 
     def sample(postselection_mask, batch_size=None):
         sampler = set_sharing(
@@ -792,14 +796,72 @@ def test_a_component_discard_skips_and_clears_the_other_components(
     with monkeypatch.context() as patch_rows:
         _record_rows(patch_rows, live)
         kept = sample(mask)
-    discarded = kept[:, masked]
-    survivors = int((~discarded).sum())
+    survivors = len(kept)
+    assert 0 < survivors < shots
     # NOTE: the components before the pruning one see every shot, those after
     # it the survivors alone.
     assert sum(live) == masked * shots + (3 - masked) * survivors
     assert np.array_equal(sample(mask, batch_size=7), kept)
-    assert discarded.any() and (~discarded).any()
-    assert np.array_equal(kept[~discarded], free[~discarded])
-    assert np.array_equal(kept[:, 0], free[:, 0])
-    assert not kept[discarded][:, others].any()
-    assert free[discarded][:, others].any(axis=0).all()
+    assert np.array_equal(kept, free[~free[:, masked]])
+
+
+# Detectors 0 and 1 are stabilizer-rank component outputs; detector 2 is direct.
+COMPONENT_DETECTORS_CIRCUIT = """
+R 0 1 2
+H 0 1
+T 0 1
+CNOT 0 1
+T 1
+H 0 1
+X_ERROR(0.2) 0 1 2
+M 0 1 2
+DETECTOR rec[-3]
+DETECTOR rec[-2]
+DETECTOR rec[-1]
+OBSERVABLE_INCLUDE(0) rec[-3] rec[-2]
+"""
+
+
+@pytest.mark.parametrize("use_reference", [False, True])
+@pytest.mark.parametrize("batch_size", [7, 64])
+@pytest.mark.parametrize("masked", [[0], [0, 1], [0, 2]])
+def test_stabilizer_rank_survivors_are_the_unmasked_samples_kept(
+    use_reference, batch_size, masked
+):
+    circuit = Circuit(COMPONENT_DETECTORS_CIRCUIT)
+    mask = np.zeros(circuit.num_detectors, dtype=np.bool_)
+    mask[masked] = True
+
+    def sample(postselection_mask):
+        sampler = circuit.compile_detector_sampler(strategy="cat5", seed=6)
+        assert sampler._direct_detector_mask.tolist() == [False, False, True]
+        return sampler.sample(
+            300,
+            batch_size=batch_size,
+            append_observables=True,
+            use_detector_reference_sample=use_reference,
+            postselection_mask=postselection_mask,
+        )
+
+    unmasked = sample(None)
+    survivors = sample(mask)
+    if 2 not in masked:
+        np.testing.assert_array_equal(survivors, unmasked[_keep(unmasked[:, :3], mask)])
+    assert 0 < len(survivors) < 300
+    assert not np.any(survivors[:, :3] & mask)
+
+
+@pytest.mark.parametrize("masked", [[0], [0, 2]])
+def test_stabilizer_rank_postselection_compiles_once(masked):
+    """Survivor counts vary between calls, but the compiled shapes do not."""
+    circuit = Circuit(COMPONENT_DETECTORS_CIRCUIT)
+    sampler = circuit.compile_detector_sampler(strategy="cat5", seed=0)
+    mask = np.zeros(circuit.num_detectors, dtype=np.bool_)
+    mask[masked] = True
+    compact: Any = sampler_module._compact
+    counts = {len(sampler.sample(500, batch_size=128, postselection_mask=mask))}
+    compiled = compact._cache_size()
+    for _ in range(5):
+        counts.add(len(sampler.sample(500, batch_size=128, postselection_mask=mask)))
+    assert len(counts) > 1
+    assert compact._cache_size() == compiled

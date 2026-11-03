@@ -132,6 +132,8 @@ class ShotPlan:
             itself past the pruning. None for a component without postselected
             outputs, which prunes no shot.
         programs: Each component's lane program.
+        rejected: The postselected detectors, as words: a shot with one of them
+            set was discarded, and the others are returned.
 
     """
 
@@ -139,6 +141,7 @@ class ShotPlan:
     kept: np.ndarray
     pruned_kept: tuple[np.ndarray | None, ...]
     programs: tuple[LaneProgram, ...]
+    rejected: np.ndarray
 
 
 def shot_plan(
@@ -174,6 +177,7 @@ def shot_plan(
         kept=kept,
         pruned_kept=tuple(pruned_kept),
         programs=programs,
+        rejected=shared.pack_bits(postselected, words),
     )
 
 
@@ -376,9 +380,10 @@ class ShotSampler:
             bit_packed: Whether the arrays are bit-packed.
             batch_size: The most shots a thread runs at once; it bounds memory and
                 does not change the samples.
-            mask: The postselected detectors: a shot with a postselected direct
-                detector of 1 keeps only its direct detectors, and the components
-                prune shots at their postselected outputs.
+            mask: The postselected detectors: only shots where they all read 0
+                are returned. A shot with a postselected direct detector of 1
+                skips the components, and the components prune shots at their
+                postselected outputs.
             flip: A reference bit per output, XOR-ed in before the tests.
 
         """
@@ -395,14 +400,25 @@ class ShotSampler:
         noise_seeds = self._channels.block_seeds(shots)
         seeds = self._next_seeds(self._seeds)
 
-        def read(words: np.ndarray, c: np.ndarray) -> np.ndarray:
-            return read_outputs(words, c, num_outputs, bit_packed=bit_packed)
+        rejected = plan.rejected if plan.rejected.any() else None
+
+        def read(words: np.ndarray) -> list[np.ndarray]:
+            if rejected is not None:
+                hits = (words[:, : len(rejected)] & rejected).any(axis=1)
+                if hits.any():
+                    # NOTE: the output words alone, so that bit-packed outputs
+                    # can be views of them.
+                    words = words[~hits, : self._layout.output_words]
+            return [
+                read_outputs(words, c, num_outputs, bit_packed=bit_packed)
+                for c in columns
+            ]
 
         if shots <= part:
             words, deviation = self._sample_part(
                 0, shots, noise_seeds, seeds, plan, constant, batch_size
             )
-            return [read(words, c) for c in columns], deviation
+            return read(words), deviation
         outputs = [
             (
                 np.empty((shots, -(-len(c) // 8)), dtype=np.uint8)
@@ -411,18 +427,22 @@ class ShotSampler:
             )
             for c in columns
         ]
+        filled = 0
         deviation = 0.0
         for start in range(0, shots, part):
             stop = min(start + part, shots)
             words, part_deviation = self._sample_part(
                 start, stop, noise_seeds, seeds, plan, constant, batch_size
             )
-            for out, c in zip(outputs, columns, strict=True):
-                out[start:stop] = read(words, c)
+            arrays = read(words)
+            count = len(arrays[0]) if arrays else stop - start
+            for out, array in zip(outputs, arrays, strict=True):
+                out[filled : filled + count] = array
+            filled += count
             # NOTE: written so that a NaN deviation sticks.
             if part_deviation > deviation or part_deviation != part_deviation:
                 deviation = part_deviation
-        return outputs, deviation
+        return [out[:filled] for out in outputs], deviation
 
     def _part_shots(self) -> int:
         """Return the shots of a part: whole noise blocks whose words fit in memory.
