@@ -128,12 +128,17 @@ class ShotPlan:
         screen: The postselected direct outputs, as words: a shot with one of
             them set is discarded before the components.
         kept: The outputs a discarded shot keeps (its direct detectors), as words.
+        pruned_kept: The outputs a shot that component ``k`` prunes keeps, as
+            words: ``kept`` and component ``k``'s outputs, which it clears
+            itself past the pruning. None for a component without postselected
+            outputs, which prunes no shot.
         programs: Each component's lane program.
 
     """
 
     screen: np.ndarray
     kept: np.ndarray
+    pruned_kept: tuple[np.ndarray | None, ...]
     programs: tuple[LaneProgram, ...]
 
 
@@ -154,9 +159,21 @@ def shot_plan(
             layout.components, layout.keys, layout.key_starts, strict=True
         )
     )
+    kept = shared.pack_bits(layout.direct & is_detector, words)
+    pruned_kept = []
+    for component in layout.components:
+        outputs = list(component.output_indices)
+        if not postselected[outputs].any():
+            pruned_kept.append(None)
+            continue
+        own = kept.copy()
+        for o in outputs:
+            own[o >> 6] |= np.uint64(1) << np.uint64(o & 63)
+        pruned_kept.append(own)
     return ShotPlan(
         screen=shared.pack_bits(postselected & layout.direct, words),
-        kept=shared.pack_bits(layout.direct & is_detector, words),
+        kept=kept,
+        pruned_kept=tuple(pruned_kept),
         programs=programs,
     )
 
@@ -529,30 +546,44 @@ class ShotSampler:
     ) -> list[tuple]:
         """Screen the rows' shots and run the components on them.
 
-        Alone on its thread, a chunk runs each component's amplitude loops on
-        ``threads`` threads.
+        A shot that a component prunes is skipped by the later components and
+        keeps only the outputs of ``plan.pruned_kept``, whatever the order of
+        the components. Alone on its thread, a chunk runs each component's
+        amplitude loops on ``threads`` threads.
         """
         alive = np.empty(len(rows), dtype=np.bool_)
         _screen(rows, constant, plan.screen, plan.kept, alive)
-        if not alive.any():
-            return []
-        return [
-            shared.run_lanes(
-                len(rows) << component.width,
-                rows,
-                alive,
-                first_shot,
-                seed,
-                self._share,
-                program,
-                shared._POISON,
-                PARALLEL_WORK,
-                threads,
+        stats = []
+        for component, program, seed, kept in zip(
+            self._layout.components,
+            plan.programs,
+            seeds,
+            plan.pruned_kept,
+            strict=True,
+        ):
+            if not alive.any():
+                break
+            before = None if kept is None else alive.copy()
+            stats.append(
+                shared.run_lanes(
+                    len(rows) << component.width,
+                    rows,
+                    alive,
+                    first_shot,
+                    seed,
+                    self._share,
+                    program,
+                    shared._POISON,
+                    PARALLEL_WORK,
+                    threads,
+                )
             )
-            for component, program, seed in zip(
-                self._layout.components, plan.programs, seeds, strict=True
-            )
-        ]
+            if kept is not None:
+                assert before is not None
+                pruned = before & ~alive
+                if pruned.any():
+                    rows[pruned, : len(kept)] &= kept
+        return stats
 
     def _record(self, stats: list[tuple]) -> float:
         """Keep the lane counts; return the largest normalization deviation."""
