@@ -112,7 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `stim.target_inv(0)` instead of ignoring the inversion. (#240)
 - `R_PAULI` program text accepts inverted targets such as `R_PAULI(0.3) !X0*Y1`,
   and circuits print them in that form instead of
-  `SPP[R_PAULI(theta=0.3*pi)] !X0*Y1`. (#240)
+  `SPP[R_PAULI(theta=0.3*pi)] !X0*Y1`. (#244)
 - With a `postselection_mask` and no `batch_size`, the last survivors of a call,
   split into a batch per thread, ran one batch at a time for components so wide
   that only one of the largest batches fits in memory. They now run on as many
