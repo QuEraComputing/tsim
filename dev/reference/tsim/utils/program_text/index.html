@@ -289,7 +289,7 @@
         <span class=k>return</span> <span class=sa>f</span><span class=s2>&quot;R_PAULI(</span><span class=si>{</span><span class=n>alpha</span><span class=si>}</span><span class=s2>) </span><span class=si>{</span><span class=n>product</span><span class=si>}</span><span class=s2>&quot;</span>
 
     <span class=n>text</span> <span class=o>=</span> <span class=n>re</span><span class=o>.</span><span class=n>sub</span><span class=p>(</span>
-        <span class=sa>rf</span><span class=s2>&quot;\bSPP\[R_PAULI\(theta=(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi\)\] ((?:[XYZ]\d+)(?:\*[XYZ]\d+)*)&quot;</span><span class=p>,</span>
+        <span class=sa>rf</span><span class=s2>&quot;\bSPP\[R_PAULI\(theta=(</span><span class=si>{</span><span class=n>FLOAT_RE</span><span class=si>}</span><span class=s2>)\*pi\)\] (!?[XYZ]\d+(?:\*!?[XYZ]\d+)*)&quot;</span><span class=p>,</span>
         <span class=n>replace_pauli</span><span class=p>,</span>
         <span class=n>text</span><span class=p>,</span>
     <span class=p>)</span>

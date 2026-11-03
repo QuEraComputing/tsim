@@ -24,7 +24,8 @@
 <span class=normal>172</span>
 <span class=normal>173</span>
 <span class=normal>174</span>
-<span class=normal>175</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>expand_clifford_rotations</span><span class=p>(</span><span class=n>source</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>:</span>
+<span class=normal>175</span>
+<span class=normal>176</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>expand_clifford_rotations</span><span class=p>(</span><span class=n>source</span><span class=p>:</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Return ``source`` with half-π parametric rotations expanded to Clifford gates.</span>
 
 <span class=sd>    ``REPEAT`` blocks are preserved structurally and expanded recursively.</span>
@@ -45,8 +46,9 @@
         <span class=n>expansion</span> <span class=o>=</span> <span class=n>_try_clifford_expansion</span><span class=p>(</span><span class=n>instr</span><span class=p>)</span>
         <span class=k>if</span> <span class=n>expansion</span> <span class=ow>is</span> <span class=ow>not</span> <span class=kc>None</span><span class=p>:</span>
             <span class=n>gates</span><span class=p>,</span> <span class=n>targets</span> <span class=o>=</span> <span class=n>expansion</span>
-            <span class=k>for</span> <span class=n>gate</span> <span class=ow>in</span> <span class=n>gates</span><span class=p>:</span>
-                <span class=n>out</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>gate</span><span class=p>,</span> <span class=n>targets</span><span class=p>,</span> <span class=p>[])</span>
+            <span class=k>for</span> <span class=n>layer</span> <span class=ow>in</span> <span class=n>_disjoint_layers</span><span class=p>([[</span><span class=n>t</span><span class=p>]</span> <span class=k>for</span> <span class=n>t</span> <span class=ow>in</span> <span class=n>targets</span><span class=p>]):</span>
+                <span class=k>for</span> <span class=n>gate</span> <span class=ow>in</span> <span class=n>gates</span><span class=p>:</span>
+                    <span class=n>out</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>gate</span><span class=p>,</span> <span class=p>[</span><span class=n>targets</span><span class=p>[</span><span class=n>i</span><span class=p>]</span> <span class=k>for</span> <span class=n>i</span> <span class=ow>in</span> <span class=n>layer</span><span class=p>],</span> <span class=p>[])</span>
         <span class=k>else</span><span class=p>:</span>
             <span class=n>out</span><span class=o>.</span><span class=n>append</span><span class=p>(</span><span class=n>instr</span><span class=p>)</span>
     <span class=k>return</span> <span class=n>out</span>
