@@ -181,6 +181,11 @@ def sample_program(
     return combined
 
 
+def _survivors(samples: np.ndarray, postselect: np.ndarray) -> np.ndarray:
+    """Return the rows of ``samples`` where every ``postselect`` output is 0."""
+    return samples[~np.any(samples & postselect, axis=1)]
+
+
 @kernel
 def _write_direct_detectors(f, f_indices, flips, columns, postselect, out):
     """Clear every row of ``out`` and write its direct detector ``j`` at ``columns[j]``.
@@ -391,9 +396,8 @@ class _CompiledSamplerBase:
                 referenced=referenced,
             )
         flip = None if referenced is None else self._reference_sample() & referenced
-        # NOTE: a discarded shot reads False past its direct detectors, which only
-        # the shot words write; the noise sampler writes direct outputs straight
-        # into boolean rows otherwise.
+        # NOTE: only the shot words are filtered by a mask; the noise sampler
+        # writes direct outputs straight into boolean rows otherwise.
         if not (self._program.components or bit_packed or mask is not None):
             samples = self._shots.direct_bools(shots, flip)
             return [_take_columns(samples, c) for c in columns]
@@ -420,11 +424,15 @@ class _CompiledSamplerBase:
     ) -> list[np.ndarray]:
         """Return the output bits ``columns`` of ``shots`` shots, sampled with JAX.
 
-        The arguments are those of ``_sample_outputs``. A mask only changes the
-        samples through direct detectors that can fire, so other masks are
-        sampled without postselection.
+        The arguments are those of ``_sample_outputs``. Only the shots that a
+        mask keeps are returned. Direct detectors that can fire are tested
+        before the components run, and the other masked detectors after.
         """
-        if mask is not None:
+        postselect = None
+        screen = False
+        if mask is not None and mask.any():
+            postselect = np.zeros(self._program.num_outputs, dtype=np.bool_)
+            postselect[: self._num_detectors] = mask
             skips = mask & self._direct_detector_mask
             indices, flips, direct_columns = self._direct_detectors
             constant = indices < 0
@@ -432,19 +440,16 @@ class _CompiledSamplerBase:
             if referenced is not None:
                 fires = fires & ~referenced[direct_columns[constant]]
             skips[direct_columns[constant]] &= fires
-            if not skips.any():
-                mask = None
-        if mask is not None:
+            screen = bool(skips.any())
+        if screen:
+            assert mask is not None
             samples = self._sample_batches_with_postselection(
                 shots, batch_size, postselection_mask=mask, referenced=referenced
             )
-        elif referenced is not None:
-            samples, reference = self._sample_batches(
-                shots, batch_size, compute_reference=True
-            )
-            samples ^= reference & referenced
         else:
-            samples = self._sample_batches(shots, batch_size)
+            samples = self._sample_batches(
+                shots, batch_size, referenced=referenced, postselect=postselect
+            )
         return [
             _maybe_bit_pack(_take_columns(samples, c), bit_packed=bit_packed)
             for c in columns
@@ -498,53 +503,37 @@ class _CompiledSamplerBase:
         """Estimate the largest batch size that fits in available device memory."""
         return max(1, self._memory_budget() // self._peak_bytes_per_sample())
 
-    @overload
     def _sample_batches(
         self,
         shots: int,
         batch_size: int | None = None,
         *,
-        compute_reference: Literal[False] = False,
-    ) -> np.ndarray: ...
-
-    @overload
-    def _sample_batches(
-        self,
-        shots: int,
-        batch_size: int | None = None,
-        *,
-        compute_reference: Literal[True],
-    ) -> tuple[np.ndarray, np.ndarray]: ...
-
-    def _sample_batches(
-        self,
-        shots: int,
-        batch_size: int | None = None,
-        *,
-        compute_reference: bool = False,
-    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
-        """Sample in batches with JAX and concatenate results.
+        referenced: np.ndarray | None = None,
+        postselect: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Sample in batches with JAX and concatenate the results.
 
         Args:
             shots: Number of samples to draw.
             batch_size: Samples per batch. Auto-determined if None.
-            compute_reference: If True, add one extra sample to the first
-                batch for a noiseless reference (f_params=0).
+            referenced: The outputs that a noiseless reference sample is XOR-ed
+                into, if any. The first batch holds one extra sample for it.
+            postselect: The outputs that discard a shot when they read 1, after
+                the reference sample is XOR-ed in, if any.
 
         Returns:
-            Samples array, or (samples, reference) tuple when compute_reference=True.
+            The samples of the shots that are not discarded.
 
         """
         _check_sizes(shots, batch_size)
+        num_outputs = self._program.num_outputs
         if shots == 0:
-            empty = np.empty((0, self._program.num_outputs), dtype=np.bool_)
-            if compute_reference:
-                return empty, np.zeros(self._program.num_outputs, dtype=np.bool_)
-            return empty
+            return np.empty((0, num_outputs), dtype=np.bool_)
 
         # NOTE: with a reference sample the batch size grows by one when the
         # batches would hold exactly ``shots``, so that the first batch's
         # reference sample fits without another batch shape for JIT.
+        compute_reference = referenced is not None
         batch_size = self._resolve_batch_size(
             shots, batch_size, compute_reference=compute_reference
         )
@@ -558,15 +547,14 @@ class _CompiledSamplerBase:
                 f_params[0] = 0
             batches.append(backend.sample(f_params, backend.next_seed()))
         reference: np.ndarray | None = None
-        if compute_reference:
+        if referenced is not None:
             reference = np.asarray(batches[0][0])
             batches[0] = batches[0][1:]
         result = backend.concatenate(batches)[:shots]
-
-        if compute_reference:
+        if referenced is not None:
             assert reference is not None
-            return result, reference
-        return result
+            result ^= reference & referenced
+        return result if postselect is None else _survivors(result, postselect)
 
     def _sample_batches_with_postselection(
         self,
@@ -578,10 +566,12 @@ class _CompiledSamplerBase:
     ) -> np.ndarray:
         """Sample with postselection and JAX, skipping the components for direct discards.
 
-        A shot that a masked direct detector discards keeps its direct detector
-        columns and reads ``False`` elsewhere. The other shots are sampled in
-        batches of ``batch_size``. Without a ``batch_size``, batches are as large
-        as memory allows, and the last survivors are split into equal batches.
+        Only the shots where every masked detector reads 0 are returned. A shot
+        that a masked direct detector discards skips the components. The other
+        shots are sampled in batches of ``batch_size``, and then tested for the
+        other masked detectors. Without a ``batch_size``, batches
+        are as large as memory allows, and the last survivors are split into
+        equal batches.
 
         Args:
             shots: Number of samples to draw.
@@ -606,13 +596,20 @@ class _CompiledSamplerBase:
         if flip is not None:
             flips = flips ^ flip[columns]
         postselect = postselection_mask[columns]
-        result = np.empty((shots, num_outputs), dtype=np.bool_)
+        # NOTE: the screen has tested the direct detectors, so the samples are
+        # tested for the others alone.
+        postselect_outputs = np.zeros(num_outputs, dtype=np.bool_)
+        postselect_outputs[: self._num_detectors] = postselection_mask
+        postselect_outputs[columns] = False
+        test_samples = bool(postselect_outputs.any())
         backend = self._backend
         assert backend is not None
         chunk = min(batch_size, SCREEN_SHOTS)
+        direct = np.empty((chunk, num_outputs), dtype=np.bool_)
+        result = np.empty((shots, num_outputs), dtype=np.bool_)
+        filled = 0
         num_f = self._channel_sampler.signature_matrix.shape[1]
         pending_f = [np.empty((0, num_f), dtype=np.uint8)]
-        pending_shot = [np.empty(0, dtype=np.int64)]
         pending = 0
         starts = range(0, shots, chunk)
         screened_chunks = 0
@@ -632,11 +629,10 @@ class _CompiledSamplerBase:
                         flips,
                         columns,
                         postselect,
-                        result[start:stop],
+                        direct[: stop - start],
                     )
                     survivors = np.flatnonzero(~discarded)
                     pending_f.append(f_params[survivors])
-                    pending_shot.append(start + survivors)
                     pending += len(survivors)
             ready = pending
             size, rows = batch_size, batch_size
@@ -647,7 +643,7 @@ class _CompiledSamplerBase:
                 # batch shapes are compiled.
                 size = ceil(ready / ceil(ready / batch_size))
                 rows = min(batch_size, 1 << (size - 1).bit_length())
-            all_f, all_shot = np.concatenate(pending_f), np.concatenate(pending_shot)
+            all_f = np.concatenate(pending_f)
             for start in range(0, ready, size):
                 samples = backend.sample(
                     all_f[start : start + size],
@@ -655,10 +651,14 @@ class _CompiledSamplerBase:
                     flip=flip,
                     pad_to=rows,
                 )
-                result[all_shot[start : start + size]] = np.asarray(samples)
-            pending_f, pending_shot = [all_f[ready:]], [all_shot[ready:]]
+                kept = np.asarray(samples)
+                if test_samples:
+                    kept = _survivors(kept, postselect_outputs)
+                result[filled : filled + len(kept)] = kept
+                filled += len(kept)
+            pending_f = [all_f[ready:]]
             pending -= ready
-        return result
+        return result[:filled]
 
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""
@@ -936,19 +936,25 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 only be used when observables are deterministic. Otherwise, it can
                 unpredictably change the results.
             postselection_mask: Optional boolean array of length ``num_detectors``.
-                When set, shots where any masked direct detector (an error bit
-                or a constant) fires are not sampled further. All ``shots`` rows
-                are still returned: survivors contain the full sample, while
-                discarded rows keep their direct detector columns and read
-                ``False`` in every other column, observables included. With
-                ``strategy="active_statevector"`` a masked component detector
-                also discards a shot: its row keeps the direct detectors and the
-                outputs of that component already determined when that detector
-                fired, and reads ``False`` elsewhere. Re-apply the mask to the returned detector
-                columns to recover surviving shots.
+                When set, only the shots in which every masked detector reads 0
+                in the returned sample (after the reference sample is XOR-ed
+                in, with ``use_detector_reference_sample``) are returned, so the
+                result can have fewer than ``shots`` rows, and
+                ``len(result) / shots`` is the acceptance rate. Without a mask,
+                exactly ``shots`` rows are returned. A shot that a masked direct
+                detector (an error bit or a constant) discards skips the
+                components; with ``strategy="active_statevector"`` a masked
+                component detector also stops a shot's simulation, while
+                stabilizer-rank components are computed in full.
 
         Returns:
-            A numpy array or tuple of numpy arrays containing the samples.
+            A numpy array or tuple of numpy arrays containing the samples. With
+            ``separate_observables``, both arrays hold the same shots.
+
+        Warns:
+            UserWarning: If a masked direct detector is a constant 1, without
+                ``use_detector_reference_sample``, so that every shot is
+                discarded.
 
         Raises:
             ValueError: If ``separate_observables`` is combined with
@@ -970,6 +976,17 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                     f"postselection_mask must have shape ({num_detectors},), "
                     f"got {mask.shape}"
                 )
+            if not use_detector_reference_sample:
+                indices, flips, direct_columns = self._direct_detectors
+                always = direct_columns[(indices < 0) & flips]
+                always = always[mask[always]]
+                if len(always):
+                    warnings.warn(
+                        f"The postselected detectors {always.tolist()} always "
+                        "read 1, so every shot is discarded. Did you mean "
+                        "use_detector_reference_sample=True?",
+                        stacklevel=2,
+                    )
         num_outputs = self._program.num_outputs
         referenced = None
         if use_detector_reference_sample or use_observable_reference_sample:

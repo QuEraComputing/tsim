@@ -51,8 +51,8 @@ def _accepted(sampler, shots, mask, *, reference=False):
         postselection_mask=mask,
         use_detector_reference_sample=reference,
     )
-    keep = ~detectors.any(axis=1)
-    return keep.mean(), np.concatenate([detectors, observables], axis=1)[keep]
+    assert not detectors.any()
+    return len(detectors) / shots, np.concatenate([detectors, observables], axis=1)
 
 
 @pytest.mark.parametrize("reference", [False, True])
@@ -317,7 +317,7 @@ def test_masks_of_component_detectors_alone_prune_lanes():
 
 
 @pytest.mark.parametrize("sharing", [False, True])
-def test_reference_bits_leave_the_outputs_of_pruned_shots_false(sharing, monkeypatch):
+def test_reference_bits_flip_the_observables_of_kept_shots(sharing, monkeypatch):
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
     mask = np.ones(circuit.num_detectors, dtype=bool)
 
@@ -336,10 +336,6 @@ def test_reference_bits_leave_the_outputs_of_pruned_shots_false(sharing, monkeyp
 
     detectors, raw = sample(np.zeros(4, dtype=bool))
     _, flipped = sample(np.array([False, False, False, True]))
-    raw, flipped = raw[:, 0], flipped[:, 0]
-    kept = ~detectors.any(axis=1)
-    np.testing.assert_array_equal(flipped[kept], ~raw[kept])
-    # NOTE: a shot pruned before the observable is set reads False either way.
-    cleared = ~raw & ~flipped
-    assert cleared.any() and not cleared[kept].any()
-    np.testing.assert_array_equal(cleared | (flipped == ~raw), np.ones_like(kept))
+    assert 0 < len(detectors) < 20_000
+    assert not detectors.any()
+    np.testing.assert_array_equal(flipped, ~raw)

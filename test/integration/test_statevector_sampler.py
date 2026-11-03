@@ -78,10 +78,10 @@ def test_postselected_samples_agree_across_strategies():
         detectors, observables = sampler.sample(
             shots, batch_size=7_000, separate_observables=True, postselection_mask=mask
         )
-        assert detectors.shape == (shots, circuit.num_detectors)
-        assert observables.shape == (shots, circuit.num_observables)
-        keep = ~detectors.any(axis=1)
-        rates.append((keep.mean(), observables[keep, 0].mean()))
+        assert detectors.shape[1] == circuit.num_detectors
+        assert observables.shape == (len(detectors), circuit.num_observables)
+        assert not detectors.any()
+        rates.append((len(detectors) / shots, observables[:, 0].mean()))
     (accept_a, error_a), (accept_b, error_b) = rates
     accept_sigma = np.sqrt(accept_a * (1 - accept_a) * 2 / shots)
     assert abs(accept_a - accept_b) <= 5 * accept_sigma + 1e-3

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+- `CompiledDetectorSampler.sample(postselection_mask=...)` returns only the
+  shots that no masked detector discards, so it can return fewer than `shots`
+  rows, possibly none, and `len(result) / shots` is the acceptance rate. It used
+  to return all `shots` rows, with the discarded ones partly filled with
+  `False`, for the caller to filter. Filtering the result with the mask again
+  still works but no longer does anything. Code that assumes
+  `len(result) == shots` must change, and code that computes the acceptance
+  rate as the mean of the re-applied mask now silently gets 1.0; use
+  `len(result) / shots` instead. The
+  rule is now the same for every strategy, including masked component detectors
+  with a stabilizer-rank strategy. Without a mask, exactly `shots`
+  rows are returned. `sample` warns when a masked detector is a constant 1,
+  which discards every shot. (#252)
+
 ### Added
 - `Circuit.detector_error_model(decompose_errors=True)` is supported. The
   argument is passed on to stim, with the logical observables kept as
