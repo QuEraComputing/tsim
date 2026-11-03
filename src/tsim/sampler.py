@@ -715,26 +715,31 @@ class _CompiledSamplerBase:
             channel.num_bits for channel in self._channel_sampler.channels
         )
 
-        statevector = (
-            f"{len(statevector_widths)} statevector components "
-            f"(width ≤ {max(statevector_widths)}, "
-            f"{statevector_actions} actions), "
-            if statevector_widths
-            else ""
-        )
-
-        return (
-            f"{type(self).__name__}({n_direct} direct, "
-            f"{statevector}"
-            f"{np.sum(c_graphs)} graphs, "
-            f"{error_channel_bits} error channel bits, "
-            f"{np.max(num_outputs) if num_outputs else 0} outputs for largest cc, "
-            f"≤ {np.max(c_params) if c_params else 0} parameters, {np.sum(c_a_terms)} A terms, "
-            f"{np.sum(c_b_terms)} B terms, "
-            f"{np.sum(c_c_terms)} C terms, {np.sum(c_d_terms)} D terms, "
-            f"{np.sum(c_e_terms)} E terms, "
-            f"{total_memory_str})"
-        )
+        # NOTE: only the statistics of the backends in use are shown.
+        parts = [f"{n_direct} direct"]
+        if statevector_widths:
+            parts.append(
+                f"{len(statevector_widths)} statevector components "
+                f"(width ≤ {max(statevector_widths)}, "
+                f"{statevector_actions} actions)"
+            )
+        if c_graphs:
+            parts.append(f"{sum(c_graphs)} graphs")
+        parts += [
+            f"{error_channel_bits} error channel bits",
+            f"{max(num_outputs, default=0)} outputs for largest cc",
+        ]
+        if c_graphs:
+            parts += [
+                f"≤ {max(c_params)} parameters",
+                f"{sum(c_a_terms)} A terms",
+                f"{sum(c_b_terms)} B terms",
+                f"{sum(c_c_terms)} C terms",
+                f"{sum(c_d_terms)} D terms",
+                f"{sum(c_e_terms)} E terms",
+            ]
+        parts.append(total_memory_str)
+        return f"{type(self).__name__}({', '.join(parts)})"
 
 
 class CompiledMeasurementSampler(_CompiledSamplerBase):

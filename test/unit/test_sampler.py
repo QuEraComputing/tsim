@@ -335,6 +335,23 @@ def test_sampler_repr():
     assert "2 error channel bits" in repr_str
 
 
+def test_sampler_repr_shows_only_used_backends():
+    c = Circuit("""
+        H 0
+        T 0
+        H 0
+        M 0
+        """)
+    statevector = repr(c.compile_sampler())
+    assert "statevector components" in statevector
+    assert "graphs" not in statevector
+    assert "A terms" not in statevector
+    zx = repr(c.compile_sampler(strategy="cat5"))
+    assert "statevector" not in zx
+    assert "graphs" in zx
+    assert "A terms" in zx
+
+
 @pytest.mark.parametrize(
     ("shots", "expected_batch_size"),
     [(100, 25), (101, 26)],
