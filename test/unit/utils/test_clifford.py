@@ -9,6 +9,7 @@ import stim
 from tsim.circuit import Circuit
 from tsim.utils.clifford import (
     _to_half_pi_index,
+    expand_clifford_rotations,
     parametric_to_clifford_gates,
 )
 
@@ -198,6 +199,7 @@ class TestStimCircuitProperty:
             "R_PAULI(1.0) X0\nR_PAULI(1.0) Z0",
             "R_PAULI(0.5) X0*Z1\nR_PAULI(0.5) Z0*X1\nR_PAULI(0.5) Y2",
             "R_PAULI(-0.5) X0*Y1 Z2\nR_PAULI(-0.5) Z0 X1*X2",
+            "R_PAULI(0.5) X0*!Z1\nR_PAULI(0.5) Z0",
         ],
     )
     def test_merged_rotations_preserve_unitary(self, program):
@@ -207,6 +209,17 @@ class TestStimCircuitProperty:
         for line in program.splitlines():
             ref += Circuit(line).stim_circuit
         assert c.stim_circuit.to_tableau() == ref.to_tableau()
+
+    def test_merged_spp_dag(self):
+        merged = stim.Circuit("SPP_DAG[R_PAULI(theta=1.0*pi)] X0 Z0*Y1")
+        expanded = expand_clifford_rotations(merged)
+        assert expanded.to_tableau() == stim.Circuit("X 0\nZ 0\nY 1").to_tableau()
+
+    def test_merged_rotation_in_repeat_block(self):
+        line = "U3(0.5, 0.5, 1.0) 0"
+        c = Circuit(f"REPEAT 2 {{\n{line}\n{line}\n}}")
+        ref = Circuit(line).stim_circuit * 4
+        assert c.stim_circuit.flattened().to_tableau() == ref.to_tableau()
 
     @pytest.mark.parametrize("theta_idx", range(4))
     @pytest.mark.parametrize("phi_idx", range(4))

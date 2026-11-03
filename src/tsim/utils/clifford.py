@@ -221,7 +221,7 @@ def _split_products(targets: list[stim.GateTarget]) -> list[list[stim.GateTarget
 
 
 def _disjoint_layers(supports: list[list[int]]) -> list[list[int]]:
-    """Group consecutive indices into ``supports`` into runs acting on disjoint qubits.
+    """Group consecutive indices of ``supports`` into runs acting on disjoint qubits.
 
     A merged instruction like ``I[U3(...)] 0 0`` or ``SPP[R_PAULI(...)] X0 Z0``
     applies its rotation once per target (or product), in order. A multi-gate
