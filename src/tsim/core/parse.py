@@ -71,30 +71,35 @@ def _validate_r_pauli_targets(instruction: stim.CircuitInstruction) -> None:
     """Validate an ``R_PAULI``-tagged SPP instruction's raw targets.
 
     Rejects duplicate target qubits within a single Pauli product (before any
-    algebraic simplification) and enforces the per-instruction qubit limit, both
-    checked on the raw (un-reduced) target list.
+    algebraic simplification) and enforces the per-product qubit limit, both
+    checked on the raw (un-reduced) target list. Stim merges consecutive
+    ``SPP`` lines with the same tag into one instruction, so the limit applies
+    to each product rather than to the whole instruction.
     """
     targets = instruction.targets_copy()
-    total_qubits = sum(1 for t in targets if not t.is_combiner)
-    if total_qubits > R_PAULI_MAX_QUBITS:
-        raise ValueError(
-            f"R_PAULI supports at most {R_PAULI_MAX_QUBITS} qubits per instruction, "
-            f"got {total_qubits}."
-        )
-
-    seen: set[int] = set()
+    products: list[list[int]] = [[]]
     for i, target in enumerate(targets):
         if target.is_combiner:
             continue
-        if target.value in seen:
-            raise ValueError(
-                f"R_PAULI target qubits must be distinct within a product, "
-                f"got repeated qubit {target.value} in {str(instruction)!r}."
-            )
-        seen.add(target.value)
+        products[-1].append(target.value)
         next_idx = i + 1
-        if next_idx >= len(targets) or not targets[next_idx].is_combiner:
-            seen = set()
+        if next_idx < len(targets) and not targets[next_idx].is_combiner:
+            products.append([])
+
+    for qubits in products:
+        if len(qubits) > R_PAULI_MAX_QUBITS:
+            raise ValueError(
+                f"R_PAULI supports at most {R_PAULI_MAX_QUBITS} qubits per Pauli "
+                f"product, got {len(qubits)}."
+            )
+        seen: set[int] = set()
+        for qubit in qubits:
+            if qubit in seen:
+                raise ValueError(
+                    f"R_PAULI target qubits must be distinct within a product, "
+                    f"got repeated qubit {qubit} in {str(instruction)!r}."
+                )
+            seen.add(qubit)
 
 
 def _iter_pauli_products(
