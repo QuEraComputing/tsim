@@ -1278,3 +1278,11 @@ def test_append_r_pauli_sign_applies_per_pauli_string():
 def test_append_r_pauli_anti_hermitian_pauli_string_rejected(pauli: str):
     with pytest.raises(ValueError, match="sign"):
         Circuit().append("R_PAULI", stim.PauliString(pauli), 0.3)
+
+
+@pytest.mark.parametrize("product", ["!X0*Y1", "X0*!Y1"])
+def test_r_pauli_shorthand_inverted_target_matches_negated_angle(product: str):
+    c = Circuit(f"R_PAULI(0.3) {product}")
+    np.testing.assert_allclose(
+        c.to_tensor(), Circuit("R_PAULI(-0.3) X0*Y1").to_tensor(), atol=1e-9
+    )
