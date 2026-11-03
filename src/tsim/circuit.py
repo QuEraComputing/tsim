@@ -832,10 +832,13 @@ class Circuit:
         """Return the circuit's doubled tensor (its channel, U ⊗ Ū for unitaries).
 
         Axes follow zxparam's ``Graph.to_tensor``: outputs then inputs, by qubit,
-        each with a copy and a conjugate axis. Error bits default to 0 (the
-        noiseless circuit); ``bindings`` maps error indices to bits and raises
-        ``ValueError`` for any other key. Detector and observable annotations are
-        left out. Needs ``zxparam[quimb]``.
+        each with a copy and a conjugate axis. Only qubits that some instruction
+        targets get axes, in increasing index order; qubits that no instruction
+        names are left out, so ``H 1`` gives a one-qubit tensor (add ``I q`` to
+        keep qubit ``q``). Error bits default to 0 (the noiseless circuit);
+        ``bindings`` maps error indices to bits and raises ``ValueError`` for any
+        other key. Detector and observable annotations are left out. Needs
+        ``zxparam[quimb]``.
         """
         builder = parse_stim_circuit(self._stim_circ)
         values: dict[int, Bit] = {j: 0 for j in range(builder.num_error_bits)}
