@@ -47,8 +47,9 @@ def compile_program(
 ) -> CompiledProgram:
     """Compile a prepared graph into an executable sampling program.
 
-    The graph is split into connected components. A component whose single
-    output equals one error-basis bit or a constant takes the direct path. With
+    The graph is split into connected components. A component without outputs
+    is dropped, and one whose single output equals one error-basis bit or a
+    constant takes the direct path. With
     ``strategy="active_statevector"`` every other component becomes an action tape for
     the statevector executor. Otherwise its outputs are plugged (all prefixes
     in ``sequential`` mode, none and all in ``joint`` mode), each plugged graph
@@ -87,6 +88,11 @@ def compile_program(
     components = sorted(graph.connected_components(), key=lambda c: len(c.outputs()))
     for component in components:
         output_indices = [_port(component, v) for v in component.outputs()]
+        # NOTE: a component without outputs, such as a block that a reset or an
+        # unread measurement cuts off, only scales each shot by a factor that the
+        # normalization cancels.
+        if not output_indices:
+            continue
         direct = classify_direct(component, layout)
         if direct is not None:
             basis_index, flip = direct

@@ -209,6 +209,48 @@ def test_direct_and_constant_detectors_are_reassembled_in_order(
         assert samples[:, column].any() and not samples[:, column].all()
 
 
+# Qubits 0 and 1 form a non-Clifford block that no output reads: the detector
+# ignores the MR, and the R cuts the block off from the M after it. (#260)
+UNREAD_BLOCK = """
+U3(0.25, -0.25, 0.825) 0
+YCY 1 0
+U3(0.125, 0.595, 0.5) 0
+SQRT_YY 1 0
+{cut}
+X_ERROR(0.1) 2
+M 2
+DETECTOR rec[-1]
+"""
+
+
+@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize(
+    "sample_detectors, cut, constant",
+    [(True, "MR 1", []), (False, "R 0 1\nM 0 1", [False, False])],
+)
+def test_components_without_outputs_are_dropped(
+    strategy, sample_detectors, cut, constant
+):
+    circuit = Circuit(UNREAD_BLOCK.format(cut=cut))
+    prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
+    assert any(not c.outputs() for c in prepared.graph.connected_components())
+    program = compile_program(prepared, mode="sequential", strategy=strategy)
+    assert program.components == ()
+    if strategy == "cat5":
+        joint = compile_program(prepared, mode="joint", strategy=strategy)
+        assert joint.components == ()
+
+    compile_sampler = (
+        circuit.compile_detector_sampler
+        if sample_detectors
+        else circuit.compile_sampler
+    )
+    samples = compile_sampler(strategy=strategy, seed=0).sample(2000)
+    assert samples.shape == (2000, len(constant) + 1)
+    assert (samples[:, :-1] == constant).all()
+    assert 0.05 < samples[:, -1].mean() < 0.15
+
+
 def test_constant_outputs_condition_the_joint_probability():
     # Measurement 0 is random (H T H |0>); measurements 1 and 2 are constant.
     circuit = Circuit("R 0 1 2\nH 0\nT 0\nH 0\nX 2\nM 0 1 2")
