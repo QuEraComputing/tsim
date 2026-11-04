@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `R_X(theta=0.1*pi,)`, are now rejected in both forms. (#202)
 
 ### Changed
+- `Circuit.append` raises `ValueError` when `targets`, `arg` or `tag` are
+  passed with a `stim.CircuitInstruction`, `stim.CircuitRepeatBlock` or
+  `stim.Circuit`. They used to be silently ignored.
 - The samplers now default to `strategy="active_statevector"`; pass
   `strategy="cat5"` for the previous stabilizer-rank default.
   `CompiledStateProbs` keeps `"cat5"`. (#203)
