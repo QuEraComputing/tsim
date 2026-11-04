@@ -1114,10 +1114,10 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         """Sample ``shots`` shots and return only those that pass postselection.
 
         A shot passes when none of the detectors in ``postselection_mask`` fires
-        (every shot passes without a mask). Unlike ``sample``, the discarded
-        shots are not returned, and neither are the postselected detectors,
-        which no passing shot fires; with ``device="cuda"`` neither is copied
-        off the GPU.
+        (every shot passes without a mask). As with ``sample``, the discarded
+        shots are not returned; unlike it, neither are the postselected
+        detectors, which no passing shot fires, and with ``device="cuda"``
+        neither is copied off the GPU.
 
         Args:
             shots: The number of shots to sample, discarded ones included.
@@ -1205,9 +1205,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         if mask is None:
             return samples, 0
         selected = np.concatenate([mask, np.zeros(num_outputs - num_detectors, bool)])
-        mask_bytes = np.packbits(selected, bitorder="little")
-        rows = samples[~(samples & mask_bytes).any(axis=1)]
-        bits = np.unpackbits(rows, axis=1, count=num_outputs, bitorder="little")
+        bits = np.unpackbits(samples, axis=1, count=num_outputs, bitorder="little")
         rows = np.packbits(bits[:, ~selected], axis=1, bitorder="little")
         return rows, shots - len(rows)
 

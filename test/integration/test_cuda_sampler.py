@@ -7,9 +7,7 @@ import numpy as np
 import pytest
 
 from tsim.circuit import Circuit
-from tsim.statevector.cuda import available
-from tsim.statevector.cuda import codegen
-from tsim.statevector.cuda import sampler as cuda_sampler
+from tsim.statevector.cuda import available, codegen, sampler as cuda_sampler
 from tsim.statevector.program import StatevectorComponent
 
 pytestmark = pytest.mark.skipif(not available(), reason="needs CuPy and a CUDA GPU")
@@ -52,8 +50,9 @@ def _accepted(sampler, shots, mask, **kwargs):
     detectors, observables = sampler.sample(
         shots, separate_observables=True, postselection_mask=mask, **kwargs
     )
-    keep = ~(detectors & mask).any(axis=1) if mask is not None else slice(None)
-    return np.concatenate([detectors, observables], axis=1)[keep]
+    # NOTE: sample returns only the shots that the mask keeps.
+    assert mask is None or not (detectors & mask).any()
+    return np.concatenate([detectors, observables], axis=1)
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))

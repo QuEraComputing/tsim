@@ -781,6 +781,9 @@ class CudaShotSampler:
         As ``ShotSampler.sample``; ``batch_size`` bounds the shots of a device batch.
         """
         words, deviation = self._sample_words(shots, batch_size, mask, flip)
+        rejected = self.plan(mask).rejected
+        if rejected.any():
+            words = words[~(words[:, : len(rejected)] & rejected).any(axis=1)]
         num_outputs = self.layout.num_outputs
         arrays = [
             read_outputs(words, c, num_outputs, bit_packed=bit_packed) for c in columns
