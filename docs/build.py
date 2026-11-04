@@ -575,7 +575,7 @@ def _render_member(member, level: int) -> list[str]:
             _render_docstring(member),
             "",
         ]
-        for sub_name, sub in sorted(member.members.items()):
+        for sub_name, sub in sorted(member.all_members.items()):
             if sub_name.startswith("_") and sub_name != "__init__":
                 continue
             if sub_name == "__init__":
@@ -584,105 +584,6 @@ def _render_member(member, level: int) -> list[str]:
                 out.extend(_render_member(sub, level + 1))
         return out
     return []
-
-
-def _render_module(module) -> str:
-    """Render a single module to an MDX document."""
-    title = module.path.split(".")[-1] or module.path
-    desc = ""
-    body_doc = ""
-    if module.docstring:
-        full = module.docstring.value.strip()
-        # The first line becomes the page subtitle (frontmatter description).
-        # Render only the remainder in the body to avoid showing the summary
-        # line twice (once as subtitle, once as the first body paragraph).
-        first_line, _, rest = full.partition("\n")
-        desc = first_line.replace('"', "'")
-        body_doc = rest.strip()
-
-    lines = [
-        "---",
-        f'title: "{title}"',
-    ]
-    if desc:
-        lines.append(f'description: "{desc}"')
-    lines.append("---")
-    lines.append("")
-
-    if body_doc:
-        lines.append(_escape_mdx_text(body_doc))
-        lines.append("")
-
-    classes = []
-    functions = []
-    for name, member in sorted(module.members.items()):
-        if name.startswith("_"):
-            continue
-        if member.kind == griffe.Kind.CLASS:
-            classes.append(member)
-        elif member.kind == griffe.Kind.FUNCTION:
-            functions.append(member)
-
-    for c in classes:
-        lines.extend(_render_member(c, level=2))
-    for f in functions:
-        lines.extend(_render_member(f, level=2))
-
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def _module_output_path(module) -> Path:
-    """Map module to its output MDX path.
-
-    - Package ``__init__`` modules → ``<subdir>/index.mdx`` (the landing
-      page for that subpackage).
-    - Regular submodules → ``<a>/<b>.mdx``.
-    - The top-level ``tsim`` package → ``api-reference/index.mdx``.
-    """
-    dotted = module.path
-    parts = dotted.split(".")[1:]
-    if not parts:
-        return API_DIR / "index.mdx"
-    if module.is_init_module:
-        return API_DIR / Path(*parts) / "index.mdx"
-    return API_DIR / Path(*parts).with_suffix(".mdx")
-
-
-def _build_api_groups(rendered_paths: list[Path]) -> list[dict]:
-    """Map rendered MDX paths to Mintlify navigation groups.
-
-    Each top-level subdirectory of api-reference/ becomes one group;
-    files directly under api-reference/ go into a "Top level" group.
-    Inside each group, the subpackage ``index`` page is listed first
-    (it's the landing page) and the remaining modules follow alphabetically.
-    """
-    top_level: list[str] = []
-    by_dir: dict[str, list[str]] = {}
-
-    for p in rendered_paths:
-        rel = p.relative_to(DOCS_DIR).with_suffix("").as_posix()
-        # rel looks like "api-reference/core/parse" or "api-reference/circuit"
-        parts = rel.split("/")
-        if len(parts) == 2:
-            top_level.append(rel)
-        else:
-            subpkg = parts[1]
-            by_dir.setdefault(subpkg, []).append(rel)
-
-    def _index_first(pages: list[str]) -> list[str]:
-        """Return pages with any ``.../index`` entry sorted to the front."""
-        indexes = sorted(
-            p for p in pages if p.endswith("/index") or p == "api-reference/index"
-        )
-        others = sorted(p for p in pages if p not in indexes)
-        return indexes + others
-
-    groups: list[dict] = []
-    if top_level:
-        groups.append({"group": "Top level", "pages": _index_first(top_level)})
-    for subpkg in sorted(by_dir):
-        groups.append({"group": subpkg, "pages": _index_first(by_dir[subpkg])})
-    return groups
 
 
 def _patch_docs_json(api_groups: list[dict]) -> None:
@@ -705,76 +606,63 @@ def _patch_docs_json(api_groups: list[dict]) -> None:
     DOCS_JSON.write_text(json.dumps(cfg, indent=2) + "\n")
 
 
+# Mirrors docs/scripts/gen_ref_nav.py on main: only the public API (which
+# follows semantic versioning) and tsim.experimental are documented. Every
+# other module is internal.
+API_PAGES = {
+    "index": (
+        "Tsim API",
+        "The public API, which follows semantic versioning. Other modules are "
+        "internal and may change without notice.",
+        [
+            "tsim.Circuit",
+            "tsim.CompiledMeasurementSampler",
+            "tsim.CompiledDetectorSampler",
+        ],
+    ),
+    "experimental": (
+        "Experimental",
+        "Helpers outside of the stable API. They may change or be removed in any "
+        "release.",
+        [
+            "tsim.experimental.CompiledStateProbs",
+            "tsim.experimental.SteaneEncoder",
+            "tsim.experimental.ColorEncoder5",
+        ],
+    ),
+}
+
+
+def _render_page(pkg, title: str, intro: str, objects: list[str]) -> str:
+    """Render one API page listing the given objects."""
+    lines = ["---", f'title: "{title}"', "---", "", intro, ""]
+    for path in objects:
+        obj = pkg[path.removeprefix("tsim.")]
+        lines.extend(_render_member(obj.final_target, level=2))
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def build_api() -> int:
-    """Walk src/tsim/ with griffe and render one MDX per module."""
+    """Render the public and experimental API pages with griffe."""
     pkg = griffe.load(
         "tsim",
         search_paths=[str(SRC_DIR)],
         extensions=griffe.load_extensions("griffe_inherited_docstrings"),
+        resolve_aliases=True,
     )
     API_DIR.mkdir(parents=True, exist_ok=True)
-    rendered: list[Path] = []
-    visited_ids: set[int] = set()
-    visited_paths: set[str] = set()
-
-    def walk(module):
-        # rendered is closed over
-        # Guard against circular re-exports. Griffe creates new objects for
-        # each level of the phantom re-export (e.g. ``import tsim`` inside
-        # encoder.py produces ``tsim.utils.encoder.tsim``, then
-        # ``tsim.utils.encoder.tsim.utils.encoder.tsim``, etc.), so object-id
-        # tracking alone is insufficient — the ids are always fresh. Track
-        # both ids and paths as a belt-and-suspenders guard, but also detect
-        # phantom cycles by checking whether any prefix sub-path of the
-        # current path was already visited: a phantom path like
-        # ``tsim.utils.encoder.tsim`` re-introduces ``tsim`` (a visited root)
-        # as a non-root component, so its dot-segments will contain a visited
-        # path as a suffix component.
-        obj_id = id(module)
-        if obj_id in visited_ids:
-            return
-        visited_ids.add(obj_id)
-        path = module.path
-        if path in visited_paths:
-            return
-        # Detect phantom re-export cycles: if any proper suffix of the path
-        # (as dot-segments) matches an already-visited path, this is a
-        # circular re-export, not a real new module.
-        segments = path.split(".")
-        for i in range(1, len(segments)):
-            if ".".join(segments[i:]) in visited_paths:
-                return
-        visited_paths.add(path)
-        # Only process modules that belong directly to the tsim source tree.
-        # Re-exported packages like ``tsim.utils.encoder.tsim`` are noise.
-        if not path.startswith("tsim"):
-            return
-        if "external" in path:
-            return
-        has_public = any(
-            not n.startswith("_")
-            and (m.kind == griffe.Kind.CLASS or m.kind == griffe.Kind.FUNCTION)
-            for n, m in module.members.items()
-        )
-        # Render the top-level ``tsim`` package as the API landing page, and
-        # any module that exposes public classes/functions. Skip sub-package
-        # ``__init__`` modules that only re-export (no direct public members):
-        # they produce a near-empty stub whose title duplicates both the nav
-        # group and the same-named submodule (e.g. ``compile`` group +
-        # ``compile.py`` page + ``compile/__init__`` page).
-        is_root = path == "tsim"
-        if has_public or is_root:
-            out = _module_output_path(module)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(_render_module(module))
-            rendered.append(out)
-        for child in module.modules.values():
-            if not child.is_alias:
-                walk(child)
-
-    walk(pkg)
-    _patch_docs_json(_build_api_groups(rendered))
-    return len(rendered)
+    for name, (title, intro, objects) in API_PAGES.items():
+        out = API_DIR / f"{name}.mdx"
+        out.write_text(_render_page(pkg, title, intro, objects))
+    _patch_docs_json(
+        [
+            {
+                "group": "API reference",
+                "pages": [f"api-reference/{name}" for name in API_PAGES],
+            }
+        ]
+    )
+    return len(API_PAGES)
 
 
 def _humanize(name: str) -> str:
@@ -961,7 +849,7 @@ def main() -> int:
     n_nb = build_notebooks(execute=not args.no_execute) if do_nb else 0
 
     elapsed = time.perf_counter() - start
-    print(f"\nBuilt {n_api} API modules, {n_nb} notebooks in {elapsed:.1f}s")
+    print(f"\nBuilt {n_api} API pages, {n_nb} notebooks in {elapsed:.1f}s")
     return 0
 
 

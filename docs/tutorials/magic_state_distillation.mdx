@@ -7,8 +7,14 @@ import tsim
 import numpy as np
 from typing import Literal
 import matplotlib.pyplot as plt
-from tsim.utils.encoder import ColorEncoder5
+from tsim.experimental import ColorEncoder5
 ```
+
+```text title="Output"
+An NVIDIA GPU may be present on this machine, but a CUDA-enabled jaxlib is not installed. Falling back to cpu.
+```
+
+
 
 In this tutorial, we will simulate a magic state distillation protocol using Tsim. We will simulate the magic state distillation circuit with 85 qubits introduced in [Rodriguez et al. (2025)](https://www.nature.com/articles/s41586-025-09367-3). This showcases Tsim's ability to simulate large non-Clifford circuits that would be impossible to simulate using a state vector simulator.
 
@@ -114,7 +120,7 @@ c.diagram("timeline-svg", height=100)
 ```
 
 ```text title="Output"
-Infidelity: 0.03342
+Infidelity: 0.03322
 ```
 
 
@@ -435,8 +441,8 @@ print(
 ```
 
 ```text title="Output"
-Infidelity: 0.00595
-Percentage of post-selected samples: 14.13%
+Infidelity: 0.00561
+Percentage of post-selected samples: 14.17%
 ```
 
 
@@ -556,8 +562,8 @@ print(
 ```
 
 ```text title="Output"
-Infidelity: 0.04050
-Percentage of post-selected samples: 12.69%
+Infidelity: 0.04157
+Percentage of post-selected samples: 12.74%
 ```
 
 
@@ -567,7 +573,7 @@ We see that the addition of noise has reduced the output fidelity to ~96%. This 
 # Encoding the distillation circuit
 
 To address this issue, we need to make our distillation circuit resilient to noise.
-We do this by encoding it using a quantum error correction code, specifically the [17,1,5] color code. The helper class `ColorEncoder5` provides a convenient way to encode the distillation circuit. Each qubit will be encoded into 17 physical qubits using an encoding circuit. After that, each gate of the distillation circuit will be applied transversally to the encoded qubits.
+We do this by encoding it using a quantum error correction code, specifically the [17,1,5] color code. The experimental helper class `tsim.experimental.ColorEncoder5` provides a convenient way to encode the distillation circuit. Each qubit will be encoded into 17 physical qubits using an encoding circuit. After that, each gate of the distillation circuit will be applied transversally to the encoded qubits.
 
 
 ```python
@@ -4289,9 +4295,11 @@ vz = sample_and_post_select(circ_z)
 ```
 
 ```text title="Output"
-Expectation value: 0.5722, percentage kept: 1.13%
-Expectation value: 0.5735, percentage kept: 1.24%
-Expectation value: 0.5703, percentage kept: 1.13%
+Expectation value: 0.5687, percentage kept: 1.12%
+
+
+Expectation value: 0.5704, percentage kept: 1.24%
+Expectation value: 0.5651, percentage kept: 1.14%
 ```
 
 
@@ -4331,7 +4339,7 @@ print(f"Infidelity: {1 - fidelity.real:.5f}")
 ```
 
 ```text title="Output"
-Infidelity: 0.00460
+Infidelity: 0.00804
 ```
 
 

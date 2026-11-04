@@ -10,7 +10,7 @@ Tsim supports a universal gate set, together with measurement and reset instruct
 
 ### Clifford Instructions
 
-Tsim supports all instructions [supported by Stim](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference). Below, we show the standard generating set of Clifford gates:
+Tsim supports all instructions [supported by Stim](https://github.com/quantumlib/Stim/blob/v1.16.0/doc/gates.md). Below, we show the standard generating set of Clifford gates:
 
 
 ```python
@@ -19,6 +19,12 @@ from tsim import Circuit
 c = Circuit("H 0")
 c.diagram("timeline-svg", height=120)
 ```
+
+```text title="Output"
+An NVIDIA GPU may be present on this machine, but a CUDA-enabled jaxlib is not installed. Falling back to cpu.
+```
+
+
 
 
 
@@ -616,7 +622,7 @@ $$
 
 ### Measurement and Reset instructions
 
-Tsim supports all collapsing gates [supported by Stim](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference#collapsing-gates).
+Tsim supports all collapsing gates [supported by Stim](https://github.com/quantumlib/Stim/blob/v1.16.0/doc/gates.md#collapsing-gates).
 
 
 ```python
@@ -1269,7 +1275,7 @@ c.diagram("timeline-svg", height=420)
 
 ### Noise Channels
 
-Tsim supports all noise channels [supported by Stim](https://github.com/quantumlib/Stim/wiki/Stim-v1.9-Gate-Reference#noise-channels).
+Tsim supports all noise channels [supported by Stim](https://github.com/quantumlib/Stim/blob/v1.16.0/doc/gates.md#noise-channels).
 
 The `X_ERROR(p)` instruction is a `X` instruction that is applied with probability `p`.
 
@@ -2017,10 +2023,10 @@ sampler.sample(shots=5)
 
 ```text title="Output"
 array([[False, False],
-       [ True,  True],
        [False, False],
        [ True,  True],
-       [ True,  True]])
+       [ True,  True],
+       [False, False]])
 ```
 
 
@@ -2139,21 +2145,21 @@ print(observables)
  [False]
  [False]
  [False]]
-[[False]
+[[ True]
+ [ True]
  [ True]
  [False]
- [ True]
  [ True]]
 ```
 
 
 
-Finally, Tsim allows to compute probability values for target states via the `CompiledStateProbs` sampler.
+Finally, Tsim allows to compute probability values for target states via the experimental `tsim.experimental.CompiledStateProbs` sampler, which may change in any release.
 
 
 ```python
 import numpy as np
-from tsim.sampler import CompiledStateProbs
+from tsim.experimental import CompiledStateProbs
 
 sampler = CompiledStateProbs(c)
 ```

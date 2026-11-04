@@ -11,6 +11,12 @@ from tesseract_decoder import tesseract, TesseractSinterDecoder
 from utils.no_decoder import NoDecoder
 ```
 
+```text title="Output"
+An NVIDIA GPU may be present on this machine, but a CUDA-enabled jaxlib is not installed. Falling back to cpu.
+```
+
+
+
 This tutorial showcases the basic functionality of **Tsim**.
 
 Tsim is a circuit sampler for Clifford+T circuits, based on stabilizer rank decomposition and ZX-calculus techniques. It closely follows the API of Stim and directly uses Stim's circuit format.
@@ -149,7 +155,7 @@ int(np.count_nonzero(samples)) / len(samples)
 
 
 ```text title="Output"
-0.1463811
+0.1464343
 ```
 
 
@@ -981,7 +987,7 @@ int(np.count_nonzero(obs_samples)) / len(obs_samples)
 
 
 ```text title="Output"
-0.14681
+0.14726
 ```
 
 
@@ -1861,8 +1867,8 @@ print(obs_samples[:5])
  [False False False]
  [False False False]
  [False False False]] 
-Triggered detection events: 1383
-[[False]
+Triggered detection events: 1415
+[[ True]
  [False]
  [False]
  [False]
@@ -1882,7 +1888,7 @@ int(np.count_nonzero(obs_samples)) / len(obs_samples)
 
 
 ```text title="Output"
-0.1591
+0.1663
 ```
 
 
@@ -1903,7 +1909,7 @@ int(np.count_nonzero(post_selected_obs)) / len(post_selected_obs)
 
 
 ```text title="Output"
-0.1400976668475312
+0.1430745814307458
 ```
 
 
@@ -1956,8 +1962,8 @@ print("Corrected:", int(np.count_nonzero(obs_corrected)) / len(obs_corrected))
 ```
 
 ```text title="Output"
-Raw obs.:  0.1591
-Corrected: 0.1429
+Raw obs.:  0.1663
+Corrected: 0.1458
 ```
 
 
@@ -1973,7 +1979,7 @@ no_dec = NoDecoder()
 
 tasks = [
     sinter.Task(
-        circuit=make_circuit(noise).cast_to_stim(),
+        circuit=make_circuit(noise),  # type: ignore[arg-type]
         json_metadata={"p": noise},
     )
     for noise in np.logspace(-3.3, -0.2, 6)
@@ -1990,6 +1996,12 @@ collected_stats = sinter.collect(
     max_batch_size=1024 * 64,
 )
 ```
+
+```text title="Output"
+An NVIDIA GPU may be present on this machine, but a CUDA-enabled jaxlib is not installed. Falling back to cpu.
+```
+
+
 
 sinter provides a number of convenient plotting tools. Here, we use them to plot the observable flip rate as a function of the physical error rate. We observe that the decoded probability approaches the expected value of $\sin(\pi/8)^2$ much faster.
 

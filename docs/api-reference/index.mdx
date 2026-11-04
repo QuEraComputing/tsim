@@ -1,21 +1,8 @@
 ---
-title: "tsim"
-description: "ZX-calculus based circuit sampler for universal quantum circuits."
+title: "Tsim API"
 ---
 
-Tsim supports fast sampling from quantum circuits with few non-Clifford gates.
-It exposes `Circuit`, `CompiledDetectorSampler`, and `CompiledMeasurementSampler`
-objects, which follow the Stim API.
-
-The package is organized as follows:
-
-- `circuit.py`: The thin `Circuit` wrapper around `stim.Circuit`.
-- `sampler.py`: Orchestrates compilation and evaluation to sample measurements or detectors.
-- `core/`: Builds quantum/classical ZX graphs with zxparam; parsing and data types.
-- `compile/`: Compiles zxparam's stabilizer-rank decompositions to JAX.
-- `statevector/`: Samples non-direct components as Pauli rotations and measurements on a dense state vector (`strategy="active_statevector"`).
-- `noise/`: Pauli noise channels and detector error models.
-- `utils/`: Utility functions for visualization and linear algebra.
+The public API, which follows semantic versioning. Other modules are internal and may change without notice.
 
 ## class `Circuit`
 
@@ -101,18 +88,6 @@ instructions and targets) must be exactly the same.
 - `bool` — receiving circuit up to the given tolerance, otherwise False.
 
 
-### `cast_to_stim`
-
-```python
-cast_to_stim() -> stim.Circuit
-```
-
-Return self with type cast to `stim.Circuit`.
-
-This is useful for passing the circuit to functions that expect a
-`stim.Circuit`.
-
-
 ### `compile_detector_sampler`
 
 ```python
@@ -128,8 +103,8 @@ through the full compilation pipeline.
 
 **Parameters:**
 
-- `strategy` (`SamplingStrategy`) — "active_statevector" (the default) to simulate each non-direct component on a dense state vector over its active qubits, or a stabilizer rank decomposition strategy ("cat5", "bss", "cutting"). "active_statevector" samples on the CPU, on ``numba.get_num_threads()`` threads.
-- `seed` (`int | None`) — Random seed for the sampler. If None, a random seed is drawn. With "active_statevector", and under any strategy for a circuit without non-direct components, the samples of a seed depend on neither the batch size nor the thread count; with a stabilizer-rank strategy they are only deterministic for a fixed batch size and fixed reference sample settings.
+- `strategy` (`SamplingStrategy`) — "active_statevector" (the default) to simulate each non-direct component on a dense state vector over its active qubits, or a stabilizer rank decomposition strategy ("cat5", "bss", "cutting"). "active_statevector" samples on the CPU, on ``numba.get_num_threads()`` threads. The stabilizer rank strategies are provisional.
+- `seed` (`int | None`) — Random seed for the sampler. If None, a random seed is drawn. A seed reproduces its samples only with the same versions of Tsim and its dependencies (such as NumPy and JAX) and the same backend (CPU or GPU). With "active_statevector", and under any strategy for a circuit without non-direct components, the samples of a seed depend on neither the batch size nor the thread count. With a stabilizer-rank strategy they also need the same explicit ``batch_size`` and the same reference sample settings, since the default batch size depends on the free memory.
 
 **Returns:**
 
@@ -175,8 +150,8 @@ Compile circuit into a measurement sampler.
 
 **Parameters:**
 
-- `strategy` (`SamplingStrategy`) — "active_statevector" (the default) to simulate each non-direct component on a dense state vector over its active qubits, or a stabilizer rank decomposition strategy ("cat5", "bss", "cutting"). "active_statevector" samples on the CPU, on ``numba.get_num_threads()`` threads.
-- `seed` (`int | None`) — Random seed for the sampler. If None, a random seed is drawn. With "active_statevector", and under any strategy for a circuit without non-direct components, the samples of a seed depend on neither the batch size nor the thread count; with a stabilizer-rank strategy they are only deterministic for a fixed batch size.
+- `strategy` (`SamplingStrategy`) — "active_statevector" (the default) to simulate each non-direct component on a dense state vector over its active qubits, or a stabilizer rank decomposition strategy ("cat5", "bss", "cutting"). "active_statevector" samples on the CPU, on ``numba.get_num_threads()`` threads. The stabilizer rank strategies are provisional.
+- `seed` (`int | None`) — Random seed for the sampler. If None, a random seed is drawn. A seed reproduces its samples only with the same versions of Tsim and its dependencies (such as NumPy and JAX) and the same backend (CPU or GPU). With "active_statevector", and under any strategy for a circuit without non-direct components, the samples of a seed depend on neither the batch size nor the thread count. With a stabilizer-rank strategy they also need the same explicit ``batch_size``, since the default batch size depends on the free memory.
 
 **Returns:**
 
@@ -223,14 +198,14 @@ when the model is meant for a matching decoder.
 ### `diagram`
 
 ```python
-diagram(type: Literal['zx', 'zx-dets', 'zx-meas', 'pyzx', 'pyzx-dets', 'pyzx-meas', 'timeline-svg', 'timeslice-svg', 'timeline-text'] = 'timeline-svg', tick: int | range | None = None, filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),), rows: int | None = None, height: float | None = None, width: float | None = None, zoomable: bool = True, kwargs: Any = {}) -> Any
+diagram(type: Literal['zx', 'zx-dets', 'zx-meas', 'timeline-svg', 'timeslice-svg', 'timeline-text'] = 'timeline-svg', tick: int | range | None = None, filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),), rows: int | None = None, height: float | None = None, width: float | None = None, zoomable: bool = True, kwargs: Any = {}) -> Any
 ```
 
 Return a diagram of the circuit, from a variety of options.
 
 **Parameters:**
 
-- `type` (`Literal['zx', 'zx-dets', 'zx-meas', 'pyzx', 'pyzx-dets', 'pyzx-meas', 'timeline-svg', 'timeslice-svg', 'timeline-text']`) — The type of diagram. Available types are: "zx": A zxparam D3 drawing of the circuit's quantum/classical ZX graph. "zx-dets": A zxparam D3 drawing of the reduced ZX graph that is used to compute probabilities of detectors and observables. "zx-meas": A zxparam D3 drawing of the reduced ZX graph that is used to compute probabilities of measurements. "pyzx", "pyzx-dets", "pyzx-meas": Deprecated aliases for "zx", "zx-dets" and "zx-meas". "timeline-svg": An SVG image of the operations applied by the circuit over time. Includes annotations showing the measurement record index that each measurement writes to, and the measurements used by detectors. "timeslice-svg": An SVG image of the operations applied between two TICK instructions in the circuit, with the operations laid out in 2d. "timeline-text": An ASCII text diagram of the operations applied by the circuit over time, with Tsim's custom gates rendered under their logical names rather than the Clifford placeholders used to store them.
+- `type` (`Literal['zx', 'zx-dets', 'zx-meas', 'timeline-svg', 'timeslice-svg', 'timeline-text']`) — The type of diagram. Available types are: "zx": A zxparam D3 drawing of the circuit's quantum/classical ZX graph. "zx-dets": A zxparam D3 drawing of the reduced ZX graph that is used to compute probabilities of detectors and observables. "zx-meas": A zxparam D3 drawing of the reduced ZX graph that is used to compute probabilities of measurements. "timeline-svg": An SVG image of the operations applied by the circuit over time. Includes annotations showing the measurement record index that each measurement writes to, and the measurements used by detectors. "timeslice-svg": An SVG image of the operations applied between two TICK instructions in the circuit, with the operations laid out in 2d. "timeline-text": An ASCII text diagram of the operations applied by the circuit over time, with Tsim's custom gates rendered under their logical names rather than the Clifford placeholders used to store them.
 - `tick` (`int | range | None`) — Required for time slice diagrams. Specifies which TICK instruction, or range of TICK instructions, to slice at. Note that the first TICK instruction in the circuit corresponds tick=1. The value tick=0 refers to the very start of the circuit. Passing `range(A, B)` for a detector slice will show the slices for ticks A through B including A but excluding B. Passing `range(A, B)` for a time slice will show the operations between tick A and tick B.
 - `rows` (`int | None`) — In diagrams that have multiple separate pieces, such as timeslice diagrams and detslice diagrams, this controls how many rows of pieces there will be. If not specified, a number of rows that creates a roughly square layout will be chosen.
 - `filter_coords` (`Iterable[Iterable[float] | stim.DemTarget]`) — A list of things to include in the diagram. Different effects depending on the diagram. For detslice diagrams, the filter defaults to showing all detectors and no observables. When specified, each list entry can be a collection of floats (detectors whose coordinates start with the same numbers will be included), a stim.DemTarget (specifying a detector or observable to include), a string like "D5" or "L0" specifying a detector or observable to include.
@@ -415,6 +390,39 @@ without_noise() -> Circuit
 Return a copy of the circuit with all noise removed.
 
 
+## class `CompiledMeasurementSampler`
+
+```python
+CompiledMeasurementSampler(circuit: Circuit, strategy: SamplingStrategy = 'active_statevector', seed: int | None = None)
+```
+
+Samples measurement outcomes from a quantum circuit.
+
+Follows ``stim.CompiledMeasurementSampler``. Each measurement record of the
+circuit is one output column.
+
+
+### `sample`
+
+```python
+sample(shots: int, batch_size: int | None = None, bit_packed: bool = False) -> np.ndarray
+```
+
+Sample measurement outcomes from the circuit.
+
+**Parameters:**
+
+- `shots` (`int`) — The number of times to sample every measurement in the circuit.
+- `batch_size` (`int | None`) — The number of samples to process at once. Defaults to None, which chooses it from the available memory. With ``strategy="active_statevector"`` it bounds the shots a thread holds and does not change the samples. With a stabilizer-rank strategy on a GPU, setting this explicitly can help fully utilize VRAM; it changes the samples of a seed.
+- `bit_packed` (`bool`) — Defaults to false. When set, results are bit-packed. The packed rows may be a strided view of a wider array.
+
+**Returns:**
+
+- `np.ndarray` — A boolean array of shape ``(shots, num_measurements)``, or with
+- `np.ndarray` — ``bit_packed`` a uint8 array of shape
+- `np.ndarray` — ``(shots, ceil(num_measurements / 8))`` in little-endian bit order.
+
+
 ## class `CompiledDetectorSampler`
 
 ```python
@@ -465,36 +473,3 @@ as honorary detectors.
 **Raises:**
 
 - `ValueError` — If ``separate_observables`` is combined with ``prepend_observables`` or ``append_observables``.
-
-
-## class `CompiledMeasurementSampler`
-
-```python
-CompiledMeasurementSampler(circuit: Circuit, strategy: SamplingStrategy = 'active_statevector', seed: int | None = None)
-```
-
-Samples measurement outcomes from a quantum circuit.
-
-Follows ``stim.CompiledMeasurementSampler``. Each measurement record of the
-circuit is one output column.
-
-
-### `sample`
-
-```python
-sample(shots: int, batch_size: int | None = None, bit_packed: bool = False) -> np.ndarray
-```
-
-Sample measurement outcomes from the circuit.
-
-**Parameters:**
-
-- `shots` (`int`) — The number of times to sample every measurement in the circuit.
-- `batch_size` (`int | None`) — The number of samples to process at once. Defaults to None, which chooses it from the available memory. With ``strategy="active_statevector"`` it bounds the shots a thread holds and does not change the samples. With a stabilizer-rank strategy on a GPU, setting this explicitly can help fully utilize VRAM; it changes the samples of a seed.
-- `bit_packed` (`bool`) — Defaults to false. When set, results are bit-packed. The packed rows may be a strided view of a wider array.
-
-**Returns:**
-
-- `np.ndarray` — A boolean array of shape ``(shots, num_measurements)``, or with
-- `np.ndarray` — ``bit_packed`` a uint8 array of shape
-- `np.ndarray` — ``(shots, ceil(num_measurements / 8))`` in little-endian bit order.
