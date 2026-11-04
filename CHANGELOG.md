@@ -26,14 +26,14 @@ overview and benchmarks.
   shots that no masked detector discards, so it can return fewer than `shots`
   rows, possibly none. The acceptance rate is the number of returned rows
   divided by `shots`: `len(result) / shots`, or `len(result[0]) / shots` with
-  `separate_observables=True`. It used
-  to return all `shots` rows, with the discarded ones partly filled with
-  `False`, for the caller to filter. Filtering the result with the mask again
-  still works but no longer does anything. Code that assumes
-  `len(result) == shots` must change, and code that computes the acceptance
-  rate as the mean of the re-applied mask now silently gets 1.0. The rule is the same for every strategy.
-  Without a mask, exactly `shots` rows are returned. `sample` warns when a
-  masked detector is a constant 1, which discards every shot. (#222, #252)
+  `separate_observables=True`. It used to return all `shots` rows, with the
+  discarded ones partly filled with `False`, for the caller to filter.
+  Filtering the result with the mask again still works but no longer does
+  anything. Code that assumes `len(result) == shots` must change, and code
+  that computes the acceptance rate as the mean of the re-applied mask now
+  silently gets 1.0. The rule is the same for every strategy. Without a mask,
+  exactly `shots` rows are returned. `sample` warns when a masked detector is
+  a constant 1, which discards every shot. (#222, #252)
 - The public API is `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and
   `tsim.CompiledDetectorSampler`, which follow semantic versioning. Every other
   module is internal and may change without notice, and the API reference
@@ -52,6 +52,11 @@ overview and benchmarks.
 - Python 3.10 is no longer supported; Tsim supports Python 3.11 to 3.14. (#216)
 - Tsim requires `stim>=1.15.0`, the first release with instruction tags, which
   Tsim uses to store its gates. It used to declare `stim>=1.0.0`. (#255)
+- Tsim requires `numpy>=2.0` and `equinox>=0.11.5`, the oldest versions it
+  works with; the `cuda13` extra requires `jax>=0.7.0`, the first release with
+  a `cuda13` extra.
+- `Circuit.cast_to_stim()` is removed. It only cast the type and returned the
+  same `tsim.Circuit`; pass the circuit directly. (#266)
 - Tsim uses zxparam instead of pyzx-param (#194, #195, #205):
   - `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return
     `zxparam.Graph`. Circuits are built directly as quantum/classical ZX
@@ -144,6 +149,8 @@ overview and benchmarks.
 - The `pyzx-param` dependency. (#194)
 
 ### Fixed
+- Noise channels whose total probability is positive but at most `1e-15` are
+  sampled instead of silently dropped. (#267)
 - Different seeds no longer give the same samples. The noise was seeded from a
   30-bit number drawn from the seed, so seeds shared it in pairs: seeds 0 to
   300,000 hold 46 such pairs, such as 37430 and 43909, and a circuit of noise

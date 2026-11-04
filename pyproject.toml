@@ -33,12 +33,12 @@ classifiers = [
 ]
 
 dependencies = [
-    "equinox>=0.11.0",
+    "equinox>=0.11.5",
     "ipywidgets>=8.0.0",
     "jax>=0.4.38",
     "lxml>=5.0.0",
     "numba>=0.61",
-    "numpy>=1.25.0",
+    "numpy>=2.0",
     "psutil>=5.9.0",
     "stim>=1.15.0",
     "stim-timeline-text>=0.1.0",
@@ -53,7 +53,7 @@ Issues = "https://github.com/QuEraComputing/tsim/issues"
 
 [project.optional-dependencies]
 cuda12 = ["jax[cuda12]>=0.4.38"]
-cuda13 = ["jax[cuda13]>=0.6.0"]
+cuda13 = ["jax[cuda13]>=0.7.0"]
 
 [build-system]
 requires = ["hatchling"]
