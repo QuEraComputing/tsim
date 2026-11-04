@@ -128,6 +128,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cleared. A program without components screens each noise block while it is
   in cache, and reuses its noise words across calls: a sampler keeps up to
   16 MiB of them. Samples are unchanged.
+- Components that feed no sampled output, such as a non-Clifford block cut
+  off by an `MR` that no detector reads or by a mid-circuit `R`, are no longer
+  compiled or sampled. With `strategy="active_statevector"`, such a block
+  without noise could raise `IndexError`. Samples for a fixed seed can differ
+  from earlier versions. (#262)
 
 ### Deprecated
 - The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types. They still work as aliases for `"zx"`, `"zx-dets"` and `"zx-meas"` but emit a `DeprecationWarning`.
@@ -138,12 +143,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Internals: the `track_classical_wires` argument of `parse_stim_circuit`, the `tsim.compile.stabrank` module, and `ConnectedComponent`, `connected_components`, `get_params` and `evaluate_graph` from `tsim.core.graph`.
 
 ### Fixed
-- With `strategy="active_statevector"`, the detector and measurement samplers
-  no longer raise `IndexError` when a non-Clifford block feeds no sampled
-  output, such as a block cut off by an `MR` that no detector reads or by a
-  mid-circuit `R`. Such blocks are no longer compiled under any strategy, so
-  with `strategy="active_statevector"` the seeded samples of circuits that have
-  one can differ. (#262)
 - Tsim gate names are case-insensitive, like Stim's: `t 0`, `ccz 0 1 2`,
   `r_x(0.1) 0` and `Circuit.append("tpp", ...)` used to fail with
   `Gate not found`.
