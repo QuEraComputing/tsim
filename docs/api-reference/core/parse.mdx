@@ -1,6 +1,6 @@
 ---
 title: "parse"
-description: "Parser for converting stim circuits to ZX graph representations."
+description: "Parser for converting Stim circuits to ZX graph representations."
 ---
 
 ## class `GraphBuilder`
@@ -9,7 +9,7 @@ description: "Parser for converting stim circuits to ZX graph representations."
 GraphBuilder()
 ```
 
-Builds the ZX graph of a stim circuit, with quantum wires and classical records.
+Builds the ZX graph of a Stim circuit, with quantum wires and classical records.
 
 Qubit wires are quantum; measurement records, detectors and observables are
 classical spiders, read through the properties below (their labels are only
@@ -265,7 +265,7 @@ be given by keyword (``R_Z(theta=0.3*pi)``) or by position (``R_Z(0.3)``).
 
 **Parameters:**
 
-- `instruction` (`stim.CircuitInstruction`) — The stim instruction whose tag will be parsed.
+- `instruction` (`stim.CircuitInstruction`) — The Stim instruction whose tag will be parsed.
 
 **Returns:**
 
@@ -292,7 +292,7 @@ in that order, as in the shorthand).
 
 **Parameters:**
 
-- `tag` (`str`) — The stim instruction tag.
+- `tag` (`str`) — The Stim instruction tag.
 
 **Returns:**
 
@@ -310,11 +310,11 @@ in that order, as in the shorthand).
 parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder
 ```
 
-Parse a stim circuit into a GraphBuilder.
+Parse a Stim circuit into a GraphBuilder.
 
 **Parameters:**
 
-- `stim_circuit` (`stim.Circuit`) — The stim circuit to convert.
+- `stim_circuit` (`stim.Circuit`) — The Stim circuit to convert.
 
 **Returns:**
 

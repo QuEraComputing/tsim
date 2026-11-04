@@ -13,7 +13,13 @@ If you're not yet familiar with Stim, there are lots of resources out there: For
 
 ### Non-Clifford instructions
 
-Tsim extends the Stim text format with the non-Clifford instructions `T`, `T_DAG`, `R_X`, `R_Y`, and `R_Z`, `U3`. Rotation angles are specified in units of π.
+Tsim extends the Stim text format with non-Clifford instructions:
+
+- `T` and `T_DAG` on qubits, and `TPP` and `TPP_DAG` on Pauli products,
+- the rotations `R_X`, `R_Y`, `R_Z`, the general single-qubit unitary `U3`, the two-qubit rotations `R_XX`, `R_YY`, `R_ZZ`, and `R_PAULI` on Pauli products,
+- `CCZ` and `CCX` on qubit triples, which expand to a Clifford+T decomposition.
+
+Rotation angles are specified in units of π.
 
 
 ```python
@@ -24,8 +30,11 @@ c = tsim.Circuit("""
     R_Y(0.2) 0
     R_Z(0.3) 0
     U3(0.1, 0.2, 0.3) 0
+    TPP X0*Y1
+    R_ZZ(0.25) 0 1
+    R_PAULI(0.3) X0*Z1
 """)
-c.diagram(height=150)
+c.diagram(height=200)
 ```
 
 
@@ -35,12 +44,14 @@ c.diagram(height=150)
 
 
 <iframe srcDoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;html,body{margin:0;padding:0;height:100%;overflow:hidden;}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;&lt;div data-tsim-zoom=&quot;tsim-zoom-001&quot; style=&quot;width:100%; height:100%; box-sizing:border-box; font-size:0; line-height:0; overflow:auto; background:white; border:none; position:relative;&quot;&gt;
-  &lt;div style=&quot;display:inline-block; overflow:hidden; width:450.0px; height:150.0px;&quot;&gt;
-    &lt;div style=&quot;transform-origin:0 0; display:block; width:480.0px; height:160.0px; transform:scale(0.9375);&quot;&gt;
-      &lt;svg width=&quot;480.0&quot; height=&quot;160.0&quot; xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 480 160&quot; version=&quot;1.1&quot;&gt;
+  &lt;div style=&quot;display:inline-block; overflow:hidden; width:600.0px; height:200.0px;&quot;&gt;
+    &lt;div style=&quot;transform-origin:0 0; display:block; width:672.0px; height:224.0px; transform:scale(0.8928571428571429);&quot;&gt;
+      &lt;svg width=&quot;672.0&quot; height=&quot;224.0&quot; xmlns=&quot;http://www.w3.org/2000/svg&quot; viewBox=&quot;0 0 672 224&quot; version=&quot;1.1&quot;&gt;
 &lt;g id=&quot;qubit_lines&quot;&gt;
-&lt;path id=&quot;qubit_line:0&quot; d=&quot;M64,64 L448,64 &quot; stroke=&quot;black&quot;/&gt;
+&lt;path id=&quot;qubit_line:0&quot; d=&quot;M64,64 L640,64 &quot; stroke=&quot;black&quot;/&gt;
 &lt;text dominant-baseline=&quot;central&quot; text-anchor=&quot;end&quot; font-family=&quot;monospace&quot; font-size=&quot;12&quot; x=&quot;64&quot; y=&quot;64&quot;&gt;q0&lt;/text&gt;
+&lt;path id=&quot;qubit_line:1&quot; d=&quot;M64,128 L640,128 &quot; stroke=&quot;black&quot;/&gt;
+&lt;text dominant-baseline=&quot;central&quot; text-anchor=&quot;end&quot; font-family=&quot;monospace&quot; font-size=&quot;12&quot; x=&quot;64&quot; y=&quot;128&quot;&gt;q1&lt;/text&gt;
 &lt;/g&gt;
 &lt;rect x=&quot;80&quot; y=&quot;48&quot; width=&quot;32&quot; height=&quot;32&quot; stroke=&quot;black&quot; fill=&quot;white&quot;/&gt;
 &lt;text dominant-baseline=&quot;central&quot; text-anchor=&quot;middle&quot; font-family=&quot;monospace&quot; font-size=&quot;30&quot; x=&quot;96&quot; y=&quot;64&quot;&gt;T&lt;/text&gt;&lt;rect x=&quot;144&quot; y=&quot;48&quot; width=&quot;32&quot; height=&quot;32&quot; stroke=&quot;black&quot; fill=&quot;white&quot;/&gt;
@@ -51,7 +62,22 @@ c.diagram(height=150)
 &lt;rect x=&quot;336&quot; y=&quot;48&quot; width=&quot;32&quot; height=&quot;32&quot; stroke=&quot;black&quot; fill=&quot;white&quot;/&gt;
 &lt;text dominant-baseline=&quot;central&quot; text-anchor=&quot;middle&quot; font-family=&quot;monospace&quot; font-size=&quot;30&quot; x=&quot;352&quot; y=&quot;64&quot;&gt;R&lt;tspan baseline-shift=&quot;sub&quot; font-size=&quot;14&quot;&gt;Z&lt;/tspan&gt;&lt;/text&gt;&lt;text dominant-baseline=&quot;hanging&quot; text-anchor=&quot;middle&quot; font-family=&quot;monospace&quot; font-size=&quot;10&quot; stroke=&quot;black&quot; x=&quot;352&quot; y=&quot;84&quot;&gt;0.3π&lt;/text&gt;
 &lt;rect x=&quot;400&quot; y=&quot;48&quot; width=&quot;32&quot; height=&quot;32&quot; stroke=&quot;black&quot; fill=&quot;white&quot;/&gt;
-&lt;text dominant-baseline=&quot;central&quot; text-anchor=&quot;middle&quot; font-family=&quot;monospace&quot; font-size=&quot;30&quot; x=&quot;416&quot; y=&quot;64&quot;&gt;U&lt;tspan baseline-shift=&quot;sub&quot; font-size=&quot;14&quot;&gt;3&lt;/tspan&gt;&lt;/text&gt;&lt;/svg&gt;
+&lt;text dominant-baseline=&quot;central&quot; text-anchor=&quot;middle&quot; font-family=&quot;monospace&quot; font-size=&quot;30&quot; x=&quot;416&quot; y=&quot;64&quot;&gt;U&lt;tspan baseline-shift=&quot;sub&quot; font-size=&quot;14&quot;&gt;3&lt;/tspan&gt;&lt;/text&gt;&lt;path d=&quot;M480,64 L480,128 &quot; stroke=&quot;black&quot;/&gt;
+&lt;rect x=&quot;464&quot; y=&quot;48&quot; width=&quot;32&quot; height=&quot;32&quot; stroke=&quot;black&quot; fill=&quot;black&quot;/&gt;
+&lt;text dominant-baseline=&quot;central&quot; text-anchor=&quot;middle&quot; font-family=&quot;monospace&quot; font-size=&quot;12&quot; x=&quot;480&quot; y=&quot;64&quot; fill=&quot;white&quot;&gt;TPP&lt;tspan baseline-shift=&quot;sub&quot; font-size=&quot;10&quot;&gt;X&lt;/tspan&gt;&lt;/text&gt;
+&lt;rect x=&quot;464&quot; y=&quot;112&quot; width=&quot;32&quot; height=&quot;32&quot; stroke=&quot;black&quot; fill=&quot;black&quot;/&gt;
+&lt;text dominant-baseline=&quot;central&quot; text-anchor=&quot;middle&quot; font-family=&quot;monospace&quot; font-size=&quot;12&quot; x=&quot;480&quot; y=&quot;128&quot; fill=&quot;white&quot;&gt;TPP&lt;tspan baseline-shift=&quot;sub&quot; font-size=&quot;10&quot;&gt;Y&lt;/tspan&gt;&lt;/text&gt;
+&lt;path d=&quot;M544,64 L544,128 &quot; stroke=&quot;black&quot;/&gt;
+&lt;rect x=&quot;528&quot; y=&quot;48&quot; width=&quot;32&quot; height=&quot;32&quot; stroke=&quot;black&quot; fill=&quot;black&quot;/&gt;
+&lt;text dominant-baseline=&quot;central&quot; text-anchor=&quot;middle&quot; font-family=&quot;monospace&quot; font-size=&quot;12&quot; x=&quot;544&quot; y=&quot;64&quot; fill=&quot;white&quot;&gt;SPP&lt;tspan baseline-shift=&quot;sub&quot; font-size=&quot;10&quot;&gt;Z&lt;/tspan&gt;&lt;/text&gt;
+&lt;rect x=&quot;528&quot; y=&quot;112&quot; width=&quot;32&quot; height=&quot;32&quot; stroke=&quot;black&quot; fill=&quot;black&quot;/&gt;
+&lt;text dominant-baseline=&quot;central&quot; text-anchor=&quot;middle&quot; font-family=&quot;monospace&quot; font-size=&quot;12&quot; x=&quot;544&quot; y=&quot;128&quot; fill=&quot;white&quot;&gt;SPP&lt;tspan baseline-shift=&quot;sub&quot; font-size=&quot;10&quot;&gt;Z&lt;/tspan&gt;&lt;/text&gt;
+&lt;path d=&quot;M608,64 L608,128 &quot; stroke=&quot;black&quot;/&gt;
+&lt;rect x=&quot;592&quot; y=&quot;48&quot; width=&quot;32&quot; height=&quot;32&quot; stroke=&quot;black&quot; fill=&quot;black&quot;/&gt;
+&lt;text dominant-baseline=&quot;central&quot; text-anchor=&quot;middle&quot; font-family=&quot;monospace&quot; font-size=&quot;12&quot; x=&quot;608&quot; y=&quot;64&quot; fill=&quot;white&quot;&gt;SPP&lt;tspan baseline-shift=&quot;sub&quot; font-size=&quot;10&quot;&gt;X&lt;/tspan&gt;&lt;/text&gt;
+&lt;rect x=&quot;592&quot; y=&quot;112&quot; width=&quot;32&quot; height=&quot;32&quot; stroke=&quot;black&quot; fill=&quot;black&quot;/&gt;
+&lt;text dominant-baseline=&quot;central&quot; text-anchor=&quot;middle&quot; font-family=&quot;monospace&quot; font-size=&quot;12&quot; x=&quot;608&quot; y=&quot;128&quot; fill=&quot;white&quot;&gt;SPP&lt;tspan baseline-shift=&quot;sub&quot; font-size=&quot;10&quot;&gt;Z&lt;/tspan&gt;&lt;/text&gt;
+&lt;/svg&gt;
     &lt;/div&gt;
   &lt;/div&gt;
 &lt;/div&gt;
@@ -62,9 +88,9 @@ c.diagram(height=150)
   wrap.dataset.tsimZoomInit = &quot;1&quot;;
   var size = wrap.firstElementChild;
   var xform = size.firstElementChild;
-  var natW = 480.0;
-  var natH = 160.0;
-  var scale = 0.9375;
+  var natW = 672.0;
+  var natH = 224.0;
+  var scale = 0.8928571428571429;
   var cw = wrap.clientWidth;
   if (cw &gt; 0 &amp;&amp; natW &gt; 0) {
     /* keep height-fit initial scale */
@@ -91,7 +117,7 @@ c.diagram(height=150)
     }
   }, { passive: false });
 })();
-&lt;/script&gt;&lt;/body&gt;&lt;/html&gt;" width="100%" height="154" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="Circuit diagram 1" loading="lazy" />
+&lt;/script&gt;&lt;/body&gt;&lt;/html&gt;" width="100%" height="204" style={{border: "1px solid #eee", borderRadius: "0.5rem"}} title="Circuit diagram 1" loading="lazy" />
 
 
 

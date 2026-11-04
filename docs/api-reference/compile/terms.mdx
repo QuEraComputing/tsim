@@ -22,8 +22,8 @@ ExactScalarArray(coeffs: Array, power: Array | None = None)
 
 Exact scalar array for ZX-calculus phase arithmetic using dyadic representation.
 
-Represents values of the form (c_0 + c_1·ω + c_2·ω² + c_3·ω³) × 2^power
-where ω = e^(iπ/4). This enables exact computation without floating-point errors.
+Represents values of the form (c_0 + c_1·ω + c_2·ω² + c_3·ω⁻¹) × 2^power
+where ω = e^(iπ/4), so that ω² = i. This enables exact computation without floating-point errors.
 
 
 ### `prod`
@@ -32,7 +32,7 @@ where ω = e^(iπ/4). This enables exact computation without floating-point erro
 prod(axis: int = -1) -> ExactScalarArray
 ```
 
-Compute product along the specified axis using associative scan.
+Compute product along the specified axis with a sequential scan.
 
 Returns identity (1+0i with power 0) for empty reductions.
 
@@ -51,7 +51,7 @@ Returns identity (1+0i with power 0) for empty reductions.
 sum(axis: int = -1) -> ExactScalarArray
 ```
 
-Sum elements along the specified axis using normalized pairwise adds.
+Sum elements along the specified axis with a sequential scan.
 
 **Parameters:**
 

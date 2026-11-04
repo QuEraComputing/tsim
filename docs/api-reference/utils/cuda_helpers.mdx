@@ -41,15 +41,14 @@ alive until the array and all derived views are dropped; only then does
 ## `copy_d2h`
 
 ```python
-copy_d2h(src, dst: np.ndarray | None = None) -> np.ndarray
+copy_d2h(src: Any) -> np.ndarray
 ```
 
 Device-to-host copy, pinned-destination fast path when available.
 
 **Parameters:**
 
-- `src` — Single-device contiguous array-like exposing ``unsafe_buffer_pointer()``, ``nbytes``, ``shape``, and ``dtype``. The caller must sync to the source's stream before invocation (``jax.block_until_ready(src)`` for a jax.Array).
-- `dst` (`np.ndarray | None`) — Optional pre-allocated pinned ndarray to write into. Must have at least ``src.nbytes`` bytes.
+- `src` (`Any`) — Single-device contiguous array-like exposing ``unsafe_buffer_pointer()``, ``nbytes``, ``shape``, and ``dtype``. The caller must sync to the source's stream before invocation (``jax.block_until_ready(src)`` for a jax.Array).
 
 **Returns:**
 

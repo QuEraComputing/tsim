@@ -1,6 +1,6 @@
 ---
 title: "program_text"
-description: "Conversion utilities between Tsim shorthand and stim program text."
+description: "Conversion utilities between Tsim shorthand and Stim program text."
 ---
 
 ## `controlled_gate_decomposition_lines`
@@ -36,9 +36,9 @@ Encode a T-family gate tag while preserving an optional user tag.
 enriched_stim_error(exc: ValueError, converted_text: str) -> ValueError
 ```
 
-Improve stim parse errors for tsim-specific gates.
+Improve Stim parse errors for Tsim-specific gates.
 
-When stim raises a 'Gate not found' error for a gate that should have been
+When Stim raises a 'Gate not found' error for a gate that should have been
 converted by shorthand_to_stim, this searches the converted text for the
 unconverted usage and returns a more helpful error message.
 
@@ -66,7 +66,7 @@ in that order, as in the shorthand).
 
 **Parameters:**
 
-- `tag` (`str`) — The stim instruction tag.
+- `tag` (`str`) — The Stim instruction tag.
 
 **Returns:**
 
@@ -84,7 +84,7 @@ in that order, as in the shorthand).
 shorthand_to_stim(text: str) -> str
 ```
 
-Convert Tsim shorthand syntax to valid stim instructions.
+Convert Tsim shorthand syntax to valid Stim instructions.
 
 **Converts:**
 
@@ -115,7 +115,7 @@ e.g. ``I[R_X(0.25)] 0`` and ``R_X(0.25) 0`` produce the same instruction.
 stim_to_shorthand(text: str) -> str
 ```
 
-Convert expanded stim annotations back to Tsim shorthand.
+Convert expanded Stim annotations back to Tsim shorthand.
 
 Rewrites:
 - I[U3(theta=θ*pi, phi=φ*pi, lambda=λ*pi)] → U3(θ, φ, λ)
