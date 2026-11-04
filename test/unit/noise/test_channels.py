@@ -129,7 +129,7 @@ class TestCorrelatedErrorProbs:
         assert_allclose(np.sum(probs), 1.0)
 
     def test_three_errors_uniform(self):
-        """The example from stim docs: 60% distributed uniformly among 3 errors."""
+        """The example from Stim docs: 60% distributed uniformly among 3 errors."""
         # CORRELATED_ERROR(0.2) -> ELSE(0.25) -> ELSE(0.333...)
         # P1 = 0.2, P2 = 0.8*0.25 = 0.2, P3 = 0.8*0.75*0.333... = 0.2
         probs = correlated_error_probs([0.2, 0.25, 1 / 3])

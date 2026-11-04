@@ -64,7 +64,7 @@ The [Tsim 1.0 blog post](https://bloqade.quera.com/blog/introducing-tsim-1-0-0/)
 
 ## Architecture
 ![Architecture](architecture.svg)
-A detailed description of Tsim's architecture is given in [arXiv:2604.01059](https://arxiv.org/abs/2604.01059).
+
 Quantum programs are translated into ZX diagrams in which Pauli noise channels appear as parameterized vertices with binary variables $e_i$.
 ZX simplification factors the diagram into a classical part that represents the Tanner graph and a quantum part containing the observable circuit. Both parts define a new basis of *error mechanisms* $f_i = \bigoplus_j T_{ij}\,e_j$.
 Outputs that depend on the error mechanisms alone are sampled directly from the noise model.
@@ -112,7 +112,7 @@ Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/St
 | `R_X(α)`, `R_Y(α)`, `R_Z(α)` | qubits | Rotation by απ around the X, Y, or Z axis |
 | `U3(θ, φ, λ)` | qubits | General single-qubit unitary, each angle in units of π |
 | `TPP`, `TPP_DAG` | Pauli products | exp(∓iπ/8 · P) up to global phase; `TPP Z0` is `T` |
-| `R_XX(α)`, `R_YY(α)`, `R_ZZ(α)` | qubit pairs | exp(−iαπ/2 · P) for P = XX, YY, ZZ on two distinct qubits |
+| `R_XX(α)`, `R_YY(α)`, `R_ZZ(α)` | two distinct qubits | exp(−iαπ/2 · P) for P = XX, YY, ZZ |
 | `R_PAULI(α)` | Pauli products | exp(−iαπ/2 · P) for a Pauli product of up to 64 qubits |
 | `CCZ`, `CCX` | qubit triples | Controlled-controlled Z and Toffoli (controls first), via a Clifford+T decomposition |
 
@@ -178,13 +178,39 @@ Tsim can be five orders of magnitude faster than [quizx](https://github.com/zxca
 ![Benchmarks](benchmarks.svg)
 
 ## Citing Tsim
-
 If you use Tsim, please consider citing the paper describing the core simulation approach:
 ```
 @article{tsim2026,
   title={Tsim: Fast Universal Simulator for Quantum Error Correction},
   author={Haenel, Rafael and Luo, Xiuzhe and Zhao, Chen},
   journal={arXiv preprint arXiv:2604.01059},
+  year={2026}
+}
+```
+
+You may also cite the work by [Sutcliffe and Kissinger (2024)](https://arxiv.org/abs/2403.06777):
+```
+@article{sutcliffe2024fast,
+  title={Fast classical simulation of quantum circuits via parametric rewriting in the ZX-calculus},
+  author={Sutcliffe, Matthew and Kissinger, Aleks},
+  journal={arXiv preprint arXiv:2403.06777},
+  year={2024}
+}
+```
+
+The active state vector strategy builds on Clifft and SymFT:
+```
+@article{chase2026clifft,
+  title={Clifft: Fast Exact Simulation of Near-Clifford Quantum Circuits},
+  author={Chase, Bradley A. and Labib, Farrokh},
+  journal={arXiv preprint arXiv:2604.27058},
+  year={2026}
+}
+
+@article{fang2026symft,
+  title={SymFT: Universal Fault-Tolerant Quantum Circuit Simulation via Symbolic Clifford--Pauli Frames and Stabilizer Coordinates},
+  author={Fang, Wang and Lou, Huazhe and Li, Riling},
+  journal={arXiv preprint arXiv:2607.28600},
   year={2026}
 }
 ```

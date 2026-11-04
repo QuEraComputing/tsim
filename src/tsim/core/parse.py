@@ -1,4 +1,4 @@
-"""Parser for converting stim circuits to ZX graph representations."""
+"""Parser for converting Stim circuits to ZX graph representations."""
 
 from collections.abc import Iterator
 from fractions import Fraction
@@ -33,7 +33,7 @@ def parse_parametric_tag(
     be given by keyword (``R_Z(theta=0.3*pi)``) or by position (``R_Z(0.3)``).
 
     Args:
-        instruction: The stim instruction whose tag will be parsed.
+        instruction: The Stim instruction whose tag will be parsed.
 
     Returns:
         Tuple of (gate_name, params_dict) when the instruction's tag is a
@@ -105,7 +105,7 @@ def _iter_pauli_products(
     Tracks Pauli algebra when the same qubit appears multiple times:
     same Pauli cancels (P·P = I), different Paulis combine with a sign
     (e.g. Z·X = iY).  An accumulated sign of -1 flips the invert flag;
-    ±i raises ValueError (anti-Hermitian product), matching stim.
+    ±i raises ValueError (anti-Hermitian product), matching Stim.
     """
     qubit_pauli: dict[int, Literal["X", "Y", "Z"]] = {}
     sign = 0  # accumulated power of i (mod 4)
@@ -155,10 +155,10 @@ def _iter_pauli_products(
 
 
 def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
-    """Parse a stim circuit into a GraphBuilder.
+    """Parse a Stim circuit into a GraphBuilder.
 
     Args:
-        stim_circuit: The stim circuit to convert.
+        stim_circuit: The Stim circuit to convert.
 
     Returns:
         A GraphBuilder containing the ZX graph and all auxiliary data.

@@ -1,4 +1,4 @@
-"""Conversion utilities between tsim shorthand and stim program text."""
+"""Conversion utilities between Tsim shorthand and Stim program text."""
 
 import re
 from collections.abc import Callable
@@ -116,9 +116,9 @@ def _replace_t_family_shorthand(tsim_gate: str) -> Callable[[re.Match[str]], str
 
 
 def enriched_stim_error(exc: ValueError, converted_text: str) -> ValueError:
-    """Improve stim parse errors for tsim-specific gates.
+    """Improve Stim parse errors for Tsim-specific gates.
 
-    When stim raises a 'Gate not found' error for a gate that should have been
+    When Stim raises a 'Gate not found' error for a gate that should have been
     converted by shorthand_to_stim, this searches the converted text for the
     unconverted usage and returns a more helpful error message.
     """
@@ -135,7 +135,7 @@ def enriched_stim_error(exc: ValueError, converted_text: str) -> ValueError:
 
 
 def shorthand_to_stim(text: str) -> str:
-    """Convert tsim shorthand syntax to valid stim instructions.
+    """Convert Tsim shorthand syntax to valid Stim instructions.
 
     Converts:
         CCZ 0 1 2           → Clifford+T decomposition of CCZ
@@ -185,7 +185,7 @@ def _convert_line(line: str) -> str:
 
 def _canonical_parametric_tag(tag: str) -> str:
     # Canonicalize so that equivalent inputs like `I[R_X(0.005)]`,
-    # `I[R_X(theta=0.5e-2*pi)]` and `I[R_X(theta=0.005*pi)]` produce the same stim
+    # `I[R_X(theta=0.5e-2*pi)]` and `I[R_X(theta=0.005*pi)]` produce the same Stim
     # tag string. This keeps `tsim.Circuit(str(c)) == c` round-trip stable across
     # notations. Malformed tags are kept as-is and rejected when parsed.
     try:
@@ -240,7 +240,7 @@ def _expand_rotation_shorthand(instruction: str) -> str:
 
 
 def stim_to_shorthand(text: str) -> str:
-    """Convert expanded stim annotations back to tsim shorthand.
+    """Convert expanded Stim annotations back to Tsim shorthand.
 
     Rewrites:
     - I[U3(theta=θ*pi, phi=φ*pi, lambda=λ*pi)] → U3(θ, φ, λ)

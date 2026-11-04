@@ -274,7 +274,7 @@ def test_get_detector_error_model_mpp_measurement_counting():
 
     This test verifies that rec indices are correctly adjusted when MPP instructions
     produce multiple measurements. The circuit has a non-deterministic observable
-    (Z2*Z3 measured on |++⟩ state), which should raise a ValueError because stim
+    (Z2*Z3 measured on |++⟩ state), which should raise a ValueError because Stim
     interprets it as a gauge and eliminates it.
     """
     # Circuit with MPP producing 2 measurements + M producing 2 measurements
@@ -352,7 +352,7 @@ def test_get_detector_error_model_decompose_errors():
     for key, p in undecomposed.items():
         assert decomposed[key] == pytest.approx(p, abs=1e-12)
 
-    # It is stim's own decomposition.
+    # It is Stim's own decomposition.
     assert dem == c.detector_error_model(decompose_errors=True)
 
 

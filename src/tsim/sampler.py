@@ -967,7 +967,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             ``bit_packed`` a uint8 array of shape ``(rows, ceil(num_columns / 8))``
             in little-endian bit order. ``rows`` is ``shots``, or fewer with a
             ``postselection_mask``. The columns are the detectors, with the
-            observables prepended or appended if requested. With
+            observables prepended and/or appended if requested. With
             ``separate_observables``, a ``(detectors, observables)`` tuple of such
             arrays holding the same shots.
 
