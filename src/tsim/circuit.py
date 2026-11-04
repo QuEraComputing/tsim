@@ -270,7 +270,7 @@ class Circuit:
 
         """
         if isinstance(name, str):
-            # NOTE: stim gate names are case-insensitive, and so are tsim's.
+            # NOTE: Stim gate names are case-insensitive, and so are Tsim's.
             name = name.upper()
             if name in ("CCZ", "CCX"):
                 if arg is not None:

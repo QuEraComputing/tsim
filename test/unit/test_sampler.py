@@ -131,12 +131,18 @@ def test_detector_sampler_zero_shots_with_reference():
     assert result.shape == (0, 3)
 
 
-def test_measurement_sampler_bit_packed():
+@pytest.mark.parametrize("strategy", ["active_statevector", "cat5"])
+@pytest.mark.parametrize("shots", [0, 2000])
+def test_measurement_sampler_bit_packed(strategy, shots):
     text = "H 0 1 2\nT 0\nX_ERROR(0.1) 3 4 5 6 7 8 9 10 11\nM 0 1 2 3 4 5 6 7 8 9 10 11"
-    expected = Circuit(text).compile_sampler(seed=4).sample(2000)
-    result = Circuit(text).compile_sampler(seed=4).sample(2000, bit_packed=True)
+
+    def sampler():
+        return Circuit(text).compile_sampler(seed=4, strategy=strategy)
+
+    expected = sampler().sample(shots, batch_size=1000)
+    result = sampler().sample(shots, batch_size=1000, bit_packed=True)
     assert result.dtype == np.uint8
-    assert result.shape == (2000, 2)
+    assert result.shape == (shots, 2)
     assert np.array_equal(result, np.packbits(expected, axis=1, bitorder="little"))
 
 

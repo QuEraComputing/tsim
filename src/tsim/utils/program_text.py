@@ -36,7 +36,8 @@ _TAG_RE = re.compile(r"\[[^\]\n]*\]")
 _COMMENT_RE = re.compile(r"#.*")
 _GATE_NOT_FOUND_RE = re.compile(r"Gate not found: '(\w+)'")
 _GATE_USAGE_RE = re.compile(
-    r"(?<!\[)\b(CCZ\b|CCX\b|R_PAULI\([^)]*\)|R_[XYZ]{1,2}\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)"
+    r"(?<!\[)\b(CCZ\b|CCX\b|R_PAULI\([^)]*\)|R_[XYZ]{1,2}\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)",
+    re.IGNORECASE,
 )
 
 
@@ -122,7 +123,7 @@ def enriched_stim_error(exc: ValueError, converted_text: str) -> ValueError:
     unconverted usage and returns a more helpful error message.
     """
     m = _GATE_NOT_FOUND_RE.search(str(exc))
-    if not m or m.group(1) not in _TSIM_GATES:
+    if not m or m.group(1).upper() not in _TSIM_GATES:
         return exc
     # Successfully converted gates live inside tags (e.g. I[R_Z(...)]), which are
     # dropped so that they can't match. Tags go first since they may contain '#'.
@@ -168,7 +169,7 @@ def _convert_line(line: str) -> str:
         return line
     indent, name, tag, rest = match.groups()
     rest, sep, comment = rest.partition("#")
-    # NOTE: stim gate names are case-insensitive, and so are tsim's.
+    # NOTE: Stim gate names are case-insensitive, and so are Tsim's.
     upper = name.upper()
 
     if upper in _T_FAMILY:

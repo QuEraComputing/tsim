@@ -690,10 +690,18 @@ def test_is_clifford_rejects_non_r_pauli_tag_on_spp():
         ("r_pauli(0.3) x0*y1", "R_PAULI(0.3) X0*Y1"),
         ("u3(0.1, 0.2, 0.3) 0", "U3(0.1, 0.2, 0.3) 0"),
         ("ccz 0 1 2\nccx 0 1 2", "CCZ 0 1 2\nCCX 0 1 2"),
+        ("Tpp_Dag X0\nR_zz(0.2) 0 1", "TPP_DAG X0\nR_ZZ(0.2) 0 1"),
+        ("t[mytag] 0  # comment", "T[mytag] 0"),
+        (
+            "repeat 2 {\n    t 0\n    ccz 0 1 2\n}",
+            "REPEAT 2 {\n    T 0\n    CCZ 0 1 2\n}",
+        ),
     ],
 )
 def test_gate_names_are_case_insensitive(lower, upper):
-    assert Circuit(lower) == Circuit(upper)
+    circuit = Circuit(lower)
+    assert circuit == Circuit(upper)
+    assert Circuit(str(circuit)) == circuit
 
 
 @pytest.mark.parametrize(
