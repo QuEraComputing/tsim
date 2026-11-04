@@ -314,11 +314,13 @@ class _CompiledSamplerBase:
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
                 ``numba.get_num_threads()`` threads.
-            seed: Random seed for the sampler. If None, a random seed is drawn. With
-                "active_statevector", and under any strategy for a circuit without
-                non-direct components, the samples of a seed depend on neither the batch
-                size nor the thread count; with a stabilizer-rank strategy they are only
-                deterministic for a fixed batch size.
+            seed: Random seed for the sampler. If None, a random seed is drawn. A seed
+                reproduces its samples only with the same Tsim version and backend (CPU
+                or GPU); other versions may change them. With "active_statevector", and
+                under any strategy for a circuit without non-direct components, the
+                samples of a seed depend on neither the batch size nor the thread count;
+                with a stabilizer-rank strategy they are only deterministic for a fixed
+                batch size.
 
         """
         if seed is None:
@@ -768,11 +770,13 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
-            seed: Random seed for the sampler. If None, a random seed is drawn. With
-                "active_statevector", and under any strategy for a circuit without
-                non-direct components, the samples of a seed depend on neither the batch
-                size nor the thread count; with a stabilizer-rank strategy they are only
-                deterministic for a fixed batch size.
+            seed: Random seed for the sampler. If None, a random seed is drawn. A seed
+                reproduces its samples only with the same Tsim version and backend (CPU
+                or GPU); other versions may change them. With "active_statevector", and
+                under any strategy for a circuit without non-direct components, the
+                samples of a seed depend on neither the batch size nor the thread count;
+                with a stabilizer-rank strategy they are only deterministic for a fixed
+                batch size.
 
         """
         super().__init__(
@@ -864,12 +868,13 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
-            seed: Random seed for the sampler. If None, a random seed is drawn. With
-                "active_statevector", and under any strategy for a circuit without
-                non-direct components, the samples of a seed depend on neither the batch
-                size nor the thread count; with a stabilizer-rank strategy they are only
-                deterministic for a fixed batch size and fixed reference sample
-                settings.
+            seed: Random seed for the sampler. If None, a random seed is drawn. A seed
+                reproduces its samples only with the same Tsim version and backend (CPU
+                or GPU); other versions may change them. With "active_statevector", and
+                under any strategy for a circuit without non-direct components, the
+                samples of a seed depend on neither the batch size nor the thread count;
+                with a stabilizer-rank strategy they are only deterministic for a fixed
+                batch size and fixed reference sample settings.
 
         """
         super().__init__(
@@ -1062,8 +1067,9 @@ class CompiledStateProbs(_CompiledSamplerBase):
             sample_detectors: If True, compute detector/observable probabilities.
             strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
                 "cutting"); "active_statevector" cannot compute probabilities.
-            seed: Random seed. If None, a random seed is generated. Note that
-                deterministic results are only guaranteed for a fixed batch size.
+            seed: Random seed. If None, a random seed is generated. Results are
+                only deterministic for a fixed batch size, Tsim version and
+                backend (CPU or GPU).
 
         """
         super().__init__(

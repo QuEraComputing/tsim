@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a stabilizer-rank strategy. Without a mask, exactly `shots`
   rows are returned. `sample` warns when a masked detector is a constant 1,
   which discards every shot. (#252)
+- The public API is `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and
+  `tsim.CompiledDetectorSampler`, which follow semantic versioning. Every other
+  module is internal and may change without notice, and the API reference
+  documents only the public and experimental objects. `CompiledStateProbs`,
+  `SteaneEncoder` and `ColorEncoder5` are importable from `tsim.experimental`,
+  which may change in any release. A seed reproduces its samples only with the
+  same Tsim version and backend (CPU or GPU).
 
 ### Added
 - `CompiledMeasurementSampler.sample(bit_packed=True)`, as in Stim.

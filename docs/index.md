@@ -170,6 +170,13 @@ the noiseless reference sample, and otherwise when their raw parities are 0. A
 masked detector that is a constant 1, such as one of a noiseless circuit whose
 measurements have parity 1, discards every shot; `sample` warns about it.
 
+## API stability
+
+Tsim follows [semantic versioning](https://semver.org/) for its public API: `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and `tsim.CompiledDetectorSampler`. `tsim.experimental` holds helpers that may change in any release. Every other module is internal, even where it is importable.
+
+A seed reproduces its samples only with the same Tsim version and backend (CPU or GPU); new versions may change the samples of a seed.
+
+
 ## Citing Tsim
 If you use Tsim, please consider citing the paper describing the core simulation approach:
 ```
