@@ -121,6 +121,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shot's outputs when its lane dies instead of keeping graves, and both samplers
   pick their backend in one `_sample_outputs` method. Samples are unchanged.
   (#223)
+- With `strategy="active_statevector"` and a postselection mask, the shots
+  that pass are gathered by numba kernels in the threads that sampled them,
+  instead of by NumPy on one thread. Discarded shots are no longer finished:
+  a pruned shot draws no coins, and its outputs are neither completed nor
+  cleared. A program without components screens each noise block while it is
+  in cache. Samples are unchanged.
 
 ### Deprecated
 - The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types. They still work as aliases for `"zx"`, `"zx-dets"` and `"zx-meas"` but emit a `DeprecationWarning`.

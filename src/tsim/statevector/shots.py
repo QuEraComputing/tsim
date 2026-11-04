@@ -35,6 +35,8 @@ from tsim.utils.kernels import PARALLEL_WORK, jit, kernel, run_tasks
 # 2^8 its fixed costs dominate.
 MAX_CHUNK_SHOTS = 2**16
 MIN_CHUNK_SHOTS = 2**8
+# NOTE: the most scratch memory a sampler keeps between calls.
+MAX_SCRATCH_BYTES = 2**25
 
 
 def memory_budget() -> int:
@@ -126,22 +128,15 @@ class ShotPlan:
     Attributes:
         screen: The postselected direct outputs, as words: a shot with one of
             them set is discarded before the components.
-        kept: The outputs a discarded shot keeps (its direct detectors), as words.
-        pruned_kept: The outputs a shot that component ``k`` prunes keeps, as
-            words: ``kept`` and component ``k``'s outputs, which it clears
-            itself past the pruning. None for a component without postselected
-            outputs, which prunes no shot.
         programs: Each component's lane program.
-        rejected: The postselected detectors, as words: a shot with one of them
-            set was discarded, and the others are returned.
+        rejected: Whether any detector is postselected: if so, only the shots
+            that pass the screen and every component are returned.
 
     """
 
     screen: np.ndarray
-    kept: np.ndarray
-    pruned_kept: tuple[np.ndarray | None, ...]
     programs: tuple[LaneProgram, ...]
-    rejected: np.ndarray
+    rejected: bool
 
 
 def shot_plan(
@@ -152,7 +147,6 @@ def shot_plan(
     postselected = np.zeros(num_outputs, dtype=bool)
     if mask is not None:
         postselected[:num_detectors] = mask
-    is_detector = np.arange(num_outputs) < num_detectors
     programs = tuple(
         lane_program(
             component, key, key_start, postselected[list(component.output_indices)]
@@ -161,38 +155,22 @@ def shot_plan(
             layout.components, layout.keys, layout.key_starts, strict=True
         )
     )
-    kept = shared.pack_bits(layout.direct & is_detector, words)
-    pruned_kept = []
-    for component in layout.components:
-        outputs = list(component.output_indices)
-        if not postselected[outputs].any():
-            pruned_kept.append(None)
-            continue
-        own = kept.copy()
-        for o in outputs:
-            own[o >> 6] |= np.uint64(1) << np.uint64(o & 63)
-        pruned_kept.append(own)
     return ShotPlan(
         screen=shared.pack_bits(postselected & layout.direct, words),
-        kept=kept,
-        pruned_kept=tuple(pruned_kept),
         programs=programs,
-        rejected=shared.pack_bits(postselected, words),
+        rejected=bool(postselected.any()),
     )
 
 
 @jit
-def _screen(words, constant, screen, kept, alive):
-    """XOR the constants into the outputs; a screened shot keeps only ``kept``."""
+def _screen(words, constant, screen, alive):
+    """XOR the constants into the outputs; a shot with a ``screen`` bit is not alive."""
     for s in range(words.shape[0]):
         hit = np.uint64(0)
         for w in range(len(constant)):
             words[s, w] ^= constant[w]
             hit |= words[s, w] & screen[w]
         alive[s] = hit == 0
-        if hit:
-            for w in range(len(kept)):
-                words[s, w] &= kept[w]
 
 
 @jit
@@ -239,6 +217,84 @@ def _unpack(words, runs, width, out):
                         bits, filled = np.uint64(0), 0
         if filled:
             _spread(bits, out, target)
+
+
+@jit
+def _compact(rows, alive, width):
+    """Move the first ``width`` words of each alive shot to the front, in order.
+
+    Returns the number of alive shots.
+    """
+    target = 0
+    for s in range(rows.shape[0]):
+        if alive[s]:
+            if target != s:
+                for w in range(width):
+                    rows[target, w] = rows[s, w]
+            target += 1
+    return target
+
+
+@kernel
+def _copy_kept(words, keep, size, kept, starts, out):
+    """Copy the rows ``keep`` flags in each run of ``size`` rows to ``out``, in order.
+
+    Run ``i`` keeps ``kept[i]`` rows, from row ``starts[i]`` of ``out`` on; runs
+    copy in parallel.
+    """
+    width = out.shape[1]
+    for i in numba.prange(starts.shape[0]):
+        first = i * size
+        last = min(first + size, words.shape[0]) - 1
+        while last >= first and not keep[last]:
+            last -= 1
+        target = starts[i]
+        if 2 * kept[i] < last + 1 - first:
+            # NOTE: few kept rows: copy only them.
+            for s in range(first, last + 1):
+                if keep[s]:
+                    for w in range(width):
+                        out[target, w] = words[s, w]
+                    target += 1
+        elif width == 1:
+            # NOTE: every row up to the run's last kept one is written to
+            # ``target``, which only a kept row moves on, so the loop has no
+            # branch and never writes past the run's rows of ``out``.
+            for s in range(first, last + 1):
+                out[target, 0] = words[s, 0]
+                target += keep[s]
+        else:
+            for s in range(first, last + 1):
+                for w in range(width):
+                    out[target, w] = words[s, w]
+                target += keep[s]
+
+
+@jit
+def _join(words, kept, size, width):
+    """Move the ``kept[i]`` rows at the front of each run of ``size`` rows together.
+
+    Only the first ``width`` words move. Returns the number of rows kept.
+    """
+    filled = 0
+    for i in range(kept.shape[0]):
+        source = i * size
+        if source != filled:
+            for r in range(kept[i]):
+                for w in range(width):
+                    words[filled + r, w] = words[source + r, w]
+        filled += kept[i]
+    return filled
+
+
+def _shrink(words: np.ndarray, rows: int) -> np.ndarray:
+    """Return the first ``rows`` rows of ``words``, an array no view shares.
+
+    The memory past them is given back without a copy, so that a view of the
+    survivors does not keep a whole call's rows alive.
+    """
+    words.resize((rows, words.shape[1]), refcheck=False)
+    return words
 
 
 def bool_outputs(words: np.ndarray, columns: np.ndarray) -> np.ndarray:
@@ -318,6 +374,9 @@ class ShotSampler:
         self._plans: dict[bytes, ShotPlan] = {}
         self._widest = max((c.width for c in self._layout.components), default=0)
         self._direct_tables: WordTables | None = None
+        # NOTE: noise words of a program without components, reused by the calls
+        # that screen them, since only their survivors are returned.
+        self._scratch: np.ndarray | None = None
         if not self._layout.components:
             f = self._layout.direct_f
             sets = np.flatnonzero(f >= 0)
@@ -400,15 +459,7 @@ class ShotSampler:
         noise_seeds = self._channels.block_seeds(shots)
         seeds = self._next_seeds(self._seeds)
 
-        rejected = plan.rejected if plan.rejected.any() else None
-
         def read(words: np.ndarray) -> list[np.ndarray]:
-            if rejected is not None:
-                hits = (words[:, : len(rejected)] & rejected).any(axis=1)
-                if hits.any():
-                    # NOTE: the output words alone, so that bit-packed outputs
-                    # can be views of them.
-                    words = words[~hits, : self._layout.output_words]
             return [
                 read_outputs(words, c, num_outputs, bit_packed=bit_packed)
                 for c in columns
@@ -464,14 +515,19 @@ class ShotSampler:
     ) -> tuple[np.ndarray, float]:
         """Return the shot words of a call's shots ``start … stop-1`` and their deviation.
 
-        ``noise_seeds`` seed the call's noise blocks, so ``start`` is a whole
-        number of blocks, and ``seeds`` its components.
+        With a postselected detector, only the shots that pass postselection
+        are returned, and only their output words. ``noise_seeds`` seed the
+        call's noise blocks, so ``start`` is a whole number of blocks, and
+        ``seeds`` its components.
         """
         shots = stop - start
+        width = self._layout.output_words
+        blocks = noise_seeds[start // _BLOCK_SHOTS : -(-stop // _BLOCK_SHOTS)]
+        if shots and not self._layout.components and plan.rejected:
+            return self._sample_screened(shots, blocks, plan, constant), 0.0
         words = np.empty((shots, self._layout.num_words), dtype=np.uint64)
         if shots == 0:
             return words, 0.0
-        blocks = noise_seeds[start // _BLOCK_SHOTS : -(-stop // _BLOCK_SHOTS)]
         self._channels.sample_words(words, self._layout.noise, blocks)
         if not self._layout.components and not (constant.any() or plan.screen.any()):
             # NOTE: direct outputs without constants are their noise bits.
@@ -479,12 +535,55 @@ class ShotSampler:
         threads = numba.get_num_threads()
         chunk, workers = self._schedule(shots, batch_size, threads)
 
-        def run(offset: int) -> list[tuple]:
+        def run(offset: int) -> tuple[list[tuple], int]:
             rows = words[offset : offset + chunk]
-            return self._run_chunk(rows, plan, constant, start + offset, seeds, threads)
+            alive = np.empty(len(rows), dtype=np.bool_)
+            stats = self._run_chunk(
+                rows, alive, plan, constant, start + offset, seeds, threads
+            )
+            # NOTE: each chunk moves its survivors to its front on its own thread.
+            kept = _compact(rows, alive, width) if plan.rejected else len(rows)
+            return stats, kept
 
-        results = run_tasks(run, range(0, shots, chunk), workers)
-        return words, self._record([stats for result in results for stats in result])
+        offsets = range(0, shots, chunk)
+        results = run_tasks(run, offsets, workers)
+        deviation = self._record([stats for result, _ in results for stats in result])
+        if not plan.rejected:
+            return words, deviation
+        kept = np.array([k for _, k in results], dtype=np.int64)
+        filled = _join(words, kept, chunk, width)
+        # NOTE: the output words alone, so that bit-packed outputs can be views.
+        if width == words.shape[1]:
+            return _shrink(words, filled), deviation
+        return np.ascontiguousarray(words[:filled, :width]), deviation
+
+    def _sample_screened(
+        self, shots: int, blocks: np.ndarray, plan: ShotPlan, constant: np.ndarray
+    ) -> np.ndarray:
+        """Return the output words of the shots that pass postselection, of ``shots``.
+
+        For a program without components, which postselects direct detectors
+        only, all of them in the screen. Each noise block is screened while it is
+        in cache, and the survivors are copied out of words that later calls
+        reuse: fresh memory would cost a page fault per 4 kB.
+        """
+        width = self._layout.num_words
+        assert width == self._layout.output_words
+        # NOTE: a call that finds the scratch taken (another thread's) allocates.
+        scratch, self._scratch = self._scratch, None
+        if scratch is None or len(scratch) < shots:
+            scratch = np.empty((shots, width), dtype=np.uint64)
+        words = scratch[:shots]
+        keep, kept = self._channels.sample_screened_words(
+            words, self._layout.noise, blocks, constant, plan.screen
+        )
+        starts = np.zeros(len(kept), dtype=np.int64)
+        np.cumsum(kept[:-1], out=starts[1:])
+        out = np.empty((int(kept.sum()), width), dtype=np.uint64)
+        _copy_kept(len(out) * width, words, keep, _BLOCK_SHOTS, kept, starts, out)
+        if scratch.nbytes <= MAX_SCRATCH_BYTES:
+            self._scratch = scratch
+        return out
 
     def direct_bools(self, shots: int, flip: np.ndarray | None = None) -> np.ndarray:
         """Return every output bit of a program without components, as booleans.
@@ -507,6 +606,7 @@ class ShotSampler:
         words = np.zeros((1, self._layout.num_words), dtype=np.uint64)
         stats = self._run_chunk(
             words,
+            np.empty(1, dtype=np.bool_),
             self.plan(None),
             self._constant(None),
             0,
@@ -556,6 +656,7 @@ class ShotSampler:
     def _run_chunk(
         self,
         rows: np.ndarray,
+        alive: np.ndarray,
         plan: ShotPlan,
         constant: np.ndarray,
         first_shot: int,
@@ -564,24 +665,19 @@ class ShotSampler:
     ) -> list[tuple]:
         """Screen the rows' shots and run the components on them.
 
-        A shot that a component prunes is skipped by the later components and
-        keeps only the outputs of ``plan.pruned_kept``, whatever the order of
-        the components. Alone on its thread, a chunk runs each component's
-        amplitude loops on ``threads`` threads.
+        ``alive`` receives whether each shot passed the screen and every
+        component's postselected outputs: a shot that one prunes is skipped by
+        the later ones, and its outputs are left as they are, since it is not
+        returned. Alone on its thread, a chunk runs each component's amplitude
+        loops on ``threads`` threads.
         """
-        alive = np.empty(len(rows), dtype=np.bool_)
-        _screen(rows, constant, plan.screen, plan.kept, alive)
+        _screen(rows, constant, plan.screen, alive)
         stats = []
-        for component, program, seed, kept in zip(
-            self._layout.components,
-            plan.programs,
-            seeds,
-            plan.pruned_kept,
-            strict=True,
+        for component, program, seed in zip(
+            self._layout.components, plan.programs, seeds, strict=True
         ):
             if not alive.any():
                 break
-            before = None if kept is None else alive.copy()
             stats.append(
                 shared.run_lanes(
                     len(rows) << component.width,
@@ -596,11 +692,6 @@ class ShotSampler:
                     threads,
                 )
             )
-            if kept is not None:
-                assert before is not None
-                pruned = before & ~alive
-                if pruned.any():
-                    rows[pruned, : len(kept)] &= kept
         return stats
 
     def _record(self, stats: list[tuple]) -> float:

@@ -20,8 +20,8 @@ shots, the chunk, the threads or whether lanes are shared at all.
 
 Pruning. After the action that sets a postselected output's last branch bit (or
 before the first action, for an output of f-bits only) the lanes in which it reads
-1 die. Their shots get their outputs there, from the outcomes drawn so far, and
-those that need a later branch bit read False.
+1 die. Their shots leave ``alive`` and are not sampled further: they are
+discarded, so their outputs are left unfinished.
 
 Outputs. Each shot XORs the branch part of its outputs, from its last lane, and
 its own fair coins: the dormant measurements that no sign and no postselected
@@ -599,29 +599,6 @@ def _lane_pattern(symbols, r, branch_row, output_word, output_bit, num_words):
     return pattern
 
 
-# NOTE: _finish_shot runs once per pruned shot, so, like _lane_key, it takes only
-# the arrays it reads and not the LaneProgram.
-@jit
-def _finish_shot(
-    words, shot, pattern, hidden, out_words, coin_pattern, seed, index, slots, first
-):
-    """Add a shot's branch parts and coins to its outputs, then clear ``hidden``.
-
-    The coins come from the shot's draw slots ``first`` on, 64 per slot.
-    """
-    for w in range(len(out_words)):
-        words[shot, out_words[w]] ^= pattern[w]
-    coins = np.uint64(0)
-    for j in range(coin_pattern.shape[0]):
-        if j % 64 == 0:
-            coins = _draw(seed, index, slots, first + j // 64)
-        if (coins >> np.uint64(j % 64)) & np.uint64(1):
-            for w in range(len(out_words)):
-                words[shot, out_words[w]] ^= coin_pattern[j, w]
-    for w in range(len(out_words)):
-        words[shot, out_words[w]] &= ~hidden[w]
-
-
 @jit
 def _prune(
     amps,
@@ -632,67 +609,30 @@ def _prune(
     row,
     n,
     code_row,
-    words,
     alive,
-    first_shot,
-    seed,
-    slots,
-    program,
+    prune_row,
     tests,
-    action,
 ):
-    """Finish the shots of the lanes in which a tested output reads 1.
+    """Drop the lanes in which a tested output reads 1, and their shots.
 
-    Those shots get their outputs as they stand after ``action``, with the
-    outputs that need a later branch bit cleared, and leave ``live`` and
-    ``alive``. The other lanes move down in order, and ``code_row`` maps codes
-    to their new rows. Returns ``(size, n, pruned lanes)``.
+    Those shots leave ``live`` and ``alive``. The other lanes move down in
+    order, and ``code_row`` maps codes to their new rows. Returns
+    ``(size, n, pruned lanes)``.
     """
     dies = np.zeros(size, dtype=np.bool_)
     pruned = 0
     for r in range(size):
         for o in range(len(tests)):
-            if tests[o] and _row_parity(symbols, r, program.prune_row[o]):
+            if tests[o] and _row_parity(symbols, r, prune_row[o]):
                 dies[r] = True
                 pruned += 1
                 break
     if pruned == 0:
         return size, n, 0
-    out_words = program.out_words
-    hidden = np.zeros(len(out_words), dtype=np.uint64)
-    for o in range(len(program.output_bit)):
-        if program.ready[o] > action:
-            w = program.output_word[o]
-            hidden[w] |= np.uint64(1) << np.uint64(program.output_bit[o])
-    pattern = np.zeros((size, len(out_words)), dtype=np.uint64)
-    for r in range(size):
-        if dies[r]:
-            pattern[r] = _lane_pattern(
-                symbols,
-                r,
-                program.branch_row,
-                program.output_word,
-                program.output_bit,
-                len(out_words),
-            )
-    coins = program.coin_pattern
-    first_coin = len(program.kind)
     m = 0
     for i in range(n):
         shot, r = live[i], code_row[row[i]]
         if dies[r]:
-            _finish_shot(
-                words,
-                shot,
-                pattern[r],
-                hidden,
-                out_words,
-                coins,
-                seed,
-                first_shot + shot,
-                slots,
-                first_coin,
-            )
             alive[shot] = False
             continue
         live[m], row[m] = shot, row[i]
@@ -769,14 +709,9 @@ def run_lanes(
             row,
             n,
             code_row,
-            words,
             alive,
-            first_shot,
-            seed,
-            slots,
-            program,
+            program.prune_row,
             program.prune_first,
-            -1,
         )
 
     for a in range(num_actions):
@@ -911,14 +846,9 @@ def run_lanes(
                 row,
                 n,
                 code_row,
-                words,
                 alive,
-                first_shot,
-                seed,
-                slots,
-                program,
+                program.prune_row,
                 program.prune_outputs[a],
-                a,
             )
             dead += pruned
 
