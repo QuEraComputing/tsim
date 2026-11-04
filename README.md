@@ -76,7 +76,7 @@ The [Tsim 1.0 blog post](https://bloqade.quera.com/blog/introducing-tsim-1-0-0/)
 
 
 ## Architecture
-![Architecture](docs/architecture.svg)
+<img src="docs/architecture.svg" alt="Architecture" width="100%">
 
 A detailed description of Tsim's architecture is given in [arXiv:2604.01059](https://arxiv.org/abs/2604.01059).
 Quantum programs are translated into ZX diagrams in which Pauli noise channels appear as parameterized vertices with binary variables $e_i$.
