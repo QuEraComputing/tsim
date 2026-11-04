@@ -60,7 +60,7 @@ Choose a strategy with the `strategy` argument of `compile_sampler` and `compile
 sampler = c.compile_detector_sampler(strategy="cat5")
 ```
 
-Only `"active_statevector"` is part of the stable API. The stabilizer rank strategies are experimental and may change or be removed in any release.
+The stabilizer rank strategies are provisional; see [API stability](#api-stability).
 
 The [Tsim 1.0 blog post](https://bloqade.quera.com/blog/introducing-tsim-1-0-0/) introduces the active state vector strategy and compares its performance with other simulators.
 
@@ -174,7 +174,7 @@ measurements have parity 1, discards every shot; `sample` warns about it.
 
 ## API stability
 
-Tsim follows [semantic versioning](https://semver.org/) for its public API: `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and `tsim.CompiledDetectorSampler`. `tsim.experimental` holds helpers that may change in any release. Every other module is internal, even where it is importable. Of the [sampling strategies](#sampling-strategies), only `"active_statevector"` is stable; the stabilizer rank strategies (`"cat5"`, `"bss"`, `"cutting"`) are experimental. See the [API reference](reference/index.md).
+Tsim follows [semantic versioning](https://semver.org/) for its public API: `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and `tsim.CompiledDetectorSampler`. `tsim.experimental` holds helpers that may change in any release. Every other module is internal, even where it is importable. The stabilizer rank [sampling strategies](#sampling-strategies) (`"cat5"`, `"bss"`, `"cutting"`) are provisional: they may be removed in a minor release, after at least one minor release in which they emit a `DeprecationWarning`. See the [API reference](reference/index.md).
 
 A seed reproduces its samples only with the same versions of Tsim and its dependencies (such as NumPy and JAX) and the same backend (CPU or GPU). With a stabilizer-rank strategy, pass the same explicit `batch_size` as well, since the default batch size depends on the free memory.
 

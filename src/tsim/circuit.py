@@ -953,9 +953,8 @@ class Circuit:
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
-                ``numba.get_num_threads()`` threads. Only "active_statevector"
-                is stable; the stabilizer rank strategies are experimental and
-                may change or be removed in any release.
+                ``numba.get_num_threads()`` threads. The stabilizer rank
+                strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
@@ -991,9 +990,8 @@ class Circuit:
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
-                ``numba.get_num_threads()`` threads. Only "active_statevector"
-                is stable; the stabilizer rank strategies are experimental and
-                may change or be removed in any release.
+                ``numba.get_num_threads()`` threads. The stabilizer rank
+                strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
