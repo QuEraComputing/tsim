@@ -872,7 +872,7 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _Fire
         probs = channel.probs.astype(np.float64)
         conditional = np.cumsum(np.clip(probs[1:], 0, None))
         fire = min(float(conditional[-1]), 1.0) if len(conditional) else 0.0
-        if fire <= 1e-15:
+        if fire == 0.0:
             continue
         p_fire.append(fire)
         cdf.extend(conditional / conditional[-1])
