@@ -24,13 +24,14 @@ overview and benchmarks.
   `CompiledStateProbs` keeps `"cat5"`. (#203)
 - `CompiledDetectorSampler.sample(postselection_mask=...)` returns only the
   shots that no masked detector discards, so it can return fewer than `shots`
-  rows, possibly none, and `len(result) / shots` is the acceptance rate. It used
+  rows, possibly none. The acceptance rate is the number of returned rows
+  divided by `shots`: `len(result) / shots`, or `len(result[0]) / shots` with
+  `separate_observables=True`. It used
   to return all `shots` rows, with the discarded ones partly filled with
   `False`, for the caller to filter. Filtering the result with the mask again
   still works but no longer does anything. Code that assumes
   `len(result) == shots` must change, and code that computes the acceptance
-  rate as the mean of the re-applied mask now silently gets 1.0; use
-  `len(result) / shots` instead. The rule is the same for every strategy.
+  rate as the mean of the re-applied mask now silently gets 1.0. The rule is the same for every strategy.
   Without a mask, exactly `shots` rows are returned. `sample` warns when a
   masked detector is a constant 1, which discards every shot. (#222, #252)
 - The public API is `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and
@@ -69,16 +70,12 @@ overview and benchmarks.
     `zxparam[quimb]`, otherwise it raises `ImportError`. (#246)
   - `Circuit.to_matrix()` is removed; compare `to_tensor()` with `U ⊗ Ū`
     instead.
-  - The ZX diagram types are now `"zx"`, `"zx-dets"` and `"zx-meas"`. They
-    return zxparam's HTML drawing object instead of a graph.
+  - The ZX diagram types `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` are now
+    `"zx"`, `"zx-dets"` and `"zx-meas"`, and return zxparam's HTML drawing
+    object instead of a graph. The old names raise `ValueError`.
 - `Circuit.append` raises `ValueError` when `targets`, `arg` or `tag` are
   passed with a `stim.CircuitInstruction`, `stim.CircuitRepeatBlock` or
   `stim.Circuit`. They used to be silently ignored. (#254)
-- An `E`/`ELSE_CORRELATED_ERROR` chain whose links repeat Pauli components
-  compiles to one error bit per component (X or Z on a qubit) instead of one
-  per link. Chains with fewer components than links get fewer error bits,
-  numbered by component, so `Circuit.to_tensor(bindings)` and `get_graph`
-  change for them. See Fixed. (#248)
 
 ### Added
 - `strategy="active_statevector"` for `compile_sampler`,
@@ -128,7 +125,7 @@ overview and benchmarks.
 - Compiling a sampler is faster: ZX reduction and stabilizer-rank
   decomposition run in zxparam's Rust core (#205), and channel validation,
   the noise sampling tables, the GF(2) error basis and detector placement do
-  less work; `cultivation_d5_end2end` compiles about 2.5x faster. (#207)
+  less work. (#207)
 - Noise sampling runs in numba kernels and draws each fault's outcome from an
   alias table; `numba>=0.61` is now a dependency. (#199, #211)
 - Outputs that are constant now take the direct-output path, skipping
@@ -143,31 +140,8 @@ overview and benchmarks.
 - `repr()` of a sampler shows only the statistics of the backends it uses.
   (#251)
 
-### Deprecated
-- The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types. They still work
-  as aliases for `"zx"`, `"zx-dets"` and `"zx-meas"` but emit a
-  `DeprecationWarning`. (#194)
-
 ### Removed
 - The `pyzx-param` dependency. (#194)
-- Internals: `GraphRepresentation` (`tsim.core.instructions`) is now
-  `GraphBuilder` in the new `tsim.core.builder`, and `parse_stim_circuit`
-  returns it. Its bookkeeping functions became methods: `detector` is now
-  `add_detector` and `observable_include` is now `include_observable`; `tick`,
-  `correlated_error` and `finalize_correlated_error` keep their names;
-  `ensure_lane`, `add_lane`, `add_quantum_boundary`, `last_col` and `last_edge`
-  are now private. Its fields are private behind read-only properties (`rec` is
-  now `records`). `ANNOTATION_ROW`, `HELPER_LANE` and `_error_phase` (now
-  `error_phase`) moved to `tsim.core.builder`. `build_sampling_graph`
-  (`tsim.core.graph`) is replaced by `GraphBuilder.build(closed=...,
-  outputs=...)`. (#197)
-- Internals: the `track_classical_wires` argument of `parse_stim_circuit`, the
-  `tsim.compile.stabrank` module, and `ConnectedComponent`,
-  `connected_components`, `get_params` and `evaluate_graph` from
-  `tsim.core.graph`. `classify_direct` moved from `tsim.core.graph` to
-  `tsim.compile.pipeline`; `tsim.utils.diagram.render_pyzx_d3`, `squash_graph`
-  and `scale_horizontally` are gone, since ZX diagrams use zxparam's `draw`
-  layout and scale options. (#194, #197)
 
 ### Fixed
 - Different seeds no longer give the same samples. The noise was seeded from a
@@ -199,15 +173,10 @@ overview and benchmarks.
 - `R_PAULI` program text accepts inverted targets such as `R_PAULI(0.3) !X0*Y1`,
   and circuits print them in that form instead of
   `SPP[R_PAULI(theta=0.3*pi)] !X0*Y1`. (#244)
-- A general 3-qubit Pauli channel written as a 63-link
-  `E`/`ELSE_CORRELATED_ERROR` chain compiles to 6 error bits instead of
-  failing with `Maximum allowed dimension exceeded`. Links share a component
-  while nothing else acts on its wire between them (a `SWAP` moves the wire to
-  the other qubit). A chain builds the same graph as before if all its links
-  have targets and it never flips a component of a wire twice, also not within
-  one link: `E X0 Z1; ELSE_CORRELATED_ERROR Y2` does, but `E X0 X0` and
-  `E X0; SWAP 0 1; ELSE_CORRELATED_ERROR X1` do not. A chain that would need
-  more than 2^20 outcomes raises `ValueError`. (#248)
+- Long `E`/`ELSE_CORRELATED_ERROR` chains whose links share Pauli components,
+  such as a general 3-qubit Pauli channel, compile instead of failing with
+  `Maximum allowed dimension exceeded`. A chain that would need more than 2^20
+  outcomes raises `ValueError`. (#248)
 - Program text no longer rewrites shorthand inside tags or comments, so tags
   such as `I[R_X(0.1)]`, `X[U3(0.1, 0.2, 0.3)]` or `H[my T tag]` no longer
   fail to parse or change. (#218, #202)
