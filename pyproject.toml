@@ -47,7 +47,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/QuEraComputing/tsim"
-Documentation = "https://queracomputing.github.io/tsim/latest"
+Documentation = "https://tsim.mintlify.app/"
 Repository = "https://github.com/QuEraComputing/tsim"
 Issues = "https://github.com/QuEraComputing/tsim/issues"
 
