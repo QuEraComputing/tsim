@@ -6,8 +6,7 @@
     <span class=o>*</span><span class=p>,</span>
     <span class=n>tag</span><span class=p>:</span> <span class=nb>str</span> <span class=o>=</span> <span class=s2>&quot;&quot;</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>list</span><span class=p>[</span><span class=nb>str</span><span class=p>]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Return a Clifford+T decomposition for a controlled-controlled gate.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>43</span>
-<span class=normal>44</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Return a Clifford+T decomposition for a controlled-controlled gate.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>44</span>
 <span class=normal>45</span>
 <span class=normal>46</span>
 <span class=normal>47</span>
@@ -39,7 +38,8 @@
 <span class=normal>73</span>
 <span class=normal>74</span>
 <span class=normal>75</span>
-<span class=normal>76</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>controlled_gate_decomposition_lines</span><span class=p>(</span>
+<span class=normal>76</span>
+<span class=normal>77</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>controlled_gate_decomposition_lines</span><span class=p>(</span>
     <span class=n>gate</span><span class=p>:</span> <span class=nb>str</span><span class=p>,</span>
     <span class=n>control1</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=nb>str</span><span class=p>,</span>
     <span class=n>control2</span><span class=p>:</span> <span class=nb>int</span> <span class=o>|</span> <span class=nb>str</span><span class=p>,</span>
@@ -76,8 +76,7 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.program_text.enriched_stim_error class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">enriched_stim_error</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>enriched_stim_error</span><span class=p>(</span>
     <span class=n>exc</span><span class=p>:</span> <span class=ne>ValueError</span><span class=p>,</span> <span class=n>converted_text</span><span class=p>:</span> <span class=nb>str</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=ne>ValueError</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Improve stim parse errors for tsim-specific gates.</p> <p>When stim raises a 'Gate not found' error for a gate that should have been converted by shorthand_to_stim, this searches the converted text for the unconverted usage and returns a more helpful error message.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>117</span>
-<span class=normal>118</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Improve stim parse errors for tsim-specific gates.</p> <p>When stim raises a 'Gate not found' error for a gate that should have been converted by shorthand_to_stim, this searches the converted text for the unconverted usage and returns a more helpful error message.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>118</span>
 <span class=normal>119</span>
 <span class=normal>120</span>
 <span class=normal>121</span>
@@ -92,7 +91,8 @@
 <span class=normal>130</span>
 <span class=normal>131</span>
 <span class=normal>132</span>
-<span class=normal>133</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>enriched_stim_error</span><span class=p>(</span><span class=n>exc</span><span class=p>:</span> <span class=ne>ValueError</span><span class=p>,</span> <span class=n>converted_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=ne>ValueError</span><span class=p>:</span>
+<span class=normal>133</span>
+<span class=normal>134</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>enriched_stim_error</span><span class=p>(</span><span class=n>exc</span><span class=p>:</span> <span class=ne>ValueError</span><span class=p>,</span> <span class=n>converted_text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=ne>ValueError</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Improve stim parse errors for tsim-specific gates.</span>
 
 <span class=sd>    When stim raises a &#39;Gate not found&#39; error for a gate that should have been</span>
@@ -100,7 +100,7 @@
 <span class=sd>    unconverted usage and returns a more helpful error message.</span>
 <span class=sd>    &quot;&quot;&quot;</span>
     <span class=n>m</span> <span class=o>=</span> <span class=n>_GATE_NOT_FOUND_RE</span><span class=o>.</span><span class=n>search</span><span class=p>(</span><span class=nb>str</span><span class=p>(</span><span class=n>exc</span><span class=p>))</span>
-    <span class=k>if</span> <span class=ow>not</span> <span class=n>m</span> <span class=ow>or</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>)</span> <span class=ow>not</span> <span class=ow>in</span> <span class=n>_TSIM_GATES</span><span class=p>:</span>
+    <span class=k>if</span> <span class=ow>not</span> <span class=n>m</span> <span class=ow>or</span> <span class=n>m</span><span class=o>.</span><span class=n>group</span><span class=p>(</span><span class=mi>1</span><span class=p>)</span><span class=o>.</span><span class=n>upper</span><span class=p>()</span> <span class=ow>not</span> <span class=ow>in</span> <span class=n>_TSIM_GATES</span><span class=p>:</span>
         <span class=k>return</span> <span class=n>exc</span>
     <span class=c1># Successfully converted gates live inside tags (e.g. I[R_Z(...)]), which are</span>
     <span class=c1># dropped so that they can&#39;t match. Tags go first since they may contain &#39;#&#39;.</span>
@@ -110,8 +110,7 @@
         <span class=k>return</span> <span class=n>exc</span>
     <span class=k>return</span> <span class=ne>ValueError</span><span class=p>(</span><span class=sa>f</span><span class=s2>&quot;Could not parse &#39;</span><span class=si>{</span><span class=n>usage</span><span class=o>.</span><span class=n>group</span><span class=p>()</span><span class=si>}</span><span class=s2>&#39; in program text.&quot;</span><span class=p>)</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.program_text.shorthand_to_stim class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">shorthand_to_stim</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>shorthand_to_stim</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Convert tsim shorthand syntax to valid stim instructions.</p> <details class=converts open> <summary>Converts</summary> <p>CCZ 0 1 2 → Clifford+T decomposition of CCZ CCX 0 1 2 → Clifford+T decomposition of CCX/Toffoli T 0 1 → S[T] 0 1 T_DAG 0 1 → S_DAG[T] 0 1 TPP X0<em>Y1 → SPP[T] X0</em>Y1 TPP_DAG X0<em>Y1 → SPP_DAG[T] X0</em>Y1 R_Z(0.3) 0 → I[R_Z(theta=0.3<em>pi)] 0 R_X(0.25) 0 → I[R_X(theta=0.25</em>pi)] 0 R_Y(-0.5) 0 → I[R_Y(theta=-0.5<em>pi)] 0 R_XX(0.5) 0 1 → SPP[R_PAULI(theta=0.5</em>pi)] X0<em>X1 R_YY(0.5) 0 1 → SPP[R_PAULI(theta=0.5</em>pi)] Y0<em>Y1 R_ZZ(0.5) 0 1 → SPP[R_PAULI(theta=0.5</em>pi)] Z0<em>Z1 R_PAULI(0.3) X0</em>Y1 → SPP[R_PAULI(theta=0.3<em>pi)] X0</em>Y1 R_PAULI(0.3) !X0<em>Y1 → SPP[R_PAULI(theta=0.3</em>pi)] !X0<em>Y1 U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3</em>pi, phi=0.24<em>pi, lambda=0.49</em>pi)] 0</p> </details> <p>Tags and comments are left untouched, except that parametric tags on <code>I</code>, <code>SPP</code> and <code>SPP_DAG</code> are canonicalized to the keyword form above, so that e.g. <code>I[R_X(0.25)] 0</code> and <code>R_X(0.25) 0</code> produce the same instruction.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>136</span>
-<span class=normal>137</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Convert tsim shorthand syntax to valid stim instructions.</p> <details class=converts open> <summary>Converts</summary> <p>CCZ 0 1 2 → Clifford+T decomposition of CCZ CCX 0 1 2 → Clifford+T decomposition of CCX/Toffoli T 0 1 → S[T] 0 1 T_DAG 0 1 → S_DAG[T] 0 1 TPP X0<em>Y1 → SPP[T] X0</em>Y1 TPP_DAG X0<em>Y1 → SPP_DAG[T] X0</em>Y1 R_Z(0.3) 0 → I[R_Z(theta=0.3<em>pi)] 0 R_X(0.25) 0 → I[R_X(theta=0.25</em>pi)] 0 R_Y(-0.5) 0 → I[R_Y(theta=-0.5<em>pi)] 0 R_XX(0.5) 0 1 → SPP[R_PAULI(theta=0.5</em>pi)] X0<em>X1 R_YY(0.5) 0 1 → SPP[R_PAULI(theta=0.5</em>pi)] Y0<em>Y1 R_ZZ(0.5) 0 1 → SPP[R_PAULI(theta=0.5</em>pi)] Z0<em>Z1 R_PAULI(0.3) X0</em>Y1 → SPP[R_PAULI(theta=0.3<em>pi)] X0</em>Y1 R_PAULI(0.3) !X0<em>Y1 → SPP[R_PAULI(theta=0.3</em>pi)] !X0<em>Y1 U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3</em>pi, phi=0.24<em>pi, lambda=0.49</em>pi)] 0</p> </details> <p>Tags and comments are left untouched, except that parametric tags on <code>I</code>, <code>SPP</code> and <code>SPP_DAG</code> are canonicalized to the keyword form above, so that e.g. <code>I[R_X(0.25)] 0</code> and <code>R_X(0.25) 0</code> produce the same instruction.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>137</span>
 <span class=normal>138</span>
 <span class=normal>139</span>
 <span class=normal>140</span>
@@ -136,7 +135,8 @@
 <span class=normal>159</span>
 <span class=normal>160</span>
 <span class=normal>161</span>
-<span class=normal>162</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>shorthand_to_stim</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+<span class=normal>162</span>
+<span class=normal>163</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>shorthand_to_stim</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Convert tsim shorthand syntax to valid stim instructions.</span>
 
 <span class=sd>    Converts:</span>
@@ -164,8 +164,7 @@
     <span class=n>text</span> <span class=o>=</span> <span class=n>_expand_controlled_gates</span><span class=p>(</span><span class=n>text</span><span class=p>)</span>
     <span class=k>return</span> <span class=s2>&quot;</span><span class=se>\n</span><span class=s2>&quot;</span><span class=o>.</span><span class=n>join</span><span class=p>(</span><span class=n>_convert_line</span><span class=p>(</span><span class=n>line</span><span class=p>)</span> <span class=k>for</span> <span class=n>line</span> <span class=ow>in</span> <span class=n>text</span><span class=o>.</span><span class=n>split</span><span class=p>(</span><span class=s2>&quot;</span><span class=se>\n</span><span class=s2>&quot;</span><span class=p>))</span>
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.program_text.stim_to_shorthand class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">stim_to_shorthand</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Convert expanded stim annotations back to tsim shorthand.</p> <p>Rewrites: - I[U3(theta=θ<em>pi, phi=φ</em>pi, lambda=λ<em>pi)] → U3(θ, φ, λ) - I[R_X(theta=α</em>pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α) - SPP[R_PAULI(theta=α<em>pi)] P0</em>P1 → R_PP(α) 0 1 (P ∈ {X, Y, Z}) - SPP[R_PAULI(theta=α<em>pi)] X0</em>Y1 → R_PAULI(α) X0<em>Y1 - SPP[R_PAULI(theta=α</em>pi)] !X0<em>Y1 → R_PAULI(α) !X0</em>Y1 - SPP[T] → TPP - SPP_DAG[T] → TPP_DAG - S[T] → T - S_DAG[T] → T_DAG</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>241</span>
-<span class=normal>242</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Convert expanded stim annotations back to tsim shorthand.</p> <p>Rewrites: - I[U3(theta=θ<em>pi, phi=φ</em>pi, lambda=λ<em>pi)] → U3(θ, φ, λ) - I[R_X(theta=α</em>pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α) - SPP[R_PAULI(theta=α<em>pi)] P0</em>P1 → R_PP(α) 0 1 (P ∈ {X, Y, Z}) - SPP[R_PAULI(theta=α<em>pi)] X0</em>Y1 → R_PAULI(α) X0<em>Y1 - SPP[R_PAULI(theta=α</em>pi)] !X0<em>Y1 → R_PAULI(α) !X0</em>Y1 - SPP[T] → TPP - SPP_DAG[T] → TPP_DAG - S[T] → T - S_DAG[T] → T_DAG</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/program_text.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>242</span>
 <span class=normal>243</span>
 <span class=normal>244</span>
 <span class=normal>245</span>
@@ -250,7 +249,8 @@
 <span class=normal>324</span>
 <span class=normal>325</span>
 <span class=normal>326</span>
-<span class=normal>327</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
+<span class=normal>327</span>
+<span class=normal>328</span></pre></div></td><td class=code><div><pre><span></span><code><span class=k>def</span><span class=w> </span><span class=nf>stim_to_shorthand</span><span class=p>(</span><span class=n>text</span><span class=p>:</span> <span class=nb>str</span><span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span><span class=p>:</span>
 <span class=w>    </span><span class=sd>&quot;&quot;&quot;Convert expanded stim annotations back to tsim shorthand.</span>
 
 <span class=sd>    Rewrites:</span>
