@@ -138,6 +138,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Internals: the `track_classical_wires` argument of `parse_stim_circuit`, the `tsim.compile.stabrank` module, and `ConnectedComponent`, `connected_components`, `get_params` and `evaluate_graph` from `tsim.core.graph`.
 
 ### Fixed
+- With `strategy="active_statevector"`, the detector and measurement samplers
+  no longer raise `IndexError` when a non-Clifford block feeds no sampled
+  output, such as a block cut off by an `MR` that no detector reads or by a
+  mid-circuit `R`. Such blocks are no longer compiled under any strategy, so
+  with `strategy="active_statevector"` the seeded samples of circuits that have
+  one can differ. (#262)
 - Tsim gate names are case-insensitive, like Stim's: `t 0`, `ccz 0 1 2`,
   `r_x(0.1) 0` and `Circuit.append("tpp", ...)` used to fail with
   `Gate not found`.
