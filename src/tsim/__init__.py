@@ -9,7 +9,7 @@ These three objects are Tsim's public API, which follows semantic versioning.
 module is internal and may change without notice, even where it is importable.
 """
 
-__version__ = "0.1.5"
+__version__ = "1.0.0"
 
 from tsim.circuit import Circuit as Circuit
 from tsim.sampler import (

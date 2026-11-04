@@ -1,7 +1,7 @@
 [project]
 name = "bloqade-tsim"
-version = "0.1.5"
-description = "A low-magic universal quantum circuit sampler based on ZX stabilizer rank decomposition"
+version = "1.0.0"
+description = "A fast sampler for noisy quantum circuits with non-Clifford gates, built on the ZX-calculus"
 authors = [
     { name = "Rafael Haenel", email = "rhaenel@quera.com" },
     { name = "Chen Zhao", email = "czhao@quera.com" },
@@ -19,7 +19,7 @@ keywords = [
     "quantum-error-correction",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
