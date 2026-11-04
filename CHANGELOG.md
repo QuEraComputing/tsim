@@ -147,7 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from 2^63 on raised `OverflowError`. The noise, the components and the
   reference samples now each draw from their own child of
   `np.random.SeedSequence(seed)`, and `seed=None` draws 128 bits instead of 30.
-  Seeded samples differ from earlier versions under every strategy. (#261)
+  Seeded samples differ from earlier versions under every strategy. (#263)
 - Tsim gate names are case-insensitive, like Stim's: `t 0`, `ccz 0 1 2`,
   `r_x(0.1) 0` and `Circuit.append("tpp", ...)` used to fail with
   `Gate not found`.
