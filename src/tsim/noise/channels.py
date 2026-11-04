@@ -774,6 +774,48 @@ class ChannelSampler:
             *flips,
         )
 
+    def sample_screened_words(
+        self,
+        out: np.ndarray,
+        flips: WordTables,
+        seeds: np.ndarray,
+        constant: np.ndarray,
+        screen: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """``sample_words``, then XOR ``constant`` into each row and screen it.
+
+        Returns whether each row has no ``screen`` bit, and the number of such
+        rows in each block of ``_BLOCK_SHOTS``. ``constant`` and ``screen`` cover
+        every word of a row.
+        """
+        num_samples = len(out)
+        num_blocks = -(-num_samples // _BLOCK_SHOTS)
+        if len(seeds) != num_blocks:
+            raise ValueError(
+                f"{num_samples} samples need {num_blocks} block seeds, "
+                f"got {len(seeds)}"
+            )
+        if not (len(constant) == len(screen) == out.shape[1]):
+            raise ValueError("constant and screen must cover every word of a row")
+        t = self._tables
+        keep = np.empty(num_samples, dtype=np.bool_)
+        kept = np.empty(num_blocks, dtype=np.int64)
+        _sample_screened_blocks(
+            num_samples * len(t.p_fire),
+            out,
+            seeds,
+            t.p_fire,
+            t.outcome_start,
+            t.alias_prob,
+            t.alias_index,
+            *flips,
+            constant,
+            screen,
+            keep,
+            kept,
+        )
+        return keep, kept
+
 
 class WordTables(NamedTuple):
     """The words each fault outcome XORs into a row.
@@ -948,4 +990,67 @@ def _sample_blocks(
             flip_start,
             word,
             mask,
+        )
+
+
+@jit
+def _screen_rows(rows, constant, screen, keep):
+    """XOR ``constant`` into each row and flag in ``keep`` the rows without a ``screen`` bit.
+
+    ``constant`` and ``screen`` cover every word of a row. Returns the number of
+    rows kept.
+    """
+    num_rows, width = rows.shape
+    kept = 0
+    if width == 1:
+        # NOTE: a loop over one word would keep LLVM from vectorizing.
+        c, m = constant[0], screen[0]
+        for s in range(num_rows):
+            value = rows[s, 0] ^ c
+            rows[s, 0] = value
+            keep[s] = (value & m) == 0
+            kept += keep[s]
+        return kept
+    for s in range(num_rows):
+        hit = np.uint64(0)
+        for w in range(width):
+            rows[s, w] ^= constant[w]
+            hit |= rows[s, w] & screen[w]
+        keep[s] = hit == 0
+        kept += keep[s]
+    return kept
+
+
+@kernel
+def _sample_screened_blocks(
+    out,
+    seeds,
+    p_fire,
+    outcome_start,
+    alias_prob,
+    alias_index,
+    flip_start,
+    word,
+    mask,
+    constant,
+    screen,
+    keep,
+    kept,
+):
+    """``_sample_blocks``, then each block's rows are screened by ``_screen_rows``."""
+    for b in numba.prange(len(seeds)):
+        rows = out[b * _BLOCK_SHOTS : (b + 1) * _BLOCK_SHOTS]
+        _sample_block(
+            rows,
+            seeds[b],
+            p_fire,
+            outcome_start,
+            alias_prob,
+            alias_index,
+            flip_start,
+            word,
+            mask,
+        )
+        kept[b] = _screen_rows(
+            rows, constant, screen, keep[b * _BLOCK_SHOTS : (b + 1) * _BLOCK_SHOTS]
         )
