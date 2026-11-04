@@ -676,6 +676,44 @@ def test_is_clifford_rejects_tpp_dag():
     assert not c.is_clifford
 
 
+def test_is_clifford_rejects_non_r_pauli_tag_on_spp():
+    c = Circuit("SPP[R_X(theta=0.5*pi)] X0")
+    assert not c.is_clifford
+
+
+@pytest.mark.parametrize(
+    "lower,upper",
+    [
+        ("t 0\nt_dag 1", "T 0\nT_DAG 1"),
+        ("tpp X0*Y1\ntpp_dag Z0", "TPP X0*Y1\nTPP_DAG Z0"),
+        ("r_x(0.1) 0\nr_zz(0.2) 0 1", "R_X(0.1) 0\nR_ZZ(0.2) 0 1"),
+        ("r_pauli(0.3) x0*y1", "R_PAULI(0.3) X0*Y1"),
+        ("u3(0.1, 0.2, 0.3) 0", "U3(0.1, 0.2, 0.3) 0"),
+        ("ccz 0 1 2\nccx 0 1 2", "CCZ 0 1 2\nCCX 0 1 2"),
+    ],
+)
+def test_gate_names_are_case_insensitive(lower, upper):
+    assert Circuit(lower) == Circuit(upper)
+
+
+@pytest.mark.parametrize(
+    "name,targets,arg",
+    [
+        ("t", [0], None),
+        ("tpp", [stim.target_x(0)], None),
+        ("r_y", [0], 0.3),
+        ("r_xx", [0, 1], 0.3),
+        ("u3", [0], [0.1, 0.2, 0.3]),
+        ("ccz", [0, 1, 2], None),
+    ],
+)
+def test_append_gate_names_are_case_insensitive(name, targets, arg):
+    lower, upper = Circuit(), Circuit()
+    lower.append(name, targets, arg)
+    upper.append(name.upper(), targets, arg)
+    assert lower == upper
+
+
 def _assert_stim_tsim_samples_match(program: str, n_shots: int = 16) -> None:
     """Assert stim and tsim produce the same samples for a deterministic circuit.
 

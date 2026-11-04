@@ -80,12 +80,13 @@ def _expand_controlled_gates(text: str) -> str:
     lines: list[str] = []
     for line in text.splitlines():
         body, sep, comment = line.partition("#")
-        match = re.match(r"^(\s*)(CCZ|CCX)(?:\[([^\]\n]*)\])?\s+(.+?)\s*$", body)
+        match = re.match(r"^(\s*)((?i:CCZ|CCX))(?:\[([^\]\n]*)\])?\s+(.+?)\s*$", body)
         if not match:
             lines.append(line)
             continue
 
         indent, gate, tag, targets_text = match.groups()
+        gate = gate.upper()
         targets = targets_text.split()
         if len(targets) % 3 != 0 or not all(target.isdecimal() for target in targets):
             raise ValueError(
@@ -167,12 +168,14 @@ def _convert_line(line: str) -> str:
         return line
     indent, name, tag, rest = match.groups()
     rest, sep, comment = rest.partition("#")
+    # NOTE: stim gate names are case-insensitive, and so are tsim's.
+    upper = name.upper()
 
-    if name in _T_FAMILY:
-        instruction = f"{_T_FAMILY[name]}[{encode_t_tag(tag or '')}]{rest}"
-    elif name in _ROTATION_SHORTHAND_GATES and tag is None:
-        instruction = _expand_rotation_shorthand(name + rest)
-    elif name.upper() in _PARAMETRIC_TAG_GATES and tag:
+    if upper in _T_FAMILY:
+        instruction = f"{_T_FAMILY[upper]}[{encode_t_tag(tag or '')}]{rest}"
+    elif upper in _ROTATION_SHORTHAND_GATES and tag is None:
+        instruction = _expand_rotation_shorthand(upper + rest)
+    elif upper in _PARAMETRIC_TAG_GATES and tag:
         instruction = f"{name}[{_canonical_parametric_tag(tag)}]{rest}"
     else:
         return line
@@ -213,7 +216,7 @@ def _expand_rotation_shorthand(instruction: str) -> str:
         return f"SPP[R_PAULI(theta={alpha}*pi)] {m.group(2)}"
 
     instruction = re.sub(
-        rf"^R_PAULI\(({FLOAT_RE})\)\s+(!?[XYZ]\d+(?:\*!?[XYZ]\d+)*)",
+        rf"^R_PAULI\(({FLOAT_RE})\)\s+(!?[XYZxyz]\d+(?:\*!?[XYZxyz]\d+)*)",
         replace_pauli,
         instruction,
     )
