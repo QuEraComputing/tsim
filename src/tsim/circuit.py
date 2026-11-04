@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 from tsim.core.graph import transform_error_basis
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.core.tags import encode_t_tag
-from tsim.core.types import Device, SamplingStrategy
+from tsim.core.types import SamplingStrategy
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
 from tsim.utils.diagram import draw_zx, render_svg
@@ -936,7 +936,6 @@ class Circuit:
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        device: Device = "cpu",
     ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
@@ -944,7 +943,9 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                "bss", "cutting"). "active_statevector" samples on a CUDA GPU
+                when CuPy sees one and every component has at most 11 active
+                qubits (in float32), and otherwise on the CPU, on
                 ``numba.get_num_threads()`` threads. The stabilizer rank
                 strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
@@ -955,10 +956,7 @@ class Circuit:
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size``, since the default batch size
                 depends on the free memory.
-
-            device: "cpu" (the default), or "cuda" to run the noise and the
-                statevector components as float32 CUDA kernels (needs
-                ``strategy="active_statevector"``, CuPy and an NVIDIA GPU).
+                On a GPU, they do depend on the batch size.
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
@@ -966,19 +964,13 @@ class Circuit:
         """
         from tsim.sampler import CompiledMeasurementSampler
 
-        return CompiledMeasurementSampler(
-            self,
-            seed=seed,
-            strategy=strategy,
-            device=device,
-        )
+        return CompiledMeasurementSampler(self, seed=seed, strategy=strategy)
 
     def compile_detector_sampler(
         self,
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        device: Device = "cpu",
     ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
 
@@ -991,7 +983,9 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                "bss", "cutting"). "active_statevector" samples on a CUDA GPU
+                when CuPy sees one and every component has at most 11 active
+                qubits (in float32), and otherwise on the CPU, on
                 ``numba.get_num_threads()`` threads. The stabilizer rank
                 strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
@@ -1002,10 +996,7 @@ class Circuit:
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size`` and the same reference sample
                 settings, since the default batch size depends on the free memory.
-
-            device: "cpu" (the default), or "cuda" to run the noise and the
-                statevector components as float32 CUDA kernels (needs
-                ``strategy="active_statevector"``, CuPy and an NVIDIA GPU).
+                On a GPU, they do depend on the batch size.
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.
@@ -1013,12 +1004,7 @@ class Circuit:
         """
         from tsim.sampler import CompiledDetectorSampler
 
-        return CompiledDetectorSampler(
-            self,
-            seed=seed,
-            strategy=strategy,
-            device=device,
-        )
+        return CompiledDetectorSampler(self, seed=seed, strategy=strategy)
 
     def inverse(self) -> Circuit:
         """Return the inverse of the circuit."""

@@ -34,7 +34,6 @@ from typing import Any
 
 import numpy as np
 
-from tsim.core.types import CompiledProgram
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.cuda import runtime
 from tsim.statevector.cuda.codegen import PRELUDE, hex64, tape_function
@@ -44,9 +43,8 @@ from tsim.statevector.cuda.noise import (
     noise_tables,
     pass_rate,
 )
-from tsim.statevector.program import STABILIZER_RANK_HINT
 from tsim.statevector.shared import pack_bits
-from tsim.statevector.shots import ShotPlan, ShotSampler, bool_outputs, read_outputs
+from tsim.statevector.shots import ShotLayout, ShotPlan, ShotSampler
 
 MAX_WIDTH = 11
 """Widest component the CUDA executor runs: 32 threads of 64 amplitudes."""
@@ -218,11 +216,10 @@ class _Module:
     count_bits: Any
     list_bits: Any
     screen: Any
-    kept: Any
     tape_blocks: int
     has_mask: bool
     columns: np.ndarray
-    """The outputs that ``sample_accepted`` returns: those outside the mask."""
+    """The outputs that ``sample_accepted`` returns: all of them, in order."""
     pieces: Any
     piece_start: Any
     plan: ShotPlan
@@ -233,11 +230,17 @@ class _Module:
     """Each ``expectations`` value's noise passes (screened, deferred), or None."""
 
 
-def _pinned_counts(cp) -> tuple[np.ndarray, Any]:
-    """Return three pinned host counters and a device array over the same memory."""
+def _pinned(shape: tuple[int, ...], dtype) -> np.ndarray:
+    """Return an uninitialized array in pinned host memory."""
     import cupyx
 
-    host = cupyx.empty_pinned((3,), dtype=np.uint32)
+    # NOTE: CuPy's stub types the dtype as a float type.
+    return cupyx.empty_pinned(shape, dtype=dtype)  # pyright: ignore[reportArgumentType]
+
+
+def _pinned_counts(cp) -> tuple[np.ndarray, Any]:
+    """Return three pinned host counters and a device array over the same memory."""
+    host = _pinned((3,), np.uint32)
     # NOTE: with unified addressing a pinned host pointer is also a device pointer.
     memory = cp.cuda.UnownedMemory(host.ctypes.data, host.nbytes, host)
     device = cp.ndarray((3,), np.uint32, cp.cuda.MemoryPointer(memory, 0))
@@ -270,6 +273,27 @@ def _pieces(columns: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return np.asarray(pieces or [(0, 0)], np.uint32), np.asarray(start, np.uint32)
 
 
+def _select(
+    rows: np.ndarray, columns: np.ndarray, num_outputs: int, bit_packed: bool
+) -> np.ndarray:
+    """Return the outputs ``columns`` of rows of every output, as ``read_outputs`` does.
+
+    The rows are bit-packed as ``np.packbits`` does, with zero bits past the
+    outputs; leading outputs in order are a view of them, or of whole bytes.
+    """
+    count = len(columns)
+    if bit_packed and np.array_equal(columns, np.arange(count)):
+        packed = rows[:, : -(-count // 8)]
+        if count == num_outputs or count % 8 == 0:
+            return packed
+        packed = packed.copy()
+        packed[:, -1] &= np.uint8((1 << (count % 8)) - 1)
+        return packed
+    bits = np.unpackbits(rows, axis=1, count=num_outputs, bitorder="little")
+    bits = bits.view(np.bool_)[:, columns]
+    return np.packbits(bits, axis=1, bitorder="little") if bit_packed else bits
+
+
 class _HostRows:
     """A call's passing rows (and expectations) in pinned host memory, chunk by chunk."""
 
@@ -298,12 +322,10 @@ class _HostRows:
             self.values[:total] = values[:total]
 
     def _resize(self, capacity: int) -> None:
-        import cupyx
-
         self.capacity = capacity
-        self.rows = cupyx.empty_pinned((capacity, self.nb), dtype=np.uint8)
+        self.rows = _pinned((capacity, self.nb), np.uint8)
         if self.no is not None:
-            self.values = cupyx.empty_pinned((capacity, self.no), dtype=np.float32)
+            self.values = _pinned((capacity, self.no), np.float32)
 
     def take(self, count: int) -> tuple[np.ndarray, np.ndarray | None]:
         """Return the next ``count`` rows (and expectations) to fill."""
@@ -325,37 +347,36 @@ class CudaShotSampler:
     """Samples shot words of a statevector program on a CUDA GPU.
 
     It keeps ``ShotSampler``'s interface (``sample``, ``direct_bools``,
-    ``reference``, ``plan``, ``layout``) and adds ``sample_accepted``, which
-    copies only the shots that pass postselection and can return each
+    ``reference``, ``plan``, ``layout``); ``sample`` copies only the shots that
+    pass postselection off the GPU. ``sample_accepted`` can also return each
     observable's expectation.
     """
 
+    @staticmethod
+    def supports(layout: ShotLayout) -> bool:
+        """Return whether every component of ``layout`` fits in ``MAX_WIDTH`` qubits."""
+        return all(c.width <= MAX_WIDTH for c in layout.components)
+
     def __init__(
         self,
-        program: CompiledProgram,
+        host: ShotSampler,
         channels: ChannelSampler,
         num_detectors: int,
         seed: np.random.SeedSequence,
     ) -> None:
-        """Lay out the program's shot words and upload the noise tables.
+        """Upload the noise tables of ``host``'s shot words.
+
+        ``host`` draws the reference samples, on the CPU.
 
         Raises:
             ImportError: If CuPy is not installed.
-            ValueError: If a component is wider than ``MAX_WIDTH``.
 
         """
         self._cp = runtime.cupy()
         cp = self._cp
-        host_seed, seed = seed.spawn(2)
-        self._host = ShotSampler(program, channels, num_detectors, host_seed)
-        layout = self._host.layout
-        for component in layout.components:
-            if component.width > MAX_WIDTH:
-                raise ValueError(
-                    f"device='cuda' runs components of up to {MAX_WIDTH} active qubits; "
-                    f"the component with outputs {list(component.output_indices)} has "
-                    f"{component.width}. Use device='cpu'. {STABILIZER_RANK_HINT}"
-                )
+        assert self.supports(host.layout)
+        self._host = host
+        layout = host.layout
         self._num_detectors = num_detectors
         self._observables = np.arange(num_detectors, layout.num_outputs)
         self._rng = np.random.default_rng(seed)
@@ -438,7 +459,8 @@ class CudaShotSampler:
         if mask is not None:
             bits[: len(mask)] = mask
         psm_words = pack_bits(bits, layout.output_words)
-        columns = np.flatnonzero(~bits[: layout.num_outputs]).astype(np.int32)
+        # NOTE: the rows keep the postselected outputs, as the CPU's do.
+        columns = np.arange(layout.num_outputs, dtype=np.int32)
         # NOTE: the tapes write only their outputs' words, and test the
         # postselected outputs among them.
         written = sorted({int(w) for p in plan.programs for w in p.out_words})
@@ -492,7 +514,6 @@ class CudaShotSampler:
             count_bits=module.get_function("count_bits"),
             list_bits=module.get_function("list_bits"),
             screen=cp.asarray(plan.screen),
-            kept=cp.asarray(plan.kept),
             tape_blocks=runtime.multiprocessors() * blocks_per_sm,
             has_mask=mask is not None,
             columns=columns,
@@ -613,7 +634,6 @@ class CudaShotSampler:
         constant: Any,
         expectations: bool,
         launch: _Launch,
-        every_row: bool,
         slot: int = 0,
         noise_stream: Any = None,
     ) -> tuple[Any, Any, Any, Any]:
@@ -621,8 +641,8 @@ class CudaShotSampler:
 
         ``accepted`` is the bitmap of the accepted shots (with a mask).
 
-        ``launch`` holds the channels that the noise kernel draws; without
-        ``every_row`` only the rows of the shots that pass the screen are written.
+        ``launch`` holds the channels that the noise kernel draws; only the rows
+        of the shots that pass the screen are written.
         ``counts`` holds the screened survivors, the accepted shots and the norm
         deviation's bits. ``slot`` names the device buffers; ``noise_stream``, if
         given, runs the noise kernel, after the current stream's work.
@@ -660,11 +680,9 @@ class CudaShotSampler:
                 *self._record_args,
                 constant,
                 module.screen,
-                module.kept,
                 queue,
                 counts[0:1],
                 accepted if module.has_mask else np.uint64(0),
-                np.int32(every_row),
             ),
             shared_mem=8 * launch.max_events,
         )
@@ -778,40 +796,15 @@ class CudaShotSampler:
     ) -> tuple[list[np.ndarray], float]:
         """Return the output bits ``columns`` of ``shots`` shots and the largest norm deviation.
 
-        As ``ShotSampler.sample``; ``batch_size`` bounds the shots of a device batch.
+        As ``ShotSampler.sample``: with a ``mask`` only the shots that pass
+        postselection are returned. ``batch_size`` bounds the shots of a device
+        batch.
         """
-        words, deviation = self._sample_words(shots, batch_size, mask, flip)
-        rejected = self.plan(mask).rejected
-        if rejected.any():
-            words = words[~(words[:, : len(rejected)] & rejected).any(axis=1)]
+        rows, _, deviation = self.sample_accepted(
+            shots, mask=mask, flip=flip, batch_size=batch_size
+        )
         num_outputs = self.layout.num_outputs
-        arrays = [
-            read_outputs(words, c, num_outputs, bit_packed=bit_packed) for c in columns
-        ]
-        return arrays, deviation
-
-    def _sample_words(
-        self,
-        shots: int,
-        batch_size: int | None,
-        mask: np.ndarray | None,
-        flip: np.ndarray | None,
-    ) -> tuple[np.ndarray, float]:
-        """Return the shot words of ``shots`` shots and the largest norm deviation."""
-        module = self._module(mask)
-        layout = self.layout
-        out = np.empty((shots, layout.num_words), dtype=np.uint64)
-        constant = self._constant(flip)
-        batch = min(batch_size or BATCH_SHOTS, BATCH_SHOTS)
-        deviation = 0.0
-        for start in range(0, shots, batch):
-            n = min(batch, shots - start)
-            words, _, counts, _ = self._run_batch(
-                module, n, start, constant, False, self._all, True
-            )
-            words.get(out=out[start : start + n])
-            deviation = max(deviation, self._deviation(counts.get()))
-        return out, deviation
+        return [_select(rows, c, num_outputs, bit_packed) for c in columns], deviation
 
     def _synchronize(self) -> None:
         """Wait for every kernel and copy of ``sample_accepted``."""
@@ -839,8 +832,7 @@ class CudaShotSampler:
         """Sample ``shots`` shots; return only those that pass postselection.
 
         A shot passes when none of the ``mask``'s detectors is set (every shot
-        passes without a mask). Rows keep their shots' order and hold only the
-        outputs outside the mask, whose bits are known for a passing shot.
+        passes without a mask). Rows keep their shots' order and hold every output.
 
         The shots run in chunks on two streams: each chunk's rows go to the host
         while the next chunk's kernels run. The chunks hold about ``CHUNK_BYTES``
@@ -848,8 +840,8 @@ class CudaShotSampler:
         samples do not depend on earlier calls.
 
         Returns:
-            ``(outputs, expectations, deviation)``: the passing shots' outputs
-            outside the mask, bit-packed as ``np.packbits(..., bitorder="little")`` would (``uint8``,
+            ``(outputs, expectations, deviation)``: the passing shots' outputs,
+            bit-packed as ``np.packbits(..., bitorder="little")`` would (``uint8``,
             in pinned host memory), with ``expectations`` each observable's
             expectation of ``(-1)^observable`` given the shot's history before
             the measurement that settles it, or its sampled ``±1`` when a
@@ -862,6 +854,9 @@ class CudaShotSampler:
         module = self._module(mask)
         layout = self.layout
         nb, no = -(-len(module.columns) // 8), len(self._observables)
+        if not shots:
+            values = np.zeros((0, no), np.float32) if expectations else None
+            return np.zeros((0, nb), np.uint8), values, 0.0
         constant = self._constant(flip)
         split = self._split(module, expectations)
         launch = split[0] if split else self._all
@@ -889,7 +884,6 @@ class CudaShotSampler:
                     constant,
                     expectations,
                     launch,
-                    False,
                     slot,
                     self._noise_streams[slot],
                 )
@@ -985,5 +979,6 @@ class CudaShotSampler:
 
     def direct_bools(self, shots: int, flip: np.ndarray | None = None) -> np.ndarray:
         """Return every output bit of a program without components, as booleans."""
-        words, _ = self._sample_words(shots, None, None, flip)
-        return bool_outputs(words, np.arange(self.layout.num_outputs))
+        rows, _, _ = self.sample_accepted(shots, flip=flip)
+        num_outputs = self.layout.num_outputs
+        return _select(rows, np.arange(num_outputs), num_outputs, False)

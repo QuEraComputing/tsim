@@ -23,6 +23,8 @@ def cupy() -> ModuleType:
         ImportError: If CuPy is not installed.
 
     """
+    if importlib.util.find_spec("cupy") is None:
+        raise ImportError("CuPy is not installed")
     spec = importlib.util.find_spec("nvidia")
     if spec is not None and spec.submodule_search_locations:
         for root in spec.submodule_search_locations:
@@ -35,8 +37,12 @@ def cupy() -> ModuleType:
     return cp
 
 
+@functools.cache
 def available() -> bool:
-    """Return whether CuPy is installed and sees a CUDA device."""
+    """Return whether CuPy is installed and sees a CUDA device.
+
+    ``CUDA_VISIBLE_DEVICES=""`` hides the devices, so that the samplers run on the CPU.
+    """
     try:
         cp = cupy()
         return cp.cuda.runtime.getDeviceCount() > 0
@@ -53,4 +59,7 @@ def arch() -> str:
 @functools.cache
 def multiprocessors() -> int:
     """Return the number of streaming multiprocessors of the current device."""
-    return int(cupy().cuda.runtime.getDeviceProperties(0)["multiProcessorCount"])
+    cuda = cupy().cuda
+    return int(
+        cuda.runtime.getDeviceProperties(cuda.Device().id)["multiProcessorCount"]
+    )

@@ -1,4 +1,4 @@
-"""device="cuda" end to end, against the stabilizer-rank strategy and the CPU executor."""
+"""The CUDA executor end to end, against the stabilizer-rank strategy and the CPU executor."""
 
 from test.helpers.gen import gen_stim_circuit
 from test.helpers.statevector import CIRCUITS, assert_counts_match
@@ -7,8 +7,10 @@ import numpy as np
 import pytest
 
 from tsim.circuit import Circuit
-from tsim.statevector.cuda import available, codegen, sampler as cuda_sampler
+from tsim.statevector.cuda import available, codegen, runtime, sampler as cuda_sampler
+from tsim.statevector.cuda.sampler import CudaShotSampler
 from tsim.statevector.program import StatevectorComponent
+from tsim.statevector.shots import ShotSampler
 
 pytestmark = pytest.mark.skipif(not available(), reason="needs CuPy and a CUDA GPU")
 
@@ -46,6 +48,27 @@ OBSERVABLE_INCLUDE(0) rec[-1]
 """
 
 
+def _gpu(sampler):
+    """Return ``sampler``, which must run on the GPU."""
+    _gpu_shots(sampler)
+    return sampler
+
+
+def _gpu_shots(sampler) -> CudaShotSampler:
+    """Return the GPU shot sampler of ``sampler``."""
+    assert isinstance(sampler._shots, CudaShotSampler)
+    return sampler._shots
+
+
+def _cpu(compile, **kwargs):
+    """Return ``compile(**kwargs)``, a sampler compiled as on a host without a GPU."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(runtime, "available", lambda: False)
+        sampler = compile(**kwargs)
+    assert sampler._shots is None or type(sampler._shots) is ShotSampler
+    return sampler
+
+
 def _accepted(sampler, shots, mask, **kwargs):
     detectors, observables = sampler.sample(
         shots, separate_observables=True, postselection_mask=mask, **kwargs
@@ -55,6 +78,13 @@ def _accepted(sampler, shots, mask, **kwargs):
     return np.concatenate([detectors, observables], axis=1)
 
 
+def _packed(sampler, shots, mask=None):
+    """Return ``sample``'s bit-packed detectors then observables."""
+    return sampler.sample(
+        shots, append_observables=True, bit_packed=True, postselection_mask=mask
+    )
+
+
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
 def test_cuda_detector_sampling_matches_stabilizer_rank(name):
     circuit = Circuit(CIRCUITS[name])
@@ -62,7 +92,7 @@ def test_cuda_detector_sampling_matches_stabilizer_rank(name):
     expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
         shots, batch_size=10_000, append_observables=True
     )
-    got = circuit.compile_detector_sampler(seed=2, device="cuda").sample(
+    got = _gpu(circuit.compile_detector_sampler(seed=2)).sample(
         shots, append_observables=True
     )
     assert_counts_match(got, expected)
@@ -75,7 +105,7 @@ def test_cuda_measurement_sampling_matches_stabilizer_rank(name):
     expected = circuit.compile_sampler(strategy="cat5", seed=1).sample(
         shots, batch_size=10_000
     )
-    got = circuit.compile_sampler(seed=2, device="cuda").sample(shots)
+    got = _gpu(circuit.compile_sampler(seed=2)).sample(shots)
     assert_counts_match(got, expected)
 
 
@@ -86,10 +116,8 @@ def test_cuda_postselection_keeps_the_accepted_distribution(name):
         pytest.skip("no detectors to postselect")
     shots = 40_000
     mask = np.ones(circuit.num_detectors, dtype=bool)
-    expected = _accepted(circuit.compile_detector_sampler(seed=1), shots, mask)
-    got = _accepted(
-        circuit.compile_detector_sampler(seed=2, device="cuda"), shots, mask
-    )
+    expected = _accepted(_cpu(circuit.compile_detector_sampler, seed=1), shots, mask)
+    got = _accepted(_gpu(circuit.compile_detector_sampler(seed=2)), shots, mask)
     rate, cuda_rate = len(expected) / shots, len(got) / shots
     sigma = np.sqrt(rate * (1 - rate) * 2 / shots)
     assert abs(cuda_rate - rate) <= 5 * sigma + 3 / shots
@@ -105,7 +133,7 @@ def test_cuda_sampling_of_random_noisy_circuits(seed):
     expected = circuit.compile_sampler(strategy="cat5", seed=seed).sample(
         shots, batch_size=shots
     )
-    got = circuit.compile_sampler(seed=seed + 10, device="cuda").sample(shots)
+    got = _gpu(circuit.compile_sampler(seed=seed + 10)).sample(shots)
     assert_counts_match(got, expected)
 
 
@@ -116,31 +144,72 @@ def test_cuda_reference_samples_and_pruning(reference):
     shots = 40_000
     kwargs = {"use_detector_reference_sample": reference}
     expected = _accepted(
-        circuit.compile_detector_sampler(seed=3), shots, mask, **kwargs
+        _cpu(circuit.compile_detector_sampler, seed=3), shots, mask, **kwargs
     )
     got = _accepted(
-        circuit.compile_detector_sampler(seed=3, device="cuda"), shots, mask, **kwargs
+        _gpu(circuit.compile_detector_sampler(seed=3)), shots, mask, **kwargs
     )
     rate, cuda_rate = len(expected) / shots, len(got) / shots
     assert abs(cuda_rate - rate) <= 5 * np.sqrt(rate * (1 - rate) * 2 / shots)
     assert_counts_match(got, expected)
 
 
-@pytest.mark.parametrize("device", ["cpu", "cuda"])
-def test_sample_postselected_returns_only_passing_shots(device):
+def test_cuda_postselection_keeps_every_column():
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
     mask = np.zeros(circuit.num_detectors, dtype=bool)
     mask[[0, 2]] = True
-    sampler = circuit.compile_detector_sampler(seed=4, device=device)
-    packed, discarded = sampler.sample_postselected(20_000, postselection_mask=mask)
-    assert discarded == 20_000 - len(packed)
-    kept = circuit.num_detectors - mask.sum() + 1
+    packed = _packed(_gpu(circuit.compile_detector_sampler(seed=4)), 20_000, mask)
+    outputs = circuit.num_detectors + circuit.num_observables
+    assert packed.shape[1] == -(-outputs // 8)
     bits = np.unpackbits(packed, axis=1, bitorder="little")
-    assert not bits[:, kept:].any()
-    full = _accepted(circuit.compile_detector_sampler(seed=5), 20_000, mask)
+    assert not bits[:, outputs:].any()
+    assert not bits[:, : circuit.num_detectors][:, mask].any()
+    full = _accepted(_cpu(circuit.compile_detector_sampler, seed=5), 20_000, mask)
     assert abs(len(bits) - len(full)) <= 5 * np.sqrt(len(full))
-    outside = np.concatenate([~mask, [True]])
-    assert_counts_match(bits[:, :kept].astype(bool), full[:, outside])
+    assert_counts_match(bits[:, :outputs].astype(bool), full)
+
+
+@pytest.mark.parametrize("bit_packed", [False, True])
+def test_cuda_arranges_the_columns_as_the_cpu_does(bit_packed):
+    # NOTE: samplers of one seed draw the same shots, whichever columns they return.
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    mask = np.zeros(circuit.num_detectors, dtype=bool)
+    mask[0] = True
+    num_detectors = circuit.num_detectors
+
+    def sample(**kwargs):
+        sampler = _gpu(circuit.compile_detector_sampler(seed=17))
+        return sampler.sample(
+            5_000, postselection_mask=mask, bit_packed=bit_packed, **kwargs
+        )
+
+    def bools(array, count):
+        if not bit_packed:
+            return array
+        return np.unpackbits(array, axis=1, count=count, bitorder="little").astype(bool)
+
+    appended = bools(sample(append_observables=True), num_detectors + 1)
+    detectors = bools(sample(), num_detectors)
+    prepended = bools(sample(prepend_observables=True), num_detectors + 1)
+    separate = sample(separate_observables=True)
+    np.testing.assert_array_equal(detectors, appended[:, :num_detectors])
+    np.testing.assert_array_equal(prepended[:, 0], appended[:, -1])
+    np.testing.assert_array_equal(prepended[:, 1:], detectors)
+    np.testing.assert_array_equal(bools(separate[0], num_detectors), detectors)
+    np.testing.assert_array_equal(bools(separate[1], 1), appended[:, -1:])
+    cpu = _cpu(circuit.compile_detector_sampler, seed=17).sample(
+        10, postselection_mask=mask, bit_packed=bit_packed, append_observables=True
+    )
+    gpu = sample(append_observables=True)
+    assert gpu.dtype == cpu.dtype
+    assert gpu.shape[1] == cpu.shape[1]
+
+
+def test_cuda_samples_no_shots():
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    sampler = _gpu(circuit.compile_detector_sampler(seed=1))
+    assert sampler.sample(0, append_observables=True).shape == (0, 4)
+    assert sampler.sample(0, bit_packed=True).shape == (0, 1)
 
 
 # NOTE: 150 noisy detectors, so the rows span three words, and two observables.
@@ -156,7 +225,7 @@ NOISY_DETECTORS = "\n".join(
 )
 
 
-def test_cuda_returns_the_outputs_outside_the_mask(monkeypatch):
+def test_cuda_postselection_drops_the_rows_that_fail(monkeypatch):
     # NOTE: the masked run must draw the unmasked run's noise, so none is deferred.
     monkeypatch.setattr(cuda_sampler, "DEFER_SHARE", 2.0)
     circuit = Circuit(NOISY_DETECTORS)
@@ -165,18 +234,12 @@ def test_cuda_returns_the_outputs_outside_the_mask(monkeypatch):
     # NOTE: a few masked detectors, then unmasked runs across words, then a mix.
     mask[[0, 3, 4]] = True
     mask[100:] = rng.random(50) < 0.1
-    full, _ = circuit.compile_detector_sampler(
-        seed=11, device="cuda"
-    ).sample_postselected(5_000)
-    rows, discarded = circuit.compile_detector_sampler(
-        seed=11, device="cuda"
-    ).sample_postselected(5_000, postselection_mask=mask)
+    full = _packed(_gpu(circuit.compile_detector_sampler(seed=11)), 5_000)
+    rows = _packed(_gpu(circuit.compile_detector_sampler(seed=11)), 5_000, mask)
     full_bits = np.unpackbits(full, axis=1, count=152, bitorder="little")
     passing = ~full_bits[:, :150][:, mask].any(axis=1)
-    outside = np.concatenate([~mask, [True, True]])
-    expected = np.packbits(full_bits[passing][:, outside], axis=1, bitorder="little")
-    assert discarded == 5_000 - passing.sum() > 0
-    np.testing.assert_array_equal(rows, expected)
+    assert 0 < passing.sum() < 5_000
+    np.testing.assert_array_equal(rows, full[passing])
 
 
 # NOTE: GHZ_WITH_DIRECT_DETECTOR's component and direct detector, then four
@@ -214,14 +277,21 @@ def test_cuda_defers_the_noise_that_postselection_cannot_see():
     circuit = Circuit(UNREAD_NOISE)
     mask = np.zeros(circuit.num_detectors, dtype=bool)
     mask[[0, 2]] = True
-    sampler = circuit.compile_detector_sampler(seed=12, device="cuda")
-    packed, _ = sampler.sample_postselected(200_000, postselection_mask=mask)
-    assert sampler._shots._module(mask).splits[False] is not None
-    bits = np.unpackbits(packed, axis=1, count=6, bitorder="little")
-    full = _accepted(circuit.compile_detector_sampler(seed=13), 200_000, mask)
-    assert abs(len(bits) - len(full)) <= 5 * np.sqrt(len(full))
-    outside = np.concatenate([~mask, [True]])
-    assert_counts_match(bits.astype(bool), full[:, outside])
+    sampler = _gpu(circuit.compile_detector_sampler(seed=12))
+    got = _accepted(sampler, 200_000, mask)
+    assert _gpu_shots(sampler)._module(mask).splits[False] is not None
+    full = _accepted(_cpu(circuit.compile_detector_sampler, seed=13), 200_000, mask)
+    assert abs(len(got) - len(full)) <= 5 * np.sqrt(len(full))
+    assert_counts_match(got, full)
+
+
+def _expectations(sampler, shots, mask=None):
+    """Return the passing rows and expectations of ``sample_accepted``."""
+    rows, values, _ = _gpu_shots(sampler).sample_accepted(
+        shots, mask=mask, expectations=True
+    )
+    assert values is not None
+    return rows, values
 
 
 def test_deferred_noise_leaves_the_expectations_unbiased():
@@ -230,12 +300,10 @@ def test_deferred_noise_leaves_the_expectations_unbiased():
     circuit = Circuit(UNREAD_NOISE)
     mask = np.zeros(circuit.num_detectors, dtype=bool)
     mask[[0, 2]] = True
-    sampler = circuit.compile_detector_sampler(seed=14, device="cuda")
-    _, values, _ = sampler.sample_postselected(
-        200_000, postselection_mask=mask, observable_expectations=True
-    )
-    assert sampler._shots._module(mask).splits[True] is not None
-    full = _accepted(circuit.compile_detector_sampler(seed=15), 200_000, mask)
+    sampler = _gpu(circuit.compile_detector_sampler(seed=14))
+    _, values = _expectations(sampler, 200_000, mask)
+    assert _gpu_shots(sampler)._module(mask).splits[True] is not None
+    full = _accepted(_cpu(circuit.compile_detector_sampler, seed=15), 200_000, mask)
     expected = np.mean(1 - 2 * full[:, -1].astype(float))
     assert abs(values.mean() - expected) < 5 / np.sqrt(len(full))
 
@@ -258,33 +326,25 @@ def test_cuda_chunks_return_the_rows_of_one_pass(monkeypatch, text):
     mask = np.zeros(circuit.num_detectors, dtype=bool)
     mask[[0, 2]] = True
     outputs = circuit.num_detectors + circuit.num_observables
-    full, _ = circuit.compile_detector_sampler(
-        seed=16, device="cuda"
-    ).sample_postselected(10_500)
-    rows, discarded = circuit.compile_detector_sampler(
-        seed=16, device="cuda"
-    ).sample_postselected(10_500, postselection_mask=mask)
+    full = _packed(_gpu(circuit.compile_detector_sampler(seed=16)), 10_500)
+    rows = _packed(_gpu(circuit.compile_detector_sampler(seed=16)), 10_500, mask)
     full_bits = np.unpackbits(full, axis=1, count=outputs, bitorder="little")
     passing = ~full_bits[:, : circuit.num_detectors][:, mask].any(axis=1)
-    outside = np.concatenate([~mask, np.ones(circuit.num_observables, dtype=bool)])
-    expected = np.packbits(full_bits[passing][:, outside], axis=1, bitorder="little")
-    assert discarded == 10_500 - passing.sum() > 0
-    np.testing.assert_array_equal(rows, expected)
+    assert 0 < passing.sum() < 10_500
+    np.testing.assert_array_equal(rows, full[passing])
 
 
 def test_observable_expectations_average_to_the_sampled_observable():
     circuit = Circuit(T_STATE_X)
-    sampler = circuit.compile_detector_sampler(seed=6, device="cuda")
-    packed, values, _ = sampler.sample_postselected(
-        200_000, observable_expectations=True
-    )
+    sampler = _gpu(circuit.compile_detector_sampler(seed=6))
+    packed, values = _expectations(sampler, 200_000)
     assert values.shape == (len(packed), 1)
     # NOTE: given the shot's Z error, the expectation is ±cos(π/4).
     np.testing.assert_allclose(np.abs(values), np.sqrt(0.5), atol=1e-5)
     observed = 1 - 2 * np.unpackbits(packed, axis=1, bitorder="little")[:, 0].astype(
         float
     )
-    sampled = circuit.compile_detector_sampler(seed=7).sample(
+    sampled = _cpu(circuit.compile_detector_sampler, seed=7).sample(
         200_000, append_observables=True
     )[:, 0]
     expected = np.mean(1 - 2 * sampled.astype(float))
@@ -326,11 +386,9 @@ OBSERVABLE_INCLUDE(0) rec[-1]
 def _postselected_expectations(text, shots):
     circuit = Circuit(text)
     mask = np.ones(circuit.num_detectors, dtype=bool)
-    sampler = circuit.compile_detector_sampler(seed=9, device="cuda")
-    _, values, _ = sampler.sample_postselected(
-        shots, postselection_mask=mask, observable_expectations=True
-    )
-    detectors, observables = circuit.compile_detector_sampler(seed=10).sample(
+    sampler = _gpu(circuit.compile_detector_sampler(seed=9))
+    _, values = _expectations(sampler, shots, mask)
+    detectors, observables = _cpu(circuit.compile_detector_sampler, seed=10).sample(
         shots, separate_observables=True
     )
     kept = observables[~(detectors & mask).any(axis=1), 0]
@@ -358,10 +416,8 @@ def test_clifford_observables_have_expectations_of_plus_or_minus_one():
     circuit = Circuit(
         "R 0 1\nX_ERROR(0.3) 0\nCNOT 0 1\nM 0 1\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-2]"
     )
-    sampler = circuit.compile_detector_sampler(seed=8, device="cuda")
-    packed, values, _ = sampler.sample_postselected(
-        10_000, observable_expectations=True
-    )
+    sampler = _gpu(circuit.compile_detector_sampler(seed=8))
+    packed, values = _expectations(sampler, 10_000)
     bits = np.unpackbits(packed, axis=1, bitorder="little")
     np.testing.assert_array_equal(values[:, 0], 1 - 2 * bits[:, 1].astype(np.float32))
 
@@ -372,32 +428,21 @@ def test_cuda_samples_programs_without_components(reference):
         "R 0 1\nX_ERROR(0.3) 0\nCNOT 0 1\nM 0 1\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-2]"
     )
     kwargs = {"use_detector_reference_sample": reference}
-    expected = circuit.compile_detector_sampler(seed=1).sample(
+    expected = _cpu(circuit.compile_detector_sampler, seed=1).sample(
         40_000, append_observables=True, **kwargs
     )
-    got = circuit.compile_detector_sampler(seed=2, device="cuda").sample(
+    got = _gpu(circuit.compile_detector_sampler(seed=2)).sample(
         40_000, append_observables=True, **kwargs
     )
     assert_counts_match(got, expected)
-    measured = circuit.compile_sampler(seed=3, device="cuda").sample(40_000)
+    measured = _gpu(circuit.compile_sampler(seed=3)).sample(40_000)
     assert measured.shape == (40_000, 2)
     np.testing.assert_array_equal(measured[:, 0], measured[:, 1])
 
 
-def test_expectations_need_the_cuda_device():
+def test_stabilizer_rank_strategies_stay_on_jax():
     circuit = Circuit(T_STATE_X)
-    with pytest.raises(ValueError, match="needs device='cuda'"):
-        circuit.compile_detector_sampler(seed=1).sample_postselected(
-            10, observable_expectations=True
-        )
-
-
-def test_cuda_needs_the_statevector_strategy():
-    circuit = Circuit(T_STATE_X)
-    with pytest.raises(ValueError, match="device='cuda' needs"):
-        circuit.compile_detector_sampler(strategy="cat5", device="cuda")
-    with pytest.raises(ValueError, match="device must be"):
-        circuit.compile_detector_sampler(device="tpu")  # type: ignore[arg-type]
+    assert circuit.compile_detector_sampler(strategy="cat5")._shots is None
 
 
 def _widest(circuit):
@@ -425,14 +470,9 @@ def _random_unitary_circuit(width, layers, seed=0, noise=True):
     return Circuit("\n".join(lines))
 
 
-@pytest.mark.parametrize(("width", "layers"), [(6, 8), (8, 8), (9, 10), (11, 12)])
-def test_cuda_wide_components_match_the_cpu_executor(width, layers):
-    # NOTE: widths 6, 8, 9 and 11 run 2, 8, 16 and 32 threads per shot.
-    circuit = _random_unitary_circuit(width, layers)
-    assert _widest(circuit) == width
-    shots = 200_000
-    expected = circuit.compile_sampler(seed=1).sample(shots)
-    got = circuit.compile_sampler(seed=2, device="cuda").sample(shots)
+def _assert_matches_cpu(circuit, width, shots=200_000):
+    expected = _cpu(circuit.compile_sampler, seed=1).sample(shots)
+    got = _gpu(circuit.compile_sampler(seed=2)).sample(shots)
     np.testing.assert_allclose(
         got.mean(axis=0), expected.mean(axis=0), atol=5 * 0.5 / np.sqrt(shots / 2)
     )
@@ -441,19 +481,19 @@ def test_cuda_wide_components_match_the_cpu_executor(width, layers):
         assert_counts_match(got[:, [a, b]], expected[:, [a, b]])
 
 
+@pytest.mark.parametrize(("width", "layers"), [(6, 8), (8, 8), (9, 10), (11, 12)])
+def test_cuda_wide_components_match_the_cpu_executor(width, layers):
+    # NOTE: widths 6, 8, 9 and 11 run 2, 8, 16 and 32 threads per shot.
+    circuit = _random_unitary_circuit(width, layers)
+    assert _widest(circuit) == width
+    _assert_matches_cpu(circuit, width)
+
+
 @pytest.mark.parametrize(("width", "layers"), [(6, 6), (8, 8), (11, 6)])
 def test_cuda_looping_tapes_match_the_cpu_executor(monkeypatch, width, layers):
     # NOTE: a tape past the unroll budget loops, applying runs of rotations together.
     monkeypatch.setattr(codegen, "UNROLL_BUDGET", 0)
-    circuit = _random_unitary_circuit(width, layers, seed=width)
-    shots = 200_000
-    expected = circuit.compile_sampler(seed=1).sample(shots)
-    got = circuit.compile_sampler(seed=2, device="cuda").sample(shots)
-    np.testing.assert_allclose(
-        got.mean(axis=0), expected.mean(axis=0), atol=5 * 0.5 / np.sqrt(shots / 2)
-    )
-    for a, b in [(0, 1), (0, width - 1), (width // 2, width - 1)]:
-        assert_counts_match(got[:, [a, b]], expected[:, [a, b]])
+    _assert_matches_cpu(_random_unitary_circuit(width, layers, seed=width), width)
 
 
 @pytest.mark.parametrize("width", [6, 9, 11])
@@ -461,14 +501,7 @@ def test_cuda_shots_start_after_the_common_prefix(width):
     # NOTE: without noise the rotations before the first measurement run once,
     # on the host; the shots load their amplitudes and run the rest.
     circuit = _random_unitary_circuit(width, width + 2, seed=width, noise=False)
-    shots = 200_000
-    expected = circuit.compile_sampler(seed=1).sample(shots)
-    got = circuit.compile_sampler(seed=2, device="cuda").sample(shots)
-    np.testing.assert_allclose(
-        got.mean(axis=0), expected.mean(axis=0), atol=5 * 0.5 / np.sqrt(shots / 2)
-    )
-    for a, b in [(0, 1), (0, width - 1), (width // 2, width - 1)]:
-        assert_counts_match(got[:, [a, b]], expected[:, [a, b]])
+    _assert_matches_cpu(circuit, width)
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
@@ -480,17 +513,16 @@ def test_cuda_looping_tapes_match_stabilizer_rank(monkeypatch, name):
     expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
         shots, batch_size=10_000, append_observables=True
     )
-    got = circuit.compile_detector_sampler(seed=2, device="cuda").sample(
+    got = _gpu(circuit.compile_detector_sampler(seed=2)).sample(
         shots, append_observables=True
     )
     assert_counts_match(got, expected)
 
 
-def test_cuda_rejects_components_wider_than_its_limit():
+def test_components_wider_than_the_limit_run_on_the_cpu():
     circuit = _random_unitary_circuit(13, 12)
-    assert _widest(circuit) > 11
-    with pytest.raises(ValueError, match="active qubits"):
-        circuit.compile_sampler(seed=1, device="cuda")
+    assert _widest(circuit) > cuda_sampler.MAX_WIDTH
+    assert type(circuit.compile_sampler(seed=1)._shots) is ShotSampler
 
 
 @pytest.mark.parametrize(("probability", "shots"), [(1e-10, 1 << 28), (1e-6, 1 << 26)])
@@ -499,7 +531,7 @@ def test_cuda_draws_small_outcome_probabilities_at_their_rate(probability, shots
     # the time; float32 rounding gives certain outcomes such probabilities.
     theta = float(2 * np.arcsin(np.sqrt(probability)) / np.pi)
     circuit = Circuit(f"R 0\nI[R_X(theta={theta!r}*pi)] 0\nM 0")
-    sampler = circuit.compile_sampler(seed=3, device="cuda")
+    sampler = _gpu(circuit.compile_sampler(seed=3))
     ones = sum(int(sampler.sample(1 << 24).sum()) for _ in range(shots >> 24))
     expected = probability * shots
     assert abs(ones - expected) <= 5 * np.sqrt(expected) + 1

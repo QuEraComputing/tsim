@@ -42,15 +42,20 @@ CUDA 13 (driver 580 or later):
 pip install "bloqade-tsim[gpu]"
 ```
 
+With it installed, `strategy="active_statevector"` (the default) samples on the
+GPU whenever CuPy sees one and every component has at most 11 active qubits;
+otherwise it samples on the CPU. The GPU computes in float32, and a seed's
+samples differ from the CPU's. With a `postselection_mask`, only the shots that
+pass are copied off the GPU, so heavily postselected circuits gain the most:
+
 ```python
-sampler = circuit.compile_detector_sampler(device="cuda")
-samples = sampler.sample(1_000_000, append_observables=True)
-# Only the shots that pass postselection, bit-packed, without the postselected
-# detectors, and the number of shots that postselection discarded:
-kept, discarded = sampler.sample_postselected(1_000_000, postselection_mask=mask)
+sampler = circuit.compile_detector_sampler()
+kept = sampler.sample(
+    1_000_000, append_observables=True, bit_packed=True, postselection_mask=mask
+)
 ```
 
-It simulates components of up to 11 active qubits in float32.
+`CUDA_VISIBLE_DEVICES=""` keeps the samplers on the CPU.
 
 ## Development Setup
 

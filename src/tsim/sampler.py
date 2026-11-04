@@ -16,8 +16,9 @@ import psutil
 from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
-from tsim.core.types import CompiledComponent, CompiledProgram, Device, SamplingStrategy
+from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
+from tsim.statevector.cuda import runtime as cuda_runtime
 from tsim.statevector.program import StatevectorComponent
 from tsim.statevector.shots import ShotSampler
 from tsim.utils.cuda_helpers import copy_d2h
@@ -303,7 +304,6 @@ class _CompiledSamplerBase:
         mode: Literal["sequential", "joint"],
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        device: Device = "cpu",
     ):
         """Initialize the sampler by compiling the circuit.
 
@@ -314,7 +314,9 @@ class _CompiledSamplerBase:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                "bss", "cutting"). "active_statevector" samples on a CUDA GPU
+                when CuPy sees one and every component has at most 11 active
+                qubits (in float32), and otherwise on the CPU, on
                 ``numba.get_num_threads()`` threads. The stabilizer rank
                 strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
@@ -325,25 +327,16 @@ class _CompiledSamplerBase:
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size``, since the default batch size
                 depends on the free memory.
-            device: "cpu" (the default), or "cuda" to run the noise sampler and
-                the statevector components as CUDA kernels in float32 (needs
-                ``strategy="active_statevector"``, CuPy and an NVIDIA GPU).
-
-        Raises:
-            ValueError: If ``device="cuda"`` is combined with a stabilizer-rank
-                strategy.
+                On a GPU, they do depend on the batch size.
 
         """
-        if device not in ("cpu", "cuda"):
-            raise ValueError(f"device must be 'cpu' or 'cuda', got {device!r}")
-        if device == "cuda" and strategy != "active_statevector":
-            raise ValueError("device='cuda' needs strategy='active_statevector'")
-        self._device = device
         if seed is None:
             seed = secrets.randbits(128)
-        # NOTE: the noise, the shot words and the JAX key draw from children of the
-        # whole seed, so different seeds give independent samples.
-        noise_seed, shots_seed, key_seed = np.random.SeedSequence(seed).spawn(3)
+        # NOTE: the noise, the shot words, the JAX key and the GPU draw from children
+        # of the whole seed, so different seeds give independent samples.
+        noise_seed, shots_seed, key_seed, cuda_seed = np.random.SeedSequence(
+            seed
+        ).spawn(4)
 
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
         self._program = compile_program(prepared, mode=mode, strategy=strategy)
@@ -361,19 +354,25 @@ class _CompiledSamplerBase:
         # under any strategy, are sampled as shot words; the others with JAX.
         self._shots: ShotSampler | CudaShotSampler | None = None
         self._backend: _StabilizerRankBackend | None = None
-        if device == "cuda":
-            from tsim.statevector.cuda.sampler import CudaShotSampler
-
-            self._shots = CudaShotSampler(
-                program, self._channel_sampler, self._num_detectors, shots_seed
-            )
-        elif strategy == "active_statevector" or not program.components:
+        if strategy == "active_statevector" or not program.components:
             self._shots = ShotSampler(
                 program,
                 self._channel_sampler,
                 self._num_detectors,
                 shots_seed,
             )
+            # NOTE: as JAX does for the stabilizer-rank strategies, a GPU is used
+            # whenever there is one.
+            if mode == "sequential" and cuda_runtime.available():
+                from tsim.statevector.cuda.sampler import CudaShotSampler
+
+                if CudaShotSampler.supports(self._shots.layout):
+                    self._shots = CudaShotSampler(
+                        self._shots,
+                        self._channel_sampler,
+                        self._num_detectors,
+                        cuda_seed,
+                    )
         else:
             self._backend = _StabilizerRankBackend(program, key_seed)
 
@@ -785,7 +784,6 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        device: Device = "cpu",
     ):
         """Create a measurement sampler.
 
@@ -802,8 +800,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size``, since the default batch size
                 depends on the free memory.
-
-            device: "cpu" (the default) or "cuda" (see ``_CompiledSamplerBase``).
+                On a GPU, they do depend on the batch size.
 
         """
         super().__init__(
@@ -812,7 +809,6 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             mode="sequential",
             seed=seed,
             strategy=strategy,
-            device=device,
         )
 
     def sample(
@@ -889,7 +885,6 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
-        device: Device = "cpu",
     ):
         """Create a detector sampler.
 
@@ -906,8 +901,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size`` and the same reference sample
                 settings, since the default batch size depends on the free memory.
-
-            device: "cpu" (the default) or "cuda" (see ``_CompiledSamplerBase``).
+                On a GPU, they do depend on the batch size.
 
         """
         super().__init__(
@@ -916,7 +910,6 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             mode="sequential",
             seed=seed,
             strategy=strategy,
-            device=device,
         )
 
     @overload
@@ -1076,138 +1069,6 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             referenced=referenced,
         )
         return (arrays[0], arrays[1]) if separate_observables else arrays[0]
-
-    @overload
-    def sample_postselected(
-        self,
-        shots: int,
-        *,
-        postselection_mask: np.ndarray | None = None,
-        observable_expectations: Literal[False] = False,
-        use_detector_reference_sample: bool = False,
-        use_observable_reference_sample: bool = False,
-        batch_size: int | None = None,
-    ) -> tuple[np.ndarray, int]: ...
-
-    @overload
-    def sample_postselected(
-        self,
-        shots: int,
-        *,
-        postselection_mask: np.ndarray | None = None,
-        observable_expectations: Literal[True],
-        use_detector_reference_sample: bool = False,
-        use_observable_reference_sample: bool = False,
-        batch_size: int | None = None,
-    ) -> tuple[np.ndarray, np.ndarray, int]: ...
-
-    def sample_postselected(
-        self,
-        shots: int,
-        *,
-        postselection_mask: np.ndarray | None = None,
-        observable_expectations: bool = False,
-        use_detector_reference_sample: bool = False,
-        use_observable_reference_sample: bool = False,
-        batch_size: int | None = None,
-    ) -> tuple[np.ndarray, int] | tuple[np.ndarray, np.ndarray, int]:
-        """Sample ``shots`` shots and return only those that pass postselection.
-
-        A shot passes when none of the detectors in ``postselection_mask`` fires
-        (every shot passes without a mask). As with ``sample``, the discarded
-        shots are not returned; unlike it, neither are the postselected
-        detectors, which no passing shot fires, and with ``device="cuda"``
-        neither is copied off the GPU.
-
-        Args:
-            shots: The number of shots to sample, discarded ones included.
-            postselection_mask: Optional boolean array of length ``num_detectors``.
-            observable_expectations: Also return, for each passing shot and each
-                observable, the expectation of ``(-1)^observable`` given the
-                shot's history before the measurement that settles it, as a
-                ``(passed, num_observables)`` float32 array. This is the
-                observable's expectation value on the shot's state (cf. Clifft's
-                ``EXP_VAL``): it is ``±1`` for a deterministic observable and
-                ``0`` for a fair coin. It does not condition on postselection
-                that follows that measurement, so when a postselected detector
-                is settled by a measurement of the observable's statevector
-                component at or after it, the observable's value is the sampled
-                ``±1`` (``1 - 2 * observable``) instead; either way it averages
-                to the passing shots' expectation. Needs ``device="cuda"``.
-            use_detector_reference_sample: As in ``sample``.
-            use_observable_reference_sample: As in ``sample``.
-            batch_size: Shots per batch.
-
-        Returns:
-            ``(rows, discarded)``, or ``(rows, expectations, discarded)`` with
-            ``observable_expectations``: ``rows`` holds the passing shots, in shot
-            order, with their detectors outside ``postselection_mask`` then their
-            observables, bit-packed as ``np.packbits(..., bitorder="little")``
-            would; ``discarded`` is the number of shots that postselection
-            discarded, ``shots - len(rows)``.
-
-        Raises:
-            ValueError: If ``observable_expectations`` is set without
-                ``device="cuda"``.
-
-        """
-        num_detectors = self._num_detectors
-        num_outputs = self._program.num_outputs
-        mask = None
-        if postselection_mask is not None:
-            mask = np.asarray(postselection_mask, dtype=np.bool_)
-            if mask.shape != (num_detectors,):
-                raise ValueError(
-                    f"postselection_mask must have shape ({num_detectors},), "
-                    f"got {mask.shape}"
-                )
-        compute_reference = (
-            use_detector_reference_sample or use_observable_reference_sample
-        )
-        flip = None
-        if compute_reference:
-            is_detector = np.arange(num_outputs) < num_detectors
-            referenced = np.where(
-                is_detector,
-                use_detector_reference_sample,
-                use_observable_reference_sample,
-            )
-            flip = self._reference_sample() & referenced
-        if self._device == "cuda":
-            from tsim.statevector.cuda.sampler import CudaShotSampler
-
-            assert isinstance(self._shots, CudaShotSampler)
-            _check_sizes(shots, batch_size)
-            rows, values, deviation = self._shots.sample_accepted(
-                shots,
-                mask=mask,
-                flip=flip,
-                expectations=observable_expectations,
-                batch_size=batch_size,
-            )
-            _check_norm(deviation, StatevectorComponent.norm_warning_threshold)
-            discarded = shots - len(rows)
-            if observable_expectations:
-                assert values is not None
-                return rows, values, discarded
-            return rows, discarded
-        if observable_expectations:
-            raise ValueError("observable_expectations needs device='cuda'")
-        samples = self.sample(
-            shots,
-            batch_size=batch_size,
-            append_observables=True,
-            bit_packed=True,
-            use_detector_reference_sample=use_detector_reference_sample,
-            use_observable_reference_sample=use_observable_reference_sample,
-            postselection_mask=mask,
-        )
-        if mask is None:
-            return samples, 0
-        selected = np.concatenate([mask, np.zeros(num_outputs - num_detectors, bool)])
-        bits = np.unpackbits(samples, axis=1, count=num_outputs, bitorder="little")
-        rows = np.packbits(bits[:, ~selected], axis=1, bitorder="little")
-        return rows, shots - len(rows)
 
 
 class CompiledStateProbs(_CompiledSamplerBase):

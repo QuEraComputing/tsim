@@ -163,9 +163,8 @@ extern "C" __global__ void __launch_bounds__(256) noise(
     const int* __restrict__ seg_begin, const int* __restrict__ seg_end,
     const float* __restrict__ seg_log_keep, const Record* __restrict__ records,
     const Flip* __restrict__ overflow,
-    const u64* __restrict__ constant, const u64* __restrict__ screen, const u64* __restrict__ kept,
-    unsigned* __restrict__ queue, unsigned* __restrict__ count, unsigned* __restrict__ survivors,
-    int every_row)
+    const u64* __restrict__ constant, const u64* __restrict__ screen,
+    unsigned* __restrict__ queue, unsigned* __restrict__ count, unsigned* __restrict__ survivors)
 {{
     __shared__ u64 sw[{NW} * {S}];
     extern __shared__ uint2 events[];
@@ -190,10 +189,6 @@ extern "C" __global__ void __launch_bounds__(256) noise(
                 hit |= v & screen[i];
                 sw[i * {S} + s] = v;
             }}
-            if (hit) {{
-                #pragma unroll
-                for (int i = 0; i < {OW}; ++i) sw[i * {S} + s] &= kept[i];
-            }}
             alive = !hit;
         }}
         if (s < {S}) passed[s] = alive;
@@ -211,11 +206,11 @@ extern "C" __global__ void __launch_bounds__(256) noise(
         }}
     }}
     __syncthreads();
-    // NOTE: without ``every_row`` only the shots that pass the screen are read again.
+    // NOTE: only the shots that pass the screen are read again.
     u64* rows = out + base * {NW};
     for (int i = threadIdx.x; i < ns * {NW}; i += blockDim.x) {{
         int s = i / {NW}, word = i - s * {NW};
-        if (every_row || passed[s]) rows[i] = sw[word * {S} + s];
+        if (passed[s]) rows[i] = sw[word * {S} + s];
     }}
 }}
 
@@ -455,9 +450,10 @@ def noise_tables(
     if overflow:
         pairs["word"][:-1] = [w for w, _ in overflow]
         pairs["mask"][:-1] = [m for _, m in overflow]
+    empty = np.empty(0, np.int32)
     tables = NoiseTables(
         block_shots=block_shots,
-        groups=NoiseGroups(0, (np.empty(0, np.int32),) * 5, records[:0], 0.0),
+        groups=NoiseGroups(0, (empty, empty, empty, empty, empty), records[:0], 0.0),
         records=records,
         overflow=pairs,
         p_fire=fire.p_fire,

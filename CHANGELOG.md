@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- With `strategy="active_statevector"`, the samplers run on a CUDA GPU when
+  CuPy sees one, as the stabilizer-rank strategies do with JAX: the noise
+  sampler and every statevector component run as CUDA kernels that CuPy
+  compiles with NVRTC, in float32, with no trajectory sharing. Circuits with a
+  component wider than 11 active qubits stay on the CPU, as does everything
+  under `CUDA_VISIBLE_DEVICES=""`. With a `postselection_mask`, only the shots
+  that pass are copied off the GPU. A seed's samples on the GPU differ from the
+  CPU's and depend on the batch size. Install with
+  `pip install bloqade-tsim[gpu]`.
+
 ## [1.0.0] - 2026-11-04
 
 Tsim 1.0 adds a new default sampling strategy, `"active_statevector"`, which
