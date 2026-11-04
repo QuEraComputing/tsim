@@ -26,12 +26,20 @@ PAGES = {
     ),
 }
 
+# NOTE: the encoders' methods are inherited from an internal base class, and the
+# bases would name internal classes.
+OPTIONS = """    options:
+      inherited_members: true
+      show_bases: false
+      show_inheritance_diagram: false
+"""
+
 nav = mkdocs_gen_files.Nav()
 for doc_path, (title, intro, objects) in PAGES.items():
     nav[title] = doc_path
     with mkdocs_gen_files.open(f"reference/{doc_path}", "w") as fd:
         fd.write(f"# {title}\n\n{intro}\n\n")
-        fd.writelines(f"::: {obj}\n\n" for obj in objects)
+        fd.writelines(f"::: {obj}\n{OPTIONS}\n" for obj in objects)
 
 with mkdocs_gen_files.open("reference/SUMMARY.txt", "w") as nav_file:
     nav_file.writelines(nav.build_literate_nav())

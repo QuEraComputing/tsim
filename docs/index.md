@@ -172,10 +172,9 @@ measurements have parity 1, discards every shot; `sample` warns about it.
 
 ## API stability
 
-Tsim follows [semantic versioning](https://semver.org/) for its public API: `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and `tsim.CompiledDetectorSampler`. `tsim.experimental` holds helpers that may change in any release. Every other module is internal, even where it is importable.
+Tsim follows [semantic versioning](https://semver.org/) for its public API: `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and `tsim.CompiledDetectorSampler`. `tsim.experimental` holds helpers that may change in any release. Every other module is internal, even where it is importable. See the [API reference](reference/index.md).
 
-A seed reproduces its samples only with the same Tsim version and backend (CPU or GPU); new versions may change the samples of a seed.
-
+A seed reproduces its samples only with the same versions of Tsim and its dependencies (such as NumPy and JAX) and the same backend (CPU or GPU). With a stabilizer-rank strategy, pass the same explicit `batch_size` as well, since the default batch size depends on the free memory.
 
 ## Citing Tsim
 If you use Tsim, please consider citing the paper describing the core simulation approach:

@@ -955,12 +955,13 @@ class Circuit:
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
                 ``numba.get_num_threads()`` threads.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
-                reproduces its samples only with the same Tsim version and backend (CPU
-                or GPU); other versions may change them. With "active_statevector", and
-                under any strategy for a circuit without non-direct components, the
-                samples of a seed depend on neither the batch size nor the thread count;
-                with a stabilizer-rank strategy they are only deterministic for a fixed
-                batch size.
+                reproduces its samples only with the same versions of Tsim and its
+                dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
+                With "active_statevector", and under any strategy for a circuit without
+                non-direct components, the samples of a seed depend on neither the batch
+                size nor the thread count. With a stabilizer-rank strategy they also
+                need the same explicit ``batch_size``, since the default batch size
+                depends on the free memory.
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
@@ -990,12 +991,13 @@ class Circuit:
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
                 ``numba.get_num_threads()`` threads.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
-                reproduces its samples only with the same Tsim version and backend (CPU
-                or GPU); other versions may change them. With "active_statevector", and
-                under any strategy for a circuit without non-direct components, the
-                samples of a seed depend on neither the batch size nor the thread count;
-                with a stabilizer-rank strategy they are only deterministic for a fixed
-                batch size and fixed reference sample settings.
+                reproduces its samples only with the same versions of Tsim and its
+                dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
+                With "active_statevector", and under any strategy for a circuit without
+                non-direct components, the samples of a seed depend on neither the batch
+                size nor the thread count. With a stabilizer-rank strategy they also
+                need the same explicit ``batch_size`` and the same reference sample
+                settings, since the default batch size depends on the free memory.
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.

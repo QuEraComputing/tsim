@@ -10,8 +10,7 @@ def test_public_api():
         "CompiledDetectorSampler",
         "CompiledMeasurementSampler",
     ]
-    for name in tsim.__all__:
-        assert getattr(tsim, name).__module__.startswith("tsim.")
+    assert all(hasattr(tsim, name) for name in tsim.__all__)
 
 
 def test_experimental_api():

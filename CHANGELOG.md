@@ -27,7 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documents only the public and experimental objects. `CompiledStateProbs`,
   `SteaneEncoder` and `ColorEncoder5` are importable from `tsim.experimental`,
   which may change in any release. A seed reproduces its samples only with the
-  same Tsim version and backend (CPU or GPU).
+  same versions of Tsim and its dependencies and the same backend (CPU or GPU),
+  and, with a stabilizer-rank strategy, the same explicit `batch_size`.
 
 ### Added
 - `CompiledMeasurementSampler.sample(bit_packed=True)`, as in Stim.
