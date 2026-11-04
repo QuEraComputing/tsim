@@ -128,6 +128,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cleared. A program without components screens each noise block while it is
   in cache, and reuses its noise words across calls: a sampler keeps up to
   16 MiB of them. Samples are unchanged.
+- Components that feed no sampled output, such as a non-Clifford block cut
+  off by an `MR` that no detector reads or by a mid-circuit `R`, are no longer
+  compiled or sampled. With `strategy="active_statevector"`, such a block
+  without noise could raise `IndexError`. Samples for a fixed seed can differ
+  from earlier versions. (#262)
 
 ### Deprecated
 - The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types. They still work as aliases for `"zx"`, `"zx-dets"` and `"zx-meas"` but emit a `DeprecationWarning`.
