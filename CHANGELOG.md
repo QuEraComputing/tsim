@@ -25,12 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `CompiledMeasurementSampler.sample(bit_packed=True)`, as in Stim.
 - `Circuit.detector_error_model(decompose_errors=True)` is supported. The
-  argument is passed on to stim, with the logical observables kept as
+  argument is passed on to Stim, with the logical observables kept as
   observables, so the observables must be deterministic. The docstring now warns
   that the default, undecomposed model loses every error mechanism that flips
   more than two detectors when it is given to a matching decoder such as
   PyMatching. (#232)
-- `"timeline-text"` diagram type. Renders tsim's custom gates under their
+- `"timeline-text"` diagram type. Renders Tsim's custom gates under their
   logical names instead of the Clifford placeholders used to store them, so
   `T` prints as `T` rather than `S`. Covers `T`, `T_DAG`, `TPP`, `TPP_DAG`,
   `R_X`, `R_Y`, `R_Z`, and `U3`. `R_XX`, `R_YY`, and `R_ZZ` share `R_PAULI`'s
@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `R_X(theta=0.1*pi,)`, are now rejected in both forms. (#202)
 
 ### Changed
+- `Circuit.append` raises `ValueError` when `targets`, `arg` or `tag` are
+  passed with a `stim.CircuitInstruction`, `stim.CircuitRepeatBlock` or
+  `stim.Circuit`. They used to be silently ignored.
 - The samplers now default to `strategy="active_statevector"`; pass
   `strategy="cat5"` for the previous stabilizer-rank default.
   `CompiledStateProbs` keeps `"cat5"`. (#203)
@@ -198,7 +201,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Out-of-order `OBSERVABLE_INCLUDE` indices now produce the correct sampler column order and output shape. Missing indices below the maximum mentioned id appear as deterministic-zero columns, and columns are emitted in sorted logical-index order.
 - `matmul_gf2` no longer silently corrupts parity for inner products with more than 255 set bits. The float32→uint8 cast in JAX saturates at 255, which previously made `% 2` always return 1 once a row-sum reached 256. The modulo is now applied on float32 before the uint8 cast.
 - `CompiledDetectorSampler.sample` now raises `ValueError` when `separate_observables=True` is combined with `prepend_observables=True` or `append_observables=True` (matching Stim). Previously these combinations silently dropped observable columns. The `prepend_observables=True` + `append_observables=True` combination is now supported and returns columns in `[obs, det, obs]` order, matching Stim.
-- `OBSERVABLE_INCLUDE` with Pauli targets (e.g. `OBSERVABLE_INCLUDE(0) X1`) now raises `ValueError` instead of silently producing wrong observable bits or crashing with `IndexError`. tsim only supports measurement-record targets (`rec[-k]`).
+- `OBSERVABLE_INCLUDE` with Pauli targets (e.g. `OBSERVABLE_INCLUDE(0) X1`) now raises `ValueError` instead of silently producing wrong observable bits or crashing with `IndexError`. Tsim only supports measurement-record targets (`rec[-k]`).
 - Empty `DETECTOR` and `OBSERVABLE_INCLUDE` annotations (without targets) no longer crash the parser; they now produce zero detector/observable bits, matching Stim semantics.
 - `CompiledDetectorSampler.sample` with `use_detector_reference_sample=True` or `use_observable_reference_sample=True` no longer returns fewer rows than `shots` when called with an explicit `batch_size` that exactly divides `shots`.
 - Incorrect visualization of `CORRELATED_ERROR` and `ELSE_CORRELATED_ERROR` instructions in the `pyzx` diagram renderer. Previously, error vertices were rendered as classical spiders instead of bold quantum spiders.
@@ -214,7 +217,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `DEPOLARIZE2` channel was missing the `p_ZZ` probability term, which was always set to 0. This lead to incorrect noise models that were missing ZZ errors. (#103)
-- Samplers now gracefully handle circuits with no measurements or no detectors, returning empty `(shots, 0)` arrays matching stim's behavior instead of raising an error (#106)
+- Samplers now gracefully handle circuits with no measurements or no detectors, returning empty `(shots, 0)` arrays matching Stim's behavior instead of raising an error (#106)
 - `MPP, MXX, MYY, MZZ` instructions now support a bit flip probability argument (#118)
 
 ### Added

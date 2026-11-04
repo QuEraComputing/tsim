@@ -1,6 +1,6 @@
 """ZX-calculus based circuit sampler for universal quantum circuits.
 
-tsim supports fast sampling from quantum circuits with few non-Clifford gates.
+Tsim supports fast sampling from quantum circuits with few non-Clifford gates.
 It exposes `Circuit`, `CompiledDetectorSampler`, and `CompiledMeasurementSampler`
 objects, which follow the Stim API.
 

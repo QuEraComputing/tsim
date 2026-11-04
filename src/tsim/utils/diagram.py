@@ -211,7 +211,7 @@ def placeholders_to_t(
     Supported gates are T, T†, R_Z, R_X, R_Y, U_3.
 
     Args:
-        svg_string: The SVG string from stim's diagram() method containing I_ERROR
+        svg_string: The SVG string from Stim's diagram() method containing I_ERROR
             placeholder gates whose p-value are used as identifiers.
         placeholder_id_to_labels: Mapping from identifier (float), i.e. the p values of
             I_ERROR gates, to GateLabel.
@@ -283,7 +283,7 @@ def placeholders_to_t(
 def _deduplicate_doubled_spp(svg_string: str) -> str:
     """Replace doubled SPP elements (TPP markers) with TPP labels.
 
-    When SPP[T] is rendered with doubled Pauli targets, stim produces
+    When SPP[T] is rendered with doubled Pauli targets, Stim produces
     duplicate <rect>+<text> pairs at the same (x, y) position. This
     function detects those duplicates, removes one copy, and renames
     "SPP" to "TPP" in the surviving text element.
@@ -353,7 +353,7 @@ def tagged_gates_to_placeholder(
     to I_ERROR placeholder gates whose p-values are used as identifiers.
 
     Args:
-        circuit: The stim circuit to replace tagged gates with I_ERROR placeholder gates.
+        circuit: The Stim circuit to replace tagged gates with I_ERROR placeholder gates.
 
     Returns:
         A tuple containing the modified circuit and a dictionary mapping the p-values
@@ -451,7 +451,7 @@ def render_svg(
     height: float | None = None,
     zoomable: bool = True,
 ) -> Diagram:
-    """Render a stim circuit timeline/timeslice diagram with custom labels."""
+    """Render a Stim circuit timeline/timeslice diagram with custom labels."""
     modified_circ, placeholder_id_to_labels = tagged_gates_to_placeholder(c)
     svg_with_placeholders = str(
         modified_circ.diagram(type, tick=tick, filter_coords=filter_coords, rows=rows)

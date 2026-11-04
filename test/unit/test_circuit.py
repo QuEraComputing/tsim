@@ -274,7 +274,7 @@ def test_two_qubit_gate(stim_gate: str):
 @pytest.mark.parametrize("gate", ["R_XX", "R_YY", "R_ZZ"])
 @pytest.mark.parametrize("alpha", [0.0, 1.0, 2.0, 3.0])
 def test_pauli_rotation_clifford_matches_stim(gate: str, alpha: float):
-    """At Clifford angles, R_XX/R_YY/R_ZZ match stim's reference Clifford gate.
+    """At Clifford angles, R_XX/R_YY/R_ZZ match Stim's reference Clifford gate.
 
     R_PP(alpha) = exp(-i alpha pi/2 PP) is Clifford for integer alpha: identity for
     even alpha, and the Pauli pair PP for odd alpha (both up to global phase).
@@ -723,15 +723,15 @@ def test_append_gate_names_are_case_insensitive(name, targets, arg):
 
 
 def _assert_stim_tsim_samples_match(program: str, n_shots: int = 16) -> None:
-    """Assert stim and tsim produce the same samples for a deterministic circuit.
+    """Assert Stim and Tsim produce the same samples for a deterministic circuit.
 
-    Samples the program ``n_shots`` times with stim. All rows must be identical
+    Samples the program ``n_shots`` times with Stim. All rows must be identical
     (otherwise the test circuit is not deterministic and the test is invalid).
-    Then samples with tsim's compiled sampler and verifies exact agreement.
+    Then samples with Tsim's compiled sampler and verifies exact agreement.
     """
     stim_samples = stim.Circuit(program).compile_sampler().sample(n_shots)
     assert np.all(stim_samples == stim_samples[0]), (
-        f"Test circuit is not deterministic under stim:\n{program}\n"
+        f"Test circuit is not deterministic under Stim:\n{program}\n"
         f"samples:\n{stim_samples}"
     )
 
@@ -759,7 +759,7 @@ def _assert_stim_tsim_samples_match(program: str, n_shots: int = 16) -> None:
     ],
 )
 def test_spp_stim_tsim_equivalence(instruction: str, inverse: str):
-    """SPP followed by its inverse should give identity; stim and tsim must agree."""
+    """SPP followed by its inverse should give identity; Stim and Tsim must agree."""
     program = f"R 0 1\n{instruction}\n{inverse}\nM 0 1"
     _assert_stim_tsim_samples_match(program)
 
@@ -781,7 +781,7 @@ def test_spp_stim_tsim_equivalence(instruction: str, inverse: str):
     ],
 )
 def test_mpp_stim_tsim_equivalence(instruction: str):
-    """MPP measurement on |00⟩ should match between stim and tsim."""
+    """MPP measurement on |00⟩ should match between Stim and Tsim."""
     program = f"R 0 1\n{instruction}"
     _assert_stim_tsim_samples_match(program)
 
@@ -1299,7 +1299,7 @@ def test_detector_error_model_decompose_errors():
         rounds=2,
         after_clifford_depolarization=0.001,
     )
-    # A non-Clifford rotation, which stim alone cannot parse.
+    # A non-Clifford rotation, which Stim alone cannot parse.
     program = str(stim_circuit).replace("TICK", "TICK\nR_Z(0.1) 1", 1)
     c = Circuit(program)
     dem = c.detector_error_model(decompose_errors=True)
@@ -1463,3 +1463,10 @@ def test_r_pauli_shorthand_inverted_target_matches_negated_angle(product: str):
     np.testing.assert_allclose(
         c.to_tensor(), Circuit("R_PAULI(-0.3) X0*Y1").to_tensor(), atol=1e-9
     )
+
+
+@pytest.mark.parametrize("kwargs", [{"targets": [5]}, {"arg": 0.1}, {"tag": "x"}])
+def test_append_instruction_rejects_extra_arguments(kwargs):
+    c = Circuit()
+    with pytest.raises(ValueError, match="Can't specify targets"):
+        c.append(stim.CircuitInstruction("H", [0]), **kwargs)

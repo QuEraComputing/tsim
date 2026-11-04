@@ -1,15 +1,14 @@
 # Tsim
 
-A GPU-accelerated quantum circuit sampler based on ZX-calculus stabilizer rank decomposition.
-Tsim feels just like [Stim](https://github.com/quantumlib/Stim), but supports non-Clifford gates.
+A fast sampler for noisy quantum circuits with non-Clifford gates, built on the ZX-calculus.
+Tsim feels just like [Stim](https://github.com/quantumlib/Stim), but supports `T` gates, arbitrary rotations, and
+other non-Clifford instructions.
 
 A detailed description of Tsim is given in [arXiv:2604.01059](https://arxiv.org/abs/2604.01059).
 
 ## Quick Start
 
-An introductory tutorial is available [here](demos/encoding_demo.ipynb). For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference).
-
-Additionally, Tsim supports the instructions `T`, `T_DAG`, `R_Z`, `R_X`, `R_Y`, `U3`, `TPP`, `TPP_DAG`, `R_XX`, `R_YY`, `R_ZZ`, `R_PAULI`, `CCZ`, and `CCX`.
+An introductory tutorial is available [here](demos/encoding_demo.ipynb). For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference), plus the [non-Clifford instructions](#supported-instructions) listed below.
 
 ```python
 import tsim
@@ -38,7 +37,8 @@ samples = detector_sampler.sample(shots=100)
 uv add bloqade-tsim
 ```
 
-For GPU acceleration, use
+The default sampling strategy runs on the CPU. To run the stabilizer-rank strategies on an NVIDIA GPU,
+install the JAX CUDA extra:
 
 ```bash
 uv add "bloqade-tsim[cuda13]"
@@ -46,14 +46,32 @@ uv add "bloqade-tsim[cuda13]"
 
 See [Installation](install.md) for more options.
 
-## Architecture
+## Sampling Strategies
 
+Tsim offers two ways to simulate the non-Clifford parts of a circuit. Both start from the same ZX diagram.
+Choose a strategy with the `strategy` argument of `compile_sampler` and `compile_detector_sampler`.
+
+| Strategy | Method | Runs on | Cost grows with | Use it for |
+|---|---|---|---|---|
+| `"active_statevector"` (default) | Dense state vector over the active qubits of each component, as in [Clifft](https://arxiv.org/abs/2604.27058) and [SymFT](https://arxiv.org/abs/2607.28600) | CPU (numba, multi-threaded) | Number of active qubits (at most 30) | Most circuits, especially with postselection |
+| `"cat5"`, `"bss"`, `"cutting"` | Stabilizer rank decomposition | CPU or GPU (JAX) | Number of non-Clifford gates | Few non-Clifford gates acting on many qubits; GPU throughput |
+
+```python
+sampler = c.compile_detector_sampler(strategy="cat5")
+```
+
+The [Tsim 1.0 blog post](https://bloqade.quera.com/blog/introducing-tsim-1-0-0/) introduces the active state vector strategy and compares its performance with other simulators.
+
+## Architecture
 ![Architecture](architecture.svg)
 
 Quantum programs are translated into ZX diagrams in which Pauli noise channels appear as parameterized vertices with binary variables $e_i$.
 ZX simplification factors the diagram into a classical part that represents the Tanner graph and a quantum part containing the observable circuit. Both parts define a new basis of *error mechanisms* $f_i = \bigoplus_j T_{ij}\,e_j$.
-The observable diagram is used to compute marginal probabilities for autoregressive sampling. Here, each diagram is decomposed into a sum of Clifford terms via stabilizer rank decomposition, following [Sutcliffe and Kissinger (2024)](https://arxiv.org/abs/2403.06777), and compiled into binary JAX tensors $g_{tki}$.
-At sampling time, JIT-compiled XLA kernels contract $g_{tki}$ with batched noise configurations $f_i^{s}$ to evaluate marginal probabilities and autoregressively sample detector and observable bits.
+Outputs that depend on the error mechanisms alone are sampled directly from the noise model.
+The remaining components of the observable diagram are simulated in one of two ways:
+
+- **Active state vector.** Each component is read off the reduced ZX diagram, without circuit extraction, as a sequence of Pauli rotations and measurements on $|0\dots0\rangle$. Tsim then simulates it on a dense state vector over its active qubits, an approach that follows [Clifft](https://arxiv.org/abs/2604.27058) ([Chase and Labib, 2026](https://arxiv.org/abs/2604.27058)) and [SymFT](https://arxiv.org/abs/2607.28600) ([Fang, Lou and Li, 2026](https://arxiv.org/abs/2607.28600)).
+- **Stabilizer rank.** Each component is decomposed into a sum of Clifford terms, following [Sutcliffe and Kissinger (2024)](https://arxiv.org/abs/2403.06777), and compiled into binary JAX tensors $g_{tki}$. JIT-compiled XLA kernels contract $g_{tki}$ with batched noise configurations $f_i^{s}$ to evaluate marginal probabilities and autoregressively sample detector and observable bits.
 
 ## Differences from Stim
 
@@ -83,6 +101,30 @@ samples = sampler.sample(
 When set to `True`, a noiseless reference sample is computed and XORed with the
 results, so that output values represent deviations from the noiseless baseline.
 Note that this feature should be used carefully. If detectors or observables are not deterministic, this may lead to incorrect statistics.
+
+## Supported Instructions
+
+Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference). In addition, Tsim defines the following non-Clifford instructions. Angles are given in units of π (half-turns).
+
+| Instruction | Targets | Action |
+|---|---|---|
+| `T`, `T_DAG` | qubits | π/4 phase rotation around Z, and its inverse |
+| `R_X(α)`, `R_Y(α)`, `R_Z(α)` | qubits | Rotation by απ around the X, Y, or Z axis |
+| `U3(θ, φ, λ)` | qubits | General single-qubit unitary, each angle in units of π |
+| `TPP`, `TPP_DAG` | Pauli products | exp(∓iπ/8 · P) up to global phase; `TPP Z0` is `T` |
+| `R_XX(α)`, `R_YY(α)`, `R_ZZ(α)` | two distinct qubits | exp(−iαπ/2 · P) for P = XX, YY, ZZ |
+| `R_PAULI(α)` | Pauli products | exp(−iαπ/2 · P) for a Pauli product of up to 64 qubits |
+| `CCZ`, `CCX` | qubit triples | Controlled-controlled Z and Toffoli (controls first), via a Clifford+T decomposition |
+
+```
+T 0 1 2                  # T on qubits 0, 1, 2
+R_Z(0.125) 2             # rotate qubit 2 around Z by π/8
+U3(0.5, 0.25, 0.125) 0   # θ=π/2, φ=π/4, λ=π/8
+TPP X0*Y1                # exp(-i π/8 · X0⊗Y1)
+R_ZZ(0.5) 0 2            # exp(-i π/4 · Z0⊗Z2)
+R_PAULI(0.3) X0*Y1*Z2    # exp(-i 0.3·π/2 · X0⊗Y1⊗Z2)
+CCX 0 1 2                # Toffoli with controls 0, 1 and target 2
+```
 
 ## Postselected simulations
 
@@ -136,13 +178,39 @@ Tsim can be five orders of magnitude faster than [quizx](https://github.com/zxca
 ![Benchmarks](benchmarks.svg)
 
 ## Citing Tsim
-
 If you use Tsim, please consider citing the paper describing the core simulation approach:
 ```
 @article{tsim2026,
   title={Tsim: Fast Universal Simulator for Quantum Error Correction},
   author={Haenel, Rafael and Luo, Xiuzhe and Zhao, Chen},
   journal={arXiv preprint arXiv:2604.01059},
+  year={2026}
+}
+```
+
+You may also cite the work by [Sutcliffe and Kissinger (2024)](https://arxiv.org/abs/2403.06777):
+```
+@article{sutcliffe2024fast,
+  title={Fast classical simulation of quantum circuits via parametric rewriting in the ZX-calculus},
+  author={Sutcliffe, Matthew and Kissinger, Aleks},
+  journal={arXiv preprint arXiv:2403.06777},
+  year={2024}
+}
+```
+
+The active state vector strategy builds on Clifft and SymFT:
+```
+@article{chase2026clifft,
+  title={Clifft: Fast Exact Simulation of Near-Clifford Quantum Circuits},
+  author={Chase, Bradley A. and Labib, Farrokh},
+  journal={arXiv preprint arXiv:2604.27058},
+  year={2026}
+}
+
+@article{fang2026symft,
+  title={SymFT: Universal Fault-Tolerant Quantum Circuit Simulation via Symbolic Clifford--Pauli Frames and Stabilizer Coordinates},
+  author={Fang, Wang and Lou, Huazhe and Li, Riling},
+  journal={arXiv preprint arXiv:2607.28600},
   year={2026}
 }
 ```

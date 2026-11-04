@@ -77,6 +77,7 @@ The [Tsim 1.0 blog post](https://bloqade.quera.com/blog/introducing-tsim-1-0-0/)
 
 ## Architecture
 ![Architecture](docs/architecture.svg)
+
 A detailed description of Tsim's architecture is given in [arXiv:2604.01059](https://arxiv.org/abs/2604.01059).
 Quantum programs are translated into ZX diagrams in which Pauli noise channels appear as parameterized vertices with binary variables $e_i$.
 ZX simplification factors the diagram into a classical part that represents the Tanner graph and a quantum part containing the observable circuit. Both parts define a new basis of *error mechanisms* $f_i = \bigoplus_j T_{ij}\,e_j$.
@@ -128,7 +129,7 @@ Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/St
 | `R_X(α)`, `R_Y(α)`, `R_Z(α)` | qubits | Rotation by απ around the X, Y, or Z axis |
 | `U3(θ, φ, λ)` | qubits | General single-qubit unitary, each angle in units of π |
 | `TPP`, `TPP_DAG` | Pauli products | exp(∓iπ/8 · P) up to global phase; `TPP Z0` is `T` |
-| `R_XX(α)`, `R_YY(α)`, `R_ZZ(α)` | qubit pairs | exp(−iαπ/2 · P) for P = XX, YY, ZZ on two distinct qubits |
+| `R_XX(α)`, `R_YY(α)`, `R_ZZ(α)` | two distinct qubits | exp(−iαπ/2 · P) for P = XX, YY, ZZ |
 | `R_PAULI(α)` | Pauli products | exp(−iαπ/2 · P) for a Pauli product of up to 64 qubits |
 | `CCZ`, `CCX` | qubit triples | Controlled-controlled Z and Toffoli (controls first), via a Clifford+T decomposition |
 

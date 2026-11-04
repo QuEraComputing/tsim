@@ -1,6 +1,6 @@
 # Installation
 
-tsim requires Python 3.11 or later.
+Tsim requires Python 3.11 or later.
 
 ## Using uv (recommended)
 
@@ -34,7 +34,7 @@ pip install "bloqade-tsim[cuda13]"
 
 ## Development Setup
 
-If you're contributing to tsim, clone the repository and install development dependencies:
+If you're contributing to Tsim, clone the repository and install development dependencies:
 
 ```bash
 git clone https://github.com/QuEraComputing/tsim.git

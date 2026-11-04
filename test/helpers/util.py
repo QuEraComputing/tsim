@@ -35,7 +35,7 @@ def plot_comparison(
 
     Args:
         stim_state: Probabilities from VecSampler.
-        tsim_state: Probabilities from tsim.
+        tsim_state: Probabilities from Tsim.
         exact_state: Probabilities from zxparam tensor contraction.
         plot_difference: If True, plot differences relative to tsim_state.
         xlim: Optional x-axis limits for the plot.

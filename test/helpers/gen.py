@@ -29,7 +29,7 @@ def gen_stim_circuit(
     p_u3: float = 0,
     seed: int | None = None,
 ) -> stim.Circuit:
-    """Generate a random stim circuit with specified gate probabilities.
+    """Generate a random Stim circuit with specified gate probabilities.
 
     Args:
         qubits: Number of qubits in the circuit.

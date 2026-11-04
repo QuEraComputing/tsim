@@ -54,7 +54,7 @@ def _u3_matrix(theta_pi: float, phi_pi: float, lam_pi: float) -> np.ndarray:
 
 
 def _clifford_matrix(gate_names: list[str]) -> np.ndarray:
-    """Build unitary from stim Clifford gate names."""
+    """Build unitary from Stim Clifford gate names."""
     circ = stim.Circuit()
     circ.append("I", [0])  # type: ignore
     for g in gate_names:
@@ -193,7 +193,7 @@ class TestStimCircuitProperty:
     @pytest.mark.parametrize(
         "program",
         [
-            # stim merges these into one instruction with repeated targets.
+            # Stim merges these into one instruction with repeated targets.
             "U3(-1.5, -1.5, -1.0) 0\nU3(-1.5, -1.5, -1.0) 0",
             "U3(0.5, 0.5, 1.0) 0 1\nU3(0.5, 0.5, 1.0) 1 0",
             "R_PAULI(1.0) X0\nR_PAULI(1.0) Z0",

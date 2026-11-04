@@ -757,7 +757,7 @@ class TestParseEmptyAnnotations:
 
 
 class TestParseObservableIncludePauliTargets:
-    """OBSERVABLE_INCLUDE accepts Pauli targets in stim but Tsim only supports
+    """OBSERVABLE_INCLUDE accepts Pauli targets in Stim but Tsim only supports
     measurement-record targets; reject Pauli targets explicitly rather than
     silently mis-indexing into the measurement record."""
 
@@ -967,7 +967,7 @@ class TestParseSparseObservables:
 def _instr(
     tag: str, name: str = "I", targets: tuple[int, ...] = (0,)
 ) -> stim.CircuitInstruction:
-    """Build a single stim instruction with the given tag for testing."""
+    """Build a single Stim instruction with the given tag for testing."""
     return stim.CircuitInstruction(name=name, targets=list(targets), tag=tag)
 
 

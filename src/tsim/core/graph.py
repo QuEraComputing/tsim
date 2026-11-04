@@ -60,7 +60,7 @@ def transform_error_basis(g: Graph, num_errors: int) -> tuple[Graph, np.ndarray]
 def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> SamplingGraph:
     """Prepare a circuit for compilation.
 
-    1. Parse the stim circuit into a quantum/classical ZX graph.
+    1. Parse the Stim circuit into a quantum/classical ZX graph.
     2. Close it into a sampling graph with classical outputs.
     3. Reduce it with zxparam's ``full_reduce``.
     4. Rewrite error bits as error-basis bits (Gaussian elimination).
