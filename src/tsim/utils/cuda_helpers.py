@@ -103,7 +103,7 @@ def alloc_pinned_numpy(nbytes: int, dtype, shape) -> np.ndarray:
     return np.frombuffer(carr, dtype=np.uint8).view(dtype).reshape(shape)
 
 
-def copy_d2h(src) -> np.ndarray:
+def copy_d2h(src: Any) -> np.ndarray:
     """Device-to-host copy, pinned-destination fast path when available.
 
     Args:
