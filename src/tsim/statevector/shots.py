@@ -17,6 +17,7 @@ and the shot's index, so the samples depend on neither the chunks nor the thread
 from __future__ import annotations
 
 import sys
+import threading
 from collections import deque
 from dataclasses import dataclass
 
@@ -36,7 +37,7 @@ from tsim.utils.kernels import PARALLEL_WORK, jit, kernel, run_tasks
 MAX_CHUNK_SHOTS = 2**16
 MIN_CHUNK_SHOTS = 2**8
 # NOTE: the most scratch memory a sampler keeps between calls.
-MAX_SCRATCH_BYTES = 2**25
+MAX_SCRATCH_BYTES = 2**24
 
 
 def memory_budget() -> int:
@@ -292,6 +293,9 @@ def _shrink(words: np.ndarray, rows: int) -> np.ndarray:
 
     The memory past them is given back without a copy, so that a view of the
     survivors does not keep a whole call's rows alive.
+
+    Warning: the resize skips numpy's reference check, so ``words`` must have no
+    other view left, or that view would read freed memory.
     """
     words.resize((rows, words.shape[1]), refcheck=False)
     return words
@@ -377,6 +381,7 @@ class ShotSampler:
         # NOTE: noise words of a program without components, reused by the calls
         # that screen them, since only their survivors are returned.
         self._scratch: np.ndarray | None = None
+        self._scratch_lock = threading.Lock()
         if not self._layout.components:
             f = self._layout.direct_f
             sets = np.flatnonzero(f >= 0)
@@ -557,6 +562,18 @@ class ShotSampler:
             return _shrink(words, filled), deviation
         return np.ascontiguousarray(words[:filled, :width]), deviation
 
+    def __getstate__(self) -> dict:
+        """Pickle without the scratch words and their lock."""
+        state = self.__dict__.copy()
+        state["_scratch"] = None
+        del state["_scratch_lock"]
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """Unpickle, with a new lock for the scratch words."""
+        self.__dict__.update(state)
+        self._scratch_lock = threading.Lock()
+
     def _sample_screened(
         self, shots: int, blocks: np.ndarray, plan: ShotPlan, constant: np.ndarray
     ) -> np.ndarray:
@@ -570,7 +587,8 @@ class ShotSampler:
         width = self._layout.num_words
         assert width == self._layout.output_words
         # NOTE: a call that finds the scratch taken (another thread's) allocates.
-        scratch, self._scratch = self._scratch, None
+        with self._scratch_lock:
+            scratch, self._scratch = self._scratch, None
         if scratch is None or len(scratch) < shots:
             scratch = np.empty((shots, width), dtype=np.uint64)
         words = scratch[:shots]
@@ -582,7 +600,8 @@ class ShotSampler:
         out = np.empty((int(kept.sum()), width), dtype=np.uint64)
         _copy_kept(len(out) * width, words, keep, _BLOCK_SHOTS, kept, starts, out)
         if scratch.nbytes <= MAX_SCRATCH_BYTES:
-            self._scratch = scratch
+            with self._scratch_lock:
+                self._scratch = scratch
         return out
 
     def direct_bools(self, shots: int, flip: np.ndarray | None = None) -> np.ndarray:

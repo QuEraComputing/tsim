@@ -248,3 +248,98 @@ def test_a_big_endian_host_is_rejected(monkeypatch):
     monkeypatch.setattr(sys, "byteorder", "big")
     with pytest.raises(NotImplementedError, match="little-endian"):
         Circuit(DIRECT_FLIPS).compile_detector_sampler(seed=0)
+
+
+def _kept_rows(words, keep, size):
+    """The rows ``keep`` flags, and each run of ``size`` rows' count of them."""
+    counts = np.add.reduceat(keep.astype(np.int64), np.arange(0, len(keep), size))
+    return words[keep], counts
+
+
+@pytest.mark.parametrize("width", [1, 3])
+@pytest.mark.parametrize("acceptance", [0.0, 0.1, 0.9, 1.0])
+def test_copy_kept_copies_the_kept_rows_in_order(width, acceptance):
+    rng = np.random.default_rng(int(10 * acceptance) + width)
+    size = 64
+    words = rng.integers(0, 2**63, size=(1000, width), dtype=np.uint64)
+    keep = rng.random(len(words)) < acceptance
+    expected, kept = _kept_rows(words, keep, size)
+    starts = np.concatenate([[0], np.cumsum(kept)[:-1]]).astype(np.int64)
+    out = np.full((len(expected), width), 7, dtype=np.uint64)
+    for work in (0, 1 << 30):
+        shots_module._copy_kept(work, words, keep, size, kept, starts, out)
+        np.testing.assert_array_equal(out, expected)
+
+
+def test_join_moves_each_runs_front_rows_together():
+    rng = np.random.default_rng(3)
+    size, width = 50, 4
+    words = rng.integers(0, 2**63, size=(170, width), dtype=np.uint64)
+    kept = np.array([0, 50, 7, 13], dtype=np.int64)
+    runs = [words[i * size : i * size + k].copy() for i, k in enumerate(kept)]
+    filled = shots_module._join(words, kept, size, width)
+    assert filled == kept.sum()
+    np.testing.assert_array_equal(words[:filled], np.vstack(runs))
+
+
+def test_compact_keeps_the_alive_rows_in_order():
+    rng = np.random.default_rng(4)
+    rows = rng.integers(0, 2**63, size=(300, 3), dtype=np.uint64)
+    alive = rng.random(len(rows)) < 0.4
+    expected = rows[alive][:, :2].copy()
+    kept = shots_module._compact(rows, alive, 2)
+    assert kept == alive.sum()
+    np.testing.assert_array_equal(rows[:kept, :2], expected)
+
+
+REPETITION = """
+R 0 1 2 3 4
+X_ERROR(0.05) 0 1 2 3 4
+CNOT 0 1 1 2 2 3 3 4
+M 0 1 2 3 4
+DETECTOR rec[-1] rec[-2]
+DETECTOR rec[-2] rec[-3]
+DETECTOR rec[-3] rec[-4]
+X 4
+M 4
+DETECTOR rec[-1]
+OBSERVABLE_INCLUDE(0) rec[-2]
+"""
+
+
+@pytest.mark.parametrize("bit_packed", [False, True])
+def test_screened_calls_match_whatever_the_scratch_held(monkeypatch, bit_packed):
+    """Scratch reuse across shrinking and growing calls leaves the samples alone."""
+    circuit = Circuit(REPETITION)
+    mask = np.array([True, True, False, False])
+    calls = [5000, 1, 9000, 4096, 0, 12345, 3]
+
+    def run():
+        sampler = circuit.compile_detector_sampler(seed=5)
+        return [
+            sampler.sample(n, postselection_mask=mask, bit_packed=bit_packed)
+            for n in calls
+        ]
+
+    reused = run()
+    assert 0 < len(reused[0]) < calls[0]
+    monkeypatch.setattr(shots_module, "MAX_SCRATCH_BYTES", 0)
+    fresh = run()
+    for a, b in zip(reused, fresh, strict=True):
+        np.testing.assert_array_equal(a, b)
+    rows = reused[0] if not bit_packed else np.unpackbits(reused[0], axis=1)
+    assert not rows[:, :2].any()
+
+
+def test_a_sampler_pickles_after_a_screened_call():
+    import pickle
+
+    circuit = Circuit(REPETITION)
+    mask = np.array([True, True, True, False])
+    sampler = circuit.compile_detector_sampler(seed=6)
+    sampler.sample(100, postselection_mask=mask)
+    assert shot_sampler(sampler)._scratch is not None
+    copy = pickle.loads(pickle.dumps(sampler))  # noqa: S301 (a trusted round trip)
+    expected = sampler.sample(500, postselection_mask=mask)
+    assert 0 < len(expected) < 500
+    np.testing.assert_array_equal(copy.sample(500, postselection_mask=mask), expected)

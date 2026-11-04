@@ -126,7 +126,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of by NumPy on one thread. Discarded shots are no longer finished:
   a pruned shot draws no coins, and its outputs are neither completed nor
   cleared. A program without components screens each noise block while it is
-  in cache. Samples are unchanged.
+  in cache, and reuses its noise words across calls: a sampler keeps up to
+  16 MiB of them. Samples are unchanged.
 
 ### Deprecated
 - The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types. They still work as aliases for `"zx"`, `"zx-dets"` and `"zx-meas"` but emit a `DeprecationWarning`.

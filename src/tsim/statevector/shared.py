@@ -662,8 +662,8 @@ def run_lanes(
 
     ``words`` holds the chunk's shot words (row ``s`` is shot ``first_shot + s``)
     and ``program`` is the component's ``LaneProgram``. The shots' output bits get
-    the component's branch parts and coins, and those that a pruning hides are
-    cleared. A pruned shot leaves ``alive``, so later components skip it. The
+    the component's branch parts and coins. A pruned shot leaves ``alive``, so
+    later components skip it, and its outputs are left unfinished. The
     amplitude loops run in up to ``4 * threads`` parallel chunks once their work
     reaches ``parallel_work``.
 
@@ -862,8 +862,8 @@ def run_lanes(
             program.output_bit,
             len(out_words),
         )
-    # NOTE: inline rather than _finish_shot: this loop runs once per live shot,
-    # and the call costs about 1.7x on one thread when lanes are shared.
+    # NOTE: inline rather than a call: this loop runs once per live shot, and a
+    # call costs about 1.7x on one thread when lanes are shared.
     for i in range(n):
         shot, e = live[i], code_row[row[i]]
         for w in range(len(out_words)):
