@@ -143,7 +143,7 @@ css = [
 
 [[package]]
 name = "bloqade-tsim"
-version = "0.1.5"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "equinox" },
@@ -209,14 +209,14 @@ doc = [
 
 [package.metadata]
 requires-dist = [
-    { name = "equinox", specifier = ">=0.11.0" },
+    { name = "equinox", specifier = ">=0.11.5" },
     { name = "ipywidgets", specifier = ">=8.0.0" },
     { name = "jax", specifier = ">=0.4.38" },
     { name = "jax", extras = ["cuda12"], marker = "extra == 'cuda12'", specifier = ">=0.4.38" },
-    { name = "jax", extras = ["cuda13"], marker = "extra == 'cuda13'", specifier = ">=0.6.0" },
+    { name = "jax", extras = ["cuda13"], marker = "extra == 'cuda13'", specifier = ">=0.7.0" },
     { name = "lxml", specifier = ">=5.0.0" },
     { name = "numba", specifier = ">=0.61" },
-    { name = "numpy", specifier = ">=1.25.0" },
+    { name = "numpy", specifier = ">=2.0" },
     { name = "psutil", specifier = ">=5.9.0" },
     { name = "stim", specifier = ">=1.15.0" },
     { name = "stim-timeline-text", specifier = ">=0.1.0" },

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
@@ -42,7 +41,7 @@ _PAULI_PRODUCT_GATES = frozenset(
     {"MPP", "SPP", "SPP_DAG", "OBSERVABLE_INCLUDE", "TPP", "TPP_DAG", "R_PAULI"}
 )
 
-_DEPRECATED_DIAGRAM_TYPES: dict[str, Literal["zx", "zx-dets", "zx-meas"]] = {
+_REMOVED_DIAGRAM_TYPES = {
     "pyzx": "zx",
     "pyzx-dets": "zx-dets",
     "pyzx-meas": "zx-meas",
@@ -741,9 +740,6 @@ class Circuit:
             "zx",
             "zx-dets",
             "zx-meas",
-            "pyzx",
-            "pyzx-dets",
-            "pyzx-meas",
             "timeline-svg",
             "timeslice-svg",
             "timeline-text",
@@ -766,8 +762,6 @@ class Circuit:
                     used to compute probabilities of detectors and observables.
                 "zx-meas": A zxparam D3 drawing of the reduced ZX graph that is
                     used to compute probabilities of measurements.
-                "pyzx", "pyzx-dets", "pyzx-meas": Deprecated aliases for
-                    "zx", "zx-dets" and "zx-meas".
                 "timeline-svg": An SVG image of the operations applied by
                     the circuit over time. Includes annotations showing the
                     measurement record index that each measurement writes
@@ -824,14 +818,11 @@ class Circuit:
             viewer instead of as raw text.
 
         """
-        if type in _DEPRECATED_DIAGRAM_TYPES:
-            replacement = _DEPRECATED_DIAGRAM_TYPES[type]
-            warnings.warn(
-                f"Diagram type {type!r} is deprecated; use {replacement!r} instead.",
-                DeprecationWarning,
-                stacklevel=2,
+        if type in _REMOVED_DIAGRAM_TYPES:
+            replacement = _REMOVED_DIAGRAM_TYPES[type]
+            raise ValueError(
+                f"Diagram type {type!r} was removed in Tsim 1.0; use {replacement!r}."
             )
-            type = replacement
         if type in [
             "timeline-svg",
             "timeslice-svg",

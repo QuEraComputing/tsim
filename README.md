@@ -33,7 +33,7 @@ pip install "bloqade-tsim[cuda13]"   # or bloqade-tsim[cuda12]
 ## Quick Start
 An introductory tutorial is available [here](docs/demos/encoding_demo.ipynb). Please also refer to the [documentation](https://tsim.mintlify.app/).
 
-For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference), plus the [non-Clifford instructions](#supported-instructions) listed below.
+For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/blob/v1.16.0/doc/gates.md), plus the [non-Clifford instructions](#supported-instructions) listed below.
 
 ```python
 import tsim
@@ -121,7 +121,7 @@ Note that this feature should be used carefully. If detectors or observables are
 
 ## Supported Instructions
 
-Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference). In addition, Tsim defines the following non-Clifford instructions. Angles are given in units of π (half-turns).
+Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/blob/v1.16.0/doc/gates.md). In addition, Tsim defines the following non-Clifford instructions. Angles are given in units of π (half-turns).
 
 | Instruction | Targets | Action |
 |---|---|---|
@@ -149,10 +149,12 @@ CCX 0 1 2                # Toffoli with controls 0, 1 and target 2
 Tsim 1.0 changes some defaults and APIs. See the [changelog](CHANGELOG.md) for the full list.
 
 - Samplers default to `strategy="active_statevector"`. Pass `strategy="cat5"` for the previous behavior.
+- With a `postselection_mask`, `CompiledDetectorSampler.sample` returns only the surviving shots, so the acceptance rate is the number of returned rows divided by `shots` (`len(result[0]) / shots` with `separate_observables=True`).
 - Samples for a fixed seed differ from earlier versions.
+- Tsim requires Python 3.11 or later and `stim>=1.15.0`.
 - `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`; Tsim no longer depends on `pyzx-param`.
 - `Circuit.to_matrix()` is removed. `Circuit.to_tensor()` returns the circuit's channel and needs `zxparam[quimb]`.
-- The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types are deprecated in favor of `"zx"`, `"zx-dets"` and `"zx-meas"`.
+- The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types are now `"zx"`, `"zx-dets"` and `"zx-meas"`.
 
 
 ## Publications Using Tsim
