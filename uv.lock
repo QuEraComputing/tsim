@@ -196,7 +196,6 @@ dev = [
 ]
 doc = [
     { name = "griffe-inherited-docstrings" },
-    { name = "griffe-kirin" },
     { name = "jupytext" },
     { name = "mike" },
     { name = "mkdocs" },
@@ -219,7 +218,7 @@ requires-dist = [
     { name = "numba", specifier = ">=0.61" },
     { name = "numpy", specifier = ">=1.25.0" },
     { name = "psutil", specifier = ">=5.9.0" },
-    { name = "stim", specifier = ">=1.0.0" },
+    { name = "stim", specifier = ">=1.15.0" },
     { name = "stim-timeline-text", specifier = ">=0.1.0" },
     { name = "zxparam", specifier = ">=0.1.0" },
 ]
@@ -254,7 +253,6 @@ dev = [
 ]
 doc = [
     { name = "griffe-inherited-docstrings", specifier = ">=1.1.1" },
-    { name = "griffe-kirin", specifier = ">=0.1.0" },
     { name = "jupytext", specifier = ">=1.17.2" },
     { name = "mike", specifier = ">=2.1.3" },
     { name = "mkdocs", specifier = ">=1.6.1" },
@@ -1059,19 +1057,6 @@ wheels = [
 ]
 
 [[package]]
-name = "griffe"
-version = "2.0.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "griffecli" },
-    { name = "griffelib" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/4a/49/eb6d2935e27883af92c930ed40cc4c69bcd32c402be43b8ca4ab20510f67/griffe-2.0.2.tar.gz", hash = "sha256:c5d56326d159f274492e9bf93a9895cec101155d944caa66d0fc4e0c13751b92", size = 293757, upload-time = "2026-03-27T11:34:52.205Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/94/c0/2bb018eecf9a83c68db9cd9fffd9dab25f102ad30ed869451046e46d1187/griffe-2.0.2-py3-none-any.whl", hash = "sha256:2b31816460aee1996af26050a1fc6927a2e5936486856707f55508e4c9b5960b", size = 5141, upload-time = "2026-03-27T11:34:47.721Z" },
-]
-
-[[package]]
 name = "griffe-inherited-docstrings"
 version = "1.1.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1081,32 +1066,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/cb/da/fd002dc5f215cd896bfccaebe8b4aa1cdeed8ea1d9d60633685bd61ff933/griffe_inherited_docstrings-1.1.3.tar.gz", hash = "sha256:cd1f937ec9336a790e5425e7f9b92f5a5ab17f292ba86917f1c681c0704cb64e", size = 26738, upload-time = "2026-02-21T09:38:44.312Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/16/20/4bc15f242181daad1c104e0a7d33be49e712461ea89e548152be0365b9ea/griffe_inherited_docstrings-1.1.3-py3-none-any.whl", hash = "sha256:aa7f6e624515c50d9325a5cfdf4b2acac547f1889aca89092d5da7278f739695", size = 6710, upload-time = "2026-02-20T11:06:38.75Z" },
-]
-
-[[package]]
-name = "griffe-kirin"
-version = "0.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "griffe" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a5/e0/9db75de974546903ab46a41179a95243abc84ceb2ba0b4101b5016f5301e/griffe_kirin-0.2.0.tar.gz", hash = "sha256:87d4280fbb1c77e1eb3fe7b627810b219295ec74651cf216748330b379a4ded5", size = 57664, upload-time = "2025-02-21T20:41:16.862Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/38/b2/04bf90dc9e9e80f969b562731cf1619bd2eb0d0b726ba7befd38fda38131/griffe_kirin-0.2.0-py3-none-any.whl", hash = "sha256:81d999d6e1480cbe46e5c7b82933d2eee96863840dfbac283df620d85c13c2fc", size = 4063, upload-time = "2025-02-21T20:41:14.734Z" },
-]
-
-[[package]]
-name = "griffecli"
-version = "2.0.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "colorama" },
-    { name = "griffelib" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/79/e0/6a7d661d71bb043656a109b91d84a42b5342752542074ec83b16a6eb97f0/griffecli-2.0.2.tar.gz", hash = "sha256:40a1ad4181fc39685d025e119ae2c5b669acdc1f19b705fb9bf971f4e6f6dffb", size = 56281, upload-time = "2026-03-27T11:34:50.087Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2e/e8/90d93356c88ac34c20cb5edffca68138df55ca9bbd1a06eccfbcec8fdbe5/griffecli-2.0.2-py3-none-any.whl", hash = "sha256:0d44d39e59afa81e288a3e1c3bf352cc4fa537483326ac06b8bb6a51fd8303a0", size = 9500, upload-time = "2026-03-27T11:34:48.81Z" },
 ]
 
 [[package]]
