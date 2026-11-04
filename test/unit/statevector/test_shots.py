@@ -327,7 +327,11 @@ def test_screened_calls_match_whatever_the_scratch_held(monkeypatch, bit_packed)
     fresh = run()
     for a, b in zip(reused, fresh, strict=True):
         np.testing.assert_array_equal(a, b)
-    rows = reused[0] if not bit_packed else np.unpackbits(reused[0], axis=1)
+    rows = (
+        reused[0]
+        if not bit_packed
+        else np.unpackbits(reused[0], axis=1, bitorder="little")
+    )
     assert not rows[:, :2].any()
 
 

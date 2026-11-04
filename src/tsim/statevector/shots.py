@@ -560,7 +560,8 @@ class ShotSampler:
         # NOTE: the output words alone, so that bit-packed outputs can be views.
         if width == words.shape[1]:
             return _shrink(words, filled), deviation
-        return np.ascontiguousarray(words[:filled, :width]), deviation
+        # NOTE: a copy even of one row, which a view would not release.
+        return words[:filled, :width].copy(), deviation
 
     def __getstate__(self) -> dict:
         """Pickle without the scratch words and their lock."""
