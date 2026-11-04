@@ -353,7 +353,7 @@ class ShotSampler:
         program: CompiledProgram,
         channels: ChannelSampler,
         num_detectors: int,
-        seed: int,
+        seed: np.random.SeedSequence,
     ) -> None:
         """Lay out the program's shot words.
 
@@ -371,10 +371,11 @@ class ShotSampler:
         self._num_detectors = num_detectors
         # NOTE: private switch for tests and benchmarks; samples do not depend on it.
         self._share = True
-        self._seeds = np.random.default_rng([seed, 1])
+        components, reference = seed.spawn(2)
+        self._seeds = np.random.default_rng(components)
         # NOTE: reference samples draw from their own stream, so that asking for
         # one leaves the samples of a seed alone.
-        self._reference_seeds = np.random.default_rng([seed, 2])
+        self._reference_seeds = np.random.default_rng(reference)
         self._plans: dict[bytes, ShotPlan] = {}
         self._widest = max((c.width for c in self._layout.components), default=0)
         self._direct_tables: WordTables | None = None

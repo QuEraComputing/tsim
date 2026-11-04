@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import warnings
 from math import ceil
 from typing import TYPE_CHECKING, Literal, overload
@@ -221,9 +222,12 @@ def _nbytes(tree: object) -> int:
 class _StabilizerRankBackend:
     """Samples stabilizer-rank programs with JAX, one batch at a time."""
 
-    def __init__(self, program: CompiledProgram, seed: int) -> None:
+    def __init__(self, program: CompiledProgram, seed: np.random.SeedSequence) -> None:
         self._program = program
-        self._key = jax.random.key(seed)
+        # NOTE: jax.random.key keeps only the low 32 bits of an int unless x64 is
+        # enabled, so the key takes 64 bits of the seed as two halves.
+        low, high = seed.generate_state(2)
+        self._key = jax.random.fold_in(jax.random.key(low), high)
 
     def next_seed(self) -> PRNGKey:
         self._key, key = jax.random.split(self._key)
@@ -318,16 +322,18 @@ class _CompiledSamplerBase:
 
         """
         if seed is None:
-            seed = int(np.random.default_rng().integers(0, 2**30))
+            seed = secrets.randbits(128)
+        # NOTE: the noise, the shot words and the JAX key draw from children of the
+        # whole seed, so different seeds give independent samples.
+        noise_seed, shots_seed, key_seed = np.random.SeedSequence(seed).spawn(3)
 
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
         self._program = compile_program(prepared, mode=mode, strategy=strategy)
 
-        channel_seed = int(np.random.default_rng(seed).integers(0, 2**30))
         self._channel_sampler = ChannelSampler(
             channel_probs=prepared.channel_probs,
             error_transform=prepared.error_transform,
-            seed=channel_seed,
+            seed=noise_seed,
         )
 
         self.circuit = circuit
@@ -342,10 +348,10 @@ class _CompiledSamplerBase:
                 program,
                 self._channel_sampler,
                 self._num_detectors,
-                seed,
+                shots_seed,
             )
         else:
-            self._backend = _StabilizerRankBackend(program, seed)
+            self._backend = _StabilizerRankBackend(program, key_seed)
 
         # NOTE: _write_direct_detectors writes column output_order[k] without
         # bounds checks.

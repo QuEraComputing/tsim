@@ -632,7 +632,7 @@ class ChannelSampler:
         self,
         channel_probs: list[np.ndarray],
         error_transform: np.ndarray,
-        seed: int | None = None,
+        seed: int | np.random.SeedSequence | None = None,
     ):
         """Initialize the sampler with channel probabilities and a basis transformation.
 
@@ -644,7 +644,8 @@ class ChannelSampler:
             error_transform: Binary matrix of shape (num_f, num_e) where entry [i, j] = 1
                 means f_i depends on e_j. For example, if row 0 is [0, 1, 0, 1],
                 then f0 = e1 XOR e3.
-            seed: Random seed for sampling. If None, a random seed is generated.
+            seed: Random seed for sampling, a non-negative int or a
+                ``np.random.SeedSequence``. If None, a random seed is generated.
 
         """
         unique_cols, inverse = unique_columns(error_transform)
@@ -668,9 +669,7 @@ class ChannelSampler:
         self.channels = simplify_channels(channels, null_col_id=null_col_id)
         self.signature_matrix = signature_matrix.astype(np.uint8)
 
-        self._rng = np.random.default_rng(
-            seed if seed is not None else np.random.default_rng().integers(0, 2**30)
-        )
+        self._rng = np.random.default_rng(seed)
         self._tables = _fire_tables(self.channels, self.signature_matrix)
 
     def block_seeds(self, num_samples: int) -> np.ndarray:

@@ -138,6 +138,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Internals: the `track_classical_wires` argument of `parse_stim_circuit`, the `tsim.compile.stabrank` module, and `ConnectedComponent`, `connected_components`, `get_params` and `evaluate_graph` from `tsim.core.graph`.
 
 ### Fixed
+- Different seeds no longer give the same samples. The noise was seeded from a
+  30-bit number drawn from the seed, so seeds shared it in pairs: seeds 0 to
+  300,000 hold 46 such pairs, such as 37430 and 43909, and a circuit of noise
+  bits alone gave identical samples for both. The stabilizer-rank strategies
+  seeded JAX with `jax.random.key(seed)`, which keeps only the low 32 bits of a
+  seed, so `seed` and `seed + 2**32` gave the same component samples, and seeds
+  from 2^63 on raised `OverflowError`. The noise, the components and the
+  reference samples now each draw from their own child of
+  `np.random.SeedSequence(seed)`, and `seed=None` draws 128 bits instead of 30.
+  Seeded samples differ from earlier versions under every strategy. (#263)
 - Tsim gate names are case-insensitive, like Stim's: `t 0`, `ccz 0 1 2`,
   `r_x(0.1) 0` and `Circuit.append("tpp", ...)` used to fail with
   `Gate not found`.
