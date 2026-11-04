@@ -11,7 +11,7 @@ from tsim.core.tags import is_t_tag
 
 # Clifford decompositions for U3(θ, φ, λ) = R_Z(φ) · R_Y(θ) · R_Z(λ).
 # Keys: (θ_idx, φ_idx, λ_idx) where each index ∈ {0,1,2,3} is the angle in half-pi units.
-# Values: stim gate names in circuit (time) order.
+# Values: Stim gate names in circuit (time) order.
 U3_CLIFFORD: dict[tuple[int, int, int], list[str]] = {
     (0, 0, 0): ["I"],
     (0, 0, 1): ["S"],
@@ -67,7 +67,7 @@ def _equivalent_u3_key(t: int, p: int, lam: int) -> tuple[int, int, int]:
 def parametric_to_clifford_gates(
     gate_name: str, params: dict[str, Fraction]
 ) -> list[str] | None:
-    """Convert a parametric gate with half-π angles to stim Clifford gate names.
+    """Convert a parametric gate with half-π angles to Stim Clifford gate names.
 
     Args:
         gate_name: One of ``"R_X"``, ``"R_Y"``, ``"R_Z"``, ``"U3"``.
@@ -122,7 +122,10 @@ def is_clifford(source: stim.Circuit) -> bool:
 
         if instr.name in ["SPP", "SPP_DAG"] and instr.tag:
             result = parse_parametric_tag(instr)
-            if result is not None and not is_half_pi_multiple(result[1]["theta"]):
+            if result is None:
+                continue
+            gate_name, params = result
+            if gate_name != "R_PAULI" or not is_half_pi_multiple(params["theta"]):
                 return False
             continue
 
@@ -245,7 +248,7 @@ def _try_clifford_expansion(
     """Try to expand a tagged ``I`` instruction into equivalent Clifford gates.
 
     Returns:
-        ``(gate_names, targets)`` where *gate_names* are stim gate names in
+        ``(gate_names, targets)`` where *gate_names* are Stim gate names in
         circuit order and *targets* are the qubit indices, or ``None`` if the
         instruction is not an expandable parametric rotation.
 

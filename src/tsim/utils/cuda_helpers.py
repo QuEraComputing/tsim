@@ -25,7 +25,7 @@ else:
         from cuda.bindings import runtime as cudart
 
         _CUDA_BINDINGS_AVAILABLE = True
-    except Exception:
+    except ImportError:
         cudart = None
         _CUDA_BINDINGS_AVAILABLE = False
 
@@ -103,7 +103,7 @@ def alloc_pinned_numpy(nbytes: int, dtype, shape) -> np.ndarray:
     return np.frombuffer(carr, dtype=np.uint8).view(dtype).reshape(shape)
 
 
-def copy_d2h(src, *, dst: np.ndarray | None = None) -> np.ndarray:
+def copy_d2h(src: Any) -> np.ndarray:
     """Device-to-host copy, pinned-destination fast path when available.
 
     Args:
@@ -111,8 +111,6 @@ def copy_d2h(src, *, dst: np.ndarray | None = None) -> np.ndarray:
             ``unsafe_buffer_pointer()``, ``nbytes``, ``shape``, and ``dtype``.
             The caller must sync to the source's stream before invocation
             (``jax.block_until_ready(src)`` for a jax.Array).
-        dst: Optional pre-allocated pinned ndarray to write into. Must have
-            at least ``src.nbytes`` bytes.
 
     Returns:
         ndarray with the same shape and dtype as ``src``.
@@ -129,8 +127,7 @@ def copy_d2h(src, *, dst: np.ndarray | None = None) -> np.ndarray:
         out = np.empty(src.shape, dtype=src.dtype)
         out[:] = src
         return out
-    if dst is None:
-        dst = alloc_pinned_numpy(src.nbytes, src.dtype, src.shape)
+    dst = alloc_pinned_numpy(src.nbytes, src.dtype, src.shape)
     err = cudart.cudaMemcpy(
         dst.ctypes.data,
         src.unsafe_buffer_pointer(),

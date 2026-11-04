@@ -310,11 +310,11 @@ class _CompiledSamplerBase:
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
                 ``numba.get_num_threads()`` threads.
-            seed: Random seed. If None, a random seed is generated. With
-                "active_statevector", and for circuits without non-direct
-                components, the samples of a seed depend on neither the batch
-                size nor the thread count; with a stabilizer-rank strategy they
-                are only deterministic for a fixed batch size.
+            seed: Random seed for the sampler. If None, a random seed is drawn. With
+                "active_statevector", and under any strategy for a circuit without
+                non-direct components, the samples of a seed depend on neither the batch
+                size nor the thread count; with a stabilizer-rank strategy they are only
+                deterministic for a fixed batch size.
 
         """
         if seed is None:
@@ -745,9 +745,8 @@ class _CompiledSamplerBase:
 class CompiledMeasurementSampler(_CompiledSamplerBase):
     """Samples measurement outcomes from a quantum circuit.
 
-    Uses sequential decomposition [0, 1, 2, ..., n] where:
-    - compiled_scalar_graphs[0]: normalization (0 outputs plugged)
-    - compiled_scalar_graphs[i]: cumulative probability up to bit i
+    Follows ``stim.CompiledMeasurementSampler``. Each measurement record of the
+    circuit is one output column.
     """
 
     def __init__(
@@ -763,9 +762,11 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
-            seed: Random seed for the sampler. With "active_statevector" the samples
-                of a seed do not depend on the batch size; with a stabilizer-rank
-                strategy they are only deterministic for a fixed batch size.
+            seed: Random seed for the sampler. If None, a random seed is drawn. With
+                "active_statevector", and under any strategy for a circuit without
+                non-direct components, the samples of a seed depend on neither the batch
+                size nor the thread count; with a stabilizer-rank strategy they are only
+                deterministic for a fixed batch size.
 
         """
         super().__init__(
@@ -776,7 +777,13 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             strategy=strategy,
         )
 
-    def sample(self, shots: int, *, batch_size: int | None = None) -> np.ndarray:
+    def sample(
+        self,
+        shots: int,
+        *,
+        batch_size: int | None = None,
+        bit_packed: bool = False,
+    ) -> np.ndarray:
         """Sample measurement outcomes from the circuit.
 
         Args:
@@ -787,13 +794,19 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
                 holds and does not change the samples.
                 With a stabilizer-rank strategy on a GPU, setting this explicitly
                 can help fully utilize VRAM; it changes the samples of a seed.
+            bit_packed: Defaults to false. When set, results are bit-packed. The
+                packed rows may be a strided view of a wider array.
 
         Returns:
-            A numpy array containing the measurement samples.
+            A boolean array of shape ``(shots, num_measurements)``, or with
+            ``bit_packed`` a uint8 array of shape
+            ``(shots, ceil(num_measurements / 8))`` in little-endian bit order.
 
         """
         columns = [np.arange(self._program.num_outputs)]
-        return self._sample_outputs(shots, batch_size, columns, bit_packed=False)[0]
+        return self._sample_outputs(shots, batch_size, columns, bit_packed=bit_packed)[
+            0
+        ]
 
 
 def _maybe_bit_pack(array: np.ndarray, *, bit_packed: bool) -> np.ndarray:
@@ -845,10 +858,12 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             circuit: The quantum circuit to compile.
             strategy: "active_statevector" (the default), or a stabilizer rank
                 decomposition strategy ("cat5", "bss", "cutting").
-            seed: Random seed for the sampler. With "active_statevector" the samples
-                of a seed do not depend on the batch size; with a stabilizer-rank
-                strategy they are only deterministic for a fixed batch size and
-                fixed reference sample settings.
+            seed: Random seed for the sampler. If None, a random seed is drawn. With
+                "active_statevector", and under any strategy for a circuit without
+                non-direct components, the samples of a seed depend on neither the batch
+                size nor the thread count; with a stabilizer-rank strategy they are only
+                deterministic for a fixed batch size and fixed reference sample
+                settings.
 
         """
         super().__init__(
@@ -948,8 +963,13 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 stabilizer-rank components are computed in full.
 
         Returns:
-            A numpy array or tuple of numpy arrays containing the samples. With
-            ``separate_observables``, both arrays hold the same shots.
+            A boolean array of shape ``(rows, num_columns)``, or with
+            ``bit_packed`` a uint8 array of shape ``(rows, ceil(num_columns / 8))``
+            in little-endian bit order. ``rows`` is ``shots``, or fewer with a
+            ``postselection_mask``. The columns are the detectors, with the
+            observables prepended and/or appended if requested. With
+            ``separate_observables``, a ``(detectors, observables)`` tuple of such
+            arrays holding the same shots.
 
         Warns:
             UserWarning: If a masked direct detector is a constant 1, without

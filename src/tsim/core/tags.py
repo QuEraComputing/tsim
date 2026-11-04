@@ -1,4 +1,4 @@
-"""Helpers for tags that encode tsim-specific gate metadata."""
+"""Helpers for tags that encode Tsim-specific gate metadata."""
 
 import re
 from fractions import Fraction
@@ -51,7 +51,7 @@ def parse_parametric_tag_text(tag: str) -> tuple[str, dict[str, Fraction]] | Non
     in that order, as in the shorthand).
 
     Args:
-        tag: The stim instruction tag.
+        tag: The Stim instruction tag.
 
     Returns:
         Tuple of (gate_name, params_dict), or ``None`` when the tag does not have

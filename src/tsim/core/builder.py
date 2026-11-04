@@ -1,4 +1,4 @@
-"""``GraphBuilder``: the ZX graph of a stim circuit and its bookkeeping.
+"""``GraphBuilder``: the ZX graph of a Stim circuit and its bookkeeping.
 
 ``GraphBuilder`` owns the graph while a circuit is parsed: wire ends,
 measurement records, error bits, pending correlated errors, and detectors and
@@ -72,7 +72,7 @@ def _move_label(g: Graph, source: Vertex, target: Vertex) -> None:
 
 
 class GraphBuilder:
-    """Builds the ZX graph of a stim circuit, with quantum wires and classical records.
+    """Builds the ZX graph of a Stim circuit, with quantum wires and classical records.
 
     Qubit wires are quantum; measurement records, detectors and observables are
     classical spiders, read through the properties below (their labels are only
@@ -441,7 +441,7 @@ class GraphBuilder:
             raise ValueError(
                 f"an E/ELSE_CORRELATED_ERROR chain of {k} links on {c} Pauli "
                 f"components needs 2^{min(c, k)} outcomes, more than the "
-                f"2^{MAX_CORRELATED_ERROR_BITS} tsim supports; independent E "
+                f"2^{MAX_CORRELATED_ERROR_BITS} Tsim supports; independent E "
                 "instructions approximate it to first order in p"
             )
         # NOTE: a chain that flips no spider, such as E(p) X0 X0, has no channel.

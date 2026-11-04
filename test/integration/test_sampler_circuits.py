@@ -323,7 +323,7 @@ def test_mr_inverted_resets_to_zero_state(basis: str):
 def _matches_stim_distribution(
     program: str, shots: int = 8000, atol: float = 0.025
 ) -> tuple[bool, np.ndarray, np.ndarray]:
-    """Compare tsim and stim sample means.
+    """Compare Tsim and Stim sample means.
 
     Returns ``(ok, stim_mean, tsim_mean)`` where ``ok`` is True iff every
     per-column mean matches within ``atol``.

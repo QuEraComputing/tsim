@@ -1,4 +1,4 @@
-"""Conversion utilities between Tsim shorthand and stim program text."""
+"""Conversion utilities between Tsim shorthand and Stim program text."""
 
 import re
 from collections.abc import Callable
@@ -36,7 +36,8 @@ _TAG_RE = re.compile(r"\[[^\]\n]*\]")
 _COMMENT_RE = re.compile(r"#.*")
 _GATE_NOT_FOUND_RE = re.compile(r"Gate not found: '(\w+)'")
 _GATE_USAGE_RE = re.compile(
-    r"(?<!\[)\b(CCZ\b|CCX\b|R_PAULI\([^)]*\)|R_[XYZ]{1,2}\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)"
+    r"(?<!\[)\b(CCZ\b|CCX\b|R_PAULI\([^)]*\)|R_[XYZ]{1,2}\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)",
+    re.IGNORECASE,
 )
 
 
@@ -80,12 +81,13 @@ def _expand_controlled_gates(text: str) -> str:
     lines: list[str] = []
     for line in text.splitlines():
         body, sep, comment = line.partition("#")
-        match = re.match(r"^(\s*)(CCZ|CCX)(?:\[([^\]\n]*)\])?\s+(.+?)\s*$", body)
+        match = re.match(r"^(\s*)((?i:CCZ|CCX))(?:\[([^\]\n]*)\])?\s+(.+?)\s*$", body)
         if not match:
             lines.append(line)
             continue
 
         indent, gate, tag, targets_text = match.groups()
+        gate = gate.upper()
         targets = targets_text.split()
         if len(targets) % 3 != 0 or not all(target.isdecimal() for target in targets):
             raise ValueError(
@@ -114,14 +116,14 @@ def _replace_t_family_shorthand(tsim_gate: str) -> Callable[[re.Match[str]], str
 
 
 def enriched_stim_error(exc: ValueError, converted_text: str) -> ValueError:
-    """Improve stim parse errors for tsim-specific gates.
+    """Improve Stim parse errors for Tsim-specific gates.
 
-    When stim raises a 'Gate not found' error for a gate that should have been
+    When Stim raises a 'Gate not found' error for a gate that should have been
     converted by shorthand_to_stim, this searches the converted text for the
     unconverted usage and returns a more helpful error message.
     """
     m = _GATE_NOT_FOUND_RE.search(str(exc))
-    if not m or m.group(1) not in _TSIM_GATES:
+    if not m or m.group(1).upper() not in _TSIM_GATES:
         return exc
     # Successfully converted gates live inside tags (e.g. I[R_Z(...)]), which are
     # dropped so that they can't match. Tags go first since they may contain '#'.
@@ -133,7 +135,7 @@ def enriched_stim_error(exc: ValueError, converted_text: str) -> ValueError:
 
 
 def shorthand_to_stim(text: str) -> str:
-    """Convert Tsim shorthand syntax to valid stim instructions.
+    """Convert Tsim shorthand syntax to valid Stim instructions.
 
     Converts:
         CCZ 0 1 2           → Clifford+T decomposition of CCZ
@@ -167,12 +169,14 @@ def _convert_line(line: str) -> str:
         return line
     indent, name, tag, rest = match.groups()
     rest, sep, comment = rest.partition("#")
+    # NOTE: Stim gate names are case-insensitive, and so are Tsim's.
+    upper = name.upper()
 
-    if name in _T_FAMILY:
-        instruction = f"{_T_FAMILY[name]}[{encode_t_tag(tag or '')}]{rest}"
-    elif name in _ROTATION_SHORTHAND_GATES and tag is None:
-        instruction = _expand_rotation_shorthand(name + rest)
-    elif name.upper() in _PARAMETRIC_TAG_GATES and tag:
+    if upper in _T_FAMILY:
+        instruction = f"{_T_FAMILY[upper]}[{encode_t_tag(tag or '')}]{rest}"
+    elif upper in _ROTATION_SHORTHAND_GATES and tag is None:
+        instruction = _expand_rotation_shorthand(upper + rest)
+    elif upper in _PARAMETRIC_TAG_GATES and tag:
         instruction = f"{name}[{_canonical_parametric_tag(tag)}]{rest}"
     else:
         return line
@@ -181,7 +185,7 @@ def _convert_line(line: str) -> str:
 
 def _canonical_parametric_tag(tag: str) -> str:
     # Canonicalize so that equivalent inputs like `I[R_X(0.005)]`,
-    # `I[R_X(theta=0.5e-2*pi)]` and `I[R_X(theta=0.005*pi)]` produce the same stim
+    # `I[R_X(theta=0.5e-2*pi)]` and `I[R_X(theta=0.005*pi)]` produce the same Stim
     # tag string. This keeps `tsim.Circuit(str(c)) == c` round-trip stable across
     # notations. Malformed tags are kept as-is and rejected when parsed.
     try:
@@ -213,7 +217,7 @@ def _expand_rotation_shorthand(instruction: str) -> str:
         return f"SPP[R_PAULI(theta={alpha}*pi)] {m.group(2)}"
 
     instruction = re.sub(
-        rf"^R_PAULI\(({FLOAT_RE})\)\s+(!?[XYZ]\d+(?:\*!?[XYZ]\d+)*)",
+        rf"^R_PAULI\(({FLOAT_RE})\)\s+(!?[XYZxyz]\d+(?:\*!?[XYZxyz]\d+)*)",
         replace_pauli,
         instruction,
     )
@@ -236,7 +240,7 @@ def _expand_rotation_shorthand(instruction: str) -> str:
 
 
 def stim_to_shorthand(text: str) -> str:
-    """Convert expanded stim annotations back to Tsim shorthand.
+    """Convert expanded Stim annotations back to Tsim shorthand.
 
     Rewrites:
     - I[U3(theta=θ*pi, phi=φ*pi, lambda=λ*pi)] → U3(θ, φ, λ)

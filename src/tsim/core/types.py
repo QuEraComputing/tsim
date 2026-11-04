@@ -34,7 +34,7 @@ class SamplingGraph:
 
     Contains all data structures needed for sampling. This represents a circuit
     that has been:
-    1. Parsed from stim format into a quantum/classical ZX graph (quantum
+    1. Parsed from Stim format into a quantum/classical ZX graph (quantum
        wires, classical measurement records)
     2. Closed into a sampling graph with classical output boundaries
     3. Reduced via zxparam's full_reduce

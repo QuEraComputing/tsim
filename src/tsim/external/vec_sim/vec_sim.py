@@ -1,4 +1,4 @@
-"""Statevector simulatorfor stim circuits.
+"""Statevector simulator for Stim circuits.
 
 Based on code from:
 Gidney, C., Jones, C., & Shutty, N. (2024). "Magic state cultivation: growing

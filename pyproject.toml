@@ -40,8 +40,7 @@ dependencies = [
     "numba>=0.61",
     "numpy>=1.25.0",
     "psutil>=5.9.0",
-    "stim>=1.0.0",
-    "stim-timeline-text>=0.1.0",
+    "stim>=1.15.0",
     "stim-timeline-text>=0.1.0",
     "zxparam>=0.1.0",
 ]
@@ -88,7 +87,6 @@ dev = [
 ]
 doc = [
     "griffe>=2.0.2",
-    "griffe-kirin>=0.1.0",
     "griffe-inherited-docstrings>=1.1.1",
     "nbclient>=0.10.4",
     "nbconvert>=7.17.1",

@@ -710,9 +710,7 @@ def build_api() -> int:
     pkg = griffe.load(
         "tsim",
         search_paths=[str(SRC_DIR)],
-        extensions=griffe.load_extensions(
-            "griffe_inherited_docstrings", "griffe_kirin"
-        ),
+        extensions=griffe.load_extensions("griffe_inherited_docstrings"),
     )
     API_DIR.mkdir(parents=True, exist_ok=True)
     rendered: list[Path] = []

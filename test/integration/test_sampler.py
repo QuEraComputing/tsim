@@ -451,7 +451,7 @@ def simulate_with_vec_sampler(stim_circuit: stim.Circuit) -> np.ndarray:
     """Compute state probabilities using VecSampler statevector simulator.
 
     Args:
-        stim_circuit: The stim circuit (with tags) to simulate. Should not include measurements.
+        stim_circuit: The Stim circuit (with tags) to simulate. Should not include measurements.
 
     Returns:
         Array of probabilities for each computational basis state.
@@ -464,10 +464,10 @@ def simulate_with_vec_sampler(stim_circuit: stim.Circuit) -> np.ndarray:
 def simulate_with_tsim(
     stim_circuit: stim.Circuit, strategy: SamplingStrategy = "cat5"
 ) -> np.ndarray:
-    """Compute state probabilities using tsim's CompiledStateProbs.
+    """Compute state probabilities using Tsim's CompiledStateProbs.
 
     Args:
-        stim_circuit: The stim circuit (with tags) to simulate. Should not include measurements.
+        stim_circuit: The Stim circuit (with tags) to simulate. Should not include measurements.
         strategy: Stabilizer rank decomposition strategy.
 
     Returns:
@@ -496,7 +496,7 @@ def simulate_with_zx_tensor(stim_circuit: stim.Circuit) -> np.ndarray:
     """Compute state probabilities using zxparam tensor contraction.
 
     Args:
-        stim_circuit: The stim circuit (with tags) to simulate. Should not include measurements.
+        stim_circuit: The Stim circuit (with tags) to simulate. Should not include measurements.
 
     Returns:
         Array of normalized probabilities for each computational basis state.

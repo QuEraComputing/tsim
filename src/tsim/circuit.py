@@ -114,7 +114,7 @@ def _signed_pauli_targets(
     out: list[int | stim.GateTarget] = []
     for item in items:
         if isinstance(item, stim.PauliString):
-            # NOTE: stim's stub types the returned list as a single GateTarget.
+            # NOTE: Stim's stub types the returned list as a single GateTarget.
             paulis = cast(list[stim.GateTarget], stim.target_combined_paulis(item))
             out.extend(p for p in paulis if combined or not p.is_combiner)
         else:
@@ -154,7 +154,7 @@ def _bare_qubit_targets(
 class Circuit:
     """Quantum circuit as a thin wrapper around stim.Circuit.
 
-    Circuits are constructed like stim circuits:
+    Circuits are constructed like Stim circuits:
 
             >>> circuit = Circuit('''
             ...     H 0
@@ -167,7 +167,7 @@ class Circuit:
     __slots__ = ("_stim_circ",)
 
     def __init__(self, stim_program_text: str = ""):
-        """Initialize circuit from stim program text.
+        """Initialize circuit from Stim program text.
 
         Args:
             stim_program_text: Stim program text to parse. If empty, creates an
@@ -185,7 +185,7 @@ class Circuit:
         """Create a Circuit from a stim.Circuit object.
 
         Args:
-            stim_circuit: The stim circuit to wrap.
+            stim_circuit: The Stim circuit to wrap.
 
         Returns:
             A new Circuit instance.
@@ -242,13 +242,28 @@ class Circuit:
     ) -> None:
         """Append an operation into the circuit.
 
+        Besides Stim's gates, this accepts Tsim's gates:
+
+        - ``T``, ``T_DAG`` on qubits, and ``TPP``, ``TPP_DAG`` on Pauli products.
+        - ``R_X``, ``R_Y``, ``R_Z`` and ``U3`` on qubits, ``R_XX``, ``R_YY`` and
+          ``R_ZZ`` on two distinct qubits, and ``R_PAULI`` on Pauli products.
+          ``U3`` takes three angles ``(theta, phi, lambda)`` as ``arg``, the
+          others one. Angles are in units of π.
+        - ``CCZ`` and ``CCX`` on bare qubit targets, in groups of three. They are
+          appended as their Clifford+T decomposition.
+
+        The other Tsim gates are stored as tagged Clifford placeholders.
+
+        Gate names are case-insensitive.
+
         Args:
             name: The name of the operation's gate (e.g. "H" or "M" or "CNOT").
 
-                This argument can also be set to a `stim.CircuitInstruction` or
-                `stim.CircuitInstructionBlock`, which results in the instruction or
-                block being appended to the circuit. The other arguments (targets
-                and arg) can't be specified when doing so.
+                This argument can also be set to a `stim.CircuitInstruction`,
+                `stim.CircuitRepeatBlock` or `stim.Circuit`, which results in the
+                instruction, block or circuit being appended to the circuit. The
+                other arguments (targets, arg and tag) can't be specified when
+                doing so.
 
             targets: The objects operated on by the gate. This can be either a
                 single target or an iterable of multiple targets.
@@ -256,20 +271,24 @@ class Circuit:
                 Each target can be:
                     An int: The index of a targeted qubit.
                     A `stim.GateTarget`: Could be a variety of things. Methods like
-                        `stim.target_rec`, `stim.target_sweet`, `stim.target_x`, and
-                        `stim.CircuitInstruction.__getitem__` all return this type.
+                        `stim.target_rec`, `stim.target_sweep_bit`, `stim.target_x`,
+                        and `stim.CircuitInstruction.__getitem__` all return this
+                        type.
                     A `stim.PauliString`: This will automatically be expanded into
                         a product of pauli targets like `X1*Y2*Z3`.
             arg: The "parens arguments" for the gate, such as the probability for a
                 noise operation. A double or list of doubles parameterizing the
                 gate. Different gates take different parens arguments. For example,
                 X_ERROR takes a probability, OBSERVABLE_INCLUDE takes an observable
-                index, and PAULI_CHANNEL_1 takes three disjoint probabilities.
+                index, PAULI_CHANNEL_1 takes three disjoint probabilities, and R_X
+                takes an angle in units of π.
 
             tag: A customizable string attached to the instruction.
 
         """
         if isinstance(name, str):
+            # NOTE: Stim gate names are case-insensitive, and so are Tsim's.
+            name = name.upper()
             if name in ("CCZ", "CCX"):
                 if arg is not None:
                     raise ValueError(f"For {name} gates, no arguments are accepted.")
@@ -289,9 +308,9 @@ class Circuit:
                 )
                 return
 
-            if name.upper() in _PAULI_PRODUCT_GATES:
+            if name in _PAULI_PRODUCT_GATES:
                 targets = _signed_pauli_targets(
-                    targets, combined=name.upper() != "OBSERVABLE_INCLUDE"
+                    targets, combined=name != "OBSERVABLE_INCLUDE"
                 )
 
             if name == "TPP":
@@ -343,6 +362,12 @@ class Circuit:
 
             self._stim_circ.append(name=name, targets=targets, arg=arg, tag=tag)  # type: ignore
         else:
+            no_targets = isinstance(targets, (tuple, list)) and not targets
+            if not no_targets or arg is not None or tag:
+                raise ValueError(
+                    "Can't specify targets, arg or tag when appending a "
+                    f"{type(name).__name__}."
+                )
             self._stim_circ.append(name=name)
 
     @classmethod
@@ -487,7 +512,7 @@ class Circuit:
         from raw measurement data.
 
         The converter uses a noiseless reference sample, collected from the circuit
-        using stim's Tableau simulator during initialization of the converter, as a
+        using Stim's Tableau simulator during initialization of the converter, as a
         baseline for determining what the expected value of a detector is.
 
         Note that the expected behavior of gauge detectors (detectors that are not
@@ -512,7 +537,7 @@ class Circuit:
 
     @property
     def stim_circuit(self) -> stim.Circuit:
-        """Return the underlying stim circuit.
+        """Return the underlying Stim circuit.
 
         Parametric rotation instructions whose angles are all half-π multiples
         are expanded into their equivalent Clifford gates. ``REPEAT`` blocks are
@@ -630,7 +655,7 @@ class Circuit:
         decompose_errors: bool = False,
         flatten_loops: bool = False,
         allow_gauge_detectors: bool = False,
-        approximate_disjoint_errors: bool = False,
+        approximate_disjoint_errors: bool | float = False,
         ignore_decomposition_failures: bool = False,
         block_decomposition_from_introducing_remnant_edges: bool = False,
     ) -> stim.DetectorErrorModel:
@@ -653,8 +678,8 @@ class Circuit:
                 X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to
                 decompose large errors into simple errors that affect at most two detectors.
 
-                Decomposition keeps the logical observables as observables, as stim does, so it requires them
-                to be deterministic: stim raises a ValueError otherwise.
+                Decomposition keeps the logical observables as observables, as Stim does, so it requires them
+                to be deterministic: Stim raises a ValueError otherwise.
             flatten_loops: Defaults to false. When set to true, the output will not contain any `repeat` blocks.
                 When set to false, the error analysis watches for loops in the circuit reaching a periodic steady
                 state with respect to the detectors being introduced, the error mechanisms that affect them, and the
@@ -666,7 +691,7 @@ class Circuit:
             allow_gauge_detectors: Defaults to false. When set to false, the error analysis verifies that detectors
                 in the circuit are actually deterministic under noiseless execution of the circuit.
 
-                Note that, unlike in stim, logical observables are also allowed to be non-deterministic.
+                Note that, unlike in Stim, logical observables are also allowed to be non-deterministic.
             approximate_disjoint_errors: Defaults to false. When set to false, composite error mechanisms with
                 disjoint components (such as `PAULI_CHANNEL_1(0.1, 0.2, 0.0)`) can cause the error analysis to throw
                 exceptions (because detector error models can only contain independent error mechanisms). When set
@@ -751,7 +776,7 @@ class Circuit:
                     between two TICK instructions in the circuit, with the
                     operations laid out in 2d.
                 "timeline-text": An ASCII text diagram of the operations
-                    applied by the circuit over time, with tsim's custom
+                    applied by the circuit over time, with Tsim's custom
                     gates rendered under their logical names rather than
                     the Clifford placeholders used to store them.
             tick: Required for time slice diagrams. Specifies
@@ -929,10 +954,11 @@ class Circuit:
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
                 ``numba.get_num_threads()`` threads.
-            seed: Random seed for the sampler. With "active_statevector" the samples
-                of a seed depend on neither the batch size nor the thread count;
-                with a stabilizer-rank strategy they are only deterministic for a
-                fixed batch size.
+            seed: Random seed for the sampler. If None, a random seed is drawn. With
+                "active_statevector", and under any strategy for a circuit without
+                non-direct components, the samples of a seed depend on neither the batch
+                size nor the thread count; with a stabilizer-rank strategy they are only
+                deterministic for a fixed batch size.
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
@@ -961,10 +987,12 @@ class Circuit:
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
                 ``numba.get_num_threads()`` threads.
-            seed: Random seed for the sampler. With "active_statevector" the samples
-                of a seed depend on neither the batch size nor the thread count;
-                with a stabilizer-rank strategy they are only deterministic for a
-                fixed batch size.
+            seed: Random seed for the sampler. If None, a random seed is drawn. With
+                "active_statevector", and under any strategy for a circuit without
+                non-direct components, the samples of a seed depend on neither the batch
+                size nor the thread count; with a stabilizer-rank strategy they are only
+                deterministic for a fixed batch size and fixed reference sample
+                settings.
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.

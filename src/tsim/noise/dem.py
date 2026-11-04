@@ -12,7 +12,7 @@ def get_detector_error_model(
     decompose_errors: bool = False,
     flatten_loops: bool = False,
     allow_gauge_detectors: bool = False,
-    approximate_disjoint_errors: bool = False,
+    approximate_disjoint_errors: bool | float = False,
     ignore_decomposition_failures: bool = False,
     block_decomposition_from_introducing_remnant_edges: bool = False,
 ) -> stim.DetectorErrorModel:
@@ -27,7 +27,7 @@ def get_detector_error_model(
     this method will return an incorrect detector error model.
 
     Args:
-        stim_circuit: The stim circuit to compute the detector error model for.
+        stim_circuit: The Stim circuit to compute the detector error model for.
         allow_non_deterministic_observables: Defaults to true. When set to true, the detector error model allows for
             non-deterministic observables. This is achieved by converting logical observables into detectors, calling
             the stim.Circuit.detector_error_model(allow_gauge_detectors=True), and then reconverting the detectors
@@ -38,8 +38,8 @@ def get_detector_error_model(
             XZ surface code, single qubit depolarization has a Y error term which can be decomposed into simpler
             X and Z error terms. Decomposition fails (causing this method to throw) if it's not possible to
             decompose large errors into simple errors that affect at most two detectors.
-            Decomposition keeps the logical observables as observables, as stim does, so it requires them
-            to be deterministic: stim raises a ValueError otherwise, even when
+            Decomposition keeps the logical observables as observables, as Stim does, so it requires them
+            to be deterministic: Stim raises a ValueError otherwise, even when
             allow_non_deterministic_observables is set to true.
         flatten_loops: Defaults to false. When set to true, the output will not contain any `repeat` blocks.
             When set to false, the error analysis watches for loops in the circuit reaching a periodic steady
@@ -105,14 +105,14 @@ def get_detector_error_model(
 
     new_circuit = stim.Circuit()
 
-    # NOTE: stim allows multiple OBSERVABLE_INCLUDE instruction with the same index.
+    # NOTE: Stim allows multiple OBSERVABLE_INCLUDE instruction with the same index.
     # We will combine them into a single OBSERVABLE_INCLUDE instructions and
     # push them to the end of the circuit. This requires updating the rec[] indices.
 
     for instruction in stim_circuit.flattened():
         assert not isinstance(instruction, stim.CircuitRepeatBlock)
         if stim.gate_data(instruction.name).produces_measurements:
-            # Ask stim how many records this exact instruction appended,
+            # Ask Stim how many records this exact instruction appended,
             # so we don't have to track the per-gate counting rules ourselves.
             probe = stim.Circuit()
             probe.append(instruction)
@@ -197,7 +197,7 @@ def get_detector_error_model(
         raise ValueError(
             "Failed to compute detector error model. "
             "The number of observables changed after conversion. "
-            "This indicates that stim has interpreted logical observables as gauges "
+            "This indicates that Stim has interpreted logical observables as gauges "
             f"and removed them. Error model:\n {new_dem!s}"
         )
     return new_dem
