@@ -8,7 +8,7 @@ A detailed description of Tsim is given in [arXiv:2604.01059](https://arxiv.org/
 
 ## Quick Start
 
-An introductory tutorial is available [here](demos/encoding_demo.ipynb). For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference), plus the [non-Clifford instructions](#supported-instructions) listed below.
+An introductory tutorial is available [here](demos/encoding_demo.ipynb). For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/blob/v1.16.0/doc/gates.md), plus the [non-Clifford instructions](#supported-instructions) listed below.
 
 ```python
 import tsim
@@ -106,7 +106,7 @@ Note that this feature should be used carefully. If detectors or observables are
 
 ## Supported Instructions
 
-Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference). In addition, Tsim defines the following non-Clifford instructions. Angles are given in units of π (half-turns).
+Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/blob/v1.16.0/doc/gates.md). In addition, Tsim defines the following non-Clifford instructions. Angles are given in units of π (half-turns).
 
 | Instruction | Targets | Action |
 |---|---|---|
