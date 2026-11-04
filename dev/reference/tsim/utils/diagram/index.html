@@ -92,7 +92,7 @@
     <span class=n>svg_string</span><span class=p>:</span> <span class=nb>str</span><span class=p>,</span>
     <span class=n>placeholder_id_to_labels</span><span class=p>:</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>float</span><span class=p>,</span> <span class=n>GateLabel</span><span class=p>],</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>str</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Replace I_ERROR placeholder gates in an SVG diagram with actual gate names.</p> <p>Supported gates are T, T†, R_Z, R_X, R_Y, U_3.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>svg_string</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>The SVG string from stim's diagram() method containing I_ERROR placeholder gates whose p-value are used as identifiers.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>placeholder_id_to_labels</code> </td> <td> <code><span title=dict>dict</span>[<span title=float>float</span>, <a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">GateLabel</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Replace I_ERROR placeholder gates in an SVG diagram with actual gate names.</p> <p>Supported gates are T, T†, R_Z, R_X, R_Y, U_3.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>svg_string</code> </td> <td> <code><span title=str>str</span></code> </td> <td> <div class=doc-md-description> <p>The SVG string from Stim's diagram() method containing I_ERROR placeholder gates whose p-value are used as identifiers.</p> </div> </td> <td> <em>required</em> </td> </tr> <tr class=doc-section-item> <td> <code>placeholder_id_to_labels</code> </td> <td> <code><span title=dict>dict</span>[<span title=float>float</span>, <a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">GateLabel</span>
 
 
   <span class="doc doc-labels">
@@ -179,7 +179,7 @@
 <span class=sd>    Supported gates are T, T†, R_Z, R_X, R_Y, U_3.</span>
 
 <span class=sd>    Args:</span>
-<span class=sd>        svg_string: The SVG string from stim&#39;s diagram() method containing I_ERROR</span>
+<span class=sd>        svg_string: The SVG string from Stim&#39;s diagram() method containing I_ERROR</span>
 <span class=sd>            placeholder gates whose p-value are used as identifiers.</span>
 <span class=sd>        placeholder_id_to_labels: Mapping from identifier (float), i.e. the p values of</span>
 <span class=sd>            I_ERROR gates, to GateLabel.</span>
@@ -259,7 +259,7 @@
     <span class=n>height</span><span class=p>:</span> <span class=nb>float</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
     <span class=n>zoomable</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>True</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Diagram</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Render a stim circuit timeline/timeslice diagram with custom labels.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/diagram.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>443</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Render a Stim circuit timeline/timeslice diagram with custom labels.</p> <details class=mkdocstrings-source> <summary>Source code in <code>src/tsim/utils/diagram.py</code></summary> <div class=highlight><table class=highlighttable><tr><td class=linenos><div class=linenodiv><pre><span></span><span class=normal>443</span>
 <span class=normal>444</span>
 <span class=normal>445</span>
 <span class=normal>446</span>
@@ -303,7 +303,7 @@
     <span class=n>height</span><span class=p>:</span> <span class=nb>float</span> <span class=o>|</span> <span class=kc>None</span> <span class=o>=</span> <span class=kc>None</span><span class=p>,</span>
     <span class=n>zoomable</span><span class=p>:</span> <span class=nb>bool</span> <span class=o>=</span> <span class=kc>True</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=n>Diagram</span><span class=p>:</span>
-<span class=w>    </span><span class=sd>&quot;&quot;&quot;Render a stim circuit timeline/timeslice diagram with custom labels.&quot;&quot;&quot;</span>
+<span class=w>    </span><span class=sd>&quot;&quot;&quot;Render a Stim circuit timeline/timeslice diagram with custom labels.&quot;&quot;&quot;</span>
     <span class=n>modified_circ</span><span class=p>,</span> <span class=n>placeholder_id_to_labels</span> <span class=o>=</span> <span class=n>tagged_gates_to_placeholder</span><span class=p>(</span><span class=n>c</span><span class=p>)</span>
     <span class=n>svg_with_placeholders</span> <span class=o>=</span> <span class=nb>str</span><span class=p>(</span>
         <span class=n>modified_circ</span><span class=o>.</span><span class=n>diagram</span><span class=p>(</span><span class=nb>type</span><span class=p>,</span> <span class=n>tick</span><span class=o>=</span><span class=n>tick</span><span class=p>,</span> <span class=n>filter_coords</span><span class=o>=</span><span class=n>filter_coords</span><span class=p>,</span> <span class=n>rows</span><span class=o>=</span><span class=n>rows</span><span class=p>)</span>
@@ -329,7 +329,7 @@
 </code></pre></div></td></tr></table></div> </details> </div> </div> <div class="doc doc-object doc-function"> <h2 id=tsim.utils.diagram.tagged_gates_to_placeholder class="doc doc-heading"> <code class="doc-symbol doc-symbol-heading doc-symbol-function"></code> <span class="doc doc-object-name doc-function-name">tagged_gates_to_placeholder</span> </h2> <div class="doc-signature highlight"><pre><span></span><code><span class=nf>tagged_gates_to_placeholder</span><span class=p>(</span>
     <span class=n>circuit</span><span class=p>:</span> <span class=n>Circuit</span><span class=p>,</span>
 <span class=p>)</span> <span class=o>-&gt;</span> <span class=nb>tuple</span><span class=p>[</span><span class=n>stim</span><span class=o>.</span><span class=n>Circuit</span><span class=p>,</span> <span class=nb>dict</span><span class=p>[</span><span class=nb>float</span><span class=p>,</span> <span class=n>GateLabel</span><span class=p>]]</span>
-</code></pre></div> <div class="doc doc-contents "> <p>Replace tagged gates with I_ERROR placeholder gates for rendering.</p> <p>Converts S[T], S_DAG[T], I[R_X(...)], I[R_Y(...)], I[R_Z(...)], I[U3(...)] to I_ERROR placeholder gates whose p-values are used as identifiers.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>circuit</code> </td> <td> <code><span title=stim.Circuit>Circuit</span></code> </td> <td> <div class=doc-md-description> <p>The stim circuit to replace tagged gates with I_ERROR placeholder gates.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=stim.Circuit>Circuit</span></code> </td> <td> <div class=doc-md-description> <p>A tuple containing the modified circuit and a dictionary mapping the p-values</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=dict>dict</span>[<span title=float>float</span>, <a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">GateLabel</span>
+</code></pre></div> <div class="doc doc-contents "> <p>Replace tagged gates with I_ERROR placeholder gates for rendering.</p> <p>Converts S[T], S_DAG[T], I[R_X(...)], I[R_Y(...)], I[R_Z(...)], I[U3(...)] to I_ERROR placeholder gates whose p-values are used as identifiers.</p> <p><span class=doc-section-title>Parameters:</span></p> <table> <thead> <tr> <th>Name</th> <th>Type</th> <th>Description</th> <th>Default</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code>circuit</code> </td> <td> <code><span title=stim.Circuit>Circuit</span></code> </td> <td> <div class=doc-md-description> <p>The Stim circuit to replace tagged gates with I_ERROR placeholder gates.</p> </div> </td> <td> <em>required</em> </td> </tr> </tbody> </table> <p><span class=doc-section-title>Returns:</span></p> <table> <thead> <tr> <th>Type</th> <th>Description</th> </tr> </thead> <tbody> <tr class=doc-section-item> <td> <code><span title=stim.Circuit>Circuit</span></code> </td> <td> <div class=doc-md-description> <p>A tuple containing the modified circuit and a dictionary mapping the p-values</p> </div> </td> </tr> <tr class=doc-section-item> <td> <code><span title=dict>dict</span>[<span title=float>float</span>, <a class="autorefs autorefs-internal" title='<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">GateLabel</span>
 
 
   <span class="doc doc-labels">
@@ -361,7 +361,7 @@
 <span class=sd>    to I_ERROR placeholder gates whose p-values are used as identifiers.</span>
 
 <span class=sd>    Args:</span>
-<span class=sd>        circuit: The stim circuit to replace tagged gates with I_ERROR placeholder gates.</span>
+<span class=sd>        circuit: The Stim circuit to replace tagged gates with I_ERROR placeholder gates.</span>
 
 <span class=sd>    Returns:</span>
 <span class=sd>        A tuple containing the modified circuit and a dictionary mapping the p-values</span>
