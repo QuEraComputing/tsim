@@ -313,12 +313,16 @@ class _CompiledSamplerBase:
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
-                ``numba.get_num_threads()`` threads.
-            seed: Random seed for the sampler. If None, a random seed is drawn. With
-                "active_statevector", and under any strategy for a circuit without
+                ``numba.get_num_threads()`` threads. The stabilizer rank
+                strategies are provisional.
+            seed: Random seed for the sampler. If None, a random seed is drawn. A seed
+                reproduces its samples only with the same versions of Tsim and its
+                dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
+                With "active_statevector", and under any strategy for a circuit without
                 non-direct components, the samples of a seed depend on neither the batch
-                size nor the thread count; with a stabilizer-rank strategy they are only
-                deterministic for a fixed batch size.
+                size nor the thread count. With a stabilizer-rank strategy they also
+                need the same explicit ``batch_size``, since the default batch size
+                depends on the free memory.
 
         """
         if seed is None:
@@ -767,12 +771,16 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         Args:
             circuit: The quantum circuit to compile.
             strategy: "active_statevector" (the default), or a stabilizer rank
-                decomposition strategy ("cat5", "bss", "cutting").
-            seed: Random seed for the sampler. If None, a random seed is drawn. With
-                "active_statevector", and under any strategy for a circuit without
+                decomposition strategy ("cat5", "bss", "cutting"). The
+                stabilizer rank strategies are provisional.
+            seed: Random seed for the sampler. If None, a random seed is drawn. A seed
+                reproduces its samples only with the same versions of Tsim and its
+                dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
+                With "active_statevector", and under any strategy for a circuit without
                 non-direct components, the samples of a seed depend on neither the batch
-                size nor the thread count; with a stabilizer-rank strategy they are only
-                deterministic for a fixed batch size.
+                size nor the thread count. With a stabilizer-rank strategy they also
+                need the same explicit ``batch_size``, since the default batch size
+                depends on the free memory.
 
         """
         super().__init__(
@@ -863,13 +871,16 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         Args:
             circuit: The quantum circuit to compile.
             strategy: "active_statevector" (the default), or a stabilizer rank
-                decomposition strategy ("cat5", "bss", "cutting").
-            seed: Random seed for the sampler. If None, a random seed is drawn. With
-                "active_statevector", and under any strategy for a circuit without
+                decomposition strategy ("cat5", "bss", "cutting"). The
+                stabilizer rank strategies are provisional.
+            seed: Random seed for the sampler. If None, a random seed is drawn. A seed
+                reproduces its samples only with the same versions of Tsim and its
+                dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
+                With "active_statevector", and under any strategy for a circuit without
                 non-direct components, the samples of a seed depend on neither the batch
-                size nor the thread count; with a stabilizer-rank strategy they are only
-                deterministic for a fixed batch size and fixed reference sample
-                settings.
+                size nor the thread count. With a stabilizer-rank strategy they also
+                need the same explicit ``batch_size`` and the same reference sample
+                settings, since the default batch size depends on the free memory.
 
         """
         super().__init__(
@@ -1062,8 +1073,10 @@ class CompiledStateProbs(_CompiledSamplerBase):
             sample_detectors: If True, compute detector/observable probabilities.
             strategy: Stabilizer rank decomposition strategy ("cat5", "bss",
                 "cutting"); "active_statevector" cannot compute probabilities.
-            seed: Random seed. If None, a random seed is generated. Note that
-                deterministic results are only guaranteed for a fixed batch size.
+            seed: Random seed. If None, a random seed is generated. Results are
+                only deterministic for a fixed batch size, the same versions of
+                Tsim and its dependencies (such as NumPy and JAX) and the same
+                backend (CPU or GPU).
 
         """
         super().__init__(
