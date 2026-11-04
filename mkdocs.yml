@@ -70,7 +70,6 @@ plugins:
             merge_init_into_class: true
             extensions:
               - griffe_inherited_docstrings
-              - griffe_kirin
             show_inheritance_diagram: true
             show_signature_annotations: true
             show_symbol_type_heading: true
@@ -90,9 +89,7 @@ plugins:
       allow_errors: false
       execute: true
       execute_ignore:
-          - "tutorial.ipynb"
           - "*.py"
-          - "draft/*"
 
 extra_css:
 

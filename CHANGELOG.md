@@ -59,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Circuit.append` raises `ValueError` when `targets`, `arg` or `tag` are
   passed with a `stim.CircuitInstruction`, `stim.CircuitRepeatBlock` or
   `stim.Circuit`. They used to be silently ignored.
+- Tsim requires `stim>=1.15.0`, the first release with instruction tags,
+  which Tsim uses to store its gates. It used to declare `stim>=1.0.0`.
 - The samplers now default to `strategy="active_statevector"`; pass
   `strategy="cat5"` for the previous stabilizer-rank default.
   `CompiledStateProbs` keeps `"cat5"`. (#203)
