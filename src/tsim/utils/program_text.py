@@ -1,4 +1,4 @@
-"""Conversion utilities between tsim shorthand and stim program text."""
+"""Conversion utilities between Tsim shorthand and stim program text."""
 
 import re
 from collections.abc import Callable
@@ -133,7 +133,7 @@ def enriched_stim_error(exc: ValueError, converted_text: str) -> ValueError:
 
 
 def shorthand_to_stim(text: str) -> str:
-    """Convert tsim shorthand syntax to valid stim instructions.
+    """Convert Tsim shorthand syntax to valid stim instructions.
 
     Converts:
         CCZ 0 1 2           → Clifford+T decomposition of CCZ
@@ -236,7 +236,7 @@ def _expand_rotation_shorthand(instruction: str) -> str:
 
 
 def stim_to_shorthand(text: str) -> str:
-    """Convert expanded stim annotations back to tsim shorthand.
+    """Convert expanded stim annotations back to Tsim shorthand.
 
     Rewrites:
     - I[U3(theta=θ*pi, phi=φ*pi, lambda=λ*pi)] → U3(θ, φ, λ)

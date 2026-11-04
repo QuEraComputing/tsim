@@ -13,7 +13,7 @@ from utils.no_decoder import NoDecoder
 
 This tutorial showcases the basic functionality of **Tsim**.
 
-tsim is a circuit sampler for Clifford+T circuits, based on stabilizer rank decomposition and ZX-calculus techniques. It closely follows the API of stim and directly uses stim's circuit format.
+Tsim is a circuit sampler for Clifford+T circuits, based on stabilizer rank decomposition and ZX-calculus techniques. It closely follows the API of stim and directly uses stim's circuit format.
 
 In contrast to Stim, Tsim supports `T` and `T_DAG` instructions.
 
@@ -187,7 +187,7 @@ c = Circuit("""
     """)
 ```
 
-tsim supports multiple visualization methods. The default makes use of `stim`'s "timeline-svg" visualization function:
+Tsim supports multiple visualization methods. The default makes use of `stim`'s "timeline-svg" visualization function:
 
 
 ```python
@@ -989,7 +989,7 @@ int(np.count_nonzero(obs_samples)) / len(obs_samples)
 
 ## Adding Noise
 
-A core capability of tsim is its support for Pauli noise channels.
+A core capability of Tsim is its support for Pauli noise channels.
 
 Let's look at a simple example. We'll insert a depolarizing channel `DEPOLARIZE1(0.01)` before the final stabilizer measurements.
 
@@ -1964,7 +1964,7 @@ Corrected: 0.1429
 
 ## Monte Carlo Simulation with sinter
 
-tsim is compatible with sinter, a tool for performing large Monte Carlo simulations. We can use sinter to sample and decode over a range of physical error rates.
+Tsim is compatible with sinter, a tool for performing large Monte Carlo simulations. We can use sinter to sample and decode over a range of physical error rates.
 
 
 ```python

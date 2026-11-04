@@ -30,7 +30,7 @@ def encode_t_tag(user_tag: str = "") -> str:
 
 
 def is_t_tag(tag: str) -> bool:
-    """Return whether a Stim tag encodes a tsim T-family gate."""
+    """Return whether a Stim tag encodes a Tsim T-family gate."""
     return tag == T_TAG or tag.startswith(_T_USER_TAG_PREFIX)
 
 

@@ -1,4 +1,4 @@
-"""Core data types for the tsim compilation and sampling pipeline.
+"""Core data types for the Tsim compilation and sampling pipeline.
 
 This module defines immutable data structures that represent the different
 stages of circuit compilation:

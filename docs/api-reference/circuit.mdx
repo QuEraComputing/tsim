@@ -624,7 +624,7 @@ Render a stim circuit timeline/timeslice diagram with custom labels.
 shorthand_to_stim(text: str) -> str
 ```
 
-Convert tsim shorthand syntax to valid stim instructions.
+Convert Tsim shorthand syntax to valid stim instructions.
 
 **Converts:**
 
@@ -655,7 +655,7 @@ e.g. ``I[R_X(0.25)] 0`` and ``R_X(0.25) 0`` produce the same instruction.
 stim_to_shorthand(text: str) -> str
 ```
 
-Convert expanded stim annotations back to tsim shorthand.
+Convert expanded stim annotations back to Tsim shorthand.
 
 Rewrites:
 - I[U3(theta=θ*pi, phi=φ*pi, lambda=λ*pi)] → U3(θ, φ, λ)
