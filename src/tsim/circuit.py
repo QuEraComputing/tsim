@@ -270,6 +270,8 @@ class Circuit:
 
         """
         if isinstance(name, str):
+            # NOTE: Stim gate names are case-insensitive, and so are Tsim's.
+            name = name.upper()
             if name in ("CCZ", "CCX"):
                 if arg is not None:
                     raise ValueError(f"For {name} gates, no arguments are accepted.")
@@ -289,9 +291,9 @@ class Circuit:
                 )
                 return
 
-            if name.upper() in _PAULI_PRODUCT_GATES:
+            if name in _PAULI_PRODUCT_GATES:
                 targets = _signed_pauli_targets(
-                    targets, combined=name.upper() != "OBSERVABLE_INCLUDE"
+                    targets, combined=name != "OBSERVABLE_INCLUDE"
                 )
 
             if name == "TPP":
@@ -630,7 +632,7 @@ class Circuit:
         decompose_errors: bool = False,
         flatten_loops: bool = False,
         allow_gauge_detectors: bool = False,
-        approximate_disjoint_errors: bool = False,
+        approximate_disjoint_errors: bool | float = False,
         ignore_decomposition_failures: bool = False,
         block_decomposition_from_introducing_remnant_edges: bool = False,
     ) -> stim.DetectorErrorModel:

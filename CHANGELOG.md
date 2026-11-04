@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which discards every shot. (#252)
 
 ### Added
+- `CompiledMeasurementSampler.sample(bit_packed=True)`, as in Stim.
 - `Circuit.detector_error_model(decompose_errors=True)` is supported. The
   argument is passed on to stim, with the logical observables kept as
   observables, so the observables must be deterministic. The docstring now warns
@@ -125,6 +126,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Internals: the `track_classical_wires` argument of `parse_stim_circuit`, the `tsim.compile.stabrank` module, and `ConnectedComponent`, `connected_components`, `get_params` and `evaluate_graph` from `tsim.core.graph`.
 
 ### Fixed
+- Tsim gate names are case-insensitive, like Stim's: `t 0`, `ccz 0 1 2`,
+  `r_x(0.1) 0` and `Circuit.append("tpp", ...)` used to fail with
+  `Gate not found`.
+- `Circuit.is_clifford` returns False for an `SPP`/`SPP_DAG` tagged with a
+  parametric gate other than `R_PAULI`, such as `SPP[R_X(0.5)] X0`, which
+  can't be compiled. It used to return True.
 - An `E`/`ELSE_CORRELATED_ERROR` chain whose links repeat Pauli components now
   compiles to one error bit per component (X or Z on a qubit) instead of one
   per link, so a general 3-qubit Pauli channel, a 63-link chain, is a 6-bit

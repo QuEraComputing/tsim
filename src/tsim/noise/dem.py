@@ -12,7 +12,7 @@ def get_detector_error_model(
     decompose_errors: bool = False,
     flatten_loops: bool = False,
     allow_gauge_detectors: bool = False,
-    approximate_disjoint_errors: bool = False,
+    approximate_disjoint_errors: bool | float = False,
     ignore_decomposition_failures: bool = False,
     block_decomposition_from_introducing_remnant_edges: bool = False,
 ) -> stim.DetectorErrorModel:

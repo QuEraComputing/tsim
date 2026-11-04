@@ -776,7 +776,13 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             strategy=strategy,
         )
 
-    def sample(self, shots: int, *, batch_size: int | None = None) -> np.ndarray:
+    def sample(
+        self,
+        shots: int,
+        *,
+        batch_size: int | None = None,
+        bit_packed: bool = False,
+    ) -> np.ndarray:
         """Sample measurement outcomes from the circuit.
 
         Args:
@@ -787,13 +793,19 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
                 holds and does not change the samples.
                 With a stabilizer-rank strategy on a GPU, setting this explicitly
                 can help fully utilize VRAM; it changes the samples of a seed.
+            bit_packed: Defaults to false. When set, results are bit-packed. The
+                packed rows may be a strided view of a wider array.
 
         Returns:
-            A numpy array containing the measurement samples.
+            A boolean array of shape ``(shots, num_measurements)``, or with
+            ``bit_packed`` a uint8 array of shape
+            ``(shots, ceil(num_measurements / 8))`` in little-endian bit order.
 
         """
         columns = [np.arange(self._program.num_outputs)]
-        return self._sample_outputs(shots, batch_size, columns, bit_packed=False)[0]
+        return self._sample_outputs(shots, batch_size, columns, bit_packed=bit_packed)[
+            0
+        ]
 
 
 def _maybe_bit_pack(array: np.ndarray, *, bit_packed: bool) -> np.ndarray:
