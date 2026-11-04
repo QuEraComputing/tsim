@@ -242,13 +242,24 @@ class Circuit:
     ) -> None:
         """Append an operation into the circuit.
 
+        Besides stim's gates, this accepts tsim's gates, which are stored as tagged
+        Clifford placeholders:
+
+        - ``T``, ``T_DAG`` on qubits, and ``TPP``, ``TPP_DAG`` on Pauli products.
+        - ``R_X``, ``R_Y``, ``R_Z``, ``R_XX``, ``R_YY``, ``R_ZZ`` and ``R_PAULI``,
+          with one angle as ``arg``, and ``U3`` with three angles
+          ``(theta, phi, lambda)``. Angles are in units of π.
+        - ``CCZ`` and ``CCX`` on bare qubit targets, in groups of three.
+
+        Gate names are case-insensitive.
+
         Args:
             name: The name of the operation's gate (e.g. "H" or "M" or "CNOT").
 
-                This argument can also be set to a `stim.CircuitInstruction` or
-                `stim.CircuitInstructionBlock`, which results in the instruction or
-                block being appended to the circuit. The other arguments (targets
-                and arg) can't be specified when doing so.
+                This argument can also be set to a `stim.CircuitInstruction`,
+                `stim.CircuitRepeatBlock` or `stim.Circuit`, which results in the
+                instruction, block or circuit being appended to the circuit. The
+                other arguments (targets and arg) can't be specified when doing so.
 
             targets: The objects operated on by the gate. This can be either a
                 single target or an iterable of multiple targets.
@@ -256,15 +267,17 @@ class Circuit:
                 Each target can be:
                     An int: The index of a targeted qubit.
                     A `stim.GateTarget`: Could be a variety of things. Methods like
-                        `stim.target_rec`, `stim.target_sweet`, `stim.target_x`, and
-                        `stim.CircuitInstruction.__getitem__` all return this type.
+                        `stim.target_rec`, `stim.target_sweep_bit`, `stim.target_x`,
+                        and `stim.CircuitInstruction.__getitem__` all return this
+                        type.
                     A `stim.PauliString`: This will automatically be expanded into
                         a product of pauli targets like `X1*Y2*Z3`.
             arg: The "parens arguments" for the gate, such as the probability for a
                 noise operation. A double or list of doubles parameterizing the
                 gate. Different gates take different parens arguments. For example,
                 X_ERROR takes a probability, OBSERVABLE_INCLUDE takes an observable
-                index, and PAULI_CHANNEL_1 takes three disjoint probabilities.
+                index, PAULI_CHANNEL_1 takes three disjoint probabilities, and R_X
+                takes an angle in units of π.
 
             tag: A customizable string attached to the instruction.
 
@@ -931,10 +944,11 @@ class Circuit:
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
                 ``numba.get_num_threads()`` threads.
-            seed: Random seed for the sampler. With "active_statevector" the samples
-                of a seed depend on neither the batch size nor the thread count;
-                with a stabilizer-rank strategy they are only deterministic for a
-                fixed batch size.
+            seed: Random seed for the sampler. If None, a random seed is drawn. With
+                "active_statevector", and under any strategy for a circuit without
+                non-direct components, the samples of a seed depend on neither the batch
+                size nor the thread count; with a stabilizer-rank strategy they are only
+                deterministic for a fixed batch size.
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
@@ -963,10 +977,12 @@ class Circuit:
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
                 ``numba.get_num_threads()`` threads.
-            seed: Random seed for the sampler. With "active_statevector" the samples
-                of a seed depend on neither the batch size nor the thread count;
-                with a stabilizer-rank strategy they are only deterministic for a
-                fixed batch size.
+            seed: Random seed for the sampler. If None, a random seed is drawn. With
+                "active_statevector", and under any strategy for a circuit without
+                non-direct components, the samples of a seed depend on neither the batch
+                size nor the thread count; with a stabilizer-rank strategy they are only
+                deterministic for a fixed batch size and fixed reference sample
+                settings.
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.

@@ -148,8 +148,8 @@ def _reduce_along_scan(power, coeffs, op, axis):
 class ExactScalarArray(eqx.Module):
     """Exact scalar array for ZX-calculus phase arithmetic using dyadic representation.
 
-    Represents values of the form (c_0 + c_1·ω + c_2·ω² + c_3·ω³) × 2^power
-    where ω = e^(iπ/4). This enables exact computation without floating-point errors.
+    Represents values of the form (c_0 + c_1·ω + c_2·ω² + c_3·ω⁻¹) × 2^power
+    where ω = e^(iπ/4), so that ω² = i. This enables exact computation without floating-point errors.
 
     Attributes:
         coeffs: Array of shape (..., 4) containing dyadic coefficients.
@@ -163,7 +163,7 @@ class ExactScalarArray(eqx.Module):
     def __init__(self, coeffs: Array, power: Array | None = None):
         """Initialize from coefficients and optional power.
 
-        The value represented is (c_0 + c_1*omega + c_2*omega^2 + c_3*omega^3) * 2^power
+        The value represented is (c_0 + c_1*omega + c_2*omega^2 + c_3*omega^-1) * 2^power
         where omega = e^{i*pi/4}.
         """
         self.coeffs = coeffs
@@ -179,7 +179,7 @@ class ExactScalarArray(eqx.Module):
         return ExactScalarArray(new_coeffs, new_power)
 
     def sum(self, axis: int = -1) -> "ExactScalarArray":
-        """Sum elements along the specified axis using normalized pairwise adds.
+        """Sum elements along the specified axis with a sequential scan.
 
         Args:
             axis: The axis along which to sum.
@@ -200,7 +200,7 @@ class ExactScalarArray(eqx.Module):
         return ExactScalarArray(result_coeffs, result_power)
 
     def prod(self, axis: int = -1) -> "ExactScalarArray":
-        """Compute product along the specified axis using associative scan.
+        """Compute product along the specified axis with a sequential scan.
 
         Returns identity (1+0i with power 0) for empty reductions.
 
