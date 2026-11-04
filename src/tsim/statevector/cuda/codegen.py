@@ -77,14 +77,22 @@ __device__ __forceinline__ u64 draw(u64 seed, u64 shot, u64 slots, u64 slot) {
     return mix64(seed + (shot * slots + slot) * GOLDEN + GOLDEN);
 }
 __device__ __forceinline__ int par(u64 v) { return __popcll(v) & 1; }
-// Whether the 64-bit draw r falls below the share w1 / total of its range.
-// float32 decides it unless r / 2^64 lies within 2^-21 of the share, which
-// covers both roundings; there double precision does, as it would everywhere.
-__device__ __forceinline__ int draw_below(u64 r, float w1, float total) {
+// draw_one in double precision, from the rarer outcome's share, which float32
+// keeps to full relative precision: a rare 0 takes the top of the range, as on
+// the CPU (``shared._cut``). Not inlined, as it is rarely taken.
+__device__ __noinline__ int draw_one_exact(u64 r, float w0, float w1, float total) {
+    int rare0 = w0 < w1;
+    u64 below = (u64)((double)(rare0 ? w0 : w1) / (double)total * 18446744073709551616.0);
+    return ((rare0 ? ~r : r) < below) ^ rare0;
+}
+// Whether the 64-bit draw r gives outcome 1, of weight w1 against w0. float32
+// decides it unless r / 2^64 lies within 2^-21 of the share w1 / total, which
+// covers both roundings; there draw_one_exact does.
+__device__ __forceinline__ int draw_one(u64 r, float w0, float w1, float total) {
     float p = w1 / total, x = __ull2float_rz(r) * 0x1p-64f;
     if (x < p * (1.f - 0x1p-21f)) return 1;
     if (x > p * (1.f + 0x1p-21f)) return 0;
-    return r < (u64)((double)w1 / (double)total * 18446744073709551616.0);
+    return draw_one_exact(r, w0, w1, total);
 }
 // A uniform in (0, 1] from the high 24 bits, so that logf never sees 0.
 __device__ __forceinline__ float unit(u64 r) { return ((r >> 40) + 1) * (1.0f / 16777216.0f); }
@@ -584,7 +592,7 @@ def tape_function(
             f"    if (w1 <= {CERTAIN}f * total) outcome = 0; else if (w0 <= {CERTAIN}f * total) outcome = 1;"
         )
         emit(
-            f"    else outcome = draw_below(draw(seed, shot, {slots}, {a}), w1, total);"
+            f"    else outcome = draw_one(draw(seed, shot, {slots}, {a}), w0, w1, total);"
         )
         emit("    weight = outcome ? w1 : w0;")
         if a in watched:

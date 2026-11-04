@@ -363,8 +363,15 @@ class _CompiledSamplerBase:
             )
             # NOTE: as JAX does for the stabilizer-rank strategies, a GPU is used
             # whenever there is one.
-            if mode == "sequential" and cuda_runtime.available():
-                from tsim.statevector.cuda.sampler import CudaShotSampler
+            if mode == "sequential" and cuda_runtime.forked_after_init():
+                warnings.warn(
+                    "This process was forked after its parent used the GPU, so it "
+                    "samples on the CPU; start it with the 'spawn' or 'forkserver' "
+                    "method to sample on the GPU.",
+                    stacklevel=4,
+                )
+            elif mode == "sequential" and cuda_runtime.available():
+                from tsim.statevector.cuda.sampler import MAX_WIDTH, CudaShotSampler
 
                 if CudaShotSampler.supports(self._shots.layout):
                     self._shots = CudaShotSampler(
@@ -372,6 +379,14 @@ class _CompiledSamplerBase:
                         self._channel_sampler,
                         self._num_detectors,
                         cuda_seed,
+                    )
+                else:
+                    width = max(c.width for c in self._shots.layout.components)
+                    warnings.warn(
+                        f"A CUDA GPU is available, but a component needs {width} "
+                        f"active qubits, more than the {MAX_WIDTH} that the GPU "
+                        "executor supports; sampling on the CPU.",
+                        stacklevel=4,
                     )
         else:
             self._backend = _StabilizerRankBackend(program, key_seed)

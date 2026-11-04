@@ -13,10 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sampler and every statevector component run as CUDA kernels that CuPy
   compiles with NVRTC, in float32, with no trajectory sharing. Circuits with a
   component wider than 11 active qubits stay on the CPU, as does everything
-  under `CUDA_VISIBLE_DEVICES=""`. With a `postselection_mask`, only the shots
-  that pass are copied off the GPU. A seed's samples on the GPU differ from the
-  CPU's and depend on the batch size. Install with
-  `pip install bloqade-tsim[gpu]`.
+  under `CUDA_VISIBLE_DEVICES=""` and in processes forked after their parent
+  used the GPU; a warning says so when a GPU is present. With a
+  `postselection_mask`, only the shots that pass are copied off the GPU. A
+  seed's samples on the GPU differ from the CPU's and depend on the batch size.
+  Install with `pip install bloqade-tsim[gpu]`.
 
 ## [1.0.0] - 2026-11-04
 

@@ -1,5 +1,7 @@
 """The CUDA executor end to end, against the stabilizer-rank strategy and the CPU executor."""
 
+import multiprocessing
+import warnings
 from test.helpers.gen import gen_stim_circuit
 from test.helpers.statevector import CIRCUITS, assert_counts_match
 
@@ -522,7 +524,64 @@ def test_cuda_looping_tapes_match_stabilizer_rank(monkeypatch, name):
 def test_components_wider_than_the_limit_run_on_the_cpu():
     circuit = _random_unitary_circuit(13, 12)
     assert _widest(circuit) > cuda_sampler.MAX_WIDTH
-    assert type(circuit.compile_sampler(seed=1)._shots) is ShotSampler
+    with pytest.warns(UserWarning, match="sampling on the CPU"):
+        sampler = circuit.compile_sampler(seed=1)
+    assert type(sampler._shots) is ShotSampler
+
+
+def _sampler_in_child(_):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        sampler = Circuit(T_STATE_X).compile_sampler(seed=1)
+        sampler.sample(10)
+    return type(sampler._shots).__name__, [str(w.message) for w in caught]
+
+
+def test_processes_forked_after_the_gpu_was_used_sample_on_the_cpu():
+    # NOTE: CUDA cannot be used in a child forked after its parent initialized it.
+    _gpu(Circuit(T_STATE_X).compile_sampler(seed=1)).sample(10)
+    with multiprocessing.get_context("fork").Pool(1) as pool:
+        name, messages = pool.map(_sampler_in_child, [0])[0]
+    assert name == "ShotSampler"
+    assert any("forked" in m for m in messages)
+
+
+def test_noise_of_tiny_probabilities_fires_at_its_rate():
+    # NOTE: 24-bit skips alone fire every segment at least 2^-24 of the time,
+    # here ~90 faults instead of ~0.4.
+    n, p = 1000, 1e-12
+    text = "\n".join(f"X_ERROR({p * (1 + i / n)!r}) {i}" for i in range(n))
+    sampler = _gpu(
+        Circuit(f"{text}\nM " + " ".join(map(str, range(n)))).compile_sampler(seed=1)
+    )
+    # NOTE: faults are rare enough that each lands in a byte of its own.
+    faults = sum(
+        np.count_nonzero(sampler.sample(1 << 22, bit_packed=True)) for _ in range(64)
+    )
+    assert faults <= 5
+
+
+@pytest.mark.parametrize("p0", [3e-8, 1e-6])
+def test_rare_outcome_zero_is_drawn_at_its_rate(p0):
+    # NOTE: w1 / total rounds to a multiple of 2^-24 below 1 in float32; the draw
+    # must use w0, as the CPU's ``_cut`` does.
+    cp = runtime.cupy()
+    source = codegen.PRELUDE + r"""
+extern "C" __global__ void zeros(float w0, unsigned long long n, unsigned long long* count) {
+    unsigned long long local = 0;
+    for (u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; i < n; i += (u64)gridDim.x * blockDim.x)
+        local += !draw_one(mix64(i * GOLDEN + 12345), w0, 1.f, w0 + 1.f);
+    atomicAdd(count, local);
+}
+"""
+    kernel = cp.RawModule(
+        code=source, options=(runtime.arch(), "-std=c++17")
+    ).get_function("zeros")
+    count = cp.zeros(1, dtype=cp.uint64)
+    n = 1 << 30
+    kernel((1024,), (256,), (np.float32(p0), np.uint64(n), count))
+    expected = p0 * n
+    assert abs(int(count.get()[0]) - expected) <= 5 * np.sqrt(expected) + 1
 
 
 @pytest.mark.parametrize(("probability", "shots"), [(1e-10, 1 << 28), (1e-6, 1 << 26)])

@@ -116,6 +116,49 @@ __device__ __forceinline__ void pack_rows(const u64* sw, int ns, const uint2* __
     for (int i = total / 16 * 16 + threadIdx.x; i < total; i += blockDim.x) dst[i] = stage[i];
 }}
 
+// One segment's faults. With ``FINE``, for segments of fewer than 2^-12 expected
+// faults, a draw within 2^-12 of u = 1 takes 24 more bits, which ``unit`` alone
+// cannot resolve: it would fire such a segment at least 2^-24 of the time.
+template <bool FINE>
+__device__ __forceinline__ void add_segment_faults(u64* sw, uint2* events, int* num_events,
+    int max_events, int ns, u64 state, float lk, int first, int outcomes, int idx, int end,
+    const Record* __restrict__ records, const Flip* __restrict__ overflow)
+{{
+    while (true) {{
+        state += GOLDEN;
+        u64 r = mix64(state);
+        float skip;
+        if (!FINE) skip = lk < -3.0e38f ? 0.f : floorf(__logf(unit(r)) / lk);
+        else if ((~r >> 40) >= 4096) skip = floorf(__logf(unit(r)) / lk);
+        else {{
+            // NOTE: 1 - u = (j + w) 2^-24, with w from a fresh draw.
+            float w = ((mix64(state ^ 0x5851F42D4C957F2DULL) >> 40) + 1) * 0x1p-24f;
+            skip = floorf(log1pf(-((float)(~r >> 40) + w) * 0x1p-24f) / lk);
+        }}
+        if (skip >= (float)(end - 1 - idx)) break;
+        idx += 1 + (int)skip;
+        int ch = idx / {S}, row = idx - ch * {S};
+        if (row >= ns) continue;  // the last block's missing shots
+        // NOTE: the skip reads the high 24 bits of r, the outcome its low 32:
+        // a slot from the high 24 of those, the fraction of the slot below.
+        unsigned long long x = (unsigned long long)((unsigned)r >> 8) * (unsigned)outcomes;
+        unsigned slot = (unsigned)(x >> 24);
+        unsigned rec = (unsigned)(first + ch * outcomes) + slot;
+        unsigned draw = (unsigned)(x & 0xFFFFFF) | (slot << 24);
+        int e = atomicAdd(num_events, 1);
+        if (e < max_events) events[e] = make_uint2((unsigned)row | (rec << 8), draw);
+        else apply_fault(sw, row, rec, draw, records, overflow);
+    }}
+}}
+
+__device__ __noinline__ void add_fine_segment_faults(u64* sw, uint2* events, int* num_events,
+    int max_events, int ns, u64 state, float lk, int first, int outcomes, int idx, int end,
+    const Record* __restrict__ records, const Flip* __restrict__ overflow)
+{{
+    add_segment_faults<true>(sw, events, num_events, max_events, ns, state, lk, first, outcomes,
+                             idx, end, records, overflow);
+}}
+
 // Phases 1 and 2: draw the segments' faults on the block's ``ns`` shots and XOR them into ``sw``.
 __device__ __forceinline__ void add_faults(u64* sw, uint2* events, int* num_events, int max_events,
     int ns, u64 stream, int num_segments,
@@ -129,24 +172,12 @@ __device__ __forceinline__ void add_faults(u64* sw, uint2* events, int* num_even
         int first = seg_first[sg], outcomes = seg_outcomes[sg], end = seg_end[sg];
         int idx = seg_begin[sg] - 1;
         u64 state = mix64(stream ^ ((u64)sg * GOLDEN));
-        while (true) {{
-            state += GOLDEN;
-            u64 r = mix64(state);
-            float skip = lk < -3.0e38f ? 0.f : floorf(__logf(unit(r)) / lk);
-            if (skip >= (float)(end - 1 - idx)) break;
-            idx += 1 + (int)skip;
-            int ch = idx / {S}, row = idx - ch * {S};
-            if (row >= ns) continue;  // the last block's missing shots
-            // NOTE: the skip reads the high 24 bits of r, the outcome its low 32:
-            // a slot from the high 24 of those, the fraction of the slot below.
-            unsigned long long x = (unsigned long long)((unsigned)r >> 8) * (unsigned)outcomes;
-            unsigned slot = (unsigned)(x >> 24);
-            unsigned rec = (unsigned)(first + ch * outcomes) + slot;
-            unsigned draw = (unsigned)(x & 0xFFFFFF) | (slot << 24);
-            int e = atomicAdd(num_events, 1);
-            if (e < max_events) events[e] = make_uint2((unsigned)row | (rec << 8), draw);
-            else apply_fault(sw, row, rec, draw, records, overflow);
-        }}
+        if ((float)(end - 1 - idx) * -lk < 0x1p-12f)
+            add_fine_segment_faults(sw, events, num_events, max_events, ns, state, lk, first,
+                                    outcomes, idx, end, records, overflow);
+        else
+            add_segment_faults<false>(sw, events, num_events, max_events, ns, state, lk, first,
+                                      outcomes, idx, end, records, overflow);
     }}
     __syncthreads();
     int ne = min(*num_events, max_events);
@@ -333,7 +364,8 @@ def _groups(tables: NoiseTables, select: np.ndarray) -> NoiseGroups:
         p = float(p_sorted[lo])
         lk = -np.inf if p >= 1.0 else float(np.log1p(-p))
         trials = S * (hi - lo)
-        pieces = max(1, round(trials * min(p, 1.0) / FAULTS_PER_SEGMENT))
+        # NOTE: float32 skips are exact below 2^24 trials only.
+        pieces = max(-(-trials >> 24), round(trials * min(p, 1.0) / FAULTS_PER_SEGMENT))
         cuts = np.linspace(0, trials, pieces + 1).astype(np.int64)
         for a, b in itertools.pairwise(cuts):
             if b > a:

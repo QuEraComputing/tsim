@@ -11,6 +11,7 @@ from __future__ import annotations
 import ctypes
 import functools
 import importlib.util
+import os
 import pathlib
 from types import ModuleType
 
@@ -37,17 +38,41 @@ def cupy() -> ModuleType:
     return cp
 
 
-@functools.cache
-def available() -> bool:
-    """Return whether CuPy is installed and sees a CUDA device.
+_forked_after_init = False
 
-    ``CUDA_VISIBLE_DEVICES=""`` hides the devices, so that the samplers run on the CPU.
+
+def _after_fork_in_child() -> None:
+    # NOTE: a child forked after its parent initialized CUDA cannot use CUDA; the
+    # cached answer is read without touching CUDA.
+    global _forked_after_init
+    if _device_available.cache_info().currsize and _device_available():
+        _forked_after_init = True
+
+
+def available() -> bool:
+    """Return whether CuPy is installed and sees a CUDA device this process can use.
+
+    ``CUDA_VISIBLE_DEVICES=""`` hides the devices, so that the samplers run on the
+    CPU, as they do in a process forked after its parent used the GPU.
     """
+    return not _forked_after_init and _device_available()
+
+
+def forked_after_init() -> bool:
+    """Return whether this process was forked after its parent initialized CUDA."""
+    return _forked_after_init
+
+
+@functools.cache
+def _device_available() -> bool:
     try:
         cp = cupy()
         return cp.cuda.runtime.getDeviceCount() > 0
     except Exception:
         return False
+
+
+os.register_at_fork(after_in_child=_after_fork_in_child)
 
 
 @functools.cache
