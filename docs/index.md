@@ -63,7 +63,7 @@ sampler = c.compile_detector_sampler(strategy="cat5")
 The [Tsim 1.0 blog post](https://bloqade.quera.com/blog/introducing-tsim-1-0-0/) introduces the active state vector strategy and compares its performance with other simulators.
 
 ## Architecture
-![Architecture](architecture.svg)
+![Architecture](architecture.svg){ width="100%" }
 
 Quantum programs are translated into ZX diagrams in which Pauli noise channels appear as parameterized vertices with binary variables $e_i$.
 ZX simplification factors the diagram into a classical part that represents the Tanner graph and a quantum part containing the observable circuit. Both parts define a new basis of *error mechanisms* $f_i = \bigoplus_j T_{ij}\,e_j$.
@@ -169,13 +169,6 @@ The mask tests the values that `sample` returns: with
 the noiseless reference sample, and otherwise when their raw parities are 0. A
 masked detector that is a constant 1, such as one of a noiseless circuit whose
 measurements have parity 1, discards every shot; `sample` warns about it.
-
-## Benchmarks
-
-With GPU acceleration, Tsim can achieve sampling throughput for low-magic circuits that approaches the throughput of Stim on Clifford circuits of the same size. The figure below shows a comparison for [distillation circuits](https://arxiv.org/html/2412.15165v1) (35 and 85 qubits), [cultivation circuits](https://arxiv.org/abs/2409.17595), and rotated surface code circuits.
-Tsim can be five orders of magnitude faster than [quizx](https://github.com/zxcalc/quizx).
-
-![Benchmarks](benchmarks.svg)
 
 ## Citing Tsim
 If you use Tsim, please consider citing the paper describing the core simulation approach:
