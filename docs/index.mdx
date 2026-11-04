@@ -10,7 +10,7 @@ A detailed description of Tsim is given in [arXiv:2604.01059](https://arxiv.org/
 
 ## Quick Start
 
-An introductory tutorial is available [here](/tutorials/encoding_demo). For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference), plus the [non-Clifford instructions](#supported-instructions) listed below.
+An introductory tutorial is available [here](/tutorials/encoding_demo). For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/blob/v1.16.0/doc/gates.md), plus the [non-Clifford instructions](#supported-instructions) listed below.
 
 ```python
 import tsim
@@ -62,6 +62,8 @@ Choose a strategy with the `strategy` argument of `compile_sampler` and `compile
 sampler = c.compile_detector_sampler(strategy="cat5")
 ```
 
+The stabilizer rank strategies are provisional; see [API stability](#api-stability).
+
 The [Tsim 1.0 blog post](https://bloqade.quera.com/blog/introducing-tsim-1-0-0/) introduces the active state vector strategy and compares its performance with other simulators.
 
 ## Architecture
@@ -106,7 +108,7 @@ Note that this feature should be used carefully. If detectors or observables are
 
 ## Supported Instructions
 
-Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/wiki/Stim-v1.13-Gate-Reference). In addition, Tsim defines the following non-Clifford instructions. Angles are given in units of π (half-turns).
+Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/blob/v1.16.0/doc/gates.md). In addition, Tsim defines the following non-Clifford instructions. Angles are given in units of π (half-turns).
 
 | Instruction | Targets | Action |
 |---|---|---|
@@ -171,6 +173,12 @@ The mask tests the values that `sample` returns: with
 the noiseless reference sample, and otherwise when their raw parities are 0. A
 masked detector that is a constant 1, such as one of a noiseless circuit whose
 measurements have parity 1, discards every shot; `sample` warns about it.
+
+## API stability
+
+Tsim follows [semantic versioning](https://semver.org/) for its public API: `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and `tsim.CompiledDetectorSampler`. `tsim.experimental` holds helpers that may change in any release. Every other module is internal, even where it is importable. The stabilizer rank [sampling strategies](#sampling-strategies) (`"cat5"`, `"bss"`, `"cutting"`) are provisional: they may be removed in a minor release, after at least one minor release in which they emit a `DeprecationWarning`. See the [API reference](/api-reference).
+
+A seed reproduces its samples only with the same versions of Tsim and its dependencies (such as NumPy and JAX) and the same backend (CPU or GPU). With a stabilizer-rank strategy, pass the same explicit `batch_size` as well, since the default batch size depends on the free memory.
 
 ## Citing Tsim
 If you use Tsim, please consider citing the paper describing the core simulation approach:

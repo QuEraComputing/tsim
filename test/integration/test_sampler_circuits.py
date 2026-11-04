@@ -19,7 +19,7 @@ def test_sample_bell_state():
     m = sampler.sample(100)
 
     assert np.array_equal(m[:, 0], m[:, 1])
-    assert np.count_nonzero(m[:, 0]) == 48
+    assert np.count_nonzero(m[:, 0]) == 45
 
 
 def test_detector_sampler_bell_state_with_measurement_error():
@@ -47,7 +47,7 @@ def test_t_gate():
         """)
     sampler = c.compile_sampler(strategy="cat5", seed=0)
     m = sampler.sample(100)
-    assert np.count_nonzero(m) == 9
+    assert np.count_nonzero(m) == 17
 
 
 def test_s_gate():
@@ -59,7 +59,7 @@ def test_s_gate():
         """)
     sampler = c.compile_sampler(strategy="cat5", seed=0)
     m = sampler.sample(100)
-    assert np.count_nonzero(m) == 48
+    assert np.count_nonzero(m) == 45
 
 
 def test_t_dag_gate():
@@ -101,13 +101,13 @@ def test_r_gate():
         """)
     sampler = c.compile_sampler(strategy="cat5", seed=0)
     m = sampler.sample(10)
-    assert np.count_nonzero(m[:, 0]) == 7
-    assert np.count_nonzero(m[:, 1]) == 4
+    assert np.count_nonzero(m[:, 0]) == 3
+    assert np.count_nonzero(m[:, 1]) == 5
     assert np.count_nonzero(m[:, 2]) == 0
 
     det_sampler = c.compile_detector_sampler(strategy="cat5", seed=0)
     d = det_sampler.sample(10)
-    assert np.count_nonzero(d) == 7
+    assert np.count_nonzero(d) == 3
 
 
 @pytest.mark.parametrize(

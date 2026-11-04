@@ -24,6 +24,7 @@ from tsim.noise.channels import (
     unique_columns,
     xor_convolve,
 )
+from tsim.utils.rng import GOLDEN
 
 
 class TestProbabilityConstructors:
@@ -1105,6 +1106,13 @@ class TestReduceNullBits:
 class TestFireTables:
     """The sampling tables of channels, against dense products over GF(2)."""
 
+    @pytest.mark.parametrize("p", [1e-15, 1e-16, 1e-300, np.nextafter(0.0, 1.0)])
+    def test_positive_probabilities_are_preserved(self, p):
+        channel = Channel(probs=error_probs(p), unique_col_ids=(0,))
+        tables = _fire_tables([channel], np.ones((1, 1), dtype=np.uint8))
+        assert_allclose(tables.p_fire, [p], rtol=1e-15, atol=0)
+        np.testing.assert_array_equal(tables.alias_prob, [1.0])
+
     @pytest.mark.parametrize("seed", range(6))
     def test_flips_match_dense_products(self, seed):
         rng = np.random.default_rng(seed)
@@ -1125,7 +1133,7 @@ class TestFireTables:
 
         flip_start, flip_cols = [0], []
         for channel in channels:
-            if np.clip(channel.probs[1:], 0, None).sum() <= 1e-15:
+            if np.clip(channel.probs[1:], 0, None).sum() == 0:
                 continue
             for outcome in range(1, len(channel.probs)):
                 bits = [(outcome >> i) & 1 for i in range(channel.num_bits)]
@@ -1140,6 +1148,22 @@ class TestFireTables:
 
 class TestChannelSampler:
     """Tests for ChannelSampler with simplification."""
+
+    @pytest.mark.parametrize("p", [0.0, 1e-14, 1e-15, 1e-16, 1e-18])
+    @pytest.mark.parametrize("packed", [False, True])
+    def test_small_error_probabilities_are_not_discarded(self, p, packed):
+        """A zero first RNG draw fires any positive channel, in either output layout."""
+        sampler = ChannelSampler(
+            [error_probs(p)], np.ones((1, 1), dtype=np.uint8), seed=0
+        )
+        seeds = np.array([2**64 - int(GOLDEN)], dtype=np.uint64)
+        if packed:
+            samples = np.empty((4, 1), dtype=np.uint64)
+            tables = sampler.word_tables(np.array([0]), np.array([0]))
+            sampler.sample_words(samples, tables, seeds)
+        else:
+            samples = sampler.sample(4, seeds)
+        np.testing.assert_array_equal(samples[:, 0], [int(p > 0), 0, 0, 0])
 
     def test_simple_xor_two_errors(self):
         """Test XOR of two independent error channels."""

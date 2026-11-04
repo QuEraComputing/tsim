@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Mapping
 from typing import (
     TYPE_CHECKING,
@@ -42,7 +41,7 @@ _PAULI_PRODUCT_GATES = frozenset(
     {"MPP", "SPP", "SPP_DAG", "OBSERVABLE_INCLUDE", "TPP", "TPP_DAG", "R_PAULI"}
 )
 
-_DEPRECATED_DIAGRAM_TYPES: dict[str, Literal["zx", "zx-dets", "zx-meas"]] = {
+_REMOVED_DIAGRAM_TYPES = {
     "pyzx": "zx",
     "pyzx-dets": "zx-dets",
     "pyzx-meas": "zx-meas",
@@ -741,9 +740,6 @@ class Circuit:
             "zx",
             "zx-dets",
             "zx-meas",
-            "pyzx",
-            "pyzx-dets",
-            "pyzx-meas",
             "timeline-svg",
             "timeslice-svg",
             "timeline-text",
@@ -766,8 +762,6 @@ class Circuit:
                     used to compute probabilities of detectors and observables.
                 "zx-meas": A zxparam D3 drawing of the reduced ZX graph that is
                     used to compute probabilities of measurements.
-                "pyzx", "pyzx-dets", "pyzx-meas": Deprecated aliases for
-                    "zx", "zx-dets" and "zx-meas".
                 "timeline-svg": An SVG image of the operations applied by
                     the circuit over time. Includes annotations showing the
                     measurement record index that each measurement writes
@@ -824,14 +818,11 @@ class Circuit:
             viewer instead of as raw text.
 
         """
-        if type in _DEPRECATED_DIAGRAM_TYPES:
-            replacement = _DEPRECATED_DIAGRAM_TYPES[type]
-            warnings.warn(
-                f"Diagram type {type!r} is deprecated; use {replacement!r} instead.",
-                DeprecationWarning,
-                stacklevel=2,
+        if type in _REMOVED_DIAGRAM_TYPES:
+            replacement = _REMOVED_DIAGRAM_TYPES[type]
+            raise ValueError(
+                f"Diagram type {type!r} was removed in Tsim 1.0; use {replacement!r}."
             )
-            type = replacement
         if type in [
             "timeline-svg",
             "timeslice-svg",
@@ -953,12 +944,16 @@ class Circuit:
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
-                ``numba.get_num_threads()`` threads.
-            seed: Random seed for the sampler. If None, a random seed is drawn. With
-                "active_statevector", and under any strategy for a circuit without
+                ``numba.get_num_threads()`` threads. The stabilizer rank
+                strategies are provisional.
+            seed: Random seed for the sampler. If None, a random seed is drawn. A seed
+                reproduces its samples only with the same versions of Tsim and its
+                dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
+                With "active_statevector", and under any strategy for a circuit without
                 non-direct components, the samples of a seed depend on neither the batch
-                size nor the thread count; with a stabilizer-rank strategy they are only
-                deterministic for a fixed batch size.
+                size nor the thread count. With a stabilizer-rank strategy they also
+                need the same explicit ``batch_size``, since the default batch size
+                depends on the free memory.
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
@@ -986,13 +981,16 @@ class Circuit:
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
                 "bss", "cutting"). "active_statevector" samples on the CPU, on
-                ``numba.get_num_threads()`` threads.
-            seed: Random seed for the sampler. If None, a random seed is drawn. With
-                "active_statevector", and under any strategy for a circuit without
+                ``numba.get_num_threads()`` threads. The stabilizer rank
+                strategies are provisional.
+            seed: Random seed for the sampler. If None, a random seed is drawn. A seed
+                reproduces its samples only with the same versions of Tsim and its
+                dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
+                With "active_statevector", and under any strategy for a circuit without
                 non-direct components, the samples of a seed depend on neither the batch
-                size nor the thread count; with a stabilizer-rank strategy they are only
-                deterministic for a fixed batch size and fixed reference sample
-                settings.
+                size nor the thread count. With a stabilizer-rank strategy they also
+                need the same explicit ``batch_size`` and the same reference sample
+                settings, since the default batch size depends on the free memory.
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.
@@ -1001,14 +999,6 @@ class Circuit:
         from tsim.sampler import CompiledDetectorSampler
 
         return CompiledDetectorSampler(self, seed=seed, strategy=strategy)
-
-    def cast_to_stim(self) -> stim.Circuit:
-        """Return self with type cast to `stim.Circuit`.
-
-        This is useful for passing the circuit to functions that expect a
-        `stim.Circuit`.
-        """
-        return cast(stim.Circuit, self)  # pragma: no cover
 
     def inverse(self) -> Circuit:
         """Return the inverse of the circuit."""

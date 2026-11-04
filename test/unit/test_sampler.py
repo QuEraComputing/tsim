@@ -1,3 +1,4 @@
+from test.helpers.statevector import shot_sampler
 from unittest.mock import patch
 
 import numpy as np
@@ -333,10 +334,47 @@ def test_seed():
         """)
     for _ in range(2):
         sampler = c.compile_sampler(strategy="cat5", seed=0)
-        assert np.count_nonzero(sampler.sample(100)) == 48
-        assert np.count_nonzero(sampler.sample(100)) == 53
-        assert np.count_nonzero(sampler.sample(100)) == 52
+        assert np.count_nonzero(sampler.sample(100)) == 45
         assert np.count_nonzero(sampler.sample(100)) == 50
+        assert np.count_nonzero(sampler.sample(100)) == 46
+        assert np.count_nonzero(sampler.sample(100)) == 46
+
+
+def test_seeds_sharing_30_bits_give_different_noise():
+    # NOTE: these seeds used to draw the same 30-bit noise seed (#261).
+    c = Circuit("X_ERROR(0.1) 0\nM 0")
+    a = c.compile_sampler(seed=37430).sample(1000)
+    b = c.compile_sampler(seed=43909).sample(1000)
+    assert not np.array_equal(a, b)
+
+
+def test_no_two_seeds_share_a_stream():
+    # NOTE: as a seed list, [s + 2**32, 0] is the same entropy as [s, 1], so
+    # streams keyed by such lists could be another seed's stream.
+    c = Circuit("X_ERROR(0.1) 0\nH 1\nT 1\nH 1\nM 0 1")
+    seeds = [5 + k * 2**32 for k in range(4)]
+    first_draws = set()
+    for seed in seeds:
+        sampler = c.compile_sampler(seed=seed)
+        shots = shot_sampler(sampler)
+        for rng in (
+            sampler._channel_sampler._rng,
+            shots._seeds,
+            shots._reference_seeds,
+        ):
+            first_draws.add(int(rng.integers(2**64, dtype=np.uint64)))
+    assert len(first_draws) == 3 * len(seeds)
+
+
+@pytest.mark.parametrize("strategy", ["active_statevector", "cat5"])
+@pytest.mark.parametrize("seed", [5, 2**64 + 5])
+def test_component_samples_depend_on_every_bit_of_the_seed(strategy, seed):
+    # NOTE: jax.random.key(seed) used to keep only the low 32 bits, and failed
+    # from 2**63 on.
+    c = Circuit("H 0\nT 0\nH 0\nM 0")
+    a = c.compile_sampler(strategy=strategy, seed=seed).sample(1000)
+    b = c.compile_sampler(strategy=strategy, seed=seed + 2**32).sample(1000)
+    assert not np.array_equal(a, b)
 
 
 def test_sampler_repr():

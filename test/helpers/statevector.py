@@ -459,7 +459,9 @@ def sample_lanes(
 
     The shot words hold the component's outputs (their f-parts, constants and
     ``flipped`` bits) and its key, as ``tsim.statevector.shots`` lays them out, and
-    ``run_lanes`` adds the branch parts. Returns ``(samples, deviation, stats)``.
+    ``run_lanes`` adds the branch parts. Returns ``(samples, deviation, stats)``;
+    ``stats["alive"]`` tells which shots no pruning discarded, whose samples are
+    the only finished ones.
     """
     key, program = component_program(compiled, postselected)
     tape = compiled.tape
@@ -497,5 +499,11 @@ def sample_lanes(
     bits = np.unpackbits(
         words[:, :output_words].view(np.uint8), axis=1, bitorder="little"
     )
-    stats = {"groups": groups, "peak lanes": peak, "lanes": size, "dead": dead}
+    stats = {
+        "groups": groups,
+        "peak lanes": peak,
+        "lanes": size,
+        "dead": dead,
+        "alive": alive,
+    }
     return bits[:, :num_outputs].astype(bool), float(deviation), stats

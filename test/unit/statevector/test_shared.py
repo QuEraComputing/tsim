@@ -123,34 +123,34 @@ def test_pruning_discards_exactly_the_postselected_failures(name, flip, share):
         flipped[0] = flip
         patterns = f_patterns(planned.num_f, limit=3)
         f_params = _f_params(component_layout, patterns, shots_each)
-        samples, _, _ = sample_lanes(
+        samples, _, stats = sample_lanes(
             compiled, f_params, 5, share, postselected, flipped
         )
         for i, f in enumerate(patterns):
             rows = samples[i * shots_each : (i + 1) * shots_each]
-            discarded = np.asarray((rows & postselected).any(axis=1))
+            discarded = ~stats["alive"][i * shots_each : (i + 1) * shots_each]
             expected = _postselected_distribution(
                 plan_distribution(planned, f), postselected, flipped
             )
             _assert_counts(rows ^ flipped, discarded, expected)
 
 
+@pytest.mark.parametrize("share", [True, False])
 @pytest.mark.parametrize("flip", [False, True])
 @pytest.mark.parametrize("name", NAMES)
-def test_pruned_shots_report_false_after_their_pruning_action(name, flip):
+def test_pruning_keeps_exactly_the_shots_an_unpruned_run_accepts(name, flip, share):
     for planned, component_layout, compiled in _compiled(name):
         postselected = np.ones(compiled.num_outputs, dtype=bool)
+        postselected[-1] = False
         flipped = np.full(compiled.num_outputs, flip)
         f_params = _f_params(component_layout, f_patterns(planned.num_f, 3), 4_000)
-        rows, _, _ = sample_lanes(
-            compiled, f_params, 9, postselected=postselected, flipped=flipped
+        pruned, _, stats = sample_lanes(
+            compiled, f_params, 9, share, postselected, flipped
         )
-        lanes = component_program(compiled, postselected)[1]
-        ready, tested = lanes.ready, lanes.prune_outputs
-        prune_at = np.where(tested.any(axis=0), tested.argmax(axis=0), ready)
-        pruning = np.min(np.where(rows, prune_at[None, :], np.inf), axis=1)
-        late = rows & (ready[None, :] > pruning[:, None])
-        assert not np.any(late), "an output set after the pruning action is 1"
+        unpruned, _, _ = sample_lanes(compiled, f_params, 9, share, None, flipped)
+        accepted = ~(unpruned & postselected).any(axis=1)
+        np.testing.assert_array_equal(stats["alive"], accepted)
+        np.testing.assert_array_equal(pruned[accepted], unpruned[accepted])
 
 
 @pytest.mark.parametrize("name", ["t_ghz", "midcircuit_feedforward", "injection_check"])
