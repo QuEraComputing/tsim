@@ -144,20 +144,12 @@ CCX 0 1 2                # Toffoli with controls 0, 1 and target 2
 ```
 
 
-## API stability
-
-Tsim follows [semantic versioning](https://semver.org/) for its public API: `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and `tsim.CompiledDetectorSampler`. `tsim.experimental` holds helpers that may change in any release. Every other module is internal, even where it is importable.
-
-A seed reproduces its samples only with the same Tsim version and backend (CPU or GPU); new versions may change the samples of a seed.
-
-
 ## Upgrading from 0.1
 
 Tsim 1.0 changes some defaults and APIs. See the [changelog](CHANGELOG.md) for the full list.
 
 - Samplers default to `strategy="active_statevector"`. Pass `strategy="cat5"` for the previous behavior.
 - Samples for a fixed seed differ from earlier versions.
-- The public API is `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and `tsim.CompiledDetectorSampler`. `CompiledStateProbs`, `SteaneEncoder` and `ColorEncoder5` are experimental, in `tsim.experimental`; other modules are internal. See [API stability](#api-stability).
 - `Circuit.get_graph()` and `Circuit.get_sampling_graph()` return `zxparam.Graph`; Tsim no longer depends on `pyzx-param`.
 - `Circuit.to_matrix()` is removed. `Circuit.to_tensor()` returns the circuit's channel and needs `zxparam[quimb]`.
 - The `"pyzx"`, `"pyzx-dets"` and `"pyzx-meas"` diagram types are deprecated in favor of `"zx"`, `"zx-dets"` and `"zx-meas"`.
