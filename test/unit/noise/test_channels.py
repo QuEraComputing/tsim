@@ -21,7 +21,6 @@ from tsim.noise.channels import (
     pauli_channel_2_probs,
     reduce_null_bits,
     simplify_channels,
-    sparse_unique_columns,
     unique_columns,
     xor_convolve,
 )
@@ -260,7 +259,7 @@ def _sample_channels(channels, matrix, n_samples, seed=42):
     """Sample from channels using the ChannelSampler infrastructure."""
     sampler = object.__new__(ChannelSampler)
     sampler.channels = channels
-    sampler.signature_matrix = np.asarray(matrix, dtype=np.uint8)
+    sampler.signature_matrix = SparseGF2Matrix.from_dense(matrix)
     sampler._rng = np.random.default_rng(seed)
     sampler._tables = _fire_tables(channels, sampler.signature_matrix)
     return sampler.sample(n_samples)
@@ -848,16 +847,19 @@ class TestUniqueColumns:
         rng = np.random.default_rng(rows * 1000 + cols)
         distinct = (rng.random((rows, max(1, cols // 3))) < density).astype(np.uint8)
         matrix = distinct[:, rng.integers(0, distinct.shape[1], cols)]
-        got_cols, got_inverse = unique_columns(matrix)
+        signatures, got_inverse = unique_columns(SparseGF2Matrix.from_dense(matrix))
         expected_cols, expected_inverse = np.unique(matrix, axis=1, return_inverse=True)
-        np.testing.assert_array_equal(got_cols, expected_cols)
+        got_cols = SparseGF2Matrix(signatures, rows).toarray().T
+        np.testing.assert_array_equal(
+            got_cols.reshape(expected_cols.shape), expected_cols
+        )
         np.testing.assert_array_equal(got_inverse, np.ravel(expected_inverse))
 
     def test_accepts_float_matrices(self):
         matrix = np.array([[1.0, 0.0, 1.0], [0.0, 2.0, 0.0]])
-        got_cols, got_inverse = unique_columns(matrix)
-        np.testing.assert_array_equal(got_cols, [[0.0, 1.0], [2.0, 0.0]])
-        np.testing.assert_array_equal(got_inverse, [1, 0, 1])
+        signatures, inverse = unique_columns(SparseGF2Matrix.from_dense(matrix))
+        assert signatures == [(1,), (0,)]
+        np.testing.assert_array_equal(inverse, [1, 0, 1])
         sampler = ChannelSampler([error_probs(1)], np.eye(1))
         np.testing.assert_array_equal(sampler.sample(3), np.ones((3, 1)))
 
@@ -1111,7 +1113,7 @@ class TestFireTables:
     @pytest.mark.parametrize("p", [1e-15, 1e-16, 1e-300, np.nextafter(0.0, 1.0)])
     def test_positive_probabilities_are_preserved(self, p):
         channel = Channel(probs=error_probs(p), unique_col_ids=(0,))
-        tables = _fire_tables([channel], np.ones((1, 1), dtype=np.uint8))
+        tables = _fire_tables([channel], SparseGF2Matrix([(0,)], 1))
         assert_allclose(tables.p_fire, [p], rtol=1e-15, atol=0)
         np.testing.assert_array_equal(tables.alias_prob, [1.0])
 
@@ -1131,7 +1133,7 @@ class TestFireTables:
             probs = rng.random(2**num_bits) * (rng.random(2**num_bits) < 0.6)
             probs[0] += 1e-3
             channels.append(Channel(probs=probs / probs.sum(), unique_col_ids=col_ids))
-        tables = _fire_tables(channels, signature_matrix)
+        tables = _fire_tables(channels, SparseGF2Matrix.from_dense(signature_matrix))
 
         flip_start, flip_cols = [0], []
         for channel in channels:
@@ -1369,28 +1371,13 @@ class TestChannelSampler:
         assert np.array_equal(out, expected)
 
 
-@pytest.mark.parametrize("seed", range(10))
-def test_sparse_unique_columns_matches_unique_columns(seed):
-    rng = np.random.default_rng(seed)
-    dense = (rng.random((rng.integers(1, 12), rng.integers(1, 60))) < 0.2).astype(
-        np.uint8
-    )
-    dense[:, rng.integers(0, dense.shape[1], size=5)] = dense[:, :1]  # repeats
-    sparse = SparseGF2Matrix(
-        [tuple(np.flatnonzero(r).tolist()) for r in dense], dense.shape[1]
-    )
-    unique, inverse = unique_columns(dense)
-    signatures, sparse_inverse = sparse_unique_columns(sparse)
-    np.testing.assert_array_equal(sparse_inverse, inverse)
-    np.testing.assert_array_equal(
-        np.asarray(SparseGF2Matrix(signatures, dense.shape[0])).T, unique
-    )
-
-
-def test_channel_sampler_sparse_transform_matches_dense():
-    probs = [error_probs(0.05), error_probs(0.1), error_probs(0.2)]
-    dense = np.array([[1, 0, 1], [0, 1, 1]], dtype=np.uint8)
-    sparse = SparseGF2Matrix([tuple(np.flatnonzero(r).tolist()) for r in dense], 3)
-    expected = ChannelSampler(probs, dense, seed=11).sample(5000)
-    drawn = ChannelSampler(probs, sparse, seed=11).sample(5000)
-    np.testing.assert_array_equal(drawn, expected)
+@pytest.mark.parametrize("sparse", [False, True])
+def test_channel_sampler_drops_bits_with_all_zero_columns(sparse):
+    # NOTE: e0 and e2 flip nothing, so only the 2-bit channel's second bit is left.
+    probs = [np.array([0.4, 0.1, 0.3, 0.2]), error_probs(0.3)]
+    transform = np.array([[0, 1, 0]], dtype=np.uint8)
+    if sparse:
+        transform = SparseGF2Matrix.from_dense(transform)
+    sampler = ChannelSampler(probs, transform, seed=5)
+    assert [channel.unique_col_ids for channel in sampler.channels] == [(1,)]
+    assert_allclose(sampler.sample(100_000)[:, 0].mean(), 0.3 + 0.2, rtol=0.05)

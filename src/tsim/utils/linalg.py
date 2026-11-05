@@ -25,44 +25,10 @@ def find_basis(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     """
     vecs = np.asarray(vectors, dtype=np.uint8)
-    num_vectors = vecs.shape[0]
-
-    # NOTE: vectors and their expansions over the basis are Python ints (bit j
-    # is entry j). A vector is reduced by the basis vector whose lowest bit is
-    # its own, until that bit is new (independent) or nothing is left.
-    packed = np.packbits(vecs, axis=1, bitorder="little")
-    reduced_basis: dict[int, tuple[int, int]] = {}
-    basis_indices: list[int] = []
-    t_rows: list[int] = []
-
-    for i, row in enumerate(packed):
-        v = int.from_bytes(row.tobytes(), "little")
-        dep_sum = 0
-        while v:
-            pivot = (v & -v).bit_length() - 1
-            if pivot not in reduced_basis:
-                # reduced_v = v_original + sum(reducing vectors)
-                # => reduced_v_expansion = e_new + sum(their expansions)
-                rank = len(basis_indices)
-                reduced_basis[pivot] = (v, dep_sum | 1 << rank)
-                basis_indices.append(i)
-                dep_sum = 1 << rank
-                break
-            b, expansion = reduced_basis[pivot]
-            v ^= b
-            dep_sum ^= expansion
-        # A dependent vector is the sum of the expansions of its reducing vectors
-        t_rows.append(dep_sum)
-
-    rank = len(basis_indices)
-    num_bytes = -(-rank // 8)
-    t_bytes = b"".join(row.to_bytes(num_bytes, "little") for row in t_rows)
-    transform = np.unpackbits(
-        np.frombuffer(t_bytes, dtype=np.uint8).reshape(num_vectors, num_bytes),
-        axis=1,
-        count=rank,
-        bitorder="little",
-    )
+    basis_indices, expansions = find_basis_sparse(SparseGF2Matrix.from_dense(vecs).rows)
+    transform = np.zeros((len(vecs), len(basis_indices)), dtype=np.uint8)
+    for i, expansion in enumerate(expansions):
+        transform[i, expansion] = 1
     return vecs[basis_indices], transform
 
 
@@ -79,6 +45,13 @@ class SparseGF2Matrix:
         self.rows = rows
         self.num_cols = num_cols
 
+    @classmethod
+    def from_dense(cls, matrix: np.ndarray) -> "SparseGF2Matrix":
+        """Return the sparse form of a 2-D matrix; nonzero entries count as 1."""
+        dense = np.asarray(matrix)
+        rows = [tuple(np.flatnonzero(row).tolist()) for row in dense]
+        return cls(rows, dense.shape[1])
+
     @property
     def shape(self) -> tuple[int, int]:
         """The shape ``(num_rows, num_cols)``."""
@@ -93,41 +66,55 @@ class SparseGF2Matrix:
 
     def __array__(self, dtype=None, copy=None) -> np.ndarray:
         """Return the dense matrix, for ``np.asarray``."""
+        if copy is False:
+            raise ValueError("a SparseGF2Matrix can only be densified by copying")
         dense = self.toarray()
         return dense if dtype is None else dense.astype(dtype)
 
     def columns(self) -> list[tuple[int, ...]]:
         """Return each column's sorted row indices."""
-        cols: list[list[int]] = [[] for _ in range(self.num_cols)]
+        entries: dict[int, list[int]] = {}
         for i, row in enumerate(self.rows):
-            for j in row:
-                cols[j].append(i)
-        return [tuple(c) for c in cols]
+            for column in row:
+                entries.setdefault(column, []).append(i)
+        return [
+            tuple(entries[column]) if column in entries else ()
+            for column in range(self.num_cols)
+        ]
 
 
-def _xor_shifted(a: tuple[int, int], b: tuple[int, int]) -> tuple[int, int]:
-    """XOR two bit sets stored as ``(offset, bits)``, meaning ``bits << offset``."""
-    (lo_a, x_a), (lo_b, x_b) = a, b
-    lo = min(lo_a, lo_b)
-    return lo, (x_a << (lo_a - lo)) ^ (x_b << (lo_b - lo))
+_EMPTY = (0, 0)
 
 
-def _normalize(lo: int, x: int) -> tuple[int, int]:
-    """Shift ``(lo, x)`` so that ``x`` is odd (or ``(0, 0)`` for the empty set)."""
-    if not x:
-        return 0, 0
-    shift = (x & -x).bit_length() - 1
-    return lo + shift, x >> shift
+def _normalize(offset: int, bits: int) -> tuple[int, int]:
+    """Shift ``(offset, bits)`` so that ``bits`` is odd, or return ``_EMPTY``."""
+    if not bits:
+        return _EMPTY
+    shift = (bits & -bits).bit_length() - 1
+    return offset + shift, bits >> shift
 
 
-def _indices(lo: int, x: int) -> list[int]:
-    """Return the set bit positions of ``x << lo``."""
-    out = []
-    while x:
-        low = x & -x
-        out.append(lo + low.bit_length() - 1)
-        x ^= low
-    return out
+def _xor(a: tuple[int, int], b: tuple[int, int]) -> tuple[int, int]:
+    """XOR two normalized bit sets stored as ``(offset, bits)``, ``bits << offset``."""
+    (offset_a, bits_a), (offset_b, bits_b) = a, b
+    if not bits_a:
+        return b
+    if not bits_b:
+        return a
+    offset = min(offset_a, offset_b)
+    return _normalize(
+        offset, (bits_a << (offset_a - offset)) ^ (bits_b << (offset_b - offset))
+    )
+
+
+def _indices(offset: int, bits: int) -> list[int]:
+    """Return the set bit positions of ``bits << offset``."""
+    positions = []
+    while bits:
+        lowest = bits & -bits
+        positions.append(offset + lowest.bit_length() - 1)
+        bits ^= lowest
+    return positions
 
 
 def find_basis_sparse(
@@ -135,9 +122,9 @@ def find_basis_sparse(
 ) -> tuple[list[int], list[list[int]]]:
     """``find_basis`` for sparse rows, given as sorted column indices.
 
-    Performs the same elimination as ``find_basis`` (same order, same pivots), so
-    it selects the same basis and returns the same transform. Each bit set is
-    held as ``(offset, bits)`` with ``bits`` odd, so a Python int only spans a
+    Each row is reduced by the basis vector whose lowest column is its own, until
+    that column is new (the row joins the basis) or nothing is left. Each bit set
+    is held as ``(offset, bits)`` with ``bits`` odd, so a Python int only spans a
     row's columns from its lowest set column, not from column 0. Rows whose
     columns are local (as an error-detecting circuit's are) stay small.
 
@@ -151,30 +138,30 @@ def find_basis_sparse(
     """
     reduced_basis: dict[int, tuple[tuple[int, int], tuple[int, int]]] = {}
     basis_indices: list[int] = []
-    t_rows: list[list[int]] = []
-    for i, cols in enumerate(rows):
-        if cols:
-            lo = cols[0]
-            x = 0
-            for c in cols:
-                x ^= 1 << (c - lo)
-            v = _normalize(lo, x)
-        else:
-            v = (0, 0)
-        dep = (0, 0)
-        while v[1]:
-            pivot = v[0]
+    expansions: list[list[int]] = []
+    for i, columns in enumerate(rows):
+        vector = _EMPTY
+        if columns:
+            bits = 0
+            for column in columns:
+                bits ^= 1 << (column - columns[0])
+            vector = _normalize(columns[0], bits)
+        expansion = _EMPTY
+        while vector[1]:
+            pivot = vector[0]
             if pivot not in reduced_basis:
+                # NOTE: the reduced row is the row plus the vectors that reduced
+                # it, so its expansion is the new basis bit plus theirs.
                 rank = len(basis_indices)
-                reduced_basis[pivot] = (v, _normalize(*_xor_shifted(dep, (rank, 1))))
+                reduced_basis[pivot] = (vector, _xor(expansion, (rank, 1)))
                 basis_indices.append(i)
-                dep = (rank, 1)
+                expansion = (rank, 1)
                 break
-            b, expansion = reduced_basis[pivot]
-            v = _normalize(*_xor_shifted(v, b))
-            dep = _normalize(*_xor_shifted(dep, expansion))
-        t_rows.append(_indices(*dep))
-    return basis_indices, t_rows
+            basis_vector, basis_expansion = reduced_basis[pivot]
+            vector = _xor(vector, basis_vector)
+            expansion = _xor(expansion, basis_expansion)
+        expansions.append(_indices(*expansion))
+    return basis_indices, expansions
 
 
 def matmul_gf2(a: Array, b: Array) -> Array:

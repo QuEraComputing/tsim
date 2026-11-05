@@ -151,24 +151,55 @@ def test_matmul_gf2_empty_terms():
     assert result.shape == (2, 0, 0)
 
 
+def _reference_find_basis(vectors: np.ndarray) -> tuple[list[int], np.ndarray]:
+    """Eliminate dense rows by their lowest set bit, as Python ints."""
+    reduced_basis: dict[int, tuple[int, int]] = {}
+    basis_indices: list[int] = []
+    expansions: list[int] = []
+    for i, row in enumerate(vectors):
+        vector = sum(1 << int(j) for j in np.flatnonzero(row))
+        expansion = 0
+        while vector:
+            pivot = (vector & -vector).bit_length() - 1
+            if pivot not in reduced_basis:
+                rank = len(basis_indices)
+                reduced_basis[pivot] = (vector, expansion | 1 << rank)
+                basis_indices.append(i)
+                expansion = 1 << rank
+                break
+            basis_vector, basis_expansion = reduced_basis[pivot]
+            vector ^= basis_vector
+            expansion ^= basis_expansion
+        expansions.append(expansion)
+    transform = np.array(
+        [[(e >> k) & 1 for k in range(len(basis_indices))] for e in expansions],
+        dtype=np.uint8,
+    ).reshape(len(vectors), len(basis_indices))
+    return basis_indices, transform
+
+
 @pytest.mark.parametrize("seed", range(20))
-def test_find_basis_sparse_matches_find_basis(seed):
+def test_find_basis_matches_reference_elimination(seed):
     rng = np.random.default_rng(seed)
     num_rows, num_cols = rng.integers(1, 40), rng.integers(1, 200)
     dense = (rng.random((num_rows, num_cols)) < rng.uniform(0.01, 0.3)).astype(np.uint8)
     dense[rng.random(num_rows) < 0.2] = 0  # some empty rows
     if num_rows > 2:  # some dependent rows
         dense[-1] = dense[0] ^ dense[1]
-    rows = [tuple(np.flatnonzero(r).tolist()) for r in dense]
+
+    expected_indices, expected_transform = _reference_find_basis(dense)
+    basis_indices, expansions = find_basis_sparse(
+        SparseGF2Matrix.from_dense(dense).rows
+    )
+    assert basis_indices == expected_indices
+    sparse_transform = np.zeros_like(expected_transform)
+    for i, expansion in enumerate(expansions):
+        sparse_transform[i, expansion] = 1
+    np.testing.assert_array_equal(sparse_transform, expected_transform)
 
     basis, transform = find_basis(dense)
-    basis_indices, t_rows = find_basis_sparse(rows)
-
-    np.testing.assert_array_equal(dense[basis_indices], basis)
-    sparse_transform = np.zeros_like(transform)
-    for i, row in enumerate(t_rows):
-        sparse_transform[i, row] = 1
-    np.testing.assert_array_equal(sparse_transform, transform)
+    np.testing.assert_array_equal(basis, dense[expected_indices])
+    np.testing.assert_array_equal(transform, expected_transform)
 
 
 def test_sparse_gf2_matrix_round_trip():
@@ -180,3 +211,9 @@ def test_sparse_gf2_matrix_round_trip():
         dense, [[1, 0, 0, 1, 0], [0, 0, 0, 0, 0], [0, 1, 1, 1, 0]]
     )
     assert matrix.columns() == [(0,), (2,), (2,), (0, 2), ()]
+    assert SparseGF2Matrix.from_dense(dense).rows == rows
+
+
+def test_sparse_gf2_matrix_refuses_to_densify_without_copying():
+    with pytest.raises(ValueError, match="copying"):
+        np.asarray(SparseGF2Matrix([(0,)], 1), copy=False)
