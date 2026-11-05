@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from test.helpers.statevector import shot_sampler
 from unittest.mock import patch
 
@@ -722,3 +724,30 @@ def test_direct_detectors_match_a_reference(work):
     np.testing.assert_array_equal(out, expected)
     np.testing.assert_array_equal(discarded, (bits & postselect).any(axis=1))
     assert 0 < discarded.sum() < rows
+
+
+_JAX_BACKEND_CHECK = """
+import jax._src.xla_bridge as xb
+import numpy as np
+import tsim
+
+assert not xb.backends_are_initialized(), "import tsim"
+c = tsim.Circuit(
+    "R 0 1\\nH 0\\nT 0\\nCNOT 0 1\\nX_ERROR(0.1) 0\\nH 0\\nM 0 1\\n"
+    "DETECTOR rec[-1]\\nOBSERVABLE_INCLUDE(0) rec[-2]"
+)
+c.compile_sampler(seed=1).sample(10, bit_packed=True)
+sampler = c.compile_detector_sampler(seed=1)
+sampler.sample(10, postselection_mask=np.array([True]))
+sampler.sample(10, use_detector_reference_sample=True, separate_observables=True)
+assert not xb.backends_are_initialized(), "active_statevector"
+c.compile_detector_sampler(seed=1, strategy="cat5").sample(10)
+assert xb.backends_are_initialized(), "cat5"
+"""
+
+
+def test_only_the_stabilizer_rank_strategies_start_jax():
+    # NOTE: JAX's backend reserves most of a GPU's memory when it starts, so
+    # importing Tsim and sampling with "active_statevector" must not start it. A
+    # fresh interpreter, since other tests start it.
+    subprocess.run([sys.executable, "-c", _JAX_BACKEND_CHECK], check=True)  # noqa: S603
