@@ -10,12 +10,6 @@ import matplotlib.pyplot as plt
 from tsim.experimental import ColorEncoder5
 ```
 
-```text title="Output"
-An NVIDIA GPU may be present on this machine, but a CUDA-enabled jaxlib is not installed. Falling back to cpu.
-```
-
-
-
 In this tutorial, we will simulate a magic state distillation protocol using Tsim. We will simulate the magic state distillation circuit with 85 qubits introduced in [Rodriguez et al. (2025)](https://www.nature.com/articles/s41586-025-09367-3). This showcases Tsim's ability to simulate large non-Clifford circuits that would be impossible to simulate using a state vector simulator.
 
 ### Magic states
@@ -120,7 +114,7 @@ c.diagram("timeline-svg", height=100)
 ```
 
 ```text title="Output"
-Infidelity: 0.03322
+Infidelity: 0.03336
 ```
 
 
@@ -4299,6 +4293,8 @@ Expectation value: 0.5687, percentage kept: 1.12%
 
 
 Expectation value: 0.5704, percentage kept: 1.24%
+
+
 Expectation value: 0.5651, percentage kept: 1.14%
 ```
 

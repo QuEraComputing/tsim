@@ -704,6 +704,10 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
         # set before the kernel (a subprocess) starts so it's inherited.
         old_sde = os.environ.get("SOURCE_DATE_EPOCH")
         os.environ["SOURCE_DATE_EPOCH"] = "1704067200"  # 2024-01-01 UTC
+        # Run JAX on CPU so outputs don't depend on the build machine (and a
+        # GPU without a CUDA jaxlib doesn't print a fallback warning).
+        old_jax = os.environ.get("JAX_PLATFORMS")
+        os.environ["JAX_PLATFORMS"] = "cpu"
         # Inject a hidden preamble that seeds RNG and fixes matplotlib's SVG
         # element-id hashing, so executed outputs (sampled values, figures)
         # are byte-stable across builds and safe to commit. tsim samplers use
@@ -746,6 +750,10 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
                 os.environ.pop("SOURCE_DATE_EPOCH", None)
             else:
                 os.environ["SOURCE_DATE_EPOCH"] = old_sde
+            if old_jax is None:
+                os.environ.pop("JAX_PLATFORMS", None)
+            else:
+                os.environ["JAX_PLATFORMS"] = old_jax
 
     # Drop cells tagged "remove-cell" (post-execution).
     tag_remove = TagRemovePreprocessor(remove_cell_tags=("remove-cell",))
