@@ -66,6 +66,117 @@ def find_basis(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return vecs[basis_indices], transform
 
 
+class SparseGF2Matrix:
+    """A binary matrix stored as the sorted column indices of each row's ones.
+
+    Used where a dense matrix would not fit: the error transform of a large
+    circuit has ~10^5 rows and ~10^6 columns but only tens of ones per row.
+    ``np.asarray`` gives the dense matrix.
+    """
+
+    def __init__(self, rows: list[tuple[int, ...]], num_cols: int):
+        """Create the matrix from its rows' sorted column indices."""
+        self.rows = rows
+        self.num_cols = num_cols
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        """The shape ``(num_rows, num_cols)``."""
+        return len(self.rows), self.num_cols
+
+    def toarray(self) -> np.ndarray:
+        """Return the dense uint8 matrix."""
+        dense = np.zeros(self.shape, dtype=np.uint8)
+        for i, row in enumerate(self.rows):
+            dense[i, list(row)] = 1
+        return dense
+
+    def __array__(self, dtype=None, copy=None) -> np.ndarray:
+        """Return the dense matrix, for ``np.asarray``."""
+        dense = self.toarray()
+        return dense if dtype is None else dense.astype(dtype)
+
+    def columns(self) -> list[tuple[int, ...]]:
+        """Return each column's sorted row indices."""
+        cols: list[list[int]] = [[] for _ in range(self.num_cols)]
+        for i, row in enumerate(self.rows):
+            for j in row:
+                cols[j].append(i)
+        return [tuple(c) for c in cols]
+
+
+def _xor_shifted(a: tuple[int, int], b: tuple[int, int]) -> tuple[int, int]:
+    """XOR two bit sets stored as ``(offset, bits)``, meaning ``bits << offset``."""
+    (lo_a, x_a), (lo_b, x_b) = a, b
+    lo = min(lo_a, lo_b)
+    return lo, (x_a << (lo_a - lo)) ^ (x_b << (lo_b - lo))
+
+
+def _normalize(lo: int, x: int) -> tuple[int, int]:
+    """Shift ``(lo, x)`` so that ``x`` is odd (or ``(0, 0)`` for the empty set)."""
+    if not x:
+        return 0, 0
+    shift = (x & -x).bit_length() - 1
+    return lo + shift, x >> shift
+
+
+def _indices(lo: int, x: int) -> list[int]:
+    """Return the set bit positions of ``x << lo``."""
+    out = []
+    while x:
+        low = x & -x
+        out.append(lo + low.bit_length() - 1)
+        x ^= low
+    return out
+
+
+def find_basis_sparse(
+    rows: list[tuple[int, ...]],
+) -> tuple[list[int], list[list[int]]]:
+    """``find_basis`` for sparse rows, given as sorted column indices.
+
+    Performs the same elimination as ``find_basis`` (same order, same pivots), so
+    it selects the same basis and returns the same transform. Each bit set is
+    held as ``(offset, bits)`` with ``bits`` odd, so a Python int only spans a
+    row's columns from its lowest set column, not from column 0. Rows whose
+    columns are local (as an error-detecting circuit's are) stay small.
+
+    Args:
+        rows: Each row's sorted column indices.
+
+    Returns:
+        The indices of the rows that form the basis, and for every row the
+        sorted indices of the basis vectors whose XOR it is.
+
+    """
+    reduced_basis: dict[int, tuple[tuple[int, int], tuple[int, int]]] = {}
+    basis_indices: list[int] = []
+    t_rows: list[list[int]] = []
+    for i, cols in enumerate(rows):
+        if cols:
+            lo = cols[0]
+            x = 0
+            for c in cols:
+                x ^= 1 << (c - lo)
+            v = _normalize(lo, x)
+        else:
+            v = (0, 0)
+        dep = (0, 0)
+        while v[1]:
+            pivot = v[0]
+            if pivot not in reduced_basis:
+                rank = len(basis_indices)
+                reduced_basis[pivot] = (v, _normalize(*_xor_shifted(dep, (rank, 1))))
+                basis_indices.append(i)
+                dep = (rank, 1)
+                break
+            b, expansion = reduced_basis[pivot]
+            v = _normalize(*_xor_shifted(v, b))
+            dep = _normalize(*_xor_shifted(dep, expansion))
+        t_rows.append(_indices(*dep))
+    return basis_indices, t_rows
+
+
 def matmul_gf2(a: Array, b: Array) -> Array:
     """Compute binary dot products mod 2 as ``a_GTP x b_BP -> b_BGT``.
 

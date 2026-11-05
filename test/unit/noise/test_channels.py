@@ -21,9 +21,11 @@ from tsim.noise.channels import (
     pauli_channel_2_probs,
     reduce_null_bits,
     simplify_channels,
+    sparse_unique_columns,
     unique_columns,
     xor_convolve,
 )
+from tsim.utils.linalg import SparseGF2Matrix
 from tsim.utils.rng import GOLDEN
 
 
@@ -1365,3 +1367,30 @@ class TestChannelSampler:
         out = np.ones_like(expected)
         sampler.sample_words(out, sampler._tables.flips, seeds)
         assert np.array_equal(out, expected)
+
+
+@pytest.mark.parametrize("seed", range(10))
+def test_sparse_unique_columns_matches_unique_columns(seed):
+    rng = np.random.default_rng(seed)
+    dense = (rng.random((rng.integers(1, 12), rng.integers(1, 60))) < 0.2).astype(
+        np.uint8
+    )
+    dense[:, rng.integers(0, dense.shape[1], size=5)] = dense[:, :1]  # repeats
+    sparse = SparseGF2Matrix(
+        [tuple(np.flatnonzero(r).tolist()) for r in dense], dense.shape[1]
+    )
+    unique, inverse = unique_columns(dense)
+    signatures, sparse_inverse = sparse_unique_columns(sparse)
+    np.testing.assert_array_equal(sparse_inverse, inverse)
+    np.testing.assert_array_equal(
+        np.asarray(SparseGF2Matrix(signatures, dense.shape[0])).T, unique
+    )
+
+
+def test_channel_sampler_sparse_transform_matches_dense():
+    probs = [error_probs(0.05), error_probs(0.1), error_probs(0.2)]
+    dense = np.array([[1, 0, 1], [0, 1, 1]], dtype=np.uint8)
+    sparse = SparseGF2Matrix([tuple(np.flatnonzero(r).tolist()) for r in dense], 3)
+    expected = ChannelSampler(probs, dense, seed=11).sample(5000)
+    drawn = ChannelSampler(probs, sparse, seed=11).sample(5000)
+    np.testing.assert_array_equal(drawn, expected)

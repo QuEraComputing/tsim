@@ -3,7 +3,12 @@ import numpy as np
 import pytest
 from galois import GF2
 
-from tsim.utils.linalg import find_basis, matmul_gf2
+from tsim.utils.linalg import (
+    SparseGF2Matrix,
+    find_basis,
+    find_basis_sparse,
+    matmul_gf2,
+)
 
 
 def verify_basis_decomposition(vectors: list[list[int]] | np.ndarray) -> None:
@@ -144,3 +149,34 @@ def test_matmul_gf2_empty_terms():
     b = jnp.zeros((2, 4), dtype=jnp.uint8)
     result = matmul_gf2(a, b)
     assert result.shape == (2, 0, 0)
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_find_basis_sparse_matches_find_basis(seed):
+    rng = np.random.default_rng(seed)
+    num_rows, num_cols = rng.integers(1, 40), rng.integers(1, 200)
+    dense = (rng.random((num_rows, num_cols)) < rng.uniform(0.01, 0.3)).astype(np.uint8)
+    dense[rng.random(num_rows) < 0.2] = 0  # some empty rows
+    if num_rows > 2:  # some dependent rows
+        dense[-1] = dense[0] ^ dense[1]
+    rows = [tuple(np.flatnonzero(r).tolist()) for r in dense]
+
+    basis, transform = find_basis(dense)
+    basis_indices, t_rows = find_basis_sparse(rows)
+
+    np.testing.assert_array_equal(dense[basis_indices], basis)
+    sparse_transform = np.zeros_like(transform)
+    for i, row in enumerate(t_rows):
+        sparse_transform[i, row] = 1
+    np.testing.assert_array_equal(sparse_transform, transform)
+
+
+def test_sparse_gf2_matrix_round_trip():
+    rows = [(0, 3), (), (1, 2, 3)]
+    matrix = SparseGF2Matrix(rows, 5)
+    assert matrix.shape == (3, 5)
+    dense = np.asarray(matrix)
+    np.testing.assert_array_equal(
+        dense, [[1, 0, 0, 1, 0], [0, 0, 0, 0, 0], [0, 1, 1, 1, 0]]
+    )
+    assert matrix.columns() == [(0,), (2,), (2,), (0, 2), ()]

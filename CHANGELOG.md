@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Compiling a circuit with many detectors and noise locations no longer needs
+  memory proportional to their product. The error basis (a GF(2) elimination
+  over vertices x error bits) is now built and kept sparse, so a d=25
+  surface-code 15-to-1 distillation circuit (40k qubits, 115k detectors, 1.1M
+  error bits) compiles with 4.5 GB instead of failing to allocate 121 GiB.
+  Seeded samples are unchanged.
+
 ## [1.0.0] - 2026-11-04
 
 Tsim 1.0 adds a new default sampling strategy, `"active_statevector"`, which

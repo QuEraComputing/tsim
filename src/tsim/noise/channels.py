@@ -11,6 +11,7 @@ import numba
 import numpy as np
 
 from tsim.utils.kernels import jit, kernel
+from tsim.utils.linalg import SparseGF2Matrix
 from tsim.utils.rng import next_skip, next_uniform
 
 # NOTE: shots are sampled in blocks of this many rows, in parallel, each block
@@ -600,6 +601,39 @@ def unique_columns(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return matrix[:, first[order]], rank[column_ids]
 
 
+def sparse_unique_columns(
+    matrix: SparseGF2Matrix,
+) -> tuple[list[tuple[int, ...]], np.ndarray]:
+    """``unique_columns`` for a ``SparseGF2Matrix``, in the same order.
+
+    Returns the distinct columns as sorted row-index tuples, ordered as
+    ``unique_columns`` orders the dense columns (lexicographically, row 0 first),
+    and the index of each column among them.
+    """
+    ids: dict[tuple[int, ...], int] = {}
+    distinct: list[tuple[int, ...]] = []
+    columns = matrix.columns()
+    column_ids = np.empty(len(columns), dtype=np.int64)
+    for i, column in enumerate(columns):
+        if column not in ids:
+            ids[column] = len(distinct)
+            distinct.append(column)
+        column_ids[i] = ids[column]
+    # NOTE: a column with a one in an earlier row is larger, so the dense order is
+    # the order of the negated row indices; a proper prefix (fewer ones) is smaller.
+    order = sorted(range(len(distinct)), key=lambda k: tuple(-r for r in distinct[k]))
+    rank = np.empty(len(order), dtype=np.int64)
+    rank[np.array(order, dtype=np.int64)] = np.arange(len(order))
+    return [distinct[k] for k in order], rank[column_ids]
+
+
+def _support(signature_matrix: np.ndarray | SparseGF2Matrix, col_id: int) -> list[int]:
+    """Return the f-variables that signature ``col_id`` flips."""
+    if isinstance(signature_matrix, SparseGF2Matrix):
+        return list(signature_matrix.rows[col_id])
+    return np.flatnonzero(signature_matrix[col_id]).tolist()
+
+
 class ChannelSampler:
     """Samples from multiple error channels and transforms to a reduced basis.
 
@@ -631,7 +665,7 @@ class ChannelSampler:
     def __init__(
         self,
         channel_probs: list[np.ndarray],
-        error_transform: np.ndarray,
+        error_transform: np.ndarray | SparseGF2Matrix,
         seed: int | np.random.SeedSequence | None = None,
     ):
         """Initialize the sampler with channel probabilities and a basis transformation.
@@ -643,19 +677,26 @@ class ChannelSampler:
                 produce variables [e0,e1], [e2], [e3,e4].
             error_transform: Binary matrix of shape (num_f, num_e) where entry [i, j] = 1
                 means f_i depends on e_j. For example, if row 0 is [0, 1, 0, 1],
-                then f0 = e1 XOR e3.
+                then f0 = e1 XOR e3. Dense, or a ``SparseGF2Matrix`` (as
+                ``prepare_graph`` returns), which gives the same samples.
             seed: Random seed for sampling, a non-negative int or a
                 ``np.random.SeedSequence``. If None, a random seed is generated.
 
         """
-        unique_cols, inverse = unique_columns(error_transform)
+        signature_matrix: np.ndarray | SparseGF2Matrix
+        if isinstance(error_transform, SparseGF2Matrix):
+            signatures, inverse = sparse_unique_columns(error_transform)
+            signature_matrix = SparseGF2Matrix(signatures, error_transform.shape[0])
+            null_col_id = 0 if signatures and not signatures[0] else None
+        else:
+            unique_cols, inverse = unique_columns(error_transform)
 
-        # Signature matrix: each row is a unique column signature
-        signature_matrix = unique_cols.T  # shape (num_signatures, num_f)
+            # Signature matrix: each row is a unique column signature
+            signature_matrix = unique_cols.T  # shape (num_signatures, num_f)
 
-        # Find null_col_id: the index of the all-zero column (or None)
-        zero_col_indices = np.flatnonzero(np.all(unique_cols == 0, axis=0))
-        null_col_id = int(zero_col_indices[0]) if len(zero_col_indices) else None
+            # Find null_col_id: the index of the all-zero column (or None)
+            zero_col_indices = np.flatnonzero(np.all(unique_cols == 0, axis=0))
+            null_col_id = int(zero_col_indices[0]) if len(zero_col_indices) else None
 
         # Create Channel objects with unique_col_ids from inverse mapping
         channels: list[Channel] = []
@@ -667,7 +708,11 @@ class ChannelSampler:
             e_offset += num_bits
 
         self.channels = simplify_channels(channels, null_col_id=null_col_id)
-        self.signature_matrix = signature_matrix.astype(np.uint8)
+        self.signature_matrix = (
+            signature_matrix
+            if isinstance(signature_matrix, SparseGF2Matrix)
+            else signature_matrix.astype(np.uint8)
+        )
 
         self._rng = np.random.default_rng(seed)
         self._tables = _fire_tables(self.channels, self.signature_matrix)
@@ -848,7 +893,9 @@ class _FireTables(NamedTuple):
     alias_index: np.ndarray
 
 
-def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _FireTables:
+def _fire_tables(
+    channels: list[Channel], signature_matrix: np.ndarray | SparseGF2Matrix
+) -> _FireTables:
     """Return the sampling tables of ``channels``.
 
     A channel fires with the total probability of its non-identity outcomes,
@@ -879,9 +926,7 @@ def _fire_tables(channels: list[Channel], signature_matrix: np.ndarray) -> _Fire
         outcome_start.append(len(cdf))
         for col_id in channel.unique_col_ids:
             if col_id not in supports:
-                supports[col_id] = frozenset(
-                    np.flatnonzero(signature_matrix[col_id]).tolist()
-                )
+                supports[col_id] = frozenset(_support(signature_matrix, col_id))
         bit_supports = [supports[col_id] for col_id in channel.unique_col_ids]
         flips: list[frozenset[int]] = [frozenset()]
         for outcome in range(1, len(probs)):
