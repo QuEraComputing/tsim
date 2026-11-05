@@ -37,11 +37,10 @@ samples = detector_sampler.sample(shots=100)
 uv add bloqade-tsim
 ```
 
-The default sampling strategy runs on the CPU. To run the stabilizer-rank strategies on an NVIDIA GPU,
-install the JAX CUDA extra:
+To sample on an NVIDIA GPU with the default strategy, install the `cuda` extra:
 
 ```bash
-uv add "bloqade-tsim[cuda13]"
+uv add "bloqade-tsim[cuda]"
 ```
 
 See [Installation](install.md) for more options.

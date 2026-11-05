@@ -88,3 +88,13 @@ def multiprocessors() -> int:
     return int(
         cuda.runtime.getDeviceProperties(cuda.Device().id)["multiProcessorCount"]
     )
+
+
+def out_of_memory(error: BaseException) -> bool:
+    """Return whether ``error`` is CuPy's or CUDA's out-of-memory error."""
+    cuda = cupy().cuda
+    if isinstance(error, cuda.memory.OutOfMemoryError):
+        return True
+    # NOTE: CUDA_ERROR_OUT_OF_MEMORY and cudaErrorMemoryAllocation are both 2.
+    errors = (cuda.driver.CUDADriverError, cuda.runtime.CUDARuntimeError)
+    return isinstance(error, errors) and getattr(error, "status", None) == 2

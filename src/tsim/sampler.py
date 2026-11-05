@@ -374,12 +374,20 @@ class _CompiledSamplerBase:
                 from tsim.statevector.cuda.sampler import MAX_WIDTH, CudaShotSampler
 
                 if CudaShotSampler.supports(self._shots.layout):
-                    self._shots = CudaShotSampler(
-                        self._shots,
-                        self._channel_sampler,
-                        self._num_detectors,
-                        cuda_seed,
-                    )
+                    try:
+                        self._shots = CudaShotSampler(
+                            self._shots,
+                            self._channel_sampler,
+                            self._num_detectors,
+                            cuda_seed,
+                        )
+                    except Exception as error:
+                        if not cuda_runtime.out_of_memory(error):
+                            raise
+                        warnings.warn(
+                            "The GPU is out of memory; sampling on the CPU.",
+                            stacklevel=4,
+                        )
                 else:
                     width = max(c.width for c in self._shots.layout.components)
                     warnings.warn(

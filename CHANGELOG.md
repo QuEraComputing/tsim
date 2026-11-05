@@ -17,7 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   used the GPU; a warning says so when a GPU is present. With a
   `postselection_mask`, only the shots that pass are copied off the GPU. A
   seed's samples on the GPU differ from the CPU's and depend on the batch size.
-  Install with `pip install bloqade-tsim[gpu]`.
+  A call that runs out of GPU memory retries in smaller batches, then samples
+  on the CPU with a warning. Install with `pip install bloqade-tsim[cuda]`.
+- The `jax-cuda12` and `jax-cuda13` extras, for the stabilizer-rank strategies
+  on NVIDIA GPUs with JAX. The `cuda12` and `cuda13` extras of Tsim 1.0 install
+  the same packages.
 
 ## [1.0.0] - 2026-11-04
 

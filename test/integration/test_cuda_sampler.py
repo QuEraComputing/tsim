@@ -594,3 +594,44 @@ def test_cuda_draws_small_outcome_probabilities_at_their_rate(probability, shots
     ones = sum(int(sampler.sample(1 << 24).sum()) for _ in range(shots >> 24))
     expected = probability * shots
     assert abs(ones - expected) <= 5 * np.sqrt(expected) + 1
+
+
+def _out_of_memory_above(monkeypatch, sampler, limit):
+    """Make ``sampler``'s GPU calls of batches above ``limit`` run out of memory."""
+    shots = _gpu_shots(sampler)
+    sample_accepted = shots.sample_accepted
+    batches = []
+
+    def fake(n, *, batch_size=None, **kwargs):
+        batches.append(batch_size)
+        if batch_size is None or batch_size > limit:
+            cp = runtime.cupy()
+            raise cp.cuda.memory.OutOfMemoryError(1 << 40, 0)
+        return sample_accepted(n, batch_size=batch_size, **kwargs)
+
+    monkeypatch.setattr(shots, "sample_accepted", fake)
+    return batches
+
+
+def test_calls_out_of_gpu_memory_retry_in_smaller_batches(monkeypatch):
+    sampler = _gpu(Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(seed=1))
+    batches = _out_of_memory_above(monkeypatch, sampler, 1 << 20)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert sampler.sample(1000).shape == (1000, 3)
+    assert batches == [1 << 22, 1 << 21, 1 << 20]
+    # NOTE: later calls start from the batch that fit.
+    sampler.sample(1000)
+    assert batches[-1] == 1 << 20
+
+
+def test_calls_out_of_gpu_memory_fall_back_to_the_cpu(monkeypatch):
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    sampler = _gpu(circuit.compile_detector_sampler(seed=1))
+    _out_of_memory_above(monkeypatch, sampler, 0)
+    with pytest.warns(UserWarning, match="out of memory"):
+        got = sampler.sample(20_000, append_observables=True)
+    expected = _cpu(circuit.compile_detector_sampler, seed=2).sample(
+        20_000, append_observables=True
+    )
+    assert_counts_match(got, expected)

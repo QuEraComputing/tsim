@@ -52,10 +52,14 @@ Repository = "https://github.com/QuEraComputing/tsim"
 Issues = "https://github.com/QuEraComputing/tsim/issues"
 
 [project.optional-dependencies]
+# The default strategy, "active_statevector", on NVIDIA GPUs (CUDA 13).
+cuda = ["cupy-cuda13x[ctk]>=14.0"]
+# The stabilizer-rank strategies ("cat5", "bss", "cutting") on NVIDIA GPUs, with JAX.
+jax-cuda12 = ["jax[cuda12]>=0.4.38"]
+jax-cuda13 = ["jax[cuda13]>=0.7.0"]
+# NOTE: the names of the JAX extras up to 1.0, kept so that they still install.
 cuda12 = ["jax[cuda12]>=0.4.38"]
 cuda13 = ["jax[cuda13]>=0.7.0"]
-# The statevector executor on NVIDIA GPUs (device="cuda").
-gpu = ["cupy-cuda13x[ctk]>=14.0"]
 
 [build-system]
 requires = ["hatchling"]

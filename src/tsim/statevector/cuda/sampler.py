@@ -29,6 +29,7 @@ samples differ from the CPU's.
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
@@ -51,6 +52,9 @@ MAX_WIDTH = 11
 
 BATCH_SHOTS = 1 << 22
 """Shots of one batch on the device."""
+
+MIN_BATCH_SHOTS = 1 << 14
+"""Smallest batch that a call out of device memory retries with, before the CPU."""
 
 DEVIATION_TOLERANCE = 1e-3
 """Normalization deviation that float32 amplitudes tolerate without a warning."""
@@ -399,6 +403,8 @@ class CudaShotSampler:
         self._noise_streams = [cp.cuda.Stream(non_blocking=True) for _ in range(2)]
         self._copies = [cp.cuda.Stream(non_blocking=True) for _ in range(2)]
         self._published = [_pinned_counts(cp) for _ in range(2)]
+        # NOTE: lowered when a call runs out of device memory.
+        self._max_batch = BATCH_SHOTS
 
     @property
     def layout(self):
@@ -800,11 +806,61 @@ class CudaShotSampler:
         postselection are returned. ``batch_size`` bounds the shots of a device
         batch.
         """
-        rows, _, deviation = self.sample_accepted(
-            shots, mask=mask, flip=flip, batch_size=batch_size
-        )
+        accepted = self._sample_or_none(shots, mask, flip, batch_size)
+        if accepted is None:
+            return self._host.sample(
+                shots,
+                columns,
+                bit_packed=bit_packed,
+                batch_size=batch_size,
+                mask=mask,
+                flip=flip,
+            )
+        rows, deviation = accepted
         num_outputs = self.layout.num_outputs
         return [_select(rows, c, num_outputs, bit_packed) for c in columns], deviation
+
+    def _sample_or_none(
+        self,
+        shots: int,
+        mask: np.ndarray | None,
+        flip: np.ndarray | None,
+        batch_size: int | None,
+    ) -> tuple[np.ndarray, float] | None:
+        """Return ``sample_accepted``'s rows and deviation, or None if the GPU is full.
+
+        Out of device memory, the call is retried in batches half as large, down
+        to ``MIN_BATCH_SHOTS``; past that it warns and returns None, for the CPU.
+        Later calls start from the batch that fit.
+        """
+        batch = min(batch_size or BATCH_SHOTS, self._max_batch)
+        while True:
+            try:
+                rows, _, deviation = self.sample_accepted(
+                    shots, mask=mask, flip=flip, batch_size=batch
+                )
+                return rows, deviation
+            except Exception as error:
+                if not runtime.out_of_memory(error):
+                    raise
+                self._release()
+                self._max_batch = max(batch // 2, MIN_BATCH_SHOTS)
+                if batch <= MIN_BATCH_SHOTS:
+                    warnings.warn(
+                        "The GPU ran out of memory, even for batches of "
+                        f"{MIN_BATCH_SHOTS} shots; sampling on the CPU.",
+                        stacklevel=5,
+                    )
+                    return None
+                batch = self._max_batch
+
+    def _release(self) -> None:
+        """Wait for the device and free the buffers that calls reuse."""
+        cp = self._cp
+        cp.cuda.Device().synchronize()
+        self._buffers.clear()
+        self._views.clear()
+        cp.get_default_memory_pool().free_all_blocks()
 
     def _synchronize(self) -> None:
         """Wait for every kernel and copy of ``sample_accepted``."""
@@ -979,6 +1035,9 @@ class CudaShotSampler:
 
     def direct_bools(self, shots: int, flip: np.ndarray | None = None) -> np.ndarray:
         """Return every output bit of a program without components, as booleans."""
-        rows, _, _ = self.sample_accepted(shots, flip=flip)
+        accepted = self._sample_or_none(shots, None, flip, None)
+        if accepted is None:
+            return self._host.direct_bools(shots, flip)
+        rows, _ = accepted
         num_outputs = self.layout.num_outputs
         return _select(rows, np.arange(num_outputs), num_outputs, False)
