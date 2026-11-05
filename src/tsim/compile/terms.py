@@ -14,6 +14,7 @@ scalars (``compile_scalars``), and ``evaluate.py`` orchestrates the products.
 
 import equinox as eqx
 import jax.numpy as jnp
+import numpy as np
 from jax import Array
 
 from tsim.core.exact_scalar import ExactScalarArray
@@ -21,7 +22,9 @@ from tsim.utils.linalg import matmul_gf2
 
 # Powers of ω = e^(iπ/4). UNIT_PHASES[k] is the exact 4-coefficient
 # representation of ω^k.
-UNIT_PHASES = jnp.array(
+# NOTE: the module constants are NumPy arrays, so that importing Tsim does not
+# start JAX's backend (``tsim.core.exact_scalar``).
+UNIT_PHASES = np.array(
     [
         [1, 0, 0, 0],  # omega^0 = 1
         [0, 1, 0, 0],  # omega^1
@@ -32,13 +35,13 @@ UNIT_PHASES = jnp.array(
         [0, 0, -1, 0],  # omega^6 = -i
         [0, 0, 0, 1],  # omega^7
     ],
-    dtype=jnp.int32,
+    dtype=np.int32,
 )
 
 # Lookup table for exact scalars (1 + ω^k).
-_ONE_PLUS_PHASES = UNIT_PHASES.at[:, 0].add(1)
+_ONE_PLUS_PHASES = UNIT_PHASES + np.array([1, 0, 0, 0], dtype=np.int32)
 
-_IDENTITY = jnp.array([1, 0, 0, 0], dtype=jnp.int32)
+_IDENTITY = np.array([1, 0, 0, 0], dtype=np.int32)
 
 
 class NodePhases(eqx.Module):
@@ -68,7 +71,7 @@ class NodePhases(eqx.Module):
         rowsum = matmul_gf2(self.params, param_vals)
         phase_idx = (4 * rowsum + self.phases) % 8
 
-        term_vals = _ONE_PLUS_PHASES[phase_idx]
+        term_vals = jnp.asarray(_ONE_PLUS_PHASES)[phase_idx]
         mask = jnp.arange(self.phases.shape[1])[None, :] < self.counts[:, None]
         term_vals = jnp.where(mask[..., None], term_vals, _IDENTITY)
 
@@ -105,7 +108,7 @@ class PhaseTerms(eqx.Module):
         rowsum = matmul_gf2(self.params, param_vals)
         phase_idx = (rowsum * self.coeffs) % 8
         total_phase = jnp.sum(phase_idx, axis=-1) % 8
-        return ExactScalarArray(UNIT_PHASES[total_phase])
+        return ExactScalarArray(jnp.asarray(UNIT_PHASES)[total_phase])
 
 
 class PiProducts(eqx.Module):
@@ -177,9 +180,8 @@ class PhasePairs(eqx.Module):
         beta = (self.beta + rowsum_b * 4) % 8
         gamma = (alpha + beta) % 8
 
-        term_vals = (
-            _IDENTITY + UNIT_PHASES[alpha] + UNIT_PHASES[beta] - UNIT_PHASES[gamma]
-        )
+        phases = jnp.asarray(UNIT_PHASES)
+        term_vals = _IDENTITY + phases[alpha] + phases[beta] - phases[gamma]
         mask = jnp.arange(self.alpha.shape[1])[None, :] < self.counts[:, None]
         term_vals = jnp.where(mask[..., None], term_vals, _IDENTITY)
 

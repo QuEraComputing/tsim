@@ -10,10 +10,14 @@ without floating-point errors.
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import Array, lax
 
-_E4 = jnp.exp(1j * jnp.pi / 4)
-_E4D = jnp.exp(-1j * jnp.pi / 4)
+# NOTE: module constants are NumPy, not JAX, arrays: creating a JAX array starts
+# its backend, which on a GPU reserves most of the device's memory, also for
+# programs that never use JAX.
+_E4 = np.complex64(np.exp(1j * np.pi / 4))
+_E4D = np.complex64(np.exp(-1j * np.pi / 4))
 
 
 @jax.jit
