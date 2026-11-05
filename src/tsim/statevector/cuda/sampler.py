@@ -387,7 +387,7 @@ class CudaShotSampler:
         self._channels = channels
         self._noise = noise_tables(channels, layout.noise, layout.num_words)
         n = self._noise
-        self._record_args = [cp.asarray(n.overflow.view(np.uint8))]
+        self._record_args = [self._upload(n.overflow.view(np.uint8))]
         self._all = self._launch(n.groups)
         self._modules: dict[bytes, _Module] = {}
         self._buffers: dict[str, Any] = {}
@@ -519,12 +519,12 @@ class CudaShotSampler:
             publish=module.get_function("publish"),
             count_bits=module.get_function("count_bits"),
             list_bits=module.get_function("list_bits"),
-            screen=cp.asarray(plan.screen),
+            screen=self._upload(plan.screen),
             tape_blocks=runtime.multiprocessors() * blocks_per_sm,
             has_mask=mask is not None,
             columns=columns,
-            pieces=cp.asarray(pieces),
-            piece_start=cp.asarray(piece_start),
+            pieces=self._upload(pieces),
+            piece_start=self._upload(piece_start),
             plan=plan,
             psm_words=psm_words,
             passing=self._passing(plan),
@@ -532,6 +532,17 @@ class CudaShotSampler:
         )
         self._modules[key] = compiled
         return compiled
+
+    def _upload(self, array: np.ndarray) -> Any:
+        """Return ``array`` on the device, copied before any later kernel runs.
+
+        ``cp.asarray`` copies on the current stream, usually the legacy default
+        stream, which the sampler's non-blocking streams do not wait for: a kernel
+        could read the array before the copy lands. Uploads are one-time, cached.
+        """
+        device = self._cp.asarray(array)
+        self._cp.cuda.get_current_stream().synchronize()
+        return device
 
     def _passing(self, plan: ShotPlan) -> float:
         """Return the estimated share of shots that pass the screen of ``plan``."""
@@ -542,11 +553,10 @@ class CudaShotSampler:
 
     def _launch(self, groups: NoiseGroups) -> _Launch:
         """Upload a noise launch's segments and records."""
-        cp = self._cp
         return _Launch(
             args=[
-                *(cp.asarray(a) for a in groups.segments),
-                cp.asarray(groups.records.view(np.uint8)),
+                *(self._upload(a) for a in groups.segments),
+                self._upload(groups.records.view(np.uint8)),
             ],
             num_segments=len(groups.segments[0]),
             max_events=groups.max_events,
@@ -629,7 +639,7 @@ class CudaShotSampler:
         """Return the outputs' constants XOR the reference bits ``flip``, on the device."""
         key = b"" if flip is None else np.asarray(flip, bool).tobytes()
         if key not in self._constants:
-            self._constants[key] = self._cp.asarray(self._host._constant(flip))
+            self._constants[key] = self._upload(self._host._constant(flip))
         return self._constants[key]
 
     def _run_batch(

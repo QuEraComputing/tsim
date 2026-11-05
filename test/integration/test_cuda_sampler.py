@@ -635,3 +635,29 @@ def test_calls_out_of_gpu_memory_fall_back_to_the_cpu(monkeypatch):
         20_000, append_observables=True
     )
     assert_counts_match(got, expected)
+
+
+def test_kernels_wait_for_the_tables_they_read():
+    # NOTE: the tables are copied on the current (legacy default) stream, which
+    # the sampler's non-blocking streams do not wait for; a kernel that keeps
+    # that stream busy delays the copies, so the first call would read them
+    # before they land.
+    cp = runtime.cupy()
+    spin = cp.RawKernel(
+        r"""
+        extern "C" __global__ void spin(long long cycles) {
+            long long start = clock64();
+            while (clock64() - start < cycles) {}
+        }
+        """,
+        "spin",
+    )
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    expected = _cpu(circuit.compile_detector_sampler, seed=1).sample(
+        40_000, append_observables=True
+    )
+    for seed in range(8):
+        spin((1,), (1,), (np.int64(200_000_000),))
+        sampler = _gpu(circuit.compile_detector_sampler(seed=seed))
+        got = sampler.sample(40_000, append_observables=True)
+        assert_counts_match(got, expected)
