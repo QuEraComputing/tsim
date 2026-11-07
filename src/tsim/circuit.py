@@ -823,10 +823,7 @@ class Circuit:
             raise ValueError(
                 f"Diagram type {type!r} was removed in Tsim 1.0; use {replacement!r}."
             )
-        if type in [
-            "timeline-svg",
-            "timeslice-svg",
-        ]:
+        if type == "timeline-svg" or type == "timeslice-svg":
             if height is None and width is None and type == "timeline-svg":
                 height = min(30 * self.num_qubits + 50, 700)
             return render_svg(

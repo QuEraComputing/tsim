@@ -4,7 +4,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 
 import numpy as np
 import stim
@@ -442,7 +442,7 @@ def _replace_tagged_gates(
 
 def render_svg(
     c: stim.Circuit,
-    type: str,
+    type: Literal["timeline-svg", "timeslice-svg"],
     *,
     tick: int | range | None = None,
     filter_coords: Iterable[Iterable[float] | stim.DemTarget] = ((),),
