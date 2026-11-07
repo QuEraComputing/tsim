@@ -671,3 +671,201 @@ def reference_width(
                 widest = width_of(amps)
             amps = compress(frame, active, pos, amps, num_words)
     return widest
+
+
+@jit
+def build_tree(
+    num_lines: int,
+    op_x,
+    op_z,
+    op_e,
+    angle,
+    sign_const,
+    measure,
+    apply_start,
+    apply_ops,
+    layer_start,
+    layer_ops,
+    root_amp,
+    max_width: int,
+    max_nodes: int,
+):
+    """Return the outcome tree of the reference key (all key bits 0), or ``num_nodes = -1``.
+
+    Node ``i`` is the lane before step ``node_step[i]`` along one outcome path:
+    ``node_p1[i]`` is its probability of outcome 1, ``node_certain[i]`` whether that
+    is certain, and ``node_child[i, b]`` the node after outcome ``b`` (-1 for none).
+    A node at ``num_steps`` is a leaf. The steps run as in ``run_chunk``
+    (``_prepare_step``, ``_finish_step``), so a walk of the tree draws exactly what
+    the lanes would. Gives up (returns -1) beyond ``max_nodes`` nodes.
+    """
+    num_words = (num_lines + 63) >> 6
+    num_ops = angle.shape[0]
+    num_steps = measure.shape[0]
+    ref_theta = np.empty(num_ops, dtype=np.float64)
+    for r in range(num_ops):
+        ref_theta[r] = -angle[r] if sign_const[r] & 1 else angle[r]
+    flipped = np.zeros(num_ops, dtype=np.bool_)
+    node_step = np.empty(max_nodes, dtype=np.int64)
+    node_p1 = np.zeros(max_nodes, dtype=np.float64)
+    node_certain = np.zeros(max_nodes, dtype=np.bool_)
+    node_child = np.full((max_nodes, 2), -1, dtype=np.int64)
+    stats = np.zeros(NUM_STATS, dtype=np.int64)
+    v = np.empty(2 * num_words + 1, dtype=np.uint64)
+    frame, active, pos, amps, cache, cache_ver = new_state(
+        num_lines, num_words, num_ops
+    )
+    node_step[0] = 0
+    num_nodes = 1
+    stack = [(0, frame, active, pos, amps, cache, cache_ver)]
+    while len(stack):
+        node, frame, active, pos, amps, cache, cache_ver = stack.pop()
+        while node_step[node] < num_steps:
+            step = node_step[node]
+            amps, p1, certain, through, kind, d, keep, phi, kv = _prepare_step(
+                step,
+                frame,
+                active,
+                pos,
+                amps,
+                cache,
+                cache_ver,
+                op_x,
+                op_z,
+                op_e,
+                ref_theta,
+                flipped,
+                ref_theta,
+                measure,
+                apply_start,
+                apply_ops,
+                layer_start,
+                layer_ops,
+                root_amp,
+                v,
+                num_words,
+                max_width,
+                stats,
+            )
+            node_p1[node] = p1
+            node_certain[node] = certain
+            if num_nodes + 2 > max_nodes:
+                return node_step, node_p1, node_certain, node_child, -1
+            if certain:
+                bit = 1 if p1 > 0.5 else 0
+                child = num_nodes
+                num_nodes += 1
+                node_step[child] = step + 1
+                node_child[node, bit] = child
+                amps = _finish_step(
+                    frame,
+                    active,
+                    pos,
+                    amps,
+                    certain,
+                    through,
+                    kind,
+                    d,
+                    keep,
+                    phi,
+                    kv,
+                    bit,
+                    v,
+                    num_words,
+                )
+                node = child
+                continue
+            zero, one = num_nodes, num_nodes + 1
+            num_nodes += 2
+            node_step[zero] = step + 1
+            node_step[one] = step + 1
+            node_child[node, 0] = zero
+            node_child[node, 1] = one
+            f1, a1, q1 = frame.copy(), active.copy(), pos.copy()
+            c1, cv1 = cache.copy(), cache_ver.copy()
+            amps1 = _finish_step(
+                f1,
+                a1,
+                q1,
+                amps.copy(),
+                certain,
+                through,
+                kind,
+                d,
+                keep,
+                phi,
+                kv,
+                1,
+                v.copy(),
+                num_words,
+            )
+            stack.append((one, f1, a1, q1, amps1, c1, cv1))
+            amps = _finish_step(
+                frame,
+                active,
+                pos,
+                amps,
+                certain,
+                through,
+                kind,
+                d,
+                keep,
+                phi,
+                kv,
+                0,
+                v,
+                num_words,
+            )
+            node = zero
+    return node_step, node_p1, node_certain, node_child, num_nodes
+
+
+@jit
+def walk_tree(
+    words,
+    alive,
+    first_shot: int,
+    seed: np.uint64,
+    order,
+    node_step,
+    node_p1,
+    node_certain,
+    node_child,
+    measure,
+    out_bit,
+    post,
+    stats,
+) -> None:
+    """Run the shots ``order`` (of the reference key) down a tree from ``build_tree``.
+
+    Draws, records and prunes exactly as ``run_chunk`` does, with no lane work.
+    """
+    num_steps = measure.shape[0]
+    bits = np.empty(order.shape[0], dtype=np.int64)
+    no_bits = np.empty(0, dtype=np.int64)
+    stack = [(0, 0, order.shape[0])]
+    stats[STAT_LANES] += 1
+    while len(stack):
+        node, lo, hi = stack.pop()
+        while node_step[node] < num_steps and hi > lo:
+            step = node_step[node]
+            m = measure[step]
+            p1 = node_p1[node]
+            if node_certain[node]:
+                bit = 1 if p1 > 0.5 else 0
+                hi = _record(
+                    words, alive, order, lo, hi, out_bit[m], post[m], bit, no_bits
+                )
+                node = node_child[node, bit]
+                continue
+            for i in range(lo, hi):
+                bits[i] = 1 if uniform(seed, first_shot + order[i], step) < p1 else 0
+            mid = _split(order, bits, lo, hi)
+            end1 = _record(
+                words, alive, order, mid, hi, out_bit[m], post[m], 1, no_bits
+            )
+            hi = _record(words, alive, order, lo, mid, out_bit[m], post[m], 0, no_bits)
+            if end1 > mid:
+                stack.append((node_child[node, 1], mid, end1))
+                stats[STAT_SPLITS] += 1
+            node = node_child[node, 0]

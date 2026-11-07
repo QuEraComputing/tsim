@@ -14,7 +14,7 @@ their static step plan. The noise reaches it in two ways, as for
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import ClassVar, NamedTuple
 
 import numpy as np
@@ -83,6 +83,7 @@ class ConditionedComponent:
         root_amp: Per step, the reference key's certain outcome at the root state
             (+1 or -1), or 0 (``runner.reference_prefix``).
         width: Nominal lane width, for chunk sizing only: lanes size themselves.
+        cache: The reference key's outcome tree (``reference_tree``), once built.
 
     """
 
@@ -96,6 +97,7 @@ class ConditionedComponent:
     op_e: np.ndarray
     root_amp: np.ndarray
     width: int = 10
+    cache: dict = field(default_factory=dict, compare=False, repr=False)
 
     norm_warning_threshold: ClassVar[float] = 1e-9
 
@@ -320,6 +322,42 @@ def _run_chunk_kernel(
     )
 
 
+def reference_tree(component: ConditionedComponent):
+    """Return the reference key's outcome tree (``runner.build_tree``), or None if too big.
+
+    Built on first use and kept: the reference key (no fault reaches the
+    component) usually holds most shots, and its lanes are the same in every call.
+    """
+    if "tree" not in component.cache:
+        plan = component.plan
+        node_step, node_p1, node_certain, node_child, num_nodes = runner.build_tree(
+            component.num_lines,
+            component.op_x,
+            component.op_z,
+            component.op_e,
+            component.ops.angle.astype(np.float64),
+            component.ops.sign[:, 0].astype(np.int64),
+            plan.measure,
+            plan.apply_start,
+            plan.apply_ops,
+            plan.layer_start,
+            plan.layer_ops,
+            component.root_amp,
+            MAX_WIDTH,
+            _MAX_TREE_NODES,
+        )
+        tree = None
+        if num_nodes > 0:
+            tree = (
+                node_step[:num_nodes].copy(),
+                node_p1[:num_nodes].copy(),
+                node_certain[:num_nodes].copy(),
+                node_child[:num_nodes].copy(),
+            )
+        component.cache["tree"] = tree
+    return component.cache["tree"]
+
+
 def run_part(
     component: ConditionedComponent,
     program: ConditionedProgram,
@@ -335,6 +373,7 @@ def run_part(
     is cut into at most ``threads`` pieces (each builds its own lanes, which costs
     about as much as recording a few thousand shots), and the pieces are dealt to
     ``8 * threads`` tasks, largest first, each to the task with the least work so far.
+    The reference key's pieces walk its cached outcome tree instead, if it has one.
     """
     order, starts = runner.group_by_key(
         words, alive, program.key_start, program.key_words
@@ -350,6 +389,15 @@ def run_part(
             pieces.append(
                 (lo + (hi - lo) * i // count, lo + (hi - lo) * (i + 1) // count)
             )
+    tree = None
+    first = order[0]
+    if not words[
+        first, program.key_start : program.key_start + program.key_words
+    ].any():
+        tree = reference_tree(component)
+    reference_end = (
+        int(starts[1]) if tree is not None else 0
+    )  # the reference group is first
     sizes = np.array([hi - lo for lo, hi in pieces])
     num_tasks = max(1, min(8 * threads, len(pieces)))
     load = np.zeros(num_tasks)
@@ -364,7 +412,23 @@ def run_part(
         task_stats = np.zeros(runner.NUM_STATS, dtype=np.int64)
         if not groups:
             return task_stats
-        groups = sorted(groups)
+        walked = [g for g in groups if pieces[g][1] <= reference_end]
+        for g in walked:
+            runner.walk_tree(
+                words,
+                alive,
+                first_shot,
+                np.uint64(seed),
+                order[pieces[g][0] : pieces[g][1]].copy(),
+                *tree,
+                plan.measure,
+                program.out_bit,
+                program.post,
+                task_stats,
+            )
+        groups = sorted(g for g in groups if pieces[g][1] > reference_end)
+        if not groups:
+            return task_stats
         sub_order = np.concatenate([order[pieces[g][0] : pieces[g][1]] for g in groups])
         sub_starts = np.concatenate([[0], np.cumsum(sizes[groups])]).astype(np.int64)
         runner.run_chunk(
@@ -423,6 +487,9 @@ def run_part(
 # than _PIECE_SHOTS shots is cut, so that one key cannot hold up a part; its
 # pieces rebuild its lanes, a cost of the order of _GROUP_COST shots each.
 _GROUP_COST = 2000
+# NOTE: the largest reference tree kept (nodes); a tree has a node per step and
+# outcome path, so more random outcomes than this allows are run as lanes.
+_MAX_TREE_NODES = 1 << 16
 _TOO_WIDE = (
     f"strategy='conditioned_statevector' needs more than {MAX_WIDTH} active qubits for a "
     "lane of the component with outputs {outputs}. Such lanes are rare noise patterns "
