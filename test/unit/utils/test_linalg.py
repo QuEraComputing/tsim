@@ -206,6 +206,13 @@ def test_find_basis_sparse_accepts_unsorted_rows():
     assert find_basis_sparse([(3, 1), (1, 3), (2,)]) == ([0, 2], [[0], [0], [1]])
 
 
+def test_sparse_gf2_matrix_counts_repeated_indices_once():
+    matrix = SparseGF2Matrix([(1, 0, 0)], 2)
+    assert matrix.rows == [(0, 1)]
+    np.testing.assert_array_equal(matrix.toarray(), [[1, 1]])
+    assert find_basis_sparse(matrix.rows) == ([0], [[0]])
+
+
 def test_sparse_gf2_matrix_round_trip():
     rows = [(0, 3), (), (1, 2, 3)]
     matrix = SparseGF2Matrix(rows, 5)

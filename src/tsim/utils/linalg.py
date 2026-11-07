@@ -75,8 +75,8 @@ class SparseGF2Matrix:
     """
 
     def __init__(self, rows: list[tuple[int, ...]], num_cols: int):
-        """Create the matrix from its rows' sorted column indices."""
-        self.rows = rows
+        """Create the matrix from its rows' column indices; repeats count once."""
+        self.rows = [tuple(sorted(set(row))) for row in rows]
         self.num_cols = num_cols
 
     @classmethod
