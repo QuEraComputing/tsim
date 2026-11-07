@@ -151,9 +151,13 @@ def compile_conditioned_component(
 
 
 def conditioned_component(
-    ops: PauliOps, layout: ComponentLayout
+    ops: PauliOps, layout: ComponentLayout, *, measure_through: bool | None = None
 ) -> ConditionedComponent:
-    """Return the conditioned component of ``ops``."""
+    """Return the conditioned component of ``ops``.
+
+    ``measure_through`` forces the plan (``True``: measure through, op order;
+    ``False``: Tsim's order without it); ``None`` takes the narrower (``_choose_plan``).
+    """
     num_f = ops.num_f
     sign_f = ops.sign[:, 1:].astype(bool)
     num_slots = len(layout.output_indices)
@@ -166,7 +170,7 @@ def conditioned_component(
     tape = OutputTape(
         np.array(layout.f_selection, dtype=np.int32), output_const, output_row
     )
-    ops, plan, (op_x, op_z, op_e) = _choose_plan(ops)
+    ops, plan, (op_x, op_z, op_e) = _choose_plan(ops, measure_through)
     root_amp = runner.reference_prefix(
         ops.num_lines,
         op_x,
@@ -199,7 +203,7 @@ def _packed(ops: PauliOps) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return pack_bits(ops.x, words), pack_bits(ops.z, words), op_e
 
 
-def _choose_plan(ops: PauliOps):
+def _choose_plan(ops: PauliOps, measure_through: bool | None = None):
     """Return the ops (possibly reordered), their step plan and packed Paulis.
 
     Measuring through is not always narrower: when T-like rotations are never
@@ -209,6 +213,8 @@ def _choose_plan(ops: PauliOps):
     as it gets wider than the best so far.
     """
     candidates = [(ops, True), (ops.take(schedule(ops).order), False)]
+    if measure_through is not None:
+        candidates = [candidates[0 if measure_through else 1]]
     best = None
     for candidate, through in candidates:
         plan = step_plan(candidate, measure_through=through)

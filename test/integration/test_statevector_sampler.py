@@ -1,4 +1,4 @@
-"""strategy="active_statevector" end to end, against stabilizer rank and VecSampler."""
+"""The statevector strategies end to end, against stabilizer rank and VecSampler."""
 
 import warnings
 from test.helpers.gen import gen_stim_circuit
@@ -18,38 +18,43 @@ from tsim.core.types import SamplingStrategy
 from tsim.external.vec_sim.vec_sampler import VecSampler
 from tsim.statevector.program import StatevectorComponent
 
+STATEVECTOR = ["active_statevector", "conditioned_statevector"]
 
+
+@pytest.mark.parametrize("strategy", STATEVECTOR)
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_detector_sampling_matches_stabilizer_rank(name):
+def test_detector_sampling_matches_stabilizer_rank(name, strategy):
     circuit = Circuit(CIRCUITS[name])
     shots = 20_000
     expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
         shots, append_observables=True
     )
-    got = circuit.compile_detector_sampler(
-        strategy="active_statevector", seed=2
-    ).sample(shots, batch_size=5_000, append_observables=True)
+    got = circuit.compile_detector_sampler(strategy=strategy, seed=2).sample(
+        shots, batch_size=5_000, append_observables=True
+    )
     assert_counts_match(got, expected)
 
 
+@pytest.mark.parametrize("strategy", STATEVECTOR)
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_measurement_sampling_matches_stabilizer_rank(name):
+def test_measurement_sampling_matches_stabilizer_rank(name, strategy):
     circuit = Circuit(CIRCUITS[name])
     shots = 20_000
     expected = circuit.compile_sampler(strategy="cat5", seed=1).sample(shots)
-    got = circuit.compile_sampler(strategy="active_statevector", seed=2).sample(
+    got = circuit.compile_sampler(strategy=strategy, seed=2).sample(
         shots, batch_size=5_000
     )
     assert_counts_match(got, expected)
 
 
+@pytest.mark.parametrize("strategy", STATEVECTOR)
 @pytest.mark.parametrize("seed", [1, 2, 3])
-def test_measurement_sampling_matches_vec_sampler(seed):
+def test_measurement_sampling_matches_vec_sampler(seed, strategy):
     stim_circuit = gen_stim_circuit(3, 60, p_t=3, p_x_error=0.5, p_r_z=0.5, seed=seed)
     shots = 512
     expected, _, _ = VecSampler(stim_circuit).sample(shots)
     sampler = Circuit.from_stim_program(stim_circuit).compile_sampler(
-        strategy="active_statevector", seed=seed
+        strategy=strategy, seed=seed
     )
     assert_counts_match(sampler.sample(shots, batch_size=shots), expected)
 
@@ -72,6 +77,7 @@ def test_postselected_samples_agree_across_strategies():
     cases: tuple[tuple[SamplingStrategy, int], ...] = (
         ("cat5", 1),
         ("active_statevector", 2),
+        ("conditioned_statevector", 3),
     )
     for strategy, seed in cases:
         sampler = circuit.compile_detector_sampler(strategy=strategy, seed=seed)
@@ -82,16 +88,18 @@ def test_postselected_samples_agree_across_strategies():
         assert observables.shape == (len(detectors), circuit.num_observables)
         assert not detectors.any()
         rates.append((len(detectors) / shots, observables[:, 0].mean()))
-    (accept_a, error_a), (accept_b, error_b) = rates
+    (accept_a, error_a), *others = rates
     accept_sigma = np.sqrt(accept_a * (1 - accept_a) * 2 / shots)
-    assert abs(accept_a - accept_b) <= 5 * accept_sigma + 1e-3
     error_sigma = np.sqrt(max(error_a * (1 - error_a), 1e-4) * 2 / (accept_a * shots))
-    assert abs(error_a - error_b) <= 5 * error_sigma + 1e-3
+    for accept_b, error_b in others:
+        assert abs(accept_a - accept_b) <= 5 * accept_sigma + 1e-3
+        assert abs(error_a - error_b) <= 5 * error_sigma + 1e-3
 
 
-def test_reference_samples_work_with_statevector():
+@pytest.mark.parametrize("strategy", STATEVECTOR)
+def test_reference_samples_work_with_statevector(strategy):
     circuit = Circuit(CIRCUITS["injection_check"])
-    sampler = circuit.compile_detector_sampler(strategy="active_statevector", seed=0)
+    sampler = circuit.compile_detector_sampler(strategy=strategy, seed=0)
     samples = sampler.sample(
         1_000, use_detector_reference_sample=True, use_observable_reference_sample=True
     )

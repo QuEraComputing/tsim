@@ -134,7 +134,7 @@ def test_detector_sampler_zero_shots_with_reference():
     assert result.shape == (0, 3)
 
 
-@pytest.mark.parametrize("strategy", ["active_statevector", "cat5"])
+@pytest.mark.parametrize("strategy", ["active_statevector", "conditioned_statevector", "cat5"])
 @pytest.mark.parametrize("shots", [0, 2000])
 def test_measurement_sampler_bit_packed(strategy, shots):
     text = "H 0 1 2\nT 0\nX_ERROR(0.1) 3 4 5 6 7 8 9 10 11\nM 0 1 2 3 4 5 6 7 8 9 10 11"
@@ -368,7 +368,7 @@ def test_no_two_seeds_share_a_stream():
     assert len(first_draws) == 3 * len(seeds)
 
 
-@pytest.mark.parametrize("strategy", ["active_statevector", "cat5"])
+@pytest.mark.parametrize("strategy", ["active_statevector", "conditioned_statevector", "cat5"])
 @pytest.mark.parametrize("seed", [5, 2**64 + 5])
 def test_component_samples_depend_on_every_bit_of_the_seed(strategy, seed):
     # NOTE: jax.random.key(seed) used to keep only the low 32 bits, and failed

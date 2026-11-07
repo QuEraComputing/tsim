@@ -14,6 +14,7 @@ import stim
 
 import tsim.sampler as sampler_module
 import tsim.statevector.shared as shared
+import tsim.statevector.conditioned.component as conditioned_component
 from tsim.circuit import Circuit
 
 # ────────────────────────── shared circuits ──────────────────────────────────
@@ -186,7 +187,9 @@ def test_postselection_all_false_mask_matches_default():
 # ────────────────────────── discard / partial-row semantics ──────────────────
 
 
-@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize(
+    "strategy", ["cat5", "active_statevector", "conditioned_statevector"]
+)
 @pytest.mark.parametrize("bit_packed", [False, True])
 def test_postselection_all_discarded_returns_no_rows(strategy, bit_packed):
     sampler = Circuit(ALWAYS_DISCARD_OBS_CIRCUIT).compile_detector_sampler(
@@ -204,7 +207,9 @@ def test_postselection_all_discarded_returns_no_rows(strategy, bit_packed):
     assert obs.shape == (0, 1)
 
 
-@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize(
+    "strategy", ["cat5", "active_statevector", "conditioned_statevector"]
+)
 def test_postselection_acceptance_rate(strategy):
     sampler = Circuit(MIXED_DIRECT_CIRCUIT).compile_detector_sampler(
         strategy=strategy, seed=2
@@ -279,7 +284,7 @@ def _record_rows(monkeypatch, store: list[int]) -> None:
     """Append the shots that reach the components to ``store``, per call.
 
     With JAX those are the rows of every ``sample_program`` call, and with shot
-    words the live shots of every ``run_lanes`` call.
+    words the live shots of every ``run_lanes`` (or conditioned ``run_part``) call.
     """
     sample_program, run_lanes = sampler_module.sample_program, shared.run_lanes
 
@@ -291,8 +296,15 @@ def _record_rows(monkeypatch, store: list[int]) -> None:
         store.append(int(alive.sum()))
         return run_lanes(work, words, alive, *args)
 
+    run_part = conditioned_component.run_part
+
+    def spy_part(component, program, words, alive, *args):
+        store.append(int(alive.sum()))
+        return run_part(component, program, words, alive, *args)
+
     monkeypatch.setattr(sampler_module, "sample_program", spy_program)
     monkeypatch.setattr(shared, "run_lanes", spy_lanes)
+    monkeypatch.setattr(conditioned_component, "run_part", spy_part)
 
 
 def test_components_never_run_for_all_direct_discards(monkeypatch):
@@ -307,7 +319,9 @@ def test_components_never_run_for_all_direct_discards(monkeypatch):
 
 
 @pytest.mark.parametrize("use_reference", [False, True])
-@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize(
+    "strategy", ["cat5", "active_statevector", "conditioned_statevector"]
+)
 def test_postselection_on_a_constant_detector(monkeypatch, use_reference, strategy):
     sampler = Circuit(CONSTANT_AND_COMPONENT_CIRCUIT).compile_detector_sampler(
         strategy=strategy, seed=0
@@ -364,7 +378,9 @@ def test_nonrejecting_constant_postselection_uses_normal_batches(
     assert mask.tolist() == [True, False]
 
 
-@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize(
+    "strategy", ["cat5", "active_statevector", "conditioned_statevector"]
+)
 @pytest.mark.parametrize("use_reference", [False, True])
 def test_constant_outputs_with_component_postselection(strategy, use_reference):
     circuit = Circuit("""
@@ -480,7 +496,9 @@ def test_postselection_detector_reference_xor_before_discard_check(monkeypatch):
     assert sum(jax_with) - 1 > sum(jax_without)
 
 
-@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize(
+    "strategy", ["cat5", "active_statevector", "conditioned_statevector"]
+)
 def test_postselection_observable_reference_flips_every_sampled_row(
     strategy, monkeypatch
 ):
@@ -586,7 +604,9 @@ def test_postselection_detector_reference_survivors():
     assert not np.any(samples & mask)
 
 
-@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize(
+    "strategy", ["cat5", "active_statevector", "conditioned_statevector"]
+)
 def test_postselection_reference_does_not_advance_channel_rng(strategy):
     """The reference sample must not draw from the channel sampler's RNG."""
     sampler = Circuit(MIXED_DIRECT_CIRCUIT).compile_detector_sampler(
@@ -721,7 +741,9 @@ OBSERVABLE_INCLUDE(0) rec[-1]
 """
 
 
-@pytest.mark.parametrize("strategy", ["active_statevector", "cat5"])
+@pytest.mark.parametrize(
+    "strategy", ["active_statevector", "conditioned_statevector", "cat5"]
+)
 @pytest.mark.parametrize("bit_packed", [False, True])
 def test_direct_only_postselection_returns_survivors(strategy, bit_packed):
     """Without components the survivors keep their own observables."""
