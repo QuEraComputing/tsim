@@ -303,6 +303,129 @@ def free_stabilizer(frame, active, pos, amps, s, num_words: int):
 
 @jit
 def compress(frame, active, pos, amps, num_words: int):
+    """Free every qubit that a Pauli stabilizer of the register fixes; return the amplitudes.
+
+    Z-type stabilizers first (cheap, from the support), then any other Pauli
+    stabilizer that ``_pauli_stabilizer`` finds, one at a time.
+    """
+    s_row = np.zeros(2 * num_words + 1, dtype=np.uint64)
+    while True:
+        amps = _compress_z(frame, active, pos, amps, num_words)
+        if width_of(amps) == 0 or not _pauli_stabilizer(amps, active, num_words, s_row):
+            return amps
+        amps = free_stabilizer(frame, active, pos, amps, s_row, num_words)
+
+
+@jit
+def _wht(values) -> None:
+    """In-place Walsh-Hadamard transform (unnormalized)."""
+    h = 1
+    size = values.shape[0]
+    while h < size:
+        for start in range(0, size, 2 * h):
+            for k in range(start, start + h):
+                a, b = values[k], values[k + h]
+                values[k] = a + b
+                values[k + h] = a - b
+        h *= 2
+
+
+@jit
+def _pauli_stabilizer(amps, active, num_words: int, s_row) -> bool:
+    """Look for a Pauli stabilizer ``i^e X^x Z^z`` (x != 0) of the register; write it to ``s_row``.
+
+    A stabilizer's ``x`` keeps ``|a|^2`` invariant under ``y -> y ^ x``, so ``x`` lies in
+    the orthogonal complement of the support of the Walsh transform of ``|a|^2``.
+    For such an ``x``, ``h(y) = a(y ^ x) conj(a(y))`` has a Walsh coefficient of modulus
+    ``sum |a|^2 = 1`` exactly when ``a(y ^ x) / a(y)`` is a constant times ``(-1)^{z.y}``:
+    that coefficient's index is ``z`` and its phase gives ``e``. The candidates are a
+    basis of the complement, and all its elements when it is small.
+    """
+    w = width_of(amps)
+    size = amps.shape[0]
+    prob = np.empty(size, dtype=np.float64)
+    for k in range(size):
+        prob[k] = amps[k].real ** 2 + amps[k].imag ** 2
+    _wht(prob)
+    basis = np.zeros(64, dtype=np.int64)
+    rank = 0
+    for k in range(1, size):
+        if abs(prob[k]) <= 1e-9:
+            continue
+        d = k
+        for b in range(w - 1, -1, -1):
+            if not (d >> b) & 1:
+                continue
+            if basis[b]:
+                d ^= basis[b]
+            else:
+                basis[b] = d
+                rank += 1
+                break
+        if rank == w:
+            return False
+    # The complement: reduce, then one vector per free coordinate.
+    for b in range(w - 1, -1, -1):
+        if basis[b]:
+            for c in range(b - 1, -1, -1):
+                if basis[c] and (basis[b] >> c) & 1:
+                    basis[b] ^= basis[c]
+    shifts = np.empty(w, dtype=np.int64)
+    dim = 0
+    for f in range(w):
+        if basis[f]:
+            continue
+        v = 1 << f
+        for b in range(w):
+            if basis[b] and (basis[b] >> f) & 1:
+                v |= 1 << b
+        shifts[dim] = v
+        dim += 1
+    num_candidates = (1 << dim) - 1 if dim <= 6 else dim
+    h = np.empty(size, dtype=np.complex128)
+    for c in range(1, num_candidates + 1):
+        if dim <= 6:
+            x = 0
+            for i in range(dim):
+                if (c >> i) & 1:
+                    x ^= shifts[i]
+        else:
+            x = shifts[c - 1]
+        for k in range(size):
+            h[k] = amps[k ^ x] * np.conj(amps[k])
+        _wht(h)
+        best, best_abs = 0, 0.0
+        for k in range(size):
+            v = abs(h[k])
+            if v > best_abs:
+                best, best_abs = k, v
+        if best_abs < 1.0 - 1e-9:
+            continue
+        z = best
+        coef = h[z]
+        if popcount(np.uint64(z & x)) & 1:
+            coef = -coef
+        # coef = i^{-e}
+        if abs(coef.real) > abs(coef.imag):
+            k_pow = 0 if coef.real > 0 else 2
+        else:
+            k_pow = 1 if coef.imag > 0 else 3
+        e = (4 - k_pow) & 3
+        for k in range(2 * num_words + 1):
+            s_row[k] = 0
+        for i in range(w):
+            q = active[i]
+            if (x >> i) & 1:
+                s_row[q >> 6] |= _ONE << np.uint64(q & 63)
+            if (z >> i) & 1:
+                s_row[num_words + (q >> 6)] |= _ONE << np.uint64(q & 63)
+        s_row[2 * num_words] = np.uint64(e)
+        return True
+    return False
+
+
+@jit
+def _compress_z(frame, active, pos, amps, num_words: int):
     """Free every qubit fixed by a Z-type stabilizer of the register; return the amplitudes.
 
     ``Z^s`` stabilizes the register iff ``s`` is orthogonal to the differences of its
