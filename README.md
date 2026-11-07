@@ -23,10 +23,10 @@ Or with [uv](https://docs.astral.sh/uv/):
 uv add bloqade-tsim
 ```
 
-The default sampling strategy runs on the CPU. To run the stabilizer-rank strategies on an NVIDIA GPU,
-install the JAX CUDA extra:
+To sample on an NVIDIA GPU, install the extra of your strategy:
 ```bash
-pip install "bloqade-tsim[cuda13]"   # or bloqade-tsim[cuda12]
+pip install "bloqade-tsim[cuda]"         # the default strategy, "active_statevector" (CUDA 13)
+pip install "bloqade-tsim[jax-cuda13]"   # the stabilizer-rank strategies, with JAX (or jax-cuda12)
 ```
 
 
