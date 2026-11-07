@@ -181,6 +181,8 @@ def run_chunk(
     root_amp,
     max_width: int,
     stats,
+    track,
+    path_prob,
 ):
     """Run the shots ``order`` (grouped by key: ``group_start``) through every step.
 
@@ -204,6 +206,10 @@ def run_chunk(
             root state, or 0 (see ``reference_prefix``).
         max_width: Most active qubits a lane may hold.
         stats: Receives the widest lane, lane count, splits, measure-throughs, steps.
+        track: Whether each op's outcome probability goes into ``path_prob``
+            (empty: none). For analysis.
+        path_prob: Per shot of ``words``, multiplied by the probability of each
+            tracked outcome it draws (empty: none).
 
     """
     num_words = (num_lines + 63) >> 6
@@ -284,6 +290,11 @@ def run_chunk(
                     for i in range(lo, hi):
                         bits[i] = 1 if uniform(seed, first_shot + order[i], step) < p1 else 0
                     mid = _split(order, bits, lo, hi)
+                    if path_prob.shape[0] and track[m]:
+                        for i in range(lo, mid):
+                            path_prob[order[i]] *= 1.0 - p1
+                        for i in range(mid, hi):
+                            path_prob[order[i]] *= p1
                     if mid < hi:
                         # The outcome-1 lane, on a copy of the state.
                         f1, a1, q1 = frame.copy(), active.copy(), pos.copy()

@@ -21,7 +21,7 @@ import numpy as np
 from zxparam import Graph
 
 from tsim.core.params import ParamLayout
-from tsim.statevector.conditioned import runner
+from tsim.statevector.conditioned import lane, runner
 from tsim.statevector.conditioned.plan import StepPlan, step_plan
 from tsim.statevector.pbc import ROTATION, ComponentLayout, PauliOps, read_pauli_ops
 from tsim.statevector.program import STABILIZER_RANK_HINT
@@ -223,6 +223,15 @@ def run_chunk(
     if len(order) == 0:
         return _stats(stats)
     plan = component.plan
+    try:
+        _run_chunk_kernel(component, program, rows, alive, first_shot, seed, order, group_start, stats)
+    except lane.TooWide:
+        raise ValueError(_TOO_WIDE.format(outputs=list(component.output_indices))) from None
+    return _stats(stats)
+
+
+def _run_chunk_kernel(component, program, rows, alive, first_shot, seed, order, group_start, stats):
+    plan = component.plan
     runner.run_chunk(
         rows,
         alive,
@@ -249,8 +258,9 @@ def run_chunk(
         component.root_amp,
         MAX_WIDTH,
         stats,
+        _NO_TRACK,
+        _NO_PROB,
     )
-    return _stats(stats)
 
 
 def run_part(
@@ -303,11 +313,15 @@ def run_part(
             component.ops.angle.astype(np.float64), component.ops.sign[:, 0].astype(np.int64),
             program.sign_key, program.out_bit, program.post,
             plan.measure, plan.apply_start, plan.apply_ops, plan.layer_start, plan.layer_ops,
-            component.root_amp, MAX_WIDTH, task_stats,
+            component.root_amp, MAX_WIDTH, task_stats, _NO_TRACK, _NO_PROB,
         )
         return task_stats
 
-    for task_stats in run_tasks(task, members, threads):
+    try:
+        results = run_tasks(task, members, threads)
+    except lane.TooWide:
+        raise ValueError(_TOO_WIDE.format(outputs=list(component.output_indices))) from None
+    for task_stats in results:
         stats[runner.STAT_WIDTH] = max(stats[runner.STAT_WIDTH], task_stats[runner.STAT_WIDTH])
         for i in (runner.STAT_LANES, runner.STAT_SPLITS, runner.STAT_THROUGH, runner.STAT_STEPS):
             stats[i] += task_stats[i]
@@ -319,6 +333,14 @@ def run_part(
 # than _PIECE_SHOTS shots is cut, so that one key cannot hold up a part; its
 # pieces rebuild its lanes, a cost of the order of _GROUP_COST shots each.
 _GROUP_COST = 2000
+_TOO_WIDE = (
+    "strategy='conditioned_statevector' needs more than {MAX_WIDTH} active qubits for a "
+    "lane of the component with outputs {{outputs}}. Such lanes are rare noise patterns "
+    "of shots that a postselection_mask would discard; sample with a "
+    "postselection_mask, or use strategy='active_statevector'."
+).format(MAX_WIDTH=MAX_WIDTH)
+_NO_TRACK = np.zeros(0, dtype=np.bool_)
+_NO_PROB = np.zeros(0, dtype=np.float64)
 _PIECE_SHOTS = 1 << 17
 
 
