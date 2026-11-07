@@ -6,6 +6,7 @@ ca = sum(r["accepted"] for r in cond) + 78509706; cn = sum(r["shots"] for r in c
 ch = sum(np.array(r["hist"]) for r in cond)
 old = [json.loads(l) for f in ("/tmp/cb/clifft_all.jsonl", "/tmp/cb/clifft_t12b.jsonl", "/tmp/cb/clifft_t12c.jsonl") for l in open(f) if '"tricycle_12"' in l]
 new = [json.loads(l) for l in open("/tmp/cb/clifft_t12_more.jsonl")]
+timed = [json.loads(l) for l in open("/tmp/cb/clifft_t12_timed.jsonl")]
 def show(label, rows):
     ka = sum(r["accepted"] for r in rows); kn = sum(r["shots"] for r in rows)
     p1, p2 = ca / cn, ka / kn
@@ -19,4 +20,5 @@ def show(label, rows):
     print(f"{label:28s} clifft {kn:.2e} shots accept {p2:.6f} | conditioned {cn:.2e} accept {p1:.6f} | diff {p1-p2:+.2e} +- {se:.1e} (z {(p1-p2)/se:+.2f}) | obs chi2 p {chi:.3f}")
 print("chunks:", [round(r["accepted"] / r["shots"], 6) for r in new])
 show("new clifft chunks only", new)
-show("all clifft", old + new)
+show("2-hour run only", timed)
+show("all clifft", old + new + timed)

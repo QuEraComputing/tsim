@@ -198,3 +198,8 @@ Settled (more statistics, `t12_settle.py`): clifft with its ActiveWidthScheduleP
 0.784999 (5.7e8): difference +2.0e-5 +- 2.0e-5, z = +1.0. The earlier z = 2.0 was a
 fluctuation (the first 2e8 conditioned shots read 0.785086, the first 1e7 clifft
 shots 0.784766).
+
+Two more hours of clifft on 22 threads (`clifft_t12_timed.py`, 6.9e8 shots; clifft ran
+at ~96k shots/s, no faster than on 12 threads): 0.785012 alone (z +0.39). All clifft
+(1.26e9 shots): 0.785006 vs conditioned 0.785019 (2e9): +1.3e-5 +- 1.5e-5, z = +0.87;
+observable histogram (512 patterns) chi2 p = 0.84.
