@@ -141,3 +141,29 @@ Z-syndrome outcomes (our 60-detector variant) bring it back to ~2x the proxy.
 
 Reproduce: `mc_lfr.py CIRCUIT SHOTS`, `proxy_stim.py CIRCUIT SHOTS PROCS`,
 `scaling.py N`.
+
+## Logical error rates vs `active_statevector` (Nov 7)
+
+`ler_all.sh` (`ler.py`), independent seeds per backend. Deterministic observables:
+postselect every detector (cultivation) or decode with PyMatching on the DEM of
+the circuit with T -> S and coherent rotations dropped (same decoder for both).
+
+| circuit | shots | acceptance (active / conditioned) | logical error (active / conditioned) | z |
+|---|---|---|---|---|
+| cultivation d3 | 2e9 | 0.68678 / 0.68679 | 9.06e-7 / 8.77e-7 (1244 / 1204) | +0.8 |
+| cultivation d5 | 4e9 | 0.14395 / 0.14396 | 6.9e-9 / 6.9e-9 (4 / 4) | 0.0 |
+| coherent d3 r1 (decoded) | 5e7 | 1 / 1 | 7.54e-5 / 7.48e-5 (3770 / 3740) | +0.4 |
+| coherent d3 r3 (decoded) | 5e7 | 1 / 1 | 3.72e-5 / 3.56e-5 (1862 / 1781) | +1.3 |
+| coherent d5 r1 (decoded) | 5e7 | 1 / 1 | 1.72e-6 / 1.92e-6 (86 / 96) | -0.7 |
+
+Random ideal observables (end2end d5: T state read out, P(1) = 0.853 noiseless;
+SymFT d7 fires detectors noiselessly in Tsim; distillation, tricycle factories):
+acceptance and observable histogram among accepted shots.
+
+| circuit | shots | acceptance (active / conditioned) | z | histogram chi2 p |
+|---|---|---|---|---|
+| end2end d5 (paper mask) | 2e8 | 0.11697 / 0.11702 | -1.5 | 0.22 |
+| SymFT d7 | 2e8 | 0.00554 / 0.00554 | -0.7 | 0.61 |
+| distillation | 2e8 | 0.07979 / 0.07975 | +1.3 | 0.58 (32 patterns) |
+| tricycle 6 | 1e8 | 0.88882 / 0.88882 | -0.1 | 0.27 (512) |
+| tricycle 9 | 1e8 | 0.83590 / 0.83595 | -0.9 | 0.20 (512) |
