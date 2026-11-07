@@ -16,11 +16,8 @@ import numpy as np
 
 from tsim.statevector.conditioned import lane
 from tsim.statevector.conditioned.component import MAX_WIDTH, ConditionedComponent
-from tsim.statevector.conditioned.through import (
-    finish_through,
-    prepare_through,
-    root_outcome,
-)
+from tsim.statevector.conditioned.runner import NUM_STATS, _finish_step, _prepare_step
+from tsim.statevector.conditioned.through import finish_through, prepare_through
 from tsim.utils.kernels import jit
 
 
@@ -228,8 +225,8 @@ def config_distribution(
     num_ops = theta.shape[0]
     num_steps = measure.shape[0]
     dist = np.zeros(1 << num_obs, dtype=np.float64)
+    stats = np.zeros(NUM_STATS, dtype=np.int64)
     v = np.empty(2 * num_words + 1, dtype=np.uint64)
-    no_amps = np.empty(0, dtype=np.complex128)
     frame, active, pos, amps, cache, cache_ver = lane.new_state(
         num_lines, num_words, num_ops
     )
@@ -237,96 +234,43 @@ def config_distribution(
     while len(stack):
         step, prob, code, frame, active, pos, amps, cache, cache_ver = stack.pop()
         while step < num_steps:
-            for i in range(apply_start[step], apply_start[step + 1]):
-                r = apply_ops[i]
-                amps = lane.rotate(
-                    frame,
-                    active,
-                    pos,
-                    amps,
-                    cache,
-                    cache_ver,
-                    r,
-                    op_x,
-                    op_z,
-                    op_e,
-                    theta[r],
-                    num_words,
-                    max_width,
-                )
+            amps, p1, certain, through, kind, d, keep, phi, kv = _prepare_step(
+                step,
+                frame,
+                active,
+                pos,
+                amps,
+                cache,
+                cache_ver,
+                op_x,
+                op_z,
+                op_e,
+                theta,
+                flipped,
+                ref_theta,
+                measure,
+                apply_start,
+                apply_ops,
+                layer_start,
+                layer_ops,
+                root_amp,
+                v,
+                num_words,
+                max_width,
+                stats,
+            )
             m = measure[step]
-            l0, l1 = layer_start[step], layer_start[step + 1]
-            through = l1 > l0
-            kind, d = 0, -1
-            keep = active[:0].copy()
-            phi, kv = no_amps, no_amps
-            shortcut = -1
-            if (
-                through
-                and root_amp[step] != 0
-                and apply_start[step] == apply_start[step + 1]
-                and amps.shape[0] == 1
-                and frame[frame.shape[0] - 1, 0] == np.uint64(1)
-            ):
-                shortcut = root_outcome(
-                    layer_ops[l0:l1],
-                    flipped,
-                    ref_theta,
-                    op_x,
-                    op_z,
-                    op_e,
-                    root_amp[step],
-                    num_words,
-                )
-            if shortcut >= 0:
-                p1 = float(shortcut)
-                certain = True
-            elif through:
-                layer = layer_ops[l0:l1]
-                p1, keep, phi, kv = prepare_through(
-                    frame,
-                    active,
-                    pos,
-                    amps,
-                    cache,
-                    cache_ver,
-                    op_x,
-                    op_z,
-                    op_e,
-                    layer,
-                    theta[layer],
-                    m,
-                    num_words,
-                    max_width,
-                )
-                certain = phi.shape[0] == 0
-            else:
-                kind, p1, d = lane.prepare_measure(
-                    frame,
-                    active,
-                    pos,
-                    amps,
-                    cache,
-                    cache_ver,
-                    m,
-                    op_x,
-                    op_z,
-                    op_e,
-                    num_words,
-                    v,
-                )
-                certain = p1 < lane.CERTAIN or p1 > 1.0 - lane.CERTAIN
             s = slot[m]
             need = required[s] if s >= 0 else -1
-            lo_bit, hi_bit = 0, 1
-            if certain:
-                lo_bit = hi_bit = 1 if p1 > 0.5 else 0
+            ob = obs_bit[s] if s >= 0 else -1
+            lo_bit, hi_bit = (
+                (1, 1) if certain and p1 > 0.5 else ((0, 0) if certain else (0, 1))
+            )
             if need >= 0:
                 if need < lo_bit or need > hi_bit:
                     prob = 0.0
                     break
                 lo_bit = hi_bit = need
-            ob = obs_bit[s] if s >= 0 else -1
             if hi_bit > lo_bit:
                 # Both outcomes: outcome 1 on a copy, onto the stack.
                 f1, a1, q1, c1, cv1 = (
@@ -336,13 +280,22 @@ def config_distribution(
                     cache.copy(),
                     cache_ver.copy(),
                 )
-                if through:
-                    amps1 = finish_through(a1, q1, keep, phi, kv, 1)
-                else:
-                    amps1 = lane.finish_measure(
-                        f1, a1, q1, amps.copy(), kind, d, 1, v.copy(), num_words
-                    )
-                amps1 = lane.compress(f1, a1, q1, amps1, num_words)
+                amps1 = _finish_step(
+                    f1,
+                    a1,
+                    q1,
+                    amps.copy(),
+                    certain,
+                    through,
+                    kind,
+                    d,
+                    keep,
+                    phi,
+                    kv,
+                    1,
+                    v.copy(),
+                    num_words,
+                )
                 code1 = code | (1 << ob) if ob >= 0 else code
                 stack.append((step + 1, prob * p1, code1, f1, a1, q1, amps1, c1, cv1))
                 prob *= 1.0 - p1
@@ -351,14 +304,22 @@ def config_distribution(
                 bit = lo_bit
                 if not certain:
                     prob *= p1 if bit else 1.0 - p1
-            if through:
-                if not certain:
-                    amps = finish_through(active, pos, keep, phi, kv, bit)
-            else:
-                amps = lane.finish_measure(
-                    frame, active, pos, amps, kind, d, bit, v, num_words
-                )
-            amps = lane.compress(frame, active, pos, amps, num_words)
+            amps = _finish_step(
+                frame,
+                active,
+                pos,
+                amps,
+                certain,
+                through,
+                kind,
+                d,
+                keep,
+                phi,
+                kv,
+                bit,
+                v,
+                num_words,
+            )
             if ob >= 0 and bit:
                 code |= 1 << ob
             step += 1
