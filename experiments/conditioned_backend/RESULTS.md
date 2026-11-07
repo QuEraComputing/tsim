@@ -46,7 +46,8 @@ shot** (64 shots, 24 threads, no postselection).
 | root shortcut for faulty keys; numba key grouping | 1.9 us | 0.15 us |
 | group by key over the whole call (one tree per key) | 0.75 us | 0.18 us |
 | fault-free shots unsorted; big groups cut into pieces | 0.77 us | 0.099 us |
-| general Pauli-stabilizer compression (Walsh-transform candidates) | **0.425 us** | **0.068 us** |
+| general Pauli-stabilizer compression (Walsh-transform candidates) | 0.425 us | **0.068 us** |
+| at most one piece per thread per key group | **0.355 us** | 0.074 us (noise) |
 
 Noise sampling is ~0.02 us/shot. Speedup over `active_statevector`: ~1.6e8 (24 threads each).
 Fault-free lanes have width 9 (= logical qubits); with the general Pauli compression
@@ -56,7 +57,7 @@ Other runs (24 threads; 1 thread in brackets):
 
 | circuit | postselected | all shots |
 |---|---|---|
-| BLP, 60 detectors | 0.068 us (0.425 us) | 9.6 us (158 us) |
+| BLP, 60 detectors | 0.068 us (0.355 us) | 9.6 us (158 us) |
 | BLP, paper's 27 detectors | 0.26 us (2.6 us) | |
 | toric [[81,3,3]], 168 detectors (`active_statevector`: k = 63, cannot run) | 0.34 us* | |
 | toric, paper's 81 detectors | 2.85 us (40.7 us) | |
@@ -85,7 +86,7 @@ weight-5 Z errors; detectors only on the final X checks (27 for BLP).
 | **ours, 60 detectors, real CCZ (1e9)** | **0.57997 +- 0.00002** | **6.39e-7 +- 0.31e-7** |
 | paper, toric d3 [[81,3,3]] (5e8) | 0.34906 | 1.93e-6 +- 0.11e-6 |
 | ours, toric, paper detectors, CCZ removed (Stim, 8.8e7) | 0.34903 +- 0.00005 | 2.12e-6 +- 0.26e-6 |
-| **ours, toric, paper detectors, real CCZ (2e7)** | **0.23395 +- 0.00009** | **4.62e-5 +- 0.28e-5** |
+| **ours, toric, paper detectors, real CCZ (2e8)** | **0.23395 +- 0.00003** | **4.74e-5 +- 0.09e-5** |
 | ours, toric, 168 detectors, CCZ removed (Stim, 9.6e7) | 0.20110 +- 0.00004 | 2.6e-7 +- 1.2e-7 |
 | **ours, toric, 168 detectors, real CCZ (1e9)** | **0.19510 +- 0.00001** | **8.8e-8 +- 2.0e-8** |
 

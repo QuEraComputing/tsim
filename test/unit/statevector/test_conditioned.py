@@ -163,3 +163,37 @@ def test_samples_do_not_depend_on_threads():
         out.append(sampler.sample(5000, batch_size=700))
     numba.set_num_threads(numba.config.NUMBA_NUM_THREADS)
     assert np.array_equal(out[0], out[1])
+
+
+def test_compress_frees_every_qubit_of_a_stabilizer_state():
+    from tsim.statevector.conditioned import lane
+
+    rng = np.random.default_rng(5)
+    for _ in range(20):
+        n, w = 8, int(rng.integers(1, 7))
+        frame, active, pos, amps, _, _ = lane.new_state(n, 1, 1)
+        for q in rng.choice(n, w, replace=False):
+            amps = lane.promote(active, pos, amps, int(q), 26)
+        qubits = active[:w].copy()
+        for _ in range(30):
+            code = int(rng.choice([lane.H, lane.S, lane.CX, lane.CZ]))
+            a, b = (int(q) for q in rng.choice(qubits, 2, replace=False)) if w > 1 else (int(qubits[0]), 0)
+            if code >= lane.CX and w == 1:
+                continue
+            lane.gate(frame, pos, amps, code, a, b, 1)
+        before = amps.copy()
+        amps = lane.compress(frame, active, pos, amps, 1)
+        assert lane.width_of(amps) == 0
+        assert abs(abs(amps[0]) - 1) < 1e-12 and np.linalg.norm(before) > 0
+
+
+def test_compress_keeps_magic():
+    from tsim.statevector.conditioned import lane
+
+    frame, active, pos, amps, _, _ = lane.new_state(2, 1, 1)
+    amps = lane.promote(active, pos, amps, 0, 26)
+    amps = lane.promote(active, pos, amps, 1, 26)
+    t = np.exp(1j * np.pi / 4)
+    amps[:] = np.array([1, t, t, 1j]) / 2  # T|+> (x) T|+> up to CZ-free phases
+    amps = lane.compress(frame, active, pos, amps, 1)
+    assert lane.width_of(amps) == 2

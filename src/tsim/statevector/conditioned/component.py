@@ -275,9 +275,9 @@ def run_part(
     """Run the alive shots of a whole part through the component, a key's shots on one thread.
 
     Shots are grouped by key over the part. A group larger than ``_PIECE_SHOTS``
-    is cut into pieces (each builds its own lanes, which costs about as much as
-    recording a few thousand shots), and the pieces are dealt to ``8 * threads``
-    tasks, largest first, each to the task with the least work so far.
+    is cut into at most ``threads`` pieces (each builds its own lanes, which costs
+    about as much as recording a few thousand shots), and the pieces are dealt to
+    ``8 * threads`` tasks, largest first, each to the task with the least work so far.
     """
     order, starts = runner.group_by_key(words, alive, program.key_start, program.key_words)
     stats = np.zeros(runner.NUM_STATS, dtype=np.int64)
@@ -286,7 +286,7 @@ def run_part(
     pieces = []
     for g in range(len(starts) - 1):
         lo, hi = int(starts[g]), int(starts[g + 1])
-        count = -(-(hi - lo) // _PIECE_SHOTS)
+        count = min(-(-(hi - lo) // _PIECE_SHOTS), threads)
         for i in range(count):
             pieces.append((lo + (hi - lo) * i // count, lo + (hi - lo) * (i + 1) // count))
     sizes = np.array([hi - lo for lo, hi in pieces])
