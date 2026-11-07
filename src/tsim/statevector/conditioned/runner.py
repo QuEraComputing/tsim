@@ -90,32 +90,56 @@ def _split(order, bits, lo: int, hi: int) -> int:
 def group_by_key(words, alive, key_start: int, key_words: int):
     """Return the alive shots sorted so that equal keys are adjacent, and the group starts.
 
-    Shots are sorted by a hash of their key; a run of equal hashes is checked word
-    by word, and a shot whose key differs from its run's first (a collision) gets
-    a group of its own.
+    The shots with the all-zero key (usually most of them: no fault reaches the
+    component) form the first group, unsorted. The others are sorted by a hash of
+    their key; a run of equal hashes is checked word by word, and a shot whose key
+    differs from its run's first (a collision) gets a group of its own.
     """
-    count = 0
+    num_zero = 0
+    num_other = 0
     for s in range(words.shape[0]):
-        if alive[s]:
-            count += 1
-    shots = np.empty(count, dtype=np.int64)
-    hashes = np.empty(count, dtype=np.uint64)
-    i = 0
+        if not alive[s]:
+            continue
+        zero = True
+        for w in range(key_words):
+            if words[s, key_start + w] != 0:
+                zero = False
+                break
+        if zero:
+            num_zero += 1
+        else:
+            num_other += 1
+    order = np.empty(num_zero + num_other, dtype=np.int64)
+    others = np.empty(num_other, dtype=np.int64)
+    hashes = np.empty(num_other, dtype=np.uint64)
+    iz, io = 0, 0
     for s in range(words.shape[0]):
-        if alive[s]:
-            h = np.uint64(0x243F6A8885A308D3)
-            for w in range(key_words):
-                _, h = splitmix64(h ^ words[s, key_start + w])
-            shots[i] = s
-            hashes[i] = h
-            i += 1
+        if not alive[s]:
+            continue
+        h = np.uint64(0x243F6A8885A308D3)
+        zero = True
+        for w in range(key_words):
+            word = words[s, key_start + w]
+            if word != 0:
+                zero = False
+            _, h = splitmix64(h ^ word)
+        if zero:
+            order[iz] = s
+            iz += 1
+        else:
+            others[io] = s
+            hashes[io] = h
+            io += 1
     perm = np.argsort(hashes, kind="mergesort")
-    order = shots[perm]
-    starts = np.empty(count + 1, dtype=np.int64)
+    starts = np.empty(num_other + 2, dtype=np.int64)
     num = 0
+    if num_zero:
+        starts[0] = 0
+        num = 1
     first = -1
-    for i in range(count):
-        s = order[i]
+    for i in range(num_other):
+        s = others[perm[i]]
+        order[num_zero + i] = s
         new = i == 0 or hashes[perm[i]] != hashes[perm[i - 1]]
         if not new:
             for w in range(key_words):
@@ -123,10 +147,10 @@ def group_by_key(words, alive, key_start: int, key_words: int):
                     new = True
                     break
         if new:
-            starts[num] = i
+            starts[num] = num_zero + i
             num += 1
             first = s
-    starts[num] = count
+    starts[num] = num_zero + num_other
     return order, starts[: num + 1].copy()
 
 

@@ -264,16 +264,23 @@ def run_part(
 ) -> tuple:
     """Run the alive shots of a whole part through the component, a key's shots on one thread.
 
-    Shots are grouped by key over the part, and the groups are dealt to
-    ``4 * threads`` tasks, largest first, each to the task with the least work
-    so far (a group's work is taken as a fixed cost plus its shots).
+    Shots are grouped by key over the part. A group larger than ``_PIECE_SHOTS``
+    is cut into pieces (each builds its own lanes, which costs about as much as
+    recording a few thousand shots), and the pieces are dealt to ``8 * threads``
+    tasks, largest first, each to the task with the least work so far.
     """
     order, starts = runner.group_by_key(words, alive, program.key_start, program.key_words)
     stats = np.zeros(runner.NUM_STATS, dtype=np.int64)
     if len(order) == 0:
         return _stats(stats)
-    sizes = np.diff(starts)
-    num_tasks = max(1, min(4 * threads, len(sizes)))
+    pieces = []
+    for g in range(len(starts) - 1):
+        lo, hi = int(starts[g]), int(starts[g + 1])
+        count = -(-(hi - lo) // _PIECE_SHOTS)
+        for i in range(count):
+            pieces.append((lo + (hi - lo) * i // count, lo + (hi - lo) * (i + 1) // count))
+    sizes = np.array([hi - lo for lo, hi in pieces])
+    num_tasks = max(1, min(8 * threads, len(pieces)))
     load = np.zeros(num_tasks)
     members: list[list[int]] = [[] for _ in range(num_tasks)]
     for g in np.argsort(-sizes, kind="stable"):
@@ -287,7 +294,7 @@ def run_part(
         if not groups:
             return task_stats
         groups = sorted(groups)
-        sub_order = np.concatenate([order[starts[g] : starts[g + 1]] for g in groups])
+        sub_order = np.concatenate([order[pieces[g][0] : pieces[g][1]] for g in groups])
         sub_starts = np.concatenate([[0], np.cumsum(sizes[groups])]).astype(np.int64)
         runner.run_chunk(
             words, alive, first_shot, np.uint64(seed), sub_order, sub_starts,
@@ -308,8 +315,11 @@ def run_part(
 
 
 # NOTE: a group's fixed cost in shots, for dealing groups to tasks: a lane's
-# steps cost about as much as recording a few thousand shots.
+# steps cost about as much as recording a few thousand shots. A group of more
+# than _PIECE_SHOTS shots is cut, so that one key cannot hold up a part; its
+# pieces rebuild its lanes, a cost of the order of _GROUP_COST shots each.
 _GROUP_COST = 2000
+_PIECE_SHOTS = 1 << 17
 
 
 def _stats(stats: np.ndarray) -> tuple:
