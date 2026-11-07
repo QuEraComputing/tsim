@@ -202,6 +202,10 @@ def test_find_basis_matches_reference_elimination(seed):
     np.testing.assert_array_equal(transform, expected_transform)
 
 
+def test_find_basis_sparse_accepts_unsorted_rows():
+    assert find_basis_sparse([(3, 1), (1, 3), (2,)]) == ([0, 2], [[0], [0], [1]])
+
+
 def test_sparse_gf2_matrix_round_trip():
     rows = [(0, 3), (), (1, 2, 3)]
     matrix = SparseGF2Matrix(rows, 5)

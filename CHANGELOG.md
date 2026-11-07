@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error bits) compiles with 4.5 GB instead of failing to allocate 121 GiB.
   Seeded samples are unchanged.
 
+### Changed
+- `ChannelSampler.signature_matrix` is now a `tsim.utils.linalg.SparseGF2Matrix`
+  instead of a dense uint8 array; `np.asarray` gives the dense matrix.
+
 ## [1.0.0] - 2026-11-04
 
 Tsim 1.0 adds a new default sampling strategy, `"active_statevector"`, which

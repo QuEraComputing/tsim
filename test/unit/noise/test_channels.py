@@ -850,9 +850,8 @@ class TestUniqueColumns:
         signatures, got_inverse = unique_columns(SparseGF2Matrix.from_dense(matrix))
         expected_cols, expected_inverse = np.unique(matrix, axis=1, return_inverse=True)
         got_cols = SparseGF2Matrix(signatures, rows).toarray().T
-        np.testing.assert_array_equal(
-            got_cols.reshape(expected_cols.shape), expected_cols
-        )
+        assert got_cols.shape == expected_cols.shape
+        np.testing.assert_array_equal(got_cols, expected_cols)
         np.testing.assert_array_equal(got_inverse, np.ravel(expected_inverse))
 
     def test_accepts_float_matrices(self):

@@ -25,10 +25,44 @@ def find_basis(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     """
     vecs = np.asarray(vectors, dtype=np.uint8)
-    basis_indices, expansions = find_basis_sparse(SparseGF2Matrix.from_dense(vecs).rows)
-    transform = np.zeros((len(vecs), len(basis_indices)), dtype=np.uint8)
-    for i, expansion in enumerate(expansions):
-        transform[i, expansion] = 1
+    num_vectors = vecs.shape[0]
+
+    # NOTE: vectors and their expansions over the basis are Python ints (bit j
+    # is entry j). A vector is reduced by the basis vector whose lowest bit is
+    # its own, until that bit is new (independent) or nothing is left.
+    packed = np.packbits(vecs, axis=1, bitorder="little")
+    reduced_basis: dict[int, tuple[int, int]] = {}
+    basis_indices: list[int] = []
+    t_rows: list[int] = []
+
+    for i, row in enumerate(packed):
+        v = int.from_bytes(row.tobytes(), "little")
+        dep_sum = 0
+        while v:
+            pivot = (v & -v).bit_length() - 1
+            if pivot not in reduced_basis:
+                # reduced_v = v_original + sum(reducing vectors)
+                # => reduced_v_expansion = e_new + sum(their expansions)
+                rank = len(basis_indices)
+                reduced_basis[pivot] = (v, dep_sum | 1 << rank)
+                basis_indices.append(i)
+                dep_sum = 1 << rank
+                break
+            b, expansion = reduced_basis[pivot]
+            v ^= b
+            dep_sum ^= expansion
+        # A dependent vector is the sum of the expansions of its reducing vectors
+        t_rows.append(dep_sum)
+
+    rank = len(basis_indices)
+    num_bytes = -(-rank // 8)
+    t_bytes = b"".join(row.to_bytes(num_bytes, "little") for row in t_rows)
+    transform = np.unpackbits(
+        np.frombuffer(t_bytes, dtype=np.uint8).reshape(num_vectors, num_bytes),
+        axis=1,
+        count=rank,
+        bitorder="little",
+    )
     return vecs[basis_indices], transform
 
 
@@ -73,14 +107,11 @@ class SparseGF2Matrix:
 
     def columns(self) -> list[tuple[int, ...]]:
         """Return each column's sorted row indices."""
-        entries: dict[int, list[int]] = {}
+        cols: list[list[int]] = [[] for _ in range(self.num_cols)]
         for i, row in enumerate(self.rows):
             for column in row:
-                entries.setdefault(column, []).append(i)
-        return [
-            tuple(entries[column]) if column in entries else ()
-            for column in range(self.num_cols)
-        ]
+                cols[column].append(i)
+        return [tuple(c) for c in cols]
 
 
 _EMPTY = (0, 0)
@@ -120,7 +151,7 @@ def _indices(offset: int, bits: int) -> list[int]:
 def find_basis_sparse(
     rows: list[tuple[int, ...]],
 ) -> tuple[list[int], list[list[int]]]:
-    """``find_basis`` for sparse rows, given as sorted column indices.
+    """``find_basis`` for sparse rows, given as column indices (in any order).
 
     Each row is reduced by the basis vector whose lowest column is its own, until
     that column is new (the row joins the basis) or nothing is left. Each bit set
@@ -129,7 +160,7 @@ def find_basis_sparse(
     columns are local (as an error-detecting circuit's are) stay small.
 
     Args:
-        rows: Each row's sorted column indices.
+        rows: Each row's column indices.
 
     Returns:
         The indices of the rows that form the basis, and for every row the
@@ -142,10 +173,11 @@ def find_basis_sparse(
     for i, columns in enumerate(rows):
         vector = _EMPTY
         if columns:
+            lowest = min(columns)
             bits = 0
             for column in columns:
-                bits ^= 1 << (column - columns[0])
-            vector = _normalize(columns[0], bits)
+                bits ^= 1 << (column - lowest)
+            vector = _normalize(lowest, bits)
         expansion = _EMPTY
         while vector[1]:
             pivot = vector[0]
