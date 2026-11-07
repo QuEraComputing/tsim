@@ -26,6 +26,7 @@ from tsim.statevector.conditioned.plan import StepPlan, step_plan
 from tsim.statevector.pbc import ROTATION, ComponentLayout, PauliOps, read_pauli_ops
 from tsim.statevector.program import STABILIZER_RANK_HINT
 from tsim.statevector.shared import KeyBasis, pack_bits
+from tsim.utils.kernels import run_tasks
 from tsim.utils.linalg import find_basis
 
 # NOTE: the most active qubits a lane may hold: 2^26 amplitudes are 1 GiB.
@@ -250,6 +251,65 @@ def run_chunk(
         stats,
     )
     return _stats(stats)
+
+
+def run_part(
+    component: ConditionedComponent,
+    program: ConditionedProgram,
+    words: np.ndarray,
+    alive: np.ndarray,
+    first_shot: int,
+    seed: np.uint64,
+    threads: int,
+) -> tuple:
+    """Run the alive shots of a whole part through the component, a key's shots on one thread.
+
+    Shots are grouped by key over the part, and the groups are dealt to
+    ``4 * threads`` tasks, largest first, each to the task with the least work
+    so far (a group's work is taken as a fixed cost plus its shots).
+    """
+    order, starts = runner.group_by_key(words, alive, program.key_start, program.key_words)
+    stats = np.zeros(runner.NUM_STATS, dtype=np.int64)
+    if len(order) == 0:
+        return _stats(stats)
+    sizes = np.diff(starts)
+    num_tasks = max(1, min(4 * threads, len(sizes)))
+    load = np.zeros(num_tasks)
+    members: list[list[int]] = [[] for _ in range(num_tasks)]
+    for g in np.argsort(-sizes, kind="stable"):
+        t = int(np.argmin(load))
+        members[t].append(int(g))
+        load[t] += _GROUP_COST + sizes[g]
+    plan = component.plan
+
+    def task(groups: list[int]) -> np.ndarray:
+        task_stats = np.zeros(runner.NUM_STATS, dtype=np.int64)
+        if not groups:
+            return task_stats
+        groups = sorted(groups)
+        sub_order = np.concatenate([order[starts[g] : starts[g + 1]] for g in groups])
+        sub_starts = np.concatenate([[0], np.cumsum(sizes[groups])]).astype(np.int64)
+        runner.run_chunk(
+            words, alive, first_shot, np.uint64(seed), sub_order, sub_starts,
+            program.key_start, program.key_words, component.num_lines,
+            component.op_x, component.op_z, component.op_e,
+            component.ops.angle.astype(np.float64), component.ops.sign[:, 0].astype(np.int64),
+            program.sign_key, program.out_bit, program.post,
+            plan.measure, plan.apply_start, plan.apply_ops, plan.layer_start, plan.layer_ops,
+            component.root_amp, MAX_WIDTH, task_stats,
+        )
+        return task_stats
+
+    for task_stats in run_tasks(task, members, threads):
+        stats[runner.STAT_WIDTH] = max(stats[runner.STAT_WIDTH], task_stats[runner.STAT_WIDTH])
+        for i in (runner.STAT_LANES, runner.STAT_SPLITS, runner.STAT_THROUGH, runner.STAT_STEPS):
+            stats[i] += task_stats[i]
+    return _stats(stats)
+
+
+# NOTE: a group's fixed cost in shots, for dealing groups to tasks: a lane's
+# steps cost about as much as recording a few thousand shots.
+_GROUP_COST = 2000
 
 
 def _stats(stats: np.ndarray) -> tuple:

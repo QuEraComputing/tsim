@@ -387,6 +387,10 @@ class ShotSampler:
         self._reference_seeds = np.random.default_rng(reference)
         self._plans: dict[bytes, ShotPlan] = {}
         self._widest = max((c.width for c in self._layout.components), default=0)
+        self._conditioned = bool(self._layout.components) and all(
+            isinstance(c, conditioned.ConditionedComponent)
+            for c in self._layout.components
+        )
         self._direct_tables: WordTables | None = None
         # NOTE: noise words of a program without components, reused by the calls
         # that screen them, since only their survivors are returned.
@@ -556,9 +560,22 @@ class ShotSampler:
             return words, 0.0
         threads = numba.get_num_threads()
         chunk, workers = self._schedule(shots, batch_size, threads)
+        part_stats: list[tuple] = []
+        alive_all: np.ndarray | None = None
+        if self._conditioned:
+            # NOTE: conditioned components run on the whole part at once, a key's
+            # shots on one thread, so that no key's lanes are built twice.
+            alive_all = np.empty(shots, dtype=np.bool_)
+            part_stats = self._run_conditioned(
+                words, alive_all, plan, constant, start, seeds, threads
+            )
 
         def run(offset: int) -> tuple[list[tuple], int]:
             rows = words[offset : offset + chunk]
+            if alive_all is not None:
+                alive = alive_all[offset : offset + chunk]
+                kept = _compact(rows, alive, width) if plan.rejected else len(rows)
+                return [], kept
             alive = np.empty(len(rows), dtype=np.bool_)
             stats = self._run_chunk(
                 rows, alive, plan, constant, start + offset, seeds, threads
@@ -569,7 +586,9 @@ class ShotSampler:
 
         offsets = range(0, shots, chunk)
         results = run_tasks(run, offsets, workers)
-        deviation = self._record([stats for result, _ in results for stats in result])
+        deviation = self._record(
+            part_stats + [stats for result, _ in results for stats in result]
+        )
         if not plan.rejected:
             return words, deviation
         kept = np.array([k for _, k in results], dtype=np.int64)
@@ -689,6 +708,31 @@ class ShotSampler:
         workers = min(threads, fits)
         chunk = max(1, min(chunk, fits // workers))
         return chunk, min(workers, -(-shots // chunk))
+
+    def _run_conditioned(
+        self,
+        words: np.ndarray,
+        alive: np.ndarray,
+        plan: ShotPlan,
+        constant: np.ndarray,
+        first_shot: int,
+        seeds: np.ndarray,
+        threads: int,
+    ) -> list[tuple]:
+        """Screen a part's shots and run its conditioned components on all of them."""
+        _screen(words, constant, plan.screen, alive)
+        stats = []
+        for component, program, seed in zip(
+            self._layout.components, plan.programs, seeds, strict=True
+        ):
+            if not alive.any():
+                break
+            stats.append(
+                conditioned.run_part(
+                    component, program, words, alive, first_shot, seed, threads
+                )
+            )
+        return stats
 
     def _run_chunk(
         self,
