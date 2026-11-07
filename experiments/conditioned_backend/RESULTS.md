@@ -45,20 +45,30 @@ shot** (64 shots, 24 threads, no postselection).
 | O's images by transposed masks, updated through the CX network | 2.8 us | 0.51 us |
 | root shortcut for faulty keys; numba key grouping | 1.9 us | 0.15 us |
 | group by key over the whole call (one tree per key) | 0.75 us | 0.18 us |
-| fault-free shots unsorted; big groups cut into pieces | **0.77 us** | **0.099 us** |
+| fault-free shots unsorted; big groups cut into pieces | 0.77 us | 0.099 us |
+| general Pauli-stabilizer compression (Walsh-transform candidates) | **0.425 us** | **0.068 us** |
 
-Noise sampling is ~0.02 us/shot. Speedup over `active_statevector`: ~1e8.
-Fault-free lanes have width 9 (= logical qubits) everywhere; widest lane 13-17.
+Noise sampling is ~0.02 us/shot. Speedup over `active_statevector`: ~1.6e8 (24 threads each).
+Fault-free lanes have width 9 (= logical qubits); with the general Pauli compression
+faulty lanes stay at <= 9 too (Z-type compression alone let them grow to 21).
 
-Other circuits (24 threads, postselected): BLP with the paper's 27 detectors
-2.4 us/shot (7.3 us on 1 thread; syndrome-round faults make many wide keys);
-toric [[81,3,3]] (`active_statevector`: k = 63, cannot run) **0.34 us/shot**
-(with the paper's 81 detectors ~8.7 us/shot).
+Other runs (24 threads; 1 thread in brackets):
 
-Limitation: without postselection, shots whose detectors fire keep running and
-their lanes grow by about one qubit per random detector (Z-type compression
-misses their stabilizers): ~26 ms/shot on BLP, and rare lanes exceed 26 qubits
-(clear ValueError suggesting a postselection mask).
+| circuit | postselected | all shots |
+|---|---|---|
+| BLP, 60 detectors | 0.068 us (0.425 us) | 9.6 us (158 us) |
+| BLP, paper's 27 detectors | 0.26 us (2.6 us) | |
+| toric [[81,3,3]], 168 detectors (`active_statevector`: k = 63, cannot run) | 0.34 us* | |
+| toric, paper's 81 detectors | 2.85 us (40.7 us) | |
+
+(* before the general Pauli compression.) Without postselection the shots whose
+detectors fire run to the end, and every outcome of every shot is a new lane;
+Tsim's `active_statevector` needs 11.2 s per BLP shot either way.
+
+A lane wider than 26 qubits raises a ValueError suggesting a postselection mask
+or `active_statevector`; with Z-type compression only, unpostselected BLP hit it
+(lanes grew ~1 qubit per random detector); with the general compression none
+were seen in 2e5 unpostselected shots.
 
 ## Literature: Li, Preskill, Xu, arXiv:2510.07269 (CCZ error detection)
 
