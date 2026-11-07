@@ -52,7 +52,8 @@ Fault-free lanes have width 9 (= logical qubits) everywhere; widest lane 13-17.
 
 Other circuits (24 threads, postselected): BLP with the paper's 27 detectors
 2.4 us/shot (7.3 us on 1 thread; syndrome-round faults make many wide keys);
-toric [[81,3,3]] (`active_statevector`: k = 63, cannot run) **0.34 us/shot**.
+toric [[81,3,3]] (`active_statevector`: k = 63, cannot run) **0.34 us/shot**
+(with the paper's 81 detectors ~8.7 us/shot).
 
 Limitation: without postselection, shots whose detectors fire keep running and
 their lanes grow by about one qubit per random detector (Z-type compression
@@ -74,6 +75,7 @@ weight-5 Z errors; detectors only on the final X checks (27 for BLP).
 | **ours, 60 detectors, real CCZ (1e9)** | **0.57997 +- 0.00002** | **6.39e-7 +- 0.31e-7** |
 | paper, toric d3 [[81,3,3]] (5e8) | 0.34906 | 1.93e-6 +- 0.11e-6 |
 | ours, toric, paper detectors, CCZ removed (Stim, 8.8e7) | 0.34903 +- 0.00005 | 2.12e-6 +- 0.26e-6 |
+| **ours, toric, paper detectors, real CCZ (2e7)** | **0.23395 +- 0.00009** | **4.62e-5 +- 0.28e-5** |
 | ours, toric, 168 detectors, CCZ removed (Stim, 9.6e7) | 0.20110 +- 0.00004 | 2.6e-7 +- 1.2e-7 |
 | **ours, toric, 168 detectors, real CCZ (1e9)** | **0.19510 +- 0.00001** | **8.8e-8 +- 2.0e-8** |
 
