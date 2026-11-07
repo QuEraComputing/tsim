@@ -225,8 +225,14 @@ def drop(frame, active, pos, amps, q: int, bit: int, num_words: int):
     i = pos[q]
     out = np.empty(amps.shape[0] >> 1, dtype=np.complex128)
     low = (1 << i) - 1
+    lost = 0.0
     for k in range(out.shape[0]):
-        out[k] = amps[((k & ~low) << 1) | (bit << i) | (k & low)]
+        base = ((k & ~low) << 1) | (k & low)
+        out[k] = amps[base | (bit << i)]
+        other = amps[base | ((1 - bit) << i)]
+        lost += other.real**2 + other.imag**2
+    if lost > 1e-20:
+        raise ValueError("dropped a qubit that is not in a basis state")
     for j in range(i, w - 1):
         active[j] = active[j + 1]
         pos[active[j]] = j
@@ -395,7 +401,7 @@ def _pauli_stabilizer(amps, active, num_words: int, s_row) -> bool:
             v = abs(h[k])
             if v > best_abs:
                 best, best_abs = k, v
-        if best_abs < 1.0 - 1e-9:
+        if best_abs < 1.0 - 1e-12:
             continue
         z = best
         coef = h[z]
