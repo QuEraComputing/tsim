@@ -18,7 +18,8 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
-from tsim.statevector.program import StatevectorComponent
+from tsim.statevector.conditioned.component import ConditionedComponent
+from tsim.statevector.program import STATEVECTOR_STRATEGIES, StatevectorComponent
 from tsim.statevector.shots import ShotSampler
 from tsim.utils.cuda_helpers import copy_d2h
 from tsim.utils.kernels import kernel
@@ -214,6 +215,8 @@ def _write_direct_detectors(f, f_indices, flips, columns, postselect, out):
 def _nbytes(tree: object) -> int:
     if isinstance(tree, StatevectorComponent):
         return sum(array.nbytes for array in tree.tape)
+    if isinstance(tree, ConditionedComponent):
+        return sum(array.nbytes for array in (tree.op_x, tree.op_z, tree.ops.x, tree.ops.z))
     return sum(
         v.nbytes for v in jax.tree_util.tree_leaves(tree) if isinstance(v, jax.Array)
     )
@@ -347,7 +350,7 @@ class _CompiledSamplerBase:
         # under any strategy, are sampled as shot words; the others with JAX.
         self._shots: ShotSampler | None = None
         self._backend: _StabilizerRankBackend | None = None
-        if strategy == "active_statevector" or not program.components:
+        if strategy in STATEVECTOR_STRATEGIES or not program.components:
             self._shots = ShotSampler(
                 program,
                 self._channel_sampler,
@@ -687,7 +690,7 @@ class _CompiledSamplerBase:
         statevector_actions = 0
 
         for component in self._program.components:
-            if isinstance(component, StatevectorComponent):
+            if isinstance(component, (StatevectorComponent, ConditionedComponent)):
                 statevector_widths.append(component.width)
                 statevector_actions += component.num_actions
                 num_outputs.append(len(component.output_indices))

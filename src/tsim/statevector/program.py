@@ -28,6 +28,9 @@ MEASURE_DORMANT = 4
 
 MAX_WIDTH = 30
 
+STATEVECTOR_STRATEGIES = ("active_statevector", "conditioned_statevector")
+"""Strategies that sample shot words on the CPU."""
+
 STABILIZER_RANK_HINT = (
     "Use a stabilizer-rank strategy such as strategy='cat5' for this circuit."
 )

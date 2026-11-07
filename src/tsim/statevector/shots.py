@@ -28,6 +28,7 @@ import psutil
 import tsim.statevector.shared as shared
 from tsim.core.types import CompiledProgram
 from tsim.noise.channels import _BLOCK_SHOTS, ChannelSampler, WordTables
+from tsim.statevector.conditioned import component as conditioned
 from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
 from tsim.statevector.shared import KeyBasis, LaneProgram, key_basis, lane_program
 from tsim.utils.kernels import PARALLEL_WORK, jit, kernel, run_tasks
@@ -70,7 +71,7 @@ class ShotLayout:
     constant: np.ndarray
     direct: np.ndarray
     direct_f: np.ndarray
-    components: tuple[StatevectorComponent, ...]
+    components: tuple[StatevectorComponent | conditioned.ConditionedComponent, ...]
     keys: tuple[KeyBasis, ...]
     key_starts: tuple[int, ...]
     noise: WordTables
@@ -93,14 +94,20 @@ def shot_layout(program: CompiledProgram, channels: ChannelSampler) -> ShotLayou
     components, keys, key_starts = [], [], []
     word = output_words
     for component in program.components:
-        assert isinstance(component, StatevectorComponent)
+        assert isinstance(
+            component, (StatevectorComponent, conditioned.ConditionedComponent)
+        )
         tape = component.tape
         selection = np.asarray(tape.f_selection, dtype=np.int64)
         slot, f = np.nonzero(tape.output_row[:, : len(selection)])
         f_index.append(selection[f])
         bit.append(np.asarray(component.output_indices, dtype=np.int64)[slot])
         constant[list(component.output_indices)] = tape.output_const
-        key = key_basis(component)
+        key = (
+            component.key
+            if isinstance(component, conditioned.ConditionedComponent)
+            else key_basis(component)
+        )
         row, f = np.nonzero(key.rows)
         f_index.append(selection[f])
         bit.append(64 * word + row)
@@ -149,7 +156,9 @@ def shot_plan(
     if mask is not None:
         postselected[:num_detectors] = mask
     programs = tuple(
-        lane_program(
+        component.program(key_start, postselected[list(component.output_indices)])
+        if isinstance(component, conditioned.ConditionedComponent)
+        else lane_program(
             component, key, key_start, postselected[list(component.output_indices)]
         )
         for component, key, key_start in zip(
@@ -411,7 +420,14 @@ class ShotSampler:
         the executor's shot lists.
         """
         lane = max(
-            map(shared.lane_bytes, self._layout.components, self._layout.keys),
+            (
+                16 << component.width
+                if isinstance(component, conditioned.ConditionedComponent)
+                else shared.lane_bytes(component, key)
+                for component, key in zip(
+                    self._layout.components, self._layout.keys, strict=True
+                )
+            ),
             default=0,
         )
         return 8 * self._layout.num_words + lane + 32
@@ -699,6 +715,13 @@ class ShotSampler:
         ):
             if not alive.any():
                 break
+            if isinstance(component, conditioned.ConditionedComponent):
+                stats.append(
+                    conditioned.run_chunk(
+                        component, program, rows, alive, first_shot, seed
+                    )
+                )
+                continue
             stats.append(
                 shared.run_lanes(
                     len(rows) << component.width,
