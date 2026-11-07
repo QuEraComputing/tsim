@@ -25,6 +25,7 @@ from tsim.statevector.conditioned import lane, runner
 from tsim.statevector.conditioned.plan import StepPlan, step_plan
 from tsim.statevector.pbc import ROTATION, ComponentLayout, PauliOps, read_pauli_ops
 from tsim.statevector.program import STABILIZER_RANK_HINT
+from tsim.statevector.schedule import schedule
 from tsim.statevector.shared import KeyBasis, pack_bits
 from tsim.utils.kernels import run_tasks
 from tsim.utils.linalg import find_basis
@@ -163,11 +164,7 @@ def conditioned_component(
     tape = OutputTape(
         np.array(layout.f_selection, dtype=np.int32), output_const, output_row
     )
-    words = -(-ops.num_lines // 64)
-    plan = step_plan(ops)
-    op_x = pack_bits(ops.x, words)
-    op_z = pack_bits(ops.z, words)
-    op_e = (np.count_nonzero(ops.x & ops.z, axis=1) % 4).astype(np.int64)
+    ops, plan, (op_x, op_z, op_e) = _choose_plan(ops)
     root_amp = runner.reference_prefix(
         ops.num_lines,
         op_x,
@@ -191,6 +188,53 @@ def conditioned_component(
         op_e=op_e,
         root_amp=root_amp,
     )
+
+
+def _packed(ops: PauliOps) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return each op's Pauli as X and Z bit words, and the phase exponent of its letters."""
+    words = -(-ops.num_lines // 64)
+    op_e = (np.count_nonzero(ops.x & ops.z, axis=1) % 4).astype(np.int64)
+    return pack_bits(ops.x, words), pack_bits(ops.z, words), op_e
+
+
+def _choose_plan(ops: PauliOps):
+    """Return the ops (possibly reordered), their step plan and packed Paulis.
+
+    Measuring through is not always narrower: when T-like rotations are never
+    undone (distillation), applying them in the order of Tsim's scheduler can be.
+    Both plans run the reference key along ``_PLAN_PATHS`` random outcome paths;
+    the narrower wins, measure-through on ties. A later candidate stops as soon
+    as it gets wider than the best so far.
+    """
+    candidates = [(ops, True), (ops.take(schedule(ops).order), False)]
+    best = None
+    for candidate, through in candidates:
+        plan = step_plan(candidate, measure_through=through)
+        packed = _packed(candidate)
+        try:
+            width = runner.reference_width(
+                candidate.num_lines,
+                *packed,
+                candidate.angle.astype(np.float64),
+                candidate.sign[:, 0].astype(np.int64),
+                plan.measure,
+                plan.apply_start,
+                plan.apply_ops,
+                plan.layer_start,
+                plan.layer_ops,
+                _PLAN_PATHS,
+                np.uint64(0x5EED),
+                MAX_WIDTH if best is None else best[0],
+            )
+        except lane.TooWide:
+            width = MAX_WIDTH + 1
+        if best is None or width < best[0]:
+            best = (width, candidate, plan, packed)
+    return best[1], best[2], best[3]
+
+
+# NOTE: random outcome paths of the reference key when choosing a step plan.
+_PLAN_PATHS = 16
 
 
 def _key_basis(ops: PauliOps) -> KeyBasis:

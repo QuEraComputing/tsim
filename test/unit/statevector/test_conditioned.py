@@ -74,6 +74,8 @@ def test_key_leaves_match_dense_distribution(index):
     ops = component_ops()[index]
     layout = ComponentLayout(tuple(range(ops.num_f)), {}, tuple(range(ops.num_outputs)))
     component = conditioned_component(ops, layout)
+    reference = ops
+    ops = component.ops  # the component may reorder its ops
     for f in f_patterns(ops.num_f, limit=8):
         f = np.asarray(f, dtype=np.int64)
         signs = (
@@ -90,13 +92,14 @@ def test_key_leaves_match_dense_distribution(index):
                 (j,) = np.flatnonzero(ops.slot == slot)
                 key.append(int(raw[slot]) ^ int(signs[j]))
             got[tuple(key)] = got.get(tuple(key), 0.0) + p
-        assert_distributions_close(got, ops_distribution(ops, f), atol=1e-9)
+        assert_distributions_close(got, ops_distribution(reference, f), atol=1e-9)
 
 
 def test_root_outcome_matches_measure_through():
     ops = next(o for o in component_ops() if (o.kind == ROTATION).sum() > 2)
     layout = ComponentLayout(tuple(range(ops.num_f)), {}, tuple(range(ops.num_outputs)))
     component = conditioned_component(ops, layout)
+    ops = component.ops  # the component may reorder its ops
     plan, n = component.plan, ops.num_lines
     words = -(-n // 64)
     ref = np.where(ops.sign[:, 0] & 1, -ops.angle, ops.angle)

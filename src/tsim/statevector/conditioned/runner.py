@@ -474,3 +474,108 @@ def reference_prefix(
             break
         out[step] = 1.0 if p1 < 0.5 else -1.0
     return out
+
+
+@jit
+def reference_width(
+    num_lines: int,
+    op_x,
+    op_z,
+    op_e,
+    angle,
+    sign_const,
+    measure,
+    apply_start,
+    apply_ops,
+    layer_start,
+    layer_ops,
+    paths: int,
+    seed: np.uint64,
+    max_width: int,
+) -> int:
+    """Return the widest register of the reference key over ``paths`` random outcome paths.
+
+    For choosing between step plans at compile time.
+    """
+    num_words = (num_lines + 63) >> 6
+    num_ops = angle.shape[0]
+    theta = np.empty(num_ops, dtype=np.float64)
+    for r in range(num_ops):
+        theta[r] = -angle[r] if sign_const[r] & 1 else angle[r]
+    v = np.empty(2 * num_words + 1, dtype=np.uint64)
+    widest = 0
+    for path in range(paths):
+        frame, active, pos, amps, cache, cache_ver = new_state(
+            num_lines, num_words, num_ops
+        )
+        for step in range(measure.shape[0]):
+            for i in range(apply_start[step], apply_start[step + 1]):
+                r = apply_ops[i]
+                amps = rotate(
+                    frame,
+                    active,
+                    pos,
+                    amps,
+                    cache,
+                    cache_ver,
+                    r,
+                    op_x,
+                    op_z,
+                    op_e,
+                    theta[r],
+                    num_words,
+                    max_width,
+                )
+                if width_of(amps) > widest:
+                    widest = width_of(amps)
+            m = measure[step]
+            l0, l1 = layer_start[step], layer_start[step + 1]
+            draw = uniform(seed, path, step)
+            if l1 > l0:
+                layer = layer_ops[l0:l1]
+                p1, keep, phi, kv = prepare_through(
+                    frame,
+                    active,
+                    pos,
+                    amps,
+                    cache,
+                    cache_ver,
+                    op_x,
+                    op_z,
+                    op_e,
+                    layer,
+                    theta[layer],
+                    m,
+                    num_words,
+                    max_width,
+                )
+                if phi.shape[0]:
+                    amps = finish_through(
+                        active, pos, keep, phi, kv, 1 if draw < p1 else 0
+                    )
+            else:
+                kind, p1, d = prepare_measure(
+                    frame,
+                    active,
+                    pos,
+                    amps,
+                    cache,
+                    cache_ver,
+                    m,
+                    op_x,
+                    op_z,
+                    op_e,
+                    num_words,
+                    v,
+                )
+                if p1 < CERTAIN or p1 > 1.0 - CERTAIN:
+                    bit = 1 if p1 > 0.5 else 0
+                else:
+                    bit = 1 if draw < p1 else 0
+                amps = finish_measure(
+                    frame, active, pos, amps, kind, d, bit, v, num_words
+                )
+            if width_of(amps) > widest:
+                widest = width_of(amps)
+            amps = compress(frame, active, pos, amps, num_words)
+    return widest

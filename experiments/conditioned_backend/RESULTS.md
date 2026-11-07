@@ -32,7 +32,11 @@ the reference key's outcome by Pauli algebra (`K = K0 (-1)^|F| P_F`).
 - Tests: `test/unit/statevector/test_conditioned.py` (46); the full suite passes
   (2538; `test_the_calling_thread_keeps_parallel_kernels_after_run_tasks` fails
   on origin/main too in this environment).
-- Caveat: with the fixed measurement order, distillation peaks at width 5 (Tsim 3).
+- Plan choice: each component tries the measure-through plan (op order) and a
+  plan without measure-through in Tsim's scheduler order on the reference key,
+  and keeps the narrower: distillation width 2 (Tsim 3; measure-through 5),
+  coherent d3r3 3 (Tsim 4); factories and cultivation keep measure-through.
+  Distillation vs `active_statevector` at 1e7 shots each: p = 0.90.
 
 ## Sampling time per shot (BLP [[27,3,3]] factory, postselected on all detectors)
 
