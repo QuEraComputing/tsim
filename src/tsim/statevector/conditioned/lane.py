@@ -21,10 +21,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from tsim.statevector.conditioned.gauss import layer_amplitude
 from tsim.statevector.conditioned.paulis import (
-    anticommutes,
-    copy_row,
     gate_cx,
     gate_cz,
     gate_h,
@@ -32,7 +29,6 @@ from tsim.statevector.conditioned.paulis import (
     gate_s,
     get_bit,
     image,
-    multiply_right,
     popcount,
 )
 from tsim.utils.kernels import jit
@@ -100,7 +96,7 @@ def _amp_gate(amps, code: int, i: int, j: int) -> None:
                 a0, a1 = amps[k], amps[k | bi]
                 amps[k] = (a0 + a1) * _SQRT_HALF
                 amps[k | bi] = (a0 - a1) * _SQRT_HALF
-    elif code == S or code == S_DAG:
+    elif code in (S, S_DAG):
         f = 1j if code == S else -1j
         for k in range(size):
             if k & bi:
@@ -190,7 +186,7 @@ def gate(frame, pos, amps, code: int, a: int, b: int, num_words: int) -> None:
         _amp_gate(amps, code, pa, pb)
         return
     if pa < 0:
-        if code == H or code == X:
+        if code in (H, X):
             raise ValueError("gate would move a dormant qubit off |0>")
         return
     _amp_gate(amps, code, pa, 0)
@@ -443,7 +439,9 @@ def _compress_z(frame, active, pos, amps, num_words: int):
             if v > top:
                 top = v
         y0 = -1
-        basis = np.zeros(64, dtype=np.int64)  # basis[b]: vector with leading bit b, or 0
+        basis = np.zeros(
+            64, dtype=np.int64
+        )  # basis[b]: vector with leading bit b, or 0
         rank = 0
         for k in range(amps.shape[0]):
             v = amps[k].real ** 2 + amps[k].imag ** 2
@@ -497,7 +495,21 @@ def _compress_z(frame, active, pos, amps, num_words: int):
 
 
 @jit
-def rotate(frame, active, pos, amps, cache, cache_ver, r: int, op_x, op_z, op_e, theta: float, num_words: int, max_width: int):
+def rotate(
+    frame,
+    active,
+    pos,
+    amps,
+    cache,
+    cache_ver,
+    r: int,
+    op_x,
+    op_z,
+    op_e,
+    theta: float,
+    num_words: int,
+    max_width: int,
+):
     """Apply ``exp(-i theta P)`` for op ``r``'s Pauli ``P``; return the amplitudes."""
     n = frame.shape[0] // 2
     v = op_image(frame, cache, cache_ver, r, op_x, op_z, op_e, num_words)
@@ -512,7 +524,7 @@ def rotate(frame, active, pos, amps, cache, cache_ver, r: int, op_x, op_z, op_e,
     if d >= 0:
         amps = promote(active, pos, amps, d, max_width)
         v = op_image(frame, cache, cache_ver, r, op_x, op_z, op_e, num_words)
-    xm, zm, dormant_x = masks(v, active, width_of(amps))
+    xm, zm, _ = masks(v, active, width_of(amps))
     if xm == 0 and zm == 0:
         return amps  # a global phase
     tmp = np.empty_like(amps)
@@ -530,7 +542,20 @@ def rotate(frame, active, pos, amps, cache, cache_ver, r: int, op_x, op_z, op_e,
 
 
 @jit
-def prepare_measure(frame, active, pos, amps, cache, cache_ver, m: int, op_x, op_z, op_e, num_words: int, v):
+def prepare_measure(
+    frame,
+    active,
+    pos,
+    amps,
+    cache,
+    cache_ver,
+    m: int,
+    op_x,
+    op_z,
+    op_e,
+    num_words: int,
+    v,
+):
     """Prepare the measurement of op ``m``'s Pauli; ``v`` receives its virtual image."""
     n = frame.shape[0] // 2
     v[:] = op_image(frame, cache, cache_ver, m, op_x, op_z, op_e, num_words)
@@ -569,7 +594,9 @@ def prepare_measure(frame, active, pos, amps, cache, cache_ver, m: int, op_x, op
 
 
 @jit
-def finish_measure(frame, active, pos, amps, kind: int, d: int, bit: int, v, num_words: int):
+def finish_measure(
+    frame, active, pos, amps, kind: int, d: int, bit: int, v, num_words: int
+):
     """Project onto outcome ``bit`` of a prepared measurement; return the amplitudes."""
     if kind == 0:
         # v is +-X_d: d holds |+> or |->, which H (and X) map back to |0>.

@@ -124,7 +124,9 @@ def _form_value(s: np.uint64, lin, upper) -> int:
 
 
 @jit
-def layer_amplitude(layer, num_layer: int, eps_neg, eta_neg, m_row, target, num_words: int) -> complex:
+def layer_amplitude(
+    layer, num_layer: int, eps_neg, eta_neg, m_row, target, num_words: int
+) -> complex:
     """Return ``<target| O |0...0>`` for ``O = prod_k exp(2 i theta_k V_k) M``.
 
     Args:
@@ -148,7 +150,9 @@ def layer_amplitude(layer, num_layer: int, eps_neg, eta_neg, m_row, target, num_
         zx = 0
         for w in range(W):
             zx += popcount(layer[k, W + w] & m_row[w])
-        lin[k] = (1 + 2 * eta_neg[k] + np.int64(layer[k, 2 * W]) + 2 * zx + 2 * eps_neg[k]) & 3
+        lin[k] = (
+            1 + 2 * eta_neg[k] + np.int64(layer[k, 2 * W]) + 2 * zx + 2 * eps_neg[k]
+        ) & 3
         c0 += 2 * eps_neg[k]
         for j in range(k):
             t = 0
@@ -242,9 +246,9 @@ def layer_amplitude(layer, num_layer: int, eps_neg, eta_neg, m_row, target, num_
             b_self += popcount(upper[k] & nj)
         value += 2 * (b_self + _parity(s0 & polar[j]))
         form_lin[j] = value & 3
-        for l in range(j + 1, d):
-            if (popcount(nj & null[l] & odd) + _parity(nj & polar[l])) & 1:
-                form_quad[j] |= _ONE << np.uint64(l)
-                form_quad[l] |= _ONE << np.uint64(j)
+        for k2 in range(j + 1, d):
+            if (popcount(nj & null[k2] & odd) + _parity(nj & polar[k2])) & 1:
+                form_quad[j] |= _ONE << np.uint64(k2)
+                form_quad[k2] |= _ONE << np.uint64(j)
     c = (c0 + _form_value(s0, lin, upper)) & 3
     return gauss_sum(c, form_lin, form_quad) * 2.0 ** (-0.5 * L)

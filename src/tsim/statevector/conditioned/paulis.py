@@ -26,7 +26,9 @@ _THREE = np.uint64(3)
 def popcount(value: np.uint64) -> int:
     """Return the number of set bits of ``value``."""
     v = value - ((value >> np.uint64(1)) & np.uint64(0x5555555555555555))
-    v = (v & np.uint64(0x3333333333333333)) + ((v >> np.uint64(2)) & np.uint64(0x3333333333333333))
+    v = (v & np.uint64(0x3333333333333333)) + (
+        (v >> np.uint64(2)) & np.uint64(0x3333333333333333)
+    )
     v = (v + (v >> np.uint64(4))) & np.uint64(0x0F0F0F0F0F0F0F0F)
     return np.int64((v * np.uint64(0x0101010101010101)) >> np.uint64(56))
 
@@ -65,7 +67,9 @@ def multiply_right(dst, src, num_words: int) -> None:
         twists += popcount(dst[num_words + w] & src[w])
         dst[w] ^= src[w]
         dst[num_words + w] ^= src[num_words + w]
-    dst[2 * num_words] = (dst[2 * num_words] + src[2 * num_words] + np.uint64(2 * twists)) & _THREE
+    dst[2 * num_words] = (
+        dst[2 * num_words] + src[2 * num_words] + np.uint64(2 * twists)
+    ) & _THREE
 
 
 @jit
@@ -80,7 +84,7 @@ def anticommutes(a, b, num_words: int) -> bool:
 @jit
 def is_identity_letters(row, num_words: int) -> bool:
     """Return whether ``row`` has no letters (it is a phase)."""
-    for w in range(2 * num_words):
+    for w in range(2 * num_words):  # noqa: SIM110 (numba)
         if row[w] != 0:
             return False
     return True

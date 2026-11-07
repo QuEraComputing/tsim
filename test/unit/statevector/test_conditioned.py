@@ -63,7 +63,8 @@ def test_gauss_sum_matches_brute_force():
             brute += 1j ** int((c + lin @ t + 2 * (t @ quad @ t)) % 4)
         sym = quad | quad.T
         masks = np.array(
-            [sum(int(sym[j, k]) << k for k in range(d)) for j in range(d)], dtype=np.uint64
+            [sum(int(sym[j, k]) << k for k in range(d)) for j in range(d)],
+            dtype=np.uint64,
         )
         assert abs(gauss_sum(c, lin.astype(np.int64).copy(), masks) - brute) < 1e-9
 
@@ -71,19 +72,19 @@ def test_gauss_sum_matches_brute_force():
 @pytest.mark.parametrize("index", range(len(component_ops())))
 def test_key_leaves_match_dense_distribution(index):
     ops = component_ops()[index]
-    layout = ComponentLayout(
-        tuple(range(ops.num_f)), {}, tuple(range(ops.num_outputs))
-    )
+    layout = ComponentLayout(tuple(range(ops.num_f)), {}, tuple(range(ops.num_outputs)))
     component = conditioned_component(ops, layout)
     for f in f_patterns(ops.num_f, limit=8):
         f = np.asarray(f, dtype=np.int64)
-        signs = (ops.sign[:, 0].astype(np.int64) + ops.sign[:, 1:].astype(np.int64) @ f) & 1
+        signs = (
+            ops.sign[:, 0].astype(np.int64) + ops.sign[:, 1:].astype(np.int64) @ f
+        ) & 1
         flipped = ((ops.sign[:, 1:].astype(np.int64) @ f) & 1).astype(bool)
         flipped &= ops.kind == ROTATION
         leaves, probs = exact.key_leaves(component, flipped)
         assert abs(probs.sum() - 1) < 1e-9
         got: dict[tuple[int, ...], float] = {}
-        for raw, p in zip(leaves, probs):
+        for raw, p in zip(leaves, probs, strict=True):
             key = []
             for slot in range(ops.num_outputs):
                 (j,) = np.flatnonzero(ops.slot == slot)
@@ -93,9 +94,7 @@ def test_key_leaves_match_dense_distribution(index):
 
 
 def test_root_outcome_matches_measure_through():
-    ops = next(
-        o for o in component_ops() if (o.kind == ROTATION).sum() > 2
-    )
+    ops = next(o for o in component_ops() if (o.kind == ROTATION).sum() > 2)
     layout = ComponentLayout(tuple(range(ops.num_f)), {}, tuple(range(ops.num_outputs)))
     component = conditioned_component(ops, layout)
     plan, n = component.plan, ops.num_lines
@@ -107,15 +106,34 @@ def test_root_outcome_matches_measure_through():
         for _ in range(20):
             flipped = (rng.random(ops.num_ops) < 0.3) & (ops.kind == ROTATION)
             theta = np.where(flipped, -ref, ref)
-            frame, active, pos, amps, cache, cache_ver = new_state(n, words, ops.num_ops)
+            frame, active, pos, amps, cache, cache_ver = new_state(
+                n, words, ops.num_ops
+            )
             got = root_outcome(
-                layer, flipped, ref, component.op_x, component.op_z, component.op_e,
-                component.root_amp[step], words,
+                layer,
+                flipped,
+                ref,
+                component.op_x,
+                component.op_z,
+                component.op_e,
+                component.root_amp[step],
+                words,
             )
             p1, _, phi, _ = prepare_through(
-                frame, active, pos, amps, cache, cache_ver, component.op_x,
-                component.op_z, component.op_e, layer, theta[layer].copy(),
-                int(plan.measure[step]), words, 26,
+                frame,
+                active,
+                pos,
+                amps,
+                cache,
+                cache_ver,
+                component.op_x,
+                component.op_z,
+                component.op_e,
+                layer,
+                theta[layer].copy(),
+                int(plan.measure[step]),
+                words,
+                26,
             )
             if got < 0:
                 assert len(phi) > 0
@@ -159,7 +177,9 @@ def test_samples_do_not_depend_on_threads():
     out = []
     for threads in (1, numba.config.NUMBA_NUM_THREADS):
         numba.set_num_threads(threads)
-        sampler = circuit.compile_detector_sampler(seed=7, strategy="conditioned_statevector")
+        sampler = circuit.compile_detector_sampler(
+            seed=7, strategy="conditioned_statevector"
+        )
         out.append(sampler.sample(5000, batch_size=700))
     numba.set_num_threads(numba.config.NUMBA_NUM_THREADS)
     assert np.array_equal(out[0], out[1])
@@ -177,7 +197,11 @@ def test_compress_frees_every_qubit_of_a_stabilizer_state():
         qubits = active[:w].copy()
         for _ in range(30):
             code = int(rng.choice([lane.H, lane.S, lane.CX, lane.CZ]))
-            a, b = (int(q) for q in rng.choice(qubits, 2, replace=False)) if w > 1 else (int(qubits[0]), 0)
+            a, b = (
+                (int(q) for q in rng.choice(qubits, 2, replace=False))
+                if w > 1
+                else (int(qubits[0]), 0)
+            )
             if code >= lane.CX and w == 1:
                 continue
             lane.gate(frame, pos, amps, code, a, b, 1)

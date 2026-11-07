@@ -156,10 +156,12 @@ def shot_plan(
     if mask is not None:
         postselected[:num_detectors] = mask
     programs = tuple(
-        component.program(key_start, postselected[list(component.output_indices)])
-        if isinstance(component, conditioned.ConditionedComponent)
-        else lane_program(
-            component, key, key_start, postselected[list(component.output_indices)]
+        (
+            component.program(key_start, postselected[list(component.output_indices)])
+            if isinstance(component, conditioned.ConditionedComponent)
+            else lane_program(
+                component, key, key_start, postselected[list(component.output_indices)]
+            )
         )
         for component, key, key_start in zip(
             layout.components, layout.keys, layout.key_starts, strict=True
@@ -425,9 +427,11 @@ class ShotSampler:
         """
         lane = max(
             (
-                16 << component.width
-                if isinstance(component, conditioned.ConditionedComponent)
-                else shared.lane_bytes(component, key)
+                (
+                    16 << component.width
+                    if isinstance(component, conditioned.ConditionedComponent)
+                    else shared.lane_bytes(component, key)
+                )
                 for component, key in zip(
                     self._layout.components, self._layout.keys, strict=True
                 )

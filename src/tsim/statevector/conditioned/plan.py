@@ -66,7 +66,9 @@ def is_t_like(theta: float) -> bool:
     return abs(m - r) < 1e-9 and r % 2 == 1
 
 
-def _plan_layer(anti: np.ndarray, t_like: np.ndarray, pending: list[int], m: int) -> tuple[list[int], list[int]]:
+def _plan_layer(
+    anti: np.ndarray, t_like: np.ndarray, pending: list[int], m: int
+) -> tuple[list[int], list[int]]:
     """Return (rotations to apply, oldest first; the layer) for measuring ``m``.
 
     A pending rotation that anticommutes with ``m`` is in the layer if it is T-like
@@ -85,7 +87,11 @@ def _plan_layer(anti: np.ndarray, t_like: np.ndarray, pending: list[int], m: int
         in_layer = set(layer)
         apply = {r for r in hits if r not in in_layer}
         for r in pending:
-            if r not in in_layer and r not in apply and any(anti[r, l] and pos[l] > pos[r] for l in layer):
+            if (
+                r not in in_layer
+                and r not in apply
+                and any(anti[r, m2] and pos[m2] > pos[r] for m2 in layer)
+            ):
                 apply.add(r)
         grown = True
         while grown:
@@ -96,10 +102,12 @@ def _plan_layer(anti: np.ndarray, t_like: np.ndarray, pending: list[int], m: int
                 if any(anti[r, t] and pos[t] > pos[r] for t in apply):
                     apply.add(r)
                     grown = True
-        bad = {l for l in layer if any(anti[l, a] and pos[a] > pos[l] for a in apply)}
+        bad = {
+            m2 for m2 in layer if any(anti[m2, a] and pos[a] > pos[m2] for a in apply)
+        }
         if not bad:
             return [r for r in pending if r in apply], layer
-        layer = [l for l in layer if l not in bad]
+        layer = [m2 for m2 in layer if m2 not in bad]
 
 
 def step_plan(ops: PauliOps, *, measure_through: bool = True) -> StepPlan:
@@ -108,7 +116,12 @@ def step_plan(ops: PauliOps, *, measure_through: bool = True) -> StepPlan:
     anti = anticommute(ops.x, ops.z, ops.x, ops.z)
     np.fill_diagonal(anti, False)
     earlier = [np.flatnonzero(anti[j, :j]) for j in range(num_ops)]
-    t_like = np.array([ops.kind[j] == ROTATION and is_t_like(float(ops.angle[j])) for j in range(num_ops)])
+    t_like = np.array(
+        [
+            ops.kind[j] == ROTATION and is_t_like(float(ops.angle[j]))
+            for j in range(num_ops)
+        ]
+    )
     done = np.zeros(num_ops, dtype=bool)
     pending: list[int] = []
     measure, apply_ops, layer_ops = [], [], []
@@ -118,7 +131,11 @@ def step_plan(ops: PauliOps, *, measure_through: bool = True) -> StepPlan:
             if not done[j] and ops.kind[j] == ROTATION and done[earlier[j]].all():
                 done[j] = True
                 pending.append(j)
-        ready = [j for j in range(num_ops) if not done[j] and ops.kind[j] == MEASUREMENT and done[earlier[j]].all()]
+        ready = [
+            j
+            for j in range(num_ops)
+            if not done[j] and ops.kind[j] == MEASUREMENT and done[earlier[j]].all()
+        ]
         if not ready:
             break
         m = ready[0]

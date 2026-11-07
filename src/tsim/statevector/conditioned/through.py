@@ -30,10 +30,8 @@ import numpy as np
 from tsim.statevector.conditioned.gauss import layer_amplitude
 from tsim.statevector.conditioned.lane import (
     CX,
-    op_image,
     rows_gate,
     TooWide,
-    apply_pauli,
     frame_gate,
     width_of,
 )
@@ -54,7 +52,9 @@ _I_POWERS = np.array([1.0 + 0.0j, 1.0j, -1.0 + 0.0j, -1.0j])
 
 
 @jit
-def _layer_rows(frame, cache, cache_ver, op_x, op_z, op_e, layer, m: int, num_words: int):
+def _layer_rows(
+    frame, cache, cache_ver, op_x, op_z, op_e, layer, m: int, num_words: int
+):
     """Return copies of the virtual rows of the layer Paulis and of ``M``."""
     L = layer.shape[0]
     width = 2 * num_words + 1
@@ -155,7 +155,9 @@ def _stabilizer_state(gx, gz, ge, size: int):
     support[0] = y
     # Gray code over the pivots: psi(y ^ x_g) = i^e_g (-1)^{z_g . y} psi(y).
     for count in range(1, 1 << num_piv):
-        p = popcount(np.uint64((count ^ (count >> 1)) ^ ((count - 1) ^ ((count - 1) >> 1))) - 1)
+        p = popcount(
+            np.uint64((count ^ (count >> 1)) ^ ((count - 1) ^ ((count - 1) >> 1))) - 1
+        )
         h = piv[p]
         sign = _I_POWERS[e[h] & 3]
         if popcount(np.uint64(z[h] & y)) & 1:
@@ -220,7 +222,9 @@ def _images(rows, s4_neg, m_row, active, w: int, n: int, num_words: int):
 
 
 @jit
-def _apply_factors(row, rows, s4_neg, m_row, factors: np.uint64, num_words: int, prod) -> None:
+def _apply_factors(
+    row, rows, s4_neg, m_row, factors: np.uint64, num_words: int, prod
+) -> None:
     """Map ``row`` to ``K row K^dag``, given the mask of layer factors it anticommutes with.
 
     ``prod`` is scratch.
@@ -322,7 +326,19 @@ def _frozen_basis(zimg, pos, active, w: int, num_words: int):
 
 
 @jit
-def _freeze(frame, zimg, ximg, rows, m_row, basis, count: int, active, pos, w: int, num_words: int):
+def _freeze(
+    frame,
+    zimg,
+    ximg,
+    rows,
+    m_row,
+    basis,
+    count: int,
+    active,
+    pos,
+    w: int,
+    num_words: int,
+):
     """Turn each basis Z-string into one ``Z_d`` by CX gates among dormant qubits.
 
     Returns the projected register: the current one, then the dormant qubits that
@@ -384,7 +400,9 @@ def _image_of_zero(zimg, keep, rows, m_row, eps_neg, eta_neg, num_words: int):
         if (y0 >> i) & 1:
             q = keep[i]
             target[q >> 6] |= _ONE << np.uint64(q & 63)
-    exact = layer_amplitude(rows, rows.shape[0], eps_neg, eta_neg, m_row, target, num_words)
+    exact = layer_amplitude(
+        rows, rows.shape[0], eps_neg, eta_neg, m_row, target, num_words
+    )
     scale = exact / psi0[y0]
     for k in range(psi0.shape[0]):
         psi0[k] *= scale
@@ -434,7 +452,20 @@ def _image_of_register(amps, ximg, keep, psi0, support, num_words: int):
 
 @jit
 def prepare_through(
-    frame, active, pos, amps, cache, cache_ver, op_x, op_z, op_e, layer, angles, m: int, num_words: int, max_width: int
+    frame,
+    active,
+    pos,
+    amps,
+    cache,
+    cache_ver,
+    op_x,
+    op_z,
+    op_e,
+    layer,
+    angles,
+    m: int,
+    num_words: int,
+    max_width: int,
 ):
     """Prepare the measurement of op ``m`` through the layer of rotation ops ``layer``.
 
@@ -447,18 +478,24 @@ def prepare_through(
     n = frame.shape[0] // 2
     w = width_of(amps)
     eps_neg, eta_neg, s4_neg = _factor_signs(angles)
-    rows, m_row = _layer_rows(frame, cache, cache_ver, op_x, op_z, op_e, layer, m, num_words)
+    rows, m_row = _layer_rows(
+        frame, cache, cache_ver, op_x, op_z, op_e, layer, m, num_words
+    )
     empty = np.empty(0, dtype=np.complex128)
     keep_now = active[:w].copy()
     if w == 0:
         # Fast path: <0|K|0> alone decides a certain outcome.
         zero = np.zeros(num_words, dtype=np.uint64)
-        e0 = layer_amplitude(rows, layer.shape[0], eps_neg, eta_neg, m_row, zero, num_words)
+        e0 = layer_amplitude(
+            rows, layer.shape[0], eps_neg, eta_neg, m_row, zero, num_words
+        )
         if abs(abs(e0.real) - 1.0) < 1e-12:
             return (0.0 if e0.real > 0 else 1.0), keep_now, empty, empty
     zimg, ximg = _images(rows, s4_neg, m_row, active, w, n, num_words)
     basis, count = _frozen_basis(zimg, pos, active, w, num_words)
-    keep = _freeze(frame, zimg, ximg, rows, m_row, basis, count, active, pos, w, num_words)
+    keep = _freeze(
+        frame, zimg, ximg, rows, m_row, basis, count, active, pos, w, num_words
+    )
     if keep.shape[0] > max_width:
         raise TooWide()
     psi0, support = _image_of_zero(zimg, keep, rows, m_row, eps_neg, eta_neg, num_words)
@@ -475,7 +512,9 @@ def prepare_through(
 
 
 @jit
-def root_outcome(layer, flipped, ref_theta, op_x, op_z, op_e, ref_amp: float, num_words: int) -> int:
+def root_outcome(
+    layer, flipped, ref_theta, op_x, op_z, op_e, ref_amp: float, num_words: int
+) -> int:
     """Return the outcome of a measure-through from the root state, or -1 if it is random.
 
     At the root (no active qubit, identity frame) the reference key's measurement

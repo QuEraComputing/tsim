@@ -25,7 +25,11 @@ from tsim.statevector.conditioned.lane import (
     width_of,
 )
 from tsim.statevector.conditioned.paulis import popcount
-from tsim.statevector.conditioned.through import finish_through, prepare_through, root_outcome
+from tsim.statevector.conditioned.through import (
+    finish_through,
+    prepare_through,
+    root_outcome,
+)
 from tsim.utils.kernels import jit
 from tsim.utils.rng import GOLDEN, splitmix64
 
@@ -46,7 +50,9 @@ def uniform(seed: np.uint64, shot: int, step: int) -> float:
 
 
 @jit
-def _record(words, alive, order, lo: int, hi: int, out_bit: int, post: bool, bit: int, bits) -> int:
+def _record(
+    words, alive, order, lo: int, hi: int, out_bit: int, post: bool, bit: int, bits
+) -> int:
     """XOR each shot's outcome into its output and drop shots that postselection kills.
 
     ``bits`` holds per-shot outcomes (indexed like ``order``), or is empty when every
@@ -193,15 +199,22 @@ def run_chunk(
         seed: The component's seed for this call.
         order: The alive shots, grouped by key.
         group_start: Group ``g`` is ``order[group_start[g]:group_start[g + 1]]``.
-        key_start, key_words: Where the key lives in the shot words.
+        key_start: First shot word of the key.
+        key_words: Number of words of the key.
         num_lines: Number of qubit lines n.
-        op_x, op_z, op_e: Each op's Pauli as bit words and phase exponent.
+        op_x: Each op's X part as bit words.
+        op_z: Each op's Z part as bit words.
+        op_e: Each op's phase exponent (its number of Y), mod 4.
         angle: Each rotation's angle (``exp(-i angle P)`` for sign +).
         sign_const: Each op's sign constant.
         sign_key: Each op's sign as key bits, ``(N, key_words)``.
         out_bit: Each measurement's output bit in the words, or -1.
         post: Whether each measurement's output is postselected.
-        measure, apply_start, apply_ops, layer_start, layer_ops: The step plan.
+        measure: The measured op of each step (``plan.StepPlan``).
+        apply_start: Offsets of each step's applied rotations.
+        apply_ops: The applied rotations.
+        layer_start: Offsets of each step's measure-through layer.
+        layer_ops: The layers' rotations.
         root_amp: Per step, the reference key's certain outcome (+1 or -1) at the
             root state, or 0 (see ``reference_prefix``).
         max_width: Most active qubits a lane may hold.
@@ -236,7 +249,9 @@ def run_chunk(
                 parity += popcount(sign_key[r, w] & words[s0, key_start + w])
             flipped[r] = parity & 1
             theta[r] = -ref_theta[r] if flipped[r] else ref_theta[r]
-        frame, active, pos, amps, cache, cache_ver = new_state(num_lines, num_words, num_ops)
+        frame, active, pos, amps, cache, cache_ver = new_state(
+            num_lines, num_words, num_ops
+        )
         stack = [(0, lo, hi, frame, active, pos, amps, cache, cache_ver)]
         stats[STAT_LANES] += 1
         while len(stack):
@@ -245,7 +260,19 @@ def run_chunk(
                 for i in range(apply_start[step], apply_start[step + 1]):
                     r = apply_ops[i]
                     amps = rotate(
-                        frame, active, pos, amps, cache, cache_ver, r, op_x, op_z, op_e, theta[r], num_words, max_width
+                        frame,
+                        active,
+                        pos,
+                        amps,
+                        cache,
+                        cache_ver,
+                        r,
+                        op_x,
+                        op_z,
+                        op_e,
+                        theta[r],
+                        num_words,
+                        max_width,
                     )
                 m = measure[step]
                 l0, l1 = layer_start[step], layer_start[step + 1]
@@ -262,7 +289,14 @@ def run_chunk(
                     and frame[frame.shape[0] - 1, 0] == _ONE
                 ):
                     shortcut = root_outcome(
-                        layer_ops[l0:l1], flipped, ref_theta, op_x, op_z, op_e, root_amp[step], num_words
+                        layer_ops[l0:l1],
+                        flipped,
+                        ref_theta,
+                        op_x,
+                        op_z,
+                        op_e,
+                        root_amp[step],
+                        num_words,
                     )
                 if shortcut >= 0:
                     p1 = float(shortcut)
@@ -271,24 +305,54 @@ def run_chunk(
                 elif through:
                     layer = layer_ops[l0:l1]
                     p1, keep, phi, kv = prepare_through(
-                        frame, active, pos, amps, cache, cache_ver, op_x, op_z, op_e, layer, theta[layer], m, num_words, max_width
+                        frame,
+                        active,
+                        pos,
+                        amps,
+                        cache,
+                        cache_ver,
+                        op_x,
+                        op_z,
+                        op_e,
+                        layer,
+                        theta[layer],
+                        m,
+                        num_words,
+                        max_width,
                     )
                     stats[STAT_THROUGH] += 1
                     certain = phi.shape[0] == 0
                 if not through:
                     kind, p1, d = prepare_measure(
-                        frame, active, pos, amps, cache, cache_ver, m, op_x, op_z, op_e, num_words, v
+                        frame,
+                        active,
+                        pos,
+                        amps,
+                        cache,
+                        cache_ver,
+                        m,
+                        op_x,
+                        op_z,
+                        op_e,
+                        num_words,
+                        v,
                     )
                     certain = p1 < CERTAIN or p1 > 1.0 - CERTAIN
                 stats[STAT_STEPS] += 1
                 if certain:
                     bit = 1 if p1 > 0.5 else 0
                     if not through:
-                        amps = finish_measure(frame, active, pos, amps, kind, d, bit, v, num_words)
-                    hi = _record(words, alive, order, lo, hi, out_bit[m], post[m], bit, no_bits)
+                        amps = finish_measure(
+                            frame, active, pos, amps, kind, d, bit, v, num_words
+                        )
+                    hi = _record(
+                        words, alive, order, lo, hi, out_bit[m], post[m], bit, no_bits
+                    )
                 else:
                     for i in range(lo, hi):
-                        bits[i] = 1 if uniform(seed, first_shot + order[i], step) < p1 else 0
+                        bits[i] = (
+                            1 if uniform(seed, first_shot + order[i], step) < p1 else 0
+                        )
                     mid = _split(order, bits, lo, hi)
                     if path_prob.shape[0] and track[m]:
                         for i in range(lo, mid):
@@ -303,8 +367,20 @@ def run_chunk(
                             amps1 = finish_through(a1, q1, keep, phi, kv, 1)
                         else:
                             v1 = v.copy()
-                            amps1 = finish_measure(f1, a1, q1, amps.copy(), kind, d, 1, v1, num_words)
-                        end1 = _record(words, alive, order, mid, hi, out_bit[m], post[m], 1, no_bits)
+                            amps1 = finish_measure(
+                                f1, a1, q1, amps.copy(), kind, d, 1, v1, num_words
+                            )
+                        end1 = _record(
+                            words,
+                            alive,
+                            order,
+                            mid,
+                            hi,
+                            out_bit[m],
+                            post[m],
+                            1,
+                            no_bits,
+                        )
                         if end1 > mid:
                             amps1 = compress(f1, a1, q1, amps1, num_words)
                             if width_of(amps1) > stats[STAT_WIDTH]:
@@ -312,9 +388,18 @@ def run_chunk(
                             if mid > lo:
                                 stats[STAT_LANES] += 1
                                 stats[STAT_SPLITS] += 1
-                                stack.append((step + 1, mid, end1, f1, a1, q1, amps1, c1, cv1))
+                                stack.append(
+                                    (step + 1, mid, end1, f1, a1, q1, amps1, c1, cv1)
+                                )
                             else:
-                                frame, active, pos, amps, cache, cache_ver = f1, a1, q1, amps1, c1, cv1
+                                frame, active, pos, amps, cache, cache_ver = (
+                                    f1,
+                                    a1,
+                                    q1,
+                                    amps1,
+                                    c1,
+                                    cv1,
+                                )
                                 lo, hi = mid, end1
                                 step += 1
                                 continue
@@ -324,8 +409,12 @@ def run_chunk(
                     if through:
                         amps = finish_through(active, pos, keep, phi, kv, 0)
                     else:
-                        amps = finish_measure(frame, active, pos, amps, kind, d, 0, v, num_words)
-                    hi = _record(words, alive, order, lo, mid, out_bit[m], post[m], 0, no_bits)
+                        amps = finish_measure(
+                            frame, active, pos, amps, kind, d, 0, v, num_words
+                        )
+                    hi = _record(
+                        words, alive, order, lo, mid, out_bit[m], post[m], 0, no_bits
+                    )
                 amps = compress(frame, active, pos, amps, num_words)
                 if width_of(amps) > stats[STAT_WIDTH]:
                     stats[STAT_WIDTH] = width_of(amps)
@@ -357,14 +446,29 @@ def reference_prefix(
     theta = np.empty(num_ops, dtype=np.float64)
     for r in range(num_ops):
         theta[r] = -angle[r] if sign_const[r] & 1 else angle[r]
-    frame, active, pos, amps, cache, cache_ver = new_state(num_lines, num_words, num_ops)
+    frame, active, pos, amps, cache, cache_ver = new_state(
+        num_lines, num_words, num_ops
+    )
     for step in range(measure.shape[0]):
         l0, l1 = layer_start[step], layer_start[step + 1]
         if l1 == l0 or apply_start[step] != apply_start[step + 1]:
             break
         layer = layer_ops[l0:l1]
-        p1, keep, phi, kv = prepare_through(
-            frame, active, pos, amps, cache, cache_ver, op_x, op_z, op_e, layer, theta[layer], measure[step], num_words, 64
+        p1, _, phi, _ = prepare_through(
+            frame,
+            active,
+            pos,
+            amps,
+            cache,
+            cache_ver,
+            op_x,
+            op_z,
+            op_e,
+            layer,
+            theta[layer],
+            measure[step],
+            num_words,
+            64,
         )
         if phi.shape[0] != 0 or frame[frame.shape[0] - 1, 0] != _ONE:
             break

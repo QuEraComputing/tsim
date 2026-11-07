@@ -216,7 +216,9 @@ def _nbytes(tree: object) -> int:
     if isinstance(tree, StatevectorComponent):
         return sum(array.nbytes for array in tree.tape)
     if isinstance(tree, ConditionedComponent):
-        return sum(array.nbytes for array in (tree.op_x, tree.op_z, tree.ops.x, tree.ops.z))
+        return sum(
+            array.nbytes for array in (tree.op_x, tree.op_z, tree.ops.x, tree.ops.z)
+        )
     return sum(
         v.nbytes for v in jax.tree_util.tree_leaves(tree) if isinstance(v, jax.Array)
     )

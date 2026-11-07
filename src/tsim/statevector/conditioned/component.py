@@ -117,7 +117,9 @@ class ConditionedComponent:
         """Return the per-op data for a postselection mask over the output slots."""
         key_words = -(-len(self.key.rows) // 64)
         sign_key = (
-            pack_bits(self.key.sign_coords, key_words).reshape(self.ops.num_ops, key_words)
+            pack_bits(self.key.sign_coords, key_words).reshape(
+                self.ops.num_ops, key_words
+            )
             if key_words
             else np.zeros((self.ops.num_ops, 0), dtype=np.uint64)
         )
@@ -145,7 +147,9 @@ def compile_conditioned_component(
     return conditioned_component(ops, component_layout)
 
 
-def conditioned_component(ops: PauliOps, layout: ComponentLayout) -> ConditionedComponent:
+def conditioned_component(
+    ops: PauliOps, layout: ComponentLayout
+) -> ConditionedComponent:
     """Return the conditioned component of ``ops``."""
     num_f = ops.num_f
     sign_f = ops.sign[:, 1:].astype(bool)
@@ -156,7 +160,9 @@ def conditioned_component(ops: PauliOps, layout: ComponentLayout) -> Conditioned
         output_const[ops.slot[j]] = bool(ops.sign[j, 0])
         output_row[ops.slot[j]] = sign_f[j]
     assert np.count_nonzero(ops.slot >= 0) == num_slots
-    tape = OutputTape(np.array(layout.f_selection, dtype=np.int32), output_const, output_row)
+    tape = OutputTape(
+        np.array(layout.f_selection, dtype=np.int32), output_const, output_row
+    )
     words = -(-ops.num_lines // 64)
     plan = step_plan(ops)
     op_x = pack_bits(ops.x, words)
@@ -219,18 +225,25 @@ def run_chunk(
     and the steps run.
     """
     stats = np.zeros(runner.NUM_STATS, dtype=np.int64)
-    order, group_start = runner.group_by_key(rows, alive, program.key_start, program.key_words)
+    order, group_start = runner.group_by_key(
+        rows, alive, program.key_start, program.key_words
+    )
     if len(order) == 0:
         return _stats(stats)
-    plan = component.plan
     try:
-        _run_chunk_kernel(component, program, rows, alive, first_shot, seed, order, group_start, stats)
+        _run_chunk_kernel(
+            component, program, rows, alive, first_shot, seed, order, group_start, stats
+        )
     except lane.TooWide:
-        raise ValueError(_TOO_WIDE.format(outputs=list(component.output_indices))) from None
+        raise ValueError(
+            _TOO_WIDE.format(outputs=list(component.output_indices))
+        ) from None
     return _stats(stats)
 
 
-def _run_chunk_kernel(component, program, rows, alive, first_shot, seed, order, group_start, stats):
+def _run_chunk_kernel(
+    component, program, rows, alive, first_shot, seed, order, group_start, stats
+):
     plan = component.plan
     runner.run_chunk(
         rows,
@@ -279,7 +292,9 @@ def run_part(
     about as much as recording a few thousand shots), and the pieces are dealt to
     ``8 * threads`` tasks, largest first, each to the task with the least work so far.
     """
-    order, starts = runner.group_by_key(words, alive, program.key_start, program.key_words)
+    order, starts = runner.group_by_key(
+        words, alive, program.key_start, program.key_words
+    )
     stats = np.zeros(runner.NUM_STATS, dtype=np.int64)
     if len(order) == 0:
         return _stats(stats)
@@ -288,7 +303,9 @@ def run_part(
         lo, hi = int(starts[g]), int(starts[g + 1])
         count = min(-(-(hi - lo) // _PIECE_SHOTS), threads)
         for i in range(count):
-            pieces.append((lo + (hi - lo) * i // count, lo + (hi - lo) * (i + 1) // count))
+            pieces.append(
+                (lo + (hi - lo) * i // count, lo + (hi - lo) * (i + 1) // count)
+            )
     sizes = np.array([hi - lo for lo, hi in pieces])
     num_tasks = max(1, min(8 * threads, len(pieces)))
     load = np.zeros(num_tasks)
@@ -307,23 +324,52 @@ def run_part(
         sub_order = np.concatenate([order[pieces[g][0] : pieces[g][1]] for g in groups])
         sub_starts = np.concatenate([[0], np.cumsum(sizes[groups])]).astype(np.int64)
         runner.run_chunk(
-            words, alive, first_shot, np.uint64(seed), sub_order, sub_starts,
-            program.key_start, program.key_words, component.num_lines,
-            component.op_x, component.op_z, component.op_e,
-            component.ops.angle.astype(np.float64), component.ops.sign[:, 0].astype(np.int64),
-            program.sign_key, program.out_bit, program.post,
-            plan.measure, plan.apply_start, plan.apply_ops, plan.layer_start, plan.layer_ops,
-            component.root_amp, MAX_WIDTH, task_stats, _NO_TRACK, _NO_PROB,
+            words,
+            alive,
+            first_shot,
+            np.uint64(seed),
+            sub_order,
+            sub_starts,
+            program.key_start,
+            program.key_words,
+            component.num_lines,
+            component.op_x,
+            component.op_z,
+            component.op_e,
+            component.ops.angle.astype(np.float64),
+            component.ops.sign[:, 0].astype(np.int64),
+            program.sign_key,
+            program.out_bit,
+            program.post,
+            plan.measure,
+            plan.apply_start,
+            plan.apply_ops,
+            plan.layer_start,
+            plan.layer_ops,
+            component.root_amp,
+            MAX_WIDTH,
+            task_stats,
+            _NO_TRACK,
+            _NO_PROB,
         )
         return task_stats
 
     try:
         results = run_tasks(task, members, threads)
     except lane.TooWide:
-        raise ValueError(_TOO_WIDE.format(outputs=list(component.output_indices))) from None
+        raise ValueError(
+            _TOO_WIDE.format(outputs=list(component.output_indices))
+        ) from None
     for task_stats in results:
-        stats[runner.STAT_WIDTH] = max(stats[runner.STAT_WIDTH], task_stats[runner.STAT_WIDTH])
-        for i in (runner.STAT_LANES, runner.STAT_SPLITS, runner.STAT_THROUGH, runner.STAT_STEPS):
+        stats[runner.STAT_WIDTH] = max(
+            stats[runner.STAT_WIDTH], task_stats[runner.STAT_WIDTH]
+        )
+        for i in (
+            runner.STAT_LANES,
+            runner.STAT_SPLITS,
+            runner.STAT_THROUGH,
+            runner.STAT_STEPS,
+        ):
             stats[i] += task_stats[i]
     return _stats(stats)
 
@@ -334,11 +380,11 @@ def run_part(
 # pieces rebuild its lanes, a cost of the order of _GROUP_COST shots each.
 _GROUP_COST = 2000
 _TOO_WIDE = (
-    "strategy='conditioned_statevector' needs more than {MAX_WIDTH} active qubits for a "
-    "lane of the component with outputs {{outputs}}. Such lanes are rare noise patterns "
+    f"strategy='conditioned_statevector' needs more than {MAX_WIDTH} active qubits for a "
+    "lane of the component with outputs {outputs}. Such lanes are rare noise patterns "
     "of shots that a postselection_mask would discard; sample with a "
     "postselection_mask, or use strategy='active_statevector'."
-).format(MAX_WIDTH=MAX_WIDTH)
+)
 _NO_TRACK = np.zeros(0, dtype=np.bool_)
 _NO_PROB = np.zeros(0, dtype=np.float64)
 _PIECE_SHOTS = 1 << 17

@@ -16,7 +16,11 @@ import numpy as np
 
 from tsim.statevector.conditioned import lane
 from tsim.statevector.conditioned.component import MAX_WIDTH, ConditionedComponent
-from tsim.statevector.conditioned.through import finish_through, prepare_through, root_outcome
+from tsim.statevector.conditioned.through import (
+    finish_through,
+    prepare_through,
+    root_outcome,
+)
 from tsim.utils.kernels import jit
 
 
@@ -60,7 +64,15 @@ def key_leaves(
     leaves_bits: list[np.ndarray] = []
     leaves_prob: list[float] = []
     root = lane.new_state(n, W, num_ops)
-    stack = [(0, 1.0, np.zeros(num_slots, dtype=bool), np.ones(len(allowed), dtype=bool), root)]
+    stack = [
+        (
+            0,
+            1.0,
+            np.zeros(num_slots, dtype=bool),
+            np.ones(len(allowed), dtype=bool),
+            root,
+        )
+    ]
     while stack:
         step, prob, bits, rows, state = stack.pop()
         frame, active, pos, amps, cache, cver = state
@@ -68,21 +80,54 @@ def key_leaves(
         while step < plan.num_steps:
             for r in plan.applied(step):
                 amps = lane.rotate(
-                    frame, active, pos, amps, cache, cver, int(r), component.op_x, component.op_z,
-                    component.op_e, float(theta[r]), W, MAX_WIDTH,
+                    frame,
+                    active,
+                    pos,
+                    amps,
+                    cache,
+                    cver,
+                    int(r),
+                    component.op_x,
+                    component.op_z,
+                    component.op_e,
+                    float(theta[r]),
+                    W,
+                    MAX_WIDTH,
                 )
             m = int(plan.measure[step])
             layer = plan.layer(step)
             if len(layer):
                 p1, keep, phi, kv = prepare_through(
-                    frame, active, pos, amps, cache, cver, component.op_x, component.op_z,
-                    component.op_e, layer, theta[layer].copy(), m, W, MAX_WIDTH,
+                    frame,
+                    active,
+                    pos,
+                    amps,
+                    cache,
+                    cver,
+                    component.op_x,
+                    component.op_z,
+                    component.op_e,
+                    layer,
+                    theta[layer].copy(),
+                    m,
+                    W,
+                    MAX_WIDTH,
                 )
                 certain = len(phi) == 0
             else:
                 kind, p1, d = lane.prepare_measure(
-                    frame, active, pos, amps, cache, cver, m, component.op_x, component.op_z,
-                    component.op_e, W, v,
+                    frame,
+                    active,
+                    pos,
+                    amps,
+                    cache,
+                    cver,
+                    m,
+                    component.op_x,
+                    component.op_z,
+                    component.op_e,
+                    W,
+                    v,
                 )
                 certain = p1 < lane.CERTAIN or p1 > 1 - lane.CERTAIN
             slot = int(ops.slot[m])
@@ -101,16 +146,32 @@ def key_leaves(
                 break
             # The outcome-1 branch (if both survive) goes on the stack with a copy.
             for bit, pb, keep_rows in branches[1:]:
-                f2, a2, q2, c2, cv2 = frame.copy(), active.copy(), pos.copy(), cache.copy(), cver.copy()
+                f2, a2, q2, c2, cv2 = (
+                    frame.copy(),
+                    active.copy(),
+                    pos.copy(),
+                    cache.copy(),
+                    cver.copy(),
+                )
                 if len(layer):
                     amps2 = finish_through(a2, q2, keep, phi, kv, bit)
                 else:
-                    amps2 = lane.finish_measure(f2, a2, q2, amps.copy(), kind, d, bit, v.copy(), W)
+                    amps2 = lane.finish_measure(
+                        f2, a2, q2, amps.copy(), kind, d, bit, v.copy(), W
+                    )
                 amps2 = lane.compress(f2, a2, q2, amps2, W)
                 bits2 = bits.copy()
                 if slot >= 0:
                     bits2[slot] = bit
-                stack.append((step + 1, prob * pb, bits2, keep_rows, (f2, a2, q2, amps2, c2, cv2)))
+                stack.append(
+                    (
+                        step + 1,
+                        prob * pb,
+                        bits2,
+                        keep_rows,
+                        (f2, a2, q2, amps2, c2, cv2),
+                    )
+                )
             bit, pb, rows = branches[0]
             if len(layer):
                 if not certain:
@@ -169,7 +230,9 @@ def config_distribution(
     dist = np.zeros(1 << num_obs, dtype=np.float64)
     v = np.empty(2 * num_words + 1, dtype=np.uint64)
     no_amps = np.empty(0, dtype=np.complex128)
-    frame, active, pos, amps, cache, cache_ver = lane.new_state(num_lines, num_words, num_ops)
+    frame, active, pos, amps, cache, cache_ver = lane.new_state(
+        num_lines, num_words, num_ops
+    )
     stack = [(0, 1.0, 0, frame, active, pos, amps, cache, cache_ver)]
     while len(stack):
         step, prob, code, frame, active, pos, amps, cache, cache_ver = stack.pop()
@@ -177,7 +240,19 @@ def config_distribution(
             for i in range(apply_start[step], apply_start[step + 1]):
                 r = apply_ops[i]
                 amps = lane.rotate(
-                    frame, active, pos, amps, cache, cache_ver, r, op_x, op_z, op_e, theta[r], num_words, max_width
+                    frame,
+                    active,
+                    pos,
+                    amps,
+                    cache,
+                    cache_ver,
+                    r,
+                    op_x,
+                    op_z,
+                    op_e,
+                    theta[r],
+                    num_words,
+                    max_width,
                 )
             m = measure[step]
             l0, l1 = layer_start[step], layer_start[step + 1]
@@ -193,19 +268,52 @@ def config_distribution(
                 and amps.shape[0] == 1
                 and frame[frame.shape[0] - 1, 0] == np.uint64(1)
             ):
-                shortcut = root_outcome(layer_ops[l0:l1], flipped, ref_theta, op_x, op_z, op_e, root_amp[step], num_words)
+                shortcut = root_outcome(
+                    layer_ops[l0:l1],
+                    flipped,
+                    ref_theta,
+                    op_x,
+                    op_z,
+                    op_e,
+                    root_amp[step],
+                    num_words,
+                )
             if shortcut >= 0:
                 p1 = float(shortcut)
                 certain = True
             elif through:
                 layer = layer_ops[l0:l1]
                 p1, keep, phi, kv = prepare_through(
-                    frame, active, pos, amps, cache, cache_ver, op_x, op_z, op_e, layer, theta[layer], m, num_words, max_width
+                    frame,
+                    active,
+                    pos,
+                    amps,
+                    cache,
+                    cache_ver,
+                    op_x,
+                    op_z,
+                    op_e,
+                    layer,
+                    theta[layer],
+                    m,
+                    num_words,
+                    max_width,
                 )
                 certain = phi.shape[0] == 0
             else:
                 kind, p1, d = lane.prepare_measure(
-                    frame, active, pos, amps, cache, cache_ver, m, op_x, op_z, op_e, num_words, v
+                    frame,
+                    active,
+                    pos,
+                    amps,
+                    cache,
+                    cache_ver,
+                    m,
+                    op_x,
+                    op_z,
+                    op_e,
+                    num_words,
+                    v,
                 )
                 certain = p1 < lane.CERTAIN or p1 > 1.0 - lane.CERTAIN
             s = slot[m]
@@ -221,11 +329,19 @@ def config_distribution(
             ob = obs_bit[s] if s >= 0 else -1
             if hi_bit > lo_bit:
                 # Both outcomes: outcome 1 on a copy, onto the stack.
-                f1, a1, q1, c1, cv1 = frame.copy(), active.copy(), pos.copy(), cache.copy(), cache_ver.copy()
+                f1, a1, q1, c1, cv1 = (
+                    frame.copy(),
+                    active.copy(),
+                    pos.copy(),
+                    cache.copy(),
+                    cache_ver.copy(),
+                )
                 if through:
                     amps1 = finish_through(a1, q1, keep, phi, kv, 1)
                 else:
-                    amps1 = lane.finish_measure(f1, a1, q1, amps.copy(), kind, d, 1, v.copy(), num_words)
+                    amps1 = lane.finish_measure(
+                        f1, a1, q1, amps.copy(), kind, d, 1, v.copy(), num_words
+                    )
                 amps1 = lane.compress(f1, a1, q1, amps1, num_words)
                 code1 = code | (1 << ob) if ob >= 0 else code
                 stack.append((step + 1, prob * p1, code1, f1, a1, q1, amps1, c1, cv1))
@@ -239,7 +355,9 @@ def config_distribution(
                 if not certain:
                     amps = finish_through(active, pos, keep, phi, kv, bit)
             else:
-                amps = lane.finish_measure(frame, active, pos, amps, kind, d, bit, v, num_words)
+                amps = lane.finish_measure(
+                    frame, active, pos, amps, kind, d, bit, v, num_words
+                )
             amps = lane.compress(frame, active, pos, amps, num_words)
             if ob >= 0 and bit:
                 code |= 1 << ob
