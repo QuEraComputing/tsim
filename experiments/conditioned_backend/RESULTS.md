@@ -53,7 +53,8 @@ shot** (64 shots, 24 threads, no postselection).
 | group by key over the whole call (one tree per key) | 0.75 us | 0.18 us |
 | fault-free shots unsorted; big groups cut into pieces | 0.77 us | 0.099 us |
 | general Pauli-stabilizer compression (Walsh-transform candidates) | 0.425 us | **0.068 us** |
-| at most one piece per thread per key group | **0.355 us** | **0.070 us** |
+| at most one piece per thread per key group | 0.355 us | 0.070 us |
+| reference key's outcome tree cached on the component | **0.345 us** | **0.061 us** |
 
 Noise sampling is ~0.02 us/shot. Speedup over `active_statevector`: ~1.6e8 (24 threads each).
 Fault-free lanes have width 9 (= logical qubits); with the general Pauli compression
@@ -63,10 +64,30 @@ Other runs (24 threads; 1 thread in brackets):
 
 | circuit | postselected | all shots |
 |---|---|---|
-| BLP, 60 detectors | 0.068 us (0.355 us) | 9.6 us (158 us) |
+| BLP, 60 detectors | 0.061 us (0.345 us) | 9.6 us (158 us) |
 | BLP, paper's 27 detectors | 0.25 us (2.5 us) | |
 | toric [[81,3,3]], 168 detectors (`active_statevector`: k = 63, cannot run) | 0.20 us (2.0 us) | |
 | toric, paper's 81 detectors | 2.85 us (40.7 us) | |
+
+Per call (BLP, 24 threads): calls of 1e3 / 1e4 / 1e5 / 1e6 shots take
+5.3 / 8.9 / 14 / 62 ms (5.3 / 0.89 / 0.14 / 0.062 us per shot); before the tree
+cache every call rebuilt the fault-free lanes (22 ms).
+
+Against `active_statevector` on the benchmark circuits (postselected, 24 threads, 2e6 shots):
+
+| circuit (Tsim k) | Tsim | conditioned |
+|---|---|---|
+| cultivation d3 (4) | 0.008 us | 0.012 us |
+| cultivation d5 (6) | 0.007 us | 0.015 us |
+| end2end d5 (6) | 0.083 us | 0.100 us |
+| distillation (3) | 0.006 us | 0.010 us |
+| coherent d3r3 (4) | 0.007 us | 0.011 us |
+| tricycle 6 (9) | 0.028 us | 0.025 us |
+| tricycle 9 (11) | 1.71 us | 0.030 us (57x) |
+| tricycle 12 (16) | 388 us | 0.033 us (11,700x) |
+| BLP 27 (26) | 11.2 s (no postselection) | 0.061 us |
+
+At small k both are bound by the noise sampling and Tsim is up to 2x faster.
 
 Without postselection the shots whose
 detectors fire run to the end, and every outcome of every shot is a new lane;
