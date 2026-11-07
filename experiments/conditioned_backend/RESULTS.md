@@ -29,8 +29,10 @@ the reference key's outcome by Pauli algebra (`K = K0 (-1)^|F| P_F`).
   observable histograms agree (cultivation d3/d5, end2end d5, distillation,
   coherent d3r3, tricycle 6/9; helper circuits with and without postselection).
 - Every optimization kept postselected samples bit-identical (hash check).
-- Tests: `test/unit/statevector/test_conditioned.py` (44); existing statevector
-  suites pass.
+- Tests: `test/unit/statevector/test_conditioned.py` (46); the full suite passes
+  (2538; `test_the_calling_thread_keeps_parallel_kernels_after_run_tasks` fails
+  on origin/main too in this environment).
+- Caveat: with the fixed measurement order, distillation peaks at width 5 (Tsim 3).
 
 ## Sampling time per shot (BLP [[27,3,3]] factory, postselected on all detectors)
 
@@ -47,7 +49,7 @@ shot** (64 shots, 24 threads, no postselection).
 | group by key over the whole call (one tree per key) | 0.75 us | 0.18 us |
 | fault-free shots unsorted; big groups cut into pieces | 0.77 us | 0.099 us |
 | general Pauli-stabilizer compression (Walsh-transform candidates) | 0.425 us | **0.068 us** |
-| at most one piece per thread per key group | **0.355 us** | 0.074 us (noise) |
+| at most one piece per thread per key group | **0.355 us** | **0.070 us** |
 
 Noise sampling is ~0.02 us/shot. Speedup over `active_statevector`: ~1.6e8 (24 threads each).
 Fault-free lanes have width 9 (= logical qubits); with the general Pauli compression
@@ -58,11 +60,11 @@ Other runs (24 threads; 1 thread in brackets):
 | circuit | postselected | all shots |
 |---|---|---|
 | BLP, 60 detectors | 0.068 us (0.355 us) | 9.6 us (158 us) |
-| BLP, paper's 27 detectors | 0.26 us (2.6 us) | |
-| toric [[81,3,3]], 168 detectors (`active_statevector`: k = 63, cannot run) | 0.34 us* | |
+| BLP, paper's 27 detectors | 0.25 us (2.5 us) | |
+| toric [[81,3,3]], 168 detectors (`active_statevector`: k = 63, cannot run) | 0.20 us (2.0 us) | |
 | toric, paper's 81 detectors | 2.85 us (40.7 us) | |
 
-(* before the general Pauli compression.) Without postselection the shots whose
+Without postselection the shots whose
 detectors fire run to the end, and every outcome of every shot is a new lane;
 Tsim's `active_statevector` needs 11.2 s per BLP shot either way.
 
