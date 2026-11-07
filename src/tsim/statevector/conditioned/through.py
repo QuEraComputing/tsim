@@ -16,7 +16,8 @@ call it ``K``, with the stored state ``|a, 0>`` (register ``a``, dormant qubits 
    single ``Z_d``: those qubits stay dormant, the others (``Dp``) join the register.
 3. ``K|0...0>`` on the register is a stabilizer state: its amplitudes follow from
    its stabilizers ``K Z_j K^dag`` up to one phase, which one Gauss sum gives.
-4. ``K|a, 0> = sum_y a_y (K X^y K^dag) K|0...0>``, walking ``y`` in Gray code.
+4. ``K|a, 0> = sum_y a_y (K X^y K^dag) K|0...0>``: each of the ``2^r`` support points
+   of ``K|0...0>`` adds to ``2^w`` points, ``2^(w + r)`` work.
 
 Nothing wider than the projected register is ever stored. The outcome-``b``
 state is ``(|a, 0> + (-1)^b K|a, 0>) / 2``.
@@ -100,8 +101,8 @@ def _restrict(row, keep, num_keep: int, num_words: int) -> tuple[int, int, int]:
 def _stabilizer_state(gx, gz, ge, size: int):
     """Return the stabilizer state with generators ``i^ge X^gx Z^gz`` on ``log2(size)`` qubits.
 
-    Up to a global phase. Also returns the index of an amplitude it sets to a
-    nonzero value (the anchor for the phase).
+    Up to a global phase. Also returns the index ``y0`` of a nonzero amplitude
+    (the anchor for the phase) and the support, in the order it was filled.
     """
     num = gx.shape[0]
     x = gx.copy()
@@ -153,9 +154,11 @@ def _stabilizer_state(gx, gz, ge, size: int):
         if pivot_bit[c] >= 0 and rb[c]:
             y0 |= 1 << pivot_bit[c]
     out = np.zeros(size, dtype=np.complex128)
+    support = np.empty(1 << num_piv, dtype=np.int64)
     amp = 2.0 ** (-0.5 * num_piv)
     y = y0
     out[y] = amp
+    support[0] = y
     # Gray code over the pivots: psi(y ^ x_g) = i^e_g (-1)^{z_g . y} psi(y).
     for count in range(1, 1 << num_piv):
         p = popcount(np.uint64((count ^ (count >> 1)) ^ ((count - 1) ^ ((count - 1) >> 1))) - 1)
@@ -166,7 +169,8 @@ def _stabilizer_state(gx, gz, ge, size: int):
         amp = amp * sign
         y ^= x[h]
         out[y] = amp
-    return out, y0
+        support[count] = y
+    return out, y0, support
 
 
 @jit
@@ -317,7 +321,7 @@ def prepare_through(frame, active, pos, amps, op_x, op_z, op_e, layer, angles, m
         _conjugate(row, rows, s4_neg, m_row, num_words)
         gx[j], gz[j], ge[j] = _restrict(row, keep, wa, num_words)
     size = 1 << wa
-    psi0, y0 = _stabilizer_state(gx, gz, ge, size)
+    psi0, y0, support = _stabilizer_state(gx, gz, ge, size)
     for i in range(wa):
         q = keep[i]
         if (y0 >> i) & 1:
@@ -337,18 +341,32 @@ def prepare_through(frame, active, pos, amps, op_x, op_z, op_e, layer, angles, m
         row[q >> 6] = _ONE << np.uint64(q & 63)
         _conjugate(row, rows, s4_neg, m_row, num_words)
         wx[j], wz[j], we[j] = _restrict(row, keep, wa, num_words)
-    kv = amps[0] * psi0
-    u = psi0.copy()
-    tmp = np.empty_like(u)
-    for count in range(1, 1 << w):
+    # (W_y psi0)[j0 ^ X_y] = i^E_y (-1)^{Z_y . j0} psi0[j0] for W_y = i^E_y X^X_y Z^Z_y,
+    # so each support point j0 of psi0 adds to the 2^w points j0 ^ X_y.
+    num_y = 1 << w
+    xs = np.zeros(num_y, dtype=np.int64)
+    zs = np.zeros(num_y, dtype=np.int64)
+    es = np.zeros(num_y, dtype=np.int64)
+    prev = 0
+    for count in range(1, num_y):
         g = count ^ (count >> 1)
-        q = popcount(np.uint64(g ^ ((count - 1) ^ ((count - 1) >> 1))) - 1)
-        apply_pauli(u, wx[q], wz[q], we[q], tmp)
-        u, tmp = tmp, u
-        a = amps[g]
-        if a != 0:
-            for k in range(size):
-                kv[k] += a * u[k]
+        q = popcount(np.uint64((g ^ prev) - 1))
+        xs[g] = xs[prev] ^ wx[q]
+        zs[g] = zs[prev] ^ wz[q]
+        es[g] = (es[prev] + we[q] + 2 * popcount(np.uint64(zs[prev] & wx[q]))) & 3
+        prev = g
+    coef = np.empty(num_y, dtype=np.complex128)
+    for y in range(num_y):
+        coef[y] = amps[y] * _I_POWERS[es[y]]
+    kv = np.zeros(size, dtype=np.complex128)
+    for i in range(support.shape[0]):
+        j0 = support[i]
+        c = psi0[j0]
+        for y in range(num_y):
+            if popcount(np.uint64(zs[y] & j0)) & 1:
+                kv[j0 ^ xs[y]] -= coef[y] * c
+            else:
+                kv[j0 ^ xs[y]] += coef[y] * c
     phi = np.zeros(size, dtype=np.complex128)
     phi[: amps.shape[0]] = amps
     expect = 0.0
