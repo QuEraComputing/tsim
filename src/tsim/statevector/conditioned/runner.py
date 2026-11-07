@@ -25,7 +25,7 @@ from tsim.statevector.conditioned.lane import (
     width_of,
 )
 from tsim.statevector.conditioned.paulis import popcount
-from tsim.statevector.conditioned.through import finish_through, prepare_through
+from tsim.statevector.conditioned.through import finish_through, prepare_through, root_outcome
 from tsim.utils.kernels import jit
 from tsim.utils.rng import GOLDEN, splitmix64
 
@@ -87,6 +87,50 @@ def _split(order, bits, lo: int, hi: int) -> int:
 
 
 @jit
+def group_by_key(words, alive, key_start: int, key_words: int):
+    """Return the alive shots sorted so that equal keys are adjacent, and the group starts.
+
+    Shots are sorted by a hash of their key; a run of equal hashes is checked word
+    by word, and a shot whose key differs from its run's first (a collision) gets
+    a group of its own.
+    """
+    count = 0
+    for s in range(words.shape[0]):
+        if alive[s]:
+            count += 1
+    shots = np.empty(count, dtype=np.int64)
+    hashes = np.empty(count, dtype=np.uint64)
+    i = 0
+    for s in range(words.shape[0]):
+        if alive[s]:
+            h = np.uint64(0x243F6A8885A308D3)
+            for w in range(key_words):
+                _, h = splitmix64(h ^ words[s, key_start + w])
+            shots[i] = s
+            hashes[i] = h
+            i += 1
+    perm = np.argsort(hashes, kind="mergesort")
+    order = shots[perm]
+    starts = np.empty(count + 1, dtype=np.int64)
+    num = 0
+    first = -1
+    for i in range(count):
+        s = order[i]
+        new = i == 0 or hashes[perm[i]] != hashes[perm[i - 1]]
+        if not new:
+            for w in range(key_words):
+                if words[s, key_start + w] != words[first, key_start + w]:
+                    new = True
+                    break
+        if new:
+            starts[num] = i
+            num += 1
+            first = s
+    starts[num] = count
+    return order, starts[: num + 1].copy()
+
+
+@jit
 def run_chunk(
     words,
     alive,
@@ -110,6 +154,7 @@ def run_chunk(
     apply_ops,
     layer_start,
     layer_ops,
+    root_amp,
     max_width: int,
     stats,
 ):
@@ -131,6 +176,8 @@ def run_chunk(
         out_bit: Each measurement's output bit in the words, or -1.
         post: Whether each measurement's output is postselected.
         measure, apply_start, apply_ops, layer_start, layer_ops: The step plan.
+        root_amp: Per step, the reference key's certain outcome (+1 or -1) at the
+            root state, or 0 (see ``reference_prefix``).
         max_width: Most active qubits a lane may hold.
         stats: Receives the widest lane, lane count, splits, measure-throughs, steps.
 
@@ -139,8 +186,13 @@ def run_chunk(
     num_ops = angle.shape[0]
     num_steps = measure.shape[0]
     theta = np.empty(num_ops, dtype=np.float64)
+    ref_theta = np.empty(num_ops, dtype=np.float64)
+    flipped = np.zeros(num_ops, dtype=np.bool_)
+    for r in range(num_ops):
+        ref_theta[r] = -angle[r] if sign_const[r] & 1 else angle[r]
     bits = np.empty(order.shape[0], dtype=np.int64)
     no_bits = np.empty(0, dtype=np.int64)
+    no_amps = np.empty(0, dtype=np.complex128)
     v = np.empty(2 * num_words + 1, dtype=np.uint64)
     for g in range(group_start.shape[0] - 1):
         lo, hi = group_start[g], group_start[g + 1]
@@ -149,10 +201,11 @@ def run_chunk(
         # Concrete rotation angles from the group's key.
         s0 = order[lo]
         for r in range(num_ops):
-            parity = sign_const[r]
+            parity = 0
             for w in range(key_words):
                 parity += popcount(sign_key[r, w] & words[s0, key_start + w])
-            theta[r] = -angle[r] if parity & 1 else angle[r]
+            flipped[r] = parity & 1
+            theta[r] = -ref_theta[r] if flipped[r] else ref_theta[r]
         frame, active, pos, amps, cache, cache_ver = new_state(num_lines, num_words, num_ops)
         stack = [(0, lo, hi, frame, active, pos, amps, cache, cache_ver)]
         stats[STAT_LANES] += 1
@@ -168,14 +221,31 @@ def run_chunk(
                 l0, l1 = layer_start[step], layer_start[step + 1]
                 through = l1 > l0
                 kind, d = 0, -1
-                if through:
+                keep = active[:0].copy()
+                kv = no_amps
+                shortcut = -1
+                if (
+                    through
+                    and root_amp[step] != 0
+                    and apply_start[step] == apply_start[step + 1]
+                    and amps.shape[0] == 1
+                    and frame[frame.shape[0] - 1, 0] == _ONE
+                ):
+                    shortcut = root_outcome(
+                        layer_ops[l0:l1], flipped, ref_theta, op_x, op_z, op_e, root_amp[step], num_words
+                    )
+                if shortcut >= 0:
+                    p1 = float(shortcut)
+                    certain = True
+                    phi = no_amps
+                elif through:
                     layer = layer_ops[l0:l1]
                     p1, keep, phi, kv = prepare_through(
                         frame, active, pos, amps, cache, cache_ver, op_x, op_z, op_e, layer, theta[layer], m, num_words, max_width
                     )
                     stats[STAT_THROUGH] += 1
                     certain = phi.shape[0] == 0
-                else:
+                if not through:
                     kind, p1, d = prepare_measure(
                         frame, active, pos, amps, cache, cache_ver, m, op_x, op_z, op_e, num_words, v
                     )
@@ -225,3 +295,43 @@ def run_chunk(
                 if width_of(amps) > stats[STAT_WIDTH]:
                     stats[STAT_WIDTH] = width_of(amps)
                 step += 1
+
+
+@jit
+def reference_prefix(
+    num_lines: int,
+    op_x,
+    op_z,
+    op_e,
+    angle,
+    sign_const,
+    measure,
+    apply_start,
+    layer_start,
+    layer_ops,
+):
+    """Return per step the reference key's outcome amplitude at the root state, or 0.
+
+    The reference key (all key bits 0) is run from ``|0...0>`` while it stays at the
+    root: no active qubit and an untouched frame. Each measure-through step there
+    with a certain outcome records ``<0|K0|0> = +-1``; the rest record 0.
+    """
+    num_words = (num_lines + 63) >> 6
+    num_ops = angle.shape[0]
+    out = np.zeros(measure.shape[0], dtype=np.float64)
+    theta = np.empty(num_ops, dtype=np.float64)
+    for r in range(num_ops):
+        theta[r] = -angle[r] if sign_const[r] & 1 else angle[r]
+    frame, active, pos, amps, cache, cache_ver = new_state(num_lines, num_words, num_ops)
+    for step in range(measure.shape[0]):
+        l0, l1 = layer_start[step], layer_start[step + 1]
+        if l1 == l0 or apply_start[step] != apply_start[step + 1]:
+            break
+        layer = layer_ops[l0:l1]
+        p1, keep, phi, kv = prepare_through(
+            frame, active, pos, amps, cache, cache_ver, op_x, op_z, op_e, layer, theta[layer], measure[step], num_words, 64
+        )
+        if phi.shape[0] != 0 or frame[frame.shape[0] - 1, 0] != _ONE:
+            break
+        out[step] = 1.0 if p1 < 0.5 else -1.0
+    return out

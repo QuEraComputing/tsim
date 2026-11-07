@@ -78,6 +78,8 @@ class ConditionedComponent:
         key: The key basis of the rotation signs.
         op_x, op_z: Each op's Pauli as X and Z bit words, ``(N, W)``.
         op_e: The phase exponent of each op's letters (its number of Y), mod 4.
+        root_amp: Per step, the reference key's certain outcome at the root state
+            (+1 or -1), or 0 (``runner.reference_prefix``).
         width: Nominal lane width, for chunk sizing only: lanes size themselves.
 
     """
@@ -90,6 +92,7 @@ class ConditionedComponent:
     op_x: np.ndarray
     op_z: np.ndarray
     op_e: np.ndarray
+    root_amp: np.ndarray
     width: int = 10
 
     norm_warning_threshold: ClassVar[float] = 1e-9
@@ -154,15 +157,32 @@ def conditioned_component(ops: PauliOps, layout: ComponentLayout) -> Conditioned
     assert np.count_nonzero(ops.slot >= 0) == num_slots
     tape = OutputTape(np.array(layout.f_selection, dtype=np.int32), output_const, output_row)
     words = -(-ops.num_lines // 64)
+    plan = step_plan(ops)
+    op_x = pack_bits(ops.x, words)
+    op_z = pack_bits(ops.z, words)
+    op_e = (np.count_nonzero(ops.x & ops.z, axis=1) % 4).astype(np.int64)
+    root_amp = runner.reference_prefix(
+        ops.num_lines,
+        op_x,
+        op_z,
+        op_e,
+        ops.angle.astype(np.float64),
+        ops.sign[:, 0].astype(np.int64),
+        plan.measure,
+        plan.apply_start,
+        plan.layer_start,
+        plan.layer_ops,
+    )
     return ConditionedComponent(
         output_indices=tuple(layout.output_indices),
         ops=ops,
-        plan=step_plan(ops),
+        plan=plan,
         tape=tape,
         key=_key_basis(ops),
-        op_x=pack_bits(ops.x, words),
-        op_z=pack_bits(ops.z, words),
-        op_e=(np.count_nonzero(ops.x & ops.z, axis=1) % 4).astype(np.int64),
+        op_x=op_x,
+        op_z=op_z,
+        op_e=op_e,
+        root_amp=root_amp,
     )
 
 
@@ -197,25 +217,17 @@ def run_chunk(
     (projections renormalize, so 0), then the lanes, the widest lane, the splits
     and the steps run.
     """
-    shots = np.flatnonzero(alive)
     stats = np.zeros(runner.NUM_STATS, dtype=np.int64)
-    if len(shots) == 0:
+    order, group_start = runner.group_by_key(rows, alive, program.key_start, program.key_words)
+    if len(order) == 0:
         return _stats(stats)
-    keys = rows[shots, program.key_start : program.key_start + program.key_words]
-    if program.key_words:
-        _, group, counts = np.unique(keys, axis=0, return_inverse=True, return_counts=True)
-        order = shots[np.argsort(group.reshape(-1), kind="stable")]
-        group_start = np.concatenate([[0], np.cumsum(counts)]).astype(np.int64)
-    else:
-        order = shots.astype(np.int64)
-        group_start = np.array([0, len(shots)], dtype=np.int64)
     plan = component.plan
     runner.run_chunk(
         rows,
         alive,
         first_shot,
         np.uint64(seed),
-        order.astype(np.int64),
+        order,
         group_start,
         program.key_start,
         program.key_words,
@@ -233,6 +245,7 @@ def run_chunk(
         plan.apply_ops,
         plan.layer_start,
         plan.layer_ops,
+        component.root_amp,
         MAX_WIDTH,
         stats,
     )

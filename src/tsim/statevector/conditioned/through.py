@@ -55,12 +55,24 @@ _I_POWERS = np.array([1.0 + 0.0j, 1.0j, -1.0 + 0.0j, -1.0j])
 
 @jit
 def _layer_rows(frame, cache, cache_ver, op_x, op_z, op_e, layer, m: int, num_words: int):
-    """Return the virtual rows of the layer Paulis and of ``M``."""
+    """Return copies of the virtual rows of the layer Paulis and of ``M``."""
     L = layer.shape[0]
-    rows = np.empty((L, 2 * num_words + 1), dtype=np.uint64)
+    width = 2 * num_words + 1
+    version = frame[frame.shape[0] - 1, 0]
+    rows = np.empty((L, width), dtype=np.uint64)
     for k in range(L):
-        rows[k] = op_image(frame, cache, cache_ver, layer[k], op_x, op_z, op_e, num_words)
-    m_row = op_image(frame, cache, cache_ver, m, op_x, op_z, op_e, num_words).copy()
+        r = layer[k]
+        if cache_ver[r] != version:
+            image(frame, op_x[r], op_z[r], op_e[r], cache[r], num_words)
+            cache_ver[r] = version
+        for wd in range(width):
+            rows[k, wd] = cache[r, wd]
+    if cache_ver[m] != version:
+        image(frame, op_x[m], op_z[m], op_e[m], cache[m], num_words)
+        cache_ver[m] = version
+    m_row = np.empty(width, dtype=np.uint64)
+    for wd in range(width):
+        m_row[wd] = cache[m, wd]
     return rows, m_row
 
 
@@ -460,6 +472,42 @@ def prepare_through(
         return (0.0 if expect > 0 else 1.0), keep_now, empty, empty
     p1 = min(max((1.0 - expect) / 2.0, 0.0), 1.0)
     return p1, keep, phi, kv
+
+
+@jit
+def root_outcome(layer, flipped, ref_theta, op_x, op_z, op_e, ref_amp: float, num_words: int) -> int:
+    """Return the outcome of a measure-through from the root state, or -1 if it is random.
+
+    At the root (no active qubit, identity frame) the reference key's measurement
+    was certain: ``K0|0> = ref_amp |0>``. A key that flips the signs of the layer
+    factors ``F`` has ``K = K0 (-1)^|F| P_F`` with ``P_F = prod_F (-i sin(4 theta0_k) V_k)``,
+    since ``exp(-2i theta0 V) = exp(2i theta0 V) (-i sin(4 theta0) V)`` and every ``V_k``
+    anticommutes with ``M``. So ``<0|K|0> = ref_amp (-1)^|F| <0|P_F|0>``: random if
+    ``P_F`` has an X part, else certain.
+    """
+    W2 = 2 * num_words
+    prod = np.zeros(W2 + 1, dtype=np.uint64)
+    row = np.empty(W2 + 1, dtype=np.uint64)
+    phase = 0
+    count = 0
+    for i in range(layer.shape[0]):
+        r = layer[i]
+        if not flipped[r]:
+            continue
+        for wd in range(num_words):
+            row[wd] = op_x[r, wd]
+            row[num_words + wd] = op_z[r, wd]
+        row[W2] = np.uint64(op_e[r] & 3)
+        multiply_right(prod, row, num_words)
+        phase += 1 if np.sin(4.0 * ref_theta[r]) < 0 else 3
+        count += 1
+    for wd in range(num_words):
+        if prod[wd]:
+            return -1
+    # P_F |0> = i^e |0> for P_F = i^e Z^z.
+    total = (np.int64(prod[W2]) + phase + 2 * (count & 1)) & 3
+    value = ref_amp if total == 0 else -ref_amp
+    return 0 if value > 0 else 1
 
 
 @jit
