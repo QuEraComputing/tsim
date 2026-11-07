@@ -167,3 +167,27 @@ acceptance and observable histogram among accepted shots.
 | distillation | 2e8 | 0.07979 / 0.07975 | +1.3 | 0.58 (32 patterns) |
 | tricycle 6 | 1e8 | 0.88882 / 0.88882 | -0.1 | 0.27 (512) |
 | tricycle 9 | 1e8 | 0.83590 / 0.83595 | -0.9 | 0.20 (512) |
+
+## Against clifft 0.12 (Nov 7)
+
+Raw detector/observable parities in both (`clifft_ler.py`, `compare_clifft.py`);
+clifft programs wider than 20 are not sampled (BLP: 31, i.e. 2^31 amplitudes).
+
+| circuit | acceptance (conditioned / clifft) | z | logical error (conditioned / clifft) | z |
+|---|---|---|---|---|
+| cultivation d3 | 0.68679 / 0.68678 | +0.6 | 8.77e-7 / 8.73e-7 (1204 / 1199) | +0.1 |
+| cultivation d5 | 0.14396 / 0.14395 | +1.1 | 6.9e-9 / 0 (4 / 0 of 2.9e8) | +1.4 |
+| coherent d3 r1 | 1 / 1 | | 7.48e-5 / 7.49e-5 | -0.1 |
+| coherent d3 r3 | 1 / 1 | | 3.56e-5 / 3.49e-5 | +0.6 |
+| coherent d5 r1 | 1 / 1 | | 1.92e-6 / 1.66e-6 | +1.0 |
+| end2end d5 | 0.11702 / 0.11695 | +1.8 | histogram p 0.41 | |
+| SymFT d7 | 0.00554 / 0.00555 | -0.3 | histogram p 0.27 | |
+| distillation | 0.07975 / 0.07977 | -0.6 | histogram p 0.45 (32) | |
+| tricycle 6 | 0.88882 / 0.88879 | +0.6 | histogram p 0.12 (512) | |
+| tricycle 9 | 0.83595 / 0.83590 | +0.5 | histogram p 0.46 (512) | |
+| tricycle 12 | 0.785086 (2e8) / 0.784983 (9e7) | +2.0 | histogram p 0.18 (512) | |
+
+Tricycle 12 acceptance: clifft runs of 1e7 / 2e7 / 6e7 shots gave 0.784766 /
+0.784989 / 0.785017; conditioned seeds 0.785075 / 0.785097. Noise sampling is not
+the cause: without the CCZ (Clifford), Tsim 0.788570 vs Stim 0.788562 at 2e9
+shots each (+-0.000009), clifft 0.788599 (1e8).

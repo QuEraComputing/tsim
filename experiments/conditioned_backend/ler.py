@@ -29,6 +29,7 @@ CASES = {
     "distillation": C + "clifft-bench/distillation.stim",
     "tricycle_6": T + "tricycle_6_3_2.stim",
     "tricycle_9": T + "tricycle_9_3_2.stim",
+    "tricycle_12": T + "tricycle_12_3_2.stim",
 }
 MASKS = {"end2end_d5": C + "clifft-paper/msc_d5_end2end_p1e-3.postselection.npy"}
 
