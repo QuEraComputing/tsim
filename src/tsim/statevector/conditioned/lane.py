@@ -2,11 +2,14 @@
 
 The stored state is ``F^dag (|a>_active (x) |0>_dormant)``:
 
-- ``frame``: the Clifford ``F`` as Pauli rows (``paulis``), so the virtual image of
-  an op's Pauli ``P`` is ``F P F^dag``;
+- ``frame``: the Clifford ``F`` as ``2n`` Pauli rows (``paulis``), so the virtual
+  image of an op's Pauli ``P`` is ``F P F^dag``, and a last row whose first word
+  counts the frame's changes (its *version*);
 - ``active``: the virtual qubits of the dense register, bit ``i`` of an amplitude
   index is qubit ``active[i]``; ``pos[q]`` is ``i``, or -1 for a dormant qubit;
-- ``amps``: the ``2^width`` amplitudes ``a``.
+- ``amps``: the ``2^width`` amplitudes ``a``;
+- ``cache``, ``cache_ver``: the virtual images of the ops, each valid while its
+  version matches the frame's (most steps change no frame).
 
 Gates act on virtual qubits (``F <- G F``, ``a <- G a``) and must keep the dormant
 qubits in ``|0>``. Measurements take two calls: a ``prepare_*`` that does every
@@ -52,16 +55,29 @@ class TooWide(Exception):
 
 
 @jit
-def new_state(n: int, num_words: int):
-    """Return ``(frame, active, pos, amps)`` of ``|0...0>`` with the identity frame."""
-    frame = np.zeros((2 * n, 2 * num_words + 1), dtype=np.uint64)
+def new_state(n: int, num_words: int, num_ops: int):
+    """Return ``(frame, active, pos, amps, cache, cache_ver)`` of ``|0...0>``, identity frame."""
+    frame = np.zeros((2 * n + 1, 2 * num_words + 1), dtype=np.uint64)
     for q in range(n):
         frame[q, q >> 6] = _ONE << np.uint64(q & 63)
         frame[n + q, num_words + (q >> 6)] = _ONE << np.uint64(q & 63)
+    frame[2 * n, 0] = _ONE
     active = np.full(n, -1, dtype=np.int64)
     pos = np.full(n, -1, dtype=np.int64)
     amps = np.ones(1, dtype=np.complex128)
-    return frame, active, pos, amps
+    cache = np.empty((num_ops, 2 * num_words + 1), dtype=np.uint64)
+    cache_ver = np.zeros(num_ops, dtype=np.uint64)
+    return frame, active, pos, amps, cache, cache_ver
+
+
+@jit
+def op_image(frame, cache, cache_ver, r: int, op_x, op_z, op_e, num_words: int):
+    """Return the virtual image of op ``r``'s Pauli (a row of the cache)."""
+    version = frame[frame.shape[0] - 1, 0]
+    if cache_ver[r] != version:
+        image(frame, op_x[r], op_z[r], op_e[r], cache[r], num_words)
+        cache_ver[r] = version
+    return cache[r]
 
 
 @jit
@@ -126,26 +142,34 @@ def apply_pauli(amps, xm: int, zm: int, e: int, out) -> None:
 
 
 @jit
-def frame_gate(frame, code: int, a: int, b: int, num_words: int) -> None:
-    """Apply a gate to the frame only (``F <- G F``)."""
+def rows_gate(rows, code: int, a: int, b: int, num_words: int) -> None:
+    """Conjugate every Pauli row by a gate (``R <- G R G^dag``)."""
     if code == H:
-        gate_h(frame, a, num_words)
+        gate_h(rows, a, num_words)
     elif code == S:
-        gate_s(frame, a, num_words, False)
+        gate_s(rows, a, num_words, False)
     elif code == S_DAG:
-        gate_s(frame, a, num_words, True)
+        gate_s(rows, a, num_words, True)
     elif code == X:
-        gate_pauli(frame, a, num_words, 1)
+        gate_pauli(rows, a, num_words, 1)
     elif code == Z:
-        gate_pauli(frame, a, num_words, 2)
+        gate_pauli(rows, a, num_words, 2)
     elif code == CX:
-        gate_cx(frame, a, b, num_words)
+        gate_cx(rows, a, b, num_words)
     elif code == CZ:
-        gate_cz(frame, a, b, num_words)
+        gate_cz(rows, a, b, num_words)
     else:  # CY = S_b CX S_b^dag, applied right to left
-        gate_s(frame, b, num_words, True)
-        gate_cx(frame, a, b, num_words)
-        gate_s(frame, b, num_words, False)
+        gate_s(rows, b, num_words, True)
+        gate_cx(rows, a, b, num_words)
+        gate_s(rows, b, num_words, False)
+
+
+@jit
+def frame_gate(frame, code: int, a: int, b: int, num_words: int) -> None:
+    """Apply a gate to the frame only (``F <- G F``), and bump its version."""
+    last = frame.shape[0] - 1
+    rows_gate(frame[:last], code, a, b, num_words)
+    frame[last, 0] += _ONE
 
 
 @jit
@@ -175,7 +199,7 @@ def gate(frame, pos, amps, code: int, a: int, b: int, num_words: int) -> None:
 @jit
 def row_gate(row, code: int, a: int, b: int, num_words: int) -> None:
     """Apply a gate to one Pauli row (to follow a Pauli through gates)."""
-    frame_gate(row.reshape(1, row.shape[0]), code, a, b, num_words)
+    rows_gate(row.reshape(1, row.shape[0]), code, a, b, num_words)
 
 
 # -- register size -------------------------------------------------------------
@@ -350,11 +374,10 @@ def compress(frame, active, pos, amps, num_words: int):
 
 
 @jit
-def rotate(frame, active, pos, amps, px, pz, pe: int, theta: float, num_words: int, max_width: int):
-    """Apply ``exp(-i theta P)`` for the op Pauli ``P = i^pe X^px Z^pz``; return the amplitudes."""
+def rotate(frame, active, pos, amps, cache, cache_ver, r: int, op_x, op_z, op_e, theta: float, num_words: int, max_width: int):
+    """Apply ``exp(-i theta P)`` for op ``r``'s Pauli ``P``; return the amplitudes."""
     n = frame.shape[0] // 2
-    v = np.empty(2 * num_words + 1, dtype=np.uint64)
-    image(frame, px, pz, pe, v, num_words)
+    v = op_image(frame, cache, cache_ver, r, op_x, op_z, op_e, num_words)
     # NOTE: gather the X support on dormant qubits onto one of them and make it active.
     d = -1
     for q in range(n):
@@ -365,7 +388,7 @@ def rotate(frame, active, pos, amps, px, pz, pe: int, theta: float, num_words: i
                 frame_gate(frame, CX, d, q, num_words)
     if d >= 0:
         amps = promote(active, pos, amps, d, max_width)
-        image(frame, px, pz, pe, v, num_words)
+        v = op_image(frame, cache, cache_ver, r, op_x, op_z, op_e, num_words)
     xm, zm, dormant_x = masks(v, active, width_of(amps))
     if xm == 0 and zm == 0:
         return amps  # a global phase
@@ -384,10 +407,10 @@ def rotate(frame, active, pos, amps, px, pz, pe: int, theta: float, num_words: i
 
 
 @jit
-def prepare_measure(frame, active, pos, amps, px, pz, pe: int, num_words: int, v):
-    """Prepare the measurement of the op Pauli ``P``; ``v`` receives its virtual image."""
+def prepare_measure(frame, active, pos, amps, cache, cache_ver, m: int, op_x, op_z, op_e, num_words: int, v):
+    """Prepare the measurement of op ``m``'s Pauli; ``v`` receives its virtual image."""
     n = frame.shape[0] // 2
-    image(frame, px, pz, pe, v, num_words)
+    v[:] = op_image(frame, cache, cache_ver, m, op_x, op_z, op_e, num_words)
     d = -1
     for q in range(n):
         if pos[q] < 0 and get_bit(v, 0, q):
@@ -396,7 +419,7 @@ def prepare_measure(frame, active, pos, amps, px, pz, pe: int, num_words: int, v
     if d >= 0:
         if get_bit(v, num_words, d):
             gate(frame, pos, amps, S_DAG, d, 0, num_words)
-        image(frame, px, pz, pe, v, num_words)
+        v[:] = op_image(frame, cache, cache_ver, m, op_x, op_z, op_e, num_words)
         for q in range(n):
             if q == d:
                 continue
@@ -407,7 +430,7 @@ def prepare_measure(frame, active, pos, amps, px, pz, pe: int, num_words: int, v
                 gate(frame, pos, amps, CX, d, q, num_words)
             elif zq:
                 gate(frame, pos, amps, CZ, d, q, num_words)
-        image(frame, px, pz, pe, v, num_words)
+        v[:] = op_image(frame, cache, cache_ver, m, op_x, op_z, op_e, num_words)
         return 0, 0.5, d
     xm, zm, _ = masks(v, active, width_of(amps))
     e = np.int64(v[2 * num_words] & _THREE)

@@ -19,6 +19,7 @@ from tsim.statevector.conditioned.lane import (
     CERTAIN,
     compress,
     finish_measure,
+    new_state,
     prepare_measure,
     rotate,
     width_of,
@@ -141,7 +142,6 @@ def run_chunk(
     bits = np.empty(order.shape[0], dtype=np.int64)
     no_bits = np.empty(0, dtype=np.int64)
     v = np.empty(2 * num_words + 1, dtype=np.uint64)
-    n2 = 2 * num_lines
     for g in range(group_start.shape[0] - 1):
         lo, hi = group_start[g], group_start[g + 1]
         if hi == lo:
@@ -153,21 +153,17 @@ def run_chunk(
             for w in range(key_words):
                 parity += popcount(sign_key[r, w] & words[s0, key_start + w])
             theta[r] = -angle[r] if parity & 1 else angle[r]
-        frame = np.zeros((n2, 2 * num_words + 1), dtype=np.uint64)
-        for q in range(num_lines):
-            frame[q, q >> 6] = _ONE << np.uint64(q & 63)
-            frame[num_lines + q, num_words + (q >> 6)] = _ONE << np.uint64(q & 63)
-        active = np.full(num_lines, -1, dtype=np.int64)
-        pos = np.full(num_lines, -1, dtype=np.int64)
-        amps = np.ones(1, dtype=np.complex128)
-        stack = [(0, lo, hi, frame, active, pos, amps)]
+        frame, active, pos, amps, cache, cache_ver = new_state(num_lines, num_words, num_ops)
+        stack = [(0, lo, hi, frame, active, pos, amps, cache, cache_ver)]
         stats[STAT_LANES] += 1
         while len(stack):
-            step, lo, hi, frame, active, pos, amps = stack.pop()
+            step, lo, hi, frame, active, pos, amps, cache, cache_ver = stack.pop()
             while step < num_steps and hi > lo:
                 for i in range(apply_start[step], apply_start[step + 1]):
                     r = apply_ops[i]
-                    amps = rotate(frame, active, pos, amps, op_x[r], op_z[r], op_e[r], theta[r], num_words, max_width)
+                    amps = rotate(
+                        frame, active, pos, amps, cache, cache_ver, r, op_x, op_z, op_e, theta[r], num_words, max_width
+                    )
                 m = measure[step]
                 l0, l1 = layer_start[step], layer_start[step + 1]
                 through = l1 > l0
@@ -175,12 +171,14 @@ def run_chunk(
                 if through:
                     layer = layer_ops[l0:l1]
                     p1, keep, phi, kv = prepare_through(
-                        frame, active, pos, amps, op_x, op_z, op_e, layer, theta[layer], m, num_words, max_width
+                        frame, active, pos, amps, cache, cache_ver, op_x, op_z, op_e, layer, theta[layer], m, num_words, max_width
                     )
                     stats[STAT_THROUGH] += 1
                     certain = phi.shape[0] == 0
                 else:
-                    kind, p1, d = prepare_measure(frame, active, pos, amps, op_x[m], op_z[m], op_e[m], num_words, v)
+                    kind, p1, d = prepare_measure(
+                        frame, active, pos, amps, cache, cache_ver, m, op_x, op_z, op_e, num_words, v
+                    )
                     certain = p1 < CERTAIN or p1 > 1.0 - CERTAIN
                 stats[STAT_STEPS] += 1
                 if certain:
@@ -195,6 +193,7 @@ def run_chunk(
                     if mid < hi:
                         # The outcome-1 lane, on a copy of the state.
                         f1, a1, q1 = frame.copy(), active.copy(), pos.copy()
+                        c1, cv1 = cache.copy(), cache_ver.copy()
                         if through:
                             amps1 = finish_through(a1, q1, keep, phi, kv, 1)
                         else:
@@ -208,9 +207,9 @@ def run_chunk(
                             if mid > lo:
                                 stats[STAT_LANES] += 1
                                 stats[STAT_SPLITS] += 1
-                                stack.append((step + 1, mid, end1, f1, a1, q1, amps1))
+                                stack.append((step + 1, mid, end1, f1, a1, q1, amps1, c1, cv1))
                             else:
-                                frame, active, pos, amps = f1, a1, q1, amps1
+                                frame, active, pos, amps, cache, cache_ver = f1, a1, q1, amps1, c1, cv1
                                 lo, hi = mid, end1
                                 step += 1
                                 continue
