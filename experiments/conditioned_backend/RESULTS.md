@@ -191,3 +191,10 @@ Tricycle 12 acceptance: clifft runs of 1e7 / 2e7 / 6e7 shots gave 0.784766 /
 0.784989 / 0.785017; conditioned seeds 0.785075 / 0.785097. Noise sampling is not
 the cause: without the CCZ (Clifford), Tsim 0.788570 vs Stim 0.788562 at 2e9
 shots each (+-0.000009), clifft 0.788599 (1e8).
+
+Settled (more statistics, `t12_settle.py`): clifft with its ActiveWidthSchedulePass
+(beam 8; width 15, 4x faster) for 8 x 6e7 more shots, and the conditioned backend for
+2e9 shots in total. Tricycle 12 acceptance: conditioned 0.785019 (2e9) vs clifft
+0.784999 (5.7e8): difference +2.0e-5 +- 2.0e-5, z = +1.0. The earlier z = 2.0 was a
+fluctuation (the first 2e8 conditioned shots read 0.785086, the first 1e7 clifft
+shots 0.784766).
