@@ -161,6 +161,135 @@ def group_by_key(words, alive, key_start: int, key_words: int):
 
 
 @jit
+def _prepare_step(
+    step: int,
+    frame,
+    active,
+    pos,
+    amps,
+    cache,
+    cache_ver,
+    op_x,
+    op_z,
+    op_e,
+    theta,
+    flipped,
+    ref_theta,
+    measure,
+    apply_start,
+    apply_ops,
+    layer_start,
+    layer_ops,
+    root_amp,
+    v,
+    num_words: int,
+    max_width: int,
+    stats,
+):
+    """Apply a step's rotations and prepare its measurement.
+
+    Returns ``(amps, p1, certain, through, kind, d, keep, phi, kv)``: the
+    register after the rotations, the probability of outcome 1, whether it is
+    certain, and what ``_finish_step`` needs.
+    """
+    for i in range(apply_start[step], apply_start[step + 1]):
+        r = apply_ops[i]
+        amps = rotate(
+            frame,
+            active,
+            pos,
+            amps,
+            cache,
+            cache_ver,
+            r,
+            op_x,
+            op_z,
+            op_e,
+            theta[r],
+            num_words,
+            max_width,
+        )
+    m = measure[step]
+    l0, l1 = layer_start[step], layer_start[step + 1]
+    through = l1 > l0
+    kind, d = 0, -1
+    keep = active[:0].copy()
+    phi = np.empty(0, dtype=np.complex128)
+    kv = phi
+    stats[STAT_STEPS] += 1
+    if (
+        through
+        and root_amp[step] != 0
+        and apply_start[step] == apply_start[step + 1]
+        and amps.shape[0] == 1
+        and frame[frame.shape[0] - 1, 0] == _ONE
+    ):
+        shortcut = root_outcome(
+            layer_ops[l0:l1],
+            flipped,
+            ref_theta,
+            op_x,
+            op_z,
+            op_e,
+            root_amp[step],
+            num_words,
+        )
+        if shortcut >= 0:
+            return amps, float(shortcut), True, True, kind, d, keep, phi, kv
+    if through:
+        layer = layer_ops[l0:l1]
+        p1, keep, phi, kv = prepare_through(
+            frame,
+            active,
+            pos,
+            amps,
+            cache,
+            cache_ver,
+            op_x,
+            op_z,
+            op_e,
+            layer,
+            theta[layer],
+            m,
+            num_words,
+            max_width,
+        )
+        stats[STAT_THROUGH] += 1
+        return amps, p1, phi.shape[0] == 0, True, kind, d, keep, phi, kv
+    kind, p1, d = prepare_measure(
+        frame, active, pos, amps, cache, cache_ver, m, op_x, op_z, op_e, num_words, v
+    )
+    certain = p1 < CERTAIN or p1 > 1.0 - CERTAIN
+    return amps, p1, certain, False, kind, d, keep, phi, kv
+
+
+@jit
+def _finish_step(
+    frame,
+    active,
+    pos,
+    amps,
+    certain,
+    through,
+    kind,
+    d,
+    keep,
+    phi,
+    kv,
+    bit: int,
+    v,
+    num_words: int,
+):
+    """Project a prepared step onto outcome ``bit`` and compress; return the register."""
+    if through:
+        if not certain:
+            amps = finish_through(active, pos, keep, phi, kv, bit)
+    else:
+        amps = finish_measure(frame, active, pos, amps, kind, d, bit, v, num_words)
+    return compress(frame, active, pos, amps, num_words)
+
+
+@jit
 def run_chunk(
     words,
     alive,
@@ -235,7 +364,6 @@ def run_chunk(
         ref_theta[r] = -angle[r] if sign_const[r] & 1 else angle[r]
     bits = np.empty(order.shape[0], dtype=np.int64)
     no_bits = np.empty(0, dtype=np.int64)
-    no_amps = np.empty(0, dtype=np.complex128)
     v = np.empty(2 * num_words + 1, dtype=np.uint64)
     for g in range(group_start.shape[0] - 1):
         lo, hi = group_start[g], group_start[g + 1]
@@ -257,97 +385,54 @@ def run_chunk(
         while len(stack):
             step, lo, hi, frame, active, pos, amps, cache, cache_ver = stack.pop()
             while step < num_steps and hi > lo:
-                for i in range(apply_start[step], apply_start[step + 1]):
-                    r = apply_ops[i]
-                    amps = rotate(
-                        frame,
-                        active,
-                        pos,
-                        amps,
-                        cache,
-                        cache_ver,
-                        r,
-                        op_x,
-                        op_z,
-                        op_e,
-                        theta[r],
-                        num_words,
-                        max_width,
-                    )
+                amps, p1, certain, through, kind, d, keep, phi, kv = _prepare_step(
+                    step,
+                    frame,
+                    active,
+                    pos,
+                    amps,
+                    cache,
+                    cache_ver,
+                    op_x,
+                    op_z,
+                    op_e,
+                    theta,
+                    flipped,
+                    ref_theta,
+                    measure,
+                    apply_start,
+                    apply_ops,
+                    layer_start,
+                    layer_ops,
+                    root_amp,
+                    v,
+                    num_words,
+                    max_width,
+                    stats,
+                )
                 m = measure[step]
-                l0, l1 = layer_start[step], layer_start[step + 1]
-                through = l1 > l0
-                kind, d = 0, -1
-                keep = active[:0].copy()
-                kv = no_amps
-                shortcut = -1
-                if (
-                    through
-                    and root_amp[step] != 0
-                    and apply_start[step] == apply_start[step + 1]
-                    and amps.shape[0] == 1
-                    and frame[frame.shape[0] - 1, 0] == _ONE
-                ):
-                    shortcut = root_outcome(
-                        layer_ops[l0:l1],
-                        flipped,
-                        ref_theta,
-                        op_x,
-                        op_z,
-                        op_e,
-                        root_amp[step],
-                        num_words,
-                    )
-                if shortcut >= 0:
-                    p1 = float(shortcut)
-                    certain = True
-                    phi = no_amps
-                elif through:
-                    layer = layer_ops[l0:l1]
-                    p1, keep, phi, kv = prepare_through(
-                        frame,
-                        active,
-                        pos,
-                        amps,
-                        cache,
-                        cache_ver,
-                        op_x,
-                        op_z,
-                        op_e,
-                        layer,
-                        theta[layer],
-                        m,
-                        num_words,
-                        max_width,
-                    )
-                    stats[STAT_THROUGH] += 1
-                    certain = phi.shape[0] == 0
-                if not through:
-                    kind, p1, d = prepare_measure(
-                        frame,
-                        active,
-                        pos,
-                        amps,
-                        cache,
-                        cache_ver,
-                        m,
-                        op_x,
-                        op_z,
-                        op_e,
-                        num_words,
-                        v,
-                    )
-                    certain = p1 < CERTAIN or p1 > 1.0 - CERTAIN
-                stats[STAT_STEPS] += 1
                 if certain:
                     bit = 1 if p1 > 0.5 else 0
-                    if not through:
-                        amps = finish_measure(
-                            frame, active, pos, amps, kind, d, bit, v, num_words
-                        )
                     hi = _record(
                         words, alive, order, lo, hi, out_bit[m], post[m], bit, no_bits
                     )
+                    if hi > lo:
+                        amps = _finish_step(
+                            frame,
+                            active,
+                            pos,
+                            amps,
+                            certain,
+                            through,
+                            kind,
+                            d,
+                            keep,
+                            phi,
+                            kv,
+                            bit,
+                            v,
+                            num_words,
+                        )
                 else:
                     for i in range(lo, hi):
                         bits[i] = (
@@ -359,63 +444,70 @@ def run_chunk(
                             path_prob[order[i]] *= 1.0 - p1
                         for i in range(mid, hi):
                             path_prob[order[i]] *= p1
-                    if mid < hi:
-                        # The outcome-1 lane, on a copy of the state.
-                        f1, a1, q1 = frame.copy(), active.copy(), pos.copy()
-                        c1, cv1 = cache.copy(), cache_ver.copy()
-                        if through:
-                            amps1 = finish_through(a1, q1, keep, phi, kv, 1)
-                        else:
-                            v1 = v.copy()
-                            amps1 = finish_measure(
-                                f1, a1, q1, amps.copy(), kind, d, 1, v1, num_words
-                            )
-                        end1 = _record(
-                            words,
-                            alive,
-                            order,
-                            mid,
-                            hi,
-                            out_bit[m],
-                            post[m],
-                            1,
-                            no_bits,
-                        )
-                        if end1 > mid:
-                            amps1 = compress(f1, a1, q1, amps1, num_words)
-                            if width_of(amps1) > stats[STAT_WIDTH]:
-                                stats[STAT_WIDTH] = width_of(amps1)
-                            if mid > lo:
-                                stats[STAT_LANES] += 1
-                                stats[STAT_SPLITS] += 1
-                                stack.append(
-                                    (step + 1, mid, end1, f1, a1, q1, amps1, c1, cv1)
-                                )
-                            else:
-                                frame, active, pos, amps, cache, cache_ver = (
-                                    f1,
-                                    a1,
-                                    q1,
-                                    amps1,
-                                    c1,
-                                    cv1,
-                                )
-                                lo, hi = mid, end1
-                                step += 1
-                                continue
-                    if mid == lo:
-                        hi = lo
-                        break
-                    if through:
-                        amps = finish_through(active, pos, keep, phi, kv, 0)
-                    else:
-                        amps = finish_measure(
-                            frame, active, pos, amps, kind, d, 0, v, num_words
-                        )
+                    end1 = _record(
+                        words, alive, order, mid, hi, out_bit[m], post[m], 1, no_bits
+                    )
                     hi = _record(
                         words, alive, order, lo, mid, out_bit[m], post[m], 0, no_bits
                     )
-                amps = compress(frame, active, pos, amps, num_words)
+                    if end1 > mid:
+                        # The outcome-1 lane, on a copy of the state.
+                        f1, a1, q1 = frame.copy(), active.copy(), pos.copy()
+                        c1, cv1 = cache.copy(), cache_ver.copy()
+                        amps1 = _finish_step(
+                            f1,
+                            a1,
+                            q1,
+                            amps.copy(),
+                            certain,
+                            through,
+                            kind,
+                            d,
+                            keep,
+                            phi,
+                            kv,
+                            1,
+                            v.copy(),
+                            num_words,
+                        )
+                        if width_of(amps1) > stats[STAT_WIDTH]:
+                            stats[STAT_WIDTH] = width_of(amps1)
+                        if hi > lo:
+                            stats[STAT_LANES] += 1
+                            stats[STAT_SPLITS] += 1
+                            stack.append(
+                                (step + 1, mid, end1, f1, a1, q1, amps1, c1, cv1)
+                            )
+                        else:
+                            frame, active, pos, amps, cache, cache_ver = (
+                                f1,
+                                a1,
+                                q1,
+                                amps1,
+                                c1,
+                                cv1,
+                            )
+                            lo, hi = mid, end1
+                            step += 1
+                            continue
+                    if hi == lo:
+                        break
+                    amps = _finish_step(
+                        frame,
+                        active,
+                        pos,
+                        amps,
+                        certain,
+                        through,
+                        kind,
+                        d,
+                        keep,
+                        phi,
+                        kv,
+                        0,
+                        v,
+                        num_words,
+                    )
                 if width_of(amps) > stats[STAT_WIDTH]:
                     stats[STAT_WIDTH] = width_of(amps)
                 step += 1
