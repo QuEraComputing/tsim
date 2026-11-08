@@ -231,7 +231,9 @@ def drop(frame, active, pos, amps, q: int, bit: int, num_words: int):
         out[k] = amps[base | (bit << i)]
         other = amps[base | ((1 - bit) << i)]
         lost += other.real**2 + other.imag**2
-    if lost > 1e-20:
+    # NOTE: stabilizers are accepted up to |<s>| > 1 - 1e-12 (see _pauli_stabilizer), so after
+    # arbitrary-angle rotations up to ~5e-13 of the norm may sit on the other value.
+    if lost > 1e-9:
         raise ValueError("dropped a qubit that is not in a basis state")
     for j in range(i, w - 1):
         active[j] = active[j + 1]
