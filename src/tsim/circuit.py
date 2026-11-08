@@ -31,6 +31,7 @@ from tsim.utils.diagram import draw_zx, render_svg
 from tsim.utils.program_text import (
     CONTROLLED_GATE_ARITY,
     controlled_gate_decomposition_lines,
+    controlled_gate_target_group,
     enriched_stim_error,
     shorthand_to_stim,
     stim_to_shorthand,
@@ -296,8 +297,10 @@ class Circuit:
                 arity = CONTROLLED_GATE_ARITY[name]
                 qubits = _bare_qubit_targets(name, targets)
                 if len(qubits) % arity != 0:
-                    group = {2: "pairs", 3: "groups of three"}[arity]
-                    raise ValueError(f"{name} expects qubit targets in {group}.")
+                    raise ValueError(
+                        f"{name} expects qubit targets in "
+                        f"{controlled_gate_target_group(name)}."
+                    )
                 self.append_from_stim_program_text(
                     "\n".join(
                         line

@@ -13,6 +13,7 @@ from tsim.core.tags import (
 
 # Controlled gates expanded into Clifford+T, with their number of qubit targets.
 CONTROLLED_GATE_ARITY = {"CS": 2, "CS_DAG": 2, "CCZ": 3, "CCX": 3}
+_TARGET_GROUP = {2: "pairs", 3: "groups of three"}
 _TSIM_GATES = {
     *CONTROLLED_GATE_ARITY,
     "R_X",
@@ -40,6 +41,11 @@ _GATE_USAGE_RE = re.compile(
     r"(?<!\[)\b(CS_DAG\b|CS\b|CCZ\b|CCX\b|R_PAULI\([^)]*\)|R_[XYZ]{1,2}\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)",
     re.IGNORECASE,
 )
+
+
+def controlled_gate_target_group(gate: str) -> str:
+    """Describe how the targets of a controlled gate are grouped, e.g. "pairs"."""
+    return _TARGET_GROUP[CONTROLLED_GATE_ARITY[gate]]
 
 
 def controlled_gate_decomposition_lines(
@@ -115,8 +121,10 @@ def _expand_controlled_gates(text: str) -> str:
             or len(targets) % arity != 0
             or not all(target.isascii() and target.isdigit() for target in targets)
         ):
-            group = {2: "pairs", 3: "groups of three"}[arity]
-            raise ValueError(f"{gate} expects bare qubit integer targets in {group}.")
+            raise ValueError(
+                f"{gate} expects bare qubit integer targets in "
+                f"{controlled_gate_target_group(gate)}."
+            )
 
         # A block delimiter sharing the line, as in `REPEAT 2 { CS 0 1`, goes on
         # its own line before the decomposition.
