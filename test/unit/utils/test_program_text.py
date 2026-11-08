@@ -153,7 +153,7 @@ def test_circuit_eq_roundtrip_scientific_notation(program):
         ("U3(0.1, 0.2) 0", "U3(0.1, 0.2)"),
         ("U3(0.1, 0.2, 0.3, 0.4) 0", "U3(0.1, 0.2, 0.3, 0.4)"),
         ("r_z(a) 0", "R_Z(a)"),
-        ("REPEAT 2 { ccz 0 1 2\n}", "ccz"),
+        ("REPEAT 2 { ccz 0 1\n}", "CCZ expects"),
     ],
 )
 def test_circuit_parse_error_shows_snippet(text, snippet):

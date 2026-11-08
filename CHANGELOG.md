@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CS` and `CS_DAG` (controlled-S and its inverse) gates in circuit text and
   `Circuit.append`, implemented using Clifford+T decompositions.
 
+### Fixed
+- `CS`, `CCZ` and `CCX` in circuit text accept a tag containing `#` and can
+  share a line with a `REPEAT n {` or `}` delimiter. Repeated target qubits, as
+  in `CS 0 0`, raise an error naming the gate instead of its decomposition.
+
 ## [1.0.0] - 2026-11-04
 
 Tsim 1.0 adds a new default sampling strategy, `"active_statevector"`, which
