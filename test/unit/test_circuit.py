@@ -1489,6 +1489,60 @@ def test_cs_shorthand_rejects_bad_targets(text: str):
         Circuit(text)
 
 
+@pytest.mark.parametrize("text", ["CS 0 0", "CS_DAG 1 1", "CCZ 0 0 1", "CCX 0 1 1"])
+def test_controlled_gate_rejects_repeated_qubit(text: str):
+    with pytest.raises(ValueError, match="target qubits must be distinct"):
+        Circuit(text)
+
+
+def test_append_cs_rejects_repeated_qubit():
+    with pytest.raises(ValueError, match="target qubits must be distinct"):
+        Circuit().append("CS", [1, 1])
+
+
+def test_cs_shorthand_rejects_non_ascii_digits():
+    with pytest.raises(ValueError, match="CS expects bare qubit integer"):
+        Circuit("CS \uff10 \uff11")
+
+
+@pytest.mark.parametrize("gate", ["CS", "CCZ"])
+def test_controlled_gate_tag_may_contain_hash(gate: str):
+    qubits = [0, 1] if gate == "CS" else [0, 1, 2]
+    c = Circuit(f"{gate}[a#b] {' '.join(map(str, qubits))}  # comment")
+    expected = Circuit()
+    expected.append(gate, qubits, tag="a#b")
+    assert c == expected
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("REPEAT 2 { CS 0 1\n}", "REPEAT 2 {\n    CS 0 1\n}"),
+        ("REPEAT 2 {\nH 0\n} CS 0 1", "REPEAT 2 {\n    H 0\n}\nCS 0 1"),
+        ("REPEAT 2 { CCZ 0 1 2\n}", "REPEAT 2 {\n    CCZ 0 1 2\n}"),
+    ],
+)
+def test_controlled_gate_after_block_delimiter_on_same_line(text, expected):
+    assert Circuit(text) == Circuit(expected)
+
+
+def test_cs_in_repeat_block_matrix():
+    np.testing.assert_allclose(
+        Circuit("REPEAT 3 {\n    CS 0 1\n}").to_tensor(),
+        doubled(_CS @ _CS @ _CS),
+        atol=1e-9,
+    )
+
+
+@pytest.mark.parametrize("gate, inverse", [("CS", "CS_DAG"), ("CS_DAG", "CS")])
+def test_cs_inverse(gate, inverse):
+    np.testing.assert_allclose(
+        Circuit(f"{gate} 0 1").inverse().to_tensor(),
+        Circuit(f"{inverse} 0 1").to_tensor(),
+        atol=1e-9,
+    )
+
+
 def test_append_cs_rejects_odd_targets():
     with pytest.raises(ValueError, match="in groups of 2"):
         Circuit().append("CS", [0, 1, 2])
