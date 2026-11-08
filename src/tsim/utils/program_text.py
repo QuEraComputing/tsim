@@ -11,9 +11,10 @@ from tsim.core.tags import (
     parse_parametric_tag_text,
 )
 
+# Controlled gates expanded into Clifford+T, with their number of qubit targets.
+CONTROLLED_GATE_ARITY = {"CS": 2, "CS_DAG": 2, "CCZ": 3, "CCX": 3}
 _TSIM_GATES = {
-    "CCZ",
-    "CCX",
+    *CONTROLLED_GATE_ARITY,
     "R_X",
     "R_Y",
     "R_Z",
@@ -23,7 +24,7 @@ _TSIM_GATES = {
     "R_PAULI",
     "U3",
 }
-_ROTATION_SHORTHAND_GATES = _TSIM_GATES - {"CCZ", "CCX"}
+_ROTATION_SHORTHAND_GATES = _TSIM_GATES - CONTROLLED_GATE_ARITY.keys()
 _T_FAMILY = {"T": "S", "T_DAG": "S_DAG", "TPP": "SPP", "TPP_DAG": "SPP_DAG"}
 _PARAMETRIC_TAG_GATES = {"I", "SPP", "SPP_DAG"}
 # The prefix group also takes block delimiters that share the instruction's line,
@@ -36,27 +37,41 @@ _TAG_RE = re.compile(r"\[[^\]\n]*\]")
 _COMMENT_RE = re.compile(r"#.*")
 _GATE_NOT_FOUND_RE = re.compile(r"Gate not found: '(\w+)'")
 _GATE_USAGE_RE = re.compile(
-    r"(?<!\[)\b(CCZ\b|CCX\b|R_PAULI\([^)]*\)|R_[XYZ]{1,2}\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)",
+    r"(?<!\[)\b(CS_DAG\b|CS\b|CCZ\b|CCX\b|R_PAULI\([^)]*\)|R_[XYZ]{1,2}\([^)]*\)|R_[XYZ]\b|U3\([^)]*\)|U3\b)",
     re.IGNORECASE,
 )
 
 
 def controlled_gate_decomposition_lines(
-    gate: str,
-    control1: int | str,
-    control2: int | str,
-    target: int | str,
-    *,
-    tag: str = "",
+    gate: str, *qubits: int | str, tag: str = ""
 ) -> list[str]:
-    """Return a Clifford+T decomposition for a controlled-controlled gate."""
-    if gate not in ("CCZ", "CCX"):
-        raise ValueError(f"Unsupported controlled-controlled gate: {gate!r}")
+    """Return a Clifford+T decomposition of a controlled gate on ``qubits``.
+
+    ``CS`` and ``CS_DAG`` take two qubits; ``CCZ`` and ``CCX`` take two controls
+    followed by the target.
+    """
+    if gate not in CONTROLLED_GATE_ARITY:
+        raise ValueError(f"Unsupported controlled gate: {gate!r}")
+    if len(qubits) != CONTROLLED_GATE_ARITY[gate]:
+        raise ValueError(
+            f"{gate} takes {CONTROLLED_GATE_ARITY[gate]} qubits, got {len(qubits)}."
+        )
 
     def tagged(name: str) -> str:
         return f"{name}[{tag}]" if tag else name
 
-    a, b, c = str(control1), str(control2), str(target)
+    if gate in ("CS", "CS_DAG"):
+        # CS = diag(1, 1, 1, i): the phase i^(ab) = ω^(a + b - a⊕b) with ω = e^(iπ/4).
+        a, b = str(qubits[0]), str(qubits[1])
+        t, t_dag = ("T", "T_DAG") if gate == "CS" else ("T_DAG", "T")
+        return [
+            f"{tagged(t)} {a} {b}",
+            f"{tagged('CNOT')} {a} {b}",
+            f"{tagged(t_dag)} {b}",
+            f"{tagged('CNOT')} {a} {b}",
+        ]
+
+    a, b, c = (str(q) for q in qubits)
     ccz_lines = [
         f"{tagged('CNOT')} {b} {c}",
         f"{tagged('T_DAG')} {c}",
@@ -81,26 +96,30 @@ def _expand_controlled_gates(text: str) -> str:
     lines: list[str] = []
     for line in text.splitlines():
         body, sep, comment = line.partition("#")
-        match = re.match(r"^(\s*)((?i:CCZ|CCX))(?:\[([^\]\n]*)\])?\s+(.+?)\s*$", body)
+        match = re.match(
+            r"^(\s*)((?i:CS_DAG|CS|CCZ|CCX))(?:\[([^\]\n]*)\])?\s+(.+?)\s*$", body
+        )
         if not match:
             lines.append(line)
             continue
 
         indent, gate, tag, targets_text = match.groups()
         gate = gate.upper()
+        arity = CONTROLLED_GATE_ARITY[gate]
         targets = targets_text.split()
-        if len(targets) % 3 != 0 or not all(target.isdecimal() for target in targets):
-            raise ValueError(
-                f"{gate} expects bare qubit integer targets in groups of three."
-            )
+        if len(targets) % arity != 0 or not all(
+            target.isdecimal() for target in targets
+        ):
+            group = {2: "pairs", 3: "groups of three"}[arity]
+            raise ValueError(f"{gate} expects bare qubit integer targets in {group}.")
 
         if sep:
             lines.append(f"{indent}{sep}{comment}")
-        for i in range(0, len(targets), 3):
+        for i in range(0, len(targets), arity):
             lines.extend(
                 f"{indent}{decomp_line}"
                 for decomp_line in controlled_gate_decomposition_lines(
-                    gate, targets[i], targets[i + 1], targets[i + 2], tag=tag or ""
+                    gate, *targets[i : i + arity], tag=tag or ""
                 )
             )
     return "\n".join(lines)
@@ -138,6 +157,8 @@ def shorthand_to_stim(text: str) -> str:
     """Convert Tsim shorthand syntax to valid Stim instructions.
 
     Converts:
+        CS 0 1              → Clifford+T decomposition of CS
+        CS_DAG 0 1          → Clifford+T decomposition of CS_DAG
         CCZ 0 1 2           → Clifford+T decomposition of CCZ
         CCX 0 1 2           → Clifford+T decomposition of CCX/Toffoli
         T 0 1               → S[T] 0 1
