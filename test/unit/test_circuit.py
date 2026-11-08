@@ -1477,10 +1477,18 @@ def test_append_pauli_product_gate_accepts_string_target(
     assert c == Circuit(expected)
 
 
-@pytest.mark.parametrize("name", ["CS", "CS_DAG", "CCZ", "CCX"])
-def test_append_controlled_gate_rejects_inverted_target(name: str):
+@pytest.mark.parametrize(
+    "name, targets",
+    [
+        ("CS", [stim.target_inv(0), 1]),
+        ("CS_DAG", [stim.target_inv(0), 1]),
+        ("CCZ", [stim.target_inv(0), 1, 2]),
+        ("CCX", [stim.target_inv(0), 1, 2]),
+    ],
+)
+def test_append_controlled_gate_rejects_inverted_target(name: str, targets):
     with pytest.raises(ValueError, match="bare qubit targets"):
-        Circuit().append(name, [stim.target_inv(0), 1, 2])
+        Circuit().append(name, targets)
 
 
 @pytest.mark.parametrize("text", ["CS 0 1 2", "CS_DAG 0 rec[-1]"])
