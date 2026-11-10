@@ -217,6 +217,36 @@ def test_tagged_controlled_gate_append_matches_shorthand():
     assert c1._stim_circ == c2._stim_circ
 
 
+def test_cs_shorthand_and_append():
+    c1 = Circuit("CS 0 1 2 3\nCS_DAG[tag] 1 0")
+
+    c2 = Circuit()
+    c2.append("CS", [0, 1, 2, 3])
+    c2.append("CS_DAG", [1, 0], tag="tag")
+
+    assert c1._stim_circ == c2._stim_circ
+    assert Circuit(str(c1)) == c1
+
+
+_CS = np.diag([1, 1, 1, 1j])
+_CS_DAG = np.diag([1, 1, 1, -1j])
+
+
+@pytest.mark.parametrize("tag", ["", "[tag]"])
+@pytest.mark.parametrize("gate, matrix", [("CS", _CS), ("CS_DAG", _CS_DAG)])
+def test_cs_gate_matrix(gate, tag, matrix):
+    np.testing.assert_allclose(
+        Circuit(f"{gate}{tag} 0 1").to_tensor(), doubled(matrix), atol=1e-9
+    )
+
+
+def test_cs_samples_phase_kickback():
+    # CS² = CZ, and H·CZ·H on the target is a CNOT, so qubit 1 flips.
+    c = Circuit("X 0\nH 1\nCS 0 1\nCS 0 1\nH 1\nM 0 1")
+    samples = c.compile_sampler(seed=0).sample(100)
+    assert np.all(samples == [True, True])
+
+
 _CCZ = np.diag([1, 1, 1, 1, 1, 1, 1, -1]).astype(complex)
 _CCX = np.eye(8)[[0, 1, 2, 3, 4, 5, 7, 6]].astype(complex)
 
@@ -690,6 +720,7 @@ def test_is_clifford_rejects_non_r_pauli_tag_on_spp():
         ("r_pauli(0.3) x0*y1", "R_PAULI(0.3) X0*Y1"),
         ("u3(0.1, 0.2, 0.3) 0", "U3(0.1, 0.2, 0.3) 0"),
         ("ccz 0 1 2\nccx 0 1 2", "CCZ 0 1 2\nCCX 0 1 2"),
+        ("cs 0 1\ncs_dag 0 1", "CS 0 1\nCS_DAG 0 1"),
         ("Tpp_Dag X0\nR_zz(0.2) 0 1", "TPP_DAG X0\nR_ZZ(0.2) 0 1"),
         ("t[mytag] 0  # comment", "T[mytag] 0"),
         (
@@ -1446,10 +1477,29 @@ def test_append_pauli_product_gate_accepts_string_target(
     assert c == Circuit(expected)
 
 
-@pytest.mark.parametrize("name", ["CCZ", "CCX"])
-def test_append_ccz_ccx_rejects_inverted_target(name: str):
+@pytest.mark.parametrize(
+    "name, targets",
+    [
+        ("CS", [stim.target_inv(0), 1]),
+        ("CS_DAG", [stim.target_inv(0), 1]),
+        ("CCZ", [stim.target_inv(0), 1, 2]),
+        ("CCX", [stim.target_inv(0), 1, 2]),
+    ],
+)
+def test_append_controlled_gate_rejects_inverted_target(name: str, targets):
     with pytest.raises(ValueError, match="bare qubit targets"):
-        Circuit().append(name, [stim.target_inv(0), 1, 2])
+        Circuit().append(name, targets)
+
+
+@pytest.mark.parametrize("text", ["CS 0 1 2", "CS_DAG 0 rec[-1]"])
+def test_cs_shorthand_rejects_bad_targets(text: str):
+    with pytest.raises(ValueError, match=r"CS(_DAG)? expects bare qubit integer"):
+        Circuit(text)
+
+
+def test_append_cs_rejects_odd_targets():
+    with pytest.raises(ValueError, match="in groups of 2"):
+        Circuit().append("CS", [0, 1, 2])
 
 
 @pytest.mark.parametrize("product", ["!X0*Y1", "X0*!Y1"])

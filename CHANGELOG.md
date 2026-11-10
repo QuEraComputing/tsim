@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `CS` and `CS_DAG` (controlled-S and its inverse) gates in circuit text and
+  `Circuit.append`, implemented using Clifford+T decompositions.
+
 ## [1.0.0] - 2026-11-04
 
 Tsim 1.0 adds a new default sampling strategy, `"active_statevector"`, which
