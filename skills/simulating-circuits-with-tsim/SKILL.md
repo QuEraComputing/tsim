@@ -16,9 +16,9 @@ Tsim samples noisy quantum circuits with non-Clifford gates. It reads Stim's cir
 a few non-Clifford instructions and mirrors Stim's sampler API, so most Stim code ports by
 changing `stim` to `tsim`. Install with `uv add bloqade-tsim` or `pip install bloqade-tsim`
 (1.1.0 or later); import as `tsim`. Docs: https://bloqade.quera.com/tsim (append `.md` to any
-page for Markdown).
+page for Markdown; an MCP server for searching them is at https://bloqade.quera.com/tsim/mcp).
 
-This file covers what every task needs. Read the references when the task calls for them:
+This file covers what every task needs. Open the references when the task calls for them:
 
 - [references/qec-experiments.md](references/qec-experiments.md): Monte Carlo estimates of
   logical error rates, acceptance and fidelity; the sampling loop; decoders and their error
@@ -237,7 +237,7 @@ run the noiseless check at a parameter value where they are deterministic (the T
 two reference flags are independent: a circuit can need `use_detector_reference_sample=True`
 with `use_observable_reference_sample=False`.
 
-**Check the mask before sampling.** A wrong mask gives plausible but wrong numbers. Write the
+**Check the mask before sampling.** A wrong mask gives plausible but wrong numbers. List the
 stages down, and check that no masked detector fires without noise: one that is always 1 or
 random discards shots that have no error. Sample the noiseless check with the same reference
 flags as the real run. `without_noise()` removes the noise channels but keeps every rotation,

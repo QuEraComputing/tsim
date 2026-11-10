@@ -34,9 +34,18 @@ pip install "bloqade-tsim[cuda13]"   # or bloqade-tsim[cuda12]
 Tsim ships an [agent skill](skills/simulating-circuits-with-tsim/SKILL.md) that teaches coding
 agents (Claude Code, Codex, Cursor and others) how to judge whether a circuit is feasible,
 sample and postselect it, run logical error rate studies, and port published Stim circuits.
-Install it with:
+Install it with [Ion](https://github.com/roger-luo/ion):
+```bash
+ion add QuEraComputing/tsim/skills/simulating-circuits-with-tsim
+```
+or with `npx skills`:
 ```bash
 npx skills add QuEraComputing/tsim --skill simulating-circuits-with-tsim
+```
+
+The docs also run an MCP server that lets agents search them:
+```bash
+claude mcp add --transport http tsim https://bloqade.quera.com/tsim/mcp
 ```
 
 ## Quick Start
