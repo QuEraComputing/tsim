@@ -15,7 +15,7 @@ several threads, a busy machine) that their numbers are not accepted in reviews.
 
 ```bash
 git fetch origin main
-uv run tsim-dev bench --ref origin/main        # quick suite, about 4 minutes
+uv run tsim-dev bench --ref origin/main        # quick suite, about a minute
 ```
 
 Use `origin/main`, not `main`: the local branch is often behind. `--ref` also takes
@@ -39,7 +39,7 @@ inject_cultivate_d5_p0.001  6    cpu    13.9M  0.141     0.13   1.20x [1.19, 1.2
   smallest and largest ratio over the rounds.
 - A verdict of `faster` or `slower` needs the mean outside the tolerance (5%) and
   every round on the same side of 1. `noisy` means the rounds disagree: run again
-  with `--rounds 9 --min-seconds 1` before you conclude anything.
+  with `--thorough --rounds 9 --min-seconds 1` before you conclude anything.
 - `kept-differs`: the two sides kept different fractions of shots (beyond binomial
   noise), so they did not sample the same thing and the rate is not compared. It
   counts as a failure: a change to postselection or to the sampled distribution.
@@ -92,9 +92,19 @@ uv run tsim-dev bench --side .:threads=4 --side origin/main:threads=4
 - The sampler that tsim-bench records for each circuit: the detector sampler for
   QEC circuits. `--sampler detector|measurement` overrides it (a measurement sampler
   samples every shot, since the recorded postselection is of detectors).
-- Each measurement is a fresh process with a warm numba cache, under a memory cap.
-  Kernels loaded from the cache have behaved differently from freshly compiled
-  ones, and the cached case is what users get.
+- Every round times a fresh process per side, under a memory cap, with numba's
+  cache warm: a process's memory layout and core placement shift its rate by
+  several percent, and kernels loaded from the cache have behaved differently from
+  freshly compiled ones (the cached case is what users get). A worker whose warmup
+  compiled a kernel is started again.
+- The first 3 rounds' processes start at once, so their imports and compiles
+  overlap; each then times calls (calibrated once, about 0.3 s, best of 2) when its
+  round comes. With `--ref` the rounds stop after 3 when every round agrees on the
+  verdict, else they go on to `--rounds` (5).
+- `--thorough` runs each round's process from start to end on its own, every round,
+  with 0.5 s calls (best of 3) and a prime run first: about 4x slower. Use it for the
+  table in a pull request, and when compile time matters: without it the processes
+  compile at the same time, so the compile verdict needs a 25% difference.
 - Compile time and the first call are excluded from shots/s and reported apart.
 - The two checkouts alternate round by round, so drift affects both.
 - Circuits come from tsim-bench (https://github.com/rafaelha/tsim-bench) at the commit
@@ -121,8 +131,8 @@ uv run tsim-dev bench --side .:threads=4 --side origin/main:threads=4
 - For absolute numbers (a release note, a comparison with another simulator), also
   give the all-core rate (`--threads N`), the GPU rate where there is a GPU backend
   (`--device gpu`), and the boolean-output rate (`--bools`), each labeled.
-- Paste the table in the pull request, with the CPU model (`lscpu | grep 'Model name'`)
-  and the thread count.
+- Paste the table of a `--thorough` run in the pull request, with the CPU model
+  (`lscpu | grep 'Model name'`) and the thread count.
 
 ## Suites and the whole corpus
 

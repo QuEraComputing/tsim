@@ -124,7 +124,7 @@ def test_shot_benchmarks_report_the_device_that_sampled(fake_bench, monkeypatch)
     monkeypatch.setattr(bench, "measure", fake_measure)
     (case,) = bench.select(_bench_args())
     sides = [bench.Side("new", Path("python")), bench.Side("ref", Path("python"))]
-    args = _bench_args("--rounds", "2")
+    args = _bench_args("--rounds", "2", "--thorough")
     args.rounds = 2
     record = bench.run_case(case, sides, args)
     assert (record["device"], record["ref_device"]) == ("metal", "cpu")
@@ -460,7 +460,7 @@ def test_shot_benchmarks_compare_and_check_the_active_width(fake_bench, monkeypa
     monkeypatch.setattr(bench, "measure", fake_measure)
     (case,) = bench.select(_bench_args())
     sides = [bench.Side("new", Path("python")), bench.Side("ref", Path("python"))]
-    args = _bench_args("--rounds", "2")
+    args = _bench_args("--rounds", "2", "--thorough")
     args.rounds = 2
     record = bench.run_case(case, sides, args)
     assert (record["k"], record["ref_k"], record["width"]) == (6, 6, "same")
@@ -500,3 +500,72 @@ def test_run_maps_command_failures_to_exit_one(capsys):
     assert "exit code 42" in capsys.readouterr().out
     args.command = [sys.executable, "-c", "pass"]
     assert jobs.run(args) == 0
+
+
+@pytest.mark.parametrize(
+    ("new", "ref", "done"),
+    [
+        ([1.0, 1.01, 0.99], [1.0, 1.0, 1.0], True),  # all within the tolerance
+        ([1.3, 1.2, 1.25], [1.0, 1.0, 1.0], True),  # all faster
+        ([1.0, 1.2, 0.99], [1.0, 1.0, 1.0], False),  # one round beyond it
+        ([1.2, 0.9, 1.2], [1.0, 1.0, 1.0], False),  # noisy
+    ],
+)
+def test_rounds_stop_once_more_could_not_change_the_verdict(new, ref, done):
+    assert bench.decided(new, ref, tolerance=0.05) is done
+
+
+def test_served_rounds_share_one_call_and_stop_early(fake_bench, monkeypatch):
+    rates = {"new": [], "ref": []}
+    requests, starts = [], []
+
+    class FakeWorker:
+        def __init__(self, side, case, args):
+            self.label = side.label
+            starts.append(side.label)
+            self.ready = {}
+
+        def wait_ready(self):
+            # NOTE: the new side's first start compiles a kernel (a cold cache).
+            self.ready = {
+                "compile_s": 0.1,
+                "cache_misses": int(self.label == "new" and len(starts) <= 6),
+            }
+            return self.ready
+
+        def request(self, line, answer):
+            requests.append((self.label, line))
+            if answer == "SHOTS":
+                return {"shots": 1000, "calls": 2}
+            result = {"shots_per_s": rates[self.label].pop(0), "compile_s": 0.1}
+            result.update(acceptance=None, shots=2000, active_width=4, device="cpu")
+            return result
+
+        def close(self):
+            pass
+
+    def fake_measure(side, case, args, mode="bench"):
+        return {"compile_s": 0.1}
+
+    monkeypatch.setattr(bench, "Worker", FakeWorker)
+    monkeypatch.setattr(bench, "measure", fake_measure)
+    (case,) = bench.select(_bench_args())
+    sides = [bench.Side("new", Path("python")), bench.Side("ref", Path("python"))]
+    args = _bench_args()
+    args.rounds, args.min_seconds = 5, 0.3
+    rates.update(new=[1e6] * 5, ref=[1e6] * 5)
+    record = bench.run_case(case, sides, args)
+    assert len(record["rounds"]["new"]) == 3
+    assert record["rate"]["verdict"] == "same"
+    # NOTE: the first side calibrates; both sides time the same calls.
+    assert requests[0] == ("new", "calibrate 0.3")
+    assert {line for _, line in requests[1:]} == {"time 1000 2 2"}
+    # NOTE: the first rounds' pairs start at once; a worker that compiled a kernel
+    # during its warmup restarts the batch.
+    assert starts == ["new", "ref"] * 6
+    rates.update(new=[1.2e6, 0.9e6, 1.2e6, 1.0e6, 1.0e6], ref=[1e6] * 5)
+    starts.clear()
+    record = bench.run_case(case, sides, args)
+    assert len(record["rounds"]["new"]) == 5
+    # NOTE: every round has a pair of its own; rounds past the first batch start one.
+    assert len(starts) == 2 * (6 + 2)
