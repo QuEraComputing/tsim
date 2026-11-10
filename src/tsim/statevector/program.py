@@ -17,7 +17,7 @@ from zxparam import Graph
 
 from tsim.core.params import ParamLayout
 from tsim.statevector.pbc import ComponentLayout, read_pauli_ops
-from tsim.statevector.plan import MeasureActive, Plan, Rotate, plan
+from tsim.statevector.plan import MeasureActive, MeasureDormant, Plan, Rotate, plan
 from tsim.statevector.schedule import schedule
 
 ROTATE_DIAG = 0
@@ -149,11 +149,19 @@ def plan_component(
 def _shot_work(planned: Plan) -> int:
     """Return the amplitudes that the actions from the first shot-dependent one touch.
 
-    That is the first measurement or rotation whose sign reads a symbol. An action
+    That is the first rotation whose sign reads a symbol, measurement of the array
+    or dormant measurement whose outcome a rotation's sign reads, where
+    ``shared.common_prefix`` ends without postselection. The other dormant
+    measurements are fair coins, which touch no amplitude; any other action
     touches the amplitudes below its extent (``lower``).
     """
+    read = frozenset().union(
+        *(a.sign.terms for a in planned.actions if isinstance(a, Rotate))
+    )
     work, active, shared = 0, 0, True
     for action in planned.actions:
+        if isinstance(action, MeasureDormant) and action.branch not in read:
+            continue
         if isinstance(action, Rotate):
             active |= action.x | action.z
         shared = shared and isinstance(action, Rotate) and not action.sign.terms

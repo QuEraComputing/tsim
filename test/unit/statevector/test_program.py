@@ -1,6 +1,7 @@
 from test.helpers.statevector import (
     CIRCUITS,
     assert_distributions_close,
+    component_program,
     f_patterns,
     output_indices,
     plan_distribution,
@@ -12,6 +13,7 @@ import numpy as np
 import pytest
 
 import tsim.statevector.program as program
+import tsim.statevector.shared as shared
 from tsim.circuit import Circuit
 from tsim.compile.pipeline import classify_direct, compile_program
 from tsim.core.graph import prepare_graph
@@ -72,6 +74,54 @@ def test_measurements_that_free_no_reused_axis_run_after_every_rotation():
     planned, _ = plan_component(component, output_indices(component), layout)
     rotations = [isinstance(action, Rotate) for action in planned.actions]
     assert rotations == sorted(rotations, reverse=True)
+
+
+def _work_past_the_common_prefix(planned: Plan, layout: ComponentLayout) -> int:
+    """Amplitudes that the actions past ``shared.common_prefix`` touch, coins aside."""
+    _, lanes = component_program(lower(planned, layout))
+    start, _ = shared.common_prefix(lanes)
+    coin = (lanes.kind == MEASURE_DORMANT) & ~lanes.splits
+    return sum(1 << int(e) for e in lanes.extent[start:][~coin[start:]])
+
+
+def test_shot_work_starts_where_the_common_prefix_ends():
+    free = AffineRow(False, frozenset())
+    rotations = (Rotate(1, 0, 0.3, free), Rotate(2, 1, 0.2, free))
+    measure = MeasureActive(0, 1, 0, branch=1)
+    outputs = (AffineRow(False, frozenset({0})), AffineRow(False, frozenset({1})))
+    # NOTE: an unread dormant measurement is a fair coin, which ends no prefix.
+    coin_first = Plan(2, 0, (MeasureDormant(0), *rotations, measure), outputs)
+    coin_last = Plan(
+        2, 0, (*rotations, MeasureActive(0, 1, 0, branch=0), MeasureDormant(1)), outputs
+    )
+    # NOTE: a rotation's sign reads this one, so the shots split at it.
+    read = Plan(
+        2,
+        0,
+        (
+            MeasureDormant(0),
+            rotations[0],
+            Rotate(2, 1, 0.2, AffineRow(False, frozenset({0}))),
+            measure,
+        ),
+        outputs,
+    )
+    assert program._shot_work(coin_first) == program._shot_work(coin_last) == 4
+    assert program._shot_work(read) == 1 + 2 + 4 + 4
+    layout = ComponentLayout((), {}, (0, 1))
+    for planned in (coin_first, coin_last, read):
+        work = _work_past_the_common_prefix(planned, layout)
+        assert program._shot_work(planned) == work
+
+
+@pytest.mark.parametrize("name", sorted(CIRCUITS))
+def test_shot_work_matches_the_common_prefix_of_every_plan(name):
+    components, layout = quantum_components(CIRCUITS[name], sample_detectors=True)
+    for component in components:
+        indices = output_indices(component)
+        planned, component_layout = plan_component(component, indices, layout)
+        work = _work_past_the_common_prefix(planned, component_layout)
+        assert program._shot_work(planned) == work
 
 
 def test_lower_encodes_every_action():

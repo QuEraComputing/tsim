@@ -122,6 +122,41 @@ def test_noise_tables_size_blocks_for_their_memory():
         noise.noise_tables(channels, layout.noise, layout.num_words, 2048)
     with pytest.raises(ValueError, match="at least one shot word"):
         noise.noise_tables(channels, layout.noise, 0, 14 * 1024)
+    # NOTE: without the words, the memory still has to hold 256 events.
+    with pytest.raises(ValueError, match="fewer than 256 events"):
+        noise.noise_tables(
+            channels, layout.noise, layout.num_words, 1024, shared_words=False
+        )
+
+
+def test_noise_tables_reject_an_outcome_whose_flip_count_overflows():
+    # NOTE: a record counts its flips in 8 bits: one fault that flips a detector
+    # in each of 256 words, then one that flips 255.
+    def tables(num_words):
+        targets = " ".join(f"X{64 * w}" for w in range(num_words))
+        text = "\n".join(
+            [
+                f"E(0.05) {targets}",
+                "M " + " ".join(str(64 * w) for w in range(num_words)),
+                *(
+                    f"DETECTOR rec[{w - num_words}]\nSHIFT_COORDS(1)"
+                    + "\nDETECTOR" * 63
+                    for w in range(num_words)
+                ),
+            ]
+        )
+        host, channels = _shots(text)
+        layout = host.layout
+        assert np.diff(layout.noise.start).max() == num_words
+        return noise.noise_tables(
+            channels, layout.noise, layout.num_words, 14 * 1024, shared_words=False
+        )
+
+    with pytest.raises(ValueError, match="up to 255 flipped words"):
+        tables(256)
+    fits = tables(255)
+    assert int(fits.records["extra"][0]) & 255 == 255
+    assert len(fits.overflow) == 253 + 1
 
 
 def test_pass_rate_and_deferred_channels():
@@ -248,6 +283,14 @@ def test_unrolled_tapes_split_their_amplitudes_into_chunks():
         tape.Dialect(**{**TEST_DIALECT.__dict__, "amplitude_chunk": None}),
     )
     assert "float2 a[64];" in whole
+
+
+@pytest.mark.parametrize("chunk", [0, -32, 48])
+def test_dialects_reject_chunks_that_would_leave_a_partial_array(chunk):
+    # NOTE: an unrolled tape of 64 amplitudes in chunks of 48 would declare one
+    # array and index a second.
+    with pytest.raises(ValueError, match="power of two"):
+        tape.Dialect(**{**TEST_DIALECT.__dict__, "amplitude_chunk": chunk})
 
 
 def test_projections_read_pairs_or_every_partner_first():

@@ -44,6 +44,10 @@ from tsim.noise.channels import ChannelSampler, WordTables
 FAULTS_PER_SEGMENT = 4.0
 # NOTE: rows take 8 bits of an event.
 MAX_BLOCK_SHOTS = 256
+# NOTE: a block's event buffer holds at least this many events.
+MIN_EVENTS = 256
+# NOTE: a record's flip count has 8 bits.
+MAX_FLIPS = 255
 
 _RECORD = np.dtype(
     [
@@ -117,7 +121,7 @@ def _groups(tables: NoiseTables, select: np.ndarray) -> NoiseGroups:
     outcomes = np.diff(outcome_start)
     faults = float(p_fire[select].sum())
     max_events = min(
-        max(256, int(2 * faults * S + 256)),
+        max(MIN_EVENTS, int(2 * faults * S + MIN_EVENTS)),
         (tables.shared_bytes - 8 * tables.num_words * S * tables.shared_words) // 8,
     )
     # NOTE: channels of equal fire probability and outcomes form a group, so a
@@ -219,8 +223,8 @@ def noise_tables(
     have all of it.
 
     Raises:
-        ValueError: If the rows have no words, their words do not fit, or the
-            noise exceeds the kernels' limits.
+        ValueError: If the rows have no words, their words or 256 events do not
+            fit, or the noise exceeds the kernels' limits.
 
     """
     fire = channels._tables
@@ -235,11 +239,19 @@ def noise_tables(
     )
     if not shared_words:
         block_shots = MAX_BLOCK_SHOTS
-    elif 8 * num_words * block_shots > shared_bytes - 8 * 256:
+        if shared_bytes < 8 * MIN_EVENTS:
+            raise ValueError(
+                f"the noise kernel's shared memory holds fewer than {MIN_EVENTS} events"
+            )
+    elif 8 * num_words * block_shots > shared_bytes - 8 * MIN_EVENTS:
         raise ValueError(
             f"{num_words} shot words do not fit the noise kernel's shared memory"
         )
     outcome_start = fire.outcome_start
+    if len(flips.start) > 1 and int(np.diff(flips.start).max()) > MAX_FLIPS:
+        raise ValueError(
+            f"the GPU noise sampler supports outcomes of up to {MAX_FLIPS} flipped words"
+        )
     if len(fire.alias_prob) >= 1 << 24:
         raise ValueError("the GPU noise sampler supports fewer than 2^24 outcomes")
     records = np.zeros(len(fire.alias_prob), dtype=_RECORD)

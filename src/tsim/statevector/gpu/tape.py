@@ -89,8 +89,9 @@ class Dialect:
             which the tape functions then pass on.
         goto: Whether a pruned shot jumps to the end; otherwise it breaks out
             of a ``do``-block around the actions.
-        amplitude_chunk: Amplitudes per array of an unrolled tape, or None for
-            one array: a compiler may move a long array to the stack.
+        amplitude_chunk: Amplitudes per array of an unrolled tape (a power of
+            two, so the arrays are full), or None for one array: a compiler
+            may move a long array to the stack.
         pair_projections: Whether a projection reads and updates each pair of
             partner amplitudes at once, instead of every partner first: fewer
             values are live.
@@ -112,6 +113,12 @@ class Dialect:
     goto: bool
     amplitude_chunk: int | None = None
     pair_projections: bool = False
+
+    def __post_init__(self) -> None:
+        """Check the chunk size."""
+        chunk = self.amplitude_chunk
+        if chunk is not None and (chunk <= 0 or chunk & (chunk - 1)):
+            raise ValueError("amplitude_chunk must be a positive power of two")
 
     def hex64(self, value) -> str:
         """Return an unsigned 64-bit literal."""
