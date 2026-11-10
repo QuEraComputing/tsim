@@ -36,7 +36,8 @@ class Case:
     sampler: str = "auto"
     postselect: str = "none"  # "recorded", "all" or "none"
     id: str | None = None
-    width: int | None = None
+    width: int | None = None  # recorded width of the --width-of backend
+    tsim_width: int | None = None  # recorded Tsim width
 
 
 @dataclass(frozen=True)
@@ -111,13 +112,17 @@ def _from_corpus(entry, args) -> Case:
         postselect,
         entry.id,
         entry.width(args.width_of),
+        entry.width("tsim"),
     )
 
 
 def _lookup(item: str, everything: dict) -> object | None:
-    """Return the corpus entry with this id, or the only one whose file stem is `item`."""
+    """Return the corpus entry with this id or path, or the only one with this file stem."""
     if item in everything:
         return everything[item]
+    if item.endswith(".stim") and Path(item).is_file():
+        path = Path(item).resolve()
+        return next((e for e in everything.values() if e.path.resolve() == path), None)
     matches = [entry for key, entry in everything.items() if key.endswith("/" + item)]
     if len(matches) > 1:
         raise InfraError(
@@ -128,6 +133,13 @@ def _lookup(item: str, everything: dict) -> object | None:
 
 def select(args) -> list[Case]:
     """Turn the command line into the list of cases to measure."""
+    try:
+        return _select(args)
+    except (ValueError, RuntimeError) as error:  # a malformed tsim-bench manifest
+        raise InfraError(f"tsim-bench: {error}") from None
+
+
+def _select(args) -> list[Case]:
     bench_pkg = corpus.package(args.corpus_dir)
     if args.circuits:
         everything = bench_pkg.load(corpus.root(args.corpus_dir))
@@ -138,7 +150,8 @@ def select(args) -> list[Case]:
                 cases.append(_from_corpus(entry, args))
             elif Path(item).is_file():
                 path = Path(item).resolve()
-                cases.append(Case(path.stem, path, args.sampler, args.postselect))
+                postselect = "none" if args.no_postselect else args.postselect
+                cases.append(Case(path.stem, path, args.sampler, postselect))
             else:
                 raise InfraError(
                     f"unknown circuit {item!r}: give a .stim path or a tsim-bench id "
@@ -310,7 +323,7 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
     new = rounds[sides[0].describe()]
     record["k"] = new[0].get("active_width")
     if record["k"] is None:  # Tsim before 1.1 does not report it; use the recorded one
-        record["k"] = case.width
+        record["k"] = case.tsim_width
     record["acceptance"] = new[0].get("acceptance")
     record["shots_per_s"] = statistics.median(r["shots_per_s"] for r in new)
     record["compile_s"] = statistics.median(r["compile_s"] for r in new)
@@ -330,7 +343,35 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
         )
         if abs(record["compile_s"] - record["ref_compile_s"]) < 0.05:
             record["compile"]["verdict"] = "same"
+        record["ref_acceptance"] = old[0].get("acceptance")
+        if not same_acceptance(new, old):
+            # NOTE: a different kept fraction means the sides sample different
+            # things, so their rates are not comparable.
+            record["rate"]["verdict"] = KEPT_DIFFERS
     return record
+
+
+KEPT_DIFFERS = "kept-differs"
+
+
+def same_acceptance(new: list[dict], old: list[dict], sigmas: float = 6.0) -> bool:
+    """Return whether two sides' kept fractions agree within binomial noise.
+
+    Each round reports the kept fraction of `shots` requested shots per timed
+    repeat; the count over all repeats is larger, so this test is conservative.
+    """
+
+    def pooled(rounds: list[dict]) -> tuple[float, float]:
+        kept = sum(r["acceptance"] * r["shots"] for r in rounds)
+        total = sum(r["shots"] for r in rounds)
+        return kept / total, total
+
+    if any(r.get("acceptance") is None for r in new + old):
+        return True
+    (p, n), (q, m) = pooled(new), pooled(old)
+    both = (p * n + q * m) / (n + m)
+    sigma = math.sqrt(max(both * (1 - both), 1e-12) * (1 / n + 1 / m))
+    return abs(p - q) <= sigmas * sigma + 1e-9
 
 
 NAME = 44
@@ -353,6 +394,10 @@ def format_row(record: dict, has_ref: bool) -> str:
     rate, comp = record["rate"], record["compile"]
     row += f"   {rate['ratio']:.2f}x [{rate['low']:.2f}, {rate['high']:.2f}]"
     row += f" {rate['verdict']:<6}  {comp['ratio']:.2f}x {comp['verdict']}"
+    if rate["verdict"] == KEPT_DIFFERS:
+        row += (
+            f"  (kept {record['acceptance']:.4g} vs ref {record['ref_acceptance']:.4g})"
+        )
     return row
 
 
@@ -404,7 +449,7 @@ def run(args) -> int:
     meta = {
         "new": sides[0].describe(),
         "ref": sides[1].describe() if has_ref else None,
-        "threads": args.threads,
+        "threads": [side.threads or args.threads for side in sides],
         "rounds": rounds,
         "tolerance": args.tolerance,
         "busy_cores": busy,
@@ -422,16 +467,21 @@ def run(args) -> int:
         for key in ("rate", "compile")
     ]
     slower = verdicts.count("slower")
+    differs = verdicts.count(KEPT_DIFFERS)
     summary = f"SUMMARY: {len(records)} circuits, {errors} errors"
     if has_ref:
         summary += (
             f", {slower} slower, {verdicts.count('faster')} faster, "
             f"{verdicts.count('noisy')} noisy (tolerance {args.tolerance:.0%})"
         )
+        if differs:
+            summary += (
+                f", {differs} with a different kept fraction (rates not comparable)"
+            )
     print(f"{summary}. Details: {out}")
     if errors:
         return INFRA
-    return FAILED if slower else OK
+    return FAILED if slower or differs else OK
 
 
 def corpus_command(args) -> int:
@@ -446,7 +496,7 @@ def corpus_command(args) -> int:
             only=args.only or None,
             root=root,
         )
-    except (InfraError, KeyError) as error:
+    except (InfraError, KeyError, ValueError, RuntimeError) as error:
         common.die(str(error.args[0]))
     if args.action == "fetch":
         print(

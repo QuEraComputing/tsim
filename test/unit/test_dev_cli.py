@@ -260,3 +260,77 @@ def test_a_gpu_side_fails_when_cuda_is_not_used(fake_bench, monkeypatch):
     assert bench.measure(bench.parse_side(".:device=cpu"), case, args) == {
         "cuda": False
     }
+
+
+def test_profile_and_inspect_accept_a_corpus_dir():
+    for command in ("profile", "inspect"):
+        args = cli.build_parser().parse_args([command, "qv_q10"])
+        assert args.corpus_dir is None
+
+
+def test_paths_follow_the_manifest_and_no_postselect(fake_bench, tmp_path):
+    stim = tmp_path / "papers" / "p" / "stim" / "narrow.stim"
+    stim.parent.mkdir(parents=True)
+    stim.write_text("H 0\nM 0\n")
+    (case,) = bench.select(_bench_args(str(stim)))
+    assert (case.id, case.postselect) == ("p/narrow", "recorded")
+    other = tmp_path / "mine.stim"
+    other.write_text("H 0\nM 0\n")
+    args = _bench_args(str(other), "--postselect", "all", "--no-postselect")
+    assert bench.select(args)[0].postselect == "none"
+
+
+def test_k_falls_back_to_the_recorded_tsim_width(fake_bench):
+    (case,) = bench.select(_bench_args("narrow", "--width-of", "clifft"))
+    assert (case.width, case.tsim_width) == (9, 4)
+
+
+def test_sides_with_different_kept_fractions_are_flagged():
+    def rounds(p, shots=100_000):
+        return [{"acceptance": p, "shots": shots}] * 3
+
+    assert bench.same_acceptance(rounds(0.144), rounds(0.1445))
+    assert not bench.same_acceptance(rounds(0.144), rounds(0.16))
+    assert bench.same_acceptance([{"acceptance": None}], rounds(0.5))
+
+
+def test_the_corpus_export_is_complete_and_shared(tmp_path, monkeypatch):
+    import threading
+
+    source = tmp_path / "source"
+    (source / "tsim_bench").mkdir(parents=True)
+    (source / "tsim_bench" / "__init__.py").write_text("")
+    common.git("init", "-q", cwd=source)
+    common.git("add", ".", cwd=source)
+    common.git(
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "-q",
+        "-m",
+        "x",
+        cwd=source,
+    )
+    rev = common.git("rev-parse", "HEAD", cwd=source)
+    monkeypatch.setattr(corpus, "URL", str(source))
+    monkeypatch.setenv("TSIM_DEV_CACHE", str(tmp_path / "cache"))
+    results, errors = [], []
+
+    def export():
+        try:
+            results.append(corpus._export(rev))
+        except Exception as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=export) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not errors and len(set(results)) == 1
+    assert (results[0] / corpus.COMPLETE).exists()
+    assert (results[0] / "tsim_bench" / "__init__.py").exists()
+    with pytest.raises(common.InfraError, match="has no commit"):
+        corpus._export("0" * 40)

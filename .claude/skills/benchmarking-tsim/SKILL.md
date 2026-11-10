@@ -32,7 +32,11 @@ inject_cultivate_d5_p0.001  6    13.9M  0.141     0.13   1.20x [1.19, 1.21] fast
 - A verdict of `faster` or `slower` needs the mean outside the tolerance (5%) and
   every round on the same side of 1. `noisy` means the rounds disagree: run again
   with `--rounds 9 --min-seconds 1` before you conclude anything.
-- Exit code 0: nothing slower. 1: at least one `slower` in rate or compile time.
+- `kept-differs`: the two sides kept different fractions of shots (beyond binomial
+  noise), so they did not sample the same thing and the rate is not compared. It
+  counts as a failure: a change to postselection or to the sampled distribution.
+- Exit code 0: nothing slower. 1: at least one `slower` in rate or compile time, or
+  a `kept-differs`.
   2: a circuit could not be measured.
 - The JSON under `.tsim-dev/bench/` has every round.
 
@@ -105,8 +109,9 @@ different regime. `--only SUBSTRING` keeps circuits whose id contains it.
 
 ## Limits
 
-- CPU only. GPU runs and comparisons with other simulators (Clifft, SymFT, Magna)
-  are run from the tsim-bench repository, which pins each simulator's environment.
+- Tsim only, on the CPU or (with `--side ...:device=gpu`) its CUDA executor.
+  Comparisons with other simulators (Clifft, SymFT, Magna) are run from the
+  tsim-bench repository, which pins each simulator's environment.
 - To add a circuit or change a suite, change tsim-bench: put the file in its paper's
   folder, add an entry to that folder's `circuits.toml` (arXiv id, sampler, postselection
   and the reason for it, see its `BENCHMARKS.md`), run `python -m tsim_bench check`

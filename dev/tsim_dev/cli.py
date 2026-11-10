@@ -143,6 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--rate", type=int, default=500, help="samples per second")
     p.add_argument("--top", type=int, default=12, help="frames per table")
     _circuit_options(p)
+    _corpus_dir(p)
     _caps(p, "8G", 600)
     p.set_defaults(func=profile.profile)
 

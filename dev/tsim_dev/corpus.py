@@ -9,12 +9,14 @@ pass `--corpus-dir`, to use a local checkout instead (when changing tsim-bench i
 
 from __future__ import annotations
 
+import fcntl
 import functools
 import importlib
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from . import common
@@ -22,31 +24,63 @@ from .common import InfraError
 
 URL = "https://github.com/rafaelha/tsim-bench"
 # Bump together with any change that needs newer circuits or manifests.
-REV = "4cb8ca2963b2b982a4e37372b7168b4f590c4e97"
+REV = "88f3b7264aecb5b7d0e83e0be651e2038e2232cb"
+COMPLETE = ".tsim-dev-complete"
 
 
 def _export(rev: str) -> Path:
-    """Export `rev` of tsim-bench into the cache once and return the directory."""
-    target = common.cache_dir() / "tsim-bench" / rev[:12]
-    if (target / "tsim_bench").is_dir():
+    """Export `rev` of tsim-bench into the cache once and return the directory.
+
+    Runs that start together take a lock, and the export is extracted into a
+    temporary directory and renamed into place, so a reader sees either no
+    export or a complete one, and a finished export is never deleted.
+    """
+    cache = common.cache_dir()
+    target = cache / "tsim-bench" / rev[:12]
+    if (target / COMPLETE).exists():
         return target
-    clone = common.cache_dir() / "tsim-bench.git"
-    if not clone.is_dir():
-        print(f"fetching {URL} into {clone} ...", flush=True)
-        common.git("clone", "--bare", "-q", URL, str(clone))
-    try:
-        common.git("cat-file", "-e", f"{rev}^{{commit}}", cwd=clone)
-    except InfraError:
-        common.git("fetch", "-q", "origin", "+refs/heads/*:refs/heads/*", cwd=clone)
-    shutil.rmtree(target, ignore_errors=True)
-    target.mkdir(parents=True)
-    archive = subprocess.Popen(
-        ["git", "archive", rev], cwd=clone, stdout=subprocess.PIPE
-    )
-    subprocess.run(["tar", "-x", "-C", str(target)], stdin=archive.stdout, check=True)
-    if archive.wait():
-        shutil.rmtree(target, ignore_errors=True)
-        raise InfraError(f"git archive {rev} of tsim-bench failed")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(cache / "tsim-bench.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if (target / COMPLETE).exists():
+            return target
+        clone = cache / "tsim-bench.git"
+        if not (clone / "HEAD").exists():
+            print(f"fetching {URL} into {clone} ...", flush=True)
+            shutil.rmtree(clone, ignore_errors=True)
+            common.git("clone", "--bare", "-q", URL, str(clone))
+        try:
+            common.git("cat-file", "-e", f"{rev}^{{commit}}", cwd=clone)
+        except InfraError:
+            common.git("fetch", "-q", "origin", "+refs/heads/*:refs/heads/*", cwd=clone)
+            try:
+                common.git("cat-file", "-e", f"{rev}^{{commit}}", cwd=clone)
+            except InfraError:
+                raise InfraError(
+                    f"tsim-bench has no commit {rev[:12]}: push it, or point "
+                    "--corpus-dir / TSIM_BENCH_DIR at the checkout that has it"
+                ) from None
+        staging = Path(tempfile.mkdtemp(prefix=f".{rev[:12]}-", dir=target.parent))
+        try:
+            tarball = staging / "export.tar"
+            common.git("archive", "-o", str(tarball), rev, cwd=clone)
+            extract = subprocess.run(
+                ["tar", "-x", "-f", str(tarball), "-C", str(staging)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if extract.returncode:
+                raise InfraError(
+                    f"extracting tsim-bench {rev[:12]}: {extract.stderr.strip()}"
+                )
+            tarball.unlink()
+            (staging / COMPLETE).touch()
+            # NOTE: a leftover from an interrupted run before this lock existed.
+            shutil.rmtree(target, ignore_errors=True)
+            staging.rename(target)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
     return target
 
 
