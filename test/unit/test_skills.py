@@ -59,7 +59,7 @@ def _missing_modules(code: str) -> list[str]:
 def test_expected_skills_exist():
     assert {p.name for p in SKILL_DIRS} == {
         "tsim",
-        "tsim-qec-study",
+        "tsim-qec-experiment",
         "tsim-port-circuits",
     }
 

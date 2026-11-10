@@ -14,7 +14,7 @@ Papers about non-Clifford protocols often publish Stim circuits in which every T
 replaced by a Clifford stand-in, because Stim cannot simulate T. Tsim can, so the same circuits
 can be rerun with real T gates. This skill covers getting the circuits, converting them, checking
 the conversion, and deciding what is feasible. It builds on the `tsim` skill (active width,
-sampling) and hands off to `tsim-qec-study` for the actual statistics.
+sampling) and hands off to `tsim-qec-experiment` for the actual statistics.
 
 ## 1. Find the published circuits
 
@@ -88,7 +88,7 @@ Run these checks before trusting any number from the converted circuit:
    the stand-in circuit, reproduce one of them.
 2. **Noiseless real circuit.** In `real.without_noise()`, every detector used for postselection
    or decoding must be 0 on every shot, and the output should be the ideal state (for example,
-   infidelity 0 with the `tsim-qec-study` fidelity measurement). A detector that fires without
+   infidelity 0 with the `tsim-qec-experiment` fidelity measurement). A detector that fires without
    noise usually means a stand-in was missed or a non-stand-in `S` was converted.
 3. **Observables of the stand-in.** Sample the noiseless stand-in and check whether its
    observables are deterministic. Often they are not: a final check written as `S; MPP Y;
@@ -99,7 +99,7 @@ Run these checks before trusting any number from the converted circuit:
    around `MPP Y`), label it as your modification, and verify it is deterministic without noise.
    Conversely, check that the real-T circuit's observables are deterministic without noise; if
    the output is a magic state measured directly, use the fidelity measurement in
-   `tsim-qec-study` instead.
+   `tsim-qec-experiment` instead.
 
 ## 4. Measure the active width (k_max)
 
@@ -122,13 +122,13 @@ by size (distance, rounds), report how the width grows; that is often the main r
 
 ## 5. Plan the study
 
-- Width small enough: run the paper's figure with real T gates using `tsim-qec-study`, and plot
+- Width small enough: run the paper's figure with real T gates using `tsim-qec-experiment`, and plot
   the stand-in and real results together; the difference is usually the point.
 - Width too large: say so with the measured width and an estimate of time per shot, and suggest
   the largest instance that is feasible.
 - Note anything Tsim cannot express. Simulator-specific instructions from other tools (for
   example expectation-value instructions) need a Tsim equivalent such as the fidelity
-  measurement in `tsim-qec-study`.
+  measurement in `tsim-qec-experiment`.
 
 If a published circuit fails to parse or compile in Tsim although Stim accepts it, reduce it to
 a small reproducer and report it as described in the `tsim` skill.

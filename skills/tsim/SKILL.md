@@ -15,7 +15,7 @@ a few non-Clifford instructions and mirrors Stim's sampler API, so most Stim cod
 changing `stim` to `tsim`. Install with `uv add bloqade-tsim` or `pip install bloqade-tsim`;
 import as `tsim`. Docs: https://bloqade.quera.com/tsim (append `.md` to any page for Markdown).
 
-For logical error rates, decoders, postselection and fidelity, also read the `tsim-qec-study`
+For logical error rates, decoders, postselection and fidelity, also read the `tsim-qec-experiment`
 skill. For running circuits published with a paper, read `tsim-port-circuits`.
 
 ## Which circuits Tsim can simulate
@@ -162,7 +162,7 @@ raw measurement bits. Do not sample measurements and compute detectors from them
   observable that a non-Clifford gate affects; treat it as an approximate decoder prior and
   judge decoders by their logical error rate on Tsim's own samples. For non-deterministic
   observables, pass `allow_gauge_detectors=True`; with coherent-noise rotations, see
-  `tsim-qec-study`.
+  `tsim-qec-experiment`.
 
 ## Postselection
 
@@ -174,7 +174,7 @@ changes the result.
 `CompiledDetectorSampler.sample`. A shot is discarded if any masked detector reads 1, and
 **only surviving shots are returned**: asking for `shots=1_000_000` returns fewer rows, and
 `len(dets) / shots` is the acceptance rate. Count requested and returned shots separately, and
-keep calling until enough shots survive (see the loop in `tsim-qec-study`).
+keep calling until enough shots survive (see the loop in `tsim-qec-experiment`).
 
 **Why it is fast.** With the default strategy, a shot stops being simulated at the first masked
 detector that fires, and shots that a noise-only (direct) detector discards never reach the

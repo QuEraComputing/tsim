@@ -1,5 +1,5 @@
 ---
-name: tsim-qec-study
+name: tsim-qec-experiment
 description: Run quantum error correction studies with Tsim, such as logical error rate curves, postselected magic state cultivation or distillation, acceptance rates, and output-state fidelity, including decoder choice (PyMatching, Tesseract, BP-LSD, Relay-BP), shot budgets and error bars. Use this skill whenever someone wants a logical error rate, threshold plot, acceptance rate or fidelity from a circuit with T gates or rotations, wants to decode Tsim samples, or is about to use sinter with Tsim, even if they only say "simulate this protocol" or "reproduce this figure".
 license: Apache-2.0
 compatibility: Python 3.11+, bloqade-tsim (main). Decoders are separate packages.
@@ -8,7 +8,7 @@ metadata:
   version: "1.1"
 ---
 
-# QEC studies with Tsim
+# QEC experiments with Tsim
 
 This skill builds on the `tsim` skill (circuit format, active width, sampling options); read it
 first if it is available. The workflow below turns a noisy circuit into numbers that can go in a
