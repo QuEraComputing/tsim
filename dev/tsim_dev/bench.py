@@ -1,8 +1,13 @@
 """`tsim-dev bench`: throughput and compile time, optionally against a reference.
 
-Every measurement runs in a fresh process under a memory cap, pinned to fixed
-cores, with numba's on-disk cache warm. With `--ref`, the two checkouts are
-measured in interleaved rounds and compared round by round.
+Each side of a circuit runs in a process of its own under a memory cap, pinned to
+fixed cores, with numba's on-disk cache warm (a process whose warmup compiled a
+kernel is started again). The two sides start at the same time; each compiles once
+and then times the rounds on request; with `--ref`, the two sides'
+rounds alternate and are compared round by round, and the rounds stop after 3
+when every round agrees on the verdict (up to `--rounds`, default 5).
+`--thorough` runs every round in a fresh process, 5 rounds of 0.5 s calls: the
+measurement for a pull request's table.
 
 By default a call returns bit-packed rows, Tsim's native output, on one CPU thread
 with `TSIM_DEVICE=cpu`; each row says which device sampled. `--bools` times
@@ -17,10 +22,12 @@ import dataclasses
 import json
 import math
 import os
+import selectors
 import shutil
 import statistics
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -310,6 +317,107 @@ def measure(side: Side, case: Case, args, mode: str = "bench") -> dict:
     return {"error": f"{reason}: {last}"[:200]}
 
 
+class Worker:
+    """A side's serving worker: it compiles a case once and times calls on request."""
+
+    def __init__(self, side: Side, case: Case, args) -> None:
+        """Start the worker; `wait_ready` waits for it to compile and warm up."""
+        threads = side.threads or args.threads
+        options = args
+        if side.strategy is not None:
+            options = argparse.Namespace(**{**vars(args), "strategy": side.strategy})
+        cmd = worker_command(side.python, case, options, "serve")
+        self.args = args
+        self.process = subprocess.Popen(
+            common.capped(
+                cmd, mem=args.mem, timeout=args.timeout, pin=common.pin_cpus(threads)
+            ),
+            env=side_env(side, threads, side.device or args.device),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.ready: dict = {}
+
+    def wait_ready(self) -> dict:
+        """Wait for the worker to compile and warm up; return its compile report.
+
+        Raises:
+            InfraError: If it fails or times out.
+
+        """
+        self.ready = self._read("READY")
+        return self.ready
+
+    def request(self, line: str, answer: str) -> dict:
+        """Send one request and return the answer's JSON."""
+        assert self.process.stdin is not None
+        try:
+            self.process.stdin.write(line + "\n")
+            self.process.stdin.flush()
+        except BrokenPipeError:
+            pass  # the read below reports why the worker ended
+        return self._read(answer)
+
+    def _read(self, answer: str) -> dict:
+        """Return the JSON of the next line that starts with `answer`.
+
+        Raises:
+            InfraError: If the worker ends, answers `ERROR` or takes longer than
+                `--timeout`.
+
+        """
+        assert self.process.stdout is not None
+        deadline = time.monotonic() + self.args.timeout
+        with selectors.DefaultSelector() as selector:
+            selector.register(self.process.stdout, selectors.EVENT_READ)
+            while True:
+                if not selector.select(max(0.0, deadline - time.monotonic())):
+                    self.close()
+                    raise InfraError(f"timed out after {self.args.timeout} s")
+                line = self.process.stdout.readline()
+                if not line:
+                    self.process.wait()
+                    stderr = self.process.stderr.read() if self.process.stderr else ""
+                    reason = common.explain_exit(
+                        self.process.returncode, self.args.mem, self.args.timeout
+                    )
+                    last = (stderr.strip().splitlines() or [""])[-1]
+                    raise InfraError(f"{reason}: {last}"[:200])
+                if line.startswith(answer + " "):
+                    return json.loads(line[len(answer) + 1 :])
+                if line.startswith("ERROR "):
+                    self.close()
+                    raise InfraError(line[6:].strip()[:200])
+
+    def close(self) -> None:
+        """End the worker."""
+        if self.process.poll() is None:
+            if self.process.stdin:
+                self.process.stdin.close()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait()
+
+
+def decided(new: list[float], ref: list[float], tolerance: float) -> bool:
+    """Return whether more rounds could not change the verdict.
+
+    That is when every round is beyond the tolerance on the same side, or every
+    round is within it.
+    """
+    verdict = compare(new, ref, tolerance)
+    if verdict["verdict"] in ("faster", "slower"):
+        return True
+    return 1 - tolerance <= verdict["low"] and verdict["high"] <= 1 + tolerance
+
+
+MIN_ROUNDS = 3
+
+
 def compare(new: list[float], ref: list[float], tolerance: float) -> dict:
     """Compare paired rounds of a higher-is-better quantity.
 
@@ -338,19 +446,20 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
         "path": str(case.path),
         "postselect": case.postselect,
     }
-    for side in sides:
-        primed = measure(side, case, args, mode="prime")
-        if "error" in primed:
-            record["error"] = f"{side.describe()}: {primed['error']}"
-            return record
-    for index in range(args.rounds):
-        order = sides if index % 2 == 0 else sides[::-1]
-        for side in order:
-            result = measure(side, case, args)
-            if "error" in result:
-                record["error"] = f"{side.describe()}: {result['error']}"
+    compiles: dict[str, list[float]] = {side.describe(): [] for side in sides}
+    if args.thorough:
+        for side in sides:
+            primed = measure(side, case, args, mode="prime")
+            if "error" in primed:
+                record["error"] = f"{side.describe()}: {primed['error']}"
                 return record
-            rounds[side.describe()].append(result)
+        error = _fresh_rounds(case, sides, args, rounds)
+        compiles = {key: [r["compile_s"] for r in got] for key, got in rounds.items()}
+    else:
+        error = _served_rounds(case, sides, args, rounds, compiles)
+    if error:
+        record["error"] = error
+        return record
     record["rounds"] = rounds
     # NOTE: the width is fixed by the compiled sampler, so it must not change between
     # runs of one side; a change means compilation is not deterministic.
@@ -378,20 +487,23 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
     record["k"] = new[0].get("active_width")
     record["acceptance"] = new[0].get("acceptance")
     record["shots_per_s"] = statistics.median(r["shots_per_s"] for r in new)
-    record["compile_s"] = statistics.median(r["compile_s"] for r in new)
+    record["compile_s"] = statistics.median(compiles[sides[0].describe()])
     rates = [r["shots_per_s"] for r in new]
     record["spread"] = (max(rates) - min(rates)) / record["shots_per_s"]
     if len(sides) == 2:
         old = rounds[sides[1].describe()]
         record["ref_shots_per_s"] = statistics.median(r["shots_per_s"] for r in old)
-        record["ref_compile_s"] = statistics.median(r["compile_s"] for r in old)
+        old_compiles = compiles[sides[1].describe()]
+        record["ref_compile_s"] = statistics.median(old_compiles)
         record["rate"] = compare(rates, [r["shots_per_s"] for r in old], args.tolerance)
         # NOTE: compile time is lower-is-better, so the ratio is ref over new. Small
         # absolute differences are ignored: they are import and cache-load noise.
+        # NOTE: without --thorough each side compiles once, so only a large
+        # difference counts.
         record["compile"] = compare(
-            [r["compile_s"] for r in old],
-            [r["compile_s"] for r in new],
-            max(args.tolerance, 0.10),
+            old_compiles,
+            compiles[sides[0].describe()],
+            max(args.tolerance, 0.10 if args.thorough else 0.25),
         )
         if abs(record["compile_s"] - record["ref_compile_s"]) < 0.05:
             record["compile"]["verdict"] = "same"
@@ -404,6 +516,123 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
             # things, so their rates are not comparable.
             record["rate"]["verdict"] = KEPT_DIFFERS
     return record
+
+
+def _fresh_rounds(case: Case, sides: list[Side], args, rounds: dict) -> str | None:
+    """Measure `args.rounds` rounds, each side in a fresh process; return an error."""
+    for index in range(args.rounds):
+        order = sides if index % 2 == 0 else sides[::-1]
+        for side in order:
+            result = measure(side, case, args)
+            if "error" in result:
+                return f"{side.describe()}: {result['error']}"
+            rounds[side.describe()].append(result)
+    return None
+
+
+def _served_rounds(
+    case: Case, sides: list[Side], args, rounds: dict, compiles: dict
+) -> str | None:
+    """Measure rounds with serving workers, a fresh pair of them per round; return an error.
+
+    A process's memory layout and core placement shift its rate by several percent,
+    so every round times a fresh process per side, as `--thorough` does. The first
+    `MIN_ROUNDS` rounds' workers start at once, so their imports and compiles overlap
+    (one pair at a time for wide circuits, to bound the memory); later rounds start
+    their own pair. The first worker calibrates the call (shots per call, calls per
+    timing), and every round times the same calls. With two sides the rounds stop
+    after `MIN_ROUNDS` once more rounds could not change the verdict, else after
+    `args.rounds`.
+    """
+    pairs: list[dict[str, Worker]] = []
+    try:
+        wide = case.tsim_width is not None and case.tsim_width > PARALLEL_WIDTH
+        error = _start_pairs(case, sides, args, pairs, 1 if wide else MIN_ROUNDS)
+        if error:
+            return error
+        try:
+            first = pairs[0][sides[0].describe()]
+            call = first.request(f"calibrate {args.min_seconds}", "SHOTS")
+        except InfraError as error:
+            return f"{sides[0].describe()}: {error}"
+        request = f"time {call['shots']} {call['calls']} {REPEATS}"
+        for index in range(args.rounds):
+            if index == len(pairs):
+                error = _start_pairs(case, sides, args, pairs, 1)
+                if error:
+                    return error
+            workers = pairs[index]
+            order = sides if index % 2 == 0 else sides[::-1]
+            for side in order:
+                try:
+                    result = workers[side.describe()].request(request, "RESULT")
+                except InfraError as error:
+                    return f"{side.describe()}: {error}"
+                misses = workers[side.describe()].ready.get("cache_misses", 0)
+                if result.get("cache_misses", 0) > misses:
+                    return f"{side.describe()}: a kernel was compiled while timing"
+                rounds[side.describe()].append(result)
+                compiles[side.describe()].append(
+                    workers[side.describe()].ready["compile_s"]
+                )
+            for worker in workers.values():
+                worker.close()
+            done = index + 1 >= MIN_ROUNDS
+            if done and len(sides) == 2:
+                new, old = (
+                    [r["shots_per_s"] for r in rounds[side.describe()]]
+                    for side in sides
+                )
+                done = decided(new, old, args.tolerance)
+            if done:
+                break
+        return None
+    finally:
+        for workers in pairs:
+            for worker in workers.values():
+                worker.close()
+
+
+def _start_pairs(
+    case: Case, sides: list[Side], args, pairs: list, count: int
+) -> str | None:
+    """Start `count` pairs of workers at once and wait for them; return an error.
+
+    A worker whose warmup compiled a kernel would time freshly compiled kernels,
+    which have run differently from cached ones. Workers that start together on a
+    cold cache all compile, so if any did, the batch starts again from the cache
+    that it filled.
+    """
+    for attempt in range(2):
+        batch = [
+            {side.describe(): Worker(side, case, args) for side in sides}
+            for _ in range(count)
+        ]
+        cold = False
+        for workers in batch:
+            for key, worker in workers.items():
+                try:
+                    cold |= bool(worker.wait_ready().get("cache_misses", 0))
+                except InfraError as error:
+                    for started in batch:
+                        for other in started.values():
+                            other.close()
+                    return f"{key}: {error}"
+        if not cold or attempt == 1:
+            pairs.extend(batch)
+            return None
+        for workers in batch:
+            for worker in workers.values():
+                worker.close()
+    return None
+
+
+PARALLEL_WIDTH = 12
+"""Recorded active width above which a circuit's workers start one pair at a time."""
+
+
+REPEATS = 2
+"""Timings per round of a serving worker; a round reports the faster."""
 
 
 KEPT_DIFFERS = "kept-differs"
@@ -491,7 +720,12 @@ def run(args) -> int:
     if args.width:
         return width.run(args, cases, sides)
     has_ref = len(sides) == 2
-    rounds = args.rounds or (5 if has_ref else 3)
+    if args.thorough:
+        rounds = args.rounds or (5 if has_ref else 3)
+        args.min_seconds = args.min_seconds or 0.5
+    else:
+        rounds = args.rounds or (5 if has_ref else MIN_ROUNDS)
+        args.min_seconds = args.min_seconds or 0.3
     args.rounds = rounds
     header = f"bench: new={sides[0].describe()}"
     if has_ref:
@@ -504,7 +738,11 @@ def run(args) -> int:
     header += f" output={'bools' if args.bools else 'bit-packed'}"
     if args.sampler != "auto":
         header += f" sampler={args.sampler}"
-    header += f" rounds={rounds} busy_cores={busy:.1f}"
+    if args.thorough:
+        header += f" thorough rounds={rounds}"
+    else:
+        header += f" rounds<={rounds}"
+    header += f" call={args.min_seconds:g}s busy_cores={busy:.1f}"
     header += f" postselect={'off' if args.no_postselect else 'on'}"
     header += f" tsim-bench={corpus.describe(args.corpus_dir)}"
     print(header)
@@ -537,6 +775,8 @@ def run(args) -> int:
         "output": "bools" if args.bools else "bit-packed",
         "sampler": args.sampler,
         "rounds": rounds,
+        "thorough": args.thorough,
+        "min_seconds": args.min_seconds,
         "tolerance": args.tolerance,
         "busy_cores": busy,
         "cpu_count": os.cpu_count(),

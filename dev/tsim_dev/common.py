@@ -145,12 +145,17 @@ def capped(
     if timeout and shutil.which("timeout"):
         cmd = ["timeout", "--signal=TERM", "--kill-after=10", str(timeout), *cmd]
     if not has_systemd():
-        print("WARNING: no systemd user session, running without a memory cap")
+        _warn_uncapped()
         return cmd
     props = ["-p", f"MemoryMax={mem}", "-p", "MemorySwapMax=0"]
     if cpus:
         props += ["-p", f"CPUQuota={round(cpus * 100)}%"]
     return ["systemd-run", "--user", "--scope", "-q", *props, *cmd]
+
+
+@functools.cache
+def _warn_uncapped() -> None:
+    print("WARNING: no systemd user session, running without a memory cap")
 
 
 def explain_exit(code: int, mem: str, timeout: int | None) -> str:

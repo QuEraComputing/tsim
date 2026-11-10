@@ -136,9 +136,24 @@ def build_parser() -> argparse.ArgumentParser:
         "Example: --side .:threads=10 --side .:threads=1",
     )
     _selection(p, None)
-    p.add_argument("--rounds", type=int, default=0, help="default 5 with --ref, else 3")
     p.add_argument(
-        "--min-seconds", type=float, default=0.5, help="length of a timed call"
+        "--rounds",
+        type=int,
+        default=0,
+        help="most rounds (default 5 with --ref, else 3); with --ref the rounds stop "
+        "after 3 once every round agrees, unless --thorough",
+    )
+    p.add_argument(
+        "--min-seconds",
+        type=float,
+        default=0.0,
+        help="length of a timed call (default 0.3 s, 0.5 s with --thorough)",
+    )
+    p.add_argument(
+        "--thorough",
+        action="store_true",
+        help="every round in a fresh process, all rounds, 0.5 s calls: for the "
+        "numbers in a pull request",
     )
     p.add_argument("--tolerance", type=float, default=0.05, help="default 0.05")
     p.add_argument("--strategy", default="")
