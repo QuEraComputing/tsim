@@ -5,7 +5,7 @@
 - Relative links in the skills point to files that exist.
 - The Python code blocks of each file run, in order, in one namespace, as a reader would run
   them, and at least one of them asserts a result. A block that imports a package that is not
-  installed (an optional decoder) is skipped.
+  installed or does not import (an optional decoder) is skipped.
 
 Triggering and behavioral evals are not run in CI; see ``evals/skills/README.md``.
 """
@@ -54,7 +54,17 @@ def _missing_modules(code: str) -> list[str]:
             names += [alias.name for alias in node.names]
         elif isinstance(node, ast.ImportFrom) and node.module:
             names.append(node.module)
-    return [n for n in names if importlib.util.find_spec(n.split(".")[0]) is None]
+    missing = []
+    for name in names:
+        if name.split(".")[0] == "tsim":
+            continue
+        # NOTE: an optional decoder can be installed but fail to import; tesseract-decoder
+        # ships py313-tagged wheels that pip and uv also install on Python 3.14.
+        try:
+            importlib.import_module(name)
+        except ImportError:
+            missing.append(name)
+    return missing
 
 
 @pytest.mark.parametrize("skill_dir", SKILL_DIRS, ids=lambda p: p.name)
