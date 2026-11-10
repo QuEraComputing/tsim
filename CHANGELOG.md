@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- An experimental sampling strategy, `strategy="conditioned_statevector"`, for
+  the measurement and detector samplers. It simulates the shots of each noise
+  key together, with the key's concrete rotation signs, and measures through
+  layers of T-like rotations (angles an odd multiple of π/8) instead of applying
+  them. Its state vectors can be much narrower than `active_statevector`'s on
+  magic-state factories, for example the BLP and tricycle CCZ factories.
+  `active_width` and the component widths are `None` under it, since each
+  lane's width depends on the shot's noise and outcomes.
 - The docs pages have a menu to copy a page or open it in ChatGPT or Claude, and
   the README, the install page and the agent skill point to the docs MCP server
   at `https://bloqade.quera.com/tsim/mcp`. The README and the install page also

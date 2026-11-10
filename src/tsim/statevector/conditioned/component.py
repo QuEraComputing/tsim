@@ -1,0 +1,461 @@
+"""A component compiled for ``strategy="conditioned_statevector"``, and its chunk runs.
+
+The component keeps its Pauli ops (in the frame of the initial ``|0...0>``) and
+their static step plan. The noise reaches it in two ways, as for
+``active_statevector``:
+
+- the signs of the rotations read parities of the f-bits, the *key*, which the
+  noise sampler writes into each shot's words (``KeyBasis``);
+- a measurement's sign only flips its recorded bit, so its f-part and constant go
+  into the output (``OutputTape``), and the runner XORs in the outcome of the
+  unsigned Pauli.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import NamedTuple
+
+import numpy as np
+from zxparam import Graph
+
+from tsim.core.params import ParamLayout
+from tsim.statevector.conditioned import lane, runner
+from tsim.statevector.conditioned.plan import StepPlan, step_plan
+from tsim.statevector.pbc import ROTATION, ComponentLayout, PauliOps, read_pauli_ops
+from tsim.statevector.program import STABILIZER_RANK_HINT
+from tsim.statevector.schedule import schedule
+from tsim.statevector.shared import KeyBasis, pack_bits
+from tsim.utils.kernels import run_tasks
+from tsim.utils.linalg import find_basis
+
+# NOTE: the most active qubits a lane may hold: 2^26 amplitudes are 1 GiB.
+MAX_WIDTH = 26
+
+
+class OutputTape(NamedTuple):
+    """What the shot words need of a component's outputs.
+
+    Attributes:
+        f_selection: Global f-bit index of each component f-bit.
+        output_const: Constant of each output slot.
+        output_row: f-part of each output slot, ``(num_outputs, num_f)``.
+
+    """
+
+    f_selection: np.ndarray
+    output_const: np.ndarray
+    output_row: np.ndarray
+
+
+class ConditionedProgram(NamedTuple):
+    """A component's per-op data for one postselection mask.
+
+    Attributes:
+        key_start: First shot word of the component's key.
+        key_words: Number of words of the key.
+        sign_key: Each op's sign as key bits, ``(N, key_words)``.
+        out_bit: Each measurement's output bit in the shot words, or -1.
+        post: Whether each measurement's output is postselected.
+
+    """
+
+    key_start: int
+    key_words: int
+    sign_key: np.ndarray
+    out_bit: np.ndarray
+    post: np.ndarray
+
+
+@dataclass(frozen=True, eq=False)
+class ConditionedComponent:
+    """A component compiled for ``strategy="conditioned_statevector"``.
+
+    Attributes:
+        output_indices: Global output index of each output slot.
+        ops: The component's Pauli ops.
+        plan: Their static step plan.
+        tape: The outputs' constants and f-parts.
+        key: The key basis of the rotation signs.
+        op_x, op_z: Each op's Pauli as X and Z bit words, ``(N, W)``.
+        op_e: The phase exponent of each op's letters (its number of Y), mod 4.
+        angle: Each rotation's angle (``exp(-i angle P)`` for sign +).
+        sign_const: The constant of each op's sign.
+        root_amp: Per step, the reference key's certain outcome at the root state
+            (+1 or -1), or 0 (``runner.reference_prefix``).
+        width: Nominal lane width, for chunk sizing only: lanes size themselves.
+        cache: The reference key's outcome tree (``reference_tree``), once built.
+
+    """
+
+    output_indices: tuple[int, ...]
+    ops: PauliOps
+    plan: StepPlan
+    tape: OutputTape
+    key: KeyBasis
+    op_x: np.ndarray
+    op_z: np.ndarray
+    op_e: np.ndarray
+    angle: np.ndarray
+    sign_const: np.ndarray
+    root_amp: np.ndarray
+    width: int = 10
+    cache: dict = field(default_factory=dict, compare=False, repr=False)
+
+    @property
+    def num_outputs(self) -> int:
+        """Return the number of output slots."""
+        return len(self.output_indices)
+
+    @property
+    def num_actions(self) -> int:
+        """Return the number of ops."""
+        return self.ops.num_ops
+
+    @property
+    def num_lines(self) -> int:
+        """Return the number of qubit lines."""
+        return self.ops.num_lines
+
+    @property
+    def kernel_ops(self) -> tuple:
+        """Return the ops as the runner's kernels take them."""
+        return (
+            self.num_lines,
+            self.op_x,
+            self.op_z,
+            self.op_e,
+            self.angle,
+            self.sign_const,
+        )
+
+    def program(self, key_start: int, postselected: np.ndarray) -> ConditionedProgram:
+        """Return the per-op data for a postselection mask over the output slots."""
+        key_words = -(-len(self.key.rows) // 64)
+        sign_key = (
+            pack_bits(self.key.sign_coords, key_words).reshape(
+                self.ops.num_ops, key_words
+            )
+            if key_words
+            else np.zeros((self.ops.num_ops, 0), dtype=np.uint64)
+        )
+        out_bit = np.full(self.ops.num_ops, -1, dtype=np.int64)
+        post = np.zeros(self.ops.num_ops, dtype=np.bool_)
+        recorded = np.flatnonzero(self.ops.slot >= 0)
+        slots = self.ops.slot[recorded]
+        out_bit[recorded] = np.asarray(self.output_indices, dtype=np.int64)[slots]
+        post[recorded] = np.asarray(postselected, dtype=bool)[slots]
+        return ConditionedProgram(key_start, key_words, sign_key, out_bit, post)
+
+
+def compile_conditioned_component(
+    component: Graph, output_indices: Sequence[int], layout: ParamLayout
+) -> ConditionedComponent:
+    """Compile one non-direct component for ``strategy="conditioned_statevector"``."""
+    component_layout = ComponentLayout.of(component, output_indices, layout)
+    try:
+        ops = read_pauli_ops(component, component_layout)
+    except ValueError as error:
+        raise ValueError(
+            "strategy='conditioned_statevector' could not read the component with "
+            f"outputs {list(output_indices)}: {error}. {STABILIZER_RANK_HINT}"
+        ) from error
+    return conditioned_component(ops, component_layout)
+
+
+def conditioned_component(
+    ops: PauliOps, layout: ComponentLayout, *, measure_through: bool | None = None
+) -> ConditionedComponent:
+    """Return the conditioned component of ``ops``.
+
+    ``measure_through`` forces the plan (``True``: measure through, op order;
+    ``False``: Tsim's order without it); ``None`` takes the narrower (``_choose_plan``).
+    """
+    num_f = ops.num_f
+    sign_f = ops.sign[:, 1:].astype(bool)
+    num_slots = len(layout.output_indices)
+    output_const = np.zeros(num_slots, dtype=bool)
+    output_row = np.zeros((num_slots, num_f), dtype=bool)
+    for j in np.flatnonzero(ops.slot >= 0):
+        output_const[ops.slot[j]] = bool(ops.sign[j, 0])
+        output_row[ops.slot[j]] = sign_f[j]
+    assert np.count_nonzero(ops.slot >= 0) == num_slots
+    tape = OutputTape(
+        np.array(layout.f_selection, dtype=np.int32), output_const, output_row
+    )
+    ops, plan, (op_x, op_z, op_e) = _choose_plan(ops, measure_through)
+    angle = ops.angle.astype(np.float64)
+    sign_const = ops.sign[:, 0].astype(np.int64)
+    try:
+        root_amp = runner.reference_prefix(
+            ops.num_lines,
+            op_x,
+            op_z,
+            op_e,
+            angle,
+            sign_const,
+            plan.measure,
+            plan.apply_start,
+            plan.layer_start,
+            plan.layer_ops,
+            MAX_WIDTH,
+        )
+    except lane.TooWide:
+        # NOTE: no shortcut; sampling raises the error if a lane gets this wide.
+        root_amp = np.zeros(plan.num_steps, dtype=np.float64)
+    return ConditionedComponent(
+        output_indices=tuple(layout.output_indices),
+        ops=ops,
+        plan=plan,
+        tape=tape,
+        key=_key_basis(ops),
+        op_x=op_x,
+        op_z=op_z,
+        op_e=op_e,
+        angle=angle,
+        sign_const=sign_const,
+        root_amp=root_amp,
+    )
+
+
+def _packed(ops: PauliOps) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return each op's Pauli as X and Z bit words, and the phase exponent of its letters."""
+    words = -(-ops.num_lines // 64)
+    op_e = (np.count_nonzero(ops.x & ops.z, axis=1) % 4).astype(np.int64)
+    return pack_bits(ops.x, words), pack_bits(ops.z, words), op_e
+
+
+def _choose_plan(
+    ops: PauliOps, measure_through: bool | None = None
+) -> tuple[PauliOps, StepPlan, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Return the ops (possibly reordered), their step plan and packed Paulis.
+
+    Measuring through is not always narrower: when T-like rotations are never
+    undone (distillation), applying them in the order of Tsim's scheduler can be.
+    Both plans run the reference key along ``_PLAN_PATHS`` random outcome paths;
+    the narrower wins, measure-through on ties. A later candidate stops as soon
+    as it gets wider than the best so far.
+    """
+    candidates = [(ops, True), (ops.take(schedule(ops).order), False)]
+    if measure_through is not None:
+        candidates = [candidates[0 if measure_through else 1]]
+    best: tuple[int, PauliOps, StepPlan, tuple] | None = None
+    for candidate, through in candidates:
+        plan = step_plan(candidate, measure_through=through)
+        packed = _packed(candidate)
+        try:
+            width: int = runner.reference_width(
+                candidate.num_lines,
+                *packed,
+                candidate.angle.astype(np.float64),
+                candidate.sign[:, 0].astype(np.int64),
+                plan.measure,
+                plan.apply_start,
+                plan.apply_ops,
+                plan.layer_start,
+                plan.layer_ops,
+                _PLAN_PATHS,
+                np.uint64(0x5EED),
+                MAX_WIDTH if best is None else best[0],
+            )
+        except lane.TooWide:
+            width = MAX_WIDTH + 1
+        if best is None or width < best[0]:
+            best = (width, candidate, plan, packed)
+    assert best is not None
+    return best[1], best[2], best[3]
+
+
+# NOTE: random outcome paths of the reference key when choosing a step plan.
+_PLAN_PATHS = 16
+
+
+def _key_basis(ops: PauliOps) -> KeyBasis:
+    """Return a basis of the f-parts of the rotation signs, and every op's coordinates in it.
+
+    Measurement signs only flip outputs, so their coordinates are zero.
+    """
+    num_f = ops.num_f
+    signs = ops.sign[:, 1:].astype(bool) & (ops.kind == ROTATION)[:, None]
+    nonzero = signs.any(axis=1)
+    if not nonzero.any():
+        return KeyBasis(np.zeros((0, num_f), bool), np.zeros((ops.num_ops, 0), bool))
+    rows, _ = find_basis(signs[nonzero].astype(np.uint8))
+    rows = np.asarray(rows, dtype=bool)
+    _, transform = find_basis(np.vstack([rows, signs]).astype(np.uint8))
+    coords = np.asarray(transform, dtype=bool)[len(rows) :]
+    return KeyBasis(rows, coords)
+
+
+def reference_tree(component: ConditionedComponent) -> tuple[np.ndarray, ...] | None:
+    """Return the reference key's outcome tree (``runner.build_tree``), or None if too big.
+
+    Built on first use and kept: the reference key (no fault reaches the
+    component) usually holds most shots, and its lanes are the same in every call.
+    The tree holds every outcome branch, also those that postselection would
+    prune; if one is wider than ``MAX_WIDTH``, there is no tree and the lanes,
+    which prune, run instead.
+    """
+    if "tree" not in component.cache:
+        plan = component.plan
+        tree = None
+        try:
+            *arrays, num_nodes = runner.build_tree(
+                *component.kernel_ops,
+                plan.measure,
+                plan.apply_start,
+                plan.apply_ops,
+                plan.layer_start,
+                plan.layer_ops,
+                component.root_amp,
+                MAX_WIDTH,
+                _MAX_TREE_NODES,
+            )
+            if num_nodes > 0:
+                tree = tuple(array[:num_nodes].copy() for array in arrays)
+        except lane.TooWide:
+            pass
+        component.cache["tree"] = tree
+    return component.cache["tree"]
+
+
+def run_part(
+    component: ConditionedComponent,
+    program: ConditionedProgram,
+    words: np.ndarray,
+    alive: np.ndarray,
+    first_shot: int,
+    seed: np.uint64,
+    threads: int,
+) -> tuple:
+    """Run the alive shots of a whole part through the component, a key's shots on one thread.
+
+    Shots are grouped by key over the part. A group larger than ``_PIECE_SHOTS``
+    is cut into at most ``threads`` pieces (each builds its own lanes, which costs
+    about as much as recording a few thousand shots), and the pieces are dealt to
+    ``8 * threads`` tasks, largest first, each to the task with the least work so far.
+    The reference key's pieces walk its cached outcome tree instead, if it has one.
+    """
+    order, starts = runner.group_by_key(
+        words, alive, program.key_start, program.key_words
+    )
+    stats = np.zeros(runner.NUM_STATS, dtype=np.int64)
+    if len(order) == 0:
+        return _stats(stats)
+    pieces = []
+    for g in range(len(starts) - 1):
+        lo, hi = int(starts[g]), int(starts[g + 1])
+        count = min(-(-(hi - lo) // _PIECE_SHOTS), threads)
+        for i in range(count):
+            pieces.append(
+                (lo + (hi - lo) * i // count, lo + (hi - lo) * (i + 1) // count)
+            )
+    # NOTE: the reference key's group (all key bits 0), if any, comes first.
+    key = slice(program.key_start, program.key_start + program.key_words)
+    tree = None if words[order[0], key].any() else reference_tree(component)
+    reference_end = int(starts[1]) if tree is not None else 0
+    sizes = np.array([hi - lo for lo, hi in pieces])
+    num_tasks = max(1, min(8 * threads, len(pieces)))
+    load = np.zeros(num_tasks)
+    members: list[list[int]] = [[] for _ in range(num_tasks)]
+    for g in np.argsort(-sizes, kind="stable"):
+        t = int(np.argmin(load))
+        members[t].append(int(g))
+        load[t] += _GROUP_COST + sizes[g]
+    plan = component.plan
+
+    def task(groups: list[int]) -> np.ndarray:
+        task_stats = np.zeros(runner.NUM_STATS, dtype=np.int64)
+        if not groups:
+            return task_stats
+        for g in groups:
+            if pieces[g][1] > reference_end:
+                continue
+            assert tree is not None
+            runner.walk_tree(
+                words,
+                alive,
+                first_shot,
+                np.uint64(seed),
+                order[pieces[g][0] : pieces[g][1]].copy(),
+                *tree,
+                plan.measure,
+                program.out_bit,
+                program.post,
+                task_stats,
+            )
+        groups = sorted(g for g in groups if pieces[g][1] > reference_end)
+        if not groups:
+            return task_stats
+        sub_order = np.concatenate([order[pieces[g][0] : pieces[g][1]] for g in groups])
+        sub_starts = np.concatenate([[0], np.cumsum(sizes[groups])]).astype(np.int64)
+        runner.run_chunk(
+            words,
+            alive,
+            first_shot,
+            np.uint64(seed),
+            sub_order,
+            sub_starts,
+            program.key_start,
+            program.key_words,
+            *component.kernel_ops,
+            program.sign_key,
+            program.out_bit,
+            program.post,
+            plan.measure,
+            plan.apply_start,
+            plan.apply_ops,
+            plan.layer_start,
+            plan.layer_ops,
+            component.root_amp,
+            MAX_WIDTH,
+            task_stats,
+        )
+        return task_stats
+
+    try:
+        results = run_tasks(task, members, threads)
+    except lane.TooWide:
+        raise ValueError(
+            _TOO_WIDE.format(outputs=list(component.output_indices))
+        ) from None
+    for task_stats in results:
+        stats[runner.STAT_WIDTH] = max(
+            stats[runner.STAT_WIDTH], task_stats[runner.STAT_WIDTH]
+        )
+        for i in (
+            runner.STAT_LANES,
+            runner.STAT_SPLITS,
+            runner.STAT_THROUGH,
+            runner.STAT_STEPS,
+        ):
+            stats[i] += task_stats[i]
+    return _stats(stats)
+
+
+# NOTE: a group's fixed cost in shots, for dealing groups to tasks: a lane's
+# steps cost about as much as recording a few thousand shots. A group of more
+# than _PIECE_SHOTS shots is cut, so that one key cannot hold up a part; its
+# pieces rebuild its lanes, a cost of the order of _GROUP_COST shots each.
+_GROUP_COST = 2000
+# NOTE: the largest reference tree kept (nodes); a tree has a node per step and
+# outcome path, so more random outcomes than this allows are run as lanes.
+_MAX_TREE_NODES = 1 << 16
+_TOO_WIDE = (
+    f"strategy='conditioned_statevector' needs more than {MAX_WIDTH} active qubits for a "
+    "lane of the component with outputs {outputs}. Such lanes are rare noise patterns "
+    "of shots that a postselection_mask would discard; sample with a "
+    "postselection_mask, or use strategy='active_statevector'."
+)
+_PIECE_SHOTS = 1 << 17
+
+
+def _stats(stats: np.ndarray) -> tuple:
+    return (
+        0.0,
+        int(stats[runner.STAT_LANES]),
+        int(stats[runner.STAT_WIDTH]),
+        int(stats[runner.STAT_SPLITS]),
+        int(stats[runner.STAT_STEPS]),
+    )

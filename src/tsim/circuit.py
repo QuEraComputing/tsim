@@ -953,14 +953,18 @@ class Circuit:
         Args:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
-                qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                qubits, "conditioned_statevector" to plan each noise key's lanes
+                with its concrete signs and outcomes (T-like layers are measured
+                through instead of applied; much narrower lanes for magic-state
+                factories, best with a postselection mask), or a stabilizer rank
+                decomposition strategy ("cat5", "bss", "cutting"). The
+                statevector strategies sample on the CPU, on
                 ``numba.get_num_threads()`` threads. The stabilizer rank
                 strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
-                With "active_statevector", and under any strategy for a circuit without
+                With a statevector strategy, and under any strategy for a circuit without
                 non-direct components, the samples of a seed depend on neither the batch
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size``, since the default batch size
@@ -990,14 +994,18 @@ class Circuit:
         Args:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
-                qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                qubits, "conditioned_statevector" to plan each noise key's lanes
+                with its concrete signs and outcomes (T-like layers are measured
+                through instead of applied; much narrower lanes for magic-state
+                factories, best with a postselection mask), or a stabilizer rank
+                decomposition strategy ("cat5", "bss", "cutting"). The
+                statevector strategies sample on the CPU, on
                 ``numba.get_num_threads()`` threads. The stabilizer rank
                 strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
-                With "active_statevector", and under any strategy for a circuit without
+                With a statevector strategy, and under any strategy for a circuit without
                 non-direct components, the samples of a seed depend on neither the batch
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size`` and the same reference sample

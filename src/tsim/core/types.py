@@ -22,11 +22,15 @@ if TYPE_CHECKING:
 
     from tsim.compile.compile import CompiledScalarGraphs
     from tsim.core.params import ParamLayout
+    from tsim.statevector.conditioned.component import ConditionedComponent
     from tsim.statevector.program import StatevectorComponent
     from tsim.utils.linalg import SparseGF2Matrix
 
-SamplingStrategy = Literal["active_statevector", "cat5", "bss", "cutting"]
-"""``"active_statevector"``, or a stabilizer-rank decomposition strategy."""
+SamplingStrategy = Literal[
+    "active_statevector", "conditioned_statevector", "cat5", "bss", "cutting"
+]
+"""``"active_statevector"``, ``"conditioned_statevector"``, or a stabilizer-rank
+decomposition strategy."""
 
 
 @dataclass(frozen=True)
@@ -113,7 +117,9 @@ class CompiledProgram:
 
     """
 
-    components: tuple[CompiledComponent | StatevectorComponent, ...]
+    components: tuple[
+        CompiledComponent | StatevectorComponent | ConditionedComponent, ...
+    ]
     direct_f_indices: np.ndarray
     direct_flips: np.ndarray
     output_order: np.ndarray

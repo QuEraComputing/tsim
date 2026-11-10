@@ -8,6 +8,7 @@ import tsim.statevector.shared as shared
 import tsim.statevector.shots as shots_module
 from tsim.circuit import Circuit
 from tsim.noise.channels import _BLOCK_SHOTS
+from tsim.statevector.shared import LaneProgram
 from tsim.statevector.shots import bool_outputs, packed_outputs
 
 # NOTE: flipped direct detectors and observables, unflipped ones, and two T
@@ -147,7 +148,8 @@ def test_the_chunks_that_run_at_once_fit_in_memory(
 def test_the_memory_estimate_holds_every_lane_symbol():
     text = "R 0 1\nH 0 1\n" + "T 0\nT 1\nMPP X0*X1\n" * 300
     sampler = shot_sampler(Circuit(text).compile_sampler(seed=1))
-    program = max(sampler.plan(None).programs, key=lambda p: p.lane_words)
+    programs = [p for p in sampler.plan(None).programs if isinstance(p, LaneProgram)]
+    program = max(programs, key=lambda p: p.lane_words)
     assert program.lane_words >= 4
     amplitudes = 3 * 16 * 2**program.width
     assert sampler.bytes_per_shot() >= amplitudes + 2 * 8 * program.lane_words

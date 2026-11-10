@@ -30,8 +30,13 @@ from tsim.core.types import (
     SamplingGraph,
     SamplingStrategy,
 )
+from tsim.statevector.conditioned.component import (
+    ConditionedComponent,
+    compile_conditioned_component,
+)
 from tsim.statevector.program import (
     STABILIZER_RANK_HINT,
+    STATEVECTOR_STRATEGIES,
     StatevectorComponent,
     compile_statevector_component,
 )
@@ -59,30 +64,36 @@ def compile_program(
     Args:
         prepared: The prepared graph from ``prepare_graph``.
         mode: ``"sequential"`` for sampling, ``"joint"`` for probabilities.
-        strategy: ``"active_statevector"``, or a stabilizer-rank decomposition
-            strategy.
+        strategy: ``"active_statevector"``, ``"conditioned_statevector"``, or a
+            stabilizer-rank decomposition strategy.
 
     Returns:
         A CompiledProgram ready for sampling.
 
     Raises:
-        ValueError: If ``strategy="active_statevector"`` is combined with ``mode="joint"``.
+        ValueError: If a state-vector strategy is combined with ``mode="joint"``.
 
     """
-    if strategy == "active_statevector":
+    if strategy in STATEVECTOR_STRATEGIES:
         if mode == "joint":
             raise ValueError(
-                "strategy='active_statevector' samples outcomes and cannot compute "
+                f"strategy={strategy!r} samples outcomes and cannot compute "
                 f"probabilities. {STABILIZER_RANK_HINT}"
             )
-        compile_component = compile_statevector_component
+        compile_component = (
+            compile_statevector_component
+            if strategy == "active_statevector"
+            else compile_conditioned_component
+        )
     else:
         compile_component = partial(_compile_component, mode=mode, strategy=strategy)
     graph = prepared.graph
     layout = prepared.layout
 
     direct_entries: list[tuple[int, int, bool]] = []
-    compiled_components: list[CompiledComponent | StatevectorComponent] = []
+    compiled_components: list[
+        CompiledComponent | StatevectorComponent | ConditionedComponent
+    ] = []
     compiled_output_order: list[int] = []
 
     components = sorted(graph.connected_components(), key=lambda c: len(c.outputs()))

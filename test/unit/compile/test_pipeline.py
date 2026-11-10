@@ -134,7 +134,9 @@ DETECTOR rec[-1]
 """
 
 
-@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize(
+    "strategy", ["cat5", "active_statevector", "conditioned_statevector"]
+)
 def test_deterministic_detectors_of_a_noiseless_circuit_take_the_direct_path(
     strategy,
 ):
@@ -159,7 +161,9 @@ def test_deterministic_detectors_of_a_noiseless_circuit_take_the_direct_path(
     assert samples[:, 0].any() and not samples[:, 0].all()
 
 
-@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize(
+    "strategy", ["cat5", "active_statevector", "conditioned_statevector"]
+)
 def test_all_constant_detectors_skip_jax(monkeypatch, strategy):
     circuit = Circuit(
         "R 0 1\nX 1\nM 0 1\nDETECTOR rec[-2]\nDETECTOR rec[-1]\n"
@@ -185,7 +189,9 @@ def test_all_constant_detectors_skip_jax(monkeypatch, strategy):
     assert not dets.any() and not obs.any()
 
 
-@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize(
+    "strategy", ["cat5", "active_statevector", "conditioned_statevector"]
+)
 @pytest.mark.parametrize("with_component", [False, True])
 def test_direct_and_constant_detectors_are_reassembled_in_order(
     strategy, with_component
@@ -223,7 +229,9 @@ DETECTOR rec[-1]
 """
 
 
-@pytest.mark.parametrize("strategy", ["cat5", "active_statevector"])
+@pytest.mark.parametrize(
+    "strategy", ["cat5", "active_statevector", "conditioned_statevector"]
+)
 @pytest.mark.parametrize(
     "sample_detectors, cut, constant",
     [(True, "MR 1", []), (False, "R 0 1\nM 0 1", [False, False])],

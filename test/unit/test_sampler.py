@@ -134,7 +134,9 @@ def test_detector_sampler_zero_shots_with_reference():
     assert result.shape == (0, 3)
 
 
-@pytest.mark.parametrize("strategy", ["active_statevector", "cat5"])
+@pytest.mark.parametrize(
+    "strategy", ["active_statevector", "conditioned_statevector", "cat5"]
+)
 @pytest.mark.parametrize("shots", [0, 2000])
 def test_measurement_sampler_bit_packed(strategy, shots):
     text = "H 0 1 2\nT 0\nX_ERROR(0.1) 3 4 5 6 7 8 9 10 11\nM 0 1 2 3 4 5 6 7 8 9 10 11"
@@ -368,7 +370,9 @@ def test_no_two_seeds_share_a_stream():
     assert len(first_draws) == 3 * len(seeds)
 
 
-@pytest.mark.parametrize("strategy", ["active_statevector", "cat5"])
+@pytest.mark.parametrize(
+    "strategy", ["active_statevector", "conditioned_statevector", "cat5"]
+)
 @pytest.mark.parametrize("seed", [5, 2**64 + 5])
 def test_component_samples_depend_on_every_bit_of_the_seed(strategy, seed):
     # NOTE: jax.random.key(seed) used to keep only the low 32 bits, and failed
@@ -467,6 +471,20 @@ def test_stats_of_stabilizer_rank_strategy():
     # NOTE: without components, nothing is simulated under any strategy.
     noise = Circuit("X_ERROR(0.1) 0\nM 0").compile_sampler(strategy="cat5")
     assert noise.active_width == 0
+
+
+def test_stats_of_conditioned_strategy():
+    sampler = Circuit(T_CIRCUIT).compile_detector_sampler(
+        strategy="conditioned_statevector"
+    )
+    stats = sampler.stats
+    # NOTE: its lanes take their width from each shot's noise and outcomes.
+    assert sampler.active_width is None
+    assert stats.num_components == 1
+    assert stats.component_widths is None
+    assert stats.compiled_bytes > 0
+    assert stats.peak_bytes_per_shot > 0
+    assert "direct" in repr(sampler)
 
 
 @pytest.mark.parametrize(

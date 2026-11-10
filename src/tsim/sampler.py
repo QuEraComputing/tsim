@@ -19,7 +19,8 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
-from tsim.statevector.program import StatevectorComponent
+from tsim.statevector.conditioned.component import ConditionedComponent
+from tsim.statevector.program import STATEVECTOR_STRATEGIES, StatevectorComponent
 from tsim.statevector.shots import ShotSampler
 from tsim.utils.cuda_helpers import copy_d2h
 from tsim.utils.kernels import kernel
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
     from jax import Array as PRNGKey
 
     from tsim.circuit import Circuit
+
+_STATEVECTOR_COMPONENTS = (StatevectorComponent, ConditionedComponent)
 
 # NOTE: postselection with a stabilizer-rank strategy screens shots for direct
 # discards in rounds of SCREEN_CHUNKS chunks of at most SCREEN_SHOTS shots.
@@ -215,6 +218,10 @@ def _write_direct_detectors(f, f_indices, flips, columns, postselect, out):
 def _nbytes(tree: object) -> int:
     if isinstance(tree, StatevectorComponent):
         return sum(array.nbytes for array in tree.tape)
+    if isinstance(tree, ConditionedComponent):
+        return sum(
+            array.nbytes for array in (tree.op_x, tree.op_z, tree.ops.x, tree.ops.z)
+        )
     return sum(
         v.nbytes for v in jax.tree_util.tree_leaves(tree) if isinstance(v, jax.Array)
     )
@@ -330,14 +337,18 @@ class _CompiledSamplerBase:
             mode: Compilation mode - "sequential" for autoregressive, "joint" for probabilities.
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
-                qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                qubits, "conditioned_statevector" to plan each noise key's lanes
+                with its concrete signs and outcomes (T-like layers are measured
+                through instead of applied; much narrower lanes for magic-state
+                factories, best with a postselection mask), or a stabilizer rank
+                decomposition strategy ("cat5", "bss", "cutting"). The
+                statevector strategies sample on the CPU, on
                 ``numba.get_num_threads()`` threads. The stabilizer rank
                 strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
-                With "active_statevector", and under any strategy for a circuit without
+                With a statevector strategy, and under any strategy for a circuit without
                 non-direct components, the samples of a seed depend on neither the batch
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size``, since the default batch size
@@ -366,7 +377,7 @@ class _CompiledSamplerBase:
         # under any strategy, are sampled as shot words; the others with JAX.
         self._shots: ShotSampler | None = None
         self._backend: _StabilizerRankBackend | None = None
-        if strategy == "active_statevector" or not program.components:
+        if strategy in STATEVECTOR_STRATEGIES or not program.components:
             self._shots = ShotSampler(
                 program,
                 self._channel_sampler,
@@ -697,7 +708,8 @@ class _CompiledSamplerBase:
         amplitudes, so this is the main cost of sampling. It is 0 if every output
         is sampled directly, as for Clifford circuits, and ``None`` if the
         components are compiled for a stabilizer-rank strategy ("cat5", "bss",
-        "cutting"), which has no state vector.
+        "cutting"), which has no state vector, or for "conditioned_statevector",
+        whose lanes take their width from each shot's noise and outcomes.
         """
         return self.stats.active_width
 
@@ -712,9 +724,9 @@ class _CompiledSamplerBase:
           noise, without simulating a component.
         - ``num_components`` (``int``): components that are simulated.
         - ``component_widths`` (``tuple[int, ...] | None``): the active width of
-          each component, or ``None`` under a stabilizer-rank strategy.
+          each component, or ``None`` unless the strategy is "active_statevector".
         - ``num_actions`` (``int | None``): total state-vector actions over the
-          components, or ``None`` under a stabilizer-rank strategy.
+          components, or ``None`` unless the strategy is "active_statevector".
         - ``error_channel_bits`` (``int``): outcome bits of the simplified noise
           channels, i.e. the sum of log2 of each channel's number of outcomes.
           This is not the number of random bits drawn per shot.
@@ -731,7 +743,7 @@ class _CompiledSamplerBase:
             widths = tuple(c.width for c in statevectors)
             num_actions = sum(c.num_actions for c in statevectors)
         for component in components:
-            if isinstance(component, StatevectorComponent):
+            if isinstance(component, _STATEVECTOR_COMPONENTS):
                 compiled_bytes += _nbytes(component)
             else:
                 compiled_bytes += sum(map(_nbytes, component.compiled_scalar_graphs))
@@ -767,7 +779,7 @@ class _CompiledSamplerBase:
         num_outputs = []
 
         for component in self._program.components:
-            if isinstance(component, StatevectorComponent):
+            if isinstance(component, _STATEVECTOR_COMPONENTS):
                 num_outputs.append(len(component.output_indices))
                 continue
             for circuit in component.compiled_scalar_graphs:
@@ -846,7 +858,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
-                With "active_statevector", and under any strategy for a circuit without
+                With a statevector strategy, and under any strategy for a circuit without
                 non-direct components, the samples of a seed depend on neither the batch
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size``, since the default batch size
@@ -946,7 +958,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
-                With "active_statevector", and under any strategy for a circuit without
+                With a statevector strategy, and under any strategy for a circuit without
                 non-direct components, the samples of a seed depend on neither the batch
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size`` and the same reference sample

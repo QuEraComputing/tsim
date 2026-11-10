@@ -28,6 +28,7 @@ import psutil
 import tsim.statevector.shared as shared
 from tsim.core.types import CompiledProgram
 from tsim.noise.channels import _BLOCK_SHOTS, ChannelSampler, WordTables
+from tsim.statevector.conditioned import component as conditioned
 from tsim.statevector.program import STABILIZER_RANK_HINT, StatevectorComponent
 from tsim.statevector.shared import KeyBasis, LaneProgram, key_basis, lane_program
 from tsim.utils.kernels import PARALLEL_WORK, jit, kernel, run_tasks
@@ -70,7 +71,7 @@ class ShotLayout:
     constant: np.ndarray
     direct: np.ndarray
     direct_f: np.ndarray
-    components: tuple[StatevectorComponent, ...]
+    components: tuple[StatevectorComponent | conditioned.ConditionedComponent, ...]
     keys: tuple[KeyBasis, ...]
     key_starts: tuple[int, ...]
     noise: WordTables
@@ -93,14 +94,20 @@ def shot_layout(program: CompiledProgram, channels: ChannelSampler) -> ShotLayou
     components, keys, key_starts = [], [], []
     word = output_words
     for component in program.components:
-        assert isinstance(component, StatevectorComponent)
+        assert isinstance(
+            component, (StatevectorComponent, conditioned.ConditionedComponent)
+        )
         tape = component.tape
         selection = np.asarray(tape.f_selection, dtype=np.int64)
         slot, f = np.nonzero(tape.output_row[:, : len(selection)])
         f_index.append(selection[f])
         bit.append(np.asarray(component.output_indices, dtype=np.int64)[slot])
         constant[list(component.output_indices)] = tape.output_const
-        key = key_basis(component)
+        key = (
+            component.key
+            if isinstance(component, conditioned.ConditionedComponent)
+            else key_basis(component)
+        )
         row, f = np.nonzero(key.rows)
         f_index.append(selection[f])
         bit.append(64 * word + row)
@@ -136,7 +143,7 @@ class ShotPlan:
     """
 
     screen: np.ndarray
-    programs: tuple[LaneProgram, ...]
+    programs: tuple[LaneProgram | conditioned.ConditionedProgram, ...]
     rejected: bool
 
 
@@ -149,8 +156,12 @@ def shot_plan(
     if mask is not None:
         postselected[:num_detectors] = mask
     programs = tuple(
-        lane_program(
-            component, key, key_start, postselected[list(component.output_indices)]
+        (
+            component.program(key_start, postselected[list(component.output_indices)])
+            if isinstance(component, conditioned.ConditionedComponent)
+            else lane_program(
+                component, key, key_start, postselected[list(component.output_indices)]
+            )
         )
         for component, key, key_start in zip(
             layout.components, layout.keys, layout.key_starts, strict=True
@@ -378,6 +389,10 @@ class ShotSampler:
         self._reference_seeds = np.random.default_rng(reference)
         self._plans: dict[bytes, ShotPlan] = {}
         self._widest = max((c.width for c in self._layout.components), default=0)
+        self._conditioned = bool(self._layout.components) and all(
+            isinstance(c, conditioned.ConditionedComponent)
+            for c in self._layout.components
+        )
         self._direct_tables: WordTables | None = None
         # NOTE: noise words of a program without components, reused by the calls
         # that screen them, since only their survivors are returned.
@@ -411,7 +426,16 @@ class ShotSampler:
         the executor's shot lists.
         """
         lane = max(
-            map(shared.lane_bytes, self._layout.components, self._layout.keys),
+            (
+                (
+                    16 << component.width
+                    if isinstance(component, conditioned.ConditionedComponent)
+                    else shared.lane_bytes(component, key)
+                )
+                for component, key in zip(
+                    self._layout.components, self._layout.keys, strict=True
+                )
+            ),
             default=0,
         )
         return 8 * self._layout.num_words + lane + 32
@@ -540,9 +564,22 @@ class ShotSampler:
             return words, 0.0
         threads = numba.get_num_threads()
         chunk, workers = self._schedule(shots, batch_size, threads)
+        part_stats: list[tuple] = []
+        alive_all: np.ndarray | None = None
+        if self._conditioned:
+            # NOTE: conditioned components run on the whole part at once, a key's
+            # shots on one thread, so that no key's lanes are built twice.
+            alive_all = np.empty(shots, dtype=np.bool_)
+            part_stats = self._run_chunk(
+                words, alive_all, plan, constant, start, seeds, threads
+            )
 
         def run(offset: int) -> tuple[list[tuple], int]:
             rows = words[offset : offset + chunk]
+            if alive_all is not None:
+                alive = alive_all[offset : offset + chunk]
+                kept = _compact(rows, alive, width) if plan.rejected else len(rows)
+                return [], kept
             alive = np.empty(len(rows), dtype=np.bool_)
             stats = self._run_chunk(
                 rows, alive, plan, constant, start + offset, seeds, threads
@@ -553,7 +590,9 @@ class ShotSampler:
 
         offsets = range(0, shots, chunk)
         results = run_tasks(run, offsets, workers)
-        deviation = self._record([stats for result, _ in results for stats in result])
+        deviation = self._record(
+            part_stats + [stats for result, _ in results for stats in result]
+        )
         if not plan.rejected:
             return words, deviation
         kept = np.array([k for _, k in results], dtype=np.int64)
@@ -690,7 +729,8 @@ class ShotSampler:
         component's postselected outputs: a shot that one prunes is skipped by
         the later ones, and its outputs are left as they are, since it is not
         returned. Alone on its thread, a chunk runs each component's amplitude
-        loops on ``threads`` threads.
+        loops on ``threads`` threads; a conditioned component deals its keys
+        to ``threads`` threads.
         """
         _screen(rows, constant, plan.screen, alive)
         stats = []
@@ -699,6 +739,15 @@ class ShotSampler:
         ):
             if not alive.any():
                 break
+            if isinstance(component, conditioned.ConditionedComponent):
+                assert isinstance(program, conditioned.ConditionedProgram)
+                stats.append(
+                    conditioned.run_part(
+                        component, program, rows, alive, first_shot, seed, threads
+                    )
+                )
+                continue
+            assert isinstance(program, LaneProgram)
             stats.append(
                 shared.run_lanes(
                     len(rows) << component.width,
