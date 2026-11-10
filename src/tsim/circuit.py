@@ -23,13 +23,14 @@ if TYPE_CHECKING:
 
 from tsim.core.graph import transform_error_basis
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
-from tsim.core.tags import encode_t_tag
+from tsim.core.tags import encode_t_tag, format_parametric_tag
 from tsim.core.types import SamplingStrategy
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
-from tsim.utils.diagram import draw_zx, render_svg
+from tsim.utils.diagram import draw_zx, render_svg, render_timeline_text
 from tsim.utils.program_text import (
     CONTROLLED_GATE_ARITY,
+    canonical_parametric_tag,
     controlled_gate_decomposition_lines,
     enriched_stim_error,
     shorthand_to_stim,
@@ -346,7 +347,7 @@ class Circuit:
                     raise ValueError(
                         f"For {name} gates, a single angle must be provided."
                     )
-                tag = f"{name}(theta={args[0]}*pi)"
+                tag = format_parametric_tag(name, args[0])
                 name = "I"
                 arg = None
             elif name == "U3":
@@ -356,7 +357,7 @@ class Circuit:
                         "For U3 gates, three rotation angles must be provided."
                     )
                 theta, phi, lam = args
-                tag = f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
+                tag = format_parametric_tag("U3", theta, phi, lam)
                 name = "I"
                 arg = None
             elif name in ("R_XX", "R_YY", "R_ZZ"):
@@ -364,14 +365,16 @@ class Circuit:
                 pauli = name[2]
                 q0, q1 = _two_distinct_qubits(name, targets)
                 targets = _pauli_product_targets([(pauli, q0), (pauli, q1)])
-                tag = f"R_PAULI(theta={alpha}*pi)"
+                tag = format_parametric_tag("R_PAULI", alpha)
                 name = "SPP"
                 arg = None
             elif name == "R_PAULI":
                 alpha = _single_angle(name, arg)
-                tag = f"R_PAULI(theta={alpha}*pi)"
+                tag = format_parametric_tag("R_PAULI", alpha)
                 name = "SPP"
                 arg = None
+            elif name in ("I", "SPP", "SPP_DAG") and tag:
+                tag = canonical_parametric_tag(tag)
 
             self._stim_circ.append(name=name, targets=targets, arg=arg, tag=tag)  # type: ignore
         else:
@@ -863,9 +866,7 @@ class Circuit:
             g.to_rg()
             return draw_zx(g, builder.num_error_bits, kwargs, layout="outputs")
         elif type == "timeline-text":
-            from stim_timeline_text import render_timeline_text
-
-            return render_timeline_text(str(self._stim_circ))
+            return render_timeline_text(self._stim_circ)
         else:
             return self._stim_circ.diagram(type=type, **kwargs)  # pragma: no cover
 
@@ -1040,15 +1041,14 @@ class Circuit:
                         gate_name, params = parsed
                         if gate_name == "U3":
                             # U3(θ, φ, λ)⁻¹ = U3(-θ, -λ, -φ)
-                            theta = float(-params["theta"])
-                            phi = float(-params["lambda"])
-                            lam = float(-params["phi"])
-                            new_tag = (
-                                f"U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)"
+                            new_tag = format_parametric_tag(
+                                "U3",
+                                -params["theta"],
+                                -params["lambda"],
+                                -params["phi"],
                             )
                         else:
-                            theta = float(-params["theta"])
-                            new_tag = f"{gate_name}(theta={theta}*pi)"
+                            new_tag = format_parametric_tag(gate_name, -params["theta"])
                         result.append("I", targets, args, tag=new_tag)
                         continue
 

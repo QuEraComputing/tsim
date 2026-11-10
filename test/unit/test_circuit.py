@@ -146,12 +146,15 @@ def test_non_r_pauli_parametric_tag_on_spp_raises(program):
 @pytest.mark.parametrize(
     "stim_program, shorthand",
     [
-        ("I[R_X(0.1)] 0", "R_X(0.1) 0"),
-        ("I[U3(0.3, 0.24, 0.49)] 0", "U3(0.3, 0.24, 0.49) 0"),
-        ("SPP[R_PAULI(0.1)] X0*Y1", "R_PAULI(0.1) X0*Y1"),
+        ("I[R_X(theta=0.1*pi)] 0", "R_X(0.1) 0"),
+        (
+            "I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0",
+            "U3(0.3, 0.24, 0.49) 0",
+        ),
+        ("SPP[R_PAULI(theta=0.1*pi)] X0*Y1", "R_PAULI(0.1) X0*Y1"),
     ],
 )
-def test_positional_tag_from_stim_matches_shorthand(stim_program, shorthand):
+def test_legacy_tag_from_stim_matches_shorthand(stim_program, shorthand):
     c1 = Circuit.from_stim_program(stim.Circuit(stim_program))
     c2 = Circuit(shorthand)
     assert c1.stim_circuit != c2.stim_circuit
@@ -1305,7 +1308,7 @@ def test_stim_circuit_repeat_block_keeps_non_clifford_parametric():
     body = block.body_copy()
     instr = body[0]
     assert instr.name == "I"
-    assert instr.tag == "R_X(theta=0.3*pi)"
+    assert instr.tag == "R_X(0.3)"
 
 
 def test_stim_circuit_repeat_block_expands_half_pi_parametric():
@@ -1441,6 +1444,7 @@ def test_append_tpp_anti_hermitian_pauli_string_rejected(name: str):
         ("SPP", "-Z", None, "", "SPP !Z0"),
         ("SPP_DAG", "-XZ", None, "", "SPP_DAG !X0*Z1"),
         ("SPP", "-Z", None, "T", "TPP !Z0"),
+        ("SPP", "-XY", None, "R_PAULI(0.3)", "R_PAULI(0.3) !X0*Y1"),
         ("SPP", "-XY", None, "R_PAULI(theta=0.3*pi)", "R_PAULI(0.3) !X0*Y1"),
         ("OBSERVABLE_INCLUDE", "-Z", 0, "", "OBSERVABLE_INCLUDE(0) !Z0"),
         ("OBSERVABLE_INCLUDE", "XZ", 0, "", "OBSERVABLE_INCLUDE(0) X0 Z1"),
@@ -1590,3 +1594,10 @@ def test_append_instruction_rejects_extra_arguments(kwargs):
     c = Circuit()
     with pytest.raises(ValueError, match="Can't specify targets"):
         c.append(stim.CircuitInstruction("H", [0]), **kwargs)
+
+
+def test_append_canonicalizes_legacy_parametric_tag():
+    c = Circuit()
+    c.append("I", [0], tag="R_X(theta=0.25*pi)")
+    assert c.stim_circuit == stim.Circuit("I[R_X(0.25)] 0")
+    assert c == Circuit("R_X(0.25) 0")

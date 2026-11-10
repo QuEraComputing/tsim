@@ -30,10 +30,10 @@ def test_shorthand_to_stim_tpp_and_tpp_dag():
 @pytest.mark.parametrize(
     "shorthand, stim_text",
     [
-        ("R_PAULI(0.5) !X0", "SPP[R_PAULI(theta=0.5*pi)] !X0"),
-        ("R_PAULI(0.5) !X0*Z1", "SPP[R_PAULI(theta=0.5*pi)] !X0*Z1"),
-        ("R_PAULI(0.5) X0*!Z1", "SPP[R_PAULI(theta=0.5*pi)] X0*!Z1"),
-        ("R_PAULI(0.5) !X0*!Z1 !Y2", "SPP[R_PAULI(theta=0.5*pi)] !X0*!Z1 !Y2"),
+        ("R_PAULI(0.5) !X0", "SPP[R_PAULI(0.5)] !X0"),
+        ("R_PAULI(0.5) !X0*Z1", "SPP[R_PAULI(0.5)] !X0*Z1"),
+        ("R_PAULI(0.5) X0*!Z1", "SPP[R_PAULI(0.5)] X0*!Z1"),
+        ("R_PAULI(0.5) !X0*!Z1 !Y2", "SPP[R_PAULI(0.5)] !X0*!Z1 !Y2"),
     ],
 )
 def test_r_pauli_inverted_targets(shorthand, stim_text):
@@ -54,15 +54,13 @@ def test_shorthand_tpp_roundtrip():
 
 def test_shorthand_to_stim_rotations():
     text = "R_X(0.25) 0\nR_Y(-0.5) 1\nR_Z(0.3) 2"
-    expected = (
-        "I[R_X(theta=0.25*pi)] 0\nI[R_Y(theta=-0.5*pi)] 1\nI[R_Z(theta=0.3*pi)] 2"
-    )
+    expected = "I[R_X(0.25)] 0\nI[R_Y(-0.5)] 1\nI[R_Z(0.3)] 2"
     assert shorthand_to_stim(text) == expected
 
 
 def test_shorthand_to_stim_u3():
     text = "U3(0.3, 0.24, 0.49) 0"
-    expected = "I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0"
+    expected = "I[U3(0.3, 0.24, 0.49)] 0"
     assert shorthand_to_stim(text) == expected
 
 
@@ -78,13 +76,20 @@ def test_stim_to_shorthand_tagged_t_and_t_dag():
     assert stim_to_shorthand(text) == expected
 
 
-def test_stim_to_shorthand_rotations_and_u3():
-    text = (
-        "I[R_X(theta=0.25*pi)] 0\n"
-        "I[R_Y(theta=-0.5*pi)] 1\n"
-        "I[R_Z(theta=0.3*pi)] 2\n"
-        "I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 3"
-    )
+@pytest.mark.parametrize(
+    "text",
+    [
+        ("I[R_X(0.25)] 0\nI[R_Y(-0.5)] 1\nI[R_Z(0.3)] 2\nI[U3(0.3, 0.24, 0.49)] 3"),
+        # The legacy keyword form is still read.
+        (
+            "I[R_X(theta=0.25*pi)] 0\n"
+            "I[R_Y(theta=-0.5*pi)] 1\n"
+            "I[R_Z(theta=0.3*pi)] 2\n"
+            "I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 3"
+        ),
+    ],
+)
+def test_stim_to_shorthand_rotations_and_u3(text):
     expected = "R_X(0.25) 0\nR_Y(-0.5) 1\nR_Z(0.3) 2\nU3(0.3, 0.24, 0.49) 3"
     assert stim_to_shorthand(text) == expected
 
@@ -96,7 +101,7 @@ def test_shorthand_roundtrip():
 
 def test_shorthand_scientific_notation():
     result = shorthand_to_stim("R_Z(4e-4) 0")
-    assert "I[R_Z(theta=0.0004*pi)]" in result
+    assert "I[R_Z(0.0004)]" in result
 
 
 def test_shorthand_scientific_notation_u3():
@@ -110,8 +115,8 @@ def test_circuit_scientific_notation():
 
 
 def test_stim_to_shorthand_rotation_scientific_notation():
-    text = "I[R_Z(theta=1e-07*pi)] 0\nI[R_X(theta=-2.5e+02*pi)] 1"
-    expected = "R_Z(1e-07) 0\nR_X(-2.5e+02) 1"
+    text = "I[R_Z(1e-07)] 0\nI[R_X(-2.5e+02)] 1\nI[R_Y(theta=-2.5e+02*pi)] 2"
+    expected = "R_Z(1e-07) 0\nR_X(-250.0) 1\nR_Y(-250.0) 2"
     assert stim_to_shorthand(text) == expected
 
 
@@ -180,15 +185,19 @@ def test_shorthand_to_stim_ignores_tags_and_comments(text):
 @pytest.mark.parametrize(
     "text, expected",
     [
-        ("I[R_X(0.1)] 0", "I[R_X(theta=0.1*pi)] 0"),
-        ("I[R_Z(-0.5e-2)] 0", "I[R_Z(theta=-0.005*pi)] 0"),
+        ("I[R_X(0.1)] 0", "I[R_X(0.1)] 0"),
+        ("I[R_Z(-0.5e-2)] 0", "I[R_Z(-0.005)] 0"),
+        ("I[U3(0.1,0.2, 0.3)] 0", "I[U3(0.1, 0.2, 0.3)] 0"),
+        ("SPP[R_PAULI(0.25)] X0*Y1", "SPP[R_PAULI(0.25)] X0*Y1"),
+        ("SPP_DAG[R_PAULI(0.25)] Z0", "SPP_DAG[R_PAULI(0.25)] Z0"),
+        ("  I[R_Y(0.3)] 0  # c", "  I[R_Y(0.3)] 0  # c"),
+        # The legacy keyword form is accepted and rewritten.
+        ("I[R_X(theta=0.1*pi)] 0", "I[R_X(0.1)] 0"),
         (
-            "I[U3(0.1,0.2, 0.3)] 0",
-            "I[U3(theta=0.1*pi, phi=0.2*pi, lambda=0.3*pi)] 0",
+            "I[U3(theta=0.1*pi, phi=2e-1*pi, lambda=0.3*pi)] 0",
+            "I[U3(0.1, 0.2, 0.3)] 0",
         ),
-        ("SPP[R_PAULI(0.25)] X0*Y1", "SPP[R_PAULI(theta=0.25*pi)] X0*Y1"),
-        ("SPP_DAG[R_PAULI(0.25)] Z0", "SPP_DAG[R_PAULI(theta=0.25*pi)] Z0"),
-        ("  I[R_Y(0.3)] 0  # c", "  I[R_Y(theta=0.3*pi)] 0  # c"),
+        ("SPP[R_PAULI(theta=0.25*pi)] X0*Y1", "SPP[R_PAULI(0.25)] X0*Y1"),
         ("I[R_X(.)] 0", "I[R_X(.)] 0"),
         ("I[label] 0", "I[label] 0"),
     ],
@@ -205,11 +214,11 @@ def test_shorthand_to_stim_keeps_hash_inside_tag():
     "text, expected",
     [
         ("REPEAT 2 { T 0\n}", "REPEAT 2 { S[T] 0\n}"),
-        ("REPEAT[r] 2 {R_X(0.1) 0\n}", "REPEAT[r] 2 {I[R_X(theta=0.1*pi)] 0\n}"),
+        ("REPEAT[r] 2 {R_X(0.1) 0\n}", "REPEAT[r] 2 {I[R_X(0.1)] 0\n}"),
         ("REPEAT 2 {\nH 0\n} T 0", "REPEAT 2 {\nH 0\n} S[T] 0"),
-        ("} REPEAT 3 { i[R_Z(0.5)] 0", "} REPEAT 3 { i[R_Z(theta=0.5*pi)] 0"),
+        ("} REPEAT 3 { i[R_Z(0.5)] 0", "} REPEAT 3 { i[R_Z(0.5)] 0"),
         ("repeat 2 { T 0\n}", "repeat 2 { S[T] 0\n}"),
-        ("Repeat 2 {R_Z(0.5) 0\n}", "Repeat 2 {I[R_Z(theta=0.5*pi)] 0\n}"),
+        ("Repeat 2 {R_Z(0.5) 0\n}", "Repeat 2 {I[R_Z(0.5)] 0\n}"),
     ],
 )
 def test_shorthand_to_stim_converts_instructions_next_to_braces(text, expected):
@@ -242,3 +251,18 @@ def test_positional_tag_matches_shorthand(tagged, shorthand):
     assert circuit == Circuit(shorthand)
     assert str(circuit) == str(Circuit(shorthand))
     assert Circuit(str(circuit)) == circuit
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("SPP[R_PAULI(0.5)] X0*X1", "R_XX(0.5) 0 1"),
+        ("SPP[R_PAULI(theta=0.5*pi)] Z2*Z3", "R_ZZ(0.5) 2 3"),
+        # Only a lone same-axis pair is the two-qubit shorthand.
+        ("SPP[R_PAULI(0.5)] X0*X1 Z2", "R_PAULI(0.5) X0*X1 Z2"),
+        ("SPP[R_PAULI(0.5)] X0*X1*X2", "R_PAULI(0.5) X0*X1*X2"),
+    ],
+)
+def test_stim_to_shorthand_r_pauli(text, expected):
+    assert stim_to_shorthand(text) == expected
+    assert Circuit(expected) == Circuit(text)

@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   component widths, the action and error-bit counts, and memory estimates.
   They replace reading the private `_program` or parsing `repr(sampler)`.
 
+### Changed
+- Parametric gate tags are now written in the positional form, which is the
+  Tsim instruction itself: `R_X(0.1) 0` becomes `I[R_X(0.1)] 0` and
+  `U3(0.1, 0.2, 0.3) 0` becomes `I[U3(0.1, 0.2, 0.3)] 0` (angles in units of
+  pi), instead of `I[R_X(theta=0.1*pi)] 0`. This applies to `stim_circuit`,
+  `append`, `inverse` and all other places that write tags. The keyword form is
+  still read, and circuit text and `append` rewrite it to the positional form.
+  A `stim.Circuit` passed to `Circuit(...)` keeps its tags as written.
+
 ### Fixed
 - Compiling a circuit with many detectors and noise locations no longer needs
   memory proportional to their product. The error basis (a GF(2) elimination
