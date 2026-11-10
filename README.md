@@ -1,4 +1,4 @@
-[![Docs](https://img.shields.io/badge/docs-latest-blue?style=flat&logo=materialformkdocs)](https://tsim.mintlify.app/)
+[![Docs](https://img.shields.io/badge/docs-latest-blue?style=flat&logo=mintlify)](https://bloqade.quera.com/tsim)
 [![Coverage](https://img.shields.io/codecov/c/github/QuEraComputing/tsim?style=flat&logo=codecov)](https://codecov.io/gh/QuEraComputing/tsim)
 [![arXiv](https://img.shields.io/badge/arXiv-2604.01059-b31b1b.svg?style=flat&logo=arxiv)](https://arxiv.org/abs/2604.01059)
 [![Like This? Leave a star](https://img.shields.io/github/stars/QuEraComputing/tsim?style=flat&label=Like%20Tsim%3F%20Leave%20a%20star&color=yellow&logo=github)](https://github.com/QuEraComputing/tsim)
@@ -31,7 +31,7 @@ pip install "bloqade-tsim[cuda13]"   # or bloqade-tsim[cuda12]
 
 
 ## Quick Start
-An introductory tutorial is available [here](docs/demos/encoding_demo.ipynb). Please also refer to the [documentation](https://tsim.mintlify.app/).
+An introductory tutorial is available [here](https://bloqade.quera.com/tsim/tutorials/encoding_demo). Please also refer to the [documentation](https://bloqade.quera.com/tsim).
 
 For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/blob/v1.16.0/doc/gates.md), plus the [non-Clifford instructions](#supported-instructions) listed below.
 

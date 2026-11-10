@@ -1,0 +1,72 @@
+name: Documentation
+
+# Builds the Mintlify site: docs/build.py renders the API reference (griffe)
+# and executes the tutorial notebooks into MDX, then the Mintlify CLI checks
+# the result. Mintlify's hosted builder does not run Python, so on main the
+# built docs/ directory is force-pushed as a single commit to the docs-site
+# branch, which is the branch Mintlify deploys. Generated files never land on
+# main, and the deploy branch keeps no history.
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "src/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/docs.yml"
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEPLOY_BRANCH: docs-site
+
+jobs:
+  build:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.13.7"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Install the Mintlify CLI
+        run: npm install -g mint@4.3.12
+      - name: Install dependencies
+        # The dev group provides the notebook dependencies and the kernel.
+        run: uv sync --group doc --dev
+      - name: Build documentation
+        run: uv run python docs/build.py
+      - name: Validate
+        working-directory: docs
+        run: |
+          mint validate
+          mint broken-links --check-anchors --check-redirects --check-snippets
+      - name: Publish to the deploy branch
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          site=$(mktemp -d)
+          cp -r docs "$site/docs"
+          cd "$site"
+          git init -q -b "$DEPLOY_BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs
+          git commit -q -m "Build docs from $GITHUB_SHA"
+          git push -f "https://x-access-token:$TOKEN@github.com/$GITHUB_REPOSITORY.git" "HEAD:refs/heads/$DEPLOY_BRANCH"

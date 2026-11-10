@@ -1,0 +1,875 @@
+"""Mintlify docs build orchestrator.
+
+Regenerates ``docs/api-reference/`` from ``src/tsim/`` (via griffe) and
+``docs/tutorials/*.mdx`` from the source notebooks (via nbclient +
+nbconvert). All generated files are gitignored.
+
+Usage:
+    python docs/build.py
+    python docs/build.py --no-execute
+    python docs/build.py --api-only
+    python docs/build.py --notebooks-only
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import json
+import os
+import re
+import shutil
+import sys
+import time
+from pathlib import Path
+from typing import Any, Iterator
+
+import griffe
+import nbformat
+from nbclient import NotebookClient
+from nbconvert.exporters import MarkdownExporter
+from nbconvert.preprocessors import (
+    ExtractOutputPreprocessor,
+    TagRemovePreprocessor,
+)
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DOCS_DIR = REPO_ROOT / "docs"
+API_DIR = DOCS_DIR / "api-reference"
+TUTORIALS_DIR = DOCS_DIR / "tutorials"
+IMAGES_TUT_DIR = DOCS_DIR / "images" / "tutorials"
+SRC_DIR = REPO_ROOT / "src"
+
+
+def clean(api: bool, notebooks: bool) -> None:
+    """Remove generated output directories and files."""
+    if api and API_DIR.exists():
+        shutil.rmtree(API_DIR)
+    if notebooks:
+        if IMAGES_TUT_DIR.exists():
+            shutil.rmtree(IMAGES_TUT_DIR)
+        for mdx in TUTORIALS_DIR.glob("*.mdx"):
+            mdx.unlink()
+
+
+def _escape_mdx_text(text: str) -> str:
+    """Escape characters in Markdown text that MDX parses as JSX/expressions.
+
+    MDX treats ``<``, ``>``, ``{``, and ``}`` as JSX/expression delimiters
+    when they appear outside fenced code blocks. Docstrings often contain
+    these in physics notation (|0>, ->, <->, sum_{...}) which trips the
+    parser. We escape them so Mintlify renders them as plain text.
+
+    Only processes lines that are outside fenced code blocks (``` fences).
+    Inside fences Mintlify renders content verbatim — no escaping needed.
+    """
+    lines = text.split("\n")
+    result: list[str] = []
+    in_fence = False
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            result.append(line)
+            continue
+        if in_fence:
+            result.append(line)
+        else:
+            # Escape characters MDX parses as JSX/expression syntax.
+            escaped = (
+                line.replace("{", r"\{")
+                .replace("}", r"\}")
+                .replace("<", r"\<")
+                .replace(">", r"\>")
+            )
+            result.append(escaped)
+    return _escape_code_parameters("\n".join(result))
+
+
+_CODE_PARAMETERS = re.compile(r"\[\[(\d+,\s*\d+,\s*\d+)\]\]")
+
+
+def _escape_code_parameters(text: str) -> str:
+    """Write ``[[n,k,d]]`` code parameters with character references.
+
+    Mintlify reads double brackets as an unsupported wiki link. Fenced code
+    blocks are left alone.
+    """
+    out: list[str] = []
+    in_fence = False
+    for line in text.split("\n"):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+        elif not in_fence:
+            line = _CODE_PARAMETERS.sub(r"&#91;&#91;\1&#93;&#93;", line)
+        out.append(line)
+    return "\n".join(out)
+
+
+def _srcdoc_attr(html: str) -> str:
+    """Escape a full HTML document for use as an MDX ``<iframe srcDoc>`` value.
+
+    We embed diagrams inline via ``srcDoc`` rather than linking a standalone
+    ``.html`` file, because Mintlify's hosted CDN only serves a fixed set of
+    static file types (images, ``.js``, ``.css``, ``.json``, …) and **not**
+    ``.html`` — so linked diagram files 404 on the deployed site.
+
+    The value is consumed as a JSX double-quoted attribute string. JSX decodes
+    HTML character references at compile time, so escaping ``&``, ``<``, ``>``,
+    and ``"`` round-trips: JSX turns them back into the literal characters and
+    hands the browser the exact original HTML for the ``srcdoc`` document
+    (scripts included). Order matters — escape ``&`` first.
+    """
+    return (
+        html.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _stretch_zoom_block(block: str) -> str:
+    """Make a tsim zoom container fill the iframe's full width.
+
+    In Jupyter the container is sized to the circuit, which inside a
+    full-width iframe leaves a tiny bordered panel floating in a large
+    empty frame. Rewrite the outer ``data-tsim-zoom`` container to fill the
+    iframe (``width`` and ``height`` 100%, ``box-sizing:border-box``). The
+    container's child ``size`` div is ``display:inline-block``, so the line
+    box reserves room for a font descender below it (a few px), which pushed
+    content past the frame and produced a spurious vertical scrollbar; set
+    ``font-size:0; line-height:0`` on the container to remove that gap. The
+    rounded border lives on the iframe itself, so drop the container border
+    here. Also drop the script's auto-fit-to-width step so the diagram keeps
+    its height-fit initial scale: small circuits render at natural size
+    (left-aligned) and wide circuits keep full height and scroll
+    horizontally, instead of being squeezed thin to fit the width.
+    """
+    block = re.sub(
+        r'(<div\b[^>]*data-tsim-zoom="[^"]*"[^>]*style=")[^"]*"',
+        r"\1width:100%; height:100%; box-sizing:border-box; "
+        r"font-size:0; line-height:0; overflow:auto; background:white; "
+        r'border:none; position:relative;"',
+        block,
+        count=1,
+    )
+    block = block.replace(
+        "scale = cw / natW;",
+        "/* keep height-fit initial scale */",
+    )
+    return block
+
+
+def _extract_diagram_svgs(body: str, placeholders: dict[str, str]) -> str:
+    """Replace tsim diagram HTML with placeholder tokens, recording iframes.
+
+    tsim's ``Diagram._repr_html_()`` wraps the SVG in a zoom container div
+    plus a ``<script>`` block. MDX can't parse ``<script>`` tags or inline
+    ``style="..."`` from raw HTML, and Mintlify's CDN doesn't serve ``.html``
+    files, so we inline the full interactive document into an
+    ``<iframe srcDoc>``. This preserves the pan/zoom the Jupyter renderer
+    provides.
+
+    The inlined HTML is multi-line and indented, which the later line-based
+    transforms (math normalization, output fencing) would corrupt. So we emit
+    a single-line placeholder token here and record the real iframe in
+    *placeholders*; the caller substitutes them back in **after** those
+    transforms run.
+    """
+    tsim_pattern = re.compile(
+        r'<div\s+data-tsim-zoom="[^"]*"[^>]*'
+        r"height:(?P<height>\d+(?:\.\d+)?)px[^>]*>.*?</div>\s*</div>\s*</div>"
+        r"(?:\s*<script\b[^>]*>.*?</script>)?",
+        re.DOTALL | re.IGNORECASE,
+    )
+
+    counter = [0]
+
+    def replacer(m: re.Match) -> str:
+        counter[0] += 1
+        block = _stretch_zoom_block(m.group(0))
+        # Replace the random uuid (used in both the container attribute and
+        # the script's querySelector) with a deterministic per-notebook id so
+        # the output is byte-stable across builds (avoids git churn).
+        uid_m = re.search(r'data-tsim-zoom="([^"]+)"', block)
+        if uid_m:
+            block = block.replace(uid_m.group(1), f"tsim-zoom-{counter[0]:03d}")
+        height = int(float(m.group("height")))
+        # body overflow:hidden so only the inner zoom container scrolls
+        # (otherwise the iframe body scrolls too -> nested scrollbars).
+        html = (
+            '<!doctype html><html><head><meta charset="utf-8">'
+            "<style>html,body{margin:0;padding:0;height:100%;"
+            "overflow:hidden;}</style>"
+            f"</head><body>{block}</body></html>"
+        )
+        iframe = (
+            f'<iframe srcDoc="{_srcdoc_attr(html)}" width="100%" '
+            f'height="{height + 4}" '
+            f'style={{{{border: "1px solid #eee", borderRadius: "0.5rem"}}}} '
+            f'title="Circuit diagram {counter[0]}" loading="lazy" />'
+        )
+        token = f"MINTLIFYIFRAMETSIM{counter[0]:03d}"
+        placeholders[token] = iframe
+        return f"\n\n{token}\n\n"
+
+    return tsim_pattern.sub(replacer, body)
+
+
+def _normalize_block_math(body: str) -> str:
+    """Put each ``$$`` delimiter on its own line.
+
+    Mintlify's MDX parser only recognizes a ``$$...$$`` block as display math
+    when both delimiters sit on their own line. Notebooks frequently write
+    multi-line math with the opening (and sometimes closing) ``$$`` glued to
+    text on the same line, which breaks rendering and bleeds raw LaTeX into
+    the page. Split such delimiters onto their own lines, skipping content
+    inside fenced code blocks.
+    """
+    lines = body.split("\n")
+    out: list[str] = []
+    in_fence = False
+    for line in lines:
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        if in_fence or "$$" not in line:
+            out.append(line)
+            continue
+        # Count $$ occurrences; if exactly 2 on one line it's inline display
+        # math, leave it alone. Otherwise (1 occurrence = open or close of a
+        # multi-line block), isolate it.
+        if line.count("$$") == 1:
+            idx = line.index("$$")
+            before = line[:idx].rstrip()
+            after = line[idx + 2 :].lstrip()
+            if before:
+                out.append(before)
+            out.append("$$")
+            if after:
+                out.append(after)
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
+def _extract_pyzx_iframes(body: str, placeholders: dict[str, str]) -> str:
+    """Replace pyzx D3 diagram blocks with placeholder tokens.
+
+    ``c.diagram("pyzx")`` emits a ``<div id="graph-output-…">`` placeholder
+    followed by a ``<script type="module">`` that imports D3 from a CDN and
+    renders an interactive ZX diagram into the div. Mintlify's CDN doesn't
+    serve ``.html`` files, so we inline the div+script into an
+    ``<iframe srcDoc>``. As with the tsim diagrams, we emit a single-line
+    placeholder and record the iframe in *placeholders* for the caller to
+    substitute back after the line-based transforms run.
+    """
+    pattern = re.compile(
+        r'(<div\b[^>]*id="graph-output-[^"]*"[^>]*>\s*</div>)\s*'
+        r'(<script\b[^>]*type="module"[^>]*>.*?</script>)',
+        re.DOTALL | re.IGNORECASE,
+    )
+    counter = [0]
+
+    # The D3 render call ends with ``…, <width>, <height>, <pad>, <scale>,
+    # <bool>, <bool>, '');`` — pull the SVG height so the iframe matches the
+    # diagram instead of using a fixed height that leaves large white margins.
+    height_re = re.compile(
+        r",\s*[\d.]+,\s*([\d.]+),\s*[\d.]+,\s*[\d.]+,\s*"
+        r"(?:true|false),\s*(?:true|false)",
+        re.IGNORECASE,
+    )
+
+    def replacer(m: re.Match) -> str:
+        counter[0] += 1
+        script = m.group(2)
+        block = m.group(1) + script
+        # Replace pyzx's random ``graph-output-XXXX`` id (used in the div and
+        # the ``showGraph('#…')`` call) with a deterministic per-notebook id
+        # so the output is byte-stable across builds. The CSS uses an
+        # ``[id^="graph-output-"]`` prefix selector, so it still matches.
+        gid_m = re.search(r'id="(graph-output-[^"]+)"', block)
+        if gid_m:
+            block = block.replace(gid_m.group(1), f"graph-output-{counter[0]:03d}")
+        hm = height_re.search(script)
+        height = int(float(hm.group(1))) + 12 if hm else 400
+        html = (
+            '<!doctype html><html><head><meta charset="utf-8">'
+            "<style>html,body{margin:0;padding:0;height:100%;"
+            "overflow:hidden;}"
+            '[id^="graph-output-"]{width:100%;height:100%;'
+            "overflow:auto;box-sizing:border-box;}</style>"
+            f"</head><body>{block}</body></html>"
+        )
+        iframe = (
+            f'<iframe srcDoc="{_srcdoc_attr(html)}" width="100%" '
+            f'height="{height}" '
+            f'style={{{{border: "1px solid #eee", borderRadius: "0.5rem"}}}} '
+            f'title="ZX diagram {counter[0]}" loading="lazy" />'
+        )
+        token = f"MINTLIFYIFRAMEPYZX{counter[0]:03d}"
+        placeholders[token] = iframe
+        return f"\n\n{token}\n\n"
+
+    return pattern.sub(replacer, body)
+
+
+def _extract_zxparam_iframes(body: str, placeholders: dict[str, str]) -> str:
+    """Replace zxparam D3 diagram blocks with placeholder tokens.
+
+    ``c.diagram("zx")`` emits a ``<div id="zxp-…">`` followed by a
+    ``<script type="module">`` that imports D3 and ends with a
+    ``renderZx(document.getElementById("zxp-…"), {…graph json…});`` call.
+    Like pyzx output, it is inlined into an ``<iframe srcDoc>``. The iframe
+    height mirrors the viewer's own sizing: ``2 * pad + row_span * scale_y``
+    (floored at ``minHeight``), plus a line for a non-trivial scalar.
+    """
+    pattern = re.compile(
+        r'(<div\b[^>]*id="zxp-[^"]*"[^>]*>\s*</div>)\s*'
+        r'(<script\b[^>]*type="module"[^>]*>.*?</script>)',
+        re.DOTALL | re.IGNORECASE,
+    )
+    payload_re = re.compile(r"renderZx\([^,]+,\s*(\{.*\})\);\s*</script>", re.DOTALL)
+    counter = [0]
+
+    def diagram_height(script: str) -> int:
+        m = payload_re.search(script)
+        if not m:
+            return 400
+        graph = json.loads(m.group(1))
+        rows = [node["row"] for node in graph.get("nodes", [])] or [0.0]
+        scale_y = (graph.get("scale") or [40, 40])[1]
+        height = max(60 + (max(rows) - min(rows)) * scale_y, 60)
+        if graph.get("scalar") not in (None, "", "1"):
+            height += 22
+        return int(height) + 12
+
+    def replacer(m: re.Match) -> str:
+        counter[0] += 1
+        block = m.group(1) + m.group(2)
+        gid_m = re.search(r'id="(zxp-[^"]+)"', block)
+        if gid_m:
+            block = block.replace(gid_m.group(1), f"zxp-{counter[0]:03d}")
+        html = (
+            '<!doctype html><html><head><meta charset="utf-8">'
+            "<style>html,body{margin:0;padding:0;height:100%;"
+            "overflow:hidden;}"
+            '[id^="zxp-"]{display:block !important;width:100%;height:100%;'
+            "overflow:auto;box-sizing:border-box;}</style>"
+            f"</head><body>{block}</body></html>"
+        )
+        iframe = (
+            f'<iframe srcDoc="{_srcdoc_attr(html)}" width="100%" '
+            f'height="{diagram_height(m.group(2))}" '
+            f'style={{{{border: "1px solid #eee", borderRadius: "0.5rem"}}}} '
+            f'title="ZX diagram {counter[0]}" loading="lazy" />'
+        )
+        token = f"MINTLIFYIFRAMEZXP{counter[0]:03d}"
+        placeholders[token] = iframe
+        return f"\n\n{token}\n\n"
+
+    return pattern.sub(replacer, body)
+
+
+def _strip_script_and_pyzx(body: str) -> str:
+    """Strip any remaining ``<script>`` tags and empty graph placeholder divs.
+
+    Runs after :func:`_extract_pyzx_iframes`, which captures real pyzx
+    output pairs. Anything left over here is either an orphaned script or
+    an empty placeholder (no following script) that would crash MDX on the
+    inline ``style="..."`` attribute.
+    """
+    body = re.sub(
+        r"<script\b[^>]*>.*?</script>",
+        "",
+        body,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    body = re.sub(
+        r'<div\b[^>]*id="(?:graph-output|zxp)-[^"]*"[^>]*>\s*</div>',
+        "",
+        body,
+        flags=re.IGNORECASE,
+    )
+    return body
+
+
+def _fence_indented_outputs(body: str) -> str:
+    """Convert nbconvert's 4-space indented output blocks to fenced blocks.
+
+    nbconvert's ``MarkdownExporter`` emits cell stream/text outputs as
+    indented (4-space) code blocks. Mintlify's MDX parser does not
+    consistently recognize indented code blocks, which causes the output
+    to render as a normal paragraph — whitespace and newlines collapse,
+    and any literal escape sequences in the printed text show up
+    untouched. Rewrap each contiguous indented output as a fenced
+    ```` ```text title="Output" ```` block so it renders correctly and is
+    visually distinct from input code cells.
+    """
+    lines = body.split("\n")
+    out: list[str] = []
+    in_fence = False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            out.append(line)
+            i += 1
+            continue
+        if in_fence or not line.startswith("    "):
+            out.append(line)
+            i += 1
+            continue
+        # Start of an indented block. Collect until a non-indented,
+        # non-blank line. Allow blank lines inside the block.
+        block: list[str] = []
+        while i < len(lines):
+            cur = lines[i]
+            if cur.startswith("    "):
+                block.append(cur[4:])
+                i += 1
+            elif cur.strip() == "":
+                # Look ahead: if the next non-empty line is still
+                # indented, the blank is part of the block.
+                j = i + 1
+                while j < len(lines) and lines[j].strip() == "":
+                    j += 1
+                if j < len(lines) and lines[j].startswith("    "):
+                    block.append("")
+                    i += 1
+                else:
+                    break
+            else:
+                break
+        # Trim trailing blank lines inside the block.
+        while block and block[-1] == "":
+            block.pop()
+        if block:
+            out.append('```text title="Output"')
+            out.extend(block)
+            out.append("```")
+            out.append("")
+    return "\n".join(out)
+
+
+def _format_signature(obj) -> str:
+    """Render a function or class signature as a Python source line."""
+    name = obj.name
+    params = []
+    for p in obj.parameters:
+        if p.name == "self":
+            continue
+        s = p.name
+        if p.annotation:
+            s += f": {p.annotation}"
+        if p.default is not None and p.default != "":
+            s += f" = {p.default}"
+        params.append(s)
+    sig = f"{name}({', '.join(params)})"
+    if getattr(obj, "returns", None):
+        sig += f" -> {obj.returns}"
+    return sig
+
+
+def _one_line(text: str) -> str:
+    """Collapse internal whitespace so text fits on a single list item."""
+    return " ".join(text.split())
+
+
+def _render_docstring_sections(sections) -> str:
+    """Render parsed griffe docstring sections to MDX-safe Markdown."""
+    out: list[str] = []
+    for sec in sections:
+        kind = sec.kind.value
+        if kind == "text":
+            out.append(_escape_mdx_text(sec.value.strip()))
+            out.append("")
+        elif kind in ("parameters", "other parameters"):
+            out.append("**Parameters:**")
+            out.append("")
+            for p in sec.value:
+                anno = f" (`{p.annotation}`)" if p.annotation else ""
+                desc = _escape_mdx_text(_one_line(p.description or ""))
+                dash = f" — {desc}" if desc else ""
+                out.append(f"- `{p.name}`{anno}{dash}")
+            out.append("")
+        elif kind == "returns":
+            out.append("**Returns:**")
+            out.append("")
+            for r in sec.value:
+                anno = f"`{r.annotation}` — " if r.annotation else ""
+                desc = _escape_mdx_text(_one_line(r.description or ""))
+                out.append(f"- {anno}{desc}")
+            out.append("")
+        elif kind in ("yields", "receives"):
+            out.append(f"**{kind.capitalize()}:**")
+            out.append("")
+            for r in sec.value:
+                anno = f"`{r.annotation}` — " if r.annotation else ""
+                desc = _escape_mdx_text(_one_line(r.description or ""))
+                out.append(f"- {anno}{desc}")
+            out.append("")
+        elif kind in ("raises", "warns"):
+            label = "Raises" if kind == "raises" else "Warns"
+            out.append(f"**{label}:**")
+            out.append("")
+            for r in sec.value:
+                anno = f"`{r.annotation}` — " if r.annotation else ""
+                desc = _escape_mdx_text(_one_line(r.description or ""))
+                out.append(f"- {anno}{desc}")
+            out.append("")
+        elif kind == "examples":
+            out.append("**Examples:**")
+            out.append("")
+            for example_kind, content in sec.value:
+                # griffe yields (DocstringSectionKind, str) pairs; code parts
+                # are tagged as "examples", prose as "text".
+                if getattr(example_kind, "value", "") == "examples":
+                    out.append("```python")
+                    out.append(content.strip())
+                    out.append("```")
+                else:
+                    out.append(_escape_mdx_text(content.strip()))
+                out.append("")
+        elif kind == "admonition":
+            title = getattr(sec, "title", None) or ""
+            if title:
+                out.append(f"**{_escape_mdx_text(title)}:**")
+                out.append("")
+            val = sec.value
+            text = val.contents if hasattr(val, "contents") else str(val)
+            out.append(_escape_mdx_text(text.strip()))
+            out.append("")
+        else:
+            # Unknown section: render its raw text if it's a string.
+            val = sec.value
+            if isinstance(val, str):
+                out.append(_escape_mdx_text(val.strip()))
+                out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def _render_docstring(obj) -> str:
+    """Return the parsed docstring as MDX-safe Markdown, or '' if none.
+
+    Parses Google-style sections (Args, Returns, Raises, ...) so they render
+    as formatted lists rather than a flat paragraph. Falls back to escaped
+    raw text if parsing fails.
+    """
+    if not obj.docstring:
+        return ""
+    try:
+        sections = obj.docstring.parse(griffe.Parser.google)
+        return _render_docstring_sections(sections)
+    except Exception:
+        return _escape_mdx_text(obj.docstring.value.strip()) + "\n"
+
+
+def _render_member(member, level: int) -> list[str]:
+    """Render a function/class member as MDX lines."""
+    if member.name.startswith("_") and not member.name.startswith("__"):
+        return []
+    # NOTE: use .kind (not .is_class / .is_function) — Alias.kind safely
+    # returns Kind.ALIAS on unresolvable imports; the is_* properties raise.
+    if member.kind == griffe.Kind.FUNCTION:
+        return [
+            f"{'#' * level} `{member.name}`",
+            "",
+            "```python",
+            _format_signature(member),
+            "```",
+            "",
+            _render_docstring(member),
+            "",
+        ]
+    if member.kind == griffe.Kind.CLASS:
+        out = [
+            f"{'#' * level} class `{member.name}`",
+            "",
+            "```python",
+            _format_signature(member),
+            "```",
+            "",
+            _render_docstring(member),
+            "",
+        ]
+        for sub_name, sub in sorted(member.all_members.items()):
+            if sub_name.startswith("_") and sub_name != "__init__":
+                continue
+            if sub_name == "__init__":
+                continue
+            if sub.kind == griffe.Kind.FUNCTION:
+                out.extend(_render_member(sub, level + 1))
+        return out
+    return []
+
+
+# Only the public API (which
+# follows semantic versioning) and tsim.experimental are documented. Every
+# other module is internal.
+API_PAGES = {
+    "index": (
+        "Tsim API",
+        "The public API, which follows semantic versioning. Other modules are "
+        "internal and may change without notice.",
+        [
+            "tsim.Circuit",
+            "tsim.CompiledMeasurementSampler",
+            "tsim.CompiledDetectorSampler",
+        ],
+    ),
+    "experimental": (
+        "Experimental",
+        "Helpers outside of the stable API. They may change or be removed in any "
+        "release.",
+        [
+            "tsim.experimental.CompiledStateProbs",
+            "tsim.experimental.SteaneEncoder",
+            "tsim.experimental.ColorEncoder5",
+        ],
+    ),
+}
+
+
+def _render_page(pkg, title: str, intro: str, objects: list[str]) -> str:
+    """Render one API page listing the given objects."""
+    lines = ["---", f'title: "{title}"', f'description: "{intro}"', "---", ""]
+    for path in objects:
+        obj = pkg[path.removeprefix("tsim.")]
+        lines.extend(_render_member(obj.final_target, level=2))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def build_api() -> int:
+    """Render the public and experimental API pages with griffe."""
+    pkg = griffe.load(
+        "tsim",
+        search_paths=[str(SRC_DIR)],
+        extensions=griffe.load_extensions("griffe_inherited_docstrings"),
+        resolve_aliases=True,
+    )
+    API_DIR.mkdir(parents=True, exist_ok=True)
+    for name, (title, intro, objects) in API_PAGES.items():
+        out = API_DIR / f"{name}.mdx"
+        out.write_text(_render_page(pkg, title, intro, objects))
+    return len(API_PAGES)
+
+
+def _humanize(name: str) -> str:
+    """Convert a snake_case or kebab-case filename stem to a title string."""
+    return name.replace("_", " ").replace("-", " ").capitalize()
+
+
+def _extract_title(nb: Any, fallback_name: str) -> tuple[str, Any]:
+    """Pull title from first markdown cell if it starts with '# '.
+
+    Strip that line from the cell to avoid a duplicate H1 in the
+    rendered MDX. Returns (title, possibly-mutated-notebook).
+    """
+    for cell in nb.cells:
+        if cell.cell_type == "markdown":
+            source = cell.source.lstrip()
+            m = re.match(r"^#\s+([^\n]+)", source)
+            if m:
+                title = m.group(1).strip()
+                cell.source = source[m.end() :].lstrip("\n")
+                return title, nb
+            break  # first md cell doesn't have an H1; stop scanning
+    return _humanize(fallback_name), nb
+
+
+@contextlib.contextmanager
+def _env(**overrides: str) -> Iterator[None]:
+    """Temporarily set environment variables."""
+    saved = {key: os.environ.get(key) for key in overrides}
+    os.environ.update(overrides)
+    try:
+        yield
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def _convert_notebook(nb_path: Path, execute: bool) -> None:
+    """Convert a single .ipynb to .mdx, saving extracted figures alongside."""
+    nb = nbformat.read(str(nb_path), as_version=4)
+
+    if execute:
+        # Inject a hidden preamble that seeds RNG and fixes matplotlib's SVG
+        # element-id hashing, so executed outputs (sampled values, figures)
+        # are byte-stable across builds and safe to commit. tsim samplers use
+        # ``np.random.default_rng()`` when seed is None (not the legacy global
+        # RNG), so we default that to a fixed seed. (NOTE: sinter spawns
+        # worker subprocesses that this does not reach, so Monte-Carlo plots
+        # produced via sinter may still vary slightly between builds.)
+        preamble = nbformat.v4.new_code_cell(
+            "import numpy as _np\n"
+            "try:\n"
+            "    import matplotlib as _mpl\n"
+            "    _mpl.rcParams['svg.hashsalt'] = 'tsim-docs'\n"
+            "except Exception:\n"
+            "    pass\n"
+            "_orig_default_rng = _np.random.default_rng\n"
+            "def _seeded_default_rng(*a, **k):\n"
+            "    if not a and 'seed' not in k:\n"
+            "        return _orig_default_rng(0)\n"
+            "    return _orig_default_rng(*a, **k)\n"
+            "_np.random.default_rng = _seeded_default_rng\n"
+            "_np.random.seed(0)\n"
+        )
+        preamble.metadata["tags"] = ["remove-cell"]
+        nb.cells.insert(0, preamble)
+        # SOURCE_DATE_EPOCH pins matplotlib's embedded SVG date; JAX_PLATFORMS
+        # keeps outputs independent of the build machine (a GPU without a CUDA
+        # jaxlib would print a fallback warning). Both must be set before the
+        # kernel subprocess starts so it inherits them.
+        with _env(SOURCE_DATE_EPOCH="1704067200", JAX_PLATFORMS="cpu"):
+            client = NotebookClient(
+                nb,
+                timeout=600,
+                kernel_name="python3",
+                allow_errors=False,
+                resources={"metadata": {"path": str(nb_path.parent)}},
+            )
+            client.execute()
+
+    # Drop cells tagged "remove-cell" (post-execution).
+    tag_remove = TagRemovePreprocessor(remove_cell_tags=("remove-cell",))
+    nb, _ = tag_remove.preprocess(nb, {})
+
+    title, nb = _extract_title(nb, nb_path.stem)
+
+    out_img_dir = IMAGES_TUT_DIR / nb_path.stem
+    out_img_dir.mkdir(parents=True, exist_ok=True)
+    extract = ExtractOutputPreprocessor()
+    extract.output_filename_template = "cell_{cell_index}_{index}{extension}"
+
+    exporter = MarkdownExporter()
+    exporter.register_preprocessor(extract, enabled=True)
+    body, resources = exporter.from_notebook_node(
+        nb,
+        resources={
+            "output_files_dir": f"/images/tutorials/{nb_path.stem}",
+            "unique_key": nb_path.stem,
+        },
+    )
+
+    # Save extracted resources (matplotlib figures, etc.)
+    for fname, data in resources.get("outputs", {}).items():
+        out_file = out_img_dir / Path(fname).name
+        out_file.write_bytes(data)
+
+    # Replace tsim and pyzx diagram HTML with single-line placeholder tokens,
+    # recording the real ``<iframe srcDoc>`` embeds. Tokens (not the multi-line
+    # inlined HTML) flow through the line-based transforms below; the iframes
+    # are substituted back in at the very end so those transforms can't corrupt
+    # the inlined SVG/script content.
+    iframes: dict[str, str] = {}
+    body = _extract_diagram_svgs(body, iframes)
+    body = _extract_pyzx_iframes(body, iframes)
+    body = _extract_zxparam_iframes(body, iframes)
+
+    # Strip any orphaned <script> tags or empty graph placeholders that
+    # didn't pair up above.
+    body = _strip_script_and_pyzx(body)
+
+    # Normalize block math so each $$ sits on its own line (Mintlify
+    # requirement).
+    body = _normalize_block_math(body)
+
+    # Wrap nbconvert's 4-space indented cell outputs in fenced code blocks
+    # so Mintlify renders them as code rather than collapsing whitespace.
+    body = _fence_indented_outputs(body)
+    body = _escape_code_parameters(body)
+
+    # Replace bare "![svg](...)" alt text (nbconvert's default) with something
+    # more descriptive for accessibility.
+    body = re.sub(
+        r"!\[(?:svg|png)\]\(",
+        "![Notebook output figure](",
+        body,
+    )
+
+    # Substitute the diagram iframes back in now that all line-based
+    # transforms are done.
+    for token, iframe in iframes.items():
+        body = body.replace(token, iframe)
+
+    title_esc = title.replace('"', "'")
+    description = TUTORIAL_DESCRIPTIONS[nb_path.stem]
+    mdx = (
+        f'---\ntitle: "{title_esc}"\ndescription: "{description}"\n---\n\n'
+        f"{body.rstrip()}\n"
+    )
+    out_mdx = nb_path.with_suffix(".mdx")
+    out_mdx.write_text(mdx)
+
+
+# Page descriptions (used for SEO and shown under the title). Every notebook in
+# docs/tutorials needs an entry.
+TUTORIAL_DESCRIPTIONS = {
+    "overview": (
+        "Supported instructions and noise channels, sampling, visualization and "
+        "detector error models."
+    ),
+    "encoding_demo": (
+        "Sample a Clifford+T circuit, then encode a state in a color code and add "
+        "detectors, observables, noise and error correction."
+    ),
+    "from_stim_to_tsim": (
+        "How Tsim differs from Stim: non-Clifford instructions, detector reference "
+        "samples, sampling strategies and postselection."
+    ),
+    "magic_state_distillation": (
+        "Simulate the 85-qubit logical magic state distillation protocol of "
+        "Rodriguez et al. (2025)."
+    ),
+}
+
+
+def build_notebooks(execute: bool) -> int:
+    """Build tutorial MDX files from Jupyter notebooks."""
+    if not TUTORIALS_DIR.exists():
+        return 0
+    notebooks = sorted(TUTORIALS_DIR.glob("*.ipynb"))
+    for nb_path in notebooks:
+        _convert_notebook(nb_path, execute=execute)
+    return len(notebooks)
+
+
+def main() -> int:
+    """Run the docs build orchestrator."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--no-execute",
+        action="store_true",
+        help="Skip kernel execution; render notebooks from cached outputs.",
+    )
+    parser.add_argument("--api-only", action="store_true")
+    parser.add_argument("--notebooks-only", action="store_true")
+    args = parser.parse_args()
+
+    if args.api_only and args.notebooks_only:
+        parser.error("--api-only and --notebooks-only are mutually exclusive")
+
+    do_api = not args.notebooks_only
+    do_nb = not args.api_only
+
+    start = time.perf_counter()
+    clean(api=do_api, notebooks=do_nb)
+
+    n_api = build_api() if do_api else 0
+    n_nb = build_notebooks(execute=not args.no_execute) if do_nb else 0
+
+    elapsed = time.perf_counter() - start
+    print(f"\nBuilt {n_api} API pages, {n_nb} notebooks in {elapsed:.1f}s")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img" aria-label="Bloqade">
+  <title>Bloqade</title>
+  <!--
+    Bloqade favicon: 12 atoms on a ring, drawn on a TRANSPARENT background so
+    the browser's tab strip shows through (the old .ico had an opaque white
+    background, which rendered as a white block in dark mode).
+
+    The light and dark variants live in this one file on purpose. Browsers
+    ignore the `media` attribute on `<link rel="icon">` (Chrome and Safari both
+    do), so the only reliable way to ship a light and a dark favicon is an
+    inline `prefers-color-scheme` query inside the SVG itself. The fills are the
+    per-scheme foreground tokens from src/styles/brand.css.
+
+    Note this follows the OS/browser colour scheme, not the site's own theme
+    toggle, which is what we want: the tab strip is browser chrome, not page
+    content. Keep the geometry in sync with scripts/gen_favicon.py, which
+    rasterizes the .ico fallback from the same ring.
+
+    NB: no double hyphens in this comment; SVG is parsed as XML.
+  -->
+  <style>
+    circle {
+      fill: #1a1b22;
+    }
+    @media (prefers-color-scheme: dark) {
+      circle {
+        fill: #f2f2f8;
+      }
+    }
+  </style>
+  <!-- Ring radius 13.5, atom radius 2.5: full-bleed in the 32-unit box without
+       clipping, and ~2 units of clear space between neighbouring atoms so the
+       ring still reads as 12 dots rather than a donut at 16px. -->
+  <g>
+    <circle cx="16" cy="2.5" r="2.5" />
+    <circle cx="22.75" cy="4.31" r="2.5" />
+    <circle cx="27.69" cy="9.25" r="2.5" />
+    <circle cx="29.5" cy="16" r="2.5" />
+    <circle cx="27.69" cy="22.75" r="2.5" />
+    <circle cx="22.75" cy="27.69" r="2.5" />
+    <circle cx="16" cy="29.5" r="2.5" />
+    <circle cx="9.25" cy="27.69" r="2.5" />
+    <circle cx="4.31" cy="22.75" r="2.5" />
+    <circle cx="2.5" cy="16" r="2.5" />
+    <circle cx="4.31" cy="9.25" r="2.5" />
+    <circle cx="9.25" cy="4.31" r="2.5" />
+  </g>
+</svg>

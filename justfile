@@ -19,11 +19,20 @@ coverage-unit:
 
 coverage: coverage-run coverage-xml coverage-report
 
+# Build the docs and serve them locally (needs `npm i -g mint`).
 doc:
-    mkdocs serve
+    uv run python docs/build.py
+    cd docs && mint dev
 
+# Render notebooks from their stored outputs instead of re-executing them.
+doc-quick:
+    uv run python docs/build.py --no-execute
+    cd docs && mint dev
+
+# Build the docs and run the same checks as CI.
 doc-build:
-    mkdocs build
+    uv run python docs/build.py
+    cd docs && mint validate && mint broken-links --check-anchors --check-redirects --check-snippets
 
 vulture:
     uv run vulture
