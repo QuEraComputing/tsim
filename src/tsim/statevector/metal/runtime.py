@@ -25,7 +25,7 @@ def metal() -> ModuleType:
         ImportError: If ``pyobjc-framework-Metal`` is not installed.
 
     """
-    import Metal
+    import Metal  # pyright: ignore[reportMissingImports]  # the metal extra, macOS only
 
     return Metal
 
