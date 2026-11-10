@@ -10,6 +10,7 @@ experiments/
 /outputs/
 /output/
 /tmp/
+/.tsim-dev/
 /lean/
 /benchmark_instructions.md
 /clifft_noise_transparent_squeeze.md
