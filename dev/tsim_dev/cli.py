@@ -137,7 +137,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--batch-size", type=int, default=0)
     p.add_argument("--bit-packed", action="store_true")
     _circuit_options(p)
-    _caps(p, "8G", 600)
+    parser_caps = p.add_argument_group("caps")
+    parser_caps.add_argument(
+        "--mem", default="8G", help="memory cap per process (default 8G)"
+    )
+    parser_caps.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="seconds per measurement (default 600); with --width, for the whole run "
+        "(default 1800)",
+    )
     p.set_defaults(func=bench.run)
 
     p = sub.add_parser(

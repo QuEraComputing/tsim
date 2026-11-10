@@ -427,6 +427,8 @@ def run(args) -> int:
             raise InfraError("the two sides are the same; change a setting of one")
     except InfraError as error:
         common.die(str(error))
+    if args.timeout is None:
+        args.timeout = 1800 if args.width else 600
     if args.width:
         return width.run(args, cases, sides)
     has_ref = len(sides) == 2

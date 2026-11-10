@@ -53,9 +53,13 @@ uv run tsim-dev bench --width --ref origin/main      # whole corpus, compile onl
 uv run tsim-dev bench --width --suite full --ref origin/main
 ```
 
-Each side compiles every circuit once, in one process, and prints the width next to
-the one recorded in tsim-bench. The verdict is `wider`, `narrower`, `same` or
-`unknown`; any `wider` exits 1. A circuit over Tsim's limit shows `>=N`: N is the width
+Both sides compile every circuit once, at the same time, in `--jobs` workers (default
+4). A row is printed as soon as a circuit is done on both sides, small circuits first,
+with an `[n/N]` count, so the first rows appear within seconds; the row shows the width
+next to the one recorded in tsim-bench. The verdict is `wider`, `narrower`, `same` or
+`unknown`; any `wider` exits 1. `--case-timeout` (300 s) stops one slow compile;
+`--timeout` (1800 s here) is the deadline for the whole run, after which the circuits
+not yet compiled are reported as errors. A circuit over Tsim's limit shows `>=N`: N is the width
 in Tsim's refusal, a lower bound. Widths do not depend on the machine, so this needs
 no rounds or quiet machine, but it says nothing about speed: a change that keeps the
 width can still be slower. Compile times are shown for each side.
