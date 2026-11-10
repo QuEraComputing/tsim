@@ -31,6 +31,7 @@ from tsim.utils.diagram import draw_zx, render_svg, render_timeline_text
 from tsim.utils.program_text import (
     CONTROLLED_GATE_ARITY,
     canonical_parametric_tag,
+    canonicalize_parametric_tags,
     controlled_gate_decomposition_lines,
     enriched_stim_error,
     shorthand_to_stim,
@@ -173,13 +174,15 @@ class Circuit:
         Args:
             stim_program_text: Stim program text to parse, or a ``stim.Circuit``
                 or ``Circuit`` to copy. If empty, creates an empty circuit.
+                Parametric tags in the legacy keyword form, such as
+                ``I[R_X(theta=0.1*pi)]``, are rewritten to ``I[R_X(0.1)]``.
 
         """
         if isinstance(stim_program_text, Circuit):
             self._stim_circ = stim_program_text._stim_circ.copy()
             return
         if isinstance(stim_program_text, stim.Circuit):
-            self._stim_circ = stim_program_text.copy()
+            self._stim_circ = canonicalize_parametric_tags(stim_program_text)
             return
         if not isinstance(stim_program_text, str):
             raise TypeError(
@@ -196,15 +199,23 @@ class Circuit:
     def from_stim_program(cls, stim_circuit: stim.Circuit) -> Circuit:
         """Create a Circuit from a stim.Circuit object.
 
+        The circuit is copied, and parametric tags in the legacy keyword form,
+        such as ``I[R_X(theta=0.1*pi)]``, are rewritten to ``I[R_X(0.1)]``.
+
         Args:
-            stim_circuit: The Stim circuit to wrap.
+            stim_circuit: The Stim circuit to copy.
 
         Returns:
             A new Circuit instance.
 
         """
+        return cls._wrap(canonicalize_parametric_tags(stim_circuit))
+
+    @classmethod
+    def _wrap(cls, stim_circuit: stim.Circuit) -> Circuit:
+        """Wrap a Stim circuit built by Tsim itself, without copying or rewriting."""
         c = cls.__new__(cls)
-        c._stim_circ = stim_circuit.copy()
+        c._stim_circ = stim_circuit
         return c
 
     def append_from_stim_program_text(self, stim_program_text: str) -> None:
@@ -384,7 +395,9 @@ class Circuit:
                     "Can't specify targets, arg or tag when appending a "
                     f"{type(name).__name__}."
                 )
-            self._stim_circ.append(name=name)
+            appended = stim.Circuit()
+            appended.append(name)
+            self._stim_circ += canonicalize_parametric_tags(appended)
 
     @classmethod
     def from_file(cls, filename: str) -> Circuit:
@@ -404,7 +417,7 @@ class Circuit:
             stim_circ = stim.Circuit(converted)
         except ValueError as exc:
             raise enriched_stim_error(exc, converted) from None
-        return cls.from_stim_program(stim_circ)
+        return cls._wrap(stim_circ)
 
     def __repr__(self) -> str:
         """Return a string representation that can recreate the circuit."""
@@ -429,12 +442,12 @@ class Circuit:
         if isinstance(other, Circuit):
             self._stim_circ += other._stim_circ
         else:
-            self._stim_circ += other
+            self._stim_circ += canonicalize_parametric_tags(other)
         return self
 
     def __add__(self, other: Circuit | stim.Circuit) -> Circuit:
         """Return a new circuit with another circuit appended."""
-        result = Circuit.from_stim_program(self._stim_circ.copy())
+        result = Circuit._wrap(self._stim_circ.copy())
         result += other
         return result
 
@@ -445,7 +458,7 @@ class Circuit:
 
     def __mul__(self, repetitions: int) -> Circuit:
         """Return a new circuit repeated the given number of times."""
-        return Circuit.from_stim_program(self._stim_circ * repetitions)
+        return Circuit._wrap(self._stim_circ * repetitions)
 
     def __rmul__(self, repetitions: int) -> Circuit:
         """Return a new circuit repeated the given number of times."""
@@ -482,7 +495,7 @@ class Circuit:
         if isinstance(index_or_slice, int):
             return self._stim_circ[index_or_slice]
         elif isinstance(index_or_slice, slice):
-            return Circuit.from_stim_program(self._stim_circ[index_or_slice])
+            return Circuit._wrap(self._stim_circ[index_or_slice])
         else:
             raise TypeError(f"Invalid index or slice: {index_or_slice}")
 
@@ -513,7 +526,9 @@ class Circuit:
         if isinstance(other, Circuit):
             return self._stim_circ.approx_equals(other._stim_circ, atol=atol)
         elif isinstance(other, stim.Circuit):
-            return self._stim_circ.approx_equals(other, atol=atol)
+            return self._stim_circ.approx_equals(
+                canonicalize_parametric_tags(other), atol=atol
+            )
         else:
             return False
 
@@ -634,15 +649,15 @@ class Circuit:
 
     def copy(self) -> Circuit:
         """Create a copy of this circuit."""
-        return Circuit.from_stim_program(self._stim_circ.copy())
+        return Circuit._wrap(self._stim_circ.copy())
 
     def flattened(self) -> Circuit:
         """Return a copy of the circuit with all repeat blocks expanded."""
-        return Circuit.from_stim_program(self._stim_circ.flattened())
+        return Circuit._wrap(self._stim_circ.flattened())
 
     def without_noise(self) -> Circuit:
         """Return a copy of the circuit with all noise removed."""
-        return Circuit.from_stim_program(self._stim_circ.without_noise())
+        return Circuit._wrap(self._stim_circ.without_noise())
 
     def without_annotations(self) -> Circuit:
         """Return a copy of the circuit with all detector and observable annotations removed."""
@@ -663,7 +678,7 @@ class Circuit:
                 result.append(instr)
             return result
 
-        return Circuit.from_stim_program(strip(self._stim_circ))
+        return Circuit._wrap(strip(self._stim_circ))
 
     def detector_error_model(
         self,
@@ -1056,4 +1071,4 @@ class Circuit:
             return result
 
         inv_stim = fix_tags(self._stim_circ.inverse())
-        return Circuit.from_stim_program(inv_stim)
+        return Circuit._wrap(inv_stim)

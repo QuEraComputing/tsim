@@ -114,7 +114,8 @@ def format_parametric_tag(gate_name: str, *angles: float | Fraction) -> str:
             f"{gate_name} takes {len(expected)} angles ({', '.join(expected)}), "
             f"got {len(angles)}"
         )
-    return f"{gate_name}({', '.join(str(float(a)) for a in angles)})"
+    # `+ 0.0` turns -0.0 into 0.0, which is what parsing the tag gives back.
+    return f"{gate_name}({', '.join(str(float(a) + 0.0) for a in angles)})"
 
 
 def format_parsed_parametric_tag(gate_name: str, params: dict[str, Fraction]) -> str:
