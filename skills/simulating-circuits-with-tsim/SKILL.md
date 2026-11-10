@@ -38,7 +38,7 @@ Check these before writing code; each links to the details below.
    sampler ("Detector sampler or measurement sampler").
 3. Postselecting after sampling, or with `sinter.collect`, instead of passing
    `postselection_mask` ("Postselection").
-4. Using `strategy="cat5"`, `"bss"` or `"cutting"`, even as a cross-check ("Sampling strategy").
+4. Using `strategy="cat5"`, `"bss"` or `"cutting"`, when not explicitly asked by the user ("Sampling strategy").
 5. Writing angles in radians: `R_Z(0.25)` is a rotation by π/4 ("Circuit format").
 6. Many small `sample()` calls or a small `batch_size` ("Sampling options").
 
@@ -261,7 +261,7 @@ with the results.
 Use the default strategy and leave `strategy=` unset. The other values (`"cat5"`, `"bss"`,
 `"cutting"`) are provisional stabilizer-rank methods that are much slower and whose compile
 memory grows exponentially with the number of T gates, so they can exhaust a machine's RAM in
-seconds. Do not use them, not even as a cross-check.
+seconds. Do not use them, not even as a cross-check, unless explicitly asked by the user.
 
 ## Checking results
 
@@ -273,15 +273,13 @@ Tsim results:
 - [ ] Active width read; rate timed with a warm-up and a large call; thread count noted
 - [ ] Noiseless run: detectors used for postselection or decoding never fire
 - [ ] Reference flags used only if detectors and observables are deterministic
-- [ ] At least one check below passed (stand-in vs Stim, analytic case, or to_tensor)
+- [ ] At least one check below passed (stand-in vs Stim, or to_tensor)
 ```
 
 - **Clifford stand-in:** replace `T` by `S` and `T_DAG` by `S_DAG`, sample in Tsim (with both
   reference flags) and in Stim, and compare detector rates within error bars.
 - **Noiseless run:** in `c.without_noise()` (also without rotations that model noise),
   detectors meant to be deterministic must never fire.
-- **Analytic case:** a T state under `DEPOLARIZE1(p)`, then noiseless `T_DAG`, `H`, `M`, gives
-  `P(0) = 1 - 2p/3`.
 - **Exact probabilities:** for a few noiseless qubits, `c.to_tensor()` gives the exact channel.
 
 ## Known limitations
@@ -330,7 +328,8 @@ from (PyPI, or git and the commit), the seed, and the expected and actual result
 simulate it in practice (the width is over 30, or shots are too slow for the study), suggest
 opening an issue. The maintainers want these cases: they show where Tsim needs to improve, and
 a real circuit is the best benchmark for that. Here, do not shrink the circuit; the full circuit
-is the point. Include the circuit (attach the file, or link to it if it is large), where it
+is the point, but only if the user is open to share it.  Include the circuit
+(attach the file, or link to it if it is large), where it
 comes from (paper or repository), what the user wants to compute, and what you measured:
 qubits, T count (`c.tcount()`), `sampler.active_width` and `sampler.stats` (or the error
 message), and the time per shot if sampling ran at all.
