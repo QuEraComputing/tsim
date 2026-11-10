@@ -142,7 +142,9 @@ def explain_exit(code: int, mem: str, timeout: int | None) -> str:
 
 def pin_cpus(threads: int) -> list[int]:
     """Pick the last `threads` CPUs this process may use."""
-    if not hasattr(os, "sched_getaffinity"):
+    # NOTE: a `sys.platform` check, unlike `hasattr`, lets pyright on macOS accept
+    # this Linux-only call.
+    if sys.platform != "linux":
         return []
     cpus = sorted(os.sched_getaffinity(0))
     return cpus[-threads:]
