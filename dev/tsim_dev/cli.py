@@ -23,11 +23,55 @@ def _caps(parser, mem: str, timeout: int, cpus: float | None = None) -> None:
         )
 
 
+def _corpus_dir(parser) -> None:
+    parser.add_argument(
+        "--corpus-dir",
+        default=None,
+        help="local tsim-bench checkout (default: TSIM_BENCH_DIR, else the pinned commit)",
+    )
+
+
+def _selection(parser, suite: str) -> None:
+    parser.add_argument(
+        "--suite",
+        default=suite,
+        help=f"tsim-bench suite, or `corpus` for every circuit (default {suite})",
+    )
+    parser.add_argument(
+        "--max-width",
+        type=int,
+        default=None,
+        help="skip circuits whose recorded active width is larger",
+    )
+    parser.add_argument(
+        "--width-of",
+        default="tsim",
+        help="backend whose recorded width --max-width uses (default tsim)",
+    )
+    parser.add_argument(
+        "--only", default="", help="keep circuits whose id contains this"
+    )
+    _corpus_dir(parser)
+
+
 def _circuit_options(parser) -> None:
     parser.add_argument(
-        "--sampler", default="auto", choices=["auto", "detector", "measurement"]
+        "--no-postselect",
+        action="store_true",
+        help="ignore the postselection recorded in tsim-bench",
     )
-    parser.add_argument("--postselect", default="none", choices=["none", "all"])
+    parser.add_argument(
+        "--sampler",
+        default="auto",
+        choices=["auto", "detector", "measurement"],
+        help="for a .stim path outside tsim-bench",
+    )
+    parser.add_argument(
+        "--postselect",
+        default="none",
+        choices=["none", "all"],
+        help="for a .stim path outside tsim-bench",
+    )
     parser.add_argument(
         "--threads", type=int, default=1, help="numba threads (default 1)"
     )
@@ -50,17 +94,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=checks.test)
 
     p = sub.add_parser("bench", help="throughput and compile time, optionally vs a ref")
-    p.add_argument("circuits", nargs="*", help="registry names or .stim paths")
-    p.add_argument("--ref", help="git revision or checkout path to compare against")
-    p.add_argument("--suite", default="quick", choices=["quick", "full"])
     p.add_argument(
-        "--corpus",
-        nargs="?",
-        const="",
-        help="use the tsim-bench corpus (optionally its path) instead of the registry",
+        "circuits", nargs="*", help="tsim-bench ids or file stems, or .stim paths"
     )
-    p.add_argument("--max-k", type=int, default=12, help="corpus: largest active width")
-    p.add_argument("--only", default="", help="keep circuits whose name contains this")
+    p.add_argument("--ref", help="git revision or checkout path to compare against")
+    _selection(p, "quick")
     p.add_argument("--rounds", type=int, default=0, help="default 5 with --ref, else 3")
     p.add_argument(
         "--min-seconds", type=float, default=0.5, help="length of a timed call"
@@ -73,13 +111,17 @@ def build_parser() -> argparse.ArgumentParser:
     _caps(p, "8G", 600)
     p.set_defaults(func=bench.run)
 
-    p = sub.add_parser("corpus", help="fetch the tsim-bench circuit corpus")
-    p.add_argument("action", choices=["fetch"])
-    p.set_defaults(func=bench.fetch_corpus)
+    p = sub.add_parser(
+        "corpus", help="fetch the pinned tsim-bench, or list its circuits"
+    )
+    p.add_argument("action", choices=["fetch", "list"])
+    _selection(p, "corpus")
+    p.set_defaults(func=bench.corpus_command)
 
     p = sub.add_parser("inspect", help="size and active width of a circuit")
-    p.add_argument("circuit")
+    p.add_argument("circuit", help="tsim-bench id or file stem, or a .stim path")
     _circuit_options(p)
+    _corpus_dir(p)
     _caps(p, "8G", 600)
     p.set_defaults(func=profile.inspect)
 

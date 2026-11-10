@@ -12,8 +12,6 @@ from pathlib import Path
 from typing import NoReturn
 
 DEV_DIR = Path(__file__).resolve().parent.parent
-CIRCUITS_DIR = DEV_DIR / "circuits"
-WORKER = Path(__file__).resolve().parent / "_worker.py"
 
 # Exit codes shared by every subcommand.
 OK, FAILED, INFRA, RUNNING = 0, 1, 2, 3

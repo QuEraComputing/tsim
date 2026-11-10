@@ -6,21 +6,112 @@ import sys
 from pathlib import Path
 
 import pytest
-from tsim_dev import bench, checks, cli, common
+from tsim_dev import bench, checks, cli, common, corpus
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOK = ROOT / ".claude" / "hooks" / "guard_bash.py"
 
 
-def test_registry_circuits_exist_and_the_quick_suite_is_small():
-    registry = bench.registry()
-    assert all(case.path.is_file() for case, _ in registry.values())
-    assert all(
-        case.sampler in ("detector", "measurement") for case, _ in registry.values()
-    )
-    assert all(case.postselect in ("all", "none") for case, _ in registry.values())
-    quick = [name for name, (_, suite) in registry.items() if suite == "quick"]
-    assert 4 <= len(quick) <= 8
+FAKE_BENCH = """
+from dataclasses import dataclass, field
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+@dataclass(frozen=True)
+class Case:
+    id: str
+    path: Path
+    sampler: str
+    postselect: str
+    num_detectors: int = 2
+    arxiv: str = "0000.00000"
+    widths: dict = field(default_factory=dict, compare=False)
+
+    def width(self, backend="tsim"):
+        return self.widths.get(backend)
+
+
+def load(root=ROOT):
+    stim = root / "papers" / "p" / "stim"
+    return {
+        "p/narrow": Case("p/narrow", stim / "narrow.stim", "detector", "all", widths={"tsim": 4, "clifft": 9}),
+        "p/wide": Case("p/wide", stim / "wide.stim", "detector", "none", widths={"tsim": 26}),
+    }
+
+
+def mask_indices(case):
+    return list(range(case.num_detectors)) if case.postselect == "all" else []
+
+
+def cases(suite=None, *, max_width=None, width_of="tsim", only=None, root=ROOT):
+    selected = list(load(root).values())
+    if suite not in (None, "corpus"):
+        if suite != "quick":
+            raise KeyError(f"unknown suite {suite!r}")
+        selected = selected[:1]
+    if max_width is not None:
+        selected = [c for c in selected if (c.width(width_of) or 10**9) <= max_width]
+    return selected
+"""
+
+
+@pytest.fixture
+def fake_bench(tmp_path, monkeypatch):
+    package = tmp_path / "tsim_bench"
+    package.mkdir()
+    (package / "__init__.py").write_text(FAKE_BENCH)
+    monkeypatch.setenv("TSIM_BENCH_DIR", str(tmp_path))
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, "tsim_bench", raising=False)
+    for cached in (corpus.root, corpus.package):
+        cached.cache_clear()
+    yield tmp_path
+    for cached in (corpus.root, corpus.package):
+        cached.cache_clear()
+
+
+def _bench_args(*argv):
+    return cli.build_parser().parse_args(["bench", *argv])
+
+
+def test_corpus_circuits_are_postselected_unless_turned_off(fake_bench):
+    (case,) = bench.select(_bench_args())  # the quick suite
+    assert (case.id, case.postselect, case.width) == ("p/narrow", "recorded", 4)
+    command = bench.worker_command(Path("python"), case, _bench_args(), "bench")
+    assert command[command.index("--case") + 1] == "p/narrow"
+    assert "--no-postselect" not in command
+
+    (case,) = bench.select(_bench_args("--no-postselect"))
+    assert case.postselect == "none"
+    command = bench.worker_command(Path("python"), case, _bench_args(), "bench")
+    assert "--no-postselect" in command
+
+
+def test_max_width_uses_the_recorded_width_of_one_backend(fake_bench):
+    everything = bench.select(_bench_args("--suite", "corpus"))
+    assert [case.id for case in everything] == ["p/narrow", "p/wide"]
+    narrow = bench.select(_bench_args("--suite", "corpus", "--max-width", "8"))
+    assert [case.id for case in narrow] == ["p/narrow"]
+    by_clifft = ["--suite", "corpus", "--max-width", "8", "--width-of", "clifft"]
+    with pytest.raises(common.InfraError, match="no circuits"):
+        bench.select(_bench_args(*by_clifft))
+
+
+def test_circuits_are_named_by_id_file_stem_or_path(fake_bench, tmp_path):
+    assert [c.id for c in bench.select(_bench_args("wide"))] == ["p/wide"]
+    assert [c.id for c in bench.select(_bench_args("p/narrow"))] == ["p/narrow"]
+    stim = tmp_path / "mine.stim"
+    stim.write_text("H 0\nM 0\n")
+    (case,) = bench.select(_bench_args(str(stim), "--postselect", "all"))
+    assert (case.id, case.postselect) == (None, "all")
+    command = bench.worker_command(Path("python"), case, _bench_args(), "bench")
+    assert command[command.index("--circuit") + 1] == str(stim)
+    with pytest.raises(common.InfraError, match="unknown circuit"):
+        bench.select(_bench_args("nope"))
+    with pytest.raises(common.InfraError, match="unknown suite"):
+        bench.select(_bench_args("--suite", "nope"))
 
 
 @pytest.mark.parametrize(

@@ -14,22 +14,28 @@ import shutil
 import statistics
 import subprocess
 import sys
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import common
+from . import common, corpus
 from .common import FAILED, INFRA, OK, InfraError
 
 
 @dataclass(frozen=True)
 class Case:
-    """One circuit with the sampler options it is measured with."""
+    """One circuit with the sampler options it is measured with.
+
+    A corpus circuit (`id` set) is postselected as its tsim-bench manifest says, unless
+    `postselect` is "none". A `.stim` path outside the corpus uses `sampler` and
+    `postselect` ("all" or "none") from the command line.
+    """
 
     name: str
     path: Path
     sampler: str = "auto"
-    postselect: str = "none"
+    postselect: str = "none"  # "recorded", "all" or "none"
+    id: str | None = None
+    width: int | None = None
 
 
 @dataclass(frozen=True)
@@ -40,77 +46,67 @@ class Side:
     python: Path
 
 
-def registry() -> dict[str, tuple[Case, str]]:
-    """Return the named circuits in `dev/circuits/circuits.toml` with their suite."""
-    with open(common.CIRCUITS_DIR / "circuits.toml", "rb") as file:
-        table = tomllib.load(file)
-    return {
-        name: (
-            Case(
-                name,
-                common.CIRCUITS_DIR / entry["file"],
-                entry.get("sampler", "auto"),
-                entry.get("postselect", "none"),
-            ),
-            entry.get("suite", "full"),
-        )
-        for name, entry in table.items()
-    }
-
-
-def corpus_dir(explicit: str | None = None) -> Path:
-    """Return the tsim-bench checkout to read circuits from."""
-    for candidate in (
-        explicit,
-        os.environ.get("TSIM_BENCH_DIR"),
-        common.cache_dir() / "tsim-bench",
-    ):
-        if candidate and (Path(candidate).expanduser() / "papers").is_dir():
-            return Path(candidate).expanduser()
-    raise InfraError(
-        "no tsim-bench corpus: run `tsim-dev corpus fetch`, or set TSIM_BENCH_DIR "
-        "to a clone of https://github.com/rafaelha/tsim-bench"
+def _from_corpus(entry, args) -> Case:
+    postselect = (
+        "none" if args.no_postselect or entry.postselect == "none" else "recorded"
+    )
+    return Case(
+        entry.id.split("/", 1)[1],
+        entry.path,
+        entry.sampler,
+        postselect,
+        entry.id,
+        entry.width(args.width_of),
     )
 
 
-def corpus_cases(directory: Path, max_k: int) -> list[Case]:
-    """Return the corpus circuits whose recorded active width is at most `max_k`."""
-    cases = []
-    for record in sorted(directory.glob("papers/*/k_max.json")):
-        for entry in json.loads(record.read_text()):
-            k = entry.get("tsim_k")
-            path = record.parent / entry["file"]
-            if isinstance(k, int) and k <= max_k and path.exists():
-                cases.append(Case(f"{record.parent.name[:10]}/{path.stem}", path))
-    return cases
+def _lookup(item: str, everything: dict) -> object | None:
+    """Return the corpus entry with this id, or the only one whose file stem is `item`."""
+    if item in everything:
+        return everything[item]
+    matches = [entry for key, entry in everything.items() if key.endswith("/" + item)]
+    if len(matches) > 1:
+        raise InfraError(
+            f"{item!r} is ambiguous: " + ", ".join(entry.id for entry in matches)
+        )
+    return matches[0] if matches else None
 
 
 def select(args) -> list[Case]:
     """Turn the command line into the list of cases to measure."""
-    named = registry()
-    if args.corpus is not None:
-        cases = corpus_cases(corpus_dir(args.corpus or None), args.max_k)
-    elif args.circuits:
+    bench_pkg = corpus.package(args.corpus_dir)
+    if args.circuits:
+        everything = bench_pkg.load(corpus.root(args.corpus_dir))
         cases = []
         for item in args.circuits:
-            if item in named:
-                cases.append(named[item][0])
+            entry = _lookup(item, everything)
+            if entry is not None:
+                cases.append(_from_corpus(entry, args))
             elif Path(item).is_file():
                 path = Path(item).resolve()
                 cases.append(Case(path.stem, path, args.sampler, args.postselect))
             else:
                 raise InfraError(
-                    f"unknown circuit {item!r}: give a .stim path or one of "
-                    + ", ".join(named)
+                    f"unknown circuit {item!r}: give a .stim path or a tsim-bench id "
+                    "(`tsim-dev corpus list`)"
                 )
     else:
+        try:
+            entries = bench_pkg.cases(
+                args.suite, width_of=args.width_of, root=corpus.root(args.corpus_dir)
+            )
+        except KeyError as error:
+            raise InfraError(str(error.args[0])) from None
+        cases = [_from_corpus(entry, args) for entry in entries]
+    if args.max_width is not None:
         cases = [
             case
-            for case, suite in named.values()
-            if args.suite == "full" or suite == "quick"
+            for case in cases
+            if case.id is None
+            or (case.width is not None and case.width <= args.max_width)
         ]
     if args.only:
-        cases = [case for case in cases if args.only in case.name]
+        cases = [case for case in cases if args.only in (case.id or case.name)]
     if not cases:
         raise InfraError("no circuits selected")
     return cases
@@ -157,28 +153,29 @@ def reference(ref: str) -> Side:
     return Side(f"{ref}@{sha[:8]}", python)
 
 
-def measure(side: Side, case: Case, args, mode: str = "bench") -> dict:
-    """Run the worker once and return its result, or `{"error": ...}`."""
-    cmd = [
-        str(side.python),
-        str(common.WORKER),
-        "--circuit",
-        str(case.path),
-        "--mode",
-        mode,
-        "--sampler",
-        case.sampler,
-        "--postselect",
-        case.postselect,
-        "--min-seconds",
-        str(args.min_seconds),
-    ]
+def worker_command(python: Path, case: Case, args, mode: str) -> list[str]:
+    """Return the command that times `case` with tsim-bench's worker."""
+    cmd = [str(python), str(corpus.worker(args.corpus_dir)), "--mode", mode]
+    if case.id is not None:
+        cmd += ["--root", str(corpus.root(args.corpus_dir)), "--case", case.id]
+        if case.postselect == "none":
+            cmd.append("--no-postselect")
+    else:
+        cmd += ["--circuit", str(case.path), "--sampler", case.sampler]
+        cmd += ["--postselect", case.postselect]
+    cmd += ["--min-seconds", str(args.min_seconds)]
     if args.strategy:
         cmd += ["--strategy", args.strategy]
     if args.batch_size:
         cmd += ["--batch-size", str(args.batch_size)]
     if args.bit_packed:
         cmd.append("--bit-packed")
+    return cmd
+
+
+def measure(side: Side, case: Case, args, mode: str = "bench") -> dict:
+    """Run the worker once and return its result, or `{"error": ...}`."""
+    cmd = worker_command(side.python, case, args, mode)
     wrapped = common.capped(
         cmd, mem=args.mem, timeout=args.timeout, pin=common.pin_cpus(args.threads)
     )
@@ -219,7 +216,12 @@ def compare(new: list[float], ref: list[float], tolerance: float) -> dict:
 def run_case(case: Case, sides: list[Side], args) -> dict:
     """Prime the caches, then measure every side in interleaved rounds."""
     rounds: dict[str, list[dict]] = {side.label: [] for side in sides}
-    record: dict = {"circuit": case.name, "path": str(case.path)}
+    record: dict = {
+        "circuit": case.name,
+        "id": case.id,
+        "path": str(case.path),
+        "postselect": case.postselect,
+    }
     for side in sides:
         primed = measure(side, case, args, mode="prime")
         if "error" in primed:
@@ -236,6 +238,9 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
     record["rounds"] = rounds
     new = rounds[sides[0].label]
     record["k"] = new[0].get("active_width")
+    if record["k"] is None:  # Tsim before 1.1 does not report it; use the recorded one
+        record["k"] = case.width
+    record["acceptance"] = new[0].get("acceptance")
     record["shots_per_s"] = statistics.median(r["shots_per_s"] for r in new)
     record["compile_s"] = statistics.median(r["compile_s"] for r in new)
     rates = [r["shots_per_s"] for r in new]
@@ -257,13 +262,20 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
     return record
 
 
+NAME = 44
+
+
 def format_row(record: dict, has_ref: bool) -> str:
     """Format one result line."""
-    name = record["circuit"][:38]
+    name = record["circuit"][:NAME]
     if "error" in record:
-        return f"{name:<38}  ERROR: {record['error']}"
+        return f"{name:<{NAME}}  ERROR: {record['error']}"
     k = "-" if record["k"] is None else record["k"]
-    row = f"{name:<38} {k!s:>3} {common.si(record['shots_per_s']):>8}"
+    accepted = record.get("acceptance")
+    kept = (
+        "-" if record["postselect"] == "none" or accepted is None else f"{accepted:.3g}"
+    )
+    row = f"{name:<{NAME}} {k!s:>3} {common.si(record['shots_per_s']):>8} {kept:>6}"
     row += f" {record['compile_s']:>8.2f}"
     if not has_ref:
         return row + f"   ±{record['spread'] * 50:.0f}%"
@@ -290,10 +302,12 @@ def run(args) -> int:
         header += f" ref={sides[1].label}"
     busy = common.busy_cores()
     header += f" threads={args.threads} rounds={rounds} busy_cores={busy:.1f}"
+    header += f" postselect={'off' if args.no_postselect else 'on'}"
+    header += f" tsim-bench={corpus.describe(args.corpus_dir)}"
     print(header)
     if busy > 1.0:
         print("WARNING: other processes are using the CPU; expect noisy numbers")
-    columns = f"{'circuit':<38} {'k':>3} {'shots/s':>8} {'compile':>8}"
+    columns = f"{'circuit':<{NAME}} {'k':>3} {'shots/s':>8} {'kept':>6} {'compile':>8}"
     if has_ref:
         columns += "   shots/s vs ref (min, max)      compile vs ref"
     print(columns, flush=True)
@@ -313,6 +327,8 @@ def run(args) -> int:
         "tolerance": args.tolerance,
         "busy_cores": busy,
         "cpu_count": os.cpu_count(),
+        "postselect": not args.no_postselect,
+        "tsim_bench": corpus.describe(args.corpus_dir),
     }
     out.write_text(json.dumps({"meta": meta, "results": records}, indent=1))
 
@@ -336,16 +352,31 @@ def run(args) -> int:
     return FAILED if slower else OK
 
 
-def fetch_corpus(_args) -> int:
-    """Clone or update the tsim-bench corpus in the shared cache."""
-    target = common.cache_dir() / "tsim-bench"
-    if (target / ".git").is_dir():
-        cmd = ["git", "-C", str(target), "pull", "--ff-only", "-q"]
-    else:
-        url = "https://github.com/rafaelha/tsim-bench"
-        cmd = ["git", "clone", "--depth", "1", "-q", url, str(target)]
-    if subprocess.run(cmd, check=False).returncode:
-        common.die("could not fetch the tsim-bench corpus")
-    count = len(corpus_cases(target, 10**6))
-    print(f"corpus at {target}: {count} circuits with a recorded active width")
+def corpus_command(args) -> int:
+    """`tsim-dev corpus fetch|list`: fetch the pinned tsim-bench, or list circuits."""
+    try:
+        root = corpus.root(args.corpus_dir)
+        bench_pkg = corpus.package(args.corpus_dir)
+        entries = bench_pkg.cases(
+            args.suite,
+            max_width=args.max_width,
+            width_of=args.width_of,
+            only=args.only or None,
+            root=root,
+        )
+    except (InfraError, KeyError) as error:
+        common.die(str(error.args[0]))
+    if args.action == "fetch":
+        print(
+            f"tsim-bench {corpus.describe(args.corpus_dir)} at {root}: {len(entries)} circuits"
+        )
+        return OK
+    for entry in entries:
+        masked = len(bench_pkg.mask_indices(entry))
+        width = entry.width(args.width_of)
+        print(
+            f"{entry.id:<80} k={'-' if width is None else width!s:>3} "
+            f"arXiv:{entry.arxiv:<10} postselect {masked}/{entry.num_detectors}"
+        )
+    print(f"{len(entries)} circuits")
     return OK

@@ -18,7 +18,7 @@ JITTED = "[jitted numba code]"
 
 
 def _case(args) -> bench.Case:
-    args.corpus, args.only, args.suite = None, "", "quick"
+    args.only, args.suite, args.max_width, args.width_of = "", "quick", None, "tsim"
     args.circuits = [args.circuit]
     return bench.select(args)[0]
 
@@ -104,20 +104,7 @@ def profile(args) -> int:
         common.out_dir("profile")
         / f"{case.name.replace('/', '_')}-{common.stamp()}.folded"
     )
-    worker = [
-        sys.executable,
-        str(common.WORKER),
-        "--circuit",
-        str(case.path),
-        "--mode",
-        "profile",
-        "--sampler",
-        case.sampler,
-        "--postselect",
-        case.postselect,
-        "--min-seconds",
-        str(args.min_seconds),
-    ]
+    worker = bench.worker_command(Path(sys.executable), case, args, "profile")
     spy_cmd = [str(spy), "record", "--native", "-f", "raw", "-r", str(args.rate)]
     cmd = common.capped(
         [*spy_cmd, "-o", str(raw), "--", *worker],

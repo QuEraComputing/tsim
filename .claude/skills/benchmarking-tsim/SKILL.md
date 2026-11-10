@@ -1,6 +1,6 @@
 ---
 name: benchmarking-tsim
-description: Measures Tsim throughput and compile time with `tsim-dev bench` and compares a change against a reference commit or checkout. Use when asked to benchmark Tsim, to check a change for performance regressions, to produce before and after numbers for a pull request, or to run the tsim-bench circuit corpus.
+description: Measures Tsim throughput and compile time with `tsim-dev bench` on the tsim-bench circuits and compares a change against a reference commit or checkout. Use when asked to benchmark Tsim, to check a change for performance regressions, to produce before and after numbers for a pull request, to run the tsim-bench corpus, or to add a benchmark circuit.
 ---
 
 # Benchmarking Tsim
@@ -21,9 +21,11 @@ any commit, or the path of another checkout that has a `.venv`
 (`--ref ../tsim-other-worktree`).
 
 ```
-circuit          k  shots/s  compile   shots/s vs ref (min, max)      compile vs ref
-cultivation_d5   6    13.9M     0.13   1.20x [1.19, 1.21] faster  0.96x same
+circuit                     k  shots/s   kept  compile   shots/s vs ref (min, max)      compile vs ref
+inject_cultivate_d5_p0.001  6    13.9M  0.141     0.13   1.20x [1.19, 1.21] faster  0.96x same
 ```
+
+- `kept` is the fraction of shots that survive postselection (`-` when there is none).
 
 - `shots/s vs ref` is new over reference, so above 1 is faster. The bracket is the
   smallest and largest ratio over the rounds.
@@ -42,8 +44,11 @@ cultivation_d5   6    13.9M     0.13   1.20x [1.19, 1.21] faster  0.96x same
   ones, and the cached case is what users get.
 - Compile time and the first call are excluded from shots/s and reported apart.
 - The two checkouts alternate round by round, so drift affects both.
-- Each registry circuit fixes its sampler and postselection
-  (`dev/circuits/circuits.toml`). With postselection, shots/s counts attempted shots.
+- Circuits come from tsim-bench (https://github.com/rafaelha/tsim-bench) at the commit
+  pinned in `dev/tsim_dev/corpus.py`, fetched into `~/.cache/tsim-dev` on first use.
+  Each circuit's manifest there records its arXiv paper, its sampler and how the paper
+  postselects; the benchmark postselects that way by default. `--no-postselect`
+  samples every shot instead. shots/s counts requested shots, kept or not.
 
 ## What you must do
 
@@ -51,30 +56,40 @@ cultivation_d5   6    13.9M     0.13   1.20x [1.19, 1.21] faster  0.96x same
   next to it. Heed the busy-machine warning.
 - A change must hold across families. Run `--suite full` before claiming a speedup,
   and report the circuits that got slower as well as the ones that got faster.
-- For a single circuit: `uv run tsim-dev bench cultivation_d5 --ref origin/main`, or
-  a path to any `.stim` file with `--sampler` and `--postselect`.
+- For a single circuit: `uv run tsim-dev bench inject_cultivate_d5_p0.001 --ref origin/main`
+  (a file stem or a full id from `tsim-dev corpus list`), or a path to any `.stim` file
+  with `--sampler` and `--postselect all|none`.
+- Postselection changes what is measured: a change that speeds up rejected shots shows
+  only with it on. Report which you used, and run both when the change touches the
+  postselection path.
 - Paste the table in the pull request, with the CPU model (`lscpu | grep 'Model name'`)
   and the thread count.
 
-## The tsim-bench corpus
+## Suites and the whole corpus
 
-189 circuits from 27 papers (https://github.com/rafaelha/tsim-bench). It takes much
-longer, so run it as a job:
+Suites are defined in tsim-bench's `suites.toml`: `quick` (the default, a few minutes),
+`full` (one or two circuits per family, widths up to about 16) and `hard` (widths 16 to
+26, such as the tricycle CCZ factories; minutes per circuit). `--suite corpus` is every
+circuit, over 190 from 28 papers, so run it as a job:
 
 ```bash
-uv run tsim-dev corpus fetch                    # once; or set TSIM_BENCH_DIR to a clone
+uv run tsim-dev corpus list --max-width 12      # what would run
 uv run tsim-dev job start corpus --timeout 14400 -- \
-    uv run tsim-dev bench --corpus --max-k 12 --ref origin/main
+    uv run tsim-dev bench --suite corpus --max-width 12 --ref origin/main
 uv run tsim-dev job wait corpus                 # repeat until it reports the end
 ```
 
-`--only SUBSTRING` selects circuits by name; `--max-k` skips circuits whose recorded
-active width is larger.
+`--max-width K` skips circuits whose recorded active width is larger than K, and those
+with no recorded width; `--width-of clifft` (or another backend in tsim-bench's
+`k_max.json`) filters on that backend's width instead, for backend work that targets a
+different regime. `--only SUBSTRING` keeps circuits whose id contains it.
 
 ## Limits
 
 - CPU only. GPU runs and comparisons with other simulators (Clifft, SymFT, Magna)
   are run from the tsim-bench repository, which pins each simulator's environment.
-- To add a circuit to the registry, put the file in `dev/circuits/`, add it to
-  `circuits.toml` and `git add -f` it (`*.stim` is ignored). Keep the quick suite
-  to one small circuit per family.
+- To add a circuit or change a suite, change tsim-bench: put the file in its paper's
+  folder, add an entry to that folder's `circuits.toml` (arXiv id, sampler, postselection
+  and the reason for it, see its `BENCHMARKS.md`), run `python -m tsim_bench check`
+  there, then bump `REV` in `dev/tsim_dev/corpus.py`. Until the commit is pushed, point
+  the harness at the checkout with `--corpus-dir` or `TSIM_BENCH_DIR`.
