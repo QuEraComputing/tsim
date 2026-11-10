@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from tsim.compile.compile import CompiledScalarGraphs
     from tsim.core.params import ParamLayout
     from tsim.statevector.program import StatevectorComponent
+    from tsim.utils.linalg import SparseGF2Matrix
 
 SamplingStrategy = Literal["active_statevector", "cat5", "bss", "cutting"]
 """``"active_statevector"``, or a stabilizer-rank decomposition strategy."""
@@ -43,8 +44,9 @@ class SamplingGraph:
     Attributes:
         graph: The prepared quantum/classical ZX graph; its vertex parameters
             are error-basis bit IDs (``layout.basis(j)``).
-        error_transform: Binary matrix of shape (num_f, num_e) where entry [i, j] = 1
-            means f_i depends on e_j (i.e., f_i = XOR of e_j where matrix[i,j] = 1).
+        error_transform: Sparse binary matrix of shape (num_f, num_e) where entry
+            [i, j] = 1 means f_i depends on e_j (i.e., f_i = XOR of e_j where
+            matrix[i,j] = 1).
         channel_probs: List of probability arrays for error channels.
         num_outputs: Number of output vertices (measurements or detectors).
         num_detectors: Number of detector vertices.
@@ -53,7 +55,7 @@ class SamplingGraph:
     """
 
     graph: Graph
-    error_transform: np.ndarray
+    error_transform: SparseGF2Matrix
     channel_probs: list[np.ndarray]
     num_outputs: int
     num_detectors: int

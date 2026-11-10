@@ -66,6 +66,136 @@ def find_basis(vectors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return vecs[basis_indices], transform
 
 
+class SparseGF2Matrix:
+    """A binary matrix stored as the sorted column indices of each row's ones.
+
+    Used where a dense matrix would not fit: the error transform of a large
+    circuit has ~10^5 rows and ~10^6 columns but only tens of ones per row.
+    ``np.asarray`` gives the dense matrix.
+    """
+
+    def __init__(self, rows: list[tuple[int, ...]], num_cols: int):
+        """Create the matrix from its rows' column indices; repeats count once."""
+        self.rows = [tuple(sorted(set(row))) for row in rows]
+        self.num_cols = num_cols
+
+    @classmethod
+    def from_dense(cls, matrix: np.ndarray) -> "SparseGF2Matrix":
+        """Return the sparse form of a 2-D matrix; nonzero entries count as 1."""
+        dense = np.asarray(matrix)
+        rows = [tuple(np.flatnonzero(row).tolist()) for row in dense]
+        return cls(rows, dense.shape[1])
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        """The shape ``(num_rows, num_cols)``."""
+        return len(self.rows), self.num_cols
+
+    def toarray(self) -> np.ndarray:
+        """Return the dense uint8 matrix."""
+        dense = np.zeros(self.shape, dtype=np.uint8)
+        for i, row in enumerate(self.rows):
+            dense[i, list(row)] = 1
+        return dense
+
+    def __array__(self, dtype=None, copy=None) -> np.ndarray:
+        """Return the dense matrix, for ``np.asarray``."""
+        if copy is False:
+            raise ValueError("a SparseGF2Matrix can only be densified by copying")
+        dense = self.toarray()
+        return dense if dtype is None else dense.astype(dtype)
+
+    def columns(self) -> list[tuple[int, ...]]:
+        """Return each column's sorted row indices."""
+        cols: list[list[int]] = [[] for _ in range(self.num_cols)]
+        for i, row in enumerate(self.rows):
+            for column in row:
+                cols[column].append(i)
+        return [tuple(c) for c in cols]
+
+
+_EMPTY = (0, 0)
+
+
+def _normalize(offset: int, bits: int) -> tuple[int, int]:
+    """Shift ``(offset, bits)`` so that ``bits`` is odd, or return ``_EMPTY``."""
+    if not bits:
+        return _EMPTY
+    shift = (bits & -bits).bit_length() - 1
+    return offset + shift, bits >> shift
+
+
+def _xor(a: tuple[int, int], b: tuple[int, int]) -> tuple[int, int]:
+    """XOR two normalized bit sets stored as ``(offset, bits)``, ``bits << offset``."""
+    (offset_a, bits_a), (offset_b, bits_b) = a, b
+    if not bits_a:
+        return b
+    if not bits_b:
+        return a
+    offset = min(offset_a, offset_b)
+    return _normalize(
+        offset, (bits_a << (offset_a - offset)) ^ (bits_b << (offset_b - offset))
+    )
+
+
+def _indices(offset: int, bits: int) -> list[int]:
+    """Return the set bit positions of ``bits << offset``."""
+    positions = []
+    while bits:
+        lowest = bits & -bits
+        positions.append(offset + lowest.bit_length() - 1)
+        bits ^= lowest
+    return positions
+
+
+def find_basis_sparse(
+    rows: list[tuple[int, ...]],
+) -> tuple[list[int], list[list[int]]]:
+    """``find_basis`` for sparse rows, given as column indices (in any order).
+
+    Each row is reduced by the basis vector whose lowest column is its own, until
+    that column is new (the row joins the basis) or nothing is left. Each bit set
+    is held as ``(offset, bits)`` with ``bits`` odd, so a Python int only spans a
+    row's columns from its lowest set column, not from column 0. Rows whose
+    columns are local (as an error-detecting circuit's are) stay small.
+
+    Args:
+        rows: Each row's column indices.
+
+    Returns:
+        The indices of the rows that form the basis, and for every row the
+        sorted indices of the basis vectors whose XOR it is.
+
+    """
+    reduced_basis: dict[int, tuple[tuple[int, int], tuple[int, int]]] = {}
+    basis_indices: list[int] = []
+    expansions: list[list[int]] = []
+    for i, columns in enumerate(rows):
+        vector = _EMPTY
+        if columns:
+            lowest = min(columns)
+            bits = 0
+            for column in columns:
+                bits ^= 1 << (column - lowest)
+            vector = _normalize(lowest, bits)
+        expansion = _EMPTY
+        while vector[1]:
+            pivot = vector[0]
+            if pivot not in reduced_basis:
+                # NOTE: the reduced row is the row plus the vectors that reduced
+                # it, so its expansion is the new basis bit plus theirs.
+                rank = len(basis_indices)
+                reduced_basis[pivot] = (vector, _xor(expansion, (rank, 1)))
+                basis_indices.append(i)
+                expansion = (rank, 1)
+                break
+            basis_vector, basis_expansion = reduced_basis[pivot]
+            vector = _xor(vector, basis_vector)
+            expansion = _xor(expansion, basis_expansion)
+        expansions.append(_indices(*expansion))
+    return basis_indices, expansions
+
+
 def matmul_gf2(a: Array, b: Array) -> Array:
     """Compute binary dot products mod 2 as ``a_GTP x b_BP -> b_BGT``.
 
