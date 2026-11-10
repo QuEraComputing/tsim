@@ -29,6 +29,15 @@ install the JAX CUDA extra:
 pip install "bloqade-tsim[cuda13]"   # or bloqade-tsim[cuda12]
 ```
 
+### Using Tsim with coding agents
+
+Tsim ships an [agent skill](skills/simulating-circuits-with-tsim/SKILL.md) that teaches coding
+agents (Claude Code, Codex, Cursor and others) how to judge whether a circuit is feasible,
+sample and postselect it, run logical error rate studies, and port published Stim circuits.
+Install it with:
+```bash
+npx skills add QuEraComputing/tsim
+```
 
 ## Quick Start
 An introductory tutorial is available [here](https://bloqade.quera.com/tsim/tutorials/encoding_demo). Please also refer to the [documentation](https://bloqade.quera.com/tsim).

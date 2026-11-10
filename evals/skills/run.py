@@ -4,9 +4,11 @@
     python evals/skills/run.py cases [--agent claude|codex] [--case NAME] [--runs N]
     python evals/skills/run.py grade RESULTS_DIR
 
-See README.md in this directory. Every agent run gets a fresh working directory under
-``results/``; the skills are copied into it only for the ``with`` arm. Runs are capped with
-``systemd-run`` (memory, CPU) and ``timeout``, because agents run real simulations.
+See README.md in this directory. Every agent run gets a fresh working directory under the
+results directory, which is outside the repository so that the agent does not read Tsim's own
+AGENTS.md or CLAUDE.md; the skills are copied into it only for the ``with`` arm. Runs are
+capped with ``systemd-run`` (memory, CPU) and ``timeout``, because agents run real
+simulations.
 """
 
 from __future__ import annotations
@@ -29,6 +31,10 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 SKILLS = REPO / "skills"
 SKILL_NAMES = sorted(p.parent.name for p in SKILLS.glob("*/SKILL.md"))
+CIRCUITS = HERE / "circuits"
+# NOTE: Claude Code and Codex read CLAUDE.md and AGENTS.md from every parent directory, so runs
+# inside this repository would see Tsim's developer notes even without the skill.
+DEFAULT_RESULTS = Path.home() / ".cache" / "tsim-skill-evals"
 
 PREAMBLE = """
 Work in the current directory; input files are under inputs/. Python with Tsim, Stim,
@@ -78,12 +84,15 @@ def capped(cmd: list[str], args) -> list[str]:
     ]  # fmt: skip
 
 
-def prepare_workdir(
-    work: Path, *, with_skills: bool, inputs: Path | None, args
-) -> dict:
+def prepare_workdir(work: Path, *, with_skills: bool, inputs: dict, args) -> dict:
     work.mkdir(parents=True)
-    if inputs is not None and inputs.exists():
-        shutil.copytree(inputs, work / "inputs")
+    if inputs:
+        (work / "inputs").mkdir()
+    for name, spec in inputs.items():
+        text = (CIRCUITS / spec["circuit"]).read_text()
+        if spec.get("s_to_t"):
+            text = re.sub(r"^(\s*)S(_DAG)?(?=\s)", r"\1T\2", text, flags=re.MULTILINE)
+        (work / "inputs" / name).write_text(text)
     if with_skills:
         # NOTE: Claude Code reads project skills from .claude/skills, Codex from .agents/skills.
         for target in (".claude/skills", ".agents/skills"):
@@ -210,14 +219,14 @@ def cmd_triggers(args) -> None:
         out = root / f"q{i:02d}-run{r + 1}"
         out.mkdir(parents=True)
         meta = run_agent(
-            args.agent, q["query"], out, with_skills=True, inputs=None, args=args,
+            args.agent, q["query"], out, with_skills=True, inputs={}, args=args,
             tools="Skill Read Glob Grep",
         )  # fmt: skip
         loaded = set(meta["skills_loaded"])
-        ok = (q["skill"] in loaded) if q["skill"] else not loaded
+        ok = bool(loaded) == q["load"]
         return {
             "query": q["query"],
-            "expected": q["skill"],
+            "expected": q["load"],
             "loaded": sorted(loaded),
             "ok": ok,
         }
@@ -225,12 +234,13 @@ def cmd_triggers(args) -> None:
     with ThreadPoolExecutor(args.jobs) as pool:
         rows = list(pool.map(one, jobs))
     (root / "triggers.json").write_text(json.dumps(rows, indent=2))
-    lines = ["| ok | expected | loaded | query |", "|---|---|---|---|"]
+    lines = ["| ok | should load | loaded | query |", "|---|---|---|---|"]
     for row in rows:
         mark = "✓" if row["ok"] else "✗"
         loaded = ", ".join(row["loaded"]) or "none"
         lines.append(
-            f"| {mark} | {row['expected'] or 'none'} | {loaded} | {row['query'][:70]} |"
+            f"| {mark} | {'yes' if row['expected'] else 'no'} | {loaded} | "
+            f"{row['query'][:70]} |"
         )
     score = sum(r["ok"] for r in rows) / len(rows)
     summary = f"# Triggering ({args.agent})\n\n{score:.0%} correct\n\n" + "\n".join(
@@ -289,7 +299,7 @@ def cmd_cases(args) -> None:
         out.mkdir(parents=True)
         run_agent(
             args.agent, case["prompt"].strip() + "\n" + preamble, out,
-            with_skills=(arm == "with"), inputs=case_dir / "inputs", args=args,
+            with_skills=(arm == "with"), inputs=case.get("inputs", {}), args=args,
             tools="Bash Read Write Edit Glob Grep Skill",
         )  # fmt: skip
 
@@ -305,7 +315,7 @@ def summarize(root: Path) -> None:
     ]
     failures = []
     for case_root in sorted(p for p in root.iterdir() if p.is_dir()):
-        case, checker = load_case(HERE / "cases" / case_root.name)
+        _, checker = load_case(HERE / "cases" / case_root.name)
         for arm in ("with", "without"):
             runs = sorted(case_root.glob(f"{arm}-run*"))
             if not runs:
@@ -317,7 +327,7 @@ def summarize(root: Path) -> None:
                 meta = json.loads((run / "meta.json").read_text())
                 passed += sum(g["passed"] for g in grades.values())
                 total += len(grades)
-                loaded += case["skill"] in meta["skills_loaded"]
+                loaded += bool(meta["skills_loaded"])
                 cost += meta["cost_usd"] or 0.0
                 minutes += meta["seconds"] / 60
                 failures += [
@@ -346,7 +356,7 @@ def cmd_grade(args) -> None:
 
 def results_dir(args, kind: str) -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    root = HERE / "results" / f"{stamp}-{kind}-{args.agent}"
+    root = Path(args.results).expanduser().resolve() / f"{stamp}-{kind}-{args.agent}"
     root.mkdir(parents=True)
     return root
 
@@ -358,6 +368,11 @@ def main() -> None:
         p = sub.add_parser(name)
         p.add_argument("--agent", choices=["claude", "codex"], default="claude")
         p.add_argument("--model", help="model passed to the agent CLI")
+        p.add_argument(
+            "--results",
+            default=str(DEFAULT_RESULTS),
+            help="results directory, outside the repository (default %(default)s)",
+        )
         p.add_argument(
             "--runs", type=int, default=1, help="runs per query or case and arm"
         )

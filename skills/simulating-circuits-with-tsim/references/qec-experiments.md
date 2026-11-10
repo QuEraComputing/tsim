@@ -1,21 +1,9 @@
----
-name: running-qec-experiments-with-tsim
-description: "Runs Monte Carlo quantum error correction studies with Tsim: sampling, postselection, decoding and error bars. Use when someone wants a Monte Carlo estimate of a logical error rate, threshold or error-rate-vs-p curve, acceptance (discard) rate, output-state infidelity or error bars from a noisy circuit with T gates, rotations or other non-Clifford gates; decodes Tsim samples (PyMatching, Tesseract, BP-LSD from ldpc, Relay-BP); builds a detector error model for a non-Clifford circuit; postselects a cultivation, distillation or injection protocol; plans a shot budget; or is about to use sinter or sinter.collect with Tsim. Also use for \"simulate this protocol\", \"run a Monte Carlo simulation\" or \"reproduce this figure\" requests about such circuits, and for detector_error_model errors such as \"non-deterministic observables\" or \"The number of observables changed\"."
-license: Apache-2.0
-compatibility: Python 3.11+, bloqade-tsim (main or 1.0.0; for 1.0.0 see the "Tsim 1.0.0" section of the simulating-circuits-with-tsim skill). Decoders are separate packages.
-metadata:
-  author: QuEra Computing
-  version: "1.2"
-  last-reviewed: "2026-11-10"
-  tested-with: "Tsim main at 9ed58c9f (after 1.0.0) and Tsim 1.0.0 from PyPI"
----
-
 # QEC experiments with Tsim
 
-This skill builds on the `simulating-circuits-with-tsim` skill (circuit format, active width,
-sampling options); read it first if it is available. The workflow below turns a noisy circuit
-into numbers that can go in a paper: a logical error rate or infidelity per accepted shot, an
-acceptance rate, error bars, and a script that regenerates them.
+This reference builds on SKILL.md (active width, sampling options, postselection). The workflow
+below turns a noisy circuit into numbers that can go in a paper: a logical error rate or
+infidelity per accepted shot, an acceptance rate, error bars, and a script that regenerates
+them.
 
 These numbers are Monte Carlo estimates. Each shot draws one realization of the circuit's noise
 and samples the circuit exactly, so shots are independent, every rate is a binomial estimate,
@@ -32,7 +20,7 @@ each step follow it.
 QEC study:
 - [ ] 1. Circuit builder written; one function per parameter point
 - [ ] 2. Width read, rate timed, full budget estimated and told to the user
-- [ ] 3. Postselection plan checked with check_mask.py (OK); decoded detectors listed
+- [ ] 3. Postselection mask checked without noise; decoded detectors listed
 - [ ] 4. Decoder chosen; model built (twirled if rotations are noise); decoder timed
 - [ ] 5. Points sampled with run_point, counts logged per call
 - [ ] 6. Noiseless check: masked and decoded detectors never fire, observables never flip
@@ -42,8 +30,7 @@ QEC study:
 
 1. **Build the circuit** for each parameter point (noise strength, distance, rounds). Keep it in
    a function so the final script can regenerate everything.
-2. **Compile and check the cost**: read `sampler.active_width` (on Tsim 1.0.0, use the
-   helper in the `simulating-circuits-with-tsim` skill), then time a warm-up call and
+2. **Compile and check the cost**: read `sampler.active_width`, then time a warm-up call and
    one call of about 10^6 shots. Estimate the time for the full budget (sampling and
    decoding) before launching anything long, and tell the user. If the width is too large
    and the circuit defines observables the study does not use (for example, extra logical
@@ -51,9 +38,8 @@ QEC study:
    on a CCZ factory, keeping 1 of 9 observables lowered the width from 16 to 9. This changes
    the circuit, so propose it to the user rather than doing it silently.
 3. **Decide what is postselected and what is decoded.** Postselection detectors go into a
-   `postselection_mask`. Detectors that feed a decoder stay unmasked. Write this as a plan and
-   check it with `scripts/check_mask.py` of the `simulating-circuits-with-tsim` skill (see
-   "Postselection" there), which also gives the acceptance of each stage.
+   `postselection_mask`, checked as in "Postselection" in SKILL.md. Detectors that feed a
+   decoder stay unmasked, and must also be 0 without noise.
 4. **Pick a decoder** (or none) from the table below.
 5. **Sample in large calls, decode, and accumulate counts**, using the loop below.
 6. **Report** each point with shots, kept shots, errors, acceptance, logical error rate per
@@ -64,10 +50,9 @@ QEC study:
 sinter can call Tsim, but it costs speed and can cost correctness:
 
 - sinter applies `postselection_mask` after sampling, so Tsim simulates every discarded shot in
-  full. Postselecting inside Tsim stops discarded shots early, which for cultivation-style
-  protocols is often the largest speedup available.
-- sinter reads raw detector values. Tsim returns raw values, not flips relative to a noiseless
-  reference, so a detector that is 1 without noise looks like an error to the decoder.
+  full instead of stopping it early.
+- sinter's decoders expect Stim's flips relative to a noiseless reference; Tsim returns raw
+  values, so a detector that is 1 without noise looks like an error.
 - Each sinter worker process compiles its own sampler and starts its own numba thread pool, so
   several workers oversubscribe the CPU.
 
@@ -131,24 +116,15 @@ Notes:
 - Stop on `target_errors` (see "Error bars and shot budgets"), with `max_shots` and
   `max_seconds` as caps, rather than fixing the shot count in advance: logical error rates are
   often orders of magnitude away from the first guess.
-- Always use the detector sampler here, not the measurement sampler: it samples most
-  detectors directly from the noise and is often an order of magnitude faster.
-- Calls are sized from a memory budget (`max_bytes_per_call`, 1 GB by default). Each call has
-  a fixed overhead, so make calls as large as memory allows, but do not fix their shot count:
-  10^6 shots of a circuit with 50,000 detectors is a 50 GB array. Leave `batch_size` at its
-  default.
+- Calls are sized from a memory budget (`max_bytes_per_call`, 1 GB by default), not a fixed
+  shot count: 10^6 shots of a circuit with 50,000 detectors is a 50 GB array.
 - For circuits with hundreds of detectors or more, sample with `bit_packed=True` and
   `append_observables=True`, and give the decoder packed rows (PyMatching:
-  `decode_batch(dets, bit_packed_shots=True, bit_packed_predictions=True)`). This uses 8 times
-  less memory and was twice as fast at 1,320 detectors. Unpack observables with
-  `np.unpackbits(..., bitorder="little")`.
+  `decode_batch(dets, bit_packed_shots=True, bit_packed_predictions=True)`). Unpack
+  observables with `np.unpackbits(..., bitorder="little")`.
 - An error is any observable that differs from its prediction. If observables are not
   deterministic without noise (for example a magic state measured directly), a logical error
   rate is not meaningful; measure fidelity instead (see below).
-- Detectors that are 1 in the noiseless circuit break both postselection and decoding. Check
-  with `c.without_noise()` that the detectors you mask or decode are 0 without noise; if a
-  detector is deterministic but equals 1, fix its definition or use
-  `use_detector_reference_sample=True`.
 
 ## Choosing a decoder
 
@@ -205,8 +181,8 @@ extend it if the noise uses `R_PAULI` or `U3`.
 Follow the paper being reproduced when it names a decoder. Otherwise start with PyMatching for
 matchable codes, BP-LSD or Relay-BP for LDPC codes, and Tesseract when accuracy matters and the
 model is small enough. Decoding can take longer than sampling; time both separately and report
-both. Tested code for each decoder is in [references/decoders.md](references/decoders.md);
-read it before writing decoder code.
+both. Tested code for each decoder is in [decoders.md](decoders.md); read it before writing
+decoder code.
 
 ## Postselected protocols and fidelity
 

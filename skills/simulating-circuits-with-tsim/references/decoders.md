@@ -3,7 +3,7 @@
 Each function takes a `stim.DetectorErrorModel` and returns `decode(dets) -> predictions`,
 where `dets` is the boolean detector array from
 `sampler.sample(..., separate_observables=True)` and `predictions` is a boolean array with one
-column per observable. They plug into `run_point` in `SKILL.md`.
+column per observable. They plug into `run_point` in [qec-experiments.md](qec-experiments.md).
 
 All four were checked on a distance-3 rotated surface code memory sampled with Tsim; the
 logical error rates agreed with each other within the expected decoder differences.

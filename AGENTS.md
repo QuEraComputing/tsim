@@ -1,8 +1,8 @@
 # Agent instructions for Tsim
 
 These notes are for agents working on Tsim's code. To use Tsim in other projects, read the
-user skills in `skills/` instead (`simulating-circuits-with-tsim`, `running-qec-experiments-with-tsim`, `porting-circuits-to-tsim`); they
-also explain the cost model (active width) and the conventions users rely on.
+user skill in `skills/simulating-circuits-with-tsim/` instead; it also explains the cost model
+(active width) and the conventions users rely on.
 
 ## Commands
 
@@ -22,7 +22,8 @@ change.
 A circuit goes through these stages; each module's docstring says more.
 
 1. `circuit.py`: `Circuit` wraps a `stim.Circuit`. Non-Clifford gates are stored as tagged
-   Clifford instructions (`T` as `S[T]`, `R_Z(a)` as `I[R_Z(theta=a*pi)]`), see `core/tags.py`.
+   Clifford instructions (`T` as `S[T]`, `R_Z(a)` as `I` with a parametric tag); `core/tags.py`
+   reads and writes the tags.
 2. `core/parse.py`, `core/builder.py`: the circuit becomes a ZX graph (zxparam), with Pauli
    noise as parameterized vertices.
 3. `core/graph.py`: `prepare_graph` uses detectors and observables (detector sampler) or
@@ -65,8 +66,8 @@ more than a handful of T gates: their compile memory grows exponentially.
 - A test of a fix must fail without the fix. Keep circuits small, so tests stay fast and do not
   build large tensors.
 - Statistical tests need enough shots for the tolerance, and a fixed seed.
-- `test/unit/test_skills.py` runs the code in the user skills; update the skills when you
-  change behavior they describe.
+- `test/unit/test_skills.py` runs the code in the user skill; update the skill when you change
+  behavior it describes.
 
 ## Performance
 

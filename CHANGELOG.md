@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- An agent skill, `simulating-circuits-with-tsim`, in `skills/`, that teaches
+  coding agents to use Tsim: active width, sampling and postselection, QEC
+  studies with decoders, and porting published circuits. Install it with
+  `npx skills add QuEraComputing/tsim`; the docs site also serves it.
 - `Circuit(...)` accepts a `stim.Circuit` or another `Circuit` and copies it,
   like `Circuit.from_stim_program`. Before, passing a `stim.Circuit` raised an
   `AttributeError`.

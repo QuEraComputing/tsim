@@ -41,6 +41,33 @@ def no_sinter_collect(transcript: str) -> Result:
     return hit is None, hit or "sinter.collect not used"
 
 
+_SUPERSCRIPTS = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺\u2212", "0123456789-+-")
+_NUMBER = re.compile(
+    r"(?<![\w.])(\d+(?:\.\d+)?)"
+    r"(?:\s*(?:[eE]|[\u00d7x·*]\s*10\s*\^?)\s*\(?([-+]?\s*\d+)\)?)?"
+    r"(\s*%)?"
+)
+
+
+def numbers(text: str) -> list[float]:
+    """Every number in ``text``: 3.6e-5, 3.6 × 10^-5, 3.6×10⁻⁵ and 68.7% (as 0.687)."""
+    text = text.translate(_SUPERSCRIPTS).replace(",", "")
+    # "(3.6 ± 0.4) × 10^-5" -> "3.6 × 10^-5"
+    text = re.sub(r"\((\d+(?:\.\d+)?)\s*(?:±|\+/-)\s*\d+(?:\.\d+)?\)", r"\1", text)
+    values = []
+    for m in _NUMBER.finditer(text):
+        value = float(m[1]) * 10 ** int((m[2] or "0").replace(" ", ""))
+        values.append(value / 100 if m[3] else value)
+    return values
+
+
+def answer_has_value(answer: str, lo: float, hi: float, what: str) -> Result:
+    hits = [v for v in numbers(answer) if lo <= v <= hi]
+    return bool(hits), (
+        f"{what}: {hits[0]:g}" if hits else f"no {what} in [{lo:g}, {hi:g}]"
+    )
+
+
 def answer_matches(answer: str, pattern: str, what: str) -> Result:
     hit = _find(pattern, answer)
     return hit is not None, hit or f"answer does not mention {what}"

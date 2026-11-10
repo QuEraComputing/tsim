@@ -1,29 +1,32 @@
 ---
 name: simulating-circuits-with-tsim
-description: "Samples noisy quantum circuits with non-Clifford gates using Tsim (bloqade-tsim), a Stim-compatible simulator, and judges whether a circuit is feasible. Use when a task involves Tsim or bloqade-tsim, or a noisy circuit in Stim format with non-Clifford gates (T, T_DAG, R_X, R_Y, R_Z, U3, R_PAULI, TPP, CCZ, CCX, CS), such as magic state cultivation, distillation, injection or coherent rotation errors, even if Tsim is not named. Also use when someone asks whether such a circuit can be simulated or how long sampling will take (active width, k_max), samples its detectors, measurements or observables, ports Stim sampler code to Tsim, postselects inside Tsim, or hits Tsim problems such as \"needs N active qubits ... more than 30\", \"Malformed parametric tag\", detectors that read 1 where Stim reports 0, or slow sample() calls."
+description: "Samples noisy quantum circuits with non-Clifford gates using Tsim (bloqade-tsim), a Stim-compatible simulator, and runs Monte Carlo QEC studies with it. Use when a task involves Tsim or bloqade-tsim, or a noisy Stim-format circuit with T, T_DAG, R_X, R_Y, R_Z, U3, R_PAULI, TPP, CCZ, CCX or CS gates (magic state cultivation, distillation, injection, coherent rotation errors), even if Tsim is not named: judging feasibility or run time (active width, k_max); sampling detectors, measurements or observables; postselection; logical error rates, thresholds, acceptance or output infidelity with error bars; decoding Tsim samples (PyMatching, Tesseract, BP-LSD, Relay-BP); detector error models; sinter with Tsim; or porting published circuits (arXiv, GitHub, Zenodo) whose T or CCZ gates are Clifford stand-ins. Also use for errors such as \"needs N active qubits\", \"Malformed parametric tag\" or \"non-deterministic observables\", detectors that read 1 where Stim reports 0, or slow sample() calls."
 license: Apache-2.0
-compatibility: Python 3.11+. Written for Tsim main; on Tsim 1.0.0 (the PyPI release of 2026-11-04) read the "Tsim 1.0.0" section at the end.
+compatibility: Python 3.11+ and Tsim 1.1.0 or later (bloqade-tsim). Decoders are separate packages.
 metadata:
   author: QuEra Computing
-  version: "1.2"
+  version: "2.0"
   last-reviewed: "2026-11-10"
-  tested-with: "Tsim main at 9ed58c9f (after 1.0.0) and Tsim 1.0.0 from PyPI"
+  tested-with: "Tsim 1.1.0"
 ---
 
 # Tsim
 
 Tsim samples noisy quantum circuits with non-Clifford gates. It reads Stim's circuit format plus
 a few non-Clifford instructions and mirrors Stim's sampler API, so most Stim code ports by
-changing `stim` to `tsim`. Install with `uv add bloqade-tsim` or `pip install bloqade-tsim`;
-import as `tsim`. Docs: https://bloqade.quera.com/tsim (append `.md` to any page for Markdown).
+changing `stim` to `tsim`. Install with `uv add bloqade-tsim` or `pip install bloqade-tsim`
+(1.1.0 or later); import as `tsim`. Docs: https://bloqade.quera.com/tsim (append `.md` to any
+page for Markdown).
 
-This skill is written for Tsim's main branch. Tsim 1.0.0 from PyPI lacks a few features used
-below (`sampler.active_width` among them); `tsim.__version__` reads 1.0.0 on both, so check
-with `hasattr(sampler, "active_width")`, and on 1.0.0 read "Tsim 1.0.0" at the end.
+This file covers what every task needs. Read the references when the task calls for them:
 
-For Monte Carlo estimates of logical error rates, decoders, postselection and fidelity, also
-read the `running-qec-experiments-with-tsim` skill. For running circuits published with a
-paper, read `porting-circuits-to-tsim`.
+- [references/qec-experiments.md](references/qec-experiments.md): Monte Carlo estimates of
+  logical error rates, acceptance and fidelity; the sampling loop; decoders and their error
+  models; error bars; why not to use `sinter.collect`.
+- [references/decoders.md](references/decoders.md): tested code for PyMatching, Tesseract,
+  BP-LSD and Relay-BP on Tsim samples.
+- [references/porting.md](references/porting.md): finding a paper's circuits, converting
+  Clifford stand-ins to real T or CCZ gates, and validating the conversion.
 
 ## Which circuits Tsim can simulate
 
@@ -38,15 +41,14 @@ The width decides feasibility, not speed. Below a width of about 10 the state ve
 and the speed is set by the number of noise channels and detectors instead: published circuits
 of width 1 run anywhere from about 1 to 100 million shots per second on one core.
 
-Why the width is often small: ZX simplification absorbs the Clifford gates, so they do not
-appear in the program that runs on the state vector; only the non-Clifford rotations and the
-measurements that interact with them do. Adding Clifford structure around a non-Clifford core
-therefore leaves the width unchanged, and moves the cost elsewhere. Distance-5 cultivation has
-width 6 both as a 42-qubit inject-and-cultivate circuit and as a 463-qubit end-to-end circuit
-with a surface-code escape stage. The end-to-end circuit has 2,744 detectors, 2,730 of them
-sampled directly from the noise, and once postselection has removed most of the state-vector
-work, that direct sampling is the bottleneck (3.3 vs 53.6 million shots/s for the smaller
-circuit on 4 threads). For such circuits `bit_packed=True` helps.
+Why the width is often small: ZX simplification absorbs the Clifford gates, so only the
+non-Clifford rotations and the measurements that interact with them reach the state vector.
+Adding Clifford structure around a non-Clifford core leaves the width unchanged and moves the
+cost elsewhere. Distance-5 cultivation has width 6 both as a 42-qubit inject-and-cultivate
+circuit and as a 463-qubit end-to-end circuit with a surface-code escape stage. The end-to-end
+circuit has 2,744 detectors, 2,730 of them sampled directly from the noise, and once
+postselection has removed most of the state-vector work, that direct sampling is the bottleneck
+(3.3 vs 53.6 million shots/s for the smaller circuit on 4 threads).
 
 Compile first, then read the width. Compilation takes seconds for circuits with a few thousand
 detectors and about a minute at 50,000; sampling is usually where time goes.
@@ -61,10 +63,13 @@ c = tsim.Circuit(
     T 0
     CNOT 0 1
     DEPOLARIZE2(0.01) 0 1
-    H 0 1
+    CNOT 0 1
+    T_DAG 0
+    H 0
     M 0 1
-    DETECTOR rec[-1] rec[-2]
-    OBSERVABLE_INCLUDE(0) rec[-1]
+    DETECTOR rec[-2]
+    DETECTOR rec[-1]
+    OBSERVABLE_INCLUDE(0) rec[-2]
     """
 )
 sampler = c.compile_detector_sampler(seed=1)
@@ -72,14 +77,6 @@ print(sampler.active_width)  # int; 0 means no state vector is needed
 print(sampler.stats)  # component widths, peak bytes per shot, ...
 dets, obs = sampler.sample(shots=100_000, separate_observables=True)
 ```
-
-**Coming from Stim? Tsim's detector values differ by default.** Stim reports each detector and
-observable as a flip relative to a noiseless reference sample; Tsim reports its raw value. A
-detector whose noiseless value is 1 reads 1 in every Tsim shot and 0 in Stim, so detector rates,
-postselection and decoding all change. To get Stim's convention, sample with
-`use_detector_reference_sample=True` and `use_observable_reference_sample=True`. Use these only
-when the detectors and observables are deterministic without noise; for random ones (for
-example a measured magic state) the reference is meaningless. See "Differences from Stim".
 
 | Active width | What to expect on a typical multi-core CPU |
 |---|---|
@@ -93,9 +90,10 @@ Before a long run, time it: one small warm-up call (the first call compiles kern
 one call of about 10^6 shots, and extrapolate. Small calls understate the rate. Report the
 width and the measured shots per second, with the thread count, along with any plan.
 
-If the width is too large: postselect inside Tsim (discarded
-shots stop early, see below), simulate a smaller instance (lower distance or fewer rounds) and
-report how the width grows, or check whether part of the circuit can be a Clifford stand-in.
+If the width is too large: postselect inside Tsim (discarded shots stop early, see below),
+simulate a smaller instance (lower distance or fewer rounds) and report how the width grows,
+drop observables the study does not need (see qec-experiments.md), or check whether part of
+the circuit can be a Clifford stand-in.
 
 ## Circuit format
 
@@ -116,32 +114,43 @@ Ways to build a circuit: `tsim.Circuit(text)`, `tsim.Circuit.from_file(path)`,
 `tsim.Circuit(stim_circuit)`, or `c.append("R_Z", [0], 0.25)`.
 
 Inside Stim text, Tsim writes non-Clifford gates as tagged Clifford instructions: `T` is
-`S[T]`, `T_DAG` is `S_DAG[T]`, and `R_Z(0.25)` is `I[R_Z(0.25)]` (some versions write
-`I[R_Z(theta=0.25*pi)]`; Tsim reads both). `c.stim_circuit`
-returns that `stim.Circuit`. Stim reads it as a Clifford stand-in (T as S, rotations as
-identity), which is useful for cross-checks. Many `stim.Circuit` methods are not on
-`tsim.Circuit`; call them on `c.stim_circuit`, for example
+`S[T]`, `T_DAG` is `S_DAG[T]`, and `R_Z(0.25)` is `I[R_Z(0.25)]` or, in some versions,
+`I[R_Z(theta=0.25*pi)]`; Tsim reads both. `c.stim_circuit` returns that `stim.Circuit`. Stim
+reads it as a Clifford stand-in (T as S, rotations as identity). Many `stim.Circuit` methods
+are not on `tsim.Circuit`; call them on `c.stim_circuit`, for example
 `c.stim_circuit.get_detector_coordinates()`.
+
+## Differences from Stim that change results
+
+- **Raw detector values.** Stim reports each detector and observable as a flip relative to a
+  noiseless reference sample; Tsim reports its raw value, and allows random ones. A detector
+  whose noiseless value is 1 reads 1 in every Tsim shot and 0 in Stim, which changes detector
+  rates, postselection and decoding. To get Stim's convention, sample with
+  `use_detector_reference_sample=True` and `use_observable_reference_sample=True`, but only
+  when the detectors and observables are deterministic without noise; for random ones (for
+  example a measured magic state) the reference is meaningless.
+- **Detector error models.** `c.detector_error_model()` is built by Stim from the Clifford
+  stand-in, so it is only guaranteed correct for Clifford circuits. Before using it as a
+  decoder prior, read "Choosing a decoder" in qec-experiments.md.
 
 ## Detector sampler or measurement sampler
 
-`c.compile_detector_sampler()` samples detectors and observables;
-`c.compile_sampler()` samples raw measurement records. They compile different problems, so
-pick by what you need, not by convenience:
+`c.compile_detector_sampler()` samples detectors and observables; `c.compile_sampler()` samples
+raw measurement records. They compile different problems:
 
 - The detector sampler builds a ZX diagram whose outputs are the detectors and observables
-  themselves. After simplification, that diagram usually splits into a few small quantum
-  components and many detectors that depend on the noise alone. Each of those is one parity
-  of the noise and is sampled directly, with no state vector (`sampler.stats.num_direct_outputs`
-  counts them). In a Clifford circuit every detector is direct.
+  themselves. After simplification it usually splits into a few small quantum components and
+  many detectors that depend on the noise alone, each sampled directly as one parity of the
+  noise (`sampler.stats.num_direct_outputs` counts them). In a Clifford circuit every detector
+  is direct.
 - The measurement sampler must reproduce every random measurement outcome, so far fewer outputs
-  are direct and more work goes through components.
+  are direct.
 
 When the task needs detectors or observables (decoding, postselection, logical error rates,
-fidelity), use the detector sampler, even if the circuit is mostly Clifford. Measured on a
-distance-5 surface code memory, it was about 10 times faster than the measurement sampler
-(146 vs 14 million shots/s on 4 threads). Use the measurement sampler only when you need the
-raw measurement bits. Do not sample measurements and compute detectors from them yourself.
+fidelity), use the detector sampler, even if the circuit is mostly Clifford: on a distance-5
+surface code memory it was about 10 times faster (146 vs 14 million shots/s on 4 threads). Use
+the measurement sampler only for raw measurement bits; do not compute detectors from them
+yourself.
 
 ## Sampling options
 
@@ -153,33 +162,18 @@ raw measurement bits. Do not sample measurements and compute detectors from them
   calls about 80 times slower.
 - **`batch_size`:** leave it at the default, which is sized from free memory and is close to
   optimal. Small values (a few thousand or less) are several times slower. Lower it only to
-  cap memory; with the default strategy it does not change the samples.
+  cap memory; it does not change the samples.
 - **`bit_packed=True`** returns little-endian packed `uint8` rows, as in Stim, using 8 times
-  less memory. It is often faster for large circuits: on a distance-11 surface code memory
-  (1,320 detectors) packed sampling was twice as fast as booleans, and at distance 5 about
-  1.3 times as fast. For small circuits it gains little and is slower with
-  `separate_observables` (the observable columns are split off and re-packed); use
-  `append_observables=True` with packed output instead. Many decoders accept packed rows
-  directly, for example `matching.decode_batch(dets, bit_packed_shots=True,
-  bit_packed_predictions=True)` in PyMatching. Time both on your circuit when throughput
-  matters.
+  less memory. On a distance-11 surface code memory (1,320 detectors) it was twice as fast as
+  booleans, at distance 5 about 1.3 times. For small circuits it gains little and is slower
+  with `separate_observables` (the observables are split off and re-packed); use
+  `append_observables=True` with packed output.
 - **Threads:** the default strategy runs on `numba.get_num_threads()` threads, all cores by
   default. Use `numba.set_num_threads(k)` before `sample` (or `NUMBA_NUM_THREADS=k` before
   importing Tsim) and leave cores free on a shared machine. Do not run several multi-threaded
   Tsim processes side by side; they oversubscribe the CPU.
 - **Seeds:** a `seed` reproduces samples for the same Tsim and dependency versions and
-  backend. Thread count and `batch_size` do not affect samples of the default strategy.
-
-## Differences from Stim that change results
-
-- Tsim returns the **raw values** of detectors and observables, and allows non-deterministic
-  ones. Stim returns flips relative to a noiseless reference. For deterministic detectors, pass
-  `use_detector_reference_sample=True` and `use_observable_reference_sample=True` to get Stim's
-  convention; never use them for non-deterministic detectors. A noiseless circuit whose
-  detectors are all 0 behaves the same either way.
-- `c.detector_error_model()` is built by Stim from a Clifford stand-in of the circuit, so it is
-  only guaranteed correct for Clifford circuits. Before using it as a decoder prior, read
-  "Choosing a decoder" in `running-qec-experiments-with-tsim`.
+  backend. Thread count and `batch_size` do not affect the samples.
 
 ## Postselection
 
@@ -191,14 +185,14 @@ changes the result.
 `CompiledDetectorSampler.sample`. A shot is discarded if any masked detector reads 1, and
 **only surviving shots are returned**: asking for `shots=1_000_000` returns fewer rows, and
 `len(dets) / shots` is the acceptance rate. Count requested and returned shots separately, and
-keep calling until enough shots survive (see the loop in `running-qec-experiments-with-tsim`).
+keep calling until enough shots survive (see the loop in qec-experiments.md).
 
-**Why it is fast.** With the default strategy, a shot stops being simulated at the first masked
-detector that fires, and shots that a noise-only (direct) detector discards never reach the
-state vector. The saving grows as the acceptance falls and as the discarding detectors come
-earlier in the circuit. Distance-5 cultivation (14% acceptance) ran at 53.6 million shots/s
-with postselection against 2.0 million without, on 4 threads. Filtering afterwards, which is
-what `sinter` does, gives the same statistics but simulates every discarded shot in full.
+**Why it is fast.** A shot stops being simulated at the first masked detector that fires, and
+shots that a noise-only (direct) detector discards never reach the state vector. The saving
+grows as the acceptance falls and as the discarding detectors come earlier in the circuit.
+Distance-5 cultivation (14% acceptance) ran at 53.6 million shots/s with postselection against
+2.0 million without, on 4 threads. Filtering afterwards, which is what `sinter` does, gives the
+same statistics but simulates every discarded shot in full.
 
 **Which detectors to mask.** Follow the protocol's own definition, from the paper:
 
@@ -207,77 +201,64 @@ what `sinter` does, gives the same statistics but simulates every discarded shot
 - When a cultivation circuit includes the escape stage (growing into a large surface code),
   mask only the injection and cultivation detectors. The escape-stage detectors go to a decoder,
   and shots are discarded afterwards by a decoder confidence threshold (the complementary gap),
-  not by a mask. Masking every detector of an end-to-end circuit keeps almost no shots. These
-  skills do not cover computing the gap; use the paper's code for it, or ask the user.
+  not by a mask. Masking every detector of an end-to-end circuit keeps almost no shots. This
+  skill does not cover computing the gap; use the paper's code for it, or ask the user.
 - Circuits sometimes end with noiseless checks that exist only to read out the result, such as
   a final ideal stabilizer measurement. Whether to mask them is part of the figure of merit, not
   of the protocol; decide it with the user and say which choice you made.
 
-Detector coordinates or the circuit's structure usually identify the stages; if they do not,
-ask the user rather than guessing.
+Detector coordinates (`c.stim_circuit.get_detector_coordinates()`) or the circuit's structure
+usually identify the stages; if they do not, ask the user rather than guessing.
 
-**Write the mask as a plan and check it before sampling.** A wrong mask gives plausible but
-wrong numbers, so build it with `scripts/check_mask.py` rather than by hand. Run the script,
-don't read it: call it with the Python environment that has Tsim, as `python
-<this skill's directory>/scripts/check_mask.py`, not as `./check_mask.py` (installers can drop
-the executable bit). The commands below abbreviate the path to `scripts/check_mask.py`.
-
-1. `python scripts/check_mask.py circuit.stim --summary` lists the detectors in groups by
-   time coordinate, with any extra coordinates that label stages.
-2. Write `plan.json`, assigning every detector to a named stage with an action:
-
-   ```json
-   {"stages": [
-     {"name": "injection", "detectors": "0-6", "action": "postselect"},
-     {"name": "cultivation", "detectors": "7-13", "action": "postselect"},
-     {"name": "final check", "detectors": "14-19", "action": "ignore"}
-   ]}
-   ```
-
-   Actions are `postselect` (masked), `decode` and `ignore`; detectors are indices, inclusive
-   ranges `"a-b"`, or lists of those.
-3. `python scripts/check_mask.py circuit.stim plan.json --out mask.npy` fails if a detector is
-   in no stage or in two, or if a postselected detector reads 1 or is random without noise. It
-   also reports the acceptance of each stage from a short noisy run. Pass `--reference` if you
-   will sample with `use_detector_reference_sample=True`. Fix the plan and rerun until it
-   prints `OK`, then report the plan with the results.
-4. Load the mask and sample:
+**Check the mask before sampling.** A wrong mask gives plausible but wrong numbers. Write the
+stages down, and check that no masked detector fires without noise: one that is always 1 or
+random discards shots that have no error. Sample the noiseless check with the same reference
+flags as the real run.
 
 ```python
 import numpy as np
 
-mask = np.zeros(c.num_detectors, dtype=bool)  # or: mask = np.load("mask.npy")
-mask[0] = True
+# Detector indices of each postselected stage, taken from the protocol.
+stages = {"checks": [0, 1]}
+mask = np.zeros(c.num_detectors, dtype=bool)
+for indices in stages.values():
+    mask[indices] = True
+
+quiet = c.without_noise().compile_detector_sampler(seed=0).sample(shots=1000)
+fired = np.flatnonzero(mask & quiet.any(axis=0))
+assert not fired.size, f"masked detectors {fired} fire without noise"
+
 shots = 100_000
 dets, obs = sampler.sample(shots=shots, postselection_mask=mask, separate_observables=True)
 acceptance = len(dets) / shots
 ```
+
+To see which stage discards most shots, sample once without a mask and compute
+`1 - dets[:, stages[name]].any(axis=1).mean()` per stage. Report the stages and their detectors
+with the results.
 
 ## Sampling strategy
 
 Use the default strategy and leave `strategy=` unset. The other values (`"cat5"`, `"bss"`,
 `"cutting"`) are provisional stabilizer-rank methods that are much slower and whose compile
 memory grows exponentially with the number of T gates, so they can exhaust a machine's RAM in
-seconds; do not use them, not even as a cross-check.
+seconds. Do not use them, not even as a cross-check.
 
 ## Checking results
 
-Cheap checks catch most modelling mistakes. None of them needs another sampling strategy: do
-not cross-check against `"cat5"`, `"bss"` or `"cutting"` (see above). Before reporting numbers,
-copy this checklist and tick it off:
+Cheap checks catch most modelling mistakes. Before reporting numbers, copy this checklist and
+tick it off:
 
 ```
 Tsim results:
 - [ ] Active width read; rate timed with a warm-up and a large call; thread count noted
 - [ ] Noiseless run: detectors used for postselection or decoding never fire
 - [ ] Reference flags used only if detectors and observables are deterministic
-- [ ] Postselection plan checked with scripts/check_mask.py (if postselecting)
 - [ ] At least one check below passed (stand-in vs Stim, analytic case, or to_tensor)
 ```
 
-- **Clifford stand-in:** replace `T` by `S` and `T_DAG` by `S_DAG`, sample in Tsim and in
-  Stim (in Tsim with `use_detector_reference_sample=True` and
-  `use_observable_reference_sample=True`), and compare detector rates within error bars.
+- **Clifford stand-in:** replace `T` by `S` and `T_DAG` by `S_DAG`, sample in Tsim (with both
+  reference flags) and in Stim, and compare detector rates within error bars.
 - **Noiseless run:** in `c.without_noise()`, detectors meant to be deterministic must never fire.
 - **Analytic case:** a T state under `DEPOLARIZE1(p)`, then noiseless `T_DAG`, `H`, `M`, gives
   `P(0) = 1 - 2p/3`.
@@ -306,7 +287,7 @@ Tsim results:
 |---|---|
 | `strategy='active_statevector' needs N active qubits ... more than 30` | Width too large; see "Which circuits Tsim can simulate" |
 | `... bytes per shot ... more than half of the available memory` | Width too large for this machine's RAM |
-| `non-deterministic observables` or `The number of observables changed` (from `detector_error_model`) | An observable is random without noise; no flag fixes this. Make it deterministic (for a magic state, see the fidelity measurement in `running-qec-experiments-with-tsim`) |
+| `non-deterministic observables` or `The number of observables changed` (from `detector_error_model`) | An observable is random without noise; no flag fixes this. Make it deterministic (for a magic state, see the fidelity measurement in qec-experiments.md) |
 | `non-deterministic detectors` (from `detector_error_model(decompose_errors=True)`) | Pass `allow_gauge_detectors=True` as well |
 | `Malformed parametric tag` | Angles are in units of π: write `R_X(0.25) 0` or `I[R_X(0.25)] 0` |
 | `'Circuit' object has no attribute ...` | A Stim method; call it on `c.stim_circuit` |
@@ -330,33 +311,3 @@ is the point. Include the circuit (attach the file, or link to it if it is large
 comes from (paper or repository), what the user wants to compute, and what you measured:
 qubits, T count (`c.tcount()`), `sampler.active_width` and `sampler.stats` (or the error
 message), and the time per shot if sampling ran at all.
-
-## Tsim 1.0.0
-
-Tsim 1.0.0 (released 2026-11-04) is the PyPI release this skill was checked against. The
-features below came after it; everything else in this skill applies to both. To get them,
-install from git: `pip install git+https://github.com/QuEraComputing/tsim`.
-
-| On main | On 1.0.0 |
-|---|---|
-| `sampler.active_width`, `sampler.stats` | Read the width from `repr(sampler)` (helper below); no `stats` |
-| `tsim.Circuit(stim_circuit)` | Raises `AttributeError: ... no attribute 'splitlines'`; use `tsim.Circuit.from_stim_program(stim_circuit)`, which works on both |
-| `CS 0 1`, `CS_DAG 0 1` | `Gate not found: 'CS'`; write `T 0 1`, `CX 0 1`, `T_DAG 1`, `CX 0 1` for `CS` (swap `T` and `T_DAG` for `CS_DAG`) |
-| Compiling large circuits | Memory grows with detectors × noise locations: a d=25 15-to-1 distillation circuit needs 121 GiB on 1.0.0 and 4.5 GB on main. Compile under a memory cap, or use main |
-
-This helper returns the active width on either version (on 1.0.0, `repr(sampler)` contains
-`statevector components (width ≤ W, ...)` when there is a state vector):
-
-```python
-import re
-
-
-def active_width(sampler):
-    if hasattr(sampler, "active_width"):
-        return sampler.active_width
-    match = re.search(r"width ≤ (\d+)", repr(sampler))
-    return int(match.group(1)) if match else 0
-
-
-print(active_width(sampler))
-```

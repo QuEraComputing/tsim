@@ -1,7 +1,10 @@
-skill = "running-qec-experiments-with-tsim"
 prompt = """
 inputs/coherent_d3_r3.stim is a d=3, 3-round surface code memory with coherent R_Z \
 over-rotations plus Pauli noise. Using Tsim, estimate its logical error rate with a decoder, \
 with error bars. Write a reproducible script and save the raw counts to a JSON file. Keep \
 compute under 10 minutes.
 """
+
+# Files copied into the run's inputs/, from ../../circuits/.
+[inputs]
+"coherent_d3_r3.stim" = { circuit = "coherent_d3_r3.stim" }

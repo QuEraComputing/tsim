@@ -1,23 +1,10 @@
----
-name: porting-circuits-to-tsim
-description: "Ports published Stim circuits to Tsim with real non-Clifford gates and validates the conversion. Use when someone shares an arXiv link or ID, a paper, a Zenodo or GitHub repository, or .stim files for a non-Clifford protocol (magic state cultivation, distillation, injection, CCZ or T factories) and asks whether Tsim can simulate it with real T, CCZ or CS gates, what its active width (k_max) or cost is, or to reproduce or extend the paper's results. Also use when published circuits use Clifford stand-ins (S or S_DAG for T, a |Y> input for |T>, a CCZ modelled only by its noise) that need converting to real gates, or when a converted circuit has detectors that fire without noise or random observables."
-license: Apache-2.0
-compatibility: Python 3.11+, bloqade-tsim (main or 1.0.0; for 1.0.0 see the "Tsim 1.0.0" section of the simulating-circuits-with-tsim skill), stim.
-metadata:
-  author: QuEra Computing
-  version: "1.2"
-  last-reviewed: "2026-11-10"
-  tested-with: "Tsim main at 9ed58c9f (after 1.0.0) and Tsim 1.0.0 from PyPI"
----
-
 # Porting published circuits to Tsim
 
 Papers about non-Clifford protocols often publish Stim circuits in which every T gate is
 replaced by a Clifford stand-in, because Stim cannot simulate T. Tsim can, so the same circuits
-can be rerun with real T gates. This skill covers getting the circuits, converting them, checking
-the conversion, and deciding what is feasible. It builds on the `simulating-circuits-with-tsim`
-skill (active width, sampling) and hands off to `running-qec-experiments-with-tsim` for the
-actual statistics.
+can be rerun with real T gates. This reference covers getting the circuits, converting them,
+checking the conversion, and deciding what is feasible. It builds on SKILL.md (active width,
+sampling) and hands off to [qec-experiments.md](qec-experiments.md) for the actual statistics.
 
 Copy this checklist and tick items off as you go. Do not report numbers from a converted
 circuit until every validation item is ticked; if one cannot pass, say which and why.
@@ -126,7 +113,7 @@ Run these checks before trusting any number from the converted circuit:
    the stand-in circuit, reproduce one of them.
 2. **Noiseless real circuit.** In `real.without_noise()`, every detector used for postselection
    or decoding must be 0 on every shot, and the output should be the ideal state (for example,
-   infidelity 0 with the fidelity measurement of `running-qec-experiments-with-tsim`). A
+   infidelity 0 with the fidelity measurement of qec-experiments.md). A
    detector that fires without noise usually means one of:
    - a stand-in was missed, or a non-stand-in `S` was converted;
    - a Pauli correction is missing. A stand-in circuit can skip feed-forward corrections (for
@@ -135,7 +122,7 @@ Run these checks before trusting any number from the converted circuit:
 3. **Observables of the real circuit.** In `real.without_noise()`, every observable must be
    deterministic. If the circuit ends by measuring the magic state in a Pauli basis (a final
    logical X or Y readout), the observable is random on a T state. Add a noiseless T-basis
-   readout instead, as in the fidelity measurement of `running-qec-experiments-with-tsim`, and
+   readout instead, as in the fidelity measurement of qec-experiments.md, and
    say that you did. Published circuits often need this.
 4. **Observables of the stand-in.** Sample the noiseless stand-in and check whether its
    observables are deterministic. Often they are not: a final check written as `S; MPP Y;
@@ -148,7 +135,7 @@ Run these checks before trusting any number from the converted circuit:
 ## 4. Measure the active width (k_max)
 
 Compile without sampling and read the active width, which decides whether the circuit is
-feasible (see the `simulating-circuits-with-tsim` skill for the scale). Compiling needs no
+feasible (see SKILL.md for the scale). Compiling needs no
 sampling, but it is not free: it takes seconds for a few thousand detectors and about a minute
 at 50,000.
 
@@ -160,7 +147,7 @@ def survey_row(circuit):
     row = [circuit.num_qubits, circuit.tcount(), circuit.num_detectors]
     try:
         sampler = circuit.compile_detector_sampler()
-        return row + [sampler.active_width]  # Tsim 1.0.0: see simulating-circuits-with-tsim
+        return row + [sampler.active_width]
     except ValueError as error:
         return row + [str(error)[:120]]  # "needs N active qubits ..."
 
@@ -179,16 +166,15 @@ by size (distance, rounds), report how the width grows; that is often the main r
 
 ## 5. Plan the study
 
-- Width small enough: run the paper's figure with real T gates using
-  `running-qec-experiments-with-tsim`, and plot the stand-in and real results together; the
+- Width small enough: run the paper's figure with real T gates using qec-experiments.md, and
+  plot the stand-in and real results together; the
   difference is usually the point.
 - Width too large: say so with the measured width and an estimate of time per shot, suggest
   the largest instance that is feasible, and suggest opening an issue with the full circuit
-  (see "Reporting bugs and circuits Tsim cannot simulate yet" in the
-  `simulating-circuits-with-tsim` skill).
+  (see "Reporting bugs and circuits Tsim cannot simulate yet" in SKILL.md).
 - Note anything Tsim cannot express. Simulator-specific instructions from other tools (for
   example expectation-value instructions) need a Tsim equivalent such as the fidelity
-  measurement in `running-qec-experiments-with-tsim`.
+  measurement in qec-experiments.md.
 
 If a published circuit fails to parse or compile in Tsim although Stim accepts it, reduce it to
-a small reproducer and report it as described in the `simulating-circuits-with-tsim` skill.
+a small reproducer and report it as described in SKILL.md.

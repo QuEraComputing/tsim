@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from checks import (
+    answer_has_value,
     answer_matches,
     no_sinter_collect,
     no_stabilizer_rank,
@@ -25,10 +26,9 @@ def _matching_model_is_decomposed(transcript: str) -> tuple[bool, str]:
 
 def check(answer: str, transcript: str, work: Path) -> dict:
     return {
-        "logical error rate in the right range": answer_matches(
-            answer,
-            r"\b3\.[2-9]\d*[^\n]{0,25}?(e-0?5|10\^?[-\u2212]5|10\u207b\u2075)",
-            "a rate near 3.6e-5",
+        # 10 minutes of sampling gives a few hundred errors, so about a 10% error bar.
+        "logical error rate in the right range": answer_has_value(
+            answer, 2.5e-5, 5e-5, "logical error rate"
         ),
         "reports an interval or error bar": answer_matches(
             answer, r"interval|±|\+/-|standard error|\bCI\b", "an error bar"

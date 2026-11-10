@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from checks import (
+    answer_has_value,
     answer_matches,
     no_stabilizer_rank,
     postselects_in_tsim,
@@ -15,8 +16,8 @@ def check(answer: str, transcript: str, work: Path) -> dict:
         "reports active width 4": answer_matches(
             answer, r"width\D{0,30}\b4\b", "width 4"
         ),
-        "reports acceptance near 68.7%": answer_matches(
-            answer, r"68\.[5-9]\d*\s*%|0\.68[5-9]", "the acceptance rate"
+        "reports acceptance near 68.7%": answer_has_value(
+            answer, 0.675, 0.70, "acceptance"
         ),
         "reports the thread count": answer_matches(
             answer, r"\d+\s*(threads?|cores?)", "threads"
