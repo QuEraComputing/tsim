@@ -82,6 +82,32 @@ uv run tsim-dev bench --side .:threads=4 --side origin/main:threads=4
 - Compile time is compared too; when the sides differ only in threads, read the rate
   column.
 
+## Apple-silicon Macs (Metal)
+
+On a Mac with an M-series chip, the default strategy samples on the GPU through Metal
+whenever every component has at most 11 active qubits (k_max <= 11). A plain `uv sync`
+installs it. That is what users of a MacBook get, and it is much faster than the CPU: on an
+M4 Pro, 26-96x one CPU thread and 4-19x all ten performance cores, bit-packed. End-to-end
+cultivation d=5 ran at 125M shots/s, 19x the ten cores. Circuits without noise whose CPU
+trajectories share well, such as qv_q10, run at the CPU's rate.
+
+The bench sets `TSIM_DEVICE=cpu` by default, so on a Mac a plain run measures the CPU only.
+Say which you measured, and on a Mac measure both:
+
+```bash
+uv run tsim-dev bench --device gpu --ref REF   # a GPU change; REF must have the Metal backend
+uv run tsim-dev bench --side .:device=gpu --side .:device=cpu,threads=10   # GPU vs all cores
+```
+
+- The `device` column must say `metal` on the GPU side. It says `cpu` where Metal falls
+  back: a component wider than 11, noise beyond the GPU tables, no GPU memory.
+- A reference without the Metal backend samples on the CPU even with `--device gpu`; its
+  rows end in `DEVICE: cpu -> metal`, and the ratio compares devices, not code.
+- Compare the GPU with all CPU cores (`--threads N`, from the `NOTE` line), not one.
+- The GPU's own time per kernel: set `tsim.statevector.metal.runtime.PROFILE = {}` before
+  a `sample` call, which then runs each dispatch alone and adds its GPU seconds under the
+  kernel's name (`noise`, `tape`, `gather_rows`, ...).
+
 ## What the command controls for you
 
 - One thread, pinned to a core (`--threads N` to change; say so when you report).

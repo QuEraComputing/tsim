@@ -38,8 +38,9 @@ Tsim is slow:
   performance cores by default (`numba.get_num_threads()`); the `NOTE` line says
   how many. Quote all-core rates with `--threads N`.
 - **Device.** The harness sets `TSIM_DEVICE=cpu`, so every side samples on the
-  CPU unless you pass `--device gpu` (or `--side REF:device=gpu`). With a GPU
-  backend installed, `--device gpu` measures what users get by default. The
+  CPU unless you pass `--device gpu` (or `--side REF:device=gpu`). On an
+  Apple-silicon Mac, Tsim samples on the GPU by default for k_max <= 11, 4-19x
+  faster than all CPU cores; there `--device gpu` measures what users get. The
   `device` column says where each row sampled: a GPU falls back to the CPU for
   components wider than it runs, and a row that ends in `DEVICE: cpu -> metal`
   compares a GPU with the CPU.
@@ -61,7 +62,8 @@ uv run tsim-dev profile cultivation_d5 --seconds 5
 The run is a fresh process, one pinned thread, warm numba cache, under a memory cap,
 with bit-packed output on the CPU (`--threads`, `--device` and `--sampler` as in
 step 2). py-spy sees the host only: on a GPU the sampling phase shows the wait for
-the device, and the time inside its kernels needs the backend's own timers.
+the device. For Metal's time per kernel, see "Apple-silicon Macs" in the
+`benchmarking-tsim` skill (`runtime.PROFILE`).
 The output splits samples by phase (`compile`, `sample`) and prints three tables:
 
 - **innermost Tsim frame (kernel callers):** read this first. Jitted numba code has
