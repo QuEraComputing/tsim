@@ -32,7 +32,7 @@ doc-quick:
 # Build the docs and run the same checks as CI.
 doc-build:
     uv run python docs/build.py
-    cd docs && mint validate && mint broken-links
+    cd docs && mint validate && mint broken-links --check-anchors --check-redirects --check-snippets
 
 vulture:
     uv run vulture

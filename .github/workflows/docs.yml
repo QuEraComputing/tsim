@@ -55,7 +55,7 @@ jobs:
         working-directory: docs
         run: |
           mint validate
-          mint broken-links
+          mint broken-links --check-anchors --check-redirects --check-snippets
       - name: Publish to the deploy branch
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:

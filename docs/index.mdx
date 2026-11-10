@@ -121,7 +121,7 @@ Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/blob/v1
 | `CS`, `CS_DAG` | qubit pairs | Controlled-S, diag(1, 1, 1, i), and its inverse, via a Clifford+T decomposition |
 | `CCZ`, `CCX` | qubit triples | Controlled-controlled Z and Toffoli (controls first), via a Clifford+T decomposition |
 
-```
+```text
 T 0 1 2                  # T on qubits 0, 1, 2
 R_Z(0.125) 2             # rotate qubit 2 around Z by π/8
 U3(0.5, 0.25, 0.125) 0   # θ=π/2, φ=π/4, λ=π/8
@@ -184,7 +184,7 @@ A seed reproduces its samples only with the same versions of Tsim and its depend
 
 ## Citing Tsim
 If you use Tsim, please consider citing the paper describing the core simulation approach:
-```
+```bibtex
 @article{tsim2026,
   title={Tsim: Fast Universal Simulator for Quantum Error Correction},
   author={Haenel, Rafael and Luo, Xiuzhe and Zhao, Chen},

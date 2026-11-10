@@ -615,7 +615,7 @@ API_PAGES = {
 
 def _render_page(pkg, title: str, intro: str, objects: list[str]) -> str:
     """Render one API page listing the given objects."""
-    lines = ["---", f'title: "{title}"', "---", "", intro, ""]
+    lines = ["---", f'title: "{title}"', f'description: "{intro}"', "---", ""]
     for path in objects:
         obj = pkg[path.removeprefix("tsim.")]
         lines.extend(_render_member(obj.final_target, level=2))
@@ -780,9 +780,35 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
         body = body.replace(token, iframe)
 
     title_esc = title.replace('"', "'")
-    mdx = f'---\ntitle: "{title_esc}"\n---\n\n{body.rstrip()}\n'
+    description = TUTORIAL_DESCRIPTIONS[nb_path.stem]
+    mdx = (
+        f'---\ntitle: "{title_esc}"\ndescription: "{description}"\n---\n\n'
+        f"{body.rstrip()}\n"
+    )
     out_mdx = nb_path.with_suffix(".mdx")
     out_mdx.write_text(mdx)
+
+
+# Page descriptions (used for SEO and shown under the title). Every notebook in
+# docs/tutorials needs an entry.
+TUTORIAL_DESCRIPTIONS = {
+    "overview": (
+        "Supported instructions and noise channels, sampling, visualization and "
+        "detector error models."
+    ),
+    "encoding_demo": (
+        "Sample a Clifford+T circuit, then encode a state in a color code and add "
+        "detectors, observables, noise and error correction."
+    ),
+    "from_stim_to_tsim": (
+        "How Tsim differs from Stim: non-Clifford instructions, detector reference "
+        "samples, sampling strategies and postselection."
+    ),
+    "magic_state_distillation": (
+        "Simulate the 85-qubit logical magic state distillation protocol of "
+        "Rodriguez et al. (2025)."
+    ),
+}
 
 
 def build_notebooks(execute: bool) -> int:
