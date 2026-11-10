@@ -6,16 +6,34 @@ user skill in `skills/simulating-circuits-with-tsim/` instead; it also explains 
 
 ## Commands
 
+`uv sync` installs everything, including the `tsim-dev` CLI (`dev/`). Use it instead of
+hand-written timing scripts, `nohup`, sleep loops and bare `pytest`: it caps memory, keeps
+output short, writes details to `.tsim-dev/`, and its exit codes mean 0 pass, 1 the code
+failed (or got slower), 2 the harness could not run, 3 still running.
+
 ```bash
-uv sync                          # environment, including the dev group
-uv run pytest test               # full suite, about 90 s; test/unit alone is faster
-uv run pre-commit run --all-files  # black, isort, ruff, pyright, codespell, deptry, nbstripout
-just doc-build                   # docs build and Mintlify checks (needs `npm i -g mint`)
+uv run tsim-dev check                   # the gate before review: pre-commit, full suite (~90 s)
+uv run tsim-dev test --changed          # tests of the changed files; or give paths
+uv run tsim-dev bench --ref origin/main # quick A/B benchmark, ~4 min; exit 1 if slower
+uv run tsim-dev bench --width --ref origin/main  # active widths only, nothing sampled
+uv run tsim-dev inspect FILE.stim       # qubits, T count, active width, stats; no sampling
+uv run tsim-dev profile cultivation_d5  # where compile and sampling time goes (py-spy)
+uv run tsim-dev run -- CMD              # any command under memory, CPU and time caps
+uv run tsim-dev job start NAME -- CMD   # the same in the background; then `job wait NAME`
+just doc-build                          # docs build and Mintlify checks (needs `npm i -g mint`)
 ```
 
-`test/unit/utils/test_kernels.py::test_the_calling_thread_keeps_parallel_kernels_after_run_tasks`
-fails on hosts where numba uses the TBB threading layer; that failure does not come from your
-change.
+`--help` on each subcommand lists the caps and options.
+
+## Skills for working on Tsim
+
+`.claude/skills/` (also at `.agents/skills/`) holds procedures for this repository; they
+are not published to users.
+
+- `shipping-tsim-changes`: branch, verify, commit, review; what evidence a change needs.
+- `benchmarking-tsim`: A/B benchmarks, reading verdicts, the tsim-bench corpus.
+- `profiling-tsim`: sizing a circuit, reading profiles, choosing what to optimize.
+- `testing-tsim-correctness`: oracles and statistical tests for sampling changes.
 
 ## How Tsim works
 
@@ -71,12 +89,19 @@ more than a handful of T gates: their compile memory grows exponentially.
 
 ## Performance
 
-- Benchmark a change against `main` on the same machine, with several circuit families
-  (cultivation, distillation, coherent-noise surface codes, quantum volume), not one.
-- Numba caches compiled kernels on disk (`utils/kernels.py`). Measure with a warm cache in a
-  fresh process as well as in-process: cached kernels have behaved differently from freshly
-  compiled ones (passing large structs by value was 5 to 8 times slower when cached). After
-  changing a jitted function's signature or return type, delete stale `*.nbi`/`*.nbc` files.
+- Measure with `tsim-dev bench --ref origin/main`, never with a script of your own. It runs
+  fresh processes on one pinned thread with a warm numba cache, excludes compile time, and
+  interleaves the two checkouts. A speedup must hold on `--suite full`, across families.
+- Benchmark changes that could affect compile or sampling cost (see the
+  `shipping-tsim-changes` skill), not every change. A regression is investigated and
+  explained, not hidden; a correctness fix may cost performance if the cost is stated.
+- `tsim-dev bench --width --ref origin/main` compares active widths without sampling, for
+  changes to the graph, simplification, scheduling or the plan.
+- Numba caches compiled kernels on disk (`utils/kernels.py`). Cached kernels have behaved
+  differently from freshly compiled ones (passing large structs by value was 5 to 8 times
+  slower when cached), which is why the benchmark uses the cache. After changing a jitted
+  function's signature or return type, delete stale `*.nbi`/`*.nbc` files.
+- Run one benchmark at a time and nothing heavy beside it.
 - Prefer one general solution over special cases for particular benchmarks, and drop
   optimizations whose gain is small compared with the code they add.
 
@@ -84,14 +109,14 @@ more than a handful of T gates: their compile memory grows exponentially.
 
 Agents share this machine with people and other agents.
 
-- Run long or memory-hungry jobs under a hard cap, for example
-  `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p CPUQuota=400% timeout 1800 <cmd>`.
-  A limit stated only in a prompt is not enough: an uncapped job once used 55 GB and the
-  out-of-memory killer took down other sessions.
-- Check `sampler.active_width` before sampling anything wide, and set `NUMBA_NUM_THREADS` or
-  `numba.set_num_threads` to the cores you were given.
-- Never `pkill -f` or `pgrep -f` a pattern that also appears in your own command line; it
-  matches your own shell.
+- Run anything long or memory-hungry through `tsim-dev run` or `tsim-dev job start`
+  (defaults: 8 GB, 4 CPUs, no swap). A limit stated only in a prompt is not enough: an
+  uncapped job once used 55 GB and the out-of-memory killer took down other sessions. A
+  hook in `.claude/settings.json` blocks uncapped background Python and `pkill -f`.
+- Wait for a job with `tsim-dev job wait NAME`, not a sleep loop; stop it with
+  `tsim-dev job stop NAME`. `pkill -f` matches your own shell and kills it.
+- Check the active width (`tsim-dev inspect`) before sampling anything wide; memory per
+  shot grows like 2^k.
 
 ## Style
 
@@ -103,8 +128,12 @@ Agents share this machine with people and other agents.
 
 ## Pull requests
 
-- Branch off `main`; use [Conventional Commits](https://www.conventionalcommits.org/).
+- New work: branch off `origin/main` in a worktree. Updating an existing pull request: keep
+  its branch and commit on top. Use [Conventional Commits](https://www.conventionalcommits.org/).
+- Commit locally. Push, open, force-push or merge a pull request only when asked.
 - Add a `CHANGELOG.md` entry under `## [Unreleased]` for any user-visible change.
-- Bug fixes include a minimal reproducer as a test; performance changes include before and
-  after numbers, with the machine, thread count and circuits.
-- Run the full test suite and pre-commit before asking for review.
+- Bug fixes include a minimal reproducer as a test that fails without the fix;
+  performance-relevant changes include the `tsim-dev bench` table, the CPU model, the
+  thread count and the explanation of any regression.
+- `tsim-dev check` must pass before review. Report the commands you ran and their results,
+  and say what you did not verify.

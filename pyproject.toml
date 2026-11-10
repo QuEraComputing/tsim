@@ -85,6 +85,7 @@ dev = [
     "radon>=6.0.1",
     "zxparam[quimb]",
     "pyyaml>=6.0",
+    "tsim-dev",
 ]
 doc = [
     "griffe>=2.0.2",
@@ -93,6 +94,9 @@ doc = [
     "nbconvert>=7.17.1",
     "nbformat>=5.10.4",
 ]
+
+[tool.uv.sources]
+tsim-dev = { path = "dev", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tsim"]
@@ -123,7 +127,7 @@ exclude = '''
 
 [tool.ruff]
 target-version = "py311"
-include = ["src/**/*.py", "test/**/*.py"]
+include = ["src/**/*.py", "test/**/*.py", "dev/**/*.py", ".claude/**/*.py"]
 extend-exclude = ["src/tsim/external"]
 
 [tool.ruff.lint]
@@ -135,6 +139,8 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "docs/**" = ["D"]
 "test/**" = ["D"]
 "evals/**" = ["D", "S603", "S607"]
+"dev/**" = ["S603", "S607"]
+".claude/**" = ["S603", "S607"]
 
 [tool.coverage.run]
 include = ["src/tsim/*"]
@@ -144,7 +150,7 @@ omit = ["src/tsim/external/*"]
 testpaths = "test/"
 
 [tool.pyright]
-include = ["src", "test"]
+include = ["src", "test", "dev"]
 exclude = ["src/tsim/external"]
 reportUnusedImport = "error"
 
@@ -154,6 +160,7 @@ ignore_notebooks = true
 extend_exclude = [
     "^accel-cutting-magic-state-main/",
     "^evals/",
+    "^dev/",
     "^benchmarks/",
     "^scripts/",
     "^docs/",

@@ -168,6 +168,7 @@ dev = [
     { name = "sinter" },
     { name = "tesseract-decoder" },
     { name = "tqdm" },
+    { name = "tsim-dev" },
     { name = "vulture" },
     { name = "zxparam", extra = ["quimb"] },
 ]
@@ -220,6 +221,7 @@ dev = [
     { name = "sinter", specifier = "~=1.16.dev0" },
     { name = "tesseract-decoder", specifier = ">=0.1.1.dev20251113222502" },
     { name = "tqdm", specifier = ">=4.67.1" },
+    { name = "tsim-dev", editable = "dev" },
     { name = "vulture", specifier = ">=2.16" },
     { name = "zxparam", extras = ["quimb"] },
 ]
@@ -3558,6 +3560,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/eb/79/72064e6a701c21830
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/c0/8f5d070730d7836adc9c9b6408dec68c6ced86b304a9b26a14df072a6e8c/traitlets-5.14.3-py3-none-any.whl", hash = "sha256:b74e89e397b1ed28cc831db7aea759ba6640cb3de13090ca145426688ff1ac4f", size = 85359, upload-time = "2024-04-19T11:11:46.763Z" },
 ]
+
+[[package]]
+name = "tsim-dev"
+version = "0.1.0"
+source = { editable = "dev" }
 
 [[package]]
 name = "typing-extensions"
