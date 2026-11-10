@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Install Tsim with uv or pip, with optional CUDA support."
+description: "Install Tsim with uv or pip, with optional GPU support."
 ---
 
 Tsim requires Python 3.11 or later.
@@ -34,6 +34,22 @@ For GPU acceleration with CUDA:
 ```bash
 pip install "bloqade-tsim[cuda13]"
 ```
+
+## Apple GPUs
+
+On an Apple-silicon Mac, the default strategy (`"active_statevector"`) can sample on the GPU
+through Metal. It needs PyObjC's Metal bindings, which the `metal` extra installs:
+
+```bash
+uv add "bloqade-tsim[metal]"    # or: pip install "bloqade-tsim[metal]"
+```
+
+With it installed, the samplers use the GPU whenever every component of the circuit has at
+most 11 active qubits; otherwise they sample on the CPU, with a warning. The GPU computes in
+float32, so a sample follows the CPU's distribution to within float32 rounding, and a seed's
+samples differ from the CPU's (and depend on `batch_size`). Postselection runs on the GPU, so
+heavily postselected circuits gain the most. Set `TSIM_DEVICE=cpu` to keep the samplers on the
+CPU, for example to reproduce samples from another machine.
 
 ## Agent skill
 

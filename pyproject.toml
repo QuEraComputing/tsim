@@ -54,6 +54,10 @@ Issues = "https://github.com/QuEraComputing/tsim/issues"
 [project.optional-dependencies]
 cuda12 = ["jax[cuda12]>=0.4.38"]
 cuda13 = ["jax[cuda13]>=0.7.0"]
+# The statevector executor on Apple GPUs (Apple silicon only).
+metal = [
+    "pyobjc-framework-Metal>=10.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -166,6 +170,9 @@ extend_exclude = [
     "^docs/",
     "^test/",
 ]
+
+[tool.deptry.package_module_name_map]
+pyobjc-framework-Metal = "Metal"
 
 [tool.deptry.per_rule_ignores]
 DEP002 = ["ipywidgets"]
