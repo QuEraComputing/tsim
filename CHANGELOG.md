@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- With `strategy="active_statevector"`, the samplers run on a CUDA GPU when
+  CuPy sees one, as the stabilizer-rank strategies do with JAX: the noise
+  sampler and every statevector component run as CUDA kernels that CuPy
+  compiles with NVRTC, in float32, with no trajectory sharing. Circuits with a
+  component wider than 11 active qubits stay on the CPU, as does everything
+  under `TSIM_DEVICE=cpu` or `CUDA_VISIBLE_DEVICES=""` and in processes forked
+  after their parent used the GPU; a warning says so when a GPU is present, as
+  it does for noise beyond the GPU tables' limits. `sampler.stats.device` and
+  the sampler's repr say where it samples. With a
+  `postselection_mask`, only the shots that pass are copied off the GPU. A
+  seed's samples on the GPU differ from the CPU's and depend on the batch size.
+  A call that runs out of GPU memory retries in smaller batches, then samples
+  on the CPU with a warning. Install with `pip install bloqade-tsim[cuda]`.
+- The `jax-cuda12` and `jax-cuda13` extras, for the stabilizer-rank strategies
+  on NVIDIA GPUs with JAX. The `cuda12` and `cuda13` extras of Tsim 1.0 install
+  the same packages.
 - The docs pages have a menu to copy a page or open it in ChatGPT or Claude, and
   the README, the install page and the agent skill point to the docs MCP server
   at `https://bloqade.quera.com/tsim/mcp`. The README and the install page also

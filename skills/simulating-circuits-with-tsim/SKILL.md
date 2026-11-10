@@ -189,8 +189,13 @@ yourself.
   default. Use `numba.set_num_threads(k)` before `sample` (or `NUMBA_NUM_THREADS=k` before
   importing Tsim) and leave cores free on a shared machine. Do not run several multi-threaded
   Tsim processes side by side; they oversubscribe the CPU.
+- **NVIDIA GPUs:** with the `cuda` extra, the default strategy samples on the GPU when every
+  component has at most 11 active qubits. It computes outcome probabilities in float32; set
+  `TSIM_DEVICE=cpu` before compiling to stay on the CPU, in double precision. The sampler's
+  repr says where it samples (`samples on cuda`).
 - **Seeds:** a `seed` reproduces samples for the same Tsim and dependency versions and
-  backend. Thread count and `batch_size` do not affect the samples.
+  backend. On the CPU, thread count and `batch_size` do not affect the samples; on a GPU,
+  `batch_size` does.
 
 ## Postselection
 

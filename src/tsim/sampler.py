@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 import warnings
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
+from tsim.statevector.cuda import runtime as cuda_runtime
 from tsim.statevector.program import StatevectorComponent
 from tsim.statevector.shots import ShotSampler
 from tsim.utils.cuda_helpers import copy_d2h
@@ -28,6 +30,7 @@ if TYPE_CHECKING:
     from jax import Array as PRNGKey
 
     from tsim.circuit import Circuit
+    from tsim.statevector.cuda.sampler import CudaShotSampler
 
 # NOTE: postselection with a stabilizer-rank strategy screens shots for direct
 # discards in rounds of SCREEN_CHUNKS chunks of at most SCREEN_SHOTS shots.
@@ -308,6 +311,64 @@ class SamplerStats:
     error_channel_bits: int
     peak_bytes_per_shot: int
     compiled_bytes: int
+    device: str = "cpu"
+
+
+def _gpu_shots(
+    host: ShotSampler,
+    channels: ChannelSampler,
+    num_detectors: int,
+    seed: np.random.SeedSequence,
+) -> ShotSampler | CudaShotSampler:
+    """Return a GPU shot sampler of ``host``'s program when one can run it, else ``host``.
+
+    It warns when a GPU is there but cannot be used: in a process forked after its
+    parent used the GPU, for a component wider than the GPU executor runs, for
+    noise beyond its tables' limits, and when the GPU sampler cannot be set up
+    for lack of GPU memory.
+    """
+    # NOTE: as JAX does for the stabilizer-rank strategies, a GPU is used whenever
+    # there is one.
+    if os.environ.get("TSIM_DEVICE", "").lower() == "cpu":
+        return host
+    if cuda_runtime.forked_after_init():
+        warnings.warn(
+            "This process was forked after its parent used the GPU, so it "
+            "samples on the CPU; start it with the 'spawn' or 'forkserver' "
+            "method to sample on the GPU.",
+            stacklevel=5,
+        )
+        return host
+    if not cuda_runtime.available():
+        return host
+    from tsim.statevector.cuda.sampler import MAX_WIDTH, CudaShotSampler
+
+    layout = host.layout
+    if layout.num_words == 0:
+        return host
+    if not CudaShotSampler.supports(layout):
+        width = max(c.width for c in layout.components)
+        warnings.warn(
+            f"A CUDA GPU is available, but a component needs {width} active "
+            f"qubits, more than the {MAX_WIDTH} that the GPU executor supports; "
+            "sampling on the CPU.",
+            stacklevel=5,
+        )
+        return host
+    try:
+        return CudaShotSampler(host, channels, num_detectors, seed)
+    except ValueError as error:
+        # NOTE: noise beyond the GPU tables' limits (channels of more than 127
+        # outcomes, outcomes that flip more than 255 words).
+        warnings.warn(
+            f"The GPU cannot sample this circuit ({error}); sampling on the CPU.",
+            stacklevel=5,
+        )
+    except Exception as error:
+        if not cuda_runtime.out_of_memory(error):
+            raise
+        warnings.warn("The GPU is out of memory; sampling on the CPU.", stacklevel=5)
+    return host
 
 
 class _CompiledSamplerBase:
@@ -331,9 +392,12 @@ class _CompiledSamplerBase:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, on
-                ``numba.get_num_threads()`` threads. The stabilizer rank
-                strategies are provisional.
+                "bss", "cutting"). "active_statevector" samples on a CUDA GPU
+                when CuPy sees one and every component has at most 11 active
+                qubits (in float32), and otherwise on the CPU, on
+                ``numba.get_num_threads()`` threads. ``TSIM_DEVICE=cpu``
+                keeps the sampler on the CPU, in double precision. The
+                stabilizer rank strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
@@ -342,13 +406,17 @@ class _CompiledSamplerBase:
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size``, since the default batch size
                 depends on the free memory.
+                On a GPU, they do depend on the batch size.
 
         """
         if seed is None:
             seed = secrets.randbits(128)
-        # NOTE: the noise, the shot words and the JAX key draw from children of the
-        # whole seed, so different seeds give independent samples.
-        noise_seed, shots_seed, key_seed = np.random.SeedSequence(seed).spawn(3)
+        # NOTE: the noise, the shot words, the JAX key and the GPU draw from children
+        # of the whole seed, so different seeds give independent samples. The first
+        # three are those of a spawn(3), so the CPU's samples are unchanged.
+        noise_seed, shots_seed, key_seed, cuda_seed = np.random.SeedSequence(
+            seed
+        ).spawn(4)
 
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
         self._program = compile_program(prepared, mode=mode, strategy=strategy)
@@ -364,7 +432,7 @@ class _CompiledSamplerBase:
         program = self._program
         # NOTE: programs of statevector components, and programs without components
         # under any strategy, are sampled as shot words; the others with JAX.
-        self._shots: ShotSampler | None = None
+        self._shots: ShotSampler | CudaShotSampler | None = None
         self._backend: _StabilizerRankBackend | None = None
         if strategy == "active_statevector" or not program.components:
             self._shots = ShotSampler(
@@ -373,6 +441,10 @@ class _CompiledSamplerBase:
                 self._num_detectors,
                 shots_seed,
             )
+            if mode == "sequential":
+                self._shots = _gpu_shots(
+                    self._shots, self._channel_sampler, self._num_detectors, cuda_seed
+                )
         else:
             self._backend = _StabilizerRankBackend(program, key_seed)
 
@@ -721,6 +793,9 @@ class _CompiledSamplerBase:
         - ``peak_bytes_per_shot`` (``int``): estimated peak memory of one shot,
           by which the default batch sizes are chosen.
         - ``compiled_bytes`` (``int``): memory of the compiled components.
+        - ``device`` (``str``): where ``"active_statevector"`` samples:
+          ``"cuda"`` on an NVIDIA GPU, else ``"cpu"`` (a stabilizer-rank
+          strategy runs wherever JAX does).
         """
         components = self._program.components
         widths: tuple[int, ...] | None = None
@@ -751,6 +826,7 @@ class _CompiledSamplerBase:
             ),
             peak_bytes_per_shot=peak,
             compiled_bytes=compiled_bytes,
+            device=getattr(self._shots, "device", "cpu"),
         )
 
     def __repr__(self) -> str:
@@ -803,6 +879,8 @@ class _CompiledSamplerBase:
                 f"(width ≤ {stats.active_width}, "
                 f"{stats.num_actions} actions)"
             )
+        if self._shots is not None:
+            parts.append(f"samples on {stats.device}")
         if c_graphs:
             parts.append(f"{sum(c_graphs)} graphs")
         parts += [
@@ -851,6 +929,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size``, since the default batch size
                 depends on the free memory.
+                On a GPU, they do depend on the batch size.
 
         """
         super().__init__(
@@ -951,6 +1030,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size`` and the same reference sample
                 settings, since the default batch size depends on the free memory.
+                On a GPU, they do depend on the batch size.
 
         """
         super().__init__(
