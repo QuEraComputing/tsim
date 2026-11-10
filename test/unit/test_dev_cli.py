@@ -265,7 +265,7 @@ def test_paths_follow_the_manifest_and_no_postselect(fake_bench, tmp_path):
     assert bench.select(args)[0].postselect == "none"
 
 
-def test_k_falls_back_to_the_recorded_tsim_width(fake_bench):
+def test_cases_carry_the_recorded_tsim_width(fake_bench):
     (case,) = bench.select(_bench_args("narrow", "--width-of", "clifft"))
     assert (case.width, case.tsim_width) == (9, 4)
 
@@ -365,3 +365,28 @@ def test_the_width_stream_stops_a_stuck_compile():
     events = list(width._stream([sys.executable, "-c", script], None, case_timeout=1))
     assert events[0] == ("line", "START a")
     assert events[-1] == ("exit", ("timeout", ""))
+
+
+def test_shot_benchmarks_compare_and_check_the_active_width(fake_bench, monkeypatch):
+    widths = {"new": [6, 6, 6], "ref": [6, 6, 6]}
+
+    def fake_measure(side, case, args, mode="bench"):
+        result = {"shots_per_s": 1e6, "compile_s": 0.1, "acceptance": None, "shots": 1}
+        result["active_width"] = widths[side.label].pop(0)
+        return result
+
+    monkeypatch.setattr(bench, "measure", fake_measure)
+    (case,) = bench.select(_bench_args())
+    sides = [bench.Side("new", Path("python")), bench.Side("ref", Path("python"))]
+    args = _bench_args("--rounds", "2")
+    args.rounds = 2
+    record = bench.run_case(case, sides, args)
+    assert (record["k"], record["ref_k"], record["width"]) == (6, 6, "same")
+
+    widths.update(new=[7, 7, 7], ref=[6, 6, 6])
+    record = bench.run_case(case, sides, args)
+    assert record["width"] == "wider"
+    assert "WIDER: k 6 -> 7" in bench.format_row(record, has_ref=True)
+
+    widths.update(new=[6, 6, 7], ref=[6, 6, 6])
+    assert "changed between runs" in bench.run_case(case, sides, args)["error"]

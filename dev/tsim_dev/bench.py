@@ -309,10 +309,17 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
                 return record
             rounds[side.describe()].append(result)
     record["rounds"] = rounds
+    # NOTE: the width is fixed by the compiled sampler, so it must not change between
+    # runs of one side; a change means compilation is not deterministic.
+    for side in sides:
+        widths = {r.get("active_width") for r in rounds[side.describe()]}
+        if len(widths) > 1:
+            record["error"] = (
+                f"{side.describe()}: active width changed between runs: {sorted(widths)}"
+            )
+            return record
     new = rounds[sides[0].describe()]
     record["k"] = new[0].get("active_width")
-    if record["k"] is None:  # Tsim before 1.1 does not report it; use the recorded one
-        record["k"] = case.tsim_width
     record["acceptance"] = new[0].get("acceptance")
     record["shots_per_s"] = statistics.median(r["shots_per_s"] for r in new)
     record["compile_s"] = statistics.median(r["compile_s"] for r in new)
@@ -333,6 +340,8 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
         if abs(record["compile_s"] - record["ref_compile_s"]) < 0.05:
             record["compile"]["verdict"] = "same"
         record["ref_acceptance"] = old[0].get("acceptance")
+        record["ref_k"] = old[0].get("active_width")
+        record["width"] = width_verdict(record["k"], record["ref_k"])
         if not same_acceptance(new, old):
             # NOTE: a different kept fraction means the sides sample different
             # things, so their rates are not comparable.
@@ -341,6 +350,13 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
 
 
 KEPT_DIFFERS = "kept-differs"
+
+
+def width_verdict(new: int | None, ref: int | None) -> str:
+    """Compare the active widths of the two sides; lower is better."""
+    if new is None or ref is None or new == ref:
+        return "same"
+    return "narrower" if new < ref else "wider"
 
 
 def same_acceptance(new: list[dict], old: list[dict], sigmas: float = 6.0) -> bool:
@@ -383,6 +399,8 @@ def format_row(record: dict, has_ref: bool) -> str:
     rate, comp = record["rate"], record["compile"]
     row += f"   {rate['ratio']:.2f}x [{rate['low']:.2f}, {rate['high']:.2f}]"
     row += f" {rate['verdict']:<6}  {comp['ratio']:.2f}x {comp['verdict']}"
+    if record.get("width", "same") != "same":
+        row += f"  {record['width'].upper()}: k {record['ref_k']} -> {record['k']}"
     if rate["verdict"] == KEPT_DIFFERS:
         row += (
             f"  (kept {record['acceptance']:.4g} vs ref {record['ref_acceptance']:.4g})"
@@ -459,6 +477,8 @@ def run(args) -> int:
     ]
     slower = verdicts.count("slower")
     differs = verdicts.count(KEPT_DIFFERS)
+    widths = [r.get("width") for r in records if "error" not in r]
+    wider, narrower = widths.count("wider"), widths.count("narrower")
     summary = f"SUMMARY: {len(records)} circuits, {errors} errors"
     if has_ref:
         summary += (
@@ -469,10 +489,12 @@ def run(args) -> int:
             summary += (
                 f", {differs} with a different kept fraction (rates not comparable)"
             )
+        if wider or narrower:
+            summary += f", active width: {wider} wider, {narrower} narrower"
     print(f"{summary}. Details: {out}")
     if errors:
         return INFRA
-    return FAILED if slower or differs else OK
+    return FAILED if slower or differs or wider else OK
 
 
 def corpus_command(args) -> int:

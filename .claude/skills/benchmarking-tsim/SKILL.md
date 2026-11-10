@@ -28,6 +28,9 @@ inject_cultivate_d5_p0.001  6    13.9M  0.141     0.13   1.20x [1.19, 1.21] fast
 ```
 
 - `kept` is the fraction of shots that survive postselection (`-` when there is none).
+- `k` is the active width of the compiled sampler. With `--ref`, a row that ends in
+  `WIDER: k 6 -> 7` or `NARROWER: ...` means the two sides compiled different widths;
+  `wider` fails the run. A width that changes between runs of one side is an error.
 
 - `shots/s vs ref` is new over reference, so above 1 is faster. The bracket is the
   smallest and largest ratio over the rounds.
@@ -37,9 +40,8 @@ inject_cultivate_d5_p0.001  6    13.9M  0.141     0.13   1.20x [1.19, 1.21] fast
 - `kept-differs`: the two sides kept different fractions of shots (beyond binomial
   noise), so they did not sample the same thing and the rate is not compared. It
   counts as a failure: a change to postselection or to the sampled distribution.
-- Exit code 0: nothing slower. 1: at least one `slower` in rate or compile time, or
-  a `kept-differs`.
-  2: a circuit could not be measured.
+- Exit code 0: nothing slower. 1: at least one `slower` in rate or compile time, a
+  `kept-differs`, or a wider active width. 2: a circuit could not be measured.
 - The JSON under `.tsim-dev/bench/` has every round.
 
 ## Active width only (`--width`)
