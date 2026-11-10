@@ -11,7 +11,7 @@ Triggering and behavioral evals are not run in CI; see ``evals/skills/README.md`
 """
 
 import ast
-import importlib.util
+import importlib
 import re
 from pathlib import Path
 
