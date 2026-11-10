@@ -407,6 +407,68 @@ def test_sampler_repr_shows_only_used_backends():
     assert "A terms" in zx
 
 
+T_CIRCUIT = """
+    H 0 1
+    T 0 1
+    CX 0 1
+    T 1
+    H 0 1
+    T 0 1
+    CX 1 0
+    H 0 1
+    M 0 1
+    DETECTOR rec[-1]
+    DETECTOR rec[-2]
+    """
+
+
+@pytest.mark.parametrize("detectors", [False, True])
+def test_stats_of_clifford_circuit(detectors):
+    c = Circuit("""
+        X_ERROR(0.1) 0 1
+        H 2
+        CX 2 3
+        M 0 1 2 3
+        DETECTOR rec[-4]
+        DETECTOR rec[-3]
+        """)
+    sampler = c.compile_detector_sampler() if detectors else c.compile_sampler()
+    stats = sampler.stats
+    assert sampler.active_width == stats.active_width == 0
+    assert stats.component_widths is not None
+    assert set(stats.component_widths) <= {0}
+    assert stats.error_channel_bits == 2
+
+
+@pytest.mark.parametrize("detectors", [False, True])
+def test_stats_of_t_circuit(detectors):
+    c = Circuit(T_CIRCUIT)
+    sampler = c.compile_detector_sampler() if detectors else c.compile_sampler()
+    stats = sampler.stats
+    assert sampler.active_width == 2
+    assert stats.num_direct_outputs == 0
+    assert stats.component_widths == (2,)
+    assert stats.num_actions is not None and stats.num_actions > 0
+    assert stats.peak_bytes_per_shot > 4 * 16
+    assert stats.compiled_bytes > 0
+    assert "width ≤ 2" in repr(sampler)
+    with pytest.raises(AttributeError):
+        stats.active_width = 0  # type: ignore[misc]
+
+
+def test_stats_of_stabilizer_rank_strategy():
+    sampler = Circuit(T_CIRCUIT).compile_detector_sampler(strategy="cat5")
+    stats = sampler.stats
+    assert sampler.active_width is None
+    assert stats.num_components == 1
+    assert stats.component_widths is None
+    assert stats.num_actions is None
+    assert stats.peak_bytes_per_shot > 0
+    # NOTE: without components, nothing is simulated under any strategy.
+    noise = Circuit("X_ERROR(0.1) 0\nM 0").compile_sampler(strategy="cat5")
+    assert noise.active_width == 0
+
+
 @pytest.mark.parametrize(
     ("shots", "expected_batch_size"),
     [(100, 25), (101, 26)],

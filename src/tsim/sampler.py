@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import secrets
 import warnings
+from dataclasses import dataclass
 from math import ceil
 from typing import TYPE_CHECKING, Literal, overload
 
@@ -289,6 +290,24 @@ def _check_sizes(shots: int, batch_size: int | None) -> None:
         raise ValueError(f"shots must be non-negative, got {shots}")
     if batch_size is not None and batch_size < 1:
         raise ValueError(f"batch_size must be at least 1, got {batch_size}")
+
+
+@dataclass(frozen=True)
+class SamplerStats:
+    """Cost statistics of a compiled sampler, returned by its ``stats`` property.
+
+    The ``stats`` property documents the fields. The fields are public API; the
+    class's import path is not.
+    """
+
+    active_width: int | None
+    num_direct_outputs: int
+    num_components: int
+    component_widths: tuple[int, ...] | None
+    num_actions: int | None
+    error_channel_bits: int
+    peak_bytes_per_shot: int
+    compiled_bytes: int
 
 
 class _CompiledSamplerBase:
@@ -670,9 +689,72 @@ class _CompiledSamplerBase:
             pending -= ready
         return result[:filled]
 
+    @property
+    def active_width(self) -> int | None:
+        """The largest number of active qubits that a shot simulates.
+
+        Each shot simulates state vectors of at most ``2**active_width``
+        amplitudes, so this is the main cost of sampling. It is 0 if every output
+        is sampled directly, as for Clifford circuits, and ``None`` if the
+        components are compiled for a stabilizer-rank strategy ("cat5", "bss",
+        "cutting"), which has no state vector.
+        """
+        return self.stats.active_width
+
+    @property
+    def stats(self) -> SamplerStats:
+        """Cost statistics of the compiled circuit.
+
+        A frozen dataclass with the fields:
+
+        - ``active_width`` (``int | None``): as the ``active_width`` property.
+        - ``num_direct_outputs`` (``int``): outputs sampled directly from the
+          noise, without simulating a component.
+        - ``num_components`` (``int``): components that are simulated.
+        - ``component_widths`` (``tuple[int, ...] | None``): the active width of
+          each component, or ``None`` under a stabilizer-rank strategy.
+        - ``num_actions`` (``int | None``): total state-vector actions over the
+          components, or ``None`` under a stabilizer-rank strategy.
+        - ``error_channel_bits`` (``int``): random bits that the noise channels
+          draw per shot.
+        - ``peak_bytes_per_shot`` (``int``): estimated peak memory of one shot,
+          by which the default batch sizes are chosen.
+        - ``compiled_bytes`` (``int``): memory of the compiled components.
+        """
+        components = self._program.components
+        widths: tuple[int, ...] | None = None
+        num_actions: int | None = None
+        compiled_bytes = 0
+        statevectors = [c for c in components if isinstance(c, StatevectorComponent)]
+        if len(statevectors) == len(components):
+            widths = tuple(c.width for c in statevectors)
+            num_actions = sum(c.num_actions for c in statevectors)
+        for component in components:
+            if isinstance(component, StatevectorComponent):
+                compiled_bytes += _nbytes(component)
+            else:
+                compiled_bytes += sum(map(_nbytes, component.compiled_scalar_graphs))
+        if self._shots is not None:
+            peak = self._shots.bytes_per_shot()
+        else:
+            assert self._backend is not None
+            peak = self._backend.peak_bytes_per_shot()
+        return SamplerStats(
+            active_width=None if widths is None else max(widths, default=0),
+            num_direct_outputs=len(self._program.direct_f_indices),
+            num_components=len(components),
+            component_widths=widths,
+            num_actions=num_actions,
+            error_channel_bits=sum(
+                channel.num_bits for channel in self._channel_sampler.channels
+            ),
+            peak_bytes_per_shot=peak,
+            compiled_bytes=compiled_bytes,
+        )
+
     def __repr__(self) -> str:
         """Return a string representation with compilation statistics."""
-        n_direct = len(self._program.direct_f_indices)
+        stats = self.stats
 
         c_graphs = []
         c_params = []
@@ -681,17 +763,11 @@ class _CompiledSamplerBase:
         c_c_terms = []
         c_d_terms = []
         c_e_terms = []
-        total_memory_bytes = 0
         num_outputs = []
-        statevector_widths: list[int] = []
-        statevector_actions = 0
 
         for component in self._program.components:
             if isinstance(component, StatevectorComponent):
-                statevector_widths.append(component.width)
-                statevector_actions += component.num_actions
                 num_outputs.append(len(component.output_indices))
-                total_memory_bytes += _nbytes(component)
                 continue
             for circuit in component.compiled_scalar_graphs:
                 num_outputs.append(len(component.output_indices))
@@ -711,8 +787,6 @@ class _CompiledSamplerBase:
                     * circuit.float_terms.table.shape[1]
                 )
 
-                total_memory_bytes += _nbytes(circuit)
-
         def _format_bytes(n: int) -> str:
             if n < 1024:
                 return f"{n} B"
@@ -720,23 +794,18 @@ class _CompiledSamplerBase:
                 return f"{n / 1024:.1f} kB"
             return f"{n / (1024**2):.1f} MB"
 
-        total_memory_str = _format_bytes(total_memory_bytes)
-        error_channel_bits = sum(
-            channel.num_bits for channel in self._channel_sampler.channels
-        )
-
         # NOTE: only the statistics of the backends in use are shown.
-        parts = [f"{n_direct} direct"]
-        if statevector_widths:
+        parts = [f"{stats.num_direct_outputs} direct"]
+        if stats.component_widths:
             parts.append(
-                f"{len(statevector_widths)} statevector components "
-                f"(width ≤ {max(statevector_widths)}, "
-                f"{statevector_actions} actions)"
+                f"{stats.num_components} statevector components "
+                f"(width ≤ {stats.active_width}, "
+                f"{stats.num_actions} actions)"
             )
         if c_graphs:
             parts.append(f"{sum(c_graphs)} graphs")
         parts += [
-            f"{error_channel_bits} error channel bits",
+            f"{stats.error_channel_bits} error channel bits",
             f"{max(num_outputs, default=0)} outputs for largest cc",
         ]
         if c_graphs:
@@ -748,7 +817,7 @@ class _CompiledSamplerBase:
                 f"{sum(c_d_terms)} D terms",
                 f"{sum(c_e_terms)} E terms",
             ]
-        parts.append(total_memory_str)
+        parts.append(_format_bytes(stats.compiled_bytes))
         return f"{type(self).__name__}({', '.join(parts)})"
 
 
