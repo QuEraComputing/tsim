@@ -73,14 +73,7 @@ state-vector work, that direct sampling is the bottleneck (3.3 vs 53.6 million s
 the smaller circuit on 4 threads). For such circuits `bit_packed=True` helps, and the cost
 grows with the number of detectors, not with the width.
 
-The width depends on which outputs you ask for: every detector and observable that a quantum
-component must produce can add width. On a CCZ factory circuit, keeping all 9 observables gives
-width 16, keeping 3 gives 11, and keeping 1 gives 9. Observables are usually the point of the
-simulation, because they carry the logical degrees of freedom, so do not drop them to save
-width without the user's agreement; remove only those the study does not need, or simulate
-the needed subsets in separate runs.
-
-If the width is too large: remove unneeded outputs, postselect inside Tsim (discarded
+If the width is too large: postselect inside Tsim (discarded
 shots stop early, see below), simulate a smaller instance (lower distance or fewer rounds) and
 report how the width grows, or check whether part of the circuit can be a Clifford stand-in.
 

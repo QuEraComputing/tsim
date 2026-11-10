@@ -21,7 +21,11 @@ a script that regenerates them.
    a function so the final script can regenerate everything.
 2. **Compile and check the cost**: read `sampler.active_width`, then time a warm-up call and
    one call of about 10^6 shots. Estimate the time for the full budget (sampling and
-   decoding) before launching anything long, and tell the user.
+   decoding) before launching anything long, and tell the user. If the width is too large
+   and the circuit defines observables the study does not use (for example, extra logical
+   qubits of a multi-qubit factory), deleting their `OBSERVABLE_INCLUDE` lines can lower it:
+   on a CCZ factory, keeping 1 of 9 observables lowered the width from 16 to 9. This changes
+   the circuit, so propose it to the user rather than doing it silently.
 3. **Decide what is postselected and what is decoded.** Postselection detectors go into a
    `postselection_mask`. Detectors that feed a decoder stay unmasked.
 4. **Pick a decoder** (or none) from the table below.
