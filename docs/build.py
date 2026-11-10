@@ -83,7 +83,27 @@ def _escape_mdx_text(text: str) -> str:
                 .replace(">", r"\>")
             )
             result.append(escaped)
-    return "\n".join(result)
+    return _escape_code_parameters("\n".join(result))
+
+
+_CODE_PARAMETERS = re.compile(r"\[\[(\d+,\s*\d+,\s*\d+)\]\]")
+
+
+def _escape_code_parameters(text: str) -> str:
+    """Write ``[[n,k,d]]`` code parameters with character references.
+
+    Mintlify reads double brackets as an unsupported wiki link. Fenced code
+    blocks are left alone.
+    """
+    out: list[str] = []
+    in_fence = False
+    for line in text.split("\n"):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+        elif not in_fence:
+            line = _CODE_PARAMETERS.sub(r"&#91;&#91;\1&#93;&#93;", line)
+        out.append(line)
+    return "\n".join(out)
 
 
 def _srcdoc_attr(html: str) -> str:
@@ -765,6 +785,7 @@ def _convert_notebook(nb_path: Path, execute: bool) -> None:
     # Wrap nbconvert's 4-space indented cell outputs in fenced code blocks
     # so Mintlify renders them as code rather than collapsing whitespace.
     body = _fence_indented_outputs(body)
+    body = _escape_code_parameters(body)
 
     # Replace bare "![svg](...)" alt text (nbconvert's default) with something
     # more descriptive for accessibility.

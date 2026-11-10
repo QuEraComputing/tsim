@@ -3,9 +3,9 @@
   "theme": "mint",
   "name": "Tsim",
   "colors": {
-    "primary": "#00ba7c",
+    "primary": "#008055",
     "light": "#00ba7c",
-    "dark": "#00ba7c"
+    "dark": "#008055"
   },
   "favicon": "/images/favicon.svg",
   "seo": {
