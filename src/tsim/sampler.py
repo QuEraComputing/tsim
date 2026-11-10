@@ -715,8 +715,9 @@ class _CompiledSamplerBase:
           each component, or ``None`` under a stabilizer-rank strategy.
         - ``num_actions`` (``int | None``): total state-vector actions over the
           components, or ``None`` under a stabilizer-rank strategy.
-        - ``error_channel_bits`` (``int``): random bits that the noise channels
-          draw per shot.
+        - ``error_channel_bits`` (``int``): outcome bits of the simplified noise
+          channels, i.e. the sum of log2 of each channel's number of outcomes.
+          This is not the number of random bits drawn per shot.
         - ``peak_bytes_per_shot`` (``int``): estimated peak memory of one shot,
           by which the default batch sizes are chosen.
         - ``compiled_bytes`` (``int``): memory of the compiled components.
