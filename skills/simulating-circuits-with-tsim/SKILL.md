@@ -28,6 +28,20 @@ This file covers what every task needs. Read the references when the task calls 
 - [references/porting.md](references/porting.md): finding a paper's circuits, converting
   Clifford stand-ins to real T or CCZ gates, and validating the conversion.
 
+## Common mistakes
+
+Check these before writing code; each links to the details below.
+
+1. Comparing Tsim's detector values with Stim's without the reference flags; Tsim returns raw
+   values ("Differences from Stim").
+2. Sampling measurements and computing detectors from them instead of using the detector
+   sampler ("Detector sampler or measurement sampler").
+3. Postselecting after sampling, or with `sinter.collect`, instead of passing
+   `postselection_mask` ("Postselection").
+4. Using `strategy="cat5"`, `"bss"` or `"cutting"`, even as a cross-check ("Sampling strategy").
+5. Writing angles in radians: `R_Z(0.25)` is a rotation by π/4 ("Circuit format").
+6. Many small `sample()` calls or a small `batch_size` ("Sampling options").
+
 ## Which circuits Tsim can simulate
 
 Whether Tsim can simulate a circuit is decided by the **active width** w: the largest number
@@ -73,7 +87,7 @@ c = tsim.Circuit(
     """
 )
 sampler = c.compile_detector_sampler(seed=1)
-print(sampler.active_width)  # int; 0 means no state vector is needed
+assert sampler.active_width == 1  # 0 would mean no state vector is needed
 print(sampler.stats)  # component widths, peak bytes per shot, ...
 dets, obs = sampler.sample(shots=100_000, separate_observables=True)
 ```
@@ -85,6 +99,9 @@ dets, obs = sampler.sample(shots=100_000, separate_observables=True)
 | about 17 to 26 | Slow; each extra qubit doubles the cost, and near 26 a shot takes seconds |
 | 27 to 30 | Accepted, but each shot needs gigabytes and takes minutes; rarely practical |
 | above 30 | Rejected with a `ValueError` (or earlier, if memory runs out) |
+
+If `sampler.active_width` raises `AttributeError`, the installed Tsim is older than 1.1.0;
+upgrade `bloqade-tsim` before going further.
 
 Before a long run, time it: one small warm-up call (the first call compiles kernels), then
 one call of about 10^6 shots, and extrapolate. Small calls understate the rate. Report the
@@ -296,7 +313,10 @@ Tsim results:
 ## Reporting bugs and circuits Tsim cannot simulate yet
 
 Issues go to https://github.com/QuEraComputing/tsim/issues. Issues are public, so tell the user
-before filing and ask before sharing a circuit that is not published.
+before filing and ask before sharing a circuit that is not published. Search first
+(`gh issue list --repo QuEraComputing/tsim --state all --search "<keywords>"`), and add to an
+existing issue rather than opening a duplicate. Do not patch or monkey-patch Tsim inside the
+user's project to get around a bug; report it, and offer the user a workaround to choose.
 
 **Bugs.** If Tsim crashes, returns statistics that contradict a check above, or is far slower
 than its active width suggests, first shrink the circuit until removing anything makes the

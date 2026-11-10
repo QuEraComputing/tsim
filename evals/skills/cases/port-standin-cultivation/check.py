@@ -20,9 +20,20 @@ def _converted_circuit(work: Path) -> tuple[bool, str]:
     return False, "no converted circuit with T gates saved"
 
 
-def _checked_against_stim(transcript: str) -> tuple[bool, str]:
-    ok = re.search(r"stim\.Circuit[\s\S]{0,400}compile_detector_sampler", transcript)
-    return ok is not None, "stand-in sampled with Stim" if ok else "Stim never sampled"
+def _checked_against_stim(answer: str, transcript: str) -> tuple[bool, str]:
+    # NOTE: the stim.Circuit is often built in a helper far from where it is sampled, so
+    # require one in the code and a Tsim-vs-Stim comparison in the answer.
+    built = re.search(r"stim\.Circuit\(", transcript)
+    compared = re.search(
+        r"Stim[^\n]{0,120}\b(agree|match|consistent|within)|"
+        r"\b(agree|match|consistent)[^\n]{0,80}\bStim\b",
+        answer,
+    )
+    if not built:
+        return False, "no stim.Circuit built"
+    return compared is not None, (
+        "Tsim vs Stim compared" if compared else "no comparison with Stim"
+    )
 
 
 def _reports_widths(answer: str) -> tuple[bool, str]:
@@ -37,7 +48,7 @@ def _reports_widths(answer: str) -> tuple[bool, str]:
 def check(answer: str, transcript: str, work: Path) -> dict:
     return {
         "saves the converted circuit": _converted_circuit(work),
-        "samples the stand-in with Stim": _checked_against_stim(transcript),
+        "samples the stand-in with Stim": _checked_against_stim(answer, transcript),
         "checks the noiseless real-T circuit": (
             "without_noise" in transcript,
             (

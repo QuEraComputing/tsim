@@ -4,7 +4,8 @@
   frontmatter fields and their limits, and a ``name`` that matches its directory.
 - Relative links in the skills point to files that exist.
 - The Python code blocks of each file run, in order, in one namespace, as a reader would run
-  them. A block that imports a package that is not installed (an optional decoder) is skipped.
+  them, and at least one of them asserts a result. A block that imports a package that is not
+  installed (an optional decoder) is skipped.
 
 Triggering and behavioral evals are not run in CI; see ``evals/skills/README.md``.
 """
@@ -82,8 +83,13 @@ def test_relative_links_resolve(path: Path):
 
 @pytest.mark.parametrize("path", MARKDOWN_FILES, ids=_ids)
 def test_code_blocks_run(path: Path):
+    blocks = CODE_BLOCK.findall(path.read_text())
+    # NOTE: blocks must check their results, not only run, so that a change in behavior fails.
+    assert not blocks or any(
+        "assert " in code for code in blocks
+    ), "no block asserts a result"
     namespace: dict = {}
-    for code in CODE_BLOCK.findall(path.read_text()):
+    for code in blocks:
         if _missing_modules(code):
             continue
         exec(compile(code, str(path), "exec"), namespace)  # noqa: S102

@@ -113,4 +113,5 @@ dets, obs = circuit.compile_detector_sampler(seed=1).sample(
     shots=20_000, separate_observables=True
 )
 logical_error_rate = np.any(decode(dets) != obs, axis=1).mean()
+assert logical_error_rate < 0.01
 ```

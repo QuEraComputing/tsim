@@ -210,7 +210,8 @@ c = tsim.Circuit(
     """
 )
 counts = run_point(c, max_shots=200_000, seed=1)
-infidelity = counts["errors"] / counts["kept"]  # close to 2p/3
+infidelity = counts["errors"] / counts["kept"]
+assert abs(infidelity - 2 * p / 3) < 1e-3
 ```
 
 For an encoded state there is no need to unencode it: apply the logical `T_DAG` as a Pauli
