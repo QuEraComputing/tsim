@@ -15,6 +15,8 @@ import select
 import statistics
 import subprocess
 import time
+from collections.abc import Iterator
+from dataclasses import dataclass
 
 from . import common, corpus
 from .common import FAILED, INFRA, OK
@@ -34,11 +36,20 @@ def _items(cases) -> list[tuple[str, str, str]]:
     ]
 
 
-def _stream(cmd, env, case_timeout: int):
-    """Run the worker; yield its lines, and stop it if one circuit compiles too long.
+@dataclass
+class Exit:
+    """How a worker ended: its exit code and stderr, or a stop for taking too long."""
 
-    Yields `("line", text)` for each output line, then `("exit", (code, stderr))`;
-    `code` is "timeout" when the worker was stopped.
+    code: int = 0
+    stderr: str = ""
+    timed_out: bool = False
+
+
+def _stream(cmd, env, case_timeout: int, outcome: Exit) -> Iterator[str]:
+    """Run the worker, yield its output lines, and record how it ended in `outcome`.
+
+    The worker is stopped if no line arrives for `case_timeout` seconds, that is if
+    one circuit compiles for longer than that.
     """
     with subprocess.Popen(
         cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
@@ -52,14 +63,14 @@ def _stream(cmd, env, case_timeout: int):
                 if not line:
                     break
                 deadline = time.monotonic() + case_timeout
-                yield "line", line.rstrip("\n")
+                yield line.rstrip("\n")
             elif time.monotonic() > deadline:
                 process.kill()
                 process.wait()
-                yield "exit", ("timeout", "")
+                outcome.timed_out = True
                 return
-        code = process.wait()
-        yield "exit", (code, process.stderr.read())
+        outcome.code = process.wait()
+        outcome.stderr = process.stderr.read()
 
 
 def measure(side, cases, args) -> dict[str, dict]:
@@ -76,26 +87,23 @@ def measure(side, cases, args) -> dict[str, dict]:
         for _, flag, value in pending:
             cmd += [flag, value]
         env = side_env(side, side.threads or args.threads)
-        started, code, stderr = None, 0, ""
-        for kind, value in _stream(
-            common.capped(cmd, mem=args.mem), env, args.case_timeout
-        ):
-            if kind == "exit":
-                code, stderr = value
-            elif value.startswith("START "):
-                started = value[6:]
-            elif value.startswith("RESULT "):
-                result = json.loads(value[7:])
+        started, outcome = None, Exit()
+        capped = common.capped(cmd, mem=args.mem)
+        for line in _stream(capped, env, args.case_timeout, outcome):
+            if line.startswith("START "):
+                started = line[6:]
+            elif line.startswith("RESULT "):
+                result = json.loads(line[7:])
                 results[result.pop("name")] = result
         missing = [item for item in pending if item[0] not in results]
         if not missing:
             break
         # NOTE: the worker died or was stopped while compiling `started`.
-        if code == "timeout":
+        if outcome.timed_out:
             reason = f"compile took over {args.case_timeout} s"
         else:
-            reason = common.explain_exit(code, args.mem, None)
-            reason += ": " + (stderr.strip().splitlines() or [""])[-1]
+            reason = common.explain_exit(outcome.code, args.mem, None)
+            reason += ": " + (outcome.stderr.strip().splitlines() or [""])[-1]
         error = {"error": reason[:200]}
         if started is None or started not in {key for key, _, _ in missing}:
             results.update({key: dict(error) for key, _, _ in missing})

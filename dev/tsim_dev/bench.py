@@ -315,7 +315,8 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
         widths = {r.get("active_width") for r in rounds[side.describe()]}
         if len(widths) > 1:
             record["error"] = (
-                f"{side.describe()}: active width changed between runs: {sorted(widths)}"
+                f"{side.describe()}: active width changed between runs: "
+                + ", ".join(sorted(str(w) for w in widths))
             )
             return record
     new = rounds[sides[0].describe()]

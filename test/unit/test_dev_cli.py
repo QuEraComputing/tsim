@@ -341,16 +341,15 @@ def test_width_verdicts_treat_refused_widths_as_lower_bounds(new, ref, expected)
 def test_width_mode_resumes_after_the_worker_dies(fake_bench, monkeypatch):
     calls = []
 
-    def fake_stream(cmd, env, case_timeout):
+    def fake_stream(cmd, env, case_timeout, outcome):
         cases = [cmd[i + 1] for i, x in enumerate(cmd) if x == "--case"]
         calls.append(cases)
         for case in cases:
-            yield "line", f"START {case}"
+            yield f"START {case}"
             if case == "p/narrow" and len(calls) == 1:
-                yield "exit", ("timeout", "")
+                outcome.timed_out = True
                 return
-            yield "line", "RESULT " + json.dumps({"name": case, "width": 3})
-        yield "exit", (0, "")
+            yield "RESULT " + json.dumps({"name": case, "width": 3})
 
     monkeypatch.setattr(width, "_stream", fake_stream)
     cases = bench.select(_bench_args("--width", "--suite", "corpus"))
@@ -362,9 +361,9 @@ def test_width_mode_resumes_after_the_worker_dies(fake_bench, monkeypatch):
 
 def test_the_width_stream_stops_a_stuck_compile():
     script = "import time; print('START a', flush=True); time.sleep(30)"
-    events = list(width._stream([sys.executable, "-c", script], None, case_timeout=1))
-    assert events[0] == ("line", "START a")
-    assert events[-1] == ("exit", ("timeout", ""))
+    outcome = width.Exit()
+    lines = list(width._stream([sys.executable, "-c", script], None, 1, outcome))
+    assert lines == ["START a"] and outcome.timed_out
 
 
 def test_shot_benchmarks_compare_and_check_the_active_width(fake_bench, monkeypatch):
