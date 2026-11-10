@@ -23,10 +23,13 @@ any commit, or the path of another checkout that has a `.venv`
 (`--ref ../tsim-other-worktree`).
 
 ```
-circuit                     k  shots/s   kept  compile   shots/s vs ref (min, max)      compile vs ref
-inject_cultivate_d5_p0.001  6    13.9M  0.141     0.13   1.20x [1.19, 1.21] faster  0.96x same
+circuit                     k device  shots/s   kept  compile   shots/s vs ref (min, max)      compile vs ref
+inject_cultivate_d5_p0.001  6    cpu    13.9M  0.141     0.13   1.20x [1.19, 1.21] faster  0.96x same
 ```
 
+- `device` is where the new side sampled (`cpu`, or a GPU backend such as `metal`).
+  A row that ends in `DEVICE: cpu -> metal` compares two devices: its ratio is not
+  a code change.
 - `kept` is the fraction of shots that survive postselection (`-` when there is none).
 - `k` is the active width of the compiled sampler. With `--ref`, a row that ends in
   `WIDER: k 6 -> 7` or `NARROWER: ...` means the two sides compiled different widths;
@@ -82,6 +85,13 @@ uv run tsim-dev bench --side .:threads=4 --side origin/main:threads=4
 ## What the command controls for you
 
 - One thread, pinned to a core (`--threads N` to change; say so when you report).
+  The `NOTE` line gives the cores Tsim uses by default.
+- Bit-packed output (`--bools` for `sample()`'s default booleans) and the CPU
+  (`TSIM_DEVICE=cpu`; `--device gpu` lets Tsim use a GPU backend). The header says
+  which; the `profiling-tsim` skill lists how much each changes the rate.
+- The sampler that tsim-bench records for each circuit: the detector sampler for
+  QEC circuits. `--sampler detector|measurement` overrides it (a measurement sampler
+  samples every shot, since the recorded postselection is of detectors).
 - Each measurement is a fresh process with a warm numba cache, under a memory cap.
   Kernels loaded from the cache have behaved differently from freshly compiled
   ones, and the cached case is what users get.
@@ -105,6 +115,12 @@ uv run tsim-dev bench --side .:threads=4 --side origin/main:threads=4
 - Postselection changes what is measured: a change that speeds up rejected shots shows
   only with it on. Report which you used, and run both when the change touches the
   postselection path.
+- Benchmark with the detector sampler by default. When a circuit records the
+  measurement sampler, or the change touches either sampler, run both
+  (`--sampler detector`, `--sampler measurement`) and report both.
+- For absolute numbers (a release note, a comparison with another simulator), also
+  give the all-core rate (`--threads N`), the GPU rate where there is a GPU backend
+  (`--device gpu`), and the boolean-output rate (`--bools`), each labeled.
 - Paste the table in the pull request, with the CPU model (`lscpu | grep 'Model name'`)
   and the thread count.
 
@@ -129,7 +145,8 @@ different regime. `--only SUBSTRING` keeps circuits whose id contains it.
 
 ## Limits
 
-- Tsim on the CPU only. Comparisons with other simulators (Clifft, SymFT, Magna) are
+- Tsim on the CPU, or with `--device gpu` on a GPU backend that the checkout's
+  environment has. Comparisons with other simulators (Clifft, SymFT, Magna) are
   run from the tsim-bench repository, which pins each simulator's environment.
 - To add a circuit or change a suite, change tsim-bench: put the file in its paper's
   folder, add an entry to that folder's `circuits.toml` (arXiv id, sampler, postselection

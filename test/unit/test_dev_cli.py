@@ -91,6 +91,48 @@ def test_corpus_circuits_are_postselected_unless_turned_off(fake_bench):
     assert "--no-postselect" in command
 
 
+def test_benchmarks_time_bit_packed_rows_on_the_cpu_by_default(fake_bench, monkeypatch):
+    (case,) = bench.select(_bench_args())
+    command = bench.worker_command(Path("python"), case, _bench_args(), "bench")
+    assert "--bit-packed" in command
+    assert command[command.index("--sampler") + 1] == "detector"
+    command = bench.worker_command(
+        Path("python"), case, _bench_args("--bools"), "bench"
+    )
+    assert "--bit-packed" not in command
+    # NOTE: the recorded postselection is of detectors: a measurement sampler
+    # samples every shot.
+    (case,) = bench.select(_bench_args("--sampler", "measurement"))
+    assert (case.sampler, case.postselect) == ("measurement", "none")
+    monkeypatch.setenv("TSIM_DEVICE", "gpu-left-over")
+    side = bench.parse_side(".:device=gpu")
+    assert side.describe().endswith("device=gpu")
+    assert "TSIM_DEVICE" not in bench.side_env(side, 1, "gpu")
+    assert bench.side_env(side, 1, "cpu")["TSIM_DEVICE"] == "cpu"
+    # NOTE: tests and jobs leave the device to the tests themselves.
+    assert common.child_env(1)["TSIM_DEVICE"] == "gpu-left-over"
+
+
+def test_shot_benchmarks_report_the_device_that_sampled(fake_bench, monkeypatch):
+    devices = {"new": ["metal"] * 3, "ref": ["cpu"] * 3}
+
+    def fake_measure(side, case, args, mode="bench"):
+        result = {"shots_per_s": 1e6, "compile_s": 0.1, "acceptance": None, "shots": 1}
+        result.update(active_width=6, device=devices[side.label].pop(0))
+        return result
+
+    monkeypatch.setattr(bench, "measure", fake_measure)
+    (case,) = bench.select(_bench_args())
+    sides = [bench.Side("new", Path("python")), bench.Side("ref", Path("python"))]
+    args = _bench_args("--rounds", "2")
+    args.rounds = 2
+    record = bench.run_case(case, sides, args)
+    assert (record["device"], record["ref_device"]) == ("metal", "cpu")
+    assert "DEVICE: cpu -> metal" in bench.format_row(record, has_ref=True)
+    devices.update(new=["metal", "metal", "cpu"], ref=["cpu"] * 3)
+    assert "device changed between runs" in bench.run_case(case, sides, args)["error"]
+
+
 def test_max_width_uses_the_recorded_width_of_one_backend(fake_bench):
     everything = bench.select(_bench_args("--suite", "corpus"))
     assert [case.id for case in everything] == ["p/narrow", "p/wide"]
@@ -241,11 +283,11 @@ def test_sides_carry_their_own_settings(fake_bench):
         "cat5",
     )
     assert side.describe().endswith("threads=10 strategy=cat5")
-    assert bench.side_env(side, 10)["NUMBA_NUM_THREADS"] == "10"
+    assert bench.side_env(side, 10, "cpu")["NUMBA_NUM_THREADS"] == "10"
     # A python executable is used as given: resolving a venv's symlink would lose the venv.
     python = Path(sys.executable).absolute()
     assert bench.parse_side(f"{python}:threads=2").python == python
-    for bad in (".:cores=2", ".:threads=0", ".:device=gpu", ".:threads"):
+    for bad in (".:cores=2", ".:threads=0", ".:device=tpu", ".:threads"):
         with pytest.raises(common.InfraError):
             bench.parse_side(bad)
 

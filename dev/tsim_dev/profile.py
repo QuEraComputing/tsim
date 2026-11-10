@@ -24,7 +24,7 @@ def _case(args) -> bench.Case:
 
 
 def _defaults(args) -> None:
-    for name, value in (("strategy", ""), ("batch_size", 0), ("bit_packed", False)):
+    for name, value in (("strategy", ""), ("batch_size", 0), ("bools", False)):
         if not hasattr(args, name):
             setattr(args, name, value)
 
@@ -42,7 +42,10 @@ def inspect(args) -> int:
     if "error" in result:
         print(f"ERROR: {result['error']}")
         return INFRA
-    print(f"{case.name}: {result['sampler']} sampler, Tsim {result['tsim_version']}")
+    print(
+        f"{case.name}: {result['sampler']} sampler on {result.get('device', '?')}, "
+        f"Tsim {result['tsim_version']}"
+    )
     for key in ("qubits", "tcount", "measurements", "detectors", "active_width"):
         print(f"  {key}: {result[key]}")
     print(f"  compile_s: {result['compile_s']:.2f}")
@@ -114,7 +117,7 @@ def profile(args) -> int:
     )
     done = subprocess.run(
         cmd,
-        env=common.child_env(args.threads),
+        env=common.child_env(args.threads, args.device),
         capture_output=True,
         text=True,
         check=False,
@@ -134,6 +137,7 @@ def profile(args) -> int:
 
     print(
         f"profile {case.name}: k={result['active_width']} threads={args.threads} "
+        f"device={result.get('device', '?')} {result['sampler']} sampler, bit-packed "
         f"import {result['import_s']:.2f} s, compile {result['compile_s']:.2f} s "
         f"(warm numba cache), sampling {args.seconds:g} s at {result['shots']} shots/call"
     )

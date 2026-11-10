@@ -17,13 +17,51 @@ It prints qubits, T count, detectors, `active_width` (k) and `SamplerStats` with
 sampling. Cost per shot grows like 2^k. Do not sample or profile above k ≈ 20 without
 a smaller `--batch-size` and a memory estimate (2^k × 16 B × batch).
 
-## 2. Profile one run
+## 2. Measure the speed that users get
+
+Five settings each change a rate severalfold. The harness fixes them and prints them
+on every run; say which you used, and measure the others before you conclude that
+Tsim is slow:
+
+- **Sampler.** `compile_detector_sampler` is the default for QEC circuits and Tsim's
+  fast path: its direct detectors never go through a state vector. Profile and
+  benchmark with the detector sampler. For a circuit whose tsim-bench manifest
+  records the measurement sampler, run both (`--sampler detector`,
+  `--sampler measurement`): they sample different outputs. On qv_q10 the detector
+  sampler returns its one observable at 60.9M shots/s per core, the measurement
+  sampler its 10 measurements at 11.6M (Apple M4 Pro).
+- **Output.** The harness times bit-packed rows, Tsim's own output. `--bools`
+  times `sample()`'s default boolean output, which adds a conversion: 1.6x on
+  surface_d7_r7 on the CPU. A slow boolean rate next to a fast bit-packed one
+  points at the conversion, not the sampler.
+- **Threads.** One pinned thread gives the rate per core. Tsim samples on all
+  performance cores by default (`numba.get_num_threads()`); the `NOTE` line says
+  how many. Quote all-core rates with `--threads N`.
+- **Device.** The harness sets `TSIM_DEVICE=cpu`, so every side samples on the
+  CPU unless you pass `--device gpu` (or `--side REF:device=gpu`). With a GPU
+  backend installed, `--device gpu` measures what users get by default. The
+  `device` column says where each row sampled: a GPU falls back to the CPU for
+  components wider than it runs, and a row that ends in `DEVICE: cpu -> metal`
+  compares a GPU with the CPU.
+- **Compile.** `compile` includes the first use of a backend in the process (about
+  0.1 s for Metal's PyObjC) but not the first call, whose kernel compilation goes
+  into `warmup_s` in the JSON.
+
+```bash
+uv run tsim-dev bench qv_q10 --sampler detector               # and --sampler measurement
+uv run tsim-dev bench qv_q10 --threads 10 --device gpu --bools # what a user's sample() gets
+```
+
+## 3. Profile one run
 
 ```bash
 uv run tsim-dev profile cultivation_d5 --seconds 5
 ```
 
-The run is a fresh process, one pinned thread, warm numba cache, under a memory cap.
+The run is a fresh process, one pinned thread, warm numba cache, under a memory cap,
+with bit-packed output on the CPU (`--threads`, `--device` and `--sampler` as in
+step 2). py-spy sees the host only: on a GPU the sampling phase shows the wait for
+the device, and the time inside its kernels needs the backend's own timers.
 The output splits samples by phase (`compile`, `sample`) and prints three tables:
 
 - **innermost Tsim frame (kernel callers):** read this first. Jitted numba code has
@@ -42,7 +80,7 @@ Profile at least two families before choosing a target; the hot spot differs
 between circuits with mostly direct detectors (cultivation, surface codes), wide
 quantum components (quantum volume) and many rotations (coherent noise).
 
-## 3. Inside a kernel
+## 4. Inside a kernel
 
 The profile stops at the kernel boundary. To compare variants of a kernel, change
 it and use `uv run tsim-dev bench <circuit> --ref origin/main`: that is the
@@ -52,7 +90,7 @@ measurement that counts. Micro-benchmarks of a kernel alone have misled before
 Hardware counters (`perf stat`) need `/proc/sys/kernel/perf_event_paranoid` at 1 or
 lower; ask the user rather than changing it.
 
-## 4. Turn it into a plan
+## 5. Turn it into a plan
 
 - Write down the target (phase, function, share of time) and the circuits it
   affects, before changing code.

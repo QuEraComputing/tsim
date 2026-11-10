@@ -65,7 +65,8 @@ def _circuit_options(parser) -> None:
         "--sampler",
         default="auto",
         choices=["auto", "detector", "measurement"],
-        help="for a .stim path outside tsim-bench",
+        help="auto: the one tsim-bench records, or for a .stim path the detector "
+        "sampler if the circuit has detectors or observables (default auto)",
     )
     parser.add_argument(
         "--postselect",
@@ -75,6 +76,13 @@ def _circuit_options(parser) -> None:
     )
     parser.add_argument(
         "--threads", type=int, default=1, help="numba threads (default 1)"
+    )
+    parser.add_argument(
+        "--device",
+        default="cpu",
+        choices=["cpu", "gpu"],
+        help="cpu: TSIM_DEVICE=cpu; gpu: let Tsim pick a GPU when it has one "
+        "(default cpu)",
     )
 
 
@@ -124,7 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="REF[:KEY=VALUE,...]",
         help="a side with its own settings, instead of --ref; give two to compare. "
         "REF: `.`, a git revision, a checkout or a python executable. "
-        "Keys: threads=N, strategy=NAME. "
+        "Keys: threads=N, strategy=NAME, device=cpu|gpu. "
         "Example: --side .:threads=10 --side .:threads=1",
     )
     _selection(p, None)
@@ -135,7 +143,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tolerance", type=float, default=0.05, help="default 0.05")
     p.add_argument("--strategy", default="")
     p.add_argument("--batch-size", type=int, default=0)
-    p.add_argument("--bit-packed", action="store_true")
+    p.add_argument(
+        "--bools",
+        action="store_true",
+        help="time sample()'s default boolean output instead of bit-packed rows",
+    )
     _circuit_options(p)
     parser_caps = p.add_argument_group("caps")
     parser_caps.add_argument(

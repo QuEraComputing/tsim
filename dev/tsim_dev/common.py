@@ -77,19 +77,41 @@ def describe(path: Path) -> str:
     return f"{branch}@{commit}"
 
 
-def child_env(threads: int | None = None) -> dict[str, str]:
+def child_env(threads: int | None = None, device: str | None = None) -> dict[str, str]:
     """Return the environment for Tsim processes.
 
     JAX is kept on the CPU unless the caller already chose a platform, which also
     silences its missing-CUDA warning. The thread variables are set when given.
+    `device="cpu"` sets `TSIM_DEVICE=cpu`, which keeps the statevector samplers off
+    a GPU; "gpu" leaves the choice to Tsim, which uses a GPU when it has one; None
+    leaves `TSIM_DEVICE` as it is (tests choose per sampler).
     """
     env = dict(os.environ)
     env.setdefault("JAX_PLATFORMS", "cpu")
     env.pop("VIRTUAL_ENV", None)
+    if device == "cpu":
+        env["TSIM_DEVICE"] = "cpu"
+    elif device == "gpu":
+        env.pop("TSIM_DEVICE", None)
     if threads is not None:
         for name in ("NUMBA_NUM_THREADS", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
             env[name] = str(threads)
     return env
+
+
+@functools.cache
+def performance_cores() -> int:
+    """Return the cores that numba uses by default: the performance cores on macOS."""
+    if sys.platform == "darwin":
+        found = subprocess.run(
+            ["sysctl", "-n", "hw.perflevel0.physicalcpu"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if found.returncode == 0 and found.stdout.strip().isdigit():
+            return int(found.stdout.strip())
+    return os.cpu_count() or 1
 
 
 @functools.cache

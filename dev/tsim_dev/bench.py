@@ -3,6 +3,11 @@
 Every measurement runs in a fresh process under a memory cap, pinned to fixed
 cores, with numba's on-disk cache warm. With `--ref`, the two checkouts are
 measured in interleaved rounds and compared round by round.
+
+By default a call returns bit-packed rows, Tsim's native output, on one CPU thread
+with `TSIM_DEVICE=cpu`; each row says which device sampled. `--bools` times
+`sample()`'s default boolean output, `--threads N` more cores and `--device gpu`
+a GPU, each of which changes the rate severalfold.
 """
 
 from __future__ import annotations
@@ -45,22 +50,25 @@ class Case:
 class Side:
     """One side of a comparison: the Python that imports its Tsim, and its settings.
 
-    `threads` and `strategy` override the command line's when set.
+    `threads`, `strategy` and `device` override the command line's when set.
     """
 
     label: str
     python: Path
     threads: int | None = None
     strategy: str | None = None
+    device: str | None = None
 
     def describe(self) -> str:
         """Return the label with the settings that this side overrides."""
         extra = [f"threads={self.threads}"] if self.threads is not None else []
         extra += [f"strategy={self.strategy}"] if self.strategy is not None else []
+        extra += [f"device={self.device}"] if self.device is not None else []
         return " ".join([self.label, *extra])
 
 
-SIDE_KEYS = ("threads", "strategy")
+SIDE_KEYS = ("threads", "strategy", "device")
+DEVICES = ("cpu", "gpu")
 
 
 def distinct(sides: list[Side]) -> list[Side]:
@@ -89,7 +97,7 @@ def parse_side(spec: str) -> Side:
 
     REF is `.` (this checkout), a git revision, the path of another checkout with a
     `.venv`, or the path of a Python executable (an environment built elsewhere, such
-    as one with other dependencies). Keys: threads=N, strategy=NAME.
+    as one with other dependencies). Keys: threads=N, strategy=NAME, device=cpu|gpu.
     """
     ref, _, options = spec.partition(":")
     settings: dict = {}
@@ -105,6 +113,8 @@ def parse_side(spec: str) -> Side:
         if not settings["threads"].isdigit() or int(settings["threads"]) < 1:
             raise InfraError(f"bad thread count in --side {spec!r}")
         settings["threads"] = int(settings["threads"])
+    if settings.get("device", "cpu") not in DEVICES:
+        raise InfraError(f"bad device in --side {spec!r}: use cpu or gpu")
     if ref in ("", "."):
         base = Side(common.describe(common.root()), Path(sys.executable))
     elif Path(ref).expanduser().is_file():
@@ -118,13 +128,18 @@ def parse_side(spec: str) -> Side:
 
 
 def _from_corpus(entry, args) -> Case:
+    sampler = entry.sampler if args.sampler == "auto" else args.sampler
+    # NOTE: the recorded postselection is of detectors, so a measurement sampler
+    # samples every shot.
     postselect = (
-        "none" if args.no_postselect or entry.postselect == "none" else "recorded"
+        "none"
+        if args.no_postselect or entry.postselect == "none" or sampler != "detector"
+        else "recorded"
     )
     return Case(
         entry.id.split("/", 1)[1],
         entry.path,
-        entry.sampler,
+        sampler,
         postselect,
         entry.id,
         entry.width(args.width_of),
@@ -243,6 +258,7 @@ def worker_command(python: Path, case: Case, args, mode: str) -> list[str]:
     cmd = [str(python), str(corpus.worker(args.corpus_dir)), "--mode", mode]
     if case.id is not None:
         cmd += ["--root", str(corpus.root(args.corpus_dir)), "--case", case.id]
+        cmd += ["--sampler", case.sampler]
         if case.postselect == "none":
             cmd.append("--no-postselect")
     else:
@@ -253,20 +269,25 @@ def worker_command(python: Path, case: Case, args, mode: str) -> list[str]:
         cmd += ["--strategy", args.strategy]
     if args.batch_size:
         cmd += ["--batch-size", str(args.batch_size)]
-    if args.bit_packed:
+    if not getattr(args, "bools", False):
         cmd.append("--bit-packed")
     return cmd
 
 
-def side_env(side: Side, threads: int) -> dict[str, str]:
-    """Return the environment of one side's worker."""
-    env = common.child_env(threads)
+def side_env(side: Side, threads: int, device: str) -> dict[str, str]:
+    """Return the environment of one side's worker.
+
+    `device="cpu"` sets `TSIM_DEVICE=cpu`, which keeps a Tsim with a GPU backend on
+    the CPU; "gpu" leaves Tsim to pick a GPU when it has one.
+    """
+    env = common.child_env(threads, device)
     return env
 
 
 def measure(side: Side, case: Case, args, mode: str = "bench") -> dict:
     """Run the worker once and return its result, or `{"error": ...}`."""
     threads = side.threads or args.threads
+    device = side.device or args.device
     options = args
     if side.strategy is not None:
         options = argparse.Namespace(**{**vars(args), "strategy": side.strategy})
@@ -276,7 +297,7 @@ def measure(side: Side, case: Case, args, mode: str = "bench") -> dict:
     )
     done = subprocess.run(
         wrapped,
-        env=side_env(side, threads),
+        env=side_env(side, threads, device),
         capture_output=True,
         text=True,
         check=False,
@@ -341,7 +362,19 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
                 + ", ".join(sorted(str(w) for w in widths))
             )
             return record
+    # NOTE: a GPU can fall back to the CPU (a wide component, no GPU memory); the
+    # device each side sampled on is part of what its rate means.
+    devices = {}
+    for side in sides:
+        seen = {r.get("device", "?") for r in rounds[side.describe()]}
+        if len(seen) > 1:
+            record["error"] = (
+                f"{side.describe()}: device changed between runs: " + ", ".join(seen)
+            )
+            return record
+        devices[side.describe()] = seen.pop()
     new = rounds[sides[0].describe()]
+    record["device"] = devices[sides[0].describe()]
     record["k"] = new[0].get("active_width")
     record["acceptance"] = new[0].get("acceptance")
     record["shots_per_s"] = statistics.median(r["shots_per_s"] for r in new)
@@ -364,6 +397,7 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
             record["compile"]["verdict"] = "same"
         record["ref_acceptance"] = old[0].get("acceptance")
         record["ref_k"] = old[0].get("active_width")
+        record["ref_device"] = devices[sides[1].describe()]
         record["width"] = width_verdict(record["k"], record["ref_k"])
         if not same_acceptance(new, old):
             # NOTE: a different kept fraction means the sides sample different
@@ -415,13 +449,17 @@ def format_row(record: dict, has_ref: bool) -> str:
     kept = (
         "-" if record["postselect"] == "none" or accepted is None else f"{accepted:.3g}"
     )
-    row = f"{name:<{NAME}} {k!s:>3} {common.si(record['shots_per_s']):>8} {kept:>6}"
+    device = record.get("device", "?")
+    row = f"{name:<{NAME}} {k!s:>3} {device:>6} "
+    row += f"{common.si(record['shots_per_s']):>8} {kept:>6}"
     row += f" {record['compile_s']:>8.2f}"
     if not has_ref:
         return row + f"   ±{record['spread'] * 50:.0f}%"
     rate, comp = record["rate"], record["compile"]
     row += f"   {rate['ratio']:.2f}x [{rate['low']:.2f}, {rate['high']:.2f}]"
     row += f" {rate['verdict']:<6}  {comp['ratio']:.2f}x {comp['verdict']}"
+    if record.get("ref_device", device) != device:
+        row += f"  DEVICE: {record['ref_device']} -> {device}"
     if record.get("width", "same") != "same":
         row += f"  {record['width'].upper()}: k {record['ref_k']} -> {record['k']}"
     if rate["verdict"] == KEPT_DIFFERS:
@@ -461,13 +499,25 @@ def run(args) -> int:
     busy = common.busy_cores()
     if not any(side.threads for side in sides):
         header += f" threads={args.threads}"
+    if not any(side.device for side in sides):
+        header += f" device={args.device}"
+    header += f" output={'bools' if args.bools else 'bit-packed'}"
+    if args.sampler != "auto":
+        header += f" sampler={args.sampler}"
     header += f" rounds={rounds} busy_cores={busy:.1f}"
     header += f" postselect={'off' if args.no_postselect else 'on'}"
     header += f" tsim-bench={corpus.describe(args.corpus_dir)}"
     print(header)
+    threads = [side.threads or args.threads for side in sides]
+    if max(threads) < common.performance_cores():
+        print(
+            f"NOTE: rates on {max(threads)} of {common.performance_cores()} cores; "
+            "Tsim uses all of them by default (`--threads N` for all-core rates)"
+        )
     if busy > 1.0:
         print("WARNING: other processes are using the CPU; expect noisy numbers")
-    columns = f"{'circuit':<{NAME}} {'k':>3} {'shots/s':>8} {'kept':>6} {'compile':>8}"
+    columns = f"{'circuit':<{NAME}} {'k':>3} {'device':>6} {'shots/s':>8} {'kept':>6}"
+    columns += f" {'compile':>8}"
     if has_ref:
         columns += "   shots/s vs ref (min, max)      compile vs ref"
     print(columns, flush=True)
@@ -483,6 +533,9 @@ def run(args) -> int:
         "new": sides[0].describe(),
         "ref": sides[1].describe() if has_ref else None,
         "threads": [side.threads or args.threads for side in sides],
+        "devices": [side.device or args.device for side in sides],
+        "output": "bools" if args.bools else "bit-packed",
+        "sampler": args.sampler,
         "rounds": rounds,
         "tolerance": args.tolerance,
         "busy_cores": busy,
