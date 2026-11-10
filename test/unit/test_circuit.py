@@ -381,6 +381,27 @@ def test_from_stim_program():
     assert c._stim_circ == stim_circ
 
 
+def test_constructor_accepts_stim_circuit():
+    stim_circ = stim.Circuit("H 0\nCNOT 0 1\nM 0 1")
+    c = Circuit(stim_circ)
+    assert c == Circuit.from_stim_program(stim_circ)
+    c.append("X", [0])
+    assert stim_circ == stim.Circuit("H 0\nCNOT 0 1\nM 0 1")
+
+
+def test_constructor_accepts_circuit():
+    c1 = Circuit("H 0\nT 0\nM 0")
+    c2 = Circuit(c1)
+    assert c1 == c2
+    c2.append("X", [0])
+    assert c1 != c2
+
+
+def test_constructor_rejects_other_types():
+    with pytest.raises(TypeError, match="got int"):
+        Circuit(3)  # type: ignore[arg-type]
+
+
 def test_from_stim_program_text():
     c = Circuit("H 0\nCNOT 0 1\nM 0 1")
     assert c._stim_circ == stim.Circuit("H 0\nCNOT 0 1\nM 0 1")

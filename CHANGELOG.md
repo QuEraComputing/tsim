@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `Circuit(...)` accepts a `stim.Circuit` or another `Circuit` and copies it,
+  like `Circuit.from_stim_program`. Before, passing a `stim.Circuit` raised an
+  `AttributeError`.
 - `CS` and `CS_DAG` (controlled-S and its inverse) gates in circuit text and
   `Circuit.append`, implemented using Clifford+T decompositions.
 - `active_width` and `stats` properties on `CompiledMeasurementSampler` and
