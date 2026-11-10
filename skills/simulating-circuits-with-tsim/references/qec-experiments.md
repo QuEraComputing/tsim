@@ -73,12 +73,13 @@ import tsim
 
 def run_point(circuit, *, max_shots, target_errors=None, max_seconds=None,
               postselection_mask=None, decode=None, seed=None, log_path=None,
-              max_bytes_per_call=1 << 30, **sample_options):
+              max_bytes_per_call=1 << 30, use_detector_reference_sample=False,
+              use_observable_reference_sample=False):
     """Sample one parameter point until a shot, error or time budget is reached.
 
     Returns the counts. With ``log_path``, each call's counts are appended as one JSON line,
-    so a run that is killed keeps everything sampled so far. ``sample_options`` (for example
-    ``use_detector_reference_sample=True``) are passed to ``sample()``.
+    so a run that is killed keeps everything sampled so far. The reference flags are passed
+    to ``sample()``.
     """
     sampler = circuit.compile_detector_sampler(seed=seed)
     # Size calls by memory, not by a fixed shot count: rows are one byte per detector.
@@ -91,7 +92,8 @@ def run_point(circuit, *, max_shots, target_errors=None, max_seconds=None,
         t = time.monotonic()
         dets, obs = sampler.sample(
             shots=n, postselection_mask=postselection_mask, separate_observables=True,
-            **sample_options,
+            use_detector_reference_sample=use_detector_reference_sample,
+            use_observable_reference_sample=use_observable_reference_sample,
         )
         # Postselection can leave no rows; decoders need not handle an empty batch.
         predicted = decode(dets) if decode is not None and len(dets) else np.zeros_like(obs)
@@ -123,10 +125,12 @@ Notes:
   often orders of magnitude away from the first guess.
 - Calls are sized from a memory budget (`max_bytes_per_call`, 1 GB by default), not a fixed
   shot count: 10^6 shots of a circuit with 50,000 detectors is a 50 GB array.
-- For circuits with hundreds of detectors or more, sample with `bit_packed=True` and
-  `append_observables=True`, and give the decoder packed rows (PyMatching:
-  `decode_batch(dets, bit_packed_shots=True, bit_packed_predictions=True)`). Unpack
-  observables with `np.unpackbits(..., bitorder="little")`.
+- `run_point` works on boolean rows, which the decoder recipes expect. For circuits with
+  hundreds of detectors or more, packed rows use 8 times less memory and can be twice as fast;
+  to use them, change the loop to sample with `bit_packed=True` and `append_observables=True`,
+  split the observable bits off with `np.unpackbits(rows, axis=1, bitorder="little")`, and
+  decode packed detector rows (PyMatching: `decode_batch(dets, bit_packed_shots=True,
+  bit_packed_predictions=True)`). Count the call size from packed row bytes.
 - An error is any observable that differs from its prediction. If observables are not
   deterministic without noise (for example a magic state measured directly), a logical error
   rate is not meaningful; measure fidelity instead (see below).
