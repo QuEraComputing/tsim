@@ -42,7 +42,23 @@ inject_cultivate_d5_p0.001  6    13.9M  0.141     0.13   1.20x [1.19, 1.21] fast
   2: a circuit could not be measured.
 - The JSON under `.tsim-dev/bench/` has every round.
 
-## Compare settings: threads, GPU, strategy
+## Active width only (`--width`)
+
+For changes to compilation, scheduling or the plan, compare widths without sampling:
+
+```bash
+uv run tsim-dev bench --width --ref origin/main      # whole corpus, compile only
+uv run tsim-dev bench --width --suite full --ref origin/main
+```
+
+Each side compiles every circuit once, in one process, and prints the width next to
+the one recorded in tsim-bench. The verdict is `wider`, `narrower`, `same` or
+`unknown`; any `wider` exits 1. A circuit over Tsim's limit shows `>=N`: N is the width
+in Tsim's refusal, a lower bound. Widths do not depend on the machine, so this needs
+no rounds or quiet machine, but it says nothing about speed: a change that keeps the
+width can still be slower. Compile times are shown for each side.
+
+## Compare settings: threads, strategy
 
 `--side REF[:key=value,...]`, given twice, replaces `--ref` when the two sides differ in
 more than the checkout. REF is `.` (this checkout), a git revision, a checkout path, or

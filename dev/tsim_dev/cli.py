@@ -31,11 +31,12 @@ def _corpus_dir(parser) -> None:
     )
 
 
-def _selection(parser, suite: str) -> None:
+def _selection(parser, suite: str | None) -> None:
+    shown = suite or "quick, or corpus with --width"
     parser.add_argument(
         "--suite",
         default=suite,
-        help=f"tsim-bench suite, or `corpus` for every circuit (default {suite})",
+        help=f"tsim-bench suite, or `corpus` for every circuit (default {shown})",
     )
     parser.add_argument(
         "--max-width",
@@ -99,6 +100,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--ref", help="git revision or checkout path to compare against")
     p.add_argument(
+        "--width",
+        action="store_true",
+        help="compile only and compare active widths; nothing is sampled "
+        "(default suite: corpus)",
+    )
+    p.add_argument(
+        "--case-timeout",
+        type=int,
+        default=300,
+        help="--width: seconds to compile one circuit (default 300)",
+    )
+    p.add_argument(
+        "--jobs",
+        type=int,
+        default=4,
+        help="--width: circuits compiled at once, each under --mem (default 4)",
+    )
+    p.add_argument(
         "--side",
         action="append",
         default=[],
@@ -108,7 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
         "Keys: threads=N, device=cpu|gpu, strategy=NAME. "
         "Example: --side .:threads=10 --side .:threads=1",
     )
-    _selection(p, "quick")
+    _selection(p, None)
     p.add_argument("--rounds", type=int, default=0, help="default 5 with --ref, else 3")
     p.add_argument(
         "--min-seconds", type=float, default=0.5, help="length of a timed call"

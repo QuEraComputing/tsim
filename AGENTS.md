@@ -15,6 +15,7 @@ failed (or got slower), 2 the harness could not run, 3 still running.
 uv run tsim-dev check                   # the gate before review: pre-commit, full suite (~90 s)
 uv run tsim-dev test --changed          # tests of the changed files; or give paths
 uv run tsim-dev bench --ref origin/main # quick A/B benchmark, ~4 min; exit 1 if slower
+uv run tsim-dev bench --width --ref origin/main  # active widths only, nothing sampled
 uv run tsim-dev inspect FILE.stim       # qubits, T count, active width, stats; no sampling
 uv run tsim-dev profile cultivation_d5  # where compile and sampling time goes (py-spy)
 uv run tsim-dev run -- CMD              # any command under memory, CPU and time caps

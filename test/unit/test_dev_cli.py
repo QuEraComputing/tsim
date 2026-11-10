@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from tsim_dev import bench, checks, cli, common, corpus
+from tsim_dev import bench, checks, cli, common, corpus, width
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOK = ROOT / ".claude" / "hooks" / "guard_bash.py"
@@ -335,3 +335,49 @@ def test_the_corpus_export_is_complete_and_shared(tmp_path, monkeypatch):
     assert (results[0] / "tsim_bench" / "__init__.py").exists()
     with pytest.raises(common.InfraError, match="has no commit"):
         corpus._export("0" * 40)
+
+
+@pytest.mark.parametrize(
+    ("new", "ref", "expected"),
+    [
+        ({"width": 4}, {"width": 4}, "same"),
+        ({"width": 3}, {"width": 4}, "narrower"),
+        ({"width": 5}, {"width": 4}, "wider"),
+        ({"width": 40, "refused": True}, {"width": 26}, "wider"),
+        ({"width": 26}, {"width": 40, "refused": True}, "narrower"),
+        ({"width": 63, "refused": True}, {"width": 63, "refused": True}, "same"),
+        ({"width": 20, "refused": True}, {"width": 26}, "unknown"),
+        ({"error": "x"}, {"width": 4}, "error"),
+    ],
+)
+def test_width_verdicts_treat_refused_widths_as_lower_bounds(new, ref, expected):
+    assert width.verdict(new, ref) == expected
+
+
+def test_width_mode_resumes_after_the_worker_dies(fake_bench, monkeypatch):
+    calls = []
+
+    def fake_stream(cmd, env, case_timeout):
+        cases = [cmd[i + 1] for i, x in enumerate(cmd) if x == "--case"]
+        calls.append(cases)
+        for case in cases:
+            yield "line", f"START {case}"
+            if case == "p/narrow" and len(calls) == 1:
+                yield "exit", ("timeout", "")
+                return
+            yield "line", "RESULT " + json.dumps({"name": case, "width": 3})
+        yield "exit", (0, "")
+
+    monkeypatch.setattr(width, "_stream", fake_stream)
+    cases = bench.select(_bench_args("--width", "--suite", "corpus"))
+    results = width.measure(bench.parse_side("."), cases, _bench_args("--width"))
+    assert results["p/narrow"]["error"].startswith("compile took over")
+    assert results["p/wide"] == {"width": 3}
+    assert calls == [["p/narrow", "p/wide"], ["p/wide"]]
+
+
+def test_the_width_stream_stops_a_stuck_compile():
+    script = "import time; print('START a', flush=True); time.sleep(30)"
+    events = list(width._stream([sys.executable, "-c", script], None, case_timeout=1))
+    assert events[0] == ("line", "START a")
+    assert events[-1] == ("exit", ("timeout", ""))

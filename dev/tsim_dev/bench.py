@@ -18,7 +18,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import common, corpus
+from . import common, corpus, width
 from .common import FAILED, INFRA, OK, InfraError
 
 
@@ -133,6 +133,8 @@ def _lookup(item: str, everything: dict) -> object | None:
 
 def select(args) -> list[Case]:
     """Turn the command line into the list of cases to measure."""
+    if args.suite is None:  # compiling only is fast enough for the whole corpus
+        args.suite = "corpus" if getattr(args, "width", False) else "quick"
     try:
         return _select(args)
     except (ValueError, RuntimeError) as error:  # a malformed tsim-bench manifest
@@ -419,6 +421,8 @@ def run(args) -> int:
             raise InfraError("the two sides are the same; change a setting of one")
     except InfraError as error:
         common.die(str(error))
+    if args.width:
+        return width.run(args, cases, sides)
     has_ref = len(sides) == 2
     rounds = args.rounds or (5 if has_ref else 3)
     args.rounds = rounds

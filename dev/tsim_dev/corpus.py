@@ -24,7 +24,7 @@ from .common import InfraError
 
 URL = "https://github.com/rafaelha/tsim-bench"
 # Bump together with any change that needs newer circuits or manifests.
-REV = "88f3b7264aecb5b7d0e83e0be651e2038e2232cb"
+REV = "cd0acb6488a8ac357cefd2418b69609f637fb3e6"
 COMPLETE = ".tsim-dev-complete"
 
 
