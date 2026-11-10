@@ -30,6 +30,7 @@ batch size.
 
 from __future__ import annotations
 
+import threading
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -69,6 +70,9 @@ FAST_MATH = True
 
 DEVIATION_TOLERANCE = 1e-3
 """Normalization deviation that float32 amplitudes tolerate without a warning."""
+
+MAX_CALL_SHOTS = 1 << 31
+"""Most shots of one GPU call; larger calls run in parts (the counters are 32-bit)."""
 
 DEFER_SHARE = 0.25
 """Share of the expected faults that postselection cannot see, from which they
@@ -337,6 +341,10 @@ class MetalShotSampler:
         """
         runtime.check_simd_width()
         assert self.supports(host.layout)
+        self._args = (host, channels, num_detectors, seed)
+        # NOTE: a call's batches share the sampler's buffers, so calls from several
+        # threads run one at a time.
+        self._lock = threading.RLock()
         self._host = host
         layout = host.layout
         self._num_detectors = num_detectors
@@ -352,6 +360,13 @@ class MetalShotSampler:
         self._shares: dict[tuple, float] = {}
         self.gpu_seconds = 0.0
         """GPU time of the command buffers so far (for benchmarks)."""
+
+    device = "metal"
+    """Where this sampler samples (``SamplerStats.device``)."""
+
+    def __reduce__(self):
+        """Pickle the CPU sampler and the inputs; the GPU state is rebuilt on load."""
+        return _restore, (*self._args, self._rng.bit_generator.state)
 
     @property
     def layout(self):
@@ -746,8 +761,22 @@ class MetalShotSampler:
 
         As ``ShotSampler.sample``: with a ``mask`` only the shots that pass
         postselection are returned. ``batch_size`` bounds the shots of a batch.
-        Out of GPU memory, the call warns and samples on the CPU.
+        Out of GPU memory, and in a process forked after its parent used the
+        GPU, the call warns and samples on the CPU.
         """
+
+        def on_cpu():
+            return self._host.sample(
+                shots,
+                columns,
+                bit_packed=bit_packed,
+                batch_size=batch_size,
+                mask=mask,
+                flip=flip,
+            )
+
+        if _forked():
+            return on_cpu()
         try:
             rows, _, deviation = self.sample_accepted(
                 shots,
@@ -757,18 +786,8 @@ class MetalShotSampler:
                 bools=not bit_packed,
             )
         except MemoryError as error:
-            warnings.warn(
-                f"{error}; sampling on the CPU. Fewer shots per call fit.",
-                stacklevel=4,
-            )
-            return self._host.sample(
-                shots,
-                columns,
-                bit_packed=bit_packed,
-                batch_size=batch_size,
-                mask=mask,
-                flip=flip,
-            )
+            _warn_out_of_memory(error)
+            return on_cpu()
         if not bit_packed:
             return [_columns(rows, c) for c in columns], deviation
         num_outputs = self.layout.num_outputs
@@ -804,42 +823,61 @@ class MetalShotSampler:
         slot.counts.array[:] = 0
         slot.counts.array[4] = capacity
         commands = []
-        for k, start in enumerate(starts):
-            n = min(batch, shots - start)
-            fixed.array[k] = n
-            encoder = runtime.Encoder()
-            self._encode_batch(
-                encoder, module, slot, n, start, constant, expectations, launch
-            )
-            self._encode_pack(
-                encoder,
-                module,
-                slot,
-                n,
-                split,
-                expectations,
-                rows,
-                values,
-                (fixed, 4 * k),
-            )
-            commands.append(encoder.commit())
+        try:
+            for k, start in enumerate(starts):
+                n = min(batch, shots - start)
+                fixed.array[k] = n
+                encoder = runtime.Encoder()
+                self._encode_batch(
+                    encoder, module, slot, n, start, constant, expectations, launch
+                )
+                self._encode_pack(
+                    encoder,
+                    module,
+                    slot,
+                    n,
+                    split,
+                    expectations,
+                    rows,
+                    values,
+                    (fixed, 4 * k),
+                )
+                commands.append(encoder.commit())
+        except BaseException:
+            self._settle(commands)
+            raise
         self._wait_all(commands)
 
     def _wait_all(self, commands: list[Any]) -> None:
-        """Wait for a call's command buffers, all of them even if one fails.
+        """Wait for a call's command buffers; on any error, let them all finish first.
 
         Raises:
-            RuntimeError: If one failed; the batch buffers are then dropped.
+            MemoryError: If one ran out of GPU memory.
+            RuntimeError: If one failed otherwise.
 
         """
         try:
             for command in commands:
                 self._wait(command)
         except BaseException:
-            for command in commands:
-                command.waitUntilCompleted()
-            self._slots.clear()
+            self._settle(commands)
             raise
+
+    def _settle(self, commands: list[Any]) -> None:
+        """Drop the batch buffers and wait for ``commands``, through further interrupts.
+
+        A call that fails or is interrupted leaves its batches on the GPU; they
+        must finish before the next call reuses (or the pool hands out) a buffer
+        that they write.
+        """
+        self._slots.clear()
+        for command in commands:
+            while True:
+                try:
+                    command.waitUntilCompleted()
+                    break
+                except KeyboardInterrupt:
+                    continue
 
     def sample_accepted(
         self,
@@ -871,6 +909,46 @@ class MetalShotSampler:
             MemoryError: If the GPU runs out of memory.
 
         """
+        if shots > MAX_CALL_SHOTS:
+            parts = [
+                self.sample_accepted(
+                    min(MAX_CALL_SHOTS, shots - start),
+                    mask=mask,
+                    flip=flip,
+                    expectations=expectations,
+                    batch_size=batch_size,
+                    bools=bools,
+                )
+                for start in range(0, shots, MAX_CALL_SHOTS)
+            ]
+            found = [p[1] for p in parts if p[1] is not None]
+            values = np.concatenate(found) if expectations else None
+            return (
+                np.concatenate([p[0] for p in parts]),
+                values,
+                max(p[2] for p in parts),
+            )
+        with self._lock:
+            return self._sample_call(
+                shots,
+                mask=mask,
+                flip=flip,
+                expectations=expectations,
+                batch_size=batch_size,
+                bools=bools,
+            )
+
+    def _sample_call(
+        self,
+        shots: int,
+        *,
+        mask: np.ndarray | None = None,
+        flip: np.ndarray | None = None,
+        expectations: bool = False,
+        batch_size: int | None = None,
+        bools: bool = False,
+    ) -> tuple[np.ndarray, np.ndarray | None, float]:
+        """One call of ``sample_accepted``, of at most ``MAX_CALL_SHOTS`` shots."""
         module = self._module(mask)
         nb, no = -(-len(module.columns) // 8), len(self._observables)
         if not shots:
@@ -943,7 +1021,7 @@ class MetalShotSampler:
                 -(-threads // 256),
                 256,
             )
-            self._wait(encoder.commit())
+            self._wait_all([encoder.commit()])
         return out.array[: total * num_outputs].reshape(total, num_outputs).view(bool)
 
     def _direct_expectations(
@@ -961,8 +1039,39 @@ class MetalShotSampler:
 
     def direct_bools(self, shots: int, flip: np.ndarray | None = None) -> np.ndarray:
         """Return every output bit of a program without components, as booleans."""
-        rows, _, _ = self.sample_accepted(shots, flip=flip, bools=True)
+        if _forked():
+            return self._host.direct_bools(shots, flip)
+        try:
+            rows, _, _ = self.sample_accepted(shots, flip=flip, bools=True)
+        except MemoryError as error:
+            _warn_out_of_memory(error)
+            return self._host.direct_bools(shots, flip)
         return rows
+
+
+def _forked() -> bool:
+    """Return whether this process was forked after Metal's setup, with a warning."""
+    if not runtime.forked_after_init():
+        return False
+    warnings.warn(runtime.FORKED, stacklevel=5)
+    return True
+
+
+def _warn_out_of_memory(error: MemoryError) -> None:
+    warnings.warn(
+        f"{error}; sampling on the CPU. Fewer shots per call fit.", stacklevel=5
+    )
+
+
+def _restore(
+    host, channels, num_detectors, seed, state
+) -> MetalShotSampler | ShotSampler:
+    """Rebuild a pickled ``MetalShotSampler``, or its CPU sampler where Metal is missing."""
+    if not runtime.available():
+        return host
+    shots = MetalShotSampler(host, channels, num_detectors, seed)
+    shots._rng.bit_generator.state = state
+    return shots
 
 
 def _columns(rows: np.ndarray, columns: np.ndarray) -> np.ndarray:

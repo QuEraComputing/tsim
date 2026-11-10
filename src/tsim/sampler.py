@@ -311,6 +311,7 @@ class SamplerStats:
     error_channel_bits: int
     peak_bytes_per_shot: int
     compiled_bytes: int
+    device: str = "cpu"
 
 
 def _gpu_shots(
@@ -322,20 +323,16 @@ def _gpu_shots(
     """Return a GPU shot sampler of ``host``'s program when one can run it, else ``host``.
 
     It warns when a GPU is there but cannot be used: in a process forked after its
-    parent used the GPU, for a component wider than the GPU executor runs, and
-    when the GPU sampler cannot be set up for lack of GPU memory.
+    parent used the GPU, for a component wider than the GPU executor runs, for
+    noise beyond its tables' limits, and when the GPU sampler cannot be set up
+    for lack of GPU memory.
     """
     # NOTE: as JAX does for the stabilizer-rank strategies, a GPU is used whenever
     # there is one.
     if os.environ.get("TSIM_DEVICE", "").lower() == "cpu":
         return host
     if metal_runtime.forked_after_init():
-        warnings.warn(
-            "This process was forked after its parent used the GPU, so it samples "
-            "on the CPU; start it with the 'spawn' or 'forkserver' method to "
-            "sample on the GPU.",
-            stacklevel=5,
-        )
+        warnings.warn(metal_runtime.FORKED, stacklevel=5)
         return host
     if not metal_runtime.available():
         return host
@@ -357,7 +354,14 @@ def _gpu_shots(
         return MetalShotSampler(host, channels, num_detectors, seed)
     except MemoryError:
         warnings.warn("The GPU is out of memory; sampling on the CPU.", stacklevel=5)
-        return host
+    except ValueError as error:
+        # NOTE: noise beyond the GPU tables' limits (channels of more than 127
+        # outcomes, outcomes that flip more than 255 words).
+        warnings.warn(
+            f"The GPU cannot sample this circuit ({error}); sampling on the CPU.",
+            stacklevel=5,
+        )
+    return host
 
 
 class _CompiledSamplerBase:
@@ -783,6 +787,9 @@ class _CompiledSamplerBase:
         - ``peak_bytes_per_shot`` (``int``): estimated peak memory of one shot,
           by which the default batch sizes are chosen.
         - ``compiled_bytes`` (``int``): memory of the compiled components.
+        - ``device`` (``str``): where ``"active_statevector"`` samples:
+          ``"metal"`` on an Apple GPU, else ``"cpu"`` (a stabilizer-rank
+          strategy runs wherever JAX does).
         """
         components = self._program.components
         widths: tuple[int, ...] | None = None
@@ -813,6 +820,7 @@ class _CompiledSamplerBase:
             ),
             peak_bytes_per_shot=peak,
             compiled_bytes=compiled_bytes,
+            device=getattr(self._shots, "device", "cpu"),
         )
 
     def __repr__(self) -> str:

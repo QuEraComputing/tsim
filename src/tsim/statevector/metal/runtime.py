@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import functools
 import os
+import threading
 from dataclasses import dataclass
 from types import ModuleType
 from typing import Any
@@ -58,6 +59,12 @@ def _after_fork_in_child() -> None:
 
 
 os.register_at_fork(after_in_child=_after_fork_in_child)
+
+
+FORKED = (
+    "This process was forked after its parent used the GPU, so it samples on the "
+    "CPU; start it with the 'spawn' or 'forkserver' method to sample on the GPU."
+)
 
 
 def forked_after_init() -> bool:
@@ -126,6 +133,9 @@ call returned (and its caller dropped).
 """
 
 _pool: list[Any] = []
+# NOTE: reentrant, since a buffer can be freed (``_Owner.__del__``) while this
+# thread searches the pool.
+_pool_lock = threading.RLock()
 
 
 class _Owner:
@@ -148,8 +158,9 @@ class _Owner:
 
     def __del__(self) -> None:
         if self.recycle and _pool is not None:
-            _pool.append(self.handle)
-            del _pool[:-POOL_BUFFERS]
+            with _pool_lock:
+                _pool.append(self.handle)
+                del _pool[:-POOL_BUFFERS]
 
 
 def buffer(count: int, dtype, recycle: bool = False) -> Buffer:
@@ -163,10 +174,12 @@ def buffer(count: int, dtype, recycle: bool = False) -> Buffer:
     nbytes = max(int(count) * dtype.itemsize, 16)
     handle = None
     if recycle:
-        for k, pooled in enumerate(_pool):
-            if nbytes <= pooled.length() <= 2 * nbytes:
-                handle = _pool.pop(k)
-                break
+        with _pool_lock:
+            fits = [b for b in _pool if nbytes <= b.length() <= 2 * nbytes]
+            # NOTE: by identity, in case a buffer freed meanwhile trimmed the pool.
+            if fits and any(b is fits[0] for b in _pool):
+                handle = fits[0]
+                _pool[:] = [b for b in _pool if b is not handle]
     if handle is None:
         handle = device().newBufferWithLength_options_(
             nbytes, metal().MTLResourceStorageModeShared

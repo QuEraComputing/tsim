@@ -1,6 +1,8 @@
 """The Metal executor end to end, against the stabilizer-rank strategy and the CPU executor."""
 
 import multiprocessing
+import pickle
+import threading
 import warnings
 from test.helpers.gen import gen_stim_circuit
 from test.helpers.statevector import CIRCUITS, assert_counts_match
@@ -790,3 +792,143 @@ def test_metal_unpacks_booleans_as_it_packs_rows(text):
         )
         assert detectors.flags.c_contiguous
         np.testing.assert_array_equal(detectors, bools[:, : circuit.num_detectors])
+
+
+def test_threads_sharing_a_gpu_sampler_get_their_own_rows():
+    # NOTE: a call's batches share the sampler's buffers; four threads at once
+    # must not see each other's rows.
+    circuit = Circuit(NOISY_DETECTORS)
+    sampler = _gpu(circuit.compile_detector_sampler(seed=24))
+    mask = np.zeros(150, dtype=bool)
+    mask[:3] = True
+    failures = []
+
+    def work(masked):
+        for _ in range(6):
+            rows = sampler.sample(
+                20_000,
+                batch_size=1000,
+                append_observables=True,
+                postselection_mask=mask if masked else None,
+            )
+            if not masked and len(rows) != 20_000:
+                failures.append(f"{len(rows)} rows")
+            if masked and rows[:, :3].any():
+                failures.append("a masked detector is set")
+            if (rows[:, 150] != rows[:, 149] ^ rows[:, 143]).any():
+                failures.append("an observable disagrees with its detectors")
+
+    threads = [threading.Thread(target=work, args=(i % 2,)) for i in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not failures, failures[:5]
+
+
+def test_an_interrupted_call_leaves_the_next_call_alone(monkeypatch):
+    # NOTE: a slow width-11 tape and kernels compiled beforehand, so the
+    # interrupted call's batches are still on the GPU when the next call starts.
+    width = 11
+    lines = [str(_random_unitary_circuit(width, 30, seed=0))]
+    lines += [f"DETECTOR rec[{i - width}]" for i in range(width)]
+    circuit = Circuit("\n".join(lines))
+    sampler = _gpu(circuit.compile_detector_sampler(seed=25))
+    shots = _gpu_shots(sampler)
+    all_detectors = np.ones(width, dtype=bool)
+    mask = np.zeros(width, dtype=bool)
+    mask[1] = True
+    for warm in (mask, all_detectors):
+        sampler.sample(1 << 17, batch_size=1 << 16, postselection_mask=warm)
+    encode_pack = MetalShotSampler._encode_pack
+    calls = []
+
+    def interrupt_late(self, *args, **kwargs):
+        calls.append(None)
+        if len(calls) == 20:
+            raise KeyboardInterrupt
+        return encode_pack(self, *args, **kwargs)
+
+    monkeypatch.setattr(MetalShotSampler, "_encode_pack", interrupt_late)
+    with pytest.raises(KeyboardInterrupt):
+        sampler.sample(1 << 23, batch_size=1 << 16, postselection_mask=all_detectors)
+    monkeypatch.setattr(MetalShotSampler, "_encode_pack", encode_pack)
+    state = shots._rng.bit_generator.state
+    rows = sampler.sample(1 << 18, batch_size=1 << 16, postselection_mask=mask)
+    shots._rng.bit_generator.state = state
+    expected = sampler.sample(1 << 18, batch_size=1 << 16, postselection_mask=mask)
+    np.testing.assert_array_equal(rows, expected)
+
+
+SAMPLER_BEFORE_FORK = None
+
+
+def _sample_in_child(_):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert SAMPLER_BEFORE_FORK is not None
+        rows = SAMPLER_BEFORE_FORK.sample(100)
+    return rows.shape, [str(w.message) for w in caught]
+
+
+def test_samplers_compiled_before_a_fork_sample_on_the_cpu_in_the_child():
+    global SAMPLER_BEFORE_FORK
+    SAMPLER_BEFORE_FORK = _gpu(Circuit(T_STATE_X).compile_detector_sampler(seed=1))
+    with multiprocessing.get_context("fork").Pool(1) as pool:
+        shape, messages = pool.map_async(_sample_in_child, [0]).get(timeout=60)[0]
+    assert shape == (100, 0)
+    assert any("forked" in m for m in messages)
+
+
+def test_gpu_samplers_pickle_and_continue_their_streams():
+    circuit = Circuit(NOISY_DETECTORS)
+    sampler = _gpu(circuit.compile_detector_sampler(seed=26))
+    sampler.sample(1000)
+    loaded = pickle.loads(pickle.dumps(sampler))  # noqa: S301
+    assert isinstance(loaded._shots, MetalShotSampler)
+    np.testing.assert_array_equal(loaded.sample(5000), sampler.sample(5000))
+
+
+def test_noise_beyond_the_gpu_tables_samples_on_the_cpu():
+    # NOTE: a chain of 8 correlated errors has 255 outcomes, more than the 127 of
+    # a GPU noise record.
+    chain = ["E(0.01) X0", *(f"ELSE_CORRELATED_ERROR(0.01) X{k}" for k in range(1, 8))]
+    text = "\n".join(
+        ["R 0 1 2 3 4 5 6 7 8", "H 8", "T 8", "H 8", *chain, "M 0 1 2 3 4 5 6 7 8"]
+        + [f"DETECTOR rec[{k - 9}]" for k in range(9)]
+    )
+    with pytest.warns(UserWarning, match="cannot sample this circuit"):
+        sampler = Circuit(text).compile_detector_sampler(seed=1)
+    assert type(sampler._shots) is ShotSampler
+    assert sampler.sample(10).shape == (10, 9)
+
+
+def test_direct_outputs_out_of_gpu_memory_fall_back_to_the_cpu(monkeypatch):
+    circuit = Circuit("R 0\nX_ERROR(0.1) 0\nM 0\nDETECTOR rec[-1]")
+    sampler = _gpu(circuit.compile_detector_sampler(seed=1))
+
+    def out_of_memory(*args, **kwargs):
+        raise MemoryError("the GPU ran out of memory")
+
+    monkeypatch.setattr(_gpu_shots(sampler), "sample_accepted", out_of_memory)
+    with pytest.warns(UserWarning, match="out of memory; sampling on the CPU"):
+        rows = sampler.sample(20_000)
+    assert rows.shape == (20_000, 1) and abs(rows.mean() - 0.1) < 0.01
+
+
+def test_calls_larger_than_the_counters_run_in_parts(monkeypatch):
+    # NOTE: the 32-bit counters hold MAX_CALL_SHOTS; a larger call is the calls of
+    # its parts.
+    monkeypatch.setattr(metal_sampler, "MAX_CALL_SHOTS", 1000)
+    mask = np.zeros(150, dtype=bool)
+    mask[:3] = True
+    circuit = Circuit(NOISY_DETECTORS)
+    whole = _gpu(circuit.compile_detector_sampler(seed=27)).sample(
+        2500, postselection_mask=mask, bit_packed=True
+    )
+    parts = _gpu(circuit.compile_detector_sampler(seed=27))
+    expected = [
+        parts.sample(n, postselection_mask=mask, bit_packed=True)
+        for n in (1000, 1000, 500)
+    ]
+    np.testing.assert_array_equal(whole, np.concatenate(expected))

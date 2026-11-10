@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rows are written. A seed's samples on the GPU differ from the CPU's and depend
   on `batch_size`. The samplers fall back to the CPU, with a warning, for wider
   components, when the GPU is out of memory and in a process forked after its
-  parent used the GPU. `TSIM_DEVICE=cpu` keeps them on the CPU.
+  parent used the GPU. `TSIM_DEVICE=cpu` keeps them on the CPU, and
+  `SamplerStats.device` says where a sampler samples.
 - The docs pages have a menu to copy a page or open it in ChatGPT or Claude, and
   the README, the install page and the agent skill point to the docs MCP server
   at `https://bloqade.quera.com/tsim/mcp`. The README and the install page also
