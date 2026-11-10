@@ -211,7 +211,9 @@ Distance-5 cultivation (14% acceptance) ran at 53.6 million shots/s with postsel
 2.0 million without, on 4 threads. Filtering afterwards, which is what `sinter` does, gives the
 same statistics but simulates every discarded shot in full.
 
-**Which detectors to mask.** Follow the protocol's own definition, from the paper:
+**Which detectors to mask.** Follow the protocol's own definition, from the paper, and use the
+circuit's own marking of postselected detectors (a tag, a coordinate, a comment) when it has
+one:
 
 - Injection, cultivation and distillation postselect on every check, so for those circuits
   alone the mask usually covers every detector.
@@ -223,9 +225,17 @@ same statistics but simulates every discarded shot in full.
 - Circuits sometimes end with noiseless checks that exist only to read out the result, such as
   a final ideal stabilizer measurement. Whether to mask them is part of the figure of merit, not
   of the protocol; decide it with the user and say which choice you made.
+- Postselecting a stage that the paper decodes is a different protocol. If you do it anyway,
+  for example to avoid writing a decoder, label the result as such.
 
 Detector coordinates (`c.stim_circuit.get_detector_coordinates()`) or the circuit's structure
 usually identify the stages; if they do not, ask the user rather than guessing.
+
+Some detectors are random by design for some parameter values, for example in a sweep of the
+injected angle. Do not use the reference flags for those; postselect on their raw value, and
+run the noiseless check at a parameter value where they are deterministic (the T angle). The
+two reference flags are independent: a circuit can need `use_detector_reference_sample=True`
+with `use_observable_reference_sample=False`.
 
 **Check the mask before sampling.** A wrong mask gives plausible but wrong numbers. Write the
 stages down, and check that no masked detector fires without noise: one that is always 1 or
@@ -273,7 +283,7 @@ Tsim results:
 - [ ] Active width read; rate timed with a warm-up and a large call; thread count noted
 - [ ] Noiseless run: detectors used for postselection or decoding never fire
 - [ ] Reference flags used only if detectors and observables are deterministic
-- [ ] At least one check below passed (stand-in vs Stim, or to_tensor)
+- [ ] At least one check below passed (stand-in vs Stim, to_tensor, independent simulator)
 ```
 
 - **Clifford stand-in:** replace `T` by `S` and `T_DAG` by `S_DAG`, sample in Tsim (with both
@@ -281,6 +291,10 @@ Tsim results:
 - **Noiseless run:** in `c.without_noise()` (also without rotations that model noise),
   detectors meant to be deterministic must never fire.
 - **Exact probabilities:** for a few noiseless qubits, `c.to_tensor()` gives the exact channel.
+- **Independent result for the real circuit:** the checks above do not test a non-Clifford
+  result at scale. When it matters, or when it disagrees with a paper, compare one or two
+  points with an independent near-Clifford simulator (for example Clifft) or with exact values
+  from the literature.
 
 ## Known limitations
 

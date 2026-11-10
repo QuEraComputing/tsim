@@ -229,6 +229,42 @@ infidelity = counts["errors"] / counts["kept"]
 assert abs(infidelity - 2 * p / 3) < 1e-3
 ```
 
+Other states need other undo rotations: an H-type state (axis (X+Z)/√2) is undone by a Y
+rotation, not by `T_DAG`. Signs and axes derived by hand are easy to get wrong, so choose the
+undo by trying a few candidates and keeping one whose observable never flips without noise.
+Any such choice measures the fidelity, because the readout then projects onto the ideal state:
+
+```python
+import itertools
+
+
+def find_undo(protocol, axes, readouts, angles=(0.25, -0.25, 0.75, -0.75)):
+    """First (angle, axis, readout) whose observable never flips without noise."""
+    for a, axis, readout in itertools.product(angles, axes, readouts):
+        c = tsim.Circuit(
+            f"{protocol}\nR_PAULI({a}) {axis}\nMPP {readout}\nOBSERVABLE_INCLUDE(0) rec[-1]"
+        )
+        _, obs = c.without_noise().compile_detector_sampler(seed=0).sample(
+            shots=1000, separate_observables=True
+        )
+        if not obs.any():
+            return a, axis, readout
+    raise ValueError("no candidate is deterministic; check the axes and readouts")
+
+
+h_state = f"R 0\nR_Y(0.25) 0\nDEPOLARIZE1({p}) 0"  # cos(π/8)|0> + sin(π/8)|1>
+a, axis, readout = find_undo(h_state, ["X0", "Y0", "Z0"], ["X0", "Y0", "Z0"])
+c = tsim.Circuit(f"{h_state}\nR_PAULI({a}) {axis}\nMPP {readout}\nOBSERVABLE_INCLUDE(0) rec[-1]")
+counts = run_point(c, max_shots=200_000, seed=3)
+assert abs(counts["errors"] / counts["kept"] - 2 * p / 3) < 1e-3
+```
+
+Put the undo right after the last noise operation. For an encoded state, use logical
+representatives as the axes and readouts (`Z0*Z1*Z2`); in a CSS code, Y_L = i·X_L·Z_L spans
+both supports. For a state that is not a fixed magic state (an injected angle that is swept),
+fidelity is often not the figure of merit; measure ⟨X⟩, ⟨Y⟩ and ⟨Z⟩ with one circuit per
+basis instead.
+
 For an encoded state, apply the logical `T_DAG` as a Pauli product rotation on a
 representative of Z_L (`TPP_DAG`), then measure X_L with `MPP`. This estimates the logical
 error of the output, not its full fidelity: an error that leaves the codespace without flipping
@@ -346,4 +382,21 @@ assert rows[0]["errors"] < rows[2]["errors"]  # more noise, more logical errors
 Put the whole study in one script that builds every circuit, runs every point, writes raw
 counts (shots, kept, errors, seconds) to JSON or CSV, and draws the figures from that file. Use
 fixed, distinct seeds per point and record `tsim.__version__`. When adding shots later, run new
-seeds and add counts; do not reuse a seed.
+seeds and add counts; do not reuse a seed. Derive seeds from a stable hash such as
+`zlib.crc32(name.encode())`, not Python's `hash()`, which changes between processes.
+
+## Running long studies
+
+- **Detach** runs longer than a few minutes from the shell or agent session, for example with
+  `systemd-run --user --unit=<name> ...`, `nohup` or `tmux`. Agent background jobs and monitors
+  have time limits and are stopped.
+- **Save each point as it finishes**, keyed by the circuit's sha256, the Tsim version and the
+  point's settings (mask, flags, stopping rule), so a restarted run resumes. When a circuit or
+  setting changes, move the old results aside; never let a plot read results of a circuit that
+  has since changed.
+- **Cap the memory of every step**, including Stim cross-checks and post-processing, not only
+  the sampling, and run memory-hungry steps one at a time. An uncapped cross-check of 8
+  processes reached 23 GB and killed the whole session.
+- **Run in tiers:** cheap points first, with a report that builds from partial results, then
+  the expensive points. Time one call at both ends of a sweep: the rate changes with the noise
+  strength, and the lowest-noise points usually dominate the budget.

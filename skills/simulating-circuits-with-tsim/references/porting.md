@@ -38,6 +38,12 @@ introduces differences that are hard to find later.
 
 Record where each circuit came from (URL and commit or version) next to the circuit file.
 
+When the authors release both a generator and circuit files, regenerate the circuits and diff
+them against the released files: generator options and versions change the circuit, and
+sometimes only a non-default option reproduces the released file. Check also whether someone
+has already converted the same circuits (for example in another simulator's benchmarks), and
+diff against those.
+
 ## 2. Load and convert stand-in gates
 
 ```python
@@ -131,6 +137,24 @@ Run these checks before trusting any number from the converted circuit:
    rates; say so instead of reporting a meaningless error rate. To compare error rates, build a
    stand-in variant whose final check matches the S state (for example, drop the `S`/`S_DAG`
    around `MPP Y`), label it as your modification, and verify it is deterministic without noise.
+
+## Comparing with the paper's numbers
+
+- **Compare acceptance first.** It needs few shots, barely depends on the non-Clifford gate,
+  and identifies the circuit variant and noise model. If acceptance disagrees while error rates
+  agree, the circuit is probably a different version (generator option, layout, noise model);
+  record the difference rather than tuning until it matches.
+- **Give the published value an uncertainty.** Use its stated σ; for a value printed to a few
+  digits, a rounding uncertainty of half the last digit; for released data, infer the shot
+  count from the data's precision and use a binomial σ. Without this, a printed 0.04 against a
+  measured 0.0401 looks like a 2,000σ disagreement.
+- **Test small counts exactly.** With fewer than about 10 errors on either side, compare counts
+  with a binomial or Poisson test, not a Gaussian z.
+- **Judge a set of points together:** the mean z² over the set should be near 1.
+- **Published numbers are estimates too.** Check how many errors stand behind one, and whether
+  it came from importance sampling, and look for an exact value before suspecting Tsim. For
+  distance-5 cultivation at p = 5×10⁻⁴, Tsim's 2.68×10⁻¹⁰ was 3.4σ from a published
+  importance-sampling estimate, and 1.2σ from the exact value 2.846×10⁻¹⁰.
 
 ## 4. Measure the active width (k_max)
 
