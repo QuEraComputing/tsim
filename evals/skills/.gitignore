@@ -1,0 +1,2 @@
+# The root .gitignore ignores *.stim; the eval circuits are part of the evals.
+!circuits/*.stim

@@ -35,6 +35,18 @@ For GPU acceleration with CUDA:
 pip install "bloqade-tsim[cuda13]"
 ```
 
+## Agent skill
+
+Tsim ships an agent skill that teaches coding agents (Claude Code, Codex, Cursor and others)
+how to judge whether a circuit is feasible, sample and postselect it, run logical error rate
+studies, and port published Stim circuits. Install it with:
+
+```bash
+npx skills add QuEraComputing/tsim
+```
+
+The skill is also served by this site at `/.well-known/skills/`.
+
 ## Development setup
 
 If you're contributing to Tsim, clone the repository and install development dependencies:
