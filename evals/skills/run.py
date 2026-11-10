@@ -162,7 +162,7 @@ def parse_transcript(agent: str, out: Path) -> dict:
     """Return the final answer, the code the agent ran or wrote, skills it loaded, and cost."""
     code: list[str] = []
     skills: set[str] = set()
-    answer, cost = "", None
+    answer, cost, ran = "", None, False
 
     def note_path(text: str) -> None:
         for name in SKILL_NAMES:
@@ -182,7 +182,9 @@ def parse_transcript(agent: str, out: Path) -> dict:
                     code += [str(v) for v in inp.values() if isinstance(v, str)]
             elif ev.get("type") == "result":
                 answer, cost = ev.get("result") or "", ev.get("total_cost_usd")
+                ran = True  # also after the turn limit, which is not a failure to run
         else:
+            ran = ran or ev.get("type") == "turn.completed"
             item = ev.get("item", {})
             if ev.get("type") != "item.completed":
                 continue
@@ -201,7 +203,12 @@ def parse_transcript(agent: str, out: Path) -> dict:
             code.append(script.read_text(errors="ignore"))
     (out / "code.txt").write_text("\n\n".join(code))
     (out / "answer.txt").write_text(answer)
-    return {"skills_loaded": sorted(s for s in skills if s), "cost_usd": cost}
+    # NOTE: Claude can also invoke unrelated skills installed for the user.
+    return {
+        "skills_loaded": sorted(skills & set(SKILL_NAMES)),
+        "cost_usd": cost,
+        "ran": ran,
+    }
 
 
 # ----------------------------------------------------------------------------- triggers
@@ -223,7 +230,8 @@ def cmd_triggers(args) -> None:
             tools="Skill Read Glob Grep",
         )  # fmt: skip
         loaded = set(meta["skills_loaded"])
-        ok = bool(loaded) == q["load"]
+        # NOTE: a run that never started loads nothing, which must not pass a negative query.
+        ok = bool(loaded) if q["load"] else meta["ran"] and not loaded
         return {
             "query": q["query"],
             "expected": q["load"],
@@ -362,7 +370,7 @@ def results_dir(args, kind: str) -> Path:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("triggers", "cases"):
         p = sub.add_parser(name)
@@ -398,7 +406,12 @@ def main() -> None:
     triggers.set_defaults(func=cmd_triggers, max_turns=4, timeout=300)
     cases = sub.choices["cases"]
     cases.add_argument("--case", action="append", help="case name (repeatable)")
-    cases.add_argument("--arms", default="with,without", help="with, without, or both")
+    cases.add_argument(
+        "--arms",
+        default="with,without",
+        choices=["with", "without", "with,without"],
+        help="arms to run (default both: with,without)",
+    )
     cases.set_defaults(func=cmd_cases)
     g = sub.add_parser("grade", help="regrade an existing cases results directory")
     g.add_argument("results")

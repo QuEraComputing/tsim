@@ -23,7 +23,7 @@ def _converted_circuit(work: Path) -> tuple[bool, str]:
 def _checked_against_stim(answer: str, transcript: str) -> tuple[bool, str]:
     # NOTE: the stim.Circuit is often built in a helper far from where it is sampled, so
     # require one in the code and a Tsim-vs-Stim comparison in the answer.
-    built = re.search(r"stim\.Circuit\(", transcript)
+    built = re.search(r"\bstim\.Circuit\b", transcript)
     compared = re.search(
         r"Stim[^\n]{0,120}\b(agree|match|consistent|within)|"
         r"\b(agree|match|consistent)[^\n]{0,80}\bStim\b",

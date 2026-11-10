@@ -230,7 +230,9 @@ usually identify the stages; if they do not, ask the user rather than guessing.
 **Check the mask before sampling.** A wrong mask gives plausible but wrong numbers. Write the
 stages down, and check that no masked detector fires without noise: one that is always 1 or
 random discards shots that have no error. Sample the noiseless check with the same reference
-flags as the real run.
+flags as the real run. `without_noise()` removes the noise channels but keeps every rotation,
+so if rotations model coherent noise, delete those lines too for this check, and keep the
+rotations that belong to the protocol.
 
 ```python
 import numpy as np
@@ -276,7 +278,8 @@ Tsim results:
 
 - **Clifford stand-in:** replace `T` by `S` and `T_DAG` by `S_DAG`, sample in Tsim (with both
   reference flags) and in Stim, and compare detector rates within error bars.
-- **Noiseless run:** in `c.without_noise()`, detectors meant to be deterministic must never fire.
+- **Noiseless run:** in `c.without_noise()` (also without rotations that model noise),
+  detectors meant to be deterministic must never fire.
 - **Analytic case:** a T state under `DEPOLARIZE1(p)`, then noiseless `T_DAG`, `H`, `M`, gives
   `P(0) = 1 - 2p/3`.
 - **Exact probabilities:** for a few noiseless qubits, `c.to_tensor()` gives the exact channel.

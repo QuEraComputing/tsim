@@ -71,25 +71,28 @@ import tsim
 
 def run_point(circuit, *, max_shots, target_errors=None, max_seconds=None,
               postselection_mask=None, decode=None, seed=None, log_path=None,
-              max_bytes_per_call=1 << 30):
+              max_bytes_per_call=1 << 30, **sample_options):
     """Sample one parameter point until a shot, error or time budget is reached.
 
     Returns the counts. With ``log_path``, each call's counts are appended as one JSON line,
-    so a run that is killed keeps everything sampled so far.
+    so a run that is killed keeps everything sampled so far. ``sample_options`` (for example
+    ``use_detector_reference_sample=True``) are passed to ``sample()``.
     """
     sampler = circuit.compile_detector_sampler(seed=seed)
     # Size calls by memory, not by a fixed shot count: rows are one byte per detector.
     row_bytes = circuit.num_detectors + circuit.num_observables
-    shots_per_call = int(min(10**7, max(10**4, max_bytes_per_call // max(row_bytes, 1))))
+    shots_per_call = int(min(10**7, max(1, max_bytes_per_call // max(row_bytes, 1))))
     totals = {"shots": 0, "kept": 0, "errors": 0, "seconds": 0.0}
     start = time.monotonic()
     while totals["shots"] < max_shots:
         n = min(shots_per_call, max_shots - totals["shots"])
         t = time.monotonic()
         dets, obs = sampler.sample(
-            shots=n, postselection_mask=postselection_mask, separate_observables=True
+            shots=n, postselection_mask=postselection_mask, separate_observables=True,
+            **sample_options,
         )
-        predicted = decode(dets) if decode is not None else np.zeros_like(obs)
+        # Postselection can leave no rows; decoders need not handle an empty batch.
+        predicted = decode(dets) if decode is not None and len(dets) else np.zeros_like(obs)
         call = {
             "shots": n,
             "kept": len(dets),
@@ -125,6 +128,9 @@ Notes:
 - An error is any observable that differs from its prediction. If observables are not
   deterministic without noise (for example a magic state measured directly), a logical error
   rate is not meaningful; measure fidelity instead (see below).
+- If you checked the mask with the reference flags, pass the same flags here
+  (`use_detector_reference_sample=True`, `use_observable_reference_sample=True`), and build the
+  decoder for the same convention.
 
 ## Choosing a decoder
 
@@ -135,9 +141,12 @@ stand-in of the circuit: `T`, `TPP` and `R_PAULI` become S-type rotations, and
 - The model is only guaranteed correct for Clifford circuits, and can be wrong for any
   detector or observable that a non-Clifford gate affects. Treat it as an approximate decoder
   prior, and judge decoders by their logical error rate on Tsim's own samples.
-- Every observable must be deterministic without noise, and Stim checks this on the stand-in.
-  A random observable raises a `ValueError` whatever flags are passed, so a real-T circuit can
-  be rejected if its stand-in's observable is random. Fix the observable rather than the flags.
+- Observables must be deterministic without noise, and Stim checks this on the stand-in. With
+  `decompose_errors=True` a random observable always raises a `ValueError`; without it, Stim
+  raises (`The number of observables changed`) unless a detector shares the randomness. So a
+  real-T circuit can be rejected because its stand-in's observable is random. Check the
+  observable of the real circuit in `c.without_noise()`, and fix the observable, not the
+  flags.
 - Detectors that are random without noise are accepted by default; with
   `decompose_errors=True`, also pass `allow_gauge_detectors=True`.
 
@@ -214,9 +223,12 @@ infidelity = counts["errors"] / counts["kept"]
 assert abs(infidelity - 2 * p / 3) < 1e-3
 ```
 
-For an encoded state there is no need to unencode it: apply the logical `T_DAG` as a Pauli
-product rotation on a representative of Z_L (`TPP_DAG`), then measure X_L with `MPP`. In this
-toy 3-qubit repetition code, Z_L = Z0 and X_L = X0·X1·X2:
+For an encoded state, apply the logical `T_DAG` as a Pauli product rotation on a
+representative of Z_L (`TPP_DAG`), then measure X_L with `MPP`. This estimates the logical
+error of the output, not its full fidelity: an error that leaves the codespace without flipping
+X_L (here an X on qubit 1) goes unnoticed. To count those too, also measure the stabilizers at
+the end and postselect on them, or unencode as described below. In this toy 3-qubit repetition
+code, Z_L = Z0 and X_L = X0·X1·X2:
 
 ```python
 encoded = tsim.Circuit(
