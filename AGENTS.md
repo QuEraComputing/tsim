@@ -92,6 +92,10 @@ more than a handful of T gates: their compile memory grows exponentially.
 - Measure with `tsim-dev bench --ref origin/main`, never with a script of your own. It runs
   fresh processes on one pinned thread with a warm numba cache, excludes compile time, and
   interleaves the two checkouts. A speedup must hold on `--suite full`, across families.
+- The bench times bit-packed rows from the sampler that tsim-bench records (the detector
+  sampler for QEC circuits), on one CPU thread. The sampler, boolean output, the thread
+  count and a GPU each change the rate severalfold; the `profiling-tsim` skill says how
+  to measure each, and a report names the ones it used.
 - Benchmark changes that could affect compile or sampling cost (see the
   `shipping-tsim-changes` skill), not every change. A regression is investigated and
   explained, not hidden; a correctness fix may cost performance if the cost is stated.

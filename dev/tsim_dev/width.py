@@ -95,7 +95,11 @@ def measure(
             cmd += ["--strategy", side.strategy or args.strategy]
         for _, flag, value in pending:
             cmd += [flag, value]
-        env = side_env(side, side.threads or args.threads)
+        env = side_env(
+            side,
+            side.threads or args.threads,
+            side.device or getattr(args, "device", "cpu"),
+        )
         started, outcome, done = None, Exit(), set()
         capped = common.capped(cmd, mem=args.mem)
         for line in _stream(capped, env, args.case_timeout, deadline, outcome):
