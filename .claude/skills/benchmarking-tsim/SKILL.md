@@ -62,20 +62,16 @@ width can still be slower. Compile times are shown for each side.
 
 `--side REF[:key=value,...]`, given twice, replaces `--ref` when the two sides differ in
 more than the checkout. REF is `.` (this checkout), a git revision, a checkout path, or
-a Python executable (an environment built elsewhere, such as one with the GPU extra).
-Keys: `threads=N`, `device=cpu|gpu`, `strategy=NAME`. The first side is "new".
+a Python executable (an environment built elsewhere). Keys: `threads=N`,
+`strategy=NAME`. The first side is "new".
 
 ```bash
 uv run tsim-dev bench --side .:threads=10 --side .:threads=1          # 10 cores vs 1
-uv run tsim-dev bench --side $GPU_PY:device=gpu --side $GPU_PY:device=cpu
 uv run tsim-dev bench --side .:threads=4 --side origin/main:threads=4
 ```
 
-- `device=cpu` hides CUDA devices; `device=gpu` fails the circuit unless the worker finds
-  Tsim's CUDA executor usable. Circuits above the executor's width limit still fall back
-  to the CPU on that side, so check the width before reading a GPU ratio.
-- Compile time is compared too; across devices a "slower" compile verdict (and exit code
-  1) is expected, so read the rate column.
+- Compile time is compared too; when the sides differ only in threads, read the rate
+  column.
 
 ## What the command controls for you
 
@@ -127,9 +123,8 @@ different regime. `--only SUBSTRING` keeps circuits whose id contains it.
 
 ## Limits
 
-- Tsim only, on the CPU or (with `--side ...:device=gpu`) its CUDA executor.
-  Comparisons with other simulators (Clifft, SymFT, Magna) are run from the
-  tsim-bench repository, which pins each simulator's environment.
+- Tsim on the CPU only. Comparisons with other simulators (Clifft, SymFT, Magna) are
+  run from the tsim-bench repository, which pins each simulator's environment.
 - To add a circuit or change a suite, change tsim-bench: put the file in its paper's
   folder, add an entry to that folder's `circuits.toml` (arXiv id, sampler, postselection
   and the reason for it, see its `BENCHMARKS.md`), run `python -m tsim_bench check`

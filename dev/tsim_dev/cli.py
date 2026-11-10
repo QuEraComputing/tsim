@@ -124,7 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="REF[:KEY=VALUE,...]",
         help="a side with its own settings, instead of --ref; give two to compare. "
         "REF: `.`, a git revision, a checkout or a python executable. "
-        "Keys: threads=N, device=cpu|gpu, strategy=NAME. "
+        "Keys: threads=N, strategy=NAME. "
         "Example: --side .:threads=10 --side .:threads=1",
     )
     _selection(p, None)

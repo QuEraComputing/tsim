@@ -44,26 +44,22 @@ class Case:
 class Side:
     """One side of a comparison: the Python that imports its Tsim, and its settings.
 
-    `threads` and `strategy` override the command line's when set. `device` is "" (the
-    environment decides), "cpu" (CUDA devices hidden) or "gpu" (the run fails unless the
-    worker finds Tsim's CUDA executor usable).
+    `threads` and `strategy` override the command line's when set.
     """
 
     label: str
     python: Path
     threads: int | None = None
-    device: str = ""
     strategy: str | None = None
 
     def describe(self) -> str:
         """Return the label with the settings that this side overrides."""
         extra = [f"threads={self.threads}"] if self.threads is not None else []
-        extra += [f"device={self.device}"] if self.device else []
         extra += [f"strategy={self.strategy}"] if self.strategy is not None else []
         return " ".join([self.label, *extra])
 
 
-SIDE_KEYS = ("threads", "device", "strategy")
+SIDE_KEYS = ("threads", "strategy")
 
 
 def parse_side(spec: str) -> Side:
@@ -71,7 +67,7 @@ def parse_side(spec: str) -> Side:
 
     REF is `.` (this checkout), a git revision, the path of another checkout with a
     `.venv`, or the path of a Python executable (an environment built elsewhere, such
-    as one with a GPU extra). Keys: threads=N, device=cpu|gpu, strategy=NAME.
+    as one with other dependencies). Keys: threads=N, strategy=NAME.
     """
     ref, _, options = spec.partition(":")
     settings: dict = {}
@@ -87,8 +83,6 @@ def parse_side(spec: str) -> Side:
         if not settings["threads"].isdigit() or int(settings["threads"]) < 1:
             raise InfraError(f"bad thread count in --side {spec!r}")
         settings["threads"] = int(settings["threads"])
-    if settings.get("device", "cpu") not in ("cpu", "gpu"):
-        raise InfraError(f"device must be cpu or gpu in --side {spec!r}")
     if ref in ("", "."):
         base = Side(common.describe(common.root()), Path(sys.executable))
     elif Path(ref).expanduser().is_file():
@@ -245,8 +239,6 @@ def worker_command(python: Path, case: Case, args, mode: str) -> list[str]:
 def side_env(side: Side, threads: int) -> dict[str, str]:
     """Return the environment of one side's worker."""
     env = common.child_env(threads)
-    if side.device == "cpu":
-        env["CUDA_VISIBLE_DEVICES"] = ""
     return env
 
 
@@ -269,12 +261,7 @@ def measure(side: Side, case: Case, args, mode: str = "bench") -> dict:
     )
     for line in done.stdout.splitlines():
         if line.startswith("RESULT "):
-            result = json.loads(line[7:])
-            if side.device == "gpu" and not result.get("cuda"):
-                return {
-                    "error": "device=gpu, but this Tsim has no usable CUDA executor"
-                }
-            return result
+            return json.loads(line[7:])
     reason = common.explain_exit(done.returncode, args.mem, args.timeout)
     last = (done.stderr.strip().splitlines() or [""])[-1]
     return {"error": f"{reason}: {last}"[:200]}

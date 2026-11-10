@@ -50,8 +50,7 @@ measurement that counts. Micro-benchmarks of a kernel alone have misled before
 (cache effects, struct passing by value), so confirm any gain end to end.
 
 Hardware counters (`perf stat`) need `/proc/sys/kernel/perf_event_paranoid` at 1 or
-lower; ask the user rather than changing it. For GPU work, use Nsight Systems and
-Nsight Compute 2026 or newer; older `ncu` releases do not support the RTX 5090.
+lower; ask the user rather than changing it.
 
 ## 4. Turn it into a plan
 
