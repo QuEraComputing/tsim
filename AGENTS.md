@@ -16,6 +16,8 @@ uv run tsim-dev check                   # the gate before review: pre-commit, fu
 uv run tsim-dev test --changed          # tests of the changed files; or give paths
 uv run tsim-dev bench --ref origin/main # quick A/B benchmark, ~4 min; exit 1 if slower
 uv run tsim-dev bench --width --ref origin/main  # active widths only, nothing sampled
+uv run tsim-dev review status           # what the change still owes before merge
+uv run tsim-dev fuzz                    # 10 min differential fuzz against a dense simulator
 uv run tsim-dev inspect FILE.stim       # qubits, T count, active width, stats; no sampling
 uv run tsim-dev profile cultivation_d5  # where compile and sampling time goes (py-spy)
 uv run tsim-dev run -- CMD              # any command under memory, CPU and time caps
@@ -31,6 +33,7 @@ just doc-build                          # docs build and Mintlify checks (needs 
 are not published to users.
 
 - `shipping-tsim-changes`: branch, verify, commit, review; what evidence a change needs.
+- `reviewing-tsim-changes`: review tiers, findings with failing tests, bot comments, merge.
 - `benchmarking-tsim`: A/B benchmarks, reading verdicts, the tsim-bench corpus.
 - `profiling-tsim`: sizing a circuit, reading profiles, choosing what to optimize.
 - `testing-tsim-correctness`: oracles and statistical tests for sampling changes.
@@ -137,3 +140,16 @@ Agents share this machine with people and other agents.
   thread count and the explanation of any regression.
 - `tsim-dev check` must pass before review. Report the commands you ran and their results,
   and say what you did not verify.
+- Merge only when `tsim-dev review status` exits 0: every review thread, including Copilot's
+  and Codex's, has a fix or a reply.
+
+## Code review rules
+
+For any reviewer of a pull request here, human or automatic.
+
+- Report defects that change behavior: wrong samples, a broken invariant from the list above,
+  crashes on valid input, memory or time that grows where it did not, an unintended change
+  to the public API, a test that passes without the change.
+- Give the input, the expected result and the observed result. A finding without a way to
+  reproduce it is not acted on.
+- Do not report style, naming, formatting or typing; pre-commit enforces those.

@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import common
+from . import common, review
 from .common import FAILED, OK, InfraError
 
 
@@ -158,4 +158,6 @@ def check(args) -> int:
         print(
             f"{verdict} tests: {last.strip('= ')} ({time.time() - start:.0f} s). Log: {log}"
         )
+    if not args.no_tests:
+        review.write_evidence("check", not failed)
     return FAILED if failed else OK

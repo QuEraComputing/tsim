@@ -73,8 +73,9 @@ reformatting. Ask whether a simpler change would do.
 - Do not push, open a pull request, force-push or merge unless the user asked for that
   step in this conversation. Some branches are not meant to be public yet. When updating
   an existing PR, pushing to its branch still needs the user's go-ahead.
-- For a review, give a fresh subagent the diff and the task, not your conclusions, and
-  ask for correctness findings only. Fix what it finds, then run step 3 again.
+- Review and merge follow the `reviewing-tsim-changes` skill:
+  `uv run tsim-dev review plan` says how many reviews the change needs, and
+  `uv run tsim-dev review status` says when it is ready.
 
 ## 5. Report
 

@@ -18,7 +18,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from . import common, corpus
+from . import common, corpus, review
 from .common import FAILED, INFRA, OK
 
 NAME = 44
@@ -208,6 +208,17 @@ def run(args, cases, sides) -> int:
             f"{counts.get(v, 0)} {v}" for v in ("wider", "narrower", "same", "unknown")
         )
     print(f"{summary}. Details: {out}")
+    # NOTE: as for shot benchmarks, only a comparison of two checkouts over a whole
+    # selection counts as evidence for a review, and a wider width must be explained.
+    whole = not (args.circuits or args.only or args.max_width is not None)
+    if args.ref and whole:
+        review.write_evidence(
+            "width",
+            not errors,
+            ref=sides[1].label,
+            suite=args.suite,
+            wider=counts.get("wider", 0),
+        )
     if errors:
         return INFRA
     return FAILED if counts.get("wider") else OK

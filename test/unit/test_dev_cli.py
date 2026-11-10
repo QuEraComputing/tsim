@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from tsim_dev import bench, checks, cli, common, corpus, width
+from tsim_dev import bench, checks, cli, common, corpus, review, width
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOK = ROOT / ".claude" / "hooks" / "guard_bash.py"
@@ -389,3 +389,96 @@ def test_shot_benchmarks_compare_and_check_the_active_width(fake_bench, monkeypa
 
     widths.update(new=[6, 6, 7], ref=[6, 6, 6])
     assert "changed between runs" in bench.run_case(case, sides, args)["error"]
+
+
+@pytest.mark.parametrize(
+    ("stat", "tier"),
+    [
+        ([(10, 2, "docs/index.mdx"), (40, 0, "test/unit/test_x.py")], 0),
+        ([(200, 0, "dev/tsim_dev/bench.py")], 0),
+        ([(30, 5, "src/tsim/circuit.py")], 1),
+        ([(3, 1, "src/tsim/statevector/plan.py")], 2),
+        ([(2, 2, "src/tsim/sampler.py")], 2),
+        ([(250, 60, "src/tsim/circuit.py")], 2),
+        ([(900, 0, "src/tsim/external/vec_sim/vec_sampler.py")], 0),
+    ],
+)
+def test_the_review_tier_follows_paths_and_size(stat, tier):
+    assert review.classify(stat).tier == tier
+
+
+def test_review_plans_flag_large_diffs_gate_files_and_removed_tests():
+    plan = review.classify(
+        [
+            (700, 0, "src/tsim/circuit.py"),
+            (1, 1, ".github/workflows/ci.yml"),
+            (2, 80, "test/unit/test_circuit.py"),
+        ]
+    )
+    assert [note.split(":")[0] for note in plan.notes] == ["SPLIT", "HUMAN", "TESTS"]
+    assert review.classify([(5, 5, "src/tsim/circuit.py")]).notes == []
+
+
+def _rounds(*rounds):
+    return [{"model": model, "findings": findings} for model, findings in rounds]
+
+
+def test_review_requirements_grow_with_the_tier():
+    assert review.review_gaps(0, []) == []
+    assert review.review_gaps(1, []) != []
+    assert review.review_gaps(1, _rounds(("opus-5.5", 3))) == []
+    # Two Claude models are one family; tier 2 needs another one.
+    assert review.review_gaps(2, _rounds(("opus-5.5", 0), ("claude-fable", 0))) != []
+    assert review.review_gaps(2, _rounds(("opus-5.5", 2), ("gpt-6-astra", 0))) == []
+
+
+@pytest.mark.parametrize(
+    ("path", "bench", "width"),
+    [
+        ("src/tsim/statevector/schedule.py", True, True),
+        ("src/tsim/statevector/shots.py", True, False),
+        ("src/tsim/sampler.py", True, False),
+        ("uv.lock", True, False),
+        ("src/tsim/utils/diagram.py", False, False),
+        ("src/tsim/noise/dem.py", False, False),
+        ("docs/index.mdx", False, False),
+    ],
+)
+def test_benchmarks_are_required_by_path_not_by_tier(path, bench, width):
+    plan = review.classify([(10, 2, path)])
+    assert (plan.bench, plan.width) == (bench, width)
+
+
+def test_a_benchmark_with_a_regression_counts_as_run_and_is_noted():
+    record = {"passed": True, "slower": 2, "wider": 0, "kept_differs": 1}
+    assert review.regressions(record) == "2 slower, 1 with a different kept fraction"
+    assert review.regressions({"passed": True, "slower": 0}) == ""
+
+
+def test_tier_two_reviews_stop_after_three_rounds_with_findings():
+    two = review.review_gaps(2, _rounds(("opus-5.5", 2), ("gpt-6-astra", 1)))
+    assert len(two) == 1 and "new diff only" in two[0]
+    three = review.review_gaps(
+        2, _rounds(("opus-5.5", 2), ("gpt-6-astra", 1), ("opus-5.5", 1))
+    )
+    assert len(three) == 1 and "Stop reviewing" in three[0]
+
+
+@pytest.mark.parametrize(
+    ("command", "blocked"),
+    [
+        ("gh pr merge 281 --squash", True),
+        ("uv run tsim-dev review status; gh pr merge 281", True),
+        ("uv run tsim-dev review status && gh pr merge 281 --squash", False),
+        ("gh pr view 281", False),
+    ],
+)
+def test_the_bash_hook_lets_merges_through_the_review_gate_only(command, blocked):
+    done = subprocess.run(  # noqa: S603
+        [sys.executable, str(HOOK)],
+        input=json.dumps({"tool_name": "Bash", "tool_input": {"command": command}}),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == (2 if blocked else 0)

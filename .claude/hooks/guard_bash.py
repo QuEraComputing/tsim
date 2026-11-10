@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse hook for Bash: block two commands that have taken sessions down.
+"""PreToolUse hook for Bash: block commands that have cost sessions or let bugs out.
 
 Exit code 2 blocks the command and shows stderr to the agent. Everything else
 passes. Keep this list short: it is for rules that must hold every time.
@@ -11,6 +11,10 @@ import sys
 
 COMPUTE = re.compile(r"\b(python3?|pytest|uv run)\b")
 CAPPED = re.compile(r"\b(tsim-dev|systemd-run)\b")
+MERGE = re.compile(r"\bgh\s+pr\s+merge\b")
+GATED = re.compile(
+    r"\btsim-dev\s+review\s+status\b[^;|\n]*&&[^;|\n]*\bgh\s+pr\s+merge\b"
+)
 DETACHED = re.compile(r"\bnohup\b|\bsetsid\b|&\s*(disown\b|$)", re.MULTILINE)
 
 
@@ -21,6 +25,12 @@ def verdict(tool_input: dict) -> str | None:
         return (
             "`pkill -f` also matches this shell's own command line and kills it. "
             "Stop a job with `uv run tsim-dev job stop NAME`, or kill by PID."
+        )
+    if MERGE.search(command) and not GATED.search(command):
+        return (
+            "Merge only through the gate, from the pull request's branch: "
+            "`uv run tsim-dev review status && gh pr merge <number> --squash`. "
+            "Unanswered review comments have been merged past before."
         )
     background = tool_input.get("run_in_background") or DETACHED.search(command)
     if background and COMPUTE.search(command) and not CAPPED.search(command):

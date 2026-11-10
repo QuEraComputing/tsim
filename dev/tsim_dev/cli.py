@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from . import bench, checks, jobs, profile
+from . import bench, checks, jobs, profile, review
 
 
 def _caps(parser, mem: str, timeout: int, cpus: float | None = None) -> None:
@@ -165,6 +165,29 @@ def build_parser() -> argparse.ArgumentParser:
     _corpus_dir(p)
     _caps(p, "8G", 600)
     p.set_defaults(func=profile.profile)
+
+    p = sub.add_parser("fuzz", help="differential fuzz against a dense simulator")
+    p.add_argument("--seconds", type=float, default=600, help="default 600")
+    p.add_argument("--start", type=int, default=0, help="first seed (default 0)")
+    p.add_argument("--mem", default="4G", help="memory cap (default 4G)")
+    p.set_defaults(func=review.fuzz)
+
+    rev = sub.add_parser("review", help="what a change owes before it merges")
+    rev_sub = rev.add_subparsers(dest="review_command", required=True)
+    base_help = "diff base (default: the pull request's base, else origin/main)"
+    p = rev_sub.add_parser("plan", help="tier of the diff and the required steps")
+    p.add_argument("--base", help=base_help)
+    p.set_defaults(func=review.plan)
+    p = rev_sub.add_parser("status", help="check the requirements; exit 0 when ready")
+    p.add_argument("--base", help=base_help)
+    p.set_defaults(func=review.status)
+    p = rev_sub.add_parser("record", help="record a finished review round")
+    p.add_argument("--model", required=True, help="the reviewing model")
+    p.add_argument(
+        "--findings", type=int, required=True, help="confirmed findings of this round"
+    )
+    p.add_argument("--note", default="")
+    p.set_defaults(func=review.record)
 
     p = sub.add_parser(
         "run", help="run `-- command ...` under memory, CPU and time caps"
