@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   surface-code 15-to-1 distillation circuit (40k qubits, 115k detectors, 1.1M
   error bits) compiles with 4.5 GB instead of failing to allocate 121 GiB.
   Seeded samples are unchanged.
+- `CS`, `CCZ` and `CCX` in circuit text accept a tag containing `#` and can
+  share a line with a `REPEAT n {` or `}` delimiter. Repeated target qubits, as
+  in `CS 0 0`, raise an error naming the gate instead of its decomposition.
 
 ### Changed
 - `ChannelSampler.signature_matrix` is now a `tsim.utils.linalg.SparseGF2Matrix`

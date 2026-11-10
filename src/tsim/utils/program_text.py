@@ -52,6 +52,9 @@ def controlled_gate_decomposition_lines(
     """
     if gate not in CONTROLLED_GATE_ARITY:
         raise ValueError(f"Unsupported controlled gate: {gate!r}")
+    if len({int(q) for q in qubits}) != len(qubits):
+        targets = " ".join(str(q) for q in qubits)
+        raise ValueError(f"{gate} target qubits must be distinct, got {targets}.")
 
     def tagged(name: str) -> str:
         return f"{name}[{tag}]" if tag else name
@@ -91,25 +94,32 @@ def controlled_gate_decomposition_lines(
 def _expand_controlled_gates(text: str) -> str:
     lines: list[str] = []
     for line in text.splitlines():
-        body, sep, comment = line.partition("#")
-        match = re.match(
-            r"^(\s*)((?i:CS_DAG|CS|CCZ|CCX))(?:\[([^\]\n]*)\])?\s+(.+?)\s*$", body
-        )
-        if not match:
+        match = _INSTRUCTION_RE.match(line)
+        gate = match.group(2).upper() if match else ""
+        if not match or gate not in CONTROLLED_GATE_ARITY:
             lines.append(line)
             continue
 
-        indent, gate, tag, targets_text = match.groups()
-        gate = gate.upper()
+        # NOTE: the tag is matched before splitting off the comment, since tags
+        # may contain '#'.
+        prefix, _, tag, rest = match.groups()
+        targets_text, sep, comment = rest.partition("#")
         arity = CONTROLLED_GATE_ARITY[gate]
         targets = targets_text.split()
-        if len(targets) % arity != 0 or not all(
-            target.isdecimal() for target in targets
+        if (
+            not targets
+            or len(targets) % arity != 0
+            or not all(target.isascii() and target.isdigit() for target in targets)
         ):
             raise ValueError(
                 f"{gate} expects bare qubit integer targets in groups of {arity}."
             )
 
+        # A block delimiter sharing the line, as in `REPEAT 2 { CS 0 1`, goes on
+        # its own line before the decomposition.
+        indent = prefix[: len(prefix) - len(prefix.lstrip())]
+        if prefix.strip():
+            lines.append(prefix.rstrip())
         if sep:
             lines.append(f"{indent}{sep}{comment}")
         for i in range(0, len(targets), arity):
