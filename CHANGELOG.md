@@ -26,8 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `U3(0.1, 0.2, 0.3) 0` becomes `I[U3(0.1, 0.2, 0.3)] 0` (angles in units of
   pi), instead of `I[R_X(theta=0.1*pi)] 0`. This applies to `stim_circuit`,
   `append`, `inverse` and all other places that write tags. The keyword form is
-  still read, and circuit text and `append` rewrite it to the positional form.
-  A `stim.Circuit` passed to `Circuit(...)` keeps its tags as written.
+  still read and is rewritten to the positional form wherever a circuit comes
+  in: circuit text, `append`, and a `stim.Circuit` passed to `Circuit(...)`,
+  `from_stim_program` or `+=`.
 
 ### Fixed
 - Compiling a circuit with many detectors and noise locations no longer needs
