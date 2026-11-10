@@ -92,6 +92,11 @@ more than a handful of T gates: their compile memory grows exponentially.
 - Measure with `tsim-dev bench --ref origin/main`, never with a script of your own. It runs
   fresh processes on one pinned thread with a warm numba cache, excludes compile time, and
   interleaves the two checkouts. A speedup must hold on `--suite full`, across families.
+- Benchmark changes that could affect compile or sampling cost (see the
+  `shipping-tsim-changes` skill), not every change. A regression is investigated and
+  explained, not hidden; a correctness fix may cost performance if the cost is stated.
+- `tsim-dev bench --width --ref origin/main` compares active widths without sampling, for
+  changes to the graph, simplification, scheduling or the plan.
 - Numba caches compiled kernels on disk (`utils/kernels.py`). Cached kernels have behaved
   differently from freshly compiled ones (passing large structs by value was 5 to 8 times
   slower when cached), which is why the benchmark uses the cache. After changing a jitted
@@ -123,11 +128,12 @@ Agents share this machine with people and other agents.
 
 ## Pull requests
 
-- Branch off `origin/main` in a worktree; use
-  [Conventional Commits](https://www.conventionalcommits.org/).
+- New work: branch off `origin/main` in a worktree. Updating an existing pull request: keep
+  its branch and commit on top. Use [Conventional Commits](https://www.conventionalcommits.org/).
 - Commit locally. Push, open, force-push or merge a pull request only when asked.
 - Add a `CHANGELOG.md` entry under `## [Unreleased]` for any user-visible change.
-- Bug fixes include a minimal reproducer as a test that fails without the fix; performance
-  changes include the `tsim-dev bench` table, the CPU model and the thread count.
+- Bug fixes include a minimal reproducer as a test that fails without the fix;
+  performance-relevant changes include the `tsim-dev bench` table, the CPU model, the
+  thread count and the explanation of any regression.
 - `tsim-dev check` must pass before review. Report the commands you ran and their results,
   and say what you did not verify.
