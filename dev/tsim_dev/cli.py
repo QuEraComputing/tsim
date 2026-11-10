@@ -98,6 +98,16 @@ def build_parser() -> argparse.ArgumentParser:
         "circuits", nargs="*", help="tsim-bench ids or file stems, or .stim paths"
     )
     p.add_argument("--ref", help="git revision or checkout path to compare against")
+    p.add_argument(
+        "--side",
+        action="append",
+        default=[],
+        metavar="REF[:KEY=VALUE,...]",
+        help="a side with its own settings, instead of --ref; give two to compare. "
+        "REF: `.`, a git revision, a checkout or a python executable. "
+        "Keys: threads=N, device=cpu|gpu, strategy=NAME. "
+        "Example: --side .:threads=10 --side .:threads=1",
+    )
     _selection(p, "quick")
     p.add_argument("--rounds", type=int, default=0, help="default 5 with --ref, else 3")
     p.add_argument(

@@ -227,3 +227,36 @@ def test_dev_skills_have_valid_frontmatter():
         assert front["name"] == path.parent.name
         assert 0 < len(front["description"]) <= 1024
         assert len(text.splitlines()) < 500
+
+
+def test_sides_carry_their_own_settings(fake_bench):
+    side = bench.parse_side(".:threads=10,device=cpu,strategy=cat5")
+    assert (side.python, side.threads, side.device, side.strategy) == (
+        Path(sys.executable),
+        10,
+        "cpu",
+        "cat5",
+    )
+    assert side.describe().endswith("threads=10 device=cpu strategy=cat5")
+    assert bench.side_env(side, 10)["CUDA_VISIBLE_DEVICES"] == ""
+    assert bench.side_env(side, 10)["NUMBA_NUM_THREADS"] == "10"
+    assert "CUDA_VISIBLE_DEVICES" not in bench.side_env(
+        bench.parse_side(".:device=gpu"), 1
+    )
+    # A python executable is used as given: resolving a venv's symlink would lose the venv.
+    python = Path(sys.executable).absolute()
+    assert bench.parse_side(f"{python}:threads=2").python == python
+    for bad in (".:cores=2", ".:threads=0", ".:device=tpu", ".:threads"):
+        with pytest.raises(common.InfraError):
+            bench.parse_side(bad)
+
+
+def test_a_gpu_side_fails_when_cuda_is_not_used(fake_bench, monkeypatch):
+    done = subprocess.CompletedProcess([], 0, 'RESULT {"cuda": false}\n', "")
+    monkeypatch.setattr(bench.subprocess, "run", lambda *a, **k: done)
+    (case,) = bench.select(_bench_args())
+    args = _bench_args()
+    assert "error" in bench.measure(bench.parse_side(".:device=gpu"), case, args)
+    assert bench.measure(bench.parse_side(".:device=cpu"), case, args) == {
+        "cuda": False
+    }

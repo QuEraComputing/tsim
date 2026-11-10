@@ -7,6 +7,7 @@ measured in interleaved rounds and compared round by round.
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import os
@@ -40,10 +41,63 @@ class Case:
 
 @dataclass(frozen=True)
 class Side:
-    """One checkout under test: a label and the Python that imports its Tsim."""
+    """One side of a comparison: the Python that imports its Tsim, and its settings.
+
+    `threads` and `strategy` override the command line's when set. `device` is "" (the
+    environment decides), "cpu" (CUDA devices hidden) or "gpu" (the run fails unless the
+    worker finds Tsim's CUDA executor usable).
+    """
 
     label: str
     python: Path
+    threads: int | None = None
+    device: str = ""
+    strategy: str | None = None
+
+    def describe(self) -> str:
+        """Return the label with the settings that this side overrides."""
+        extra = [f"threads={self.threads}"] if self.threads is not None else []
+        extra += [f"device={self.device}"] if self.device else []
+        extra += [f"strategy={self.strategy}"] if self.strategy is not None else []
+        return " ".join([self.label, *extra])
+
+
+SIDE_KEYS = ("threads", "device", "strategy")
+
+
+def parse_side(spec: str) -> Side:
+    """Parse `--side REF[:key=value,...]`.
+
+    REF is `.` (this checkout), a git revision, the path of another checkout with a
+    `.venv`, or the path of a Python executable (an environment built elsewhere, such
+    as one with a GPU extra). Keys: threads=N, device=cpu|gpu, strategy=NAME.
+    """
+    ref, _, options = spec.partition(":")
+    settings: dict = {}
+    for item in filter(None, options.split(",")):
+        key, sep, value = item.partition("=")
+        if not sep or key not in SIDE_KEYS:
+            raise InfraError(
+                f"bad --side option {item!r}: use "
+                + ", ".join(f"{k}=..." for k in SIDE_KEYS)
+            )
+        settings[key] = value
+    if "threads" in settings:
+        if not settings["threads"].isdigit() or int(settings["threads"]) < 1:
+            raise InfraError(f"bad thread count in --side {spec!r}")
+        settings["threads"] = int(settings["threads"])
+    if settings.get("device", "cpu") not in ("cpu", "gpu"):
+        raise InfraError(f"device must be cpu or gpu in --side {spec!r}")
+    if ref in ("", "."):
+        base = Side(common.describe(common.root()), Path(sys.executable))
+    elif Path(ref).expanduser().is_file():
+        # NOTE: not resolved: a venv's python is a symlink to the base interpreter,
+        # and resolving it would lose the environment.
+        python = Path(ref).expanduser().absolute()
+        base = Side(str(python), python)
+    else:
+        base = reference(ref)
+    return Side(base.label, base.python, **settings)
 
 
 def _from_corpus(entry, args) -> Case:
@@ -173,22 +227,39 @@ def worker_command(python: Path, case: Case, args, mode: str) -> list[str]:
     return cmd
 
 
+def side_env(side: Side, threads: int) -> dict[str, str]:
+    """Return the environment of one side's worker."""
+    env = common.child_env(threads)
+    if side.device == "cpu":
+        env["CUDA_VISIBLE_DEVICES"] = ""
+    return env
+
+
 def measure(side: Side, case: Case, args, mode: str = "bench") -> dict:
     """Run the worker once and return its result, or `{"error": ...}`."""
-    cmd = worker_command(side.python, case, args, mode)
+    threads = side.threads or args.threads
+    options = args
+    if side.strategy is not None:
+        options = argparse.Namespace(**{**vars(args), "strategy": side.strategy})
+    cmd = worker_command(side.python, case, options, mode)
     wrapped = common.capped(
-        cmd, mem=args.mem, timeout=args.timeout, pin=common.pin_cpus(args.threads)
+        cmd, mem=args.mem, timeout=args.timeout, pin=common.pin_cpus(threads)
     )
     done = subprocess.run(
         wrapped,
-        env=common.child_env(args.threads),
+        env=side_env(side, threads),
         capture_output=True,
         text=True,
         check=False,
     )
     for line in done.stdout.splitlines():
         if line.startswith("RESULT "):
-            return json.loads(line[7:])
+            result = json.loads(line[7:])
+            if side.device == "gpu" and not result.get("cuda"):
+                return {
+                    "error": "device=gpu, but this Tsim has no usable CUDA executor"
+                }
+            return result
     reason = common.explain_exit(done.returncode, args.mem, args.timeout)
     last = (done.stderr.strip().splitlines() or [""])[-1]
     return {"error": f"{reason}: {last}"[:200]}
@@ -215,7 +286,7 @@ def compare(new: list[float], ref: list[float], tolerance: float) -> dict:
 
 def run_case(case: Case, sides: list[Side], args) -> dict:
     """Prime the caches, then measure every side in interleaved rounds."""
-    rounds: dict[str, list[dict]] = {side.label: [] for side in sides}
+    rounds: dict[str, list[dict]] = {side.describe(): [] for side in sides}
     record: dict = {
         "circuit": case.name,
         "id": case.id,
@@ -225,18 +296,18 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
     for side in sides:
         primed = measure(side, case, args, mode="prime")
         if "error" in primed:
-            record["error"] = f"{side.label}: {primed['error']}"
+            record["error"] = f"{side.describe()}: {primed['error']}"
             return record
     for index in range(args.rounds):
         order = sides if index % 2 == 0 else sides[::-1]
         for side in order:
             result = measure(side, case, args)
             if "error" in result:
-                record["error"] = f"{side.label}: {result['error']}"
+                record["error"] = f"{side.describe()}: {result['error']}"
                 return record
-            rounds[side.label].append(result)
+            rounds[side.describe()].append(result)
     record["rounds"] = rounds
-    new = rounds[sides[0].label]
+    new = rounds[sides[0].describe()]
     record["k"] = new[0].get("active_width")
     if record["k"] is None:  # Tsim before 1.1 does not report it; use the recorded one
         record["k"] = case.width
@@ -246,7 +317,7 @@ def run_case(case: Case, sides: list[Side], args) -> dict:
     rates = [r["shots_per_s"] for r in new]
     record["spread"] = (max(rates) - min(rates)) / record["shots_per_s"]
     if len(sides) == 2:
-        old = rounds[sides[1].label]
+        old = rounds[sides[1].describe()]
         record["ref_shots_per_s"] = statistics.median(r["shots_per_s"] for r in old)
         record["ref_compile_s"] = statistics.median(r["compile_s"] for r in old)
         record["rate"] = compare(rates, [r["shots_per_s"] for r in old], args.tolerance)
@@ -288,20 +359,31 @@ def format_row(record: dict, has_ref: bool) -> str:
 def run(args) -> int:
     """Run the benchmark and return the exit code."""
     try:
+        if args.side and args.ref:
+            raise InfraError("--side replaces --ref: give `--side . --side REF`")
+        if len(args.side) > 2:
+            raise InfraError("give at most two --side options")
         cases = select(args)
-        sides = [Side(common.describe(common.root()), Path(sys.executable))]
-        if args.ref:
-            sides.append(reference(args.ref))
+        if args.side:
+            sides = [parse_side(spec) for spec in args.side]
+        else:
+            sides = [Side(common.describe(common.root()), Path(sys.executable))]
+            if args.ref:
+                sides.append(reference(args.ref))
+        if len({side.describe() for side in sides}) < len(sides):
+            raise InfraError("the two sides are the same; change a setting of one")
     except InfraError as error:
         common.die(str(error))
     has_ref = len(sides) == 2
     rounds = args.rounds or (5 if has_ref else 3)
     args.rounds = rounds
-    header = f"bench: new={sides[0].label}"
+    header = f"bench: new={sides[0].describe()}"
     if has_ref:
-        header += f" ref={sides[1].label}"
+        header += f" ref={sides[1].describe()}"
     busy = common.busy_cores()
-    header += f" threads={args.threads} rounds={rounds} busy_cores={busy:.1f}"
+    if not any(side.threads for side in sides):
+        header += f" threads={args.threads}"
+    header += f" rounds={rounds} busy_cores={busy:.1f}"
     header += f" postselect={'off' if args.no_postselect else 'on'}"
     header += f" tsim-bench={corpus.describe(args.corpus_dir)}"
     print(header)
@@ -320,8 +402,8 @@ def run(args) -> int:
 
     out = common.out_dir("bench") / f"{common.stamp()}.json"
     meta = {
-        "new": sides[0].label,
-        "ref": sides[1].label if has_ref else None,
+        "new": sides[0].describe(),
+        "ref": sides[1].describe() if has_ref else None,
         "threads": args.threads,
         "rounds": rounds,
         "tolerance": args.tolerance,

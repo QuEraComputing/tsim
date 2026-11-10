@@ -22,7 +22,7 @@ from .common import InfraError
 
 URL = "https://github.com/rafaelha/tsim-bench"
 # Bump together with any change that needs newer circuits or manifests.
-REV = "f0052960949ff306bc330ad82707d48c4eeab5ef"
+REV = "4cb8ca2963b2b982a4e37372b7168b4f590c4e97"
 
 
 def _export(rev: str) -> Path:

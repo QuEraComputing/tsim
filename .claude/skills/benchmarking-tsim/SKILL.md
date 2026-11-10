@@ -36,6 +36,25 @@ inject_cultivate_d5_p0.001  6    13.9M  0.141     0.13   1.20x [1.19, 1.21] fast
   2: a circuit could not be measured.
 - The JSON under `.tsim-dev/bench/` has every round.
 
+## Compare settings: threads, GPU, strategy
+
+`--side REF[:key=value,...]`, given twice, replaces `--ref` when the two sides differ in
+more than the checkout. REF is `.` (this checkout), a git revision, a checkout path, or
+a Python executable (an environment built elsewhere, such as one with the GPU extra).
+Keys: `threads=N`, `device=cpu|gpu`, `strategy=NAME`. The first side is "new".
+
+```bash
+uv run tsim-dev bench --side .:threads=10 --side .:threads=1          # 10 cores vs 1
+uv run tsim-dev bench --side $GPU_PY:device=gpu --side $GPU_PY:device=cpu
+uv run tsim-dev bench --side .:threads=4 --side origin/main:threads=4
+```
+
+- `device=cpu` hides CUDA devices; `device=gpu` fails the circuit unless the worker finds
+  Tsim's CUDA executor usable. Circuits above the executor's width limit still fall back
+  to the CPU on that side, so check the width before reading a GPU ratio.
+- Compile time is compared too; across devices a "slower" compile verdict (and exit code
+  1) is expected, so read the rate column.
+
 ## What the command controls for you
 
 - One thread, pinned to a core (`--threads N` to change; say so when you report).
