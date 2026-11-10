@@ -20,12 +20,10 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           # Install a specific version of uv.
-          version: "0.6.14"
+          version: "0.13.7"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
       - name: Install Documentation dependencies
-        env:
-          UV_EXTRA_INDEX_URL: ${{ secrets.UV_INDEX_URL }}
         run: uv sync --group doc
       - name: Set up build cache
         uses: actions/cache@v6

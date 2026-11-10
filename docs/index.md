@@ -116,6 +116,7 @@ Tsim supports all [Stim instructions](https://github.com/quantumlib/Stim/blob/v1
 | `TPP`, `TPP_DAG` | Pauli products | exp(∓iπ/8 · P) up to global phase; `TPP Z0` is `T` |
 | `R_XX(α)`, `R_YY(α)`, `R_ZZ(α)` | two distinct qubits | exp(−iαπ/2 · P) for P = XX, YY, ZZ |
 | `R_PAULI(α)` | Pauli products | exp(−iαπ/2 · P) for a Pauli product of up to 64 qubits |
+| `CS`, `CS_DAG` | qubit pairs | Controlled-S, diag(1, 1, 1, i), and its inverse, via a Clifford+T decomposition |
 | `CCZ`, `CCX` | qubit triples | Controlled-controlled Z and Toffoli (controls first), via a Clifford+T decomposition |
 
 ```
@@ -125,6 +126,7 @@ U3(0.5, 0.25, 0.125) 0   # θ=π/2, φ=π/4, λ=π/8
 TPP X0*Y1                # exp(-i π/8 · X0⊗Y1)
 R_ZZ(0.5) 0 2            # exp(-i π/4 · Z0⊗Z2)
 R_PAULI(0.3) X0*Y1*Z2    # exp(-i 0.3·π/2 · X0⊗Y1⊗Z2)
+CS 0 1                   # controlled-S on qubits 0 and 1
 CCX 0 1 2                # Toffoli with controls 0, 1 and target 2
 ```
 

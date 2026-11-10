@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `CS` and `CS_DAG` (controlled-S and its inverse) gates in circuit text and
+  `Circuit.append`, implemented using Clifford+T decompositions.
+
 ### Fixed
 - Compiling a circuit with many detectors and noise locations no longer needs
   memory proportional to their product. The error basis (a GF(2) elimination

@@ -29,6 +29,7 @@ from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
 from tsim.utils.diagram import draw_zx, render_svg
 from tsim.utils.program_text import (
+    CONTROLLED_GATE_ARITY,
     controlled_gate_decomposition_lines,
     enriched_stim_error,
     shorthand_to_stim,
@@ -248,8 +249,9 @@ class Circuit:
           ``R_ZZ`` on two distinct qubits, and ``R_PAULI`` on Pauli products.
           ``U3`` takes three angles ``(theta, phi, lambda)`` as ``arg``, the
           others one. Angles are in units of π.
-        - ``CCZ`` and ``CCX`` on bare qubit targets, in groups of three. They are
-          appended as their Clifford+T decomposition.
+        - ``CS`` and ``CS_DAG`` on bare qubit targets, in pairs, and ``CCZ`` and
+          ``CCX`` on bare qubit targets, in groups of three. They are appended as
+          their Clifford+T decomposition.
 
         The other Tsim gates are stored as tagged Clifford placeholders.
 
@@ -288,20 +290,21 @@ class Circuit:
         if isinstance(name, str):
             # NOTE: Stim gate names are case-insensitive, and so are Tsim's.
             name = name.upper()
-            if name in ("CCZ", "CCX"):
+            if name in CONTROLLED_GATE_ARITY:
                 if arg is not None:
                     raise ValueError(f"For {name} gates, no arguments are accepted.")
+                arity = CONTROLLED_GATE_ARITY[name]
                 qubits = _bare_qubit_targets(name, targets)
-                if len(qubits) % 3 != 0:
+                if len(qubits) % arity != 0:
                     raise ValueError(
-                        f"{name} expects qubit targets in groups of three."
+                        f"{name} expects qubit targets in groups of {arity}."
                     )
                 self.append_from_stim_program_text(
                     "\n".join(
                         line
-                        for i in range(0, len(qubits), 3)
+                        for i in range(0, len(qubits), arity)
                         for line in controlled_gate_decomposition_lines(
-                            name, qubits[i], qubits[i + 1], qubits[i + 2], tag=tag
+                            name, *qubits[i : i + arity], tag=tag
                         )
                     )
                 )
@@ -823,10 +826,7 @@ class Circuit:
             raise ValueError(
                 f"Diagram type {type!r} was removed in Tsim 1.0; use {replacement!r}."
             )
-        if type in [
-            "timeline-svg",
-            "timeslice-svg",
-        ]:
+        if type == "timeline-svg" or type == "timeslice-svg":
             if height is None and width is None and type == "timeline-svg":
                 height = min(30 * self.num_qubits + 50, 700)
             return render_svg(
