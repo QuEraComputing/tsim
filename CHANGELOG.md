@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `CS` and `CS_DAG` (controlled-S and its inverse) gates in circuit text and
   `Circuit.append`, implemented using Clifford+T decompositions.
+- `active_width` and `stats` properties on `CompiledMeasurementSampler` and
+  `CompiledDetectorSampler`. `active_width` is the largest number of active
+  qubits that a shot simulates (0 if every output is direct, `None` under a
+  stabilizer-rank strategy); `stats` is a frozen dataclass with it, the
+  component widths, the action and error-bit counts, and memory estimates.
+  They replace reading the private `_program` or parsing `repr(sampler)`.
 
 ### Fixed
 - Compiling a circuit with many detectors and noise locations no longer needs
