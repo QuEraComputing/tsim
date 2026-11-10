@@ -166,14 +166,25 @@ class Circuit:
 
     __slots__ = ("_stim_circ",)
 
-    def __init__(self, stim_program_text: str = ""):
-        """Initialize circuit from Stim program text.
+    def __init__(self, stim_program_text: str | stim.Circuit | Circuit = ""):
+        """Initialize circuit from Stim program text or an existing circuit.
 
         Args:
-            stim_program_text: Stim program text to parse. If empty, creates an
-                empty circuit.
+            stim_program_text: Stim program text to parse, or a ``stim.Circuit``
+                or ``Circuit`` to copy. If empty, creates an empty circuit.
 
         """
+        if isinstance(stim_program_text, Circuit):
+            self._stim_circ = stim_program_text._stim_circ.copy()
+            return
+        if isinstance(stim_program_text, stim.Circuit):
+            self._stim_circ = stim_program_text.copy()
+            return
+        if not isinstance(stim_program_text, str):
+            raise TypeError(
+                "Circuit() expects Stim program text, a stim.Circuit or a "
+                f"Circuit, got {type(stim_program_text).__name__}"
+            )
         converted = shorthand_to_stim(stim_program_text)
         try:
             self._stim_circ = stim.Circuit(converted)
