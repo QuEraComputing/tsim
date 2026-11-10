@@ -43,6 +43,8 @@ dependencies = [
     "stim>=1.15.0",
     "stim-timeline-text>=0.1.0",
     "zxparam>=0.1.0",
+    # NOTE: the statevector executor on Apple GPUs (about 7 MB).
+    "pyobjc-framework-Metal>=10.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
 [project.urls]
@@ -54,10 +56,6 @@ Issues = "https://github.com/QuEraComputing/tsim/issues"
 [project.optional-dependencies]
 cuda12 = ["jax[cuda12]>=0.4.38"]
 cuda13 = ["jax[cuda13]>=0.7.0"]
-# The statevector executor on Apple GPUs (Apple silicon only).
-metal = [
-    "pyobjc-framework-Metal>=10.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
-]
 
 [build-system]
 requires = ["hatchling"]

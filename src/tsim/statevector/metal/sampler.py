@@ -543,7 +543,9 @@ class MetalShotSampler:
 
     def _batch_shots(self, shots: int, batch_size: int | None) -> int:
         """Return the shots of a call's batches."""
-        cap = max(1 << 16, BATCH_BYTES // (8 * self.layout.num_words))
+        # NOTE: at most 2^16 words a row, so a batch stays below 512 MB, and the
+        # kernels' 32-bit offsets within it do not wrap.
+        cap = max(1 << 10, BATCH_BYTES // (8 * self.layout.num_words))
         return max(1, min(batch_size or BATCH_SHOTS, BATCH_SHOTS, cap, shots))
 
     def _slot(self, shots: int, expectations: bool) -> _Slot:

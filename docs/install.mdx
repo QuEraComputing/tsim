@@ -37,19 +37,28 @@ pip install "bloqade-tsim[cuda13]"
 
 ## Apple GPUs
 
-On an Apple-silicon Mac, the default strategy (`"active_statevector"`) can sample on the GPU
-through Metal. It needs PyObjC's Metal bindings, which the `metal` extra installs:
+On an Apple-silicon Mac, the default strategy (`"active_statevector"`) samples on the GPU
+through Metal; the plain install includes PyObjC's Metal bindings for it. The samplers use the
+GPU whenever every component of the circuit has at most 11 active qubits, and otherwise sample
+on the CPU, with a warning. Postselection runs on the GPU, so heavily postselected circuits
+gain the most. A sampler's repr says where it samples (`samples on metal` or `samples on
+cpu`), and so does `sampler.stats.device`.
+
+The GPU computes outcome probabilities in float32, so a sample follows the CPU's distribution
+to within float32 rounding. A seed's samples on the GPU differ from the CPU's and depend on
+`batch_size`.
+
+### Sampling on the CPU instead
+
+Set `TSIM_DEVICE=cpu` to keep the samplers on the CPU, in double precision, for example to
+reproduce samples from another machine:
 
 ```bash
-uv add "bloqade-tsim[metal]"    # or: pip install "bloqade-tsim[metal]"
+TSIM_DEVICE=cpu python my_script.py
 ```
 
-With it installed, the samplers use the GPU whenever every component of the circuit has at
-most 11 active qubits; otherwise they sample on the CPU, with a warning. The GPU computes in
-float32, so a sample follows the CPU's distribution to within float32 rounding, and a seed's
-samples differ from the CPU's (and depend on `batch_size`). Postselection runs on the GPU, so
-heavily postselected circuits gain the most. Set `TSIM_DEVICE=cpu` to keep the samplers on the
-CPU, for example to reproduce samples from another machine.
+Tsim reads it whenever it compiles a sampler, so `os.environ["TSIM_DEVICE"] = "cpu"` before
+`compile_sampler` or `compile_detector_sampler` works too.
 
 ## Agent skill
 

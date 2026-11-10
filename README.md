@@ -23,9 +23,8 @@ Or with [uv](https://docs.astral.sh/uv/):
 uv add bloqade-tsim
 ```
 
-The default sampling strategy runs on the CPU, or on the GPU of an Apple-silicon Mac with the
-`metal` extra (`pip install "bloqade-tsim[metal]"`). To run the stabilizer-rank strategies on an
-NVIDIA GPU, install the JAX CUDA extra:
+The default sampling strategy runs on the CPU, and on the GPU of an Apple-silicon Mac (no extra
+needed). To run the stabilizer-rank strategies on an NVIDIA GPU, install the JAX CUDA extra:
 ```bash
 pip install "bloqade-tsim[cuda13]"   # or bloqade-tsim[cuda12]
 ```

@@ -130,6 +130,7 @@ dependencies = [
     { name = "numba" },
     { name = "numpy" },
     { name = "psutil" },
+    { name = "pyobjc-framework-metal", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "stim" },
     { name = "stim-timeline-text" },
     { name = "zxparam" },
@@ -141,9 +142,6 @@ cuda12 = [
 ]
 cuda13 = [
     { name = "jax", extra = ["cuda13"] },
-]
-metal = [
-    { name = "pyobjc-framework-metal", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
 
 [package.dev-dependencies]
@@ -194,12 +192,12 @@ requires-dist = [
     { name = "numba", specifier = ">=0.61" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "psutil", specifier = ">=5.9.0" },
-    { name = "pyobjc-framework-metal", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'metal'", specifier = ">=10.0" },
+    { name = "pyobjc-framework-metal", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'", specifier = ">=10.0" },
     { name = "stim", specifier = ">=1.15.0" },
     { name = "stim-timeline-text", specifier = ">=0.1.0" },
     { name = "zxparam", specifier = ">=0.1.0" },
 ]
-provides-extras = ["cuda12", "cuda13", "metal"]
+provides-extras = ["cuda12", "cuda13"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -932,3 +932,10 @@ def test_calls_larger_than_the_counters_run_in_parts(monkeypatch):
         for n in (1000, 1000, 500)
     ]
     np.testing.assert_array_equal(whole, np.concatenate(expected))
+
+
+def test_the_repr_says_where_a_sampler_samples():
+    circuit = Circuit(T_STATE_X)
+    assert "samples on metal" in repr(_gpu(circuit.compile_detector_sampler(seed=1)))
+    cpu = _cpu(circuit.compile_detector_sampler, seed=1)
+    assert "samples on cpu" in repr(cpu) and cpu.stats.device == "cpu"
