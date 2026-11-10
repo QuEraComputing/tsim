@@ -8,6 +8,9 @@
     "dark": "#008055"
   },
   "favicon": "/images/favicon.svg",
+  "contextual": {
+    "options": ["copy", "view", "chatgpt", "claude", "mcp", "cursor", "vscode"]
+  },
   "seo": {
     "metatags": {
       "canonical": "https://bloqade.quera.com"

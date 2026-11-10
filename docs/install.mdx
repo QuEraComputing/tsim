@@ -47,6 +47,17 @@ npx skills add QuEraComputing/tsim --skill simulating-circuits-with-tsim
 
 The skill is also served by this site at `/.well-known/skills/`.
 
+## Docs MCP server
+
+This site runs an MCP server at `https://bloqade.quera.com/tsim/mcp` that lets agents search
+and read these docs. Add it to Claude Code with:
+
+```bash
+claude mcp add --transport http tsim https://bloqade.quera.com/tsim/mcp
+```
+
+For Cursor and VS Code, use the page menu at the top of any page.
+
 ## Development setup
 
 If you're contributing to Tsim, clone the repository and install development dependencies:

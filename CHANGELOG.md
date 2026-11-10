@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The docs pages have a menu to copy a page or open it in ChatGPT or Claude, and
+  the README, the install page and the agent skill point to the docs MCP server
+  at `https://bloqade.quera.com/tsim/mcp`.
 - An agent skill, `simulating-circuits-with-tsim`, in `skills/`, that teaches
   coding agents to use Tsim: active width, sampling and postselection, QEC
   studies with decoders, and porting published circuits. Install it with

@@ -39,6 +39,11 @@ Install it with:
 npx skills add QuEraComputing/tsim --skill simulating-circuits-with-tsim
 ```
 
+The docs also run an MCP server that lets agents search them:
+```bash
+claude mcp add --transport http tsim https://bloqade.quera.com/tsim/mcp
+```
+
 ## Quick Start
 An introductory tutorial is available [here](https://bloqade.quera.com/tsim/tutorials/encoding_demo). Please also refer to the [documentation](https://bloqade.quera.com/tsim).
 

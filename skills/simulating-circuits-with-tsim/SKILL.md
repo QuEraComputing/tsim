@@ -16,7 +16,7 @@ Tsim samples noisy quantum circuits with non-Clifford gates. It reads Stim's cir
 a few non-Clifford instructions and mirrors Stim's sampler API, so most Stim code ports by
 changing `stim` to `tsim`. Install with `uv add bloqade-tsim` or `pip install bloqade-tsim`
 (1.1.0 or later); import as `tsim`. Docs: https://bloqade.quera.com/tsim (append `.md` to any
-page for Markdown).
+page for Markdown; an MCP server for searching them is at https://bloqade.quera.com/tsim/mcp).
 
 This file covers what every task needs. Read the references when the task calls for them:
 
