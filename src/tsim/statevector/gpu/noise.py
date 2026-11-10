@@ -35,6 +35,7 @@ unchanged.
 from __future__ import annotations
 
 import itertools
+import math
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -48,6 +49,11 @@ MAX_BLOCK_SHOTS = 256
 MIN_EVENTS = 256
 # NOTE: a record's flip count has 8 bits.
 MAX_FLIPS = 255
+# NOTE: a kernel draws a skip from 24 bits of a uniform, which leave trials that no
+# skip reaches once p is below about 2^-24; a segment of fewer than 2^-12 expected
+# faults is drawn from 48 bits instead (the kernels' fine path).
+TINY_P = 2.0**-23
+FINE_FAULTS = 2.0**-13
 
 _RECORD = np.dtype(
     [
@@ -143,6 +149,8 @@ def _groups(tables: NoiseTables, select: np.ndarray) -> NoiseGroups:
         trials = S * (hi - lo)
         # NOTE: float32 skips are exact below 2^24 trials only.
         pieces = max(-(-trials >> 24), round(trials * min(p, 1.0) / FAULTS_PER_SEGMENT))
+        if p < TINY_P:
+            pieces = max(pieces, math.ceil(trials * -lk / FINE_FAULTS))
         cuts = np.linspace(0, trials, pieces + 1).astype(np.int64)
         for a, b in itertools.pairwise(cuts):
             if b > a:

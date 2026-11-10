@@ -303,3 +303,23 @@ def test_projections_read_pairs_or_every_partner_first():
     assert re.search(r"\n      float2 q63 = ", whole)
     assert not re.search(r"\n      float2 q\d+ = ", paired)
     assert re.search(r"\{ float2 q\d+ = .*, q\d+ = ", paired)
+
+
+@pytest.mark.parametrize(("p", "qubits"), [(2e-8, 192), (1e-9, 3200)])
+def test_tiny_probability_segments_take_the_kernels_fine_path(p, qubits):
+    # NOTE: a 24-bit skip reaches only some trials of a segment of noise below
+    # p ~ 2^-24; segments of fewer than 2^-12 expected faults draw from 48 bits.
+    text = "\n".join(
+        [f"X_ERROR({p!r}) " + " ".join(map(str, range(qubits)))]
+        + ["M " + " ".join(map(str, range(qubits)))]
+        + [f"DETECTOR rec[{i - qubits}]" for i in range(qubits)]
+    )
+    host, channels = _shots(text)
+    layout = host.layout
+    tables = noise.noise_tables(channels, layout.noise, layout.num_words, 46 * 1024)
+    _, _, begin, end, log_keep = tables.groups.segments
+    tiny = -log_keep < noise.TINY_P
+    assert tiny.any()
+    expected = (end - begin).astype(np.float32) * -log_keep
+    assert (expected[tiny] < 2.0**-12).all()
+    assert (end - begin).sum() == tables.block_shots * qubits
