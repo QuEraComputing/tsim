@@ -1,2 +1,0 @@
-* [Tsim API](index.md)
-* [Experimental](experimental.md)
