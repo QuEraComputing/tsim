@@ -1,8 +1,8 @@
 ---
-name: tsim-qec-experiment
-description: "Runs quantum error correction studies with Tsim: sampling, postselection, decoding and error bars. Use when someone wants a logical error rate, threshold or error-rate-vs-p curve, acceptance (discard) rate, output-state infidelity or error bars from a noisy circuit with T gates, rotations or other non-Clifford gates; decodes Tsim samples (PyMatching, Tesseract, BP-LSD from ldpc, Relay-BP); builds a detector error model for a non-Clifford circuit; postselects a cultivation, distillation or injection protocol; plans a shot budget; or is about to use sinter or sinter.collect with Tsim. Also use for \"simulate this protocol\" or \"reproduce this figure\" requests about such circuits, and for detector_error_model errors such as \"non-deterministic observables\" or \"The number of observables changed\"."
+name: running-qec-experiments-with-tsim
+description: "Runs Monte Carlo quantum error correction studies with Tsim: sampling, postselection, decoding and error bars. Use when someone wants a Monte Carlo estimate of a logical error rate, threshold or error-rate-vs-p curve, acceptance (discard) rate, output-state infidelity or error bars from a noisy circuit with T gates, rotations or other non-Clifford gates; decodes Tsim samples (PyMatching, Tesseract, BP-LSD from ldpc, Relay-BP); builds a detector error model for a non-Clifford circuit; postselects a cultivation, distillation or injection protocol; plans a shot budget; or is about to use sinter or sinter.collect with Tsim. Also use for \"simulate this protocol\", \"run a Monte Carlo simulation\" or \"reproduce this figure\" requests about such circuits, and for detector_error_model errors such as \"non-deterministic observables\" or \"The number of observables changed\"."
 license: Apache-2.0
-compatibility: Python 3.11+, bloqade-tsim (main or 1.0.0; for 1.0.0 see the "Tsim 1.0.0" section of the tsim skill). Decoders are separate packages.
+compatibility: Python 3.11+, bloqade-tsim (main or 1.0.0; for 1.0.0 see the "Tsim 1.0.0" section of the simulating-circuits-with-tsim skill). Decoders are separate packages.
 metadata:
   author: QuEra Computing
   version: "1.2"
@@ -12,10 +12,16 @@ metadata:
 
 # QEC experiments with Tsim
 
-This skill builds on the `tsim` skill (circuit format, active width, sampling options); read it
-first if it is available. The workflow below turns a noisy circuit into numbers that can go in a
-paper: a logical error rate or infidelity per accepted shot, an acceptance rate, error bars, and
-a script that regenerates them.
+This skill builds on the `simulating-circuits-with-tsim` skill (circuit format, active width,
+sampling options); read it first if it is available. The workflow below turns a noisy circuit
+into numbers that can go in a paper: a logical error rate or infidelity per accepted shot, an
+acceptance rate, error bars, and a script that regenerates them.
+
+These numbers are Monte Carlo estimates. Each shot draws one realization of the circuit's noise
+and samples the circuit exactly, so shots are independent, every rate is a binomial estimate,
+and its error shrinks only as one over the square root of the number of counted events (see
+"Error bars and shot budgets"). Rare events are expensive: a logical error rate of 10^-9 needs
+about 10^11 kept shots for 100 errors, and Tsim has no importance sampling to shortcut that.
 
 ## Workflow
 
@@ -37,7 +43,7 @@ QEC study:
 1. **Build the circuit** for each parameter point (noise strength, distance, rounds). Keep it in
    a function so the final script can regenerate everything.
 2. **Compile and check the cost**: read `sampler.active_width` (on Tsim 1.0.0, use the
-   helper in the `tsim` skill), then time a warm-up call and
+   helper in the `simulating-circuits-with-tsim` skill), then time a warm-up call and
    one call of about 10^6 shots. Estimate the time for the full budget (sampling and
    decoding) before launching anything long, and tell the user. If the width is too large
    and the circuit defines observables the study does not use (for example, extra logical
@@ -46,8 +52,8 @@ QEC study:
    the circuit, so propose it to the user rather than doing it silently.
 3. **Decide what is postselected and what is decoded.** Postselection detectors go into a
    `postselection_mask`. Detectors that feed a decoder stay unmasked. Write this as a plan and
-   check it with `scripts/check_mask.py` of the `tsim` skill (see "Postselection" there),
-   which also gives the acceptance of each stage.
+   check it with `scripts/check_mask.py` of the `simulating-circuits-with-tsim` skill (see
+   "Postselection" there), which also gives the acceptance of each stage.
 4. **Pick a decoder** (or none) from the table below.
 5. **Sample in large calls, decode, and accumulate counts**, using the loop below.
 6. **Report** each point with shots, kept shots, errors, acceptance, logical error rate per
@@ -259,6 +265,8 @@ is a measurement device, not part of the protocol. Check that the observable nev
 
 ## Error bars and shot budgets
 
+- Every reported rate is a Monte Carlo estimate, so it needs an error bar; a point with few
+  or zero errors gives only an upper bound, and should be reported as one.
 - The logical error rate per kept shot is `errors / kept`; its relative error is about
   `1 / sqrt(errors)`. Aim for at least 100 errors per point for a 10% error bar.
 - For confidence intervals use `sinter.fit_binomial(num_shots=kept, num_hits=errors,

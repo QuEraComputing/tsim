@@ -1,4 +1,4 @@
-skill = "tsim-port-circuits"
+skill = "porting-circuits-to-tsim"
 prompt = """
 These cultivation circuits come from a paper's repo: inputs/cultivation_d3_standin.stim and \
 inputs/cultivation_d5_standin.stim. The authors replaced the T gates by S gates (and T_DAG by \

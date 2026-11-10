@@ -1,5 +1,5 @@
 ---
-name: tsim
+name: simulating-circuits-with-tsim
 description: "Samples noisy quantum circuits with non-Clifford gates using Tsim (bloqade-tsim), a Stim-compatible simulator, and judges whether a circuit is feasible. Use when a task involves Tsim or bloqade-tsim, or a noisy circuit in Stim format with non-Clifford gates (T, T_DAG, R_X, R_Y, R_Z, U3, R_PAULI, TPP, CCZ, CCX, CS), such as magic state cultivation, distillation, injection or coherent rotation errors, even if Tsim is not named. Also use when someone asks whether such a circuit can be simulated or how long sampling will take (active width, k_max), samples its detectors, measurements or observables, ports Stim sampler code to Tsim, postselects inside Tsim, or hits Tsim problems such as \"needs N active qubits ... more than 30\", \"Malformed parametric tag\", detectors that read 1 where Stim reports 0, or slow sample() calls."
 license: Apache-2.0
 compatibility: Python 3.11+. Written for Tsim main; on Tsim 1.0.0 (the PyPI release of 2026-11-04) read the "Tsim 1.0.0" section at the end.
@@ -21,8 +21,9 @@ This skill is written for Tsim's main branch. Tsim 1.0.0 from PyPI lacks a few f
 below (`sampler.active_width` among them); `tsim.__version__` reads 1.0.0 on both, so check
 with `hasattr(sampler, "active_width")`, and on 1.0.0 read "Tsim 1.0.0" at the end.
 
-For logical error rates, decoders, postselection and fidelity, also read the `tsim-qec-experiment`
-skill. For running circuits published with a paper, read `tsim-port-circuits`.
+For Monte Carlo estimates of logical error rates, decoders, postselection and fidelity, also
+read the `running-qec-experiments-with-tsim` skill. For running circuits published with a
+paper, read `porting-circuits-to-tsim`.
 
 ## Which circuits Tsim can simulate
 
@@ -178,7 +179,7 @@ raw measurement bits. Do not sample measurements and compute detectors from them
   detectors are all 0 behaves the same either way.
 - `c.detector_error_model()` is built by Stim from a Clifford stand-in of the circuit, so it is
   only guaranteed correct for Clifford circuits. Before using it as a decoder prior, read
-  "Choosing a decoder" in `tsim-qec-experiment`.
+  "Choosing a decoder" in `running-qec-experiments-with-tsim`.
 
 ## Postselection
 
@@ -190,7 +191,7 @@ changes the result.
 `CompiledDetectorSampler.sample`. A shot is discarded if any masked detector reads 1, and
 **only surviving shots are returned**: asking for `shots=1_000_000` returns fewer rows, and
 `len(dets) / shots` is the acceptance rate. Count requested and returned shots separately, and
-keep calling until enough shots survive (see the loop in `tsim-qec-experiment`).
+keep calling until enough shots survive (see the loop in `running-qec-experiments-with-tsim`).
 
 **Why it is fast.** With the default strategy, a shot stops being simulated at the first masked
 detector that fires, and shots that a noise-only (direct) detector discards never reach the
@@ -305,7 +306,7 @@ Tsim results:
 |---|---|
 | `strategy='active_statevector' needs N active qubits ... more than 30` | Width too large; see "Which circuits Tsim can simulate" |
 | `... bytes per shot ... more than half of the available memory` | Width too large for this machine's RAM |
-| `non-deterministic observables` or `The number of observables changed` (from `detector_error_model`) | An observable is random without noise; no flag fixes this. Make it deterministic (for a magic state, see the fidelity measurement in `tsim-qec-experiment`) |
+| `non-deterministic observables` or `The number of observables changed` (from `detector_error_model`) | An observable is random without noise; no flag fixes this. Make it deterministic (for a magic state, see the fidelity measurement in `running-qec-experiments-with-tsim`) |
 | `non-deterministic detectors` (from `detector_error_model(decompose_errors=True)`) | Pass `allow_gauge_detectors=True` as well |
 | `Malformed parametric tag` | Angles are in units of π: write `R_X(0.25) 0` or `I[R_X(0.25)] 0` |
 | `'Circuit' object has no attribute ...` | A Stim method; call it on `c.stim_circuit` |

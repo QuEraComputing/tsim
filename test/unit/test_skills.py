@@ -62,9 +62,9 @@ def _missing_modules(code: str) -> list[str]:
 
 def test_expected_skills_exist():
     assert {p.name for p in SKILL_DIRS} == {
-        "tsim",
-        "tsim-qec-experiment",
-        "tsim-port-circuits",
+        "simulating-circuits-with-tsim",
+        "running-qec-experiments-with-tsim",
+        "porting-circuits-to-tsim",
     }
 
 
@@ -101,7 +101,7 @@ def test_code_blocks_run(path: Path):
         exec(compile(code, str(path), "exec"), namespace)  # noqa: S102
 
 
-CHECK_MASK = SKILLS_DIR / "tsim" / "scripts" / "check_mask.py"
+CHECK_MASK = SKILLS_DIR / "simulating-circuits-with-tsim" / "scripts" / "check_mask.py"
 CIRCUIT = """
 R 0 1 2
 X 0

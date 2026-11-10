@@ -1,7 +1,7 @@
 # Agent instructions for Tsim
 
 These notes are for agents working on Tsim's code. To use Tsim in other projects, read the
-user skills in `skills/` instead (`tsim`, `tsim-qec-experiment`, `tsim-port-circuits`); they
+user skills in `skills/` instead (`simulating-circuits-with-tsim`, `running-qec-experiments-with-tsim`, `porting-circuits-to-tsim`); they
 also explain the cost model (active width) and the conventions users rely on.
 
 ## Commands
