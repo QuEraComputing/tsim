@@ -1,0 +1,8 @@
+skill = "tsim-port-circuits"
+prompt = """
+These cultivation circuits come from a paper's repo: inputs/cultivation_d3_standin.stim and \
+inputs/cultivation_d5_standin.stim. The authors replaced the T gates by S gates (and T_DAG by \
+S_DAG) because Stim can't do T. Run the d=3 one with real T gates in Tsim, check that the \
+conversion is right, and compare the postselected acceptance with the S stand-in. Is d=5 \
+feasible with real T gates? Keep compute under 10 minutes.
+"""

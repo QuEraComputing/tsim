@@ -84,6 +84,7 @@ dev = [
     "vulture>=2.16",
     "radon>=6.0.1",
     "zxparam[quimb]",
+    "pyyaml>=6.0",
 ]
 doc = [
     "griffe>=2.0.2",
@@ -133,6 +134,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 [tool.ruff.lint.per-file-ignores]
 "docs/**" = ["D"]
 "test/**" = ["D"]
+"evals/**" = ["D", "S603", "S607"]
 
 [tool.coverage.run]
 include = ["src/tsim/*"]
@@ -151,6 +153,7 @@ known_first_party = ["tsim"]
 ignore_notebooks = true
 extend_exclude = [
     "^accel-cutting-magic-state-main/",
+    "^evals/",
     "^benchmarks/",
     "^scripts/",
     "^docs/",
