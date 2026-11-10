@@ -18,7 +18,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import common, corpus, width
+from . import common, corpus, review, width
 from .common import FAILED, INFRA, OK, InfraError
 
 
@@ -493,6 +493,20 @@ def run(args) -> int:
         if wider or narrower:
             summary += f", active width: {wider} wider, {narrower} narrower"
     print(f"{summary}. Details: {out}")
+    # NOTE: only a comparison of two checkouts over a whole suite, with the recorded
+    # postselection, counts as evidence for a review (not --side setting comparisons).
+    whole_suite = not (args.circuits or args.only or args.max_width is not None)
+    if args.ref and whole_suite and not args.no_postselect:
+        # NOTE: a regression does not fail the evidence: it has to be explained.
+        review.write_evidence(
+            "bench",
+            not errors,
+            ref=sides[1].label,
+            suite=args.suite,
+            slower=slower,
+            wider=wider,
+            kept_differs=differs,
+        )
     if errors:
         return INFRA
     return FAILED if slower or differs or wider else OK
