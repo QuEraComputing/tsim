@@ -1,6 +1,6 @@
 ---
 name: tsim
-description: "Use when a task involves Tsim or bloqade-tsim, or a noisy circuit in Stim format with non-Clifford gates (T, T_DAG, R_X, R_Y, R_Z, U3, R_PAULI, TPP, CCZ, CCX, CS), such as magic state cultivation, distillation, injection or coherent rotation errors, even if Tsim is not named. Also use when someone asks whether such a circuit can be simulated or how long sampling will take (active width, k_max), samples its detectors, measurements or observables, ports Stim sampler code to Tsim, postselects inside Tsim, or hits Tsim problems such as \"needs N active qubits ... more than 30\", \"Malformed parametric tag\", detectors that read 1 where Stim reports 0, or slow sample() calls."
+description: "Samples noisy quantum circuits with non-Clifford gates using Tsim (bloqade-tsim), a Stim-compatible simulator, and judges whether a circuit is feasible. Use when a task involves Tsim or bloqade-tsim, or a noisy circuit in Stim format with non-Clifford gates (T, T_DAG, R_X, R_Y, R_Z, U3, R_PAULI, TPP, CCZ, CCX, CS), such as magic state cultivation, distillation, injection or coherent rotation errors, even if Tsim is not named. Also use when someone asks whether such a circuit can be simulated or how long sampling will take (active width, k_max), samples its detectors, measurements or observables, ports Stim sampler code to Tsim, postselects inside Tsim, or hits Tsim problems such as \"needs N active qubits ... more than 30\", \"Malformed parametric tag\", detectors that read 1 where Stim reports 0, or slow sample() calls."
 license: Apache-2.0
 compatibility: Python 3.11+. Written for Tsim main; `sampler.active_width` and `sampler.stats` need a release newer than 1.0.0.
 metadata:
@@ -210,8 +210,10 @@ Detector coordinates or the circuit's structure usually identify the stages; if 
 ask the user rather than guessing.
 
 **Write the mask as a plan and check it before sampling.** A wrong mask gives plausible but
-wrong numbers, so build it with `scripts/check_mask.py` from this skill's directory rather
-than by hand:
+wrong numbers, so build it with `scripts/check_mask.py` rather than by hand. Run the script,
+don't read it: call it with the Python environment that has Tsim, as `python
+<this skill's directory>/scripts/check_mask.py`, not as `./check_mask.py` (installers can drop
+the executable bit). The commands below abbreviate the path to `scripts/check_mask.py`.
 
 1. `python scripts/check_mask.py circuit.stim --summary` lists the detectors in groups by
    time coordinate, with any extra coordinates that label stages.

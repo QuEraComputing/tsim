@@ -1,6 +1,6 @@
 ---
 name: tsim-port-circuits
-description: "Use when someone shares an arXiv link or ID, a paper, a Zenodo or GitHub repository, or .stim files for a non-Clifford protocol (magic state cultivation, distillation, injection, CCZ or T factories) and asks whether Tsim can simulate it with real T, CCZ or CS gates, what its active width (k_max) or cost is, or to reproduce or extend the paper's results. Also use when published circuits use Clifford stand-ins (S or S_DAG for T, a |Y> input for |T>, a CCZ modelled only by its noise) that need converting to real gates, or when a converted circuit has detectors that fire without noise or random observables."
+description: "Ports published Stim circuits to Tsim with real non-Clifford gates and validates the conversion. Use when someone shares an arXiv link or ID, a paper, a Zenodo or GitHub repository, or .stim files for a non-Clifford protocol (magic state cultivation, distillation, injection, CCZ or T factories) and asks whether Tsim can simulate it with real T, CCZ or CS gates, what its active width (k_max) or cost is, or to reproduce or extend the paper's results. Also use when published circuits use Clifford stand-ins (S or S_DAG for T, a |Y> input for |T>, a CCZ modelled only by its noise) that need converting to real gates, or when a converted circuit has detectors that fire without noise or random observables."
 license: Apache-2.0
 compatibility: Python 3.11+, bloqade-tsim (main), stim.
 metadata:
