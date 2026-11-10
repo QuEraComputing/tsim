@@ -11,8 +11,12 @@ from . import common
 from .common import FAILED, OK, InfraError
 
 
-def changed_files() -> list[str]:
-    """Return files that differ from the merge base with main, plus untracked ones."""
+def changed_files(deleted: bool = False) -> list[str]:
+    """Return files that differ from the merge base with main, plus untracked ones.
+
+    Deleted files are left out unless `deleted` is set: pre-commit cannot lint them,
+    but deleting a source file is a reason to run tests.
+    """
     root = common.root()
     base = "HEAD"
     for candidate in ("origin/main", "main"):
@@ -25,7 +29,7 @@ def changed_files() -> list[str]:
     names += common.git(
         "ls-files", "--others", "--exclude-standard", cwd=root
     ).splitlines()
-    return sorted({name for name in names if (root / name).exists()})
+    return sorted({name for name in names if deleted or (root / name).exists()})
 
 
 def tests_for(files: list[str]) -> list[str] | None:
@@ -35,6 +39,12 @@ def tests_for(files: list[str]) -> list[str] | None:
     for name in files:
         path = Path(name)
         if path.suffix != ".py" and path.parts[0] not in ("skills", "dev"):
+            continue
+        if not (root / path).exists():
+            # NOTE: a deleted source file can break any importer; a deleted test
+            # file has nothing left to run.
+            if path.parts[:2] == ("src", "tsim"):
+                return None
             continue
         if path.parts[0] == "test":
             if path.name.startswith("test_"):
@@ -97,7 +107,7 @@ def test(args) -> int:
     """Run the tests of the changed files, the full suite, or the given targets."""
     targets = list(args.pytest_args)
     if not targets and args.changed:
-        mapped = tests_for(changed_files())
+        mapped = tests_for(changed_files(deleted=True))
         if mapped == []:
             print(
                 "no changed files map to tests; use `tsim-dev test` for the full suite"
@@ -128,7 +138,7 @@ def check(args) -> int:
     cmd += ["--files", *files] if files else ["--all-files"]
     with open(log, "w") as file:
         code = subprocess.run(
-            cmd,
+            common.capped(cmd, mem=args.mem, timeout=args.timeout),
             cwd=common.root(),
             env=common.child_env(),
             stdout=file,

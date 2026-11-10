@@ -8,6 +8,7 @@ measured in interleaved rounds and compared round by round.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import math
 import os
@@ -60,6 +61,27 @@ class Side:
 
 
 SIDE_KEYS = ("threads", "strategy")
+
+
+def distinct(sides: list[Side]) -> list[Side]:
+    """Make the sides' labels unique; reject two sides that are the same.
+
+    Two checkouts can describe themselves the same way (same branch and commit, both
+    dirty). Their rounds are kept apart by label, so such labels get the checkout path.
+    """
+    if len(sides) < 2 or sides[0].describe() != sides[1].describe():
+        return sides
+    if sides[0].python == sides[1].python:
+        raise InfraError("the two sides are the same; change a setting of one")
+    return [
+        dataclasses.replace(side, label=f"{side.label} ({_checkout(side.python)})")
+        for side in sides
+    ]
+
+
+def _checkout(python: Path) -> Path:
+    """Return the checkout of a `.venv/bin/python`, or the executable itself."""
+    return python.parents[2] if python.parent.parent.name == ".venv" else python
 
 
 def parse_side(spec: str) -> Side:
@@ -423,8 +445,7 @@ def run(args) -> int:
             sides = [Side(common.describe(common.root()), Path(sys.executable))]
             if args.ref:
                 sides.append(reference(args.ref))
-        if len({side.describe() for side in sides}) < len(sides):
-            raise InfraError("the two sides are the same; change a setting of one")
+        sides = distinct(sides)
     except InfraError as error:
         common.die(str(error))
     if args.timeout is None:

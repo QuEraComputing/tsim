@@ -27,10 +27,12 @@ def run(args) -> int:
     )
     threads = max(1, int(args.cpus)) if args.cpus else None
     code = subprocess.run(cmd, env=common.child_env(threads), check=False).returncode
-    if code in (124, 137, -9):
+    if code:
+        # NOTE: the documented codes are 0 pass and 1 failed; the command's own
+        # exit code is printed, not passed on.
         reason = common.explain_exit(code, args.mem, args.timeout)
-        print(f"ERROR: {reason}", flush=True)
-    return 137 if code == -9 else code
+        print(f"FAILED: {reason}", flush=True)
+    return FAILED if code else OK
 
 
 def _unit(name: str) -> str:

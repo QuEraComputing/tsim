@@ -17,7 +17,7 @@ DETACHED = re.compile(r"\bnohup\b|\bsetsid\b|&\s*(disown\b|$)", re.MULTILINE)
 def verdict(tool_input: dict) -> str | None:
     """Return why the command is blocked, or None to let it run."""
     command = tool_input.get("command", "")
-    if re.search(r"\bpkill\b[^|;&\n]*\s-\w*f", command):
+    if re.search(r"\bpkill\b[^|;&\n]*\s(-\w*f|--full\b)", command):
         return (
             "`pkill -f` also matches this shell's own command line and kills it. "
             "Stop a job with `uv run tsim-dev job stop NAME`, or kill by PID."

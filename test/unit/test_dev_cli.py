@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from tsim_dev import bench, checks, cli, common, corpus, width
+from tsim_dev import bench, checks, cli, common, corpus, jobs, width
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOK = ROOT / ".claude" / "hooks" / "guard_bash.py"
@@ -193,6 +193,8 @@ def test_pytest_summary_keeps_the_first_failure_and_the_last_line(tmp_path):
     [
         ({"command": "pkill -f fuzz.py"}, True),
         ({"command": "pkill -9 -f fuzz"}, True),
+        ({"command": "pkill --full fuzz.py"}, True),
+        ({"command": "pkill -9 --full fuzz"}, True),
         ({"command": "nohup python x.py > log &"}, True),
         ({"command": "uv run pytest test", "run_in_background": True}, True),
         ({"command": "uv run tsim-dev bench", "run_in_background": True}, False),
@@ -428,3 +430,31 @@ def test_shot_benchmarks_compare_and_check_the_active_width(fake_bench, monkeypa
 
     widths.update(new=[6, 6, 7], ref=[6, 6, 6])
     assert "changed between runs" in bench.run_case(case, sides, args)["error"]
+
+
+def test_deleted_files_still_choose_tests():
+    # A deleted source file can break its importers: run everything.
+    assert checks.tests_for(["src/tsim/no_longer_here.py"]) is None
+    # A deleted test file has nothing left to run.
+    assert checks.tests_for(["test/unit/test_no_longer_here.py"]) == []
+
+
+def test_sides_with_the_same_label_are_told_apart(tmp_path):
+    one = tmp_path / "a" / ".venv" / "bin" / "python"
+    two = tmp_path / "b" / ".venv" / "bin" / "python"
+    sides = bench.distinct(
+        [bench.Side("main@1234-dirty", one), bench.Side("main@1234-dirty", two)]
+    )
+    assert sides[0].describe() != sides[1].describe()
+    assert str(tmp_path / "a") in sides[0].label
+    with pytest.raises(common.InfraError, match="the same"):
+        bench.distinct([bench.Side("x", one), bench.Side("x", one)])
+
+
+def test_run_maps_command_failures_to_exit_one(capsys):
+    args = cli.build_parser().parse_args(["run"])
+    args.command = [sys.executable, "-c", "raise SystemExit(42)"]
+    assert jobs.run(args) == 1
+    assert "exit code 42" in capsys.readouterr().out
+    args.command = [sys.executable, "-c", "pass"]
+    assert jobs.run(args) == 0
