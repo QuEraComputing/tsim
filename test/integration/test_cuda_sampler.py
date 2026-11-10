@@ -1,6 +1,8 @@
 """The CUDA executor end to end, against the stabilizer-rank strategy and the CPU executor."""
 
 import multiprocessing
+import pickle
+import threading
 import warnings
 from test.helpers.gen import gen_stim_circuit
 from test.helpers.statevector import CIRCUITS, assert_counts_match
@@ -703,3 +705,83 @@ def test_noise_beyond_the_gpu_tables_samples_on_the_cpu():
         sampler = Circuit(text).compile_detector_sampler(seed=1)
     assert type(sampler._shots) is ShotSampler
     assert sampler.sample(10).shape == (10, 9)
+
+
+_FORKED = {}
+
+
+def _sample_in_child(_):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        shape = _FORKED["sampler"].sample(100).shape
+    return shape, [str(w.message) for w in caught]
+
+
+def test_samplers_compiled_before_a_fork_sample_on_the_cpu_in_the_child():
+    sampler = _gpu(Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(seed=1))
+    sampler.sample(10)
+    # NOTE: the child gets the sampler by fork, not by pickle.
+    _FORKED["sampler"] = sampler
+    try:
+        with multiprocessing.get_context("fork").Pool(1) as pool:
+            shape, messages = pool.map(_sample_in_child, [0])[0]
+    finally:
+        _FORKED.clear()
+    assert shape == (100, 3)
+    assert any("forked" in m for m in messages)
+
+
+def test_gpu_samplers_pickle_and_continue_their_streams():
+    sampler = _gpu(Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(seed=26))
+    sampler.sample(1000)
+    loaded = pickle.loads(pickle.dumps(sampler))  # noqa: S301
+    assert isinstance(loaded._shots, CudaShotSampler)
+    np.testing.assert_array_equal(loaded.sample(5000), sampler.sample(5000))
+
+
+def test_an_empty_mask_is_not_taken_for_no_mask():
+    sampler = _gpu(Circuit(T_STATE_X).compile_detector_sampler(seed=1))
+    assert sampler.sample(1000, append_observables=True).shape == (1000, 1)
+    empty = np.zeros(0, dtype=bool)
+    kept = sampler.sample(1000, append_observables=True, postselection_mask=empty)
+    assert kept.shape == (1000, 1)
+
+
+def test_outputs_beyond_the_kernels_shared_memory_sample_on_the_cpu():
+    # NOTE: 6200 outputs need 97 words, whose packed rows do not fit in shared
+    # memory beside them.
+    n = 6200
+    qubits = " ".join(map(str, range(n)))
+    circuit = Circuit(f"R {qubits}\nX_ERROR(0.01) {qubits}\nM {qubits}")
+    with pytest.warns(UserWarning, match="cannot sample this circuit"):
+        sampler = circuit.compile_sampler(seed=1)
+    assert type(sampler._shots) is ShotSampler
+    assert sampler.sample(10, bit_packed=True).shape == (10, n // 8)
+
+
+def test_concurrent_calls_on_one_sampler_are_serialized():
+    sampler = _gpu(Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(seed=1))
+    mask = np.array([False, False, True])
+    results, errors = [], []
+
+    def work(k):
+        try:
+            for _ in range(20):
+                got = sampler.sample(20_000, postselection_mask=mask if k % 2 else None)
+                results.append((k % 2, got))
+        except Exception as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=work, args=(k,)) for k in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not errors
+    for masked, got in results:
+        assert got.shape[1] == 3
+        if masked:
+            assert not got[:, 2].any()
+        else:
+            # NOTE: detector 2 fires at rate 0.2.
+            assert abs(got[:, 2].mean() - 0.2) < 0.02
