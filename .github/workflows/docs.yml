@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - "docs/**"
+      - "skills/**"
       - "src/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -62,7 +63,7 @@ jobs:
           TOKEN: ${{ github.token }}
         run: |
           site=$(mktemp -d)
-          cp -r docs "$site/docs"
+          cp -rL docs "$site/docs"
           cd "$site"
           git init -q -b "$DEPLOY_BRANCH"
           git config user.name "github-actions[bot]"
