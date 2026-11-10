@@ -1,4 +1,5 @@
 # Build tooling and notebook helpers; Mintlify only needs the MDX output.
-*.py
+# Anchored, so the scripts in .mintlify/skills/ are still served.
+/*.py
 *.ipynb
 tutorials/utils/

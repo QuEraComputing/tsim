@@ -1,11 +1,11 @@
 ---
 name: tsim-port-circuits
-description: Take Stim circuits published with a paper or repository (magic state cultivation, distillation, factories, non-Clifford QEC experiments) and simulate them in Tsim with real non-Clifford gates instead of Clifford stand-ins, including finding the circuit files, converting stand-in gates to T gates, validating against Stim, and measuring the active width (k_max) to judge feasibility. Use this skill whenever someone shares an arXiv link, a .stim file or a GitHub repo and asks whether Tsim can simulate it, how expensive it is, or to reproduce or extend the paper's simulations with T gates.
+description: "Use when someone shares an arXiv link or ID, a paper, a Zenodo or GitHub repository, or .stim files for a non-Clifford protocol (magic state cultivation, distillation, injection, CCZ or T factories) and asks whether Tsim can simulate it with real T, CCZ or CS gates, what its active width (k_max) or cost is, or to reproduce or extend the paper's results. Also use when published circuits use Clifford stand-ins (S or S_DAG for T, a |Y> input for |T>, a CCZ modelled only by its noise) that need converting to real gates, or when a converted circuit has detectors that fire without noise or random observables."
 license: Apache-2.0
 compatibility: Python 3.11+, bloqade-tsim (main), stim.
 metadata:
   author: QuEra Computing
-  version: "1.1"
+  version: "1.2"
 ---
 
 # Porting published circuits to Tsim
@@ -15,6 +15,22 @@ replaced by a Clifford stand-in, because Stim cannot simulate T. Tsim can, so th
 can be rerun with real T gates. This skill covers getting the circuits, converting them, checking
 the conversion, and deciding what is feasible. It builds on the `tsim` skill (active width,
 sampling) and hands off to `tsim-qec-experiment` for the actual statistics.
+
+Copy this checklist and tick items off as you go. Do not report numbers from a converted
+circuit until every validation item is ticked; if one cannot pass, say which and why.
+
+```
+Porting:
+- [ ] 1. Circuit files found; source (URL, commit or DOI) recorded next to them
+- [ ] 2. Stand-in convention identified from the paper; conversion confirmed with the user
+- [ ] 2. Converted; T count matches the paper (CCZ/CCX count as 7)
+- [ ] 3. Stand-in in Tsim (reference flags) agrees with Stim within error bars
+- [ ] 3. Noiseless real circuit: no detector used for postselection or decoding fires
+- [ ] 3. Noiseless real circuit: every observable is deterministic
+- [ ] 3. Noiseless stand-in: observables checked; random ones noted in the report
+- [ ] 4. Active width (or the width error) recorded for every circuit
+- [ ] 5. Plan reported: what is feasible, and what was modified and why
+```
 
 ## 1. Find the published circuits
 

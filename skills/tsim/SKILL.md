@@ -1,11 +1,11 @@
 ---
 name: tsim
-description: Simulate noisy quantum circuits that contain non-Clifford gates (T, T_DAG, arbitrary rotations, U3, CCZ, CS) with Tsim (the bloqade-tsim package), a Stim-compatible sampler. Use this skill whenever a task mentions Tsim or bloqade-tsim, asks to sample measurements, detectors or observables from a Clifford+T or Clifford+rotation circuit, asks whether such a circuit can be simulated or how long it will take, or involves magic state distillation, cultivation or coherent errors in a Stim-style circuit, even if Tsim is not named.
+description: "Use when a task involves Tsim or bloqade-tsim, or a noisy circuit in Stim format with non-Clifford gates (T, T_DAG, R_X, R_Y, R_Z, U3, R_PAULI, TPP, CCZ, CCX, CS), such as magic state cultivation, distillation, injection or coherent rotation errors, even if Tsim is not named. Also use when someone asks whether such a circuit can be simulated or how long sampling will take (active width, k_max), samples its detectors, measurements or observables, ports Stim sampler code to Tsim, postselects inside Tsim, or hits Tsim problems such as \"needs N active qubits ... more than 30\", \"Malformed parametric tag\", detectors that read 1 where Stim reports 0, or slow sample() calls."
 license: Apache-2.0
 compatibility: Python 3.11+. Written for Tsim main; `sampler.active_width` and `sampler.stats` need a release newer than 1.0.0.
 metadata:
   author: QuEra Computing
-  version: "1.1"
+  version: "1.2"
 ---
 
 # Tsim
@@ -209,10 +209,35 @@ what `sinter` does, gives the same statistics but simulates every discarded shot
 Detector coordinates or the circuit's structure usually identify the stages; if they do not,
 ask the user rather than guessing.
 
+**Write the mask as a plan and check it before sampling.** A wrong mask gives plausible but
+wrong numbers, so build it with `scripts/check_mask.py` from this skill's directory rather
+than by hand:
+
+1. `python scripts/check_mask.py circuit.stim --summary` lists the detectors in groups by
+   time coordinate, with any extra coordinates that label stages.
+2. Write `plan.json`, assigning every detector to a named stage with an action:
+
+   ```json
+   {"stages": [
+     {"name": "injection", "detectors": "0-6", "action": "postselect"},
+     {"name": "cultivation", "detectors": "7-13", "action": "postselect"},
+     {"name": "final check", "detectors": "14-19", "action": "ignore"}
+   ]}
+   ```
+
+   Actions are `postselect` (masked), `decode` and `ignore`; detectors are indices, inclusive
+   ranges `"a-b"`, or lists of those.
+3. `python scripts/check_mask.py circuit.stim plan.json --out mask.npy` fails if a detector is
+   in no stage or in two, or if a postselected detector reads 1 or is random without noise. It
+   also reports the acceptance of each stage from a short noisy run. Pass `--reference` if you
+   will sample with `use_detector_reference_sample=True`. Fix the plan and rerun until it
+   prints `OK`, then report the plan with the results.
+4. Load the mask and sample:
+
 ```python
 import numpy as np
 
-mask = np.zeros(c.num_detectors, dtype=bool)
+mask = np.zeros(c.num_detectors, dtype=bool)  # or: mask = np.load("mask.npy")
 mask[0] = True
 shots = 100_000
 dets, obs = sampler.sample(shots=shots, postselection_mask=mask, separate_observables=True)
@@ -229,7 +254,17 @@ seconds; do not use them, not even as a cross-check.
 ## Checking results
 
 Cheap checks catch most modelling mistakes. None of them needs another sampling strategy: do
-not cross-check against `"cat5"`, `"bss"` or `"cutting"` (see above).
+not cross-check against `"cat5"`, `"bss"` or `"cutting"` (see above). Before reporting numbers,
+copy this checklist and tick it off:
+
+```
+Tsim results:
+- [ ] Active width read; rate timed with a warm-up and a large call; thread count noted
+- [ ] Noiseless run: detectors used for postselection or decoding never fire
+- [ ] Reference flags used only if detectors and observables are deterministic
+- [ ] Postselection plan checked with scripts/check_mask.py (if postselecting)
+- [ ] At least one check below passed (stand-in vs Stim, analytic case, or to_tensor)
+```
 
 - **Clifford stand-in:** replace `T` by `S` and `T_DAG` by `S_DAG`, sample in Tsim and in
   Stim (in Tsim with `use_detector_reference_sample=True` and

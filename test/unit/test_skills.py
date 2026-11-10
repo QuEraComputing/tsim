@@ -11,9 +11,13 @@ Triggering and behavioral evals are not run in CI; see ``evals/skills/README.md`
 
 import ast
 import importlib.util
+import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 import yaml
 
@@ -95,3 +99,61 @@ def test_code_blocks_run(path: Path):
         if _missing_modules(code):
             continue
         exec(compile(code, str(path), "exec"), namespace)  # noqa: S102
+
+
+CHECK_MASK = SKILLS_DIR / "tsim" / "scripts" / "check_mask.py"
+CIRCUIT = """
+R 0 1 2
+X 0
+X_ERROR(0.01) 0 1 2
+H 2
+M 0 1 2
+DETECTOR(0, 0, 0) rec[-3]
+DETECTOR(1, 0, 0) rec[-2]
+DETECTOR(2, 0, 1) rec[-1]
+"""
+
+
+def _check_mask(tmp_path: Path, plan: dict | None, *args: str):
+    circuit = tmp_path / "c.stim"
+    circuit.write_text(CIRCUIT)
+    cmd = [sys.executable, str(CHECK_MASK), str(circuit)]
+    if plan is not None:
+        (tmp_path / "plan.json").write_text(json.dumps(plan))
+        cmd.append(str(tmp_path / "plan.json"))
+    cmd += ["--shots", "1000", "--noiseless-shots", "200", *args]
+    # The command runs the skill's own script with this interpreter.
+    return subprocess.run(  # noqa: S603
+        cmd, capture_output=True, text=True, timeout=300
+    )
+
+
+def test_check_mask_summary(tmp_path: Path):
+    result = _check_mask(tmp_path, None, "--summary")
+    assert result.returncode == 0, result.stderr
+    assert "D0-D1 (2): time coordinate 0" in result.stdout
+
+
+def test_check_mask_accepts_a_good_plan(tmp_path: Path):
+    plan = {
+        "stages": [
+            {"name": "checks", "detectors": "1"},
+            {"name": "flag", "detectors": [0], "action": "ignore"},
+            {"name": "readout", "detectors": "2-2", "action": "ignore"},
+        ]
+    }
+    result = _check_mask(tmp_path, plan, "--out", str(tmp_path / "mask.npy"))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert np.load(tmp_path / "mask.npy").tolist() == [False, True, False]
+
+
+def test_check_mask_rejects_a_bad_plan(tmp_path: Path):
+    plan = {
+        "stages": [{"name": "all", "detectors": "0-1"}, {"name": "x", "detectors": [1]}]
+    }
+    result = _check_mask(tmp_path, plan)
+    assert result.returncode == 1
+    out = result.stdout
+    assert "repeats detectors already in a stage: 1" in out
+    assert "detectors in no stage: 2" in out
+    assert "postselected detectors 0 are 1 in every noiseless shot" in out

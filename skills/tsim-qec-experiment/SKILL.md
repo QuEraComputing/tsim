@@ -1,11 +1,11 @@
 ---
 name: tsim-qec-experiment
-description: Run quantum error correction studies with Tsim, such as logical error rate curves, postselected magic state cultivation or distillation, acceptance rates, and output-state fidelity, including decoder choice (PyMatching, Tesseract, BP-LSD, Relay-BP), shot budgets and error bars. Use this skill whenever someone wants a logical error rate, threshold plot, acceptance rate or fidelity from a circuit with T gates or rotations, wants to decode Tsim samples, or is about to use sinter with Tsim, even if they only say "simulate this protocol" or "reproduce this figure".
+description: "Use when someone wants a logical error rate, threshold or error-rate-vs-p curve, acceptance (discard) rate, output-state infidelity or error bars from a noisy circuit with T gates, rotations or other non-Clifford gates; decodes Tsim samples (PyMatching, Tesseract, BP-LSD from ldpc, Relay-BP); builds a detector error model for a non-Clifford circuit; postselects a cultivation, distillation or injection protocol; plans a shot budget; or is about to use sinter or sinter.collect with Tsim. Also use for \"simulate this protocol\" or \"reproduce this figure\" requests about such circuits, and for detector_error_model errors such as \"non-deterministic observables\" or \"The number of observables changed\"."
 license: Apache-2.0
 compatibility: Python 3.11+, bloqade-tsim (main). Decoders are separate packages.
 metadata:
   author: QuEra Computing
-  version: "1.1"
+  version: "1.2"
 ---
 
 # QEC experiments with Tsim
@@ -17,6 +17,21 @@ a script that regenerates them.
 
 ## Workflow
 
+Copy this checklist into your notes or reply and tick items off as you go; the details of
+each step follow it.
+
+```
+QEC study:
+- [ ] 1. Circuit builder written; one function per parameter point
+- [ ] 2. Width read, rate timed, full budget estimated and told to the user
+- [ ] 3. Postselection plan checked with check_mask.py (OK); decoded detectors listed
+- [ ] 4. Decoder chosen; model built (twirled if rotations are noise); decoder timed
+- [ ] 5. Points sampled with run_point, counts logged per call
+- [ ] 6. Noiseless check: masked and decoded detectors never fire, observables never flip
+- [ ] 7. Results reported with shots, kept, errors, acceptance, intervals, seconds
+- [ ] 8. One script regenerates every number and figure
+```
+
 1. **Build the circuit** for each parameter point (noise strength, distance, rounds). Keep it in
    a function so the final script can regenerate everything.
 2. **Compile and check the cost**: read `sampler.active_width`, then time a warm-up call and
@@ -27,7 +42,9 @@ a script that regenerates them.
    on a CCZ factory, keeping 1 of 9 observables lowered the width from 16 to 9. This changes
    the circuit, so propose it to the user rather than doing it silently.
 3. **Decide what is postselected and what is decoded.** Postselection detectors go into a
-   `postselection_mask`. Detectors that feed a decoder stay unmasked.
+   `postselection_mask`. Detectors that feed a decoder stay unmasked. Write this as a plan and
+   check it with `scripts/check_mask.py` of the `tsim` skill (see "Postselection" there),
+   which also gives the acceptance of each stage.
 4. **Pick a decoder** (or none) from the table below.
 5. **Sample in large calls, decode, and accumulate counts**, using the loop below.
 6. **Report** each point with shots, kept shots, errors, acceptance, logical error rate per
