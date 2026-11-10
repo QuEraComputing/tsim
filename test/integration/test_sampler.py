@@ -236,7 +236,10 @@ def test_rotated_surface_code_single_noise_channel_matches_stim(
         **noise_kwargs,
     )
 
-    shots = 200_000
+    # NOTE: Stim's samples for a seed differ between platforms. At 200_000 shots the
+    # 0.5% tolerance was about 1.5 sigma and failed on macOS; at 2_000_000 the largest
+    # difference seen is 0.15%.
+    shots = 2_000_000
     stim_dets = circ.compile_detector_sampler(seed=42).sample(
         shots=shots, append_observables=True
     )
