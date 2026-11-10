@@ -51,6 +51,14 @@ print(sampler.stats)  # component widths, peak bytes per shot, ...
 dets, obs = sampler.sample(shots=100_000, separate_observables=True)
 ```
 
+**Coming from Stim? Tsim's detector values differ by default.** Stim reports each detector and
+observable as a flip relative to a noiseless reference sample; Tsim reports its raw value. A
+detector whose noiseless value is 1 reads 1 in every Tsim shot and 0 in Stim, so detector rates,
+postselection and decoding all change. To get Stim's convention, sample with
+`use_detector_reference_sample=True` and `use_observable_reference_sample=True`. Use these only
+when the detectors and observables are deterministic without noise; for random ones (for
+example a measured magic state) the reference is meaningless. See "Differences from Stim".
+
 | Active width | What to expect on a typical multi-core CPU |
 |---|---|
 | 0 | No state vector; as fast as sampling the noise |
@@ -220,7 +228,8 @@ seconds; do not use them, not even as a cross-check.
 Cheap checks catch most modelling mistakes:
 
 - **Clifford stand-in:** replace `T` by `S` and `T_DAG` by `S_DAG`, sample in Tsim and in
-  Stim (with the reference-sample flags in Tsim), and compare detector rates within error bars.
+  Stim (in Tsim with `use_detector_reference_sample=True` and
+  `use_observable_reference_sample=True`), and compare detector rates within error bars.
 - **Noiseless run:** in `c.without_noise()`, detectors meant to be deterministic must never fire.
 - **Analytic case:** a T state under `DEPOLARIZE1(p)`, then noiseless `T_DAG`, `H`, `M`, gives
   `P(0) = 1 - 2p/3`.
