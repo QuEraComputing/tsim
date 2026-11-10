@@ -15,9 +15,10 @@ experiments/
 /clifft_noise_transparent_squeeze.md
 /zx_pbc_explainer.html
 
-# mkdocs
-site/
-docs/reference/
+# Generated Mintlify docs (docs/build.py); CI publishes them to the docs-site branch
+docs/api-reference/
+docs/tutorials/*.mdx
+docs/images/tutorials/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -171,9 +172,6 @@ venv.bak/
 
 # Rope project settings
 .ropeproject
-
-# mkdocs documentation
-/site
 
 # mypy
 .mypy_cache/

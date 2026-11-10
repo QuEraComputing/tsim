@@ -1,6 +1,8 @@
-# Tsim
+---
+title: "Tsim"
+description: "A fast sampler for noisy quantum circuits with non-Clifford gates, built on the ZX-calculus."
+---
 
-A fast sampler for noisy quantum circuits with non-Clifford gates, built on the ZX-calculus.
 Tsim feels just like [Stim](https://github.com/quantumlib/Stim), but supports `T` gates, arbitrary rotations, and
 other non-Clifford instructions.
 
@@ -8,7 +10,7 @@ A detailed description of Tsim is given in [arXiv:2604.01059](https://arxiv.org/
 
 ## Quick Start
 
-An introductory tutorial is available [here](demos/encoding_demo.ipynb). For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/blob/v1.16.0/doc/gates.md), plus the [non-Clifford instructions](#supported-instructions) listed below.
+An introductory tutorial is available [here](/tutorials/encoding_demo). For many existing scripts, replacing `stim` with `tsim` should just work. Tsim mirrors the Stim API and supports all [Stim instructions](https://github.com/quantumlib/Stim/blob/v1.16.0/doc/gates.md), plus the [non-Clifford instructions](#supported-instructions) listed below.
 
 ```python
 import tsim
@@ -44,7 +46,7 @@ install the JAX CUDA extra:
 uv add "bloqade-tsim[cuda13]"
 ```
 
-See [Installation](install.md) for more options.
+See [Installation](/install) for more options.
 
 ## Sampling Strategies
 
@@ -65,7 +67,7 @@ The stabilizer rank strategies are provisional; see [API stability](#api-stabili
 The [Tsim 1.0 blog post](https://bloqade.quera.com/blog/introducing-tsim-1-0-0/) introduces the active state vector strategy and compares its performance with other simulators.
 
 ## Architecture
-![Architecture](architecture.svg){ width="100%" }
+<img src="/architecture.svg" alt="Tsim architecture diagram" style={{ width: "100%" }} />
 
 Quantum programs are translated into ZX diagrams in which Pauli noise channels appear as parameterized vertices with binary variables $e_i$.
 ZX simplification factors the diagram into a classical part that represents the Tanner graph and a quantum part containing the observable circuit. Both parts define a new basis of *error mechanisms* $f_i = \bigoplus_j T_{ij}\,e_j$.
@@ -176,7 +178,7 @@ measurements have parity 1, discards every shot; `sample` warns about it.
 
 ## API stability
 
-Tsim follows [semantic versioning](https://semver.org/) for its public API: `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and `tsim.CompiledDetectorSampler`. `tsim.experimental` holds helpers that may change in any release. Every other module is internal, even where it is importable. The stabilizer rank [sampling strategies](#sampling-strategies) (`"cat5"`, `"bss"`, `"cutting"`) are provisional: they may be removed in a minor release, after at least one minor release in which they emit a `DeprecationWarning`. See the [API reference](reference/index.md).
+Tsim follows [semantic versioning](https://semver.org/) for its public API: `tsim.Circuit`, `tsim.CompiledMeasurementSampler` and `tsim.CompiledDetectorSampler`. `tsim.experimental` holds helpers that may change in any release. Every other module is internal, even where it is importable. The stabilizer rank [sampling strategies](#sampling-strategies) (`"cat5"`, `"bss"`, `"cutting"`) are provisional: they may be removed in a minor release, after at least one minor release in which they emit a `DeprecationWarning`. See the [API reference](/api-reference).
 
 A seed reproduces its samples only with the same versions of Tsim and its dependencies (such as NumPy and JAX) and the same backend (CPU or GPU). With a stabilizer-rank strategy, pass the same explicit `batch_size` as well, since the default batch size depends on the free memory.
 
