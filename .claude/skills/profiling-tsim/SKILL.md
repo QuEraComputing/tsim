@@ -1,6 +1,8 @@
 ---
 name: profiling-tsim
 description: Finds where Tsim spends compile and sampling time with `tsim-dev profile` and `tsim-dev inspect`, and turns a profile into an optimization plan. Use when asked why a circuit is slow, where time goes, what to optimize next, or before starting performance work on Tsim.
+metadata:
+  internal: true
 ---
 
 # Profiling Tsim

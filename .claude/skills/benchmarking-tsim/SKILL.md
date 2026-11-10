@@ -1,6 +1,8 @@
 ---
 name: benchmarking-tsim
 description: Measures Tsim throughput and compile time with `tsim-dev bench` on the tsim-bench circuits and compares a change against a reference commit or checkout. Use when asked to benchmark Tsim, to check a change for performance regressions, to produce before and after numbers for a pull request, to run the tsim-bench corpus, or to add a benchmark circuit.
+metadata:
+  internal: true
 ---
 
 # Benchmarking Tsim

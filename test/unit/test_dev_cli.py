@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 from tsim_dev import bench, checks, cli, common, corpus
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -221,10 +222,10 @@ def test_dev_skills_have_valid_frontmatter():
     for path in skills:
         text = path.read_text()
         assert text.startswith("---\n")
-        front = dict(
-            line.split(": ", 1) for line in text.split("---\n")[1].strip().splitlines()
-        )
+        front = yaml.safe_load(text.split("---\n")[1])
         assert front["name"] == path.parent.name
+        # NOTE: hides development skills from `npx skills add QuEraComputing/tsim`.
+        assert front["metadata"]["internal"] is True
         assert 0 < len(front["description"]) <= 1024
         assert len(text.splitlines()) < 500
 

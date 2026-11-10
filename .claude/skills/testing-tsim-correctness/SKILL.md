@@ -1,6 +1,8 @@
 ---
 name: testing-tsim-correctness
 description: Chooses the oracle and writes statistical tests that show a Tsim change samples the right distribution. Use when adding or changing a gate, noise channel, sampler option, scheduler, plan or kernel in Tsim, when fixing a wrong-results bug, or when asked whether Tsim's output can be trusted for a circuit.
+metadata:
+  internal: true
 ---
 
 # Testing Tsim's correctness

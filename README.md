@@ -36,7 +36,7 @@ agents (Claude Code, Codex, Cursor and others) how to judge whether a circuit is
 sample and postselect it, run logical error rate studies, and port published Stim circuits.
 Install it with:
 ```bash
-npx skills add QuEraComputing/tsim
+npx skills add QuEraComputing/tsim --skill simulating-circuits-with-tsim
 ```
 
 ## Quick Start

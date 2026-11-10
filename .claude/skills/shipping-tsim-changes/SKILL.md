@@ -1,6 +1,8 @@
 ---
 name: shipping-tsim-changes
 description: Takes a change to Tsim's code from a new branch to a reviewed local commit, with the checks, evidence and git rules this repository uses. Use when starting a feature, bug fix or optimization in the Tsim repository, when asked to open or update a pull request, or before saying that a change is done.
+metadata:
+  internal: true
 ---
 
 # Shipping a change to Tsim
