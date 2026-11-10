@@ -4,20 +4,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import numpy as np
 import zxparam
 from zxparam import Graph, Phase, Scalar
 
 from tsim.core.params import ParamLayout
 from tsim.core.parse import parse_stim_circuit
 from tsim.core.types import SamplingGraph
-from tsim.utils.linalg import find_basis
+from tsim.utils.linalg import SparseGF2Matrix, find_basis_sparse
 
 if TYPE_CHECKING:
     from tsim.circuit import Circuit
 
 
-def transform_error_basis(g: Graph, num_errors: int) -> tuple[Graph, np.ndarray]:
+def transform_error_basis(g: Graph, num_errors: int) -> tuple[Graph, SparseGF2Matrix]:
     """Rewrite error parameters in a smaller basis of error-basis bits.
 
     Finds a linearly independent basis over GF(2) for the parity sets on the
@@ -26,12 +25,16 @@ def transform_error_basis(g: Graph, num_errors: int) -> tuple[Graph, np.ndarray]
     so basis bits are numbered in output order where possible, which helps the
     direct path avoid a reindex.
 
+    The parity sets are kept sparse (a vertex depends on tens of the ~10^6
+    error bits of a large circuit), so memory grows with the number of
+    vertex-error incidences, not with vertices x errors.
+
     Args:
         g: A graph whose vertex parameters are error IDs ``0 … num_errors − 1``.
         num_errors: The number of error bits.
 
     Returns:
-        The graph (mutated in place) and a binary matrix of shape
+        The graph (mutated in place) and a sparse binary matrix of shape
         ``(num_basis, num_errors)`` whose row ``j`` lists the errors whose XOR is
         basis bit ``j``.
 
@@ -43,18 +46,18 @@ def transform_error_basis(g: Graph, num_errors: int) -> tuple[Graph, np.ndarray]
             v for v in [*near_outputs, *g.vertices()] if g.phase(v).parameters
         )
     )
-    error_matrix = np.zeros((len(parametrized), num_errors), dtype=np.uint8)
-    for row, v in enumerate(parametrized):
-        params = sorted(g.phase(v).parameters)
+    rows: list[tuple[int, ...]] = []
+    for v in parametrized:
+        params = tuple(sorted(g.phase(v).parameters))
         if params[-1] >= num_errors:
             raise ValueError(f"vertex {v} carries a parameter that is not an error bit")
-        error_matrix[row, params] = 1
+        rows.append(params)
 
-    basis, transform = find_basis(error_matrix)
+    basis_indices, transform = find_basis_sparse(rows)
     for v, transform_row in zip(parametrized, transform, strict=True):
-        ids = frozenset(layout.basis(int(j)) for j in np.nonzero(transform_row)[0])
+        ids = frozenset(layout.basis(j) for j in transform_row)
         g.set_phase(v, Phase(g.phase(v).value, ids))
-    return g, basis
+    return g, SparseGF2Matrix([rows[i] for i in basis_indices], num_errors)
 
 
 def prepare_graph(circuit: Circuit, *, sample_detectors: bool) -> SamplingGraph:
