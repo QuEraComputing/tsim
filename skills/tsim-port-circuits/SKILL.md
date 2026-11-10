@@ -124,8 +124,9 @@ by size (distance, rounds), report how the width grows; that is often the main r
 
 - Width small enough: run the paper's figure with real T gates using `tsim-qec-experiment`, and plot
   the stand-in and real results together; the difference is usually the point.
-- Width too large: say so with the measured width and an estimate of time per shot, and suggest
-  the largest instance that is feasible.
+- Width too large: say so with the measured width and an estimate of time per shot, suggest
+  the largest instance that is feasible, and suggest opening an issue with the full circuit
+  (see "Reporting bugs and circuits Tsim cannot simulate yet" in the `tsim` skill).
 - Note anything Tsim cannot express. Simulator-specific instructions from other tools (for
   example expectation-value instructions) need a Tsim equivalent such as the fidelity
   measurement in `tsim-qec-experiment`.

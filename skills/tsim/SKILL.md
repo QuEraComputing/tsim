@@ -258,10 +258,21 @@ Cheap checks catch most modelling mistakes:
 | `'Circuit' object has no attribute ...` | A Stim method; call it on `c.stim_circuit` |
 | `Cannot set NUMBA_NUM_THREADS ... once the threads have been launched` | Use `numba.set_num_threads(k)` |
 
-## Reporting Tsim bugs
+## Reporting bugs and circuits Tsim cannot simulate yet
 
-If Tsim crashes, returns statistics that contradict a check above, or is far slower than its
-active width suggests, open an issue at https://github.com/QuEraComputing/tsim/issues. First
-shrink the circuit until removing anything makes the problem disappear. Include the circuit
-text, `tsim.__version__`, the strategy and seed, and the expected and actual results. Tell the
-user before filing.
+Issues go to https://github.com/QuEraComputing/tsim/issues. Issues are public, so tell the user
+before filing and ask before sharing a circuit that is not published.
+
+**Bugs.** If Tsim crashes, returns statistics that contradict a check above, or is far slower
+than its active width suggests, first shrink the circuit until removing anything makes the
+problem disappear. Include the circuit text, `tsim.__version__`, the seed, and the expected and
+actual results.
+
+**Circuits that are out of reach.** If a circuit matters for the user's work but Tsim cannot
+simulate it in practice (the width is over 30, or shots are too slow for the study), suggest
+opening an issue. The maintainers want these cases: they show where Tsim needs to improve, and
+a real circuit is the best benchmark for that. Here, do not shrink the circuit; the full circuit
+is the point. Include the circuit (attach the file, or link to it if it is large), where it
+comes from (paper or repository), what the user wants to compute, and what you measured:
+qubits, T count (`c.tcount()`), `sampler.active_width` and `sampler.stats` (or the error
+message), and the time per shot if sampling ran at all.
