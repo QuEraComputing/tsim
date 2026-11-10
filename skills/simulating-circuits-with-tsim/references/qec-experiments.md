@@ -311,59 +311,30 @@ is a measurement device, not part of the protocol. Check that the observable nev
 
 The standard figure is a log-log plot of the logical error rate (y) against the swept physical
 error rate (x), one curve per distance or protocol variant, with binomial error bars. Read the
-counts from the file the study wrote, not from variables in a notebook. In this example a small
-sweep stands in for that file:
+counts from the file the study wrote; here, six points of a repetition-code sweep stand in:
 
 ```python
 import matplotlib
 
 matplotlib.use("Agg")  # write files; no display needed
 import matplotlib.pyplot as plt
-import pymatching
 import sinter
-import stim
 
-rows = []  # one dict per point, as the study writes them to JSON
-for d in (3, 5):
-    for i, p in enumerate((0.02, 0.04, 0.08)):
-        circuit = tsim.Circuit(
-            stim.Circuit.generated(
-                "repetition_code:memory", distance=d, rounds=d,
-                before_round_data_depolarization=p, before_measure_flip_probability=p,
-            )
-        )
-        dem = circuit.detector_error_model(decompose_errors=True)
-        matching = pymatching.Matching.from_detector_error_model(dem)
-        counts = run_point(
-            circuit, max_shots=20_000, seed=100 * d + i,
-            decode=lambda dets, m=matching: m.decode_batch(dets).astype(bool),
-        )
-        rows.append({"distance": d, "p": p, **counts})
-
-fig, ax = plt.subplots(figsize=(5, 4))
-for d in sorted({r["distance"] for r in rows}):
-    points = sorted((r for r in rows if r["distance"] == d), key=lambda r: r["p"])
-    fits = [
-        sinter.fit_binomial(num_shots=r["kept"], num_hits=r["errors"], max_likelihood_factor=1000)
-        for r in points
-    ]
-    ax.errorbar(
-        [r["p"] for r in points],
-        [f.best for f in fits],
-        yerr=[[f.best - f.low for f in fits], [f.high - f.best for f in fits]],
-        marker="o", capsize=3, label=f"d = {d}",
-    )
-ps = sorted({r["p"] for r in rows})
-ax.plot(ps, ps, "k--", lw=1, label="logical = physical")
-ax.set(
-    xscale="log", yscale="log",
-    xlabel="physical error rate p", ylabel="logical error rate per kept shot",
-)
-ax.grid(True, which="both", alpha=0.3)
+ps = [0.02, 0.04, 0.08]
+errors = {3: [135, 466, 1672], 5: [18, 142, 947]}  # per 20,000 kept shots
+fig, ax = plt.subplots()
+for d, hits in errors.items():
+    fits = [sinter.fit_binomial(num_shots=20_000, num_hits=h, max_likelihood_factor=1000)
+            for h in hits]
+    best = [f.best for f in fits]
+    low = [b - f.low for b, f in zip(best, fits)]
+    high = [f.high - b for b, f in zip(best, fits)]
+    ax.errorbar(ps, best, yerr=[low, high], marker="o", capsize=3, label=f"d = {d}")
+ax.plot(ps, ps, "k--", label="logical = physical")
+ax.set(xscale="log", yscale="log", xlabel="physical error rate p",
+       ylabel="logical error rate per kept shot")
 ax.legend()
-fig.tight_layout()
 fig.savefig("logical_vs_physical.png", dpi=200)
-assert rows[0]["errors"] < rows[2]["errors"]  # more noise, more logical errors
 ```
 
 - Error bars are the `sinter.fit_binomial` interval with `max_likelihood_factor=1000`; say so
