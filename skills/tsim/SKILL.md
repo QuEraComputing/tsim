@@ -20,14 +20,29 @@ skill. For running circuits published with a paper, read `tsim-port-circuits`.
 
 ## Which circuits Tsim can simulate
 
-Tsim's cost is set by one number, the **active width** w: the largest number of qubits that
-must be held in a state vector at once, after Tsim has removed everything Clifford it can.
-Each shot costs roughly 2^w operations. The number of T gates and the number of qubits do
-not set the cost. End-to-end magic state cultivation at distance 5 (463 qubits, 53 T gates)
-has width 6, a distance-5 surface code with coherent rotations on every qubit (64 qubits,
-over 1,000 rotations) has width 11, and a 20-qubit quantum volume circuit has width 20.
+Whether Tsim can simulate a circuit is decided by the **active width** w: the largest number
+of qubits that must be held in a state vector at once, after Tsim has removed everything
+Clifford it can. The state-vector work per shot grows as 2^w. The number of T gates and the
+number of qubits do not set it. End-to-end magic state cultivation at distance 5 (463 qubits,
+53 T gates) has width 6, a distance-5 surface code with coherent rotations on every qubit (64
+qubits, over 1,000 rotations) has width 11, and a 20-qubit quantum volume circuit has width 20.
 
-Compile first, then read the width. Compilation is usually fast; sampling is where time goes.
+The width decides feasibility, not speed. Below a width of about 10 the state vector is cheap,
+and the speed is set by the number of noise channels and detectors instead: published circuits
+of width 1 run anywhere from about 1 to 100 million shots per second on one core.
+
+Why the width is often small: ZX simplification absorbs the Clifford gates, so they do not
+appear in the program that runs on the state vector; only the non-Clifford rotations and the
+measurements that interact with them do. Adding Clifford structure around a non-Clifford core
+therefore leaves the width unchanged, and moves the cost elsewhere. Distance-5 cultivation has
+width 6 both as a 42-qubit inject-and-cultivate circuit and as a 463-qubit end-to-end circuit
+with a surface-code escape stage. The end-to-end circuit has 2,744 detectors, 2,730 of them
+sampled directly from the noise, and once postselection has removed most of the state-vector
+work, that direct sampling is the bottleneck (3.3 vs 53.6 million shots/s for the smaller
+circuit on 4 threads). For such circuits `bit_packed=True` helps.
+
+Compile first, then read the width. Compilation takes seconds for circuits with a few thousand
+detectors and about a minute at 50,000; sampling is usually where time goes.
 
 ```python
 import tsim
@@ -62,24 +77,14 @@ example a measured magic state) the reference is meaningless. See "Differences f
 | Active width | What to expect on a typical multi-core CPU |
 |---|---|
 | 0 | No state vector; as fast as sampling the noise |
-| up to about 16 | Comfortable; millions of shots are practical |
-| about 20 to 26 | Slow; near 26 a shot takes on the order of seconds |
+| 1 to about 16 | Comfortable; millions of shots are practical |
+| about 17 to 26 | Slow; each extra qubit doubles the cost, and near 26 a shot takes seconds |
+| 27 to 30 | Accepted, but each shot needs gigabytes and takes minutes; rarely practical |
 | above 30 | Rejected with a `ValueError` (or earlier, if memory runs out) |
 
 Before a long run, time it: one small warm-up call (the first call compiles kernels), then
 one call of about 10^6 shots, and extrapolate. Small calls understate the rate. Report the
 width and the measured shots per second, with the thread count, along with any plan.
-
-Why the width is often small: ZX simplification absorbs the Clifford gates, so they do not
-appear in the program that runs on the state vector; only the non-Clifford rotations and the
-measurements that interact with them do. Adding Clifford structure around a non-Clifford core
-therefore leaves the width unchanged. Distance-5 cultivation has width 6 both as a 42-qubit
-inject-and-cultivate circuit and as a 463-qubit end-to-end circuit with a surface-code escape
-stage. The extra cost then moves elsewhere: the end-to-end circuit has 2,744 detectors, 2,730
-of them sampled directly from the noise, and once postselection has removed most of the
-state-vector work, that direct sampling is the bottleneck (3.3 vs 53.6 million shots/s for
-the smaller circuit on 4 threads). For such circuits `bit_packed=True` helps, and the cost
-grows with the number of detectors, not with the width.
 
 If the width is too large: postselect inside Tsim (discarded
 shots stop early, see below), simulate a smaller instance (lower distance or fewer rounds) and
@@ -104,7 +109,8 @@ Ways to build a circuit: `tsim.Circuit(text)`, `tsim.Circuit.from_file(path)`,
 `tsim.Circuit(stim_circuit)`, or `c.append("R_Z", [0], 0.25)`.
 
 Inside Stim text, Tsim writes non-Clifford gates as tagged Clifford instructions: `T` is
-`S[T]`, `T_DAG` is `S_DAG[T]`, and `R_Z(0.25)` is `I[R_Z(theta=0.25*pi)]`. `c.stim_circuit`
+`S[T]`, `T_DAG` is `S_DAG[T]`, and `R_Z(0.25)` is `I[R_Z(0.25)]` (some versions write
+`I[R_Z(theta=0.25*pi)]`; Tsim reads both). `c.stim_circuit`
 returns that `stim.Circuit`. Stim reads it as a Clifford stand-in (T as S, rotations as
 identity), which is useful for cross-checks. Many `stim.Circuit` methods are not on
 `tsim.Circuit`; call them on `c.stim_circuit`, for example
@@ -164,13 +170,9 @@ raw measurement bits. Do not sample measurements and compute detectors from them
   `use_detector_reference_sample=True` and `use_observable_reference_sample=True` to get Stim's
   convention; never use them for non-deterministic detectors. A noiseless circuit whose
   detectors are all 0 behaves the same either way.
-- Tsim builds detector error models by handing Stim a Clifford stand-in of the circuit (`T`,
-  `TPP` and `R_PAULI` become S-type rotations, `R_X`/`R_Y`/`R_Z`/`U3` become identity), so the
-  model is only guaranteed correct for Clifford circuits and can be wrong for any detector or
-  observable that a non-Clifford gate affects; treat it as an approximate decoder prior and
-  judge decoders by their logical error rate on Tsim's own samples. For non-deterministic
-  observables, pass `allow_gauge_detectors=True`; with coherent-noise rotations, see
-  `tsim-qec-experiment`.
+- `c.detector_error_model()` is built by Stim from a Clifford stand-in of the circuit, so it is
+  only guaranteed correct for Clifford circuits. Before using it as a decoder prior, read
+  "Choosing a decoder" in `tsim-qec-experiment`.
 
 ## Postselection
 
@@ -198,7 +200,8 @@ what `sinter` does, gives the same statistics but simulates every discarded shot
 - When a cultivation circuit includes the escape stage (growing into a large surface code),
   mask only the injection and cultivation detectors. The escape-stage detectors go to a decoder,
   and shots are discarded afterwards by a decoder confidence threshold (the complementary gap),
-  not by a mask. Masking every detector of an end-to-end circuit keeps almost no shots.
+  not by a mask. Masking every detector of an end-to-end circuit keeps almost no shots. These
+  skills do not cover computing the gap; use the paper's code for it, or ask the user.
 - Circuits sometimes end with noiseless checks that exist only to read out the result, such as
   a final ideal stabilizer measurement. Whether to mask them is part of the figure of merit, not
   of the protocol; decide it with the user and say which choice you made.
@@ -225,7 +228,8 @@ seconds; do not use them, not even as a cross-check.
 
 ## Checking results
 
-Cheap checks catch most modelling mistakes:
+Cheap checks catch most modelling mistakes. None of them needs another sampling strategy: do
+not cross-check against `"cat5"`, `"bss"` or `"cutting"` (see above).
 
 - **Clifford stand-in:** replace `T` by `S` and `T_DAG` by `S_DAG`, sample in Tsim and in
   Stim (in Tsim with `use_detector_reference_sample=True` and
@@ -246,6 +250,11 @@ Cheap checks catch most modelling mistakes:
   job pass an explicit `batch_size` (for example 2^16) to stay within the cap.
 - **`str(circuit)` rounds noise probabilities** to 6 significant digits, as Stim does; rotation
   angles keep full precision. Keep the original file when exact noise strengths matter.
+- **`CCZ`, `CCX`, `CS` and `CS_DAG` are stored as their T-gate decompositions**, so `str(c)`
+  prints the decomposition and `c.tcount()` counts 7 per `CCZ` or `CCX`. Convert before
+  comparing with a paper's gate count.
+- **`R_PAULI` acts on at most 64 qubits per Pauli product**; longer products raise a
+  `ValueError` at compile time.
 
 ## Common errors
 
@@ -253,8 +262,9 @@ Cheap checks catch most modelling mistakes:
 |---|---|
 | `strategy='active_statevector' needs N active qubits ... more than 30` | Width too large; see "Which circuits Tsim can simulate" |
 | `... bytes per shot ... more than half of the available memory` | Width too large for this machine's RAM |
-| `The circuit contains non-deterministic observables` | Pass `allow_gauge_detectors=True`, or fix the observable |
-| `Malformed parametric tag` | Write `I[R_X(theta=0.25*pi)] 0` or `R_X(0.25) 0` |
+| `non-deterministic observables` or `The number of observables changed` (from `detector_error_model`) | An observable is random without noise; no flag fixes this. Make it deterministic (for a magic state, see the fidelity measurement in `tsim-qec-experiment`) |
+| `non-deterministic detectors` (from `detector_error_model(decompose_errors=True)`) | Pass `allow_gauge_detectors=True` as well |
+| `Malformed parametric tag` | Angles are in units of π: write `R_X(0.25) 0` or `I[R_X(0.25)] 0` |
 | `'Circuit' object has no attribute ...` | A Stim method; call it on `c.stim_circuit` |
 | `Cannot set NUMBA_NUM_THREADS ... once the threads have been launched` | Use `numba.set_num_threads(k)` |
 

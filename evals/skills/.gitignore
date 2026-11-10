@@ -1,1 +1,3 @@
 results/
+# The root .gitignore ignores *.stim; the case inputs are part of the evals.
+!cases/*/inputs/*.stim

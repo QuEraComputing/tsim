@@ -51,36 +51,66 @@ Write the short loop below instead. sinter's helpers are still useful for the st
 ## The sampling loop
 
 ```python
+import json
+import time
+
 import numpy as np
 import tsim
 
 
-def run_point(circuit, *, shots, postselection_mask=None, decode=None,
-              shots_per_call=1_000_000, seed=None):
-    """Return counts for one parameter point."""
+def run_point(circuit, *, max_shots, target_errors=None, max_seconds=None,
+              postselection_mask=None, decode=None, seed=None, log_path=None,
+              max_bytes_per_call=1 << 30):
+    """Sample one parameter point until a shot, error or time budget is reached.
+
+    Returns the counts. With ``log_path``, each call's counts are appended as one JSON line,
+    so a run that is killed keeps everything sampled so far.
+    """
     sampler = circuit.compile_detector_sampler(seed=seed)
-    kept = errors = 0
-    remaining = shots
-    while remaining > 0:
-        n = min(shots_per_call, remaining)
+    # Size calls by memory, not by a fixed shot count: rows are one byte per detector.
+    row_bytes = circuit.num_detectors + circuit.num_observables
+    shots_per_call = int(min(10**7, max(10**4, max_bytes_per_call // max(row_bytes, 1))))
+    totals = {"shots": 0, "kept": 0, "errors": 0, "seconds": 0.0}
+    start = time.monotonic()
+    while totals["shots"] < max_shots:
+        n = min(shots_per_call, max_shots - totals["shots"])
+        t = time.monotonic()
         dets, obs = sampler.sample(
             shots=n, postselection_mask=postselection_mask, separate_observables=True
         )
         predicted = decode(dets) if decode is not None else np.zeros_like(obs)
-        errors += int(np.any(predicted != obs, axis=1).sum())
-        kept += len(dets)
-        remaining -= n
-    return {"shots": shots, "kept": kept, "errors": errors}
+        call = {
+            "shots": n,
+            "kept": len(dets),
+            "errors": int(np.any(predicted != obs, axis=1).sum()),
+            "seconds": time.monotonic() - t,
+        }
+        for key in totals:
+            totals[key] += call[key]
+        if log_path is not None:
+            with open(log_path, "a") as f:
+                f.write(json.dumps({"seed": seed, **call}) + "\n")
+        if target_errors is not None and totals["errors"] >= target_errors:
+            break
+        if max_seconds is not None and time.monotonic() - start >= max_seconds:
+            break
+    return totals
 ```
 
 Notes:
 
 - One sampler is compiled per point and reused across calls; successive calls continue the
-  random stream, so seeds never repeat. Use a different `seed` per point.
+  random stream, so seeds never repeat. Use a different `seed` per point, and a new seed when
+  resuming a point; then add up the counts of all its log lines.
+- Stop on `target_errors` (see "Error bars and shot budgets"), with `max_shots` and
+  `max_seconds` as caps, rather than fixing the shot count in advance: logical error rates are
+  often orders of magnitude away from the first guess.
 - Always use the detector sampler here, not the measurement sampler: it samples most
   detectors directly from the noise and is often an order of magnitude faster.
-- Keep `shots_per_call` large (10^6 or more, limited by memory) because each call has a fixed
-  overhead. Leave `batch_size` at its default.
+- Calls are sized from a memory budget (`max_bytes_per_call`, 1 GB by default). Each call has
+  a fixed overhead, so make calls as large as memory allows, but do not fix their shot count:
+  10^6 shots of a circuit with 50,000 detectors is a 50 GB array. Leave `batch_size` at its
+  default.
 - For circuits with hundreds of detectors or more, sample with `bit_packed=True` and
   `append_observables=True`, and give the decoder packed rows (PyMatching:
   `decode_batch(dets, bit_packed_shots=True, bit_packed_predictions=True)`). This uses 8 times
@@ -96,13 +126,18 @@ Notes:
 
 ## Choosing a decoder
 
-Build the decoder from `c.detector_error_model(...)`. Tsim builds detector error models by
-handing Stim a Clifford stand-in of the circuit (`T`, `TPP` and `R_PAULI` become S-type
-rotations, `R_X`/`R_Y`/`R_Z`/`U3` become identity), so the model is only guaranteed correct
-for Clifford circuits and can be wrong for any detector or observable that a non-Clifford gate
-affects; treat it as an approximate decoder prior and judge decoders by their logical error
-rate on Tsim's own samples. For non-deterministic observables, pass
-`allow_gauge_detectors=True`.
+Build the decoder from `c.detector_error_model(...)`. Stim computes this model from a Clifford
+stand-in of the circuit: `T`, `TPP` and `R_PAULI` become S-type rotations, and
+`R_X`/`R_Y`/`R_Z`/`U3` become identity.
+
+- The model is only guaranteed correct for Clifford circuits, and can be wrong for any
+  detector or observable that a non-Clifford gate affects. Treat it as an approximate decoder
+  prior, and judge decoders by their logical error rate on Tsim's own samples.
+- Every observable must be deterministic without noise, and Stim checks this on the stand-in.
+  A random observable raises a `ValueError` whatever flags are passed, so a real-T circuit can
+  be rejected if its stand-in's observable is random. Fix the observable rather than the flags.
+- Detectors that are random without noise are accepted by default; with
+  `decompose_errors=True`, also pass `allow_gauge_detectors=True`.
 
 When rotations model noise (coherent over-rotations), the plain model leaves them out and the
 decoder never learns about them. Give the decoder their Pauli twirl instead: replace each
@@ -144,7 +179,8 @@ extend it if the noise uses `R_PAULI` or `U3`.
 Follow the paper being reproduced when it names a decoder. Otherwise start with PyMatching for
 matchable codes, BP-LSD or Relay-BP for LDPC codes, and Tesseract when accuracy matters and the
 model is small enough. Decoding can take longer than sampling; time both separately and report
-both. Tested code for each decoder is in `references/decoders.md`.
+both. Tested code for each decoder is in [references/decoders.md](references/decoders.md);
+read it before writing decoder code.
 
 ## Postselected protocols and fidelity
 
@@ -152,11 +188,11 @@ For cultivation, distillation and injection, the figure of merit is usually the 
 the accepted output state, together with the acceptance rate. These protocols often need no
 decoder at all: postselect on every check, then measure the output.
 
-To measure the fidelity of an output magic state without special instructions, append a
-noiseless inverse of the encoding that moves the logical state onto one qubit, then rotate the
-target state to |0⟩ and measure. For a T state |T⟩ = T|+⟩, the rotation is `T_DAG` then `H`;
-the probability of outcome 0 is exactly ⟨T|ρ|T⟩. Make that measurement an observable, so the
-observable's flip rate over kept shots is the infidelity.
+To measure the fidelity of an output magic state without special instructions, undo the target
+state noiselessly and measure a Pauli that the undone state fixes. For a T state |T⟩ = T|+⟩,
+apply `T_DAG` and measure X; the probability of outcome 0 is exactly ⟨T|ρ|T⟩. Make that
+measurement an observable, so the observable's flip rate over kept shots is the infidelity.
+On one qubit:
 
 ```python
 p = 0.01
@@ -171,12 +207,35 @@ c = tsim.Circuit(
     OBSERVABLE_INCLUDE(0) rec[-1]
     """
 )
-counts = run_point(c, shots=200_000, seed=1)
+counts = run_point(c, max_shots=200_000, seed=1)
 infidelity = counts["errors"] / counts["kept"]  # close to 2p/3
 ```
 
-Everything after the noisy protocol (unencoding, `T_DAG`, `H`, `M`) must be noiseless,
-because it is a measurement device, not part of the protocol.
+For an encoded state there is no need to unencode it: apply the logical `T_DAG` as a Pauli
+product rotation on a representative of Z_L (`TPP_DAG`), then measure X_L with `MPP`. In this
+toy 3-qubit repetition code, Z_L = Z0 and X_L = X0·X1·X2:
+
+```python
+encoded = tsim.Circuit(
+    f"""
+    RX 0
+    R 1 2
+    T 0
+    CX 0 1 0 2
+    DEPOLARIZE1({p}) 0 1 2
+    TPP_DAG Z0
+    MPP X0*X1*X2
+    OBSERVABLE_INCLUDE(0) rec[-1]
+    """
+)
+counts = run_point(encoded, max_shots=200_000, seed=2)
+```
+
+Alternatively, append a noiseless inverse of the encoding that moves the logical state onto one
+qubit and measure that qubit as above. Either way, everything after the noisy protocol (the
+`T_DAG` or `TPP_DAG`, any unencoding, and the final measurement) must be noiseless, because it
+is a measurement device, not part of the protocol. Check that the observable never flips in
+`c.without_noise()`.
 
 ## Error bars and shot budgets
 

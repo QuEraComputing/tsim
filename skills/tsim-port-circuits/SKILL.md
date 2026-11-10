@@ -52,31 +52,50 @@ c = tsim.Circuit(
 Use `tsim.Circuit.from_file(path)` for files; `tsim.Circuit(...)` also accepts a `stim.Circuit`.
 Tsim accepts every Stim instruction.
 
-Read the paper's methods section to find which gates stand in for T. Common conventions:
+Read the paper's methods section to find which gates stand in for the non-Clifford ones.
+Common conventions:
 
 - `S` and `S_DAG` in place of `T` and `T_DAG` (the most common; the protocol's checks then see
-  an S state, which is also a stabilizer state);
-- tagged instructions, such as Tsim's own `S[T]` and `S_DAG[T]`, which Tsim already reads as
-  `T` and `T_DAG`;
-- a comment, coordinate or `QUBIT_COORDS` marker identifying the magic qubits.
+  an S state, which is also a stabilizer state).
+- A |Y⟩ = S|+⟩ input in place of a |T⟩ = T|+⟩ input: replace the `S` of the preparation by `T`,
+  and check that the final readout measures the T state's stabilizer (step 3).
+- Tagged instructions, such as Tsim's own `S[T]` and `S_DAG[T]`, which Tsim already reads as
+  `T` and `T_DAG`.
+- A `CCZ` or `CS` modelled only by its noise, for example correlated `E(p) Z Z Z ...` errors on
+  the qubits it would act on, with the gate itself left out. Insert the real gate at those
+  locations; the error targets often identify the qubits.
+- A comment, coordinate or `QUBIT_COORDS` marker identifying the magic qubits.
+
+Some proxies cannot be converted by substitution. If every magic state is replaced by a logical
+|0⟩ or |+⟩ and the conditional S corrections that a real T gate needs are absent (common in
+logical-level and lattice-surgery benchmarks), real T gates need an encoded magic-state
+preparation and those corrections. Tell the user rather than patching the circuit.
 
 Replace only the stand-ins: a circuit can also contain ordinary `S` gates that must stay. When
 the stand-ins are not marked, find them from the paper (for example, the gates on the injection
 qubit and in the check rounds) and confirm the choice with the user.
 
-When every `S` and `S_DAG` is a stand-in, a line-anchored substitution converts them all:
+When every untagged `S` and `S_DAG` is a stand-in, a line-anchored substitution converts them
+all. It leaves `S[T]` lines alone, since Tsim already reads those as T:
 
 ```python
 import re
 
-real_text = re.sub(r"^(\s*)S(_DAG)?(?=[\s\[])", r"\1T\2", str(c), flags=re.MULTILINE)
+real_text = re.sub(
+    r"^(\s*)S(_DAG)?(?=\s|\[(?!T\]))", r"\1T\2", str(c), flags=re.MULTILINE
+)
 real = tsim.Circuit(real_text)
 assert real.tcount() == 2
 ```
 
 When only some are stand-ins, change those lines individually (for example, only the `S`
 lines that target the injection qubit), and compare `real.tcount()` with the number of T gates
-the paper states.
+the paper states. `tcount()` counts each `CCZ` or `CCX` as 7.
+
+To vary the noise strength, rebuild the circuits with the authors' generator when there is
+one. Rescaling a published file by hand must change every noise argument, including
+`PAULI_CHANNEL_2` and measurement flips such as `M(0.001)`; a missed channel shifts results
+without any error.
 
 ## 3. Validate the conversion
 
@@ -88,27 +107,44 @@ Run these checks before trusting any number from the converted circuit:
    the stand-in circuit, reproduce one of them.
 2. **Noiseless real circuit.** In `real.without_noise()`, every detector used for postselection
    or decoding must be 0 on every shot, and the output should be the ideal state (for example,
-   infidelity 0 with the `tsim-qec-experiment` fidelity measurement). A detector that fires without
-   noise usually means a stand-in was missed or a non-stand-in `S` was converted.
-3. **Observables of the stand-in.** Sample the noiseless stand-in and check whether its
+   infidelity 0 with the `tsim-qec-experiment` fidelity measurement). A detector that fires
+   without noise usually means one of:
+   - a stand-in was missed, or a non-stand-in `S` was converted;
+   - a Pauli correction is missing. A stand-in circuit can skip feed-forward corrections (for
+     example an X-frame correction after a random check) that do not matter for S or a noise
+     model, but do once the gate is a real T or CCZ.
+3. **Observables of the real circuit.** In `real.without_noise()`, every observable must be
+   deterministic. If the circuit ends by measuring the magic state in a Pauli basis (a final
+   logical X or Y readout), the observable is random on a T state. Add a noiseless T-basis
+   readout instead, as in the `tsim-qec-experiment` fidelity measurement, and say that you did.
+   Published circuits often need this.
+4. **Observables of the stand-in.** Sample the noiseless stand-in and check whether its
    observables are deterministic. Often they are not: a final check written as `S; MPP Y;
    S_DAG` measures the T state's stabilizer once S becomes T, but measures X on the stand-in's
    S state, which is random. Such a stand-in gives only acceptance rates, not logical error
    rates; say so instead of reporting a meaningless error rate. To compare error rates, build a
    stand-in variant whose final check matches the S state (for example, drop the `S`/`S_DAG`
    around `MPP Y`), label it as your modification, and verify it is deterministic without noise.
-   Conversely, check that the real-T circuit's observables are deterministic without noise; if
-   the output is a magic state measured directly, use the fidelity measurement in
-   `tsim-qec-experiment` instead.
 
 ## 4. Measure the active width (k_max)
 
-Compile without sampling and read the active width, which sets the cost per shot (see the
-`tsim` skill for the scale). This is cheap even for large circuits.
+Compile without sampling and read the active width, which decides whether the circuit is
+feasible (see the `tsim` skill for the scale). Compiling needs no sampling, but it is not free:
+it takes seconds for a few thousand detectors and about a minute at 50,000.
+
+Above width 30, compiling raises a `ValueError` whose message states the width, so a survey
+loop should record the error instead of stopping:
 
 ```python
-sampler = real.compile_detector_sampler()
-print(real.num_qubits, real.tcount(), real.num_detectors, sampler.active_width)
+def survey_row(circuit):
+    row = [circuit.num_qubits, circuit.tcount(), circuit.num_detectors]
+    try:
+        return row + [circuit.compile_detector_sampler().active_width]
+    except ValueError as error:
+        return row + [str(error)[:120]]  # "needs N active qubits ..."
+
+
+print(survey_row(real))
 ```
 
 When surveying several circuits or sizes, report one row per circuit:
