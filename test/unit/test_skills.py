@@ -92,7 +92,8 @@ def test_relative_links_resolve(path: Path):
 
 
 @pytest.mark.parametrize("path", MARKDOWN_FILES, ids=_ids)
-def test_code_blocks_run(path: Path):
+def test_code_blocks_run(path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)  # blocks write figures and logs
     blocks = CODE_BLOCK.findall(path.read_text())
     # NOTE: blocks must check their results, not only run, so that a change in behavior fails.
     assert not blocks or any(

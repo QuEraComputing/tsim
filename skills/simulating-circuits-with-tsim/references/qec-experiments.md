@@ -25,7 +25,8 @@ QEC study:
 - [ ] 5. Points sampled with run_point, counts logged per call
 - [ ] 6. Noiseless check: masked and decoded detectors never fire, observables never flip
 - [ ] 7. Results reported with shots, kept, errors, acceptance, intervals, seconds
-- [ ] 8. One script regenerates every number and figure
+- [ ] 8. Log-log plot of logical vs physical error rate, with error bars
+- [ ] 9. One script regenerates every number and figure
 ```
 
 1. **Build the circuit** for each parameter point (noise strength, distance, rounds). Keep it in
@@ -43,7 +44,8 @@ QEC study:
 4. **Pick a decoder** (or none) from the table below.
 5. **Sample in large calls, decode, and accumulate counts**, using the loop below.
 6. **Report** each point with shots, kept shots, errors, acceptance, logical error rate per
-   kept shot and its confidence interval, and seconds spent sampling and decoding.
+   kept shot and its confidence interval, and seconds spent sampling and decoding, and plot
+   the sweep (see "Plotting").
 
 ## Do not use `sinter.collect` with Tsim
 
@@ -264,6 +266,76 @@ is a measurement device, not part of the protocol. Check that the observable nev
 - Plan the budget from measured rates: shots needed ≈ target errors / (acceptance × logical
   error rate). If that exceeds the time available, say so and propose fewer points, a smaller
   instance, or a higher noise strength.
+
+## Plotting
+
+The standard figure is a log-log plot of the logical error rate (y) against the swept physical
+error rate (x), one curve per distance or protocol variant, with binomial error bars. Read the
+counts from the file the study wrote, not from variables in a notebook. In this example a small
+sweep stands in for that file:
+
+```python
+import matplotlib
+
+matplotlib.use("Agg")  # write files; no display needed
+import matplotlib.pyplot as plt
+import pymatching
+import sinter
+import stim
+
+rows = []  # one dict per point, as the study writes them to JSON
+for d in (3, 5):
+    for i, p in enumerate((0.02, 0.04, 0.08)):
+        circuit = tsim.Circuit(
+            stim.Circuit.generated(
+                "repetition_code:memory", distance=d, rounds=d,
+                before_round_data_depolarization=p, before_measure_flip_probability=p,
+            )
+        )
+        dem = circuit.detector_error_model(decompose_errors=True)
+        matching = pymatching.Matching.from_detector_error_model(dem)
+        counts = run_point(
+            circuit, max_shots=20_000, seed=100 * d + i,
+            decode=lambda dets, m=matching: m.decode_batch(dets).astype(bool),
+        )
+        rows.append({"distance": d, "p": p, **counts})
+
+fig, ax = plt.subplots(figsize=(5, 4))
+for d in sorted({r["distance"] for r in rows}):
+    points = sorted((r for r in rows if r["distance"] == d), key=lambda r: r["p"])
+    fits = [
+        sinter.fit_binomial(num_shots=r["kept"], num_hits=r["errors"], max_likelihood_factor=1000)
+        for r in points
+    ]
+    ax.errorbar(
+        [r["p"] for r in points],
+        [f.best for f in fits],
+        yerr=[[f.best - f.low for f in fits], [f.high - f.best for f in fits]],
+        marker="o", capsize=3, label=f"d = {d}",
+    )
+ps = sorted({r["p"] for r in rows})
+ax.plot(ps, ps, "k--", lw=1, label="logical = physical")
+ax.set(
+    xscale="log", yscale="log",
+    xlabel="physical error rate p", ylabel="logical error rate per kept shot",
+)
+ax.grid(True, which="both", alpha=0.3)
+ax.legend()
+fig.tight_layout()
+fig.savefig("logical_vs_physical.png", dpi=200)
+assert rows[0]["errors"] < rows[2]["errors"]  # more noise, more logical errors
+```
+
+- Error bars are the `sinter.fit_binomial` interval with `max_likelihood_factor=1000`; say so
+  in the caption. A point with zero errors has no place on a log axis: plot its upper bound
+  `fit.high` with a downward marker, or leave it out and say so.
+- Label the y axis with what is counted: per kept shot, or per round. To show a rate per round,
+  convert with `sinter.shot_error_rate_to_piece_error_rate(rate, pieces=rounds)`.
+- Where the curves of different distances cross is the threshold; below it, larger distances
+  should give lower logical error rates. The dashed line marks break-even.
+- For postselected protocols, also plot the acceptance against the same x axis (a second
+  panel), or plot the logical error rate against the acceptance when trading one for the other.
+- For coherent noise, sweep the rotation angle on the x axis instead.
 
 ## Reproducibility
 
