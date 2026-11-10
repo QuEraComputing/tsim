@@ -133,7 +133,35 @@ def plan_component(
             f"component with outputs {outputs}, more than {MAX_WIDTH}. "
             f"{STABILIZER_RANK_HINT}"
         )
-    return plan(ops, scheduled), component_layout
+    planned = plan(ops, scheduled)
+    # NOTE: measurements run as early as they can, which frees axes for later
+    # rotations. Where that frees none that a rotation reuses, running them late
+    # leaves more of the tape before the first action that depends on the shot,
+    # which runs once for all shots (``shared.common_prefix``).
+    deferred = schedule(ops, defer=True)
+    if deferred.width <= scheduled.width:
+        later = plan(ops, deferred)
+        if _shot_work(later) < _shot_work(planned):
+            planned = later
+    return planned, component_layout
+
+
+def _shot_work(planned: Plan) -> int:
+    """Return the amplitudes that the actions from the first shot-dependent one touch.
+
+    That is the first measurement or rotation whose sign reads a symbol. An action
+    touches the amplitudes below its extent (``lower``).
+    """
+    work, active, shared = 0, 0, True
+    for action in planned.actions:
+        if isinstance(action, Rotate):
+            active |= action.x | action.z
+        shared = shared and isinstance(action, Rotate) and not action.sign.terms
+        if not shared:
+            work += 1 << active.bit_length()
+        if isinstance(action, MeasureActive):
+            active &= ~(1 << action.pivot)
+    return work
 
 
 def lower(plan: Plan, layout: ComponentLayout) -> StatevectorComponent:

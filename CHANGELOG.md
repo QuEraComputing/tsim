@@ -42,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in `CS 0 0`, raise an error naming the gate instead of its decomposition.
 
 ### Changed
+- `strategy="active_statevector"` may run a component's measurements later
+  where that frees no axis that a later rotation reuses and leaves more of the
+  tape before its first shot-dependent action, which a GPU backend runs once for
+  all shots. The samples follow the same distribution, but some circuits' seeds
+  give other samples than in 1.0.
 - `ChannelSampler.signature_matrix` is now a `tsim.utils.linalg.SparseGF2Matrix`
   instead of a dense uint8 array; `np.asarray` gives the dense matrix.
 

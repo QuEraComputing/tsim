@@ -321,6 +321,40 @@ def lane_bytes(component: StatevectorComponent, key: KeyBasis) -> int:
     return amplitudes + 2 * 8 * max_lane_words(component, key) + 64
 
 
+def common_prefix(program: LaneProgram) -> tuple[int, np.ndarray]:
+    """Return the leading actions that run alike on every lane, and the amplitudes after.
+
+    They end at the first rotation whose sign reads a lane symbol or the first
+    measurement that splits lanes; measurements that do not split change no
+    amplitude.
+    """
+    amps = np.zeros((1, 1 << program.width), dtype=np.complex128)
+    amps[0, 0] = 1
+    for a, kind in enumerate(program.kind):
+        if kind not in (ROTATE_DIAG, ROTATE):
+            if program.splits[a]:
+                return a, amps[0]
+            continue
+        if program.sign_row[a].any():
+            return a, amps[0]
+        span = 1 << int(program.extent[a])
+        diagonal = kind == ROTATE_DIAG
+        _rotate_range(
+            amps,
+            0,
+            span if diagonal else span >> 1,
+            span,
+            np.array([program.sign_const[a]], dtype=np.int64),
+            diagonal,
+            np.int64(program.x_mask[a]),
+            np.int64(program.z_mask[a]),
+            program.cos[a],
+            program.factor[a],
+            program.coupling[a],
+        )
+    return len(program.kind), amps[0]
+
+
 @intrinsic
 def _ctpop(typingctx, value):
     def codegen(context, builder, signature, args):
