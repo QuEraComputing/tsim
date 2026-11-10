@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -141,7 +142,11 @@ def check(circuit: tsim.Circuit, plan: dict, args) -> int:
         print(f"  {action:10s} {name}: {len(idx)} detectors ({fmt_indices(idx)})")
 
     sampler = circuit.compile_detector_sampler(seed=args.seed)
-    width = sampler.active_width
+    # NOTE: Tsim 1.0.0 has no active_width; its repr shows "width ≤ W" instead.
+    width = getattr(sampler, "active_width", None)
+    if width is None and not hasattr(sampler, "active_width"):
+        match = re.search(r"width ≤ (\d+)", repr(sampler))
+        width = int(match.group(1)) if match else 0
     print(f"active width {width}")
     quick = width is None or width <= MAX_QUICK_WIDTH or args.force
 

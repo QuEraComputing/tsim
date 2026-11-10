@@ -2,10 +2,12 @@
 name: tsim-qec-experiment
 description: "Runs quantum error correction studies with Tsim: sampling, postselection, decoding and error bars. Use when someone wants a logical error rate, threshold or error-rate-vs-p curve, acceptance (discard) rate, output-state infidelity or error bars from a noisy circuit with T gates, rotations or other non-Clifford gates; decodes Tsim samples (PyMatching, Tesseract, BP-LSD from ldpc, Relay-BP); builds a detector error model for a non-Clifford circuit; postselects a cultivation, distillation or injection protocol; plans a shot budget; or is about to use sinter or sinter.collect with Tsim. Also use for \"simulate this protocol\" or \"reproduce this figure\" requests about such circuits, and for detector_error_model errors such as \"non-deterministic observables\" or \"The number of observables changed\"."
 license: Apache-2.0
-compatibility: Python 3.11+, bloqade-tsim (main). Decoders are separate packages.
+compatibility: Python 3.11+, bloqade-tsim (main or 1.0.0; for 1.0.0 see the "Tsim 1.0.0" section of the tsim skill). Decoders are separate packages.
 metadata:
   author: QuEra Computing
   version: "1.2"
+  last-reviewed: "2026-11-10"
+  tested-with: "Tsim main at 9ed58c9f (after 1.0.0) and Tsim 1.0.0 from PyPI"
 ---
 
 # QEC experiments with Tsim
@@ -34,7 +36,8 @@ QEC study:
 
 1. **Build the circuit** for each parameter point (noise strength, distance, rounds). Keep it in
    a function so the final script can regenerate everything.
-2. **Compile and check the cost**: read `sampler.active_width`, then time a warm-up call and
+2. **Compile and check the cost**: read `sampler.active_width` (on Tsim 1.0.0, use the
+   helper in the `tsim` skill), then time a warm-up call and
    one call of about 10^6 shots. Estimate the time for the full budget (sampling and
    decoding) before launching anything long, and tell the user. If the width is too large
    and the circuit defines observables the study does not use (for example, extra logical

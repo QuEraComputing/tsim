@@ -2,10 +2,12 @@
 name: tsim
 description: "Samples noisy quantum circuits with non-Clifford gates using Tsim (bloqade-tsim), a Stim-compatible simulator, and judges whether a circuit is feasible. Use when a task involves Tsim or bloqade-tsim, or a noisy circuit in Stim format with non-Clifford gates (T, T_DAG, R_X, R_Y, R_Z, U3, R_PAULI, TPP, CCZ, CCX, CS), such as magic state cultivation, distillation, injection or coherent rotation errors, even if Tsim is not named. Also use when someone asks whether such a circuit can be simulated or how long sampling will take (active width, k_max), samples its detectors, measurements or observables, ports Stim sampler code to Tsim, postselects inside Tsim, or hits Tsim problems such as \"needs N active qubits ... more than 30\", \"Malformed parametric tag\", detectors that read 1 where Stim reports 0, or slow sample() calls."
 license: Apache-2.0
-compatibility: Python 3.11+. Written for Tsim main; `sampler.active_width` and `sampler.stats` need a release newer than 1.0.0.
+compatibility: Python 3.11+. Written for Tsim main; on Tsim 1.0.0 (the PyPI release of 2026-11-04) read the "Tsim 1.0.0" section at the end.
 metadata:
   author: QuEra Computing
   version: "1.2"
+  last-reviewed: "2026-11-10"
+  tested-with: "Tsim main at 9ed58c9f (after 1.0.0) and Tsim 1.0.0 from PyPI"
 ---
 
 # Tsim
@@ -14,6 +16,10 @@ Tsim samples noisy quantum circuits with non-Clifford gates. It reads Stim's cir
 a few non-Clifford instructions and mirrors Stim's sampler API, so most Stim code ports by
 changing `stim` to `tsim`. Install with `uv add bloqade-tsim` or `pip install bloqade-tsim`;
 import as `tsim`. Docs: https://bloqade.quera.com/tsim (append `.md` to any page for Markdown).
+
+This skill is written for Tsim's main branch. Tsim 1.0.0 from PyPI lacks a few features used
+below (`sampler.active_width` among them); `tsim.__version__` reads 1.0.0 on both, so check
+with `hasattr(sampler, "active_width")`, and on 1.0.0 read "Tsim 1.0.0" at the end.
 
 For logical error rates, decoders, postselection and fidelity, also read the `tsim-qec-experiment`
 skill. For running circuits published with a paper, read `tsim-port-circuits`.
@@ -312,8 +318,8 @@ before filing and ask before sharing a circuit that is not published.
 
 **Bugs.** If Tsim crashes, returns statistics that contradict a check above, or is far slower
 than its active width suggests, first shrink the circuit until removing anything makes the
-problem disappear. Include the circuit text, `tsim.__version__`, the seed, and the expected and
-actual results.
+problem disappear. Include the circuit text, `tsim.__version__` and where Tsim was installed
+from (PyPI, or git and the commit), the seed, and the expected and actual results.
 
 **Circuits that are out of reach.** If a circuit matters for the user's work but Tsim cannot
 simulate it in practice (the width is over 30, or shots are too slow for the study), suggest
@@ -323,3 +329,33 @@ is the point. Include the circuit (attach the file, or link to it if it is large
 comes from (paper or repository), what the user wants to compute, and what you measured:
 qubits, T count (`c.tcount()`), `sampler.active_width` and `sampler.stats` (or the error
 message), and the time per shot if sampling ran at all.
+
+## Tsim 1.0.0
+
+Tsim 1.0.0 (released 2026-11-04) is the PyPI release this skill was checked against. The
+features below came after it; everything else in this skill applies to both. To get them,
+install from git: `pip install git+https://github.com/QuEraComputing/tsim`.
+
+| On main | On 1.0.0 |
+|---|---|
+| `sampler.active_width`, `sampler.stats` | Read the width from `repr(sampler)` (helper below); no `stats` |
+| `tsim.Circuit(stim_circuit)` | Raises `AttributeError: ... no attribute 'splitlines'`; use `tsim.Circuit.from_stim_program(stim_circuit)`, which works on both |
+| `CS 0 1`, `CS_DAG 0 1` | `Gate not found: 'CS'`; write `T 0 1`, `CX 0 1`, `T_DAG 1`, `CX 0 1` for `CS` (swap `T` and `T_DAG` for `CS_DAG`) |
+| Compiling large circuits | Memory grows with detectors × noise locations: a d=25 15-to-1 distillation circuit needs 121 GiB on 1.0.0 and 4.5 GB on main. Compile under a memory cap, or use main |
+
+This helper returns the active width on either version (on 1.0.0, `repr(sampler)` contains
+`statevector components (width ≤ W, ...)` when there is a state vector):
+
+```python
+import re
+
+
+def active_width(sampler):
+    if hasattr(sampler, "active_width"):
+        return sampler.active_width
+    match = re.search(r"width ≤ (\d+)", repr(sampler))
+    return int(match.group(1)) if match else 0
+
+
+print(active_width(sampler))
+```
