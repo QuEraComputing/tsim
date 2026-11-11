@@ -91,26 +91,28 @@ def _packed(sampler, shots, mask=None):
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_cuda_detector_sampling_matches_stabilizer_rank(name):
+@pytest.mark.parametrize(
+    ("kind", "looping"),
+    [("detector", False), ("measurement", False), ("detector", True)],
+)
+def test_cuda_sampling_matches_stabilizer_rank(monkeypatch, name, kind, looping):
+    if looping:
+        # NOTE: measurements, projections and pruning in looping tapes.
+        monkeypatch.setattr(tape, "UNROLL_BUDGET", 0)
     circuit = Circuit(CIRCUITS[name])
     shots = 40_000
-    expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
-        shots, batch_size=10_000, append_observables=True
-    )
-    got = _gpu(circuit.compile_detector_sampler(seed=2)).sample(
-        shots, append_observables=True
-    )
-    assert_counts_match(got, expected)
-
-
-@pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_cuda_measurement_sampling_matches_stabilizer_rank(name):
-    circuit = Circuit(CIRCUITS[name])
-    shots = 40_000
-    expected = circuit.compile_sampler(strategy="cat5", seed=1).sample(
-        shots, batch_size=10_000
-    )
-    got = _gpu(circuit.compile_sampler(seed=2)).sample(shots)
+    if kind == "detector":
+        expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
+            shots, batch_size=10_000, append_observables=True
+        )
+        got = _gpu(circuit.compile_detector_sampler(seed=2)).sample(
+            shots, append_observables=True
+        )
+    else:
+        expected = circuit.compile_sampler(strategy="cat5", seed=1).sample(
+            shots, batch_size=10_000
+        )
+        got = _gpu(circuit.compile_sampler(seed=2)).sample(shots)
     assert_counts_match(got, expected)
 
 
@@ -507,21 +509,6 @@ def test_cuda_shots_start_after_the_common_prefix(width):
     # on the host; the shots load their amplitudes and run the rest.
     circuit = _random_unitary_circuit(width, width + 2, seed=width, noise=False)
     _assert_matches_cpu(circuit, width)
-
-
-@pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_cuda_looping_tapes_match_stabilizer_rank(monkeypatch, name):
-    # NOTE: measurements, projections and pruning in looping tapes.
-    monkeypatch.setattr(tape, "UNROLL_BUDGET", 0)
-    circuit = Circuit(CIRCUITS[name])
-    shots = 40_000
-    expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
-        shots, batch_size=10_000, append_observables=True
-    )
-    got = _gpu(circuit.compile_detector_sampler(seed=2)).sample(
-        shots, append_observables=True
-    )
-    assert_counts_match(got, expected)
 
 
 def test_components_wider_than_the_limit_run_on_the_cpu():
