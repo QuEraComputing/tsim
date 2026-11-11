@@ -682,18 +682,22 @@ def test_a_kernel_that_does_not_compile_samples_on_the_cpu(monkeypatch):
 
 
 def test_noise_of_tiny_probabilities_fires_at_its_rate():
-    # NOTE: 24-bit skips alone fire every segment at least 2^-24 of the time,
-    # here ~350 faults instead of ~0.3.
-    n, p = 1000, 1e-12
-    text = "\n".join(f"X_ERROR({p * (1 + i / n)!r}) {i}" for i in range(n))
+    # NOTE: segments of fewer than 2^-12 expected faults take the kernels' 48-bit
+    # path. 24-bit skips alone would fire every segment at least 2^-24 of the
+    # time, ~110 more faults than the ~83 expected here; a path that never fired
+    # would give none.
+    n, p, calls = 1000, 3e-10, 44
+    probabilities = [p * (1 + i / n) for i in range(n)]
+    text = "\n".join(f"X_ERROR({q!r}) {i}" for i, q in enumerate(probabilities))
     sampler = _gpu(
         Circuit(f"{text}\nM " + " ".join(map(str, range(n)))).compile_sampler(seed=1)
     )
     # NOTE: faults are rare enough that each lands in a byte of its own.
     faults = sum(
-        np.count_nonzero(sampler.sample(1 << 22, bit_packed=True)) for _ in range(44)
+        np.count_nonzero(sampler.sample(1 << 22, bit_packed=True)) for _ in range(calls)
     )
-    assert faults <= 5
+    expected = sum(probabilities) * calls * (1 << 22)
+    assert abs(faults - expected) <= 5 * np.sqrt(expected)
 
 
 @pytest.mark.parametrize("p0", [3e-8, 1e-6])
