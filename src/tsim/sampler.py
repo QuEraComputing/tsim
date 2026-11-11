@@ -21,6 +21,7 @@ from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.cuda import runtime as cuda_runtime
+from tsim.statevector.gpu import FORKED
 from tsim.statevector.program import StatevectorComponent
 from tsim.statevector.shots import ShotSampler
 from tsim.utils.cuda_helpers import copy_d2h
@@ -332,16 +333,12 @@ def _gpu_shots(
     if os.environ.get("TSIM_DEVICE", "").lower() == "cpu":
         return host
     if cuda_runtime.forked_after_init():
-        warnings.warn(
-            "This process was forked after its parent used the GPU, so it "
-            "samples on the CPU; start it with the 'spawn' or 'forkserver' "
-            "method to sample on the GPU.",
-            stacklevel=5,
-        )
+        warnings.warn(FORKED, stacklevel=5)
         return host
     if not cuda_runtime.available():
         return host
-    from tsim.statevector.cuda.sampler import MAX_WIDTH, CudaShotSampler
+    from tsim.statevector.cuda.sampler import CudaShotSampler
+    from tsim.statevector.gpu.tape import MAX_WIDTH
 
     layout = host.layout
     if layout.num_words == 0:

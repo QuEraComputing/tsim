@@ -13,7 +13,7 @@ import pytest
 from tsim.circuit import Circuit
 from tsim.statevector.cuda import available, codegen, runtime, sampler as cuda_sampler
 from tsim.statevector.cuda.sampler import CudaShotSampler
-from tsim.statevector.gpu import tape
+from tsim.statevector.gpu import noise as gpu_noise, tape
 from tsim.statevector.program import StatevectorComponent
 from tsim.statevector.shots import ShotSampler
 
@@ -232,7 +232,7 @@ NOISY_DETECTORS = "\n".join(
 
 def test_cuda_postselection_drops_the_rows_that_fail(monkeypatch):
     # NOTE: the masked run must draw the unmasked run's noise, so none is deferred.
-    monkeypatch.setattr(cuda_sampler, "DEFER_SHARE", 2.0)
+    monkeypatch.setattr(gpu_noise, "DEFER_SHARE", 2.0)
     circuit = Circuit(NOISY_DETECTORS)
     rng = np.random.default_rng(0)
     mask = np.zeros(150, dtype=bool)
@@ -318,7 +318,7 @@ def test_cuda_chunks_return_the_rows_of_one_pass(monkeypatch, text):
     # NOTE: 1000-shot chunks on both streams, and host rows that start with room
     # for the first chunk only; without deferral, a masked and an unmasked run on
     # the same chunks draw the same shots.
-    monkeypatch.setattr(cuda_sampler, "DEFER_SHARE", 2.0)
+    monkeypatch.setattr(gpu_noise, "DEFER_SHARE", 2.0)
     monkeypatch.setattr(
         cuda_sampler.CudaShotSampler, "_chunk_shots", lambda self, *args: 1000
     )
@@ -526,7 +526,7 @@ def test_cuda_looping_tapes_match_stabilizer_rank(monkeypatch, name):
 
 def test_components_wider_than_the_limit_run_on_the_cpu():
     circuit = _random_unitary_circuit(13, 12)
-    assert _widest(circuit) > cuda_sampler.MAX_WIDTH
+    assert _widest(circuit) > tape.MAX_WIDTH
     with pytest.warns(UserWarning, match="sampling on the CPU"):
         sampler = circuit.compile_sampler(seed=1)
     assert type(sampler._shots) is ShotSampler

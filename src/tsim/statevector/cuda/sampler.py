@@ -38,30 +38,21 @@ import numpy as np
 
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.cuda import runtime
-from tsim.statevector.cuda.codegen import PRELUDE, hex64, tape_function
+from tsim.statevector.cuda.codegen import CUDA, PRELUDE
 from tsim.statevector.cuda.noise import noise_tables, source as noise_source
-from tsim.statevector.gpu.noise import NoiseGroups, deferred_channels, pass_rate
+from tsim.statevector.gpu import FORKED, tape
+from tsim.statevector.gpu.noise import NoiseGroups, screen_pass_rate, split
 from tsim.statevector.gpu.rows import select
-from tsim.statevector.shared import pack_bits
-from tsim.statevector.shots import ShotLayout, ShotPlan, ShotSampler
+from tsim.statevector.shots import ShotPlan, ShotSampler
 
-MAX_WIDTH = 11
 KERNEL_SHARED_BYTES = 48 * 1024
 """Shared memory that a kernel may use without opting in, static and dynamic."""
-"""Widest component the CUDA executor runs: 32 threads of 64 amplitudes."""
 
 BATCH_SHOTS = 1 << 22
 """Shots of one batch on the device."""
 
 MIN_BATCH_SHOTS = 1 << 14
 """Smallest batch that a call out of device memory retries with, before the CPU."""
-
-DEVIATION_TOLERANCE = 1e-3
-"""Normalization deviation that float32 amplitudes tolerate without a warning."""
-
-DEFER_SHARE = 0.25
-"""Share of the expected faults that postselection cannot see, from which they
-are drawn on the accepted shots only, after the tapes."""
 
 CHUNK_BYTES = 6 << 20
 """Bytes of kept rows per chunk that a call's chunks aim at: each chunk's copy to
@@ -95,7 +86,7 @@ extern "C" __global__ void __launch_bounds__({block}) tape(
         u64 w[{NW}];
         #pragma unroll
         for (int i = 0; i < {NW}; ++i) w[i] = row[i];
-        float ev[{NE}];
+        float ev[{NO}];
         int grave = 0x7fffffff;
 {calls}
         if (valid && t == 0) {{
@@ -306,10 +297,7 @@ class CudaShotSampler:
 
     device = "cuda"
 
-    @staticmethod
-    def supports(layout: ShotLayout) -> bool:
-        """Return whether every component of ``layout`` fits in ``MAX_WIDTH`` qubits."""
-        return all(c.width <= MAX_WIDTH for c in layout.components)
+    supports = staticmethod(tape.supports)
 
     def __init__(
         self,
@@ -389,11 +377,6 @@ class CudaShotSampler:
 
     # -- compilation ----------------------------------------------------------
 
-    def _threads_per_shot(self) -> int:
-        """Return log2 of the threads per shot: one per 32 amplitudes, at most 32."""
-        width = max((c.width for c in self.layout.components), default=0)
-        return min(5, max(0, width - 5))
-
     def _module(self, mask: np.ndarray | None) -> _Module:
         # NOTE: None, not b"", so that an empty mask is not taken for no mask.
         key = None if mask is None else np.asarray(mask, bool).tobytes()
@@ -402,45 +385,19 @@ class CudaShotSampler:
         cp = self._cp
         plan = self.plan(mask)
         layout = self.layout
-        tb = self._threads_per_shot()
+        tb = tape.threads_per_shot(layout)
         T = 1 << tb
         block = 128
-        observables: list[dict[int, int]] = []
-        for component in layout.components:
-            slots = {
-                o: int(np.searchsorted(self._observables, index))
-                for o, index in enumerate(component.output_indices)
-                if index >= self._num_detectors
-            }
-            observables.append(slots)
-        functions = "\n\n".join(
-            tape_function(program, i, tb, observables[i])
-            for i, program in enumerate(plan.programs)
-        )
-        calls = "\n".join(
-            f"        grave = min(grave, component_{i}(w, shot, seed_{i}, t, gmask, ev, deviation));"
-            for i in range(len(plan.programs))
-        )
+        parts = tape.tape_kernel(layout, plan, mask, self._num_detectors, tb, CUDA)
         gmask = (
             "0xffffffffu"
             if T == 32
             else f"((1u << {T}) - 1) << (threadIdx.x & 31 & ~{T - 1})"
         )
-        bits = np.zeros(64 * layout.output_words, dtype=bool)
-        if mask is not None:
-            bits[: len(mask)] = mask
-        psm_words = pack_bits(bits, layout.output_words)
-        # NOTE: the tapes write only their outputs' words, and test the
-        # postselected outputs among them.
-        written = sorted({int(w) for p in plan.programs for w in p.out_words})
-        stores = "\n".join(f"            row[{w}] = w[{w}];" for w in written)
-        hits = " | ".join(
-            f"(w[{w}] & {hex64(psm_words[w])})" for w in written if psm_words[w]
-        )
         source = (
             PRELUDE
             + noise_source(self._noise, layout.output_words, layout.num_outputs)
-            + functions
+            + parts.functions
             + _KERNELS.format(
                 block=block,
                 T1=T - 1,
@@ -449,34 +406,29 @@ class CudaShotSampler:
                 NW=layout.num_words,
                 OW=layout.output_words,
                 NO=max(1, len(self._observables)),
-                NE=max(1, len(self._observables)),
                 S=self._noise.block_shots,
                 # NOTE: the rows keep every output, the postselected ones too.
                 NB=max(-(-layout.num_outputs // 8), 1),
-                calls=calls,
-                # NOTE: each component's stream, from the call's seed.
-                seeds="\n".join(
-                    f"    const u64 seed_{i} = mix64(seed + {i + 1} * GOLDEN);"
-                    for i in range(len(plan.programs))
-                ),
-                stores=stores,
-                hits=hits or "0",
+                calls=parts.calls,
+                seeds=parts.seeds,
+                stores=parts.stores,
+                hits=parts.hits,
             )
         )
         module = self._compile(source)
-        tape = module.get_function("tape")
+        tape_fn = module.get_function("tape")
         blocks_per_sm = 4
         if hasattr(cp.cuda.runtime, "occupancyMaxActiveBlocksPerMultiprocessor"):
             blocks_per_sm = max(
                 1,
                 cp.cuda.runtime.occupancyMaxActiveBlocksPerMultiprocessor(
-                    tape.ptr, block, 0
+                    tape_fn.ptr, block, 0
                 ),
             )
         compiled = _Module(
             noise=module.get_function("noise"),
             noise_kept=module.get_function("noise_kept"),
-            tape=tape,
+            tape=tape_fn,
             gather_columns=module.get_function("gather_columns"),
             gather_float=module.get_function("gather_float"),
             publish=module.get_function("publish"),
@@ -486,8 +438,8 @@ class CudaShotSampler:
             tape_blocks=runtime.multiprocessors() * blocks_per_sm,
             has_mask=mask is not None,
             plan=plan,
-            psm_words=psm_words,
-            passing=self._passing(plan),
+            psm_words=parts.psm_words,
+            passing=screen_pass_rate(self._channels, layout, plan),
             splits={},
         )
         self._modules[key] = compiled
@@ -503,13 +455,6 @@ class CudaShotSampler:
         device = self._cp.asarray(array)
         self._cp.cuda.get_current_stream().synchronize()
         return device
-
-    def _passing(self, plan: ShotPlan) -> float:
-        """Return the estimated share of shots that pass the screen of ``plan``."""
-        layout = self.layout
-        screen = np.zeros(layout.num_words, dtype=np.uint64)
-        screen[: layout.output_words] = plan.screen
-        return pass_rate(self._channels, layout.noise, screen) if screen.any() else 1.0
 
     def _launch(self, groups: NoiseGroups) -> _Launch:
         """Upload a noise launch's segments and records."""
@@ -527,36 +472,27 @@ class CudaShotSampler:
     ) -> tuple[_Launch, _Launch] | None:
         """Return a postselected batch's noise passes (screened, deferred), or None.
 
-        The deferred channels flip none of the bits that the screen, the tapes or
-        the postselection read: the postselected outputs, the keys, and with
-        ``expectations`` the components' observables. Each key word is read
-        whole, so the deferred channels flip output words only.
+        As ``gpu.noise.split``; with ``expectations`` the observables' bits are
+        read too. Each key word is read whole, so the deferred channels flip
+        output words only.
         """
         if not module.has_mask:
             return None
-        if expectations in module.splits:
-            return module.splits[expectations]
-        layout = self.layout
-        read = np.zeros(layout.num_words, dtype=np.uint64)
-        read[: layout.output_words] = module.psm_words | module.plan.screen
-        for program in module.plan.programs:
-            start = program.key_start
-            read[start : start + program.key_words] = ~np.uint64(0)
-            np.bitwise_or.at(read, program.ps_word, program.ps_mask.astype(np.uint64))
-        if expectations:
-            bits = np.zeros(64 * layout.output_words, dtype=bool)
-            for component in layout.components:
-                for index in component.output_indices:
-                    if index >= self._num_detectors:
-                        bits[index] = True
-            read[: layout.output_words] |= pack_bits(bits, layout.output_words)
-        deferred = deferred_channels(self._channels, layout.noise, read)
-        later = self._noise.subset(deferred)
-        split = None
-        if later.faults > 0 and later.faults >= DEFER_SHARE * self._noise.groups.faults:
-            split = (self._launch(self._noise.subset(~deferred)), self._launch(later))
-        module.splits[expectations] = split
-        return split
+        if expectations not in module.splits:
+            found = split(
+                self._noise,
+                self._channels,
+                self.layout,
+                module.plan,
+                module.psm_words,
+                self._num_detectors if expectations else None,
+            )
+            module.splits[expectations] = (
+                None
+                if found is None
+                else (self._launch(found[0]), self._launch(found[1]))
+            )
+        return module.splits[expectations]
 
     def _compile(self, source: str):
         """Compile with NVRTC; ptxas -O3 fails on some shuffled tapes, so lower levels follow."""
@@ -748,12 +684,6 @@ class CudaShotSampler:
         module.count_bits((blocks,), (1024,), (bits, np.int64(words), totals))
         module.list_bits((blocks,), (1024,), (bits, np.int64(words), totals, index))
         return index[:count]
-
-    def _deviation(self, counts: np.ndarray) -> float:
-        """Return a batch's normalization deviation beyond float32 rounding, else 0."""
-        bits = np.asarray(counts[2:3], dtype=np.uint32)
-        deviation = float(bits.view(np.float32)[0])
-        return deviation if deviation > DEVIATION_TOLERANCE else 0.0
 
     def sample(
         self,
@@ -985,7 +915,7 @@ class CudaShotSampler:
                         held.append(dst)
                     else:
                         values_host[:] = 0
-            return self._deviation(host_counts)
+            return tape.deviation(host_counts[2])
 
         # NOTE: each chunk is launched before the previous one is finished, so its
         # kernels overlap that copy.
@@ -1032,12 +962,7 @@ def _forked() -> bool:
     """Return whether this process was forked after its parent used CUDA, with a warning."""
     if not runtime.forked_after_init():
         return False
-    warnings.warn(
-        "This process was forked after its parent used the GPU, so it samples on "
-        "the CPU; start it with the 'spawn' or 'forkserver' method to sample on "
-        "the GPU.",
-        stacklevel=5,
-    )
+    warnings.warn(FORKED, stacklevel=5)
     return True
 
 

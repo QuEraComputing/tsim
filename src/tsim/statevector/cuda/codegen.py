@@ -8,7 +8,6 @@ the boundary ``draw_one`` decides an outcome in double precision.
 from __future__ import annotations
 
 from tsim.statevector.gpu import tape
-from tsim.statevector.shared import LaneProgram
 
 CUDA = tape.Dialect(
     inline="__device__ __forceinline__",
@@ -78,12 +77,3 @@ __device__ __forceinline__ void deviate(unsigned* deviation, float total) {
     if (!(d <= 1e-3f)) atomicMax(deviation, d == d ? __float_as_uint(d) : 0x7f800000u);
 }
 """
-
-hex64 = CUDA.hex64
-
-
-def tape_function(
-    program: LaneProgram, index: int, tb: int, observables: dict[int, int]
-) -> str:
-    """Return ``component_<index>`` in CUDA C++ (``tape.tape_function``)."""
-    return tape.tape_function(program, index, tb, observables, CUDA)
