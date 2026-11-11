@@ -238,6 +238,10 @@ def upload(values: np.ndarray) -> Buffer:
     return held
 
 
+class CompileError(RuntimeError):
+    """A Metal kernel that does not compile, or whose pipeline cannot be built."""
+
+
 class Library:
     """A compiled Metal library and its kernels' pipeline states."""
 
@@ -245,7 +249,7 @@ class Library:
         """Compile ``source`` (Metal Shading Language) with fast math.
 
         Raises:
-            RuntimeError: If it does not compile.
+            CompileError: If it does not compile.
 
         """
         mtl = metal()
@@ -255,12 +259,17 @@ class Library:
             source, options, None
         )
         if library is None:
-            raise RuntimeError(f"Metal compilation failed: {error}")
+            raise CompileError(f"Metal compilation failed: {error}")
         self._library = library
         self._pipelines: dict[str, Any] = {}
 
     def pipeline(self, name: str) -> Any:
-        """Return the compute pipeline state of kernel ``name``."""
+        """Return the compute pipeline state of kernel ``name``.
+
+        Raises:
+            CompileError: If its pipeline cannot be built.
+
+        """
         if name not in self._pipelines:
             function = self._library.newFunctionWithName_(name)
             if function is None:
@@ -275,7 +284,7 @@ class Library:
                 descriptor, 0, None, None
             )
             if state is None:
-                raise RuntimeError(f"pipeline {name}: {error}")
+                raise CompileError(f"pipeline {name}: {error}")
             self._pipelines[name] = state
         return self._pipelines[name]
 

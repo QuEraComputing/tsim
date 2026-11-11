@@ -183,9 +183,12 @@ class MetalShotSampler:
         self._constants: dict[bytes, runtime.Buffer] = {}
         self._slots: dict[tuple[int, bool], _Slot] = {}
         self._shares: dict[tuple, float] = {}
+        self._cpu_only = False
 
-    device = "metal"
-    """Where this sampler samples (``SamplerStats.device``)."""
+    @property
+    def device(self) -> str:
+        """Return where this sampler samples (``SamplerStats.device``)."""
+        return "cpu" if self._cpu_only else "metal"
 
     def __reduce__(self):
         """Pickle the CPU sampler and the inputs; the GPU state is rebuilt on load."""
@@ -484,8 +487,9 @@ class MetalShotSampler:
 
         As ``ShotSampler.sample``: with a ``mask`` only the shots that pass
         postselection are returned. ``batch_size`` bounds the shots of a batch.
-        Out of GPU memory, and in a process forked after its parent used the
-        GPU, the call warns and samples on the CPU.
+        Out of GPU memory, when a kernel does not compile, and in a process
+        forked after its parent used the GPU, the call warns and samples on the
+        CPU.
         """
 
         def on_gpu():
@@ -517,15 +521,23 @@ class MetalShotSampler:
     def _or_cpu(self, on_gpu, on_cpu):
         """Return ``on_gpu()``, or warn and return ``on_cpu()`` where the GPU fails.
 
-        It fails in a process forked after its parent used the GPU, and out of
-        GPU memory.
+        It fails in a process forked after its parent used the GPU, out of GPU
+        memory, and when a kernel does not compile; after that the sampler
+        samples on the CPU.
         """
-        if _forked():
+        if self._cpu_only or _forked():
             return on_cpu()
         try:
             return on_gpu()
         except MemoryError as error:
             _warn_out_of_memory(error)
+            return on_cpu()
+        except runtime.CompileError as error:
+            self._cpu_only = True
+            warnings.warn(
+                f"{error}; this sampler samples on the CPU from now on.",
+                stacklevel=_STACKLEVEL,
+            )
             return on_cpu()
 
     def _capacity(self, key: tuple, module: _Module, shots: int) -> int:

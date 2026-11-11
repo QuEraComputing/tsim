@@ -14,6 +14,7 @@ from tsim.circuit import Circuit
 from tsim.statevector.gpu import noise as gpu_noise, tape
 from tsim.statevector.metal import (
     codegen,
+    kernels,
     noise as metal_noise,
     runtime,
     sampler as metal_sampler,
@@ -657,6 +658,27 @@ def test_processes_forked_after_the_gpu_was_used_sample_on_the_cpu():
         name, messages = pool.map(_sampler_in_child, [0])[0]
     assert name == "ShotSampler"
     assert any("forked" in m for m in messages)
+
+
+def test_a_kernel_that_does_not_compile_samples_on_the_cpu(monkeypatch):
+    circuit = Circuit(T_STATE_X)
+    sampler = _gpu(circuit.compile_sampler(seed=1))
+    compiled = []
+
+    def broken(*args, **kwargs):
+        compiled.append(1)
+        return "kernel void tape("
+
+    monkeypatch.setattr(kernels, "source", broken)
+    with pytest.warns(UserWarning, match="Metal compilation failed"):
+        got = sampler.sample(20_000)
+    assert sampler.stats.device == "cpu"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        got = np.concatenate([got, sampler.sample(20_000)])
+    assert len(compiled) == 1
+    expected = _cpu(circuit.compile_sampler, seed=2).sample(40_000)
+    assert_counts_match(got, expected)
 
 
 def test_noise_of_tiny_probabilities_fires_at_its_rate():
