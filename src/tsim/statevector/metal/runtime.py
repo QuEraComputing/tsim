@@ -206,8 +206,8 @@ def upload(values: np.ndarray) -> Buffer:
 class Library:
     """A compiled Metal library and its kernels' pipeline states."""
 
-    def __init__(self, source: str, fast_math: bool = True) -> None:
-        """Compile ``source`` (Metal Shading Language).
+    def __init__(self, source: str) -> None:
+        """Compile ``source`` (Metal Shading Language) with fast math.
 
         Raises:
             RuntimeError: If it does not compile.
@@ -215,7 +215,7 @@ class Library:
         """
         mtl = metal()
         options = mtl.MTLCompileOptions.new()
-        options.setFastMathEnabled_(fast_math)
+        options.setFastMathEnabled_(True)
         library, error = device().newLibraryWithSource_options_error_(
             source, options, None
         )

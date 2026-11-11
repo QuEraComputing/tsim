@@ -31,7 +31,6 @@ batch size.
 from __future__ import annotations
 
 import threading
-import time
 import warnings
 from dataclasses import dataclass, field
 from typing import Any
@@ -65,9 +64,6 @@ NOISE_THREADS = 256
 TAPE_THREADS = 128
 """Threads per threadgroup of the tape kernel."""
 
-FAST_MATH = True
-"""Whether the kernels compile with fast math."""
-
 DEVIATION_TOLERANCE = 1e-3
 """Normalization deviation that float32 amplitudes tolerate without a warning."""
 
@@ -100,7 +96,7 @@ kernel void tape(
     device u64* row = out + (long)row_index * {NW};
     u64 w[{NW}];
     for (int i = 0; i < {NW}; ++i) w[i] = row[i];
-    float ev[{NE}];
+    float ev[{NO}];
     int grave = 0x7fffffff;
 {calls}
     if (t == 0) {{
@@ -274,7 +270,6 @@ class _Module:
     screen: runtime.Buffer
     plan: ShotPlan
     psm_words: np.ndarray
-    compile_seconds: float
     passing: float
     """Estimated share of shots that pass the screen."""
     splits: dict[bool, tuple[_Launch, _Launch] | None] = field(default_factory=dict)
@@ -290,7 +285,6 @@ class _Slot:
     output has room for.
     """
 
-    shots: int
     words: runtime.Buffer
     queue: runtime.Buffer
     accepted: runtime.Buffer
@@ -354,8 +348,6 @@ class MetalShotSampler:
         self._constants: dict[bytes, runtime.Buffer] = {}
         self._slots: dict[tuple[int, bool], _Slot] = {}
         self._shares: dict[tuple, float] = {}
-        self.gpu_seconds = 0.0
-        """GPU time of the command buffers so far (for benchmarks)."""
 
     device = "metal"
     """Where this sampler samples (``SamplerStats.device``)."""
@@ -431,10 +423,7 @@ class MetalShotSampler:
                 T1=T - 1,
                 tb=tb,
                 NW=layout.num_words,
-                OW=layout.output_words,
                 NO=max(1, len(self._observables)),
-                NE=max(1, len(self._observables)),
-                S=self._noise.block_shots,
                 NB=max(nb, 1),
                 RB=8 * layout.num_words,
                 NOUT=max(layout.num_outputs, 1),
@@ -448,15 +437,13 @@ class MetalShotSampler:
                 hits=hits or "0",
             )
         )
-        start = time.perf_counter()
-        library = runtime.Library(source, fast_math=FAST_MATH)
+        library = runtime.Library(source)
         names = ["noise", "tape", "count_bits", "list_bits", "gather_rows"]
         names += ["gather_float", "reset", "advance", "unpack_rows"]
         if self._noise.shared_words:
             names.append("noise_kept")
         for name in names:
             library.pipeline(name)
-        compile_seconds = time.perf_counter() - start
         compiled = _Module(
             library=library,
             tb=tb,
@@ -464,7 +451,6 @@ class MetalShotSampler:
             screen=runtime.upload(plan.screen),
             plan=plan,
             psm_words=psm_words,
-            compile_seconds=compile_seconds,
             passing=self.passing(mask),
         )
         self._modules[key] = compiled
@@ -546,7 +532,6 @@ class MetalShotSampler:
         if slot is None:
             nw, no = self.layout.num_words, max(1, len(self._observables))
             slot = _Slot(
-                shots=shots,
                 words=runtime.buffer(shots * nw, np.uint64),
                 queue=runtime.buffer(shots, np.uint32),
                 accepted=runtime.buffer(-(-shots // 32), np.uint32),
@@ -735,9 +720,6 @@ class MetalShotSampler:
         # NOTE: fast math records a NaN total as NaN (not inf), which must warn.
         return 0.0 if deviation <= DEVIATION_TOLERANCE else deviation
 
-    def _wait(self, commands: Any) -> None:
-        self.gpu_seconds += runtime.wait(commands)
-
     def sample(
         self,
         shots: int,
@@ -849,7 +831,7 @@ class MetalShotSampler:
         """
         try:
             for command in commands:
-                self._wait(command)
+                runtime.wait(command)
         except BaseException:
             self._settle(commands)
             raise
