@@ -119,6 +119,21 @@ class _Slot:
     values: runtime.Buffer | None = None
 
 
+@dataclass
+class _Call:
+    """What a call's batches share: its kernels, buffers, noise passes and output."""
+
+    module: _Module
+    slot: _Slot
+    constant: runtime.Buffer
+    split: tuple[_Launch, _Launch] | None
+    expectations: bool
+    rows: runtime.Buffer
+    """The accepted rows, bit-packed."""
+    values: runtime.Buffer | None
+    """The accepted rows' expectations, with ``expectations``."""
+
+
 class MetalShotSampler:
     """Samples shot words of a statevector program on a Metal GPU.
 
@@ -291,20 +306,15 @@ class MetalShotSampler:
         return slot
 
     def _encode_batch(
-        self,
-        encoder: runtime.Encoder,
-        module: _Module,
-        slot: _Slot,
-        shots: int,
-        first_shot: int,
-        constant: runtime.Buffer,
-        expectations: bool,
-        launch: _Launch,
+        self, encoder: runtime.Encoder, call: _Call, shots: int, first_shot: int
     ) -> None:
         """Encode a batch's noise and tape kernels.
 
         Only the shots that pass the screen get their words written.
         """
+        module, slot, constant = call.module, call.slot, call.constant
+        expectations = call.expectations
+        launch = call.split[0] if call.split else self._all
         library = module.library
         words = slot.words
         encoder.dispatch(library.pipeline("reset"), [slot.counts], 1, 1)
@@ -362,21 +372,18 @@ class MetalShotSampler:
     def _encode_pack(
         self,
         encoder: runtime.Encoder,
-        module: _Module,
-        slot: _Slot,
+        call: _Call,
         shots: int,
-        split: tuple[_Launch, _Launch] | None,
-        expectations: bool,
-        rows: runtime.Buffer,
-        values: runtime.Buffer | None,
         fixed: tuple[runtime.Buffer, int],
     ) -> None:
-        """Encode the listing and packing of a batch's accepted rows into ``rows``.
+        """Encode the listing and packing of a batch's accepted rows into ``call.rows``.
 
         They follow the rows of the call's earlier batches (at the cursor), and
-        their expectations go to ``values``; ``fixed`` holds the batch's shots,
-        which a call without a mask returns.
+        their expectations go to ``call.values``; ``fixed`` holds the batch's
+        shots, which a call without a mask returns.
         """
+        module, slot, split = call.module, call.slot, call.split
+        expectations, rows, values = call.expectations, call.rows, call.values
         library = module.library
         S = self._noise.block_shots
         nb = -(-self.layout.num_outputs // 8)
@@ -528,21 +535,9 @@ class MetalShotSampler:
         expected = shots * min(1.0, share)
         return min(shots, int(1.05 * expected + 8 * np.sqrt(expected) + 4096))
 
-    def _run_accepted(
-        self,
-        module: _Module,
-        slot: _Slot,
-        shots: int,
-        batch: int,
-        constant: runtime.Buffer,
-        expectations: bool,
-        split: tuple[_Launch, _Launch] | None,
-        rows: runtime.Buffer,
-        values: runtime.Buffer | None,
-        capacity: int,
-    ) -> None:
-        """Run a call's batches into ``rows`` (and ``values``) of ``capacity`` rows."""
-        launch = split[0] if split else self._all
+    def _run_accepted(self, call: _Call, shots: int, batch: int, capacity: int) -> None:
+        """Run a call's batches into ``call.rows`` (and ``values``) of ``capacity`` rows."""
+        slot = call.slot
         starts = range(0, shots, batch)
         fixed = runtime.buffer(len(starts), np.uint32)
         slot.counts.array[:] = 0
@@ -553,20 +548,8 @@ class MetalShotSampler:
                 n = min(batch, shots - start)
                 fixed.array[k] = n
                 encoder = runtime.Encoder()
-                self._encode_batch(
-                    encoder, module, slot, n, start, constant, expectations, launch
-                )
-                self._encode_pack(
-                    encoder,
-                    module,
-                    slot,
-                    n,
-                    split,
-                    expectations,
-                    rows,
-                    values,
-                    (fixed, 4 * k),
-                )
+                self._encode_batch(encoder, call, n, start)
+                self._encode_pack(encoder, call, n, (fixed, 4 * k))
                 commands.append(encoder.commit())
         except BaseException:
             self._settle(commands)
@@ -698,18 +681,8 @@ class MetalShotSampler:
                 if expectations
                 else None
             )
-            self._run_accepted(
-                module,
-                slot,
-                shots,
-                batch,
-                constant,
-                expectations,
-                split,
-                rows,
-                values,
-                capacity,
-            )
+            call = _Call(module, slot, constant, split, expectations, rows, values)
+            self._run_accepted(call, shots, batch, capacity)
             total = int(slot.counts.array[_CURSOR])
             if total <= capacity:
                 break
