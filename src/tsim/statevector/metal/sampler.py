@@ -71,6 +71,9 @@ _STACKLEVEL = 6
 TAPE_THREADS = 128
 """Threads per threadgroup of the tape kernel."""
 
+WIDE_TAPE = 8
+"""Width from which a shot's threads hold at most 16 amplitudes each, not 32."""
+
 MAX_CALL_SHOTS = 1 << 31
 """Most shots of one GPU call; larger calls run in parts (the counters are 32-bit)."""
 
@@ -213,7 +216,7 @@ class MetalShotSampler:
             return self._modules[key]
         plan = self.plan(mask)
         layout = self.layout
-        tb = tape.threads_per_shot(layout)
+        tb = _threads_per_shot(layout)
         parts = tape.tape_kernel(layout, plan, mask, self._num_detectors, tb, METAL)
         source = kernels.source(
             layout, self._noise, parts, tb, max(1, len(self._observables))
@@ -748,6 +751,18 @@ def _forked() -> bool:
         return False
     warnings.warn(FORKED, stacklevel=_STACKLEVEL)
     return True
+
+
+def _threads_per_shot(layout) -> int:
+    """Return log2 of a shot's threads, as ``tape.threads_per_shot`` from ``WIDE_TAPE`` on."""
+    # NOTE: fewer registers per thread pay for the shuffles once tapes are wide: on
+    # an M4 Pro, 32 threads of 16 amplitudes run 9 qubits 1.4x and 8 qubits 1.1-1.2x
+    # faster than 16 threads of 32; at 7 qubits they tie, at 6 four threads of 16
+    # are 10% slower than two of 32.
+    width = max((c.width for c in layout.components), default=0)
+    if width >= WIDE_TAPE:
+        return tape.threads_per_shot(layout, tape.AMPLITUDE_AXES - 1)
+    return tape.threads_per_shot(layout)
 
 
 def _warn_out_of_memory(error: MemoryError) -> None:

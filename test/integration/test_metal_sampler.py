@@ -509,7 +509,7 @@ def _assert_matches_cpu(circuit, width, shots=200_000):
 
 @pytest.mark.parametrize(("width", "layers"), [(6, 8), (8, 8), (9, 10), (11, 12)])
 def test_metal_wide_components_match_the_cpu_executor(width, layers):
-    # NOTE: widths 6, 8, 9 and 11 run 2, 8, 16 and 32 threads per shot.
+    # NOTE: widths 6, 8, 9 and 11 run 2, 16, 32 and 32 threads per shot.
     circuit = _random_unitary_circuit(width, layers)
     assert _widest(circuit) == width
     _assert_matches_cpu(circuit, width)

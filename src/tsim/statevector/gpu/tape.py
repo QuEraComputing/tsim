@@ -150,10 +150,10 @@ def supports(layout: ShotLayout) -> bool:
     return layout.num_words > 0 and all(c.width <= MAX_WIDTH for c in layout.components)
 
 
-def threads_per_shot(layout: ShotLayout) -> int:
-    """Return log2 of a shot's threads: one per ``2^AMPLITUDE_AXES`` amplitudes, at most 32."""
+def threads_per_shot(layout: ShotLayout, amplitude_axes: int = AMPLITUDE_AXES) -> int:
+    """Return log2 of a shot's threads: one per ``2^amplitude_axes`` amplitudes, at most 32."""
     width = max((c.width for c in layout.components), default=0)
-    return min(5, max(0, width - AMPLITUDE_AXES))
+    return min(5, max(0, width - amplitude_axes))
 
 
 def deviation(bits) -> float:
