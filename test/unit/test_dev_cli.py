@@ -569,3 +569,9 @@ def test_served_rounds_share_one_call_and_stop_early(fake_bench, monkeypatch):
     assert len(record["rounds"]["new"]) == 5
     # NOTE: every round has a pair of its own; rounds past the first batch start one.
     assert len(starts) == 2 * (6 + 2)
+    # NOTE: a side on another device calibrates its own call.
+    sides[0] = bench.Side("new", Path("python"), device="gpu")
+    rates.update(new=[1e6] * 5, ref=[1e6] * 5)
+    requests.clear()
+    bench.run_case(case, sides, args)
+    assert requests[:2] == [("new", "calibrate 0.3"), ("ref", "calibrate 0.3")]
