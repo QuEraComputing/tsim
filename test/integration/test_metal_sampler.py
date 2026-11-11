@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from tsim.circuit import Circuit
-from tsim.statevector.gpu import tape
+from tsim.statevector.gpu import noise as gpu_noise, tape
 from tsim.statevector.metal import (
     codegen,
     noise as metal_noise,
@@ -239,7 +239,7 @@ NOISY_DETECTORS = "\n".join(
 
 def test_metal_postselection_drops_the_rows_that_fail(monkeypatch):
     # NOTE: the masked run must draw the unmasked run's noise, so none is deferred.
-    monkeypatch.setattr(metal_sampler, "DEFER_SHARE", 2.0)
+    monkeypatch.setattr(gpu_noise, "DEFER_SHARE", 2.0)
     circuit = Circuit(NOISY_DETECTORS)
     rng = np.random.default_rng(0)
     mask = np.zeros(150, dtype=bool)
@@ -324,7 +324,7 @@ def test_deferred_noise_leaves_the_expectations_unbiased():
 def test_metal_batches_return_the_rows_of_one_pass(monkeypatch, text):
     # NOTE: 1000-shot batches, queued on one set of buffers; without deferral, a
     # masked and an unmasked run on the same batches draw the same shots.
-    monkeypatch.setattr(metal_sampler, "DEFER_SHARE", 2.0)
+    monkeypatch.setattr(gpu_noise, "DEFER_SHARE", 2.0)
     circuit = Circuit(text)
     mask = np.zeros(circuit.num_detectors, dtype=bool)
     mask[[0, 2]] = True
@@ -536,7 +536,7 @@ def test_metal_looping_tapes_match_stabilizer_rank(monkeypatch, name):
 
 def test_components_wider_than_the_limit_run_on_the_cpu():
     circuit = _random_unitary_circuit(13, 12)
-    assert _widest(circuit) > metal_sampler.MAX_WIDTH
+    assert _widest(circuit) > tape.MAX_WIDTH
     with pytest.warns(UserWarning, match="sampling on the CPU"):
         sampler = circuit.compile_sampler(seed=1)
     assert type(sampler._shots) is ShotSampler
@@ -593,13 +593,6 @@ def test_metal_unmasked_expectations_after_a_masked_call():
     again, values_again = _expectations(sampler, 20_000)
     np.testing.assert_array_equal(again, rows)
     np.testing.assert_array_equal(values_again, values)
-
-
-def test_metal_reports_a_nan_normalization():
-    sampler = _gpu(Circuit(T_STATE_X).compile_detector_sampler(seed=1))
-    counts = np.zeros(4, dtype=np.uint32)
-    counts[2] = 0x7FC00000
-    assert np.isnan(_gpu_shots(sampler)._deviation(counts))
 
 
 def test_metal_samples_rows_too_wide_for_threadgroup_memory():

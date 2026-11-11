@@ -18,7 +18,11 @@ marks them in a bitmap of the batch's shots. Under postselection,
 from __future__ import annotations
 
 from tsim.noise.channels import ChannelSampler, WordTables
-from tsim.statevector.gpu.noise import NoiseTables, noise_tables as _noise_tables
+from tsim.statevector.gpu.noise import (
+    NoiseTables,
+    noise_tables as _noise_tables,
+    words_fit,
+)
 
 SHARED_BYTES = 14 * 1024
 """Threadgroup memory of a block's words and events.
@@ -346,10 +350,12 @@ def noise_tables(
     Rows too wide for ``SHARED_BYTES`` keep their words in device memory
     (``shared_words`` False), where the noise kernel XORs the faults in.
     """
-    if 8 * 32 * num_words <= SHARED_BYTES - 8 * 256:
-        return _noise_tables(channels, flips, num_words, shared_bytes=SHARED_BYTES)
     return _noise_tables(
-        channels, flips, num_words, shared_bytes=SHARED_BYTES, shared_words=False
+        channels,
+        flips,
+        num_words,
+        shared_bytes=SHARED_BYTES,
+        shared_words=words_fit(num_words, SHARED_BYTES),
     )
 
 

@@ -763,8 +763,9 @@ def run_lanes(
         if kind in (ROTATE_DIAG, ROTATE):
             flip = np.empty(size, dtype=np.int64)
             for r in range(size):
-                flip[r] = _row_parity(symbols, r, program.sign_row[a]) ^ (
-                    program.sign_const[a]
+                flip[r] = (
+                    _row_parity(symbols, r, program.sign_row[a])
+                    ^ (program.sign_const[a])
                 )
             diagonal = kind == ROTATE_DIAG
             cos, factor, coupling = (

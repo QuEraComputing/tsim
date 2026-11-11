@@ -20,6 +20,7 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
+from tsim.statevector.gpu import FORKED
 from tsim.statevector.metal import runtime as metal_runtime
 from tsim.statevector.program import StatevectorComponent
 from tsim.statevector.shots import ShotSampler
@@ -332,11 +333,12 @@ def _gpu_shots(
     if os.environ.get("TSIM_DEVICE", "").lower() == "cpu":
         return host
     if metal_runtime.forked_after_init():
-        warnings.warn(metal_runtime.FORKED, stacklevel=5)
+        warnings.warn(FORKED, stacklevel=5)
         return host
     if not metal_runtime.available():
         return host
-    from tsim.statevector.metal.sampler import MAX_WIDTH, MetalShotSampler
+    from tsim.statevector.gpu.tape import MAX_WIDTH
+    from tsim.statevector.metal.sampler import MetalShotSampler
 
     layout = host.layout
     if layout.num_words == 0:

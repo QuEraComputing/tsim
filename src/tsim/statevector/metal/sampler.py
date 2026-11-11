@@ -38,22 +38,16 @@ from typing import Any
 import numpy as np
 
 from tsim.noise.channels import ChannelSampler
-from tsim.statevector.gpu.noise import NoiseGroups, deferred_channels, pass_rate
+from tsim.statevector.gpu import FORKED, tape
+from tsim.statevector.gpu.noise import NoiseGroups, screen_pass_rate, split
 from tsim.statevector.gpu.rows import select as _select
 from tsim.statevector.metal import runtime
-from tsim.statevector.metal.codegen import PRELUDE, hex64, tape_function
+from tsim.statevector.metal.codegen import METAL, PRELUDE
 from tsim.statevector.metal.noise import noise_tables, source as noise_source
-from tsim.statevector.shared import pack_bits
-from tsim.statevector.shots import ShotLayout, ShotPlan, ShotSampler
-
-MAX_WIDTH = 11
-"""Widest component the Metal executor runs: 32 threads of 64 amplitudes."""
+from tsim.statevector.shots import ShotPlan, ShotSampler
 
 BATCH_SHOTS = 1 << 20
 """Shots of one batch (one command buffer)."""
-
-AMPLITUDE_AXES = 5
-"""Log2 of the amplitudes per thread from which a shot takes more threads."""
 
 BATCH_BYTES = 256 << 20
 """Bytes of shot words of one batch, which bound its shots below ``BATCH_SHOTS``."""
@@ -64,15 +58,8 @@ NOISE_THREADS = 256
 TAPE_THREADS = 128
 """Threads per threadgroup of the tape kernel."""
 
-DEVIATION_TOLERANCE = 1e-3
-"""Normalization deviation that float32 amplitudes tolerate without a warning."""
-
 MAX_CALL_SHOTS = 1 << 31
 """Most shots of one GPU call; larger calls run in parts (the counters are 32-bit)."""
-
-DEFER_SHARE = 0.25
-"""Share of the expected faults that postselection cannot see, from which they
-are drawn on the accepted shots only, after the tapes."""
 
 _KERNELS = r"""
 struct TapeArgs {{ long first_shot; u64 seed; int flags; }};
@@ -303,15 +290,7 @@ class MetalShotSampler:
     expectation.
     """
 
-    @staticmethod
-    def supports(layout: ShotLayout) -> bool:
-        """Return whether every component of ``layout`` fits in ``MAX_WIDTH`` qubits.
-
-        A layout without shot words (no outputs and no noise) stays on the CPU.
-        """
-        return layout.num_words > 0 and all(
-            c.width <= MAX_WIDTH for c in layout.components
-        )
+    supports = staticmethod(tape.supports)
 
     def __init__(
         self,
@@ -375,50 +354,21 @@ class MetalShotSampler:
 
     # -- compilation ----------------------------------------------------------
 
-    def _threads_per_shot(self) -> int:
-        """Return log2 of the threads per shot: one per ``2^AMPLITUDE_AXES`` amplitudes."""
-        width = max((c.width for c in self.layout.components), default=0)
-        return min(5, max(0, width - AMPLITUDE_AXES))
-
     def _module(self, mask: np.ndarray | None) -> _Module:
         key = b"" if mask is None else np.asarray(mask, bool).tobytes()
         if key in self._modules:
             return self._modules[key]
         plan = self.plan(mask)
         layout = self.layout
-        tb = self._threads_per_shot()
+        tb = tape.threads_per_shot(layout)
         T = 1 << tb
-        observables: list[dict[int, int]] = []
-        for component in layout.components:
-            slots = {
-                o: int(np.searchsorted(self._observables, index))
-                for o, index in enumerate(component.output_indices)
-                if index >= self._num_detectors
-            }
-            observables.append(slots)
-        functions = "\n\n".join(
-            tape_function(program, i, tb, observables[i])
-            for i, program in enumerate(plan.programs)
-        )
-        calls = "\n".join(
-            f"    grave = min(grave, component_{i}(w, shot, seed_{i}, t, ev, deviation));"
-            for i in range(len(plan.programs))
-        )
-        bits = np.zeros(64 * layout.output_words, dtype=bool)
-        if mask is not None:
-            bits[: len(mask)] = mask
-        psm_words = pack_bits(bits, layout.output_words)
-        written = sorted({int(w) for p in plan.programs for w in p.out_words})
-        stores = "\n".join(f"        row[{w}] = w[{w}];" for w in written)
-        hits = " | ".join(
-            f"(w[{w}] & {hex64(psm_words[w])})" for w in written if psm_words[w]
-        )
+        parts = tape.tape_kernel(layout, plan, mask, self._num_detectors, tb, METAL)
         # NOTE: the rows keep every output, the postselected ones too, as the CPU's do.
         nb = -(-layout.num_outputs // 8)
         source = (
             PRELUDE
             + noise_source(self._noise, layout.output_words, layout.num_outputs)
-            + functions
+            + parts.functions
             + _KERNELS.format(
                 T1=T - 1,
                 tb=tb,
@@ -428,13 +378,10 @@ class MetalShotSampler:
                 RB=8 * layout.num_words,
                 NOUT=max(layout.num_outputs, 1),
                 LAST=hex((1 << (layout.num_outputs % 8 or 8)) - 1),
-                calls=calls,
-                seeds="\n".join(
-                    f"    const u64 seed_{i} = mix64(seed + {i + 1}UL * GOLDEN);"
-                    for i in range(len(plan.programs))
-                ),
-                stores=stores,
-                hits=hits or "0",
+                calls=parts.calls,
+                seeds=parts.seeds,
+                stores=parts.stores,
+                hits=parts.hits,
             )
         )
         library = runtime.Library(source)
@@ -450,8 +397,8 @@ class MetalShotSampler:
             has_mask=mask is not None,
             screen=runtime.upload(plan.screen),
             plan=plan,
-            psm_words=psm_words,
-            passing=self.passing(mask),
+            psm_words=parts.psm_words,
+            passing=screen_pass_rate(self._channels, layout, plan),
         )
         self._modules[key] = compiled
         return compiled
@@ -470,44 +417,27 @@ class MetalShotSampler:
     ) -> tuple[_Launch, _Launch] | None:
         """Return a postselected batch's noise passes (screened, deferred), or None.
 
-        The deferred channels flip none of the bits that the screen, the tapes or
-        the postselection read: the postselected outputs, the keys, and with
-        ``expectations`` the components' observables. They are drawn apart when
-        they are at least ``DEFER_SHARE`` of the expected faults.
+        As ``gpu.noise.split``; with ``expectations`` the observables' bits are
+        read too.
         """
         # NOTE: rows too wide for threadgroup memory draw all their noise at once.
         if not module.has_mask or not self._noise.shared_words:
             return None
-        if expectations in module.splits:
-            return module.splits[expectations]
-        layout = self.layout
-        read = np.zeros(layout.num_words, dtype=np.uint64)
-        read[: layout.output_words] = module.psm_words | module.plan.screen
-        for program in module.plan.programs:
-            start = program.key_start
-            read[start : start + program.key_words] = ~np.uint64(0)
-            np.bitwise_or.at(read, program.ps_word, program.ps_mask.astype(np.uint64))
-        if expectations:
-            bits = np.zeros(64 * layout.output_words, dtype=bool)
-            for component in layout.components:
-                for index in component.output_indices:
-                    if index >= self._num_detectors:
-                        bits[index] = True
-            read[: layout.output_words] |= pack_bits(bits, layout.output_words)
-        deferred = deferred_channels(self._channels, layout.noise, read)
-        later = self._noise.subset(deferred)
-        split = None
-        if later.faults > 0 and later.faults >= DEFER_SHARE * self._noise.groups.faults:
-            split = (self._launch(self._noise.subset(~deferred)), self._launch(later))
-        module.splits[expectations] = split
-        return split
-
-    def passing(self, mask: np.ndarray | None) -> float:
-        """Return the estimated share of shots that pass the screen of ``mask``."""
-        layout = self.layout
-        screen = np.zeros(layout.num_words, dtype=np.uint64)
-        screen[: layout.output_words] = self.plan(mask).screen
-        return pass_rate(self._channels, layout.noise, screen) if screen.any() else 1.0
+        if expectations not in module.splits:
+            found = split(
+                self._noise,
+                self._channels,
+                self.layout,
+                module.plan,
+                module.psm_words,
+                self._num_detectors if expectations else None,
+            )
+            module.splits[expectations] = (
+                None
+                if found is None
+                else (self._launch(found[0]), self._launch(found[1]))
+            )
+        return module.splits[expectations]
 
     # -- execution --------------------------------------------------------------
 
@@ -713,12 +643,6 @@ class MetalShotSampler:
                 256,
             )
         encoder.dispatch(library.pipeline("advance"), [cursor, count], 1, 1)
-
-    def _deviation(self, counts: np.ndarray) -> float:
-        """Return a batch's normalization deviation beyond float32 rounding, else 0."""
-        deviation = float(counts[2:3].view(np.float32)[0])
-        # NOTE: fast math records a NaN total as NaN (not inf), which must warn.
-        return 0.0 if deviation <= DEVIATION_TOLERANCE else deviation
 
     def sample(
         self,
@@ -964,7 +888,8 @@ class MetalShotSampler:
             self._rng.bit_generator.state = state
             capacity = shots
         self._shares[key] = total / max(shots, 1)
-        deviation = self._deviation(slot.counts.array)
+        # NOTE: fast math records a NaN total as NaN (not inf), which must warn.
+        deviation = tape.deviation(slot.counts.array[2])
         packed = rows.array[: total * nb].reshape(total, nb)
         expected = None
         if values is not None:
@@ -1024,7 +949,7 @@ def _forked() -> bool:
     """Return whether this process was forked after Metal's setup, with a warning."""
     if not runtime.forked_after_init():
         return False
-    warnings.warn(runtime.FORKED, stacklevel=5)
+    warnings.warn(FORKED, stacklevel=5)
     return True
 
 

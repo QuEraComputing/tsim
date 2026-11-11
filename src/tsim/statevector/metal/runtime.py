@@ -62,12 +62,6 @@ if hasattr(os, "register_at_fork"):  # not on Windows
     os.register_at_fork(after_in_child=_after_fork_in_child)
 
 
-FORKED = (
-    "This process was forked after its parent used the GPU, so it samples on the "
-    "CPU; start it with the 'spawn' or 'forkserver' method to sample on the GPU."
-)
-
-
 def forked_after_init() -> bool:
     """Return whether this process was forked after its parent initialized Metal."""
     return _forked_after_init

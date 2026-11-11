@@ -11,7 +11,6 @@ amplitudes in pairs, which keeps fewer values live.
 from __future__ import annotations
 
 from tsim.statevector.gpu import tape
-from tsim.statevector.shared import LaneProgram
 
 METAL = tape.Dialect(
     inline="inline",
@@ -90,12 +89,3 @@ inline void deviate(device atomic_uint* deviation, float total) {
         atomic_fetch_max_explicit(deviation, d == d ? as_type<uint>(d) : 0x7f800000u, memory_order_relaxed);
 }
 """
-
-hex64 = METAL.hex64
-
-
-def tape_function(
-    program: LaneProgram, index: int, tb: int, observables: dict[int, int]
-) -> str:
-    """Return ``component_<index>`` in Metal (``tape.tape_function``)."""
-    return tape.tape_function(program, index, tb, observables, METAL)
