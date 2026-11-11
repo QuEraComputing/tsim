@@ -540,9 +540,9 @@ def _served_rounds(
     `MIN_ROUNDS` rounds' workers start at once, so their imports and compiles overlap
     (one pair at a time for wide circuits, to bound the memory); later rounds start
     their own pair. The first worker calibrates the call (shots per call, calls per
-    timing), and every round times the same calls. With two sides the rounds stop
-    after `MIN_ROUNDS` once more rounds could not change the verdict, else after
-    `args.rounds`.
+    timing), and every round times the same calls; a side on another device
+    calibrates its own. With two sides the rounds stop after `MIN_ROUNDS` once more
+    rounds could not change the verdict, else after `args.rounds`.
     """
     pairs: list[dict[str, Worker]] = []
     try:
@@ -550,12 +550,19 @@ def _served_rounds(
         error = _start_pairs(case, sides, args, pairs, 1 if wide else MIN_ROUNDS)
         if error:
             return error
-        try:
-            first = pairs[0][sides[0].describe()]
-            call = first.request(f"calibrate {args.min_seconds}", "SHOTS")
-        except InfraError as error:
-            return f"{sides[0].describe()}: {error}"
-        request = f"time {call['shots']} {call['calls']} {REPEATS}"
+        requests: dict[str, str] = {}
+        calibrated: dict[str, str] = {}
+        for side in sides:
+            # NOTE: a GPU's call is far larger than a CPU's, so each device calibrates.
+            device = side.device or args.device
+            if device not in calibrated:
+                try:
+                    worker = pairs[0][side.describe()]
+                    call = worker.request(f"calibrate {args.min_seconds}", "SHOTS")
+                except InfraError as error:
+                    return f"{side.describe()}: {error}"
+                calibrated[device] = f"time {call['shots']} {call['calls']} {REPEATS}"
+            requests[side.describe()] = calibrated[device]
         for index in range(args.rounds):
             if index == len(pairs):
                 error = _start_pairs(case, sides, args, pairs, 1)
@@ -565,7 +572,9 @@ def _served_rounds(
             order = sides if index % 2 == 0 else sides[::-1]
             for side in order:
                 try:
-                    result = workers[side.describe()].request(request, "RESULT")
+                    result = workers[side.describe()].request(
+                        requests[side.describe()], "RESULT"
+                    )
                 except InfraError as error:
                     return f"{side.describe()}: {error}"
                 misses = workers[side.describe()].ready.get("cache_misses", 0)
