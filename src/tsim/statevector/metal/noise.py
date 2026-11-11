@@ -153,8 +153,7 @@ kernel void noise_kept(
     device const float* seg_log_keep [[buffer(6)]], device const Record* records [[buffer(7)]],
     device const Flip* overflow [[buffer(8)]],
     device const uint* n [[buffer(9)]], device const uint* index [[buffer(10)]],
-    device uchar* dst [[buffer(11)]], device const uint2* pieces [[buffer(12)]],
-    device const uint* piece_start [[buffer(13)]], device const uint* cursor [[buffer(14)]],
+    device uchar* dst [[buffer(11)]], device const uint* cursor [[buffer(12)]],
     threadgroup uint2* events [[threadgroup(0)]],
     uint tid [[thread_position_in_threadgroup]], uint bid [[threadgroup_position_in_grid]],
     uint nt [[threads_per_threadgroup]])
@@ -176,7 +175,7 @@ kernel void noise_kept(
     add_faults<threadgroup u64*, {S}, 1, false>(sw, events, &num_events, args.max_events, ns,
                args.seed ^ ((u64)bid * 0xD1B54A32D192ED03UL), args.num_segments, seg, records,
                overflow, tid, nt);
-    pack_rows(sw, ns, pieces, piece_start, (threadgroup uchar*)events, dst, ((long)*cursor + base) * {NB}, tid, nt);
+    pack_rows(sw, ns, (threadgroup uchar*)events, dst, ((long)*cursor + base) * {NB}, tid, nt);
 }}
 """
 
@@ -216,22 +215,16 @@ inline void apply_fault(W sw, int row, uint rec, uint draw,
     }}
 }}
 
-// The returned outputs of the block's ``ns`` rows ``sw[w * S + s]``, bit-packed
-// into {NB} bytes per row, contiguously at ``dst`` (``gpu.rows.pieces``).
-inline void pack_rows(threadgroup const u64* sw, int ns, device const uint2* pieces,
-    device const uint* start, threadgroup uchar* stage, device uchar* dst, long at, uint tid, uint nt)
+// The outputs of the block's ``ns`` rows ``sw[w * S + s]``, bit-packed into
+// {NB} bytes per row (the bits past them cleared), contiguously at ``dst``.
+inline void pack_rows(threadgroup const u64* sw, int ns, threadgroup uchar* stage,
+    device uchar* dst, long at, uint tid, uint nt)
 {{
     for (uint i = tid; i < {NK} * {S}; i += nt) {{
         int k = i / {S}, s = i - k * {S};
         if (s >= ns) continue;
-        u64 v = 0;
-        for (uint p = start[k]; p < start[k + 1]; ++p) {{
-            uint2 q = pieces[p];
-            u64 x = sw[q.x * {S} + s] >> (q.y & 63);
-            int length = ((q.y >> 6) & 63) + 1;
-            if (length < 64) x &= (1UL << length) - 1;
-            v |= x << (q.y >> 12);
-        }}
+        u64 v = sw[k * {S} + s];
+        if (k == {NK} - 1) v &= {LAST_WORD};
         threadgroup uchar* at = stage + s * {NB} + 8 * k;
         for (int j = 0; j < 8; ++j) if (8 * k + j < {NB}) at[j] = uchar(v >> (8 * j));
     }}
@@ -360,12 +353,14 @@ def noise_tables(
     )
 
 
-def source(tables: NoiseTables, output_words: int, packed_bytes: int) -> str:
+def source(tables: NoiseTables, output_words: int, num_outputs: int) -> str:
     """Return the MSL source of the ``noise`` and ``noise_kept`` kernels.
 
-    Without ``tables.shared_words`` there is no ``noise_kept``: the rows of a
-    block do not fit in threadgroup memory.
+    ``noise_kept`` packs rows of ``num_outputs`` outputs. Without
+    ``tables.shared_words`` there is no ``noise_kept``: the rows of a block do
+    not fit in threadgroup memory.
     """
+    packed_bytes = -(-num_outputs // 8)
     if tables.shared_words:
         noise, kept = NOISE_SHARED, NOISE_KEPT
     else:
@@ -376,4 +371,5 @@ def source(tables: NoiseTables, output_words: int, packed_bytes: int) -> str:
         S=tables.block_shots,
         NB=max(packed_bytes, 1),
         NK=max(-(-packed_bytes // 8), 1),
+        LAST_WORD=f"0x{(1 << (num_outputs % 64 or 64)) - 1:016X}UL",
     )

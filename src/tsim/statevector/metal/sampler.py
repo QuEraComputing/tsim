@@ -40,7 +40,7 @@ import numpy as np
 
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.gpu.noise import NoiseGroups, deferred_channels, pass_rate
-from tsim.statevector.gpu.rows import pieces as _pieces, select as _select
+from tsim.statevector.gpu.rows import select as _select
 from tsim.statevector.metal import runtime
 from tsim.statevector.metal.codegen import PRELUDE, hex64, tape_function
 from tsim.statevector.metal.noise import noise_tables, source as noise_source
@@ -271,10 +271,6 @@ class _Module:
     library: runtime.Library
     tb: int
     has_mask: bool
-    columns: np.ndarray
-    """The outputs that ``sample_accepted`` returns: all of them, in order."""
-    pieces: runtime.Buffer
-    piece_start: runtime.Buffer
     screen: runtime.Buffer
     plan: ShotPlan
     psm_words: np.ndarray
@@ -420,17 +416,16 @@ class MetalShotSampler:
         if mask is not None:
             bits[: len(mask)] = mask
         psm_words = pack_bits(bits, layout.output_words)
-        # NOTE: the rows keep the postselected outputs, as the CPU's do.
-        columns = np.arange(layout.num_outputs, dtype=np.int32)
         written = sorted({int(w) for p in plan.programs for w in p.out_words})
         stores = "\n".join(f"        row[{w}] = w[{w}];" for w in written)
         hits = " | ".join(
             f"(w[{w}] & {hex64(psm_words[w])})" for w in written if psm_words[w]
         )
-        nb = -(-len(columns) // 8)
+        # NOTE: the rows keep every output, the postselected ones too, as the CPU's do.
+        nb = -(-layout.num_outputs // 8)
         source = (
             PRELUDE
-            + noise_source(self._noise, layout.output_words, nb)
+            + noise_source(self._noise, layout.output_words, layout.num_outputs)
             + functions
             + _KERNELS.format(
                 T1=T - 1,
@@ -462,14 +457,10 @@ class MetalShotSampler:
         for name in names:
             library.pipeline(name)
         compile_seconds = time.perf_counter() - start
-        pieces, piece_start = _pieces(columns)
         compiled = _Module(
             library=library,
             tb=tb,
             has_mask=mask is not None,
-            columns=columns,
-            pieces=runtime.upload(pieces),
-            piece_start=runtime.upload(piece_start),
             screen=runtime.upload(plan.screen),
             plan=plan,
             psm_words=psm_words,
@@ -658,7 +649,7 @@ class MetalShotSampler:
         """
         library = module.library
         S = self._noise.block_shots
-        nb = -(-len(module.columns) // 8)
+        nb = -(-self.layout.num_outputs // 8)
         no = len(self._observables)
         if module.has_mask:
             words = -(-shots // 32)
@@ -699,8 +690,6 @@ class MetalShotSampler:
                     count,
                     slot.index,
                     rows,
-                    module.pieces,
-                    module.piece_start,
                     cursor,
                 ],
                 blocks,
@@ -952,7 +941,7 @@ class MetalShotSampler:
     ) -> tuple[np.ndarray, np.ndarray | None, float]:
         """One call of ``sample_accepted``, of at most ``MAX_CALL_SHOTS`` shots."""
         module = self._module(mask)
-        nb, no = -(-len(module.columns) // 8), len(self._observables)
+        nb, no = -(-self.layout.num_outputs // 8), len(self._observables)
         if not shots:
             values = np.zeros((0, no), np.float32) if expectations else None
             if bools:
@@ -1000,7 +989,7 @@ class MetalShotSampler:
             expected = values.array[: total * no].reshape(total, no)
             if not self.layout.components:
                 expected[:] = 0
-            self._direct_expectations(packed, expected, module.columns)
+            self._direct_expectations(packed, expected)
         if bools:
             return self._unpack(module, rows, total), expected, deviation
         return packed, expected, deviation
@@ -1026,16 +1015,14 @@ class MetalShotSampler:
             self._wait_all([encoder.commit()])
         return out.array[: total * num_outputs].reshape(total, num_outputs).view(bool)
 
-    def _direct_expectations(
-        self, rows: np.ndarray, values: np.ndarray, columns: np.ndarray
-    ) -> None:
+    def _direct_expectations(self, rows: np.ndarray, values: np.ndarray) -> None:
         """Set the expectations of observables outside the components: ``±1``."""
         layout = self.layout
         in_components = {i for c in layout.components for i in c.output_indices}
         for column, index in enumerate(self._observables):
             if int(index) in in_components:
                 continue
-            k = int(np.searchsorted(columns, index))
+            k = int(index)
             bit = (rows[:, k >> 3] >> np.uint8(k & 7)) & np.uint8(1)
             values[:, column] = 1.0 - 2.0 * bit.astype(np.float32)
 
