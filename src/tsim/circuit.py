@@ -954,13 +954,11 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on an Apple GPU
-                when Metal sees one (Apple silicon) and every
-                component has at most 11 active qubits (in float32), and
-                otherwise on the CPU, on ``numba.get_num_threads()`` threads.
-                The GPU's outcome probabilities are float32; ``TSIM_DEVICE=cpu``
-                keeps the sampler on the CPU, in double precision. The
-                stabilizer rank strategies are provisional.
+                "bss", "cutting"). "active_statevector" samples in float32 on an
+                Apple GPU when every component has at most 11 active qubits
+                (``TSIM_DEVICE=cpu`` turns this off), else on the CPU, on
+                ``numba.get_num_threads()`` threads. The stabilizer rank
+                strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
@@ -996,13 +994,11 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on an Apple GPU
-                when Metal sees one (Apple silicon) and every
-                component has at most 11 active qubits (in float32), and
-                otherwise on the CPU, on ``numba.get_num_threads()`` threads.
-                The GPU's outcome probabilities are float32; ``TSIM_DEVICE=cpu``
-                keeps the sampler on the CPU, in double precision. The
-                stabilizer rank strategies are provisional.
+                "bss", "cutting"). "active_statevector" samples in float32 on an
+                Apple GPU when every component has at most 11 active qubits
+                (``TSIM_DEVICE=cpu`` turns this off), else on the CPU, on
+                ``numba.get_num_threads()`` threads. The stabilizer rank
+                strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).

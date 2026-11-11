@@ -8,16 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `strategy="active_statevector"` samples on the GPU of an Apple-silicon Mac
-  whenever every component has at most 11 active qubits. On Apple silicon, Tsim
-  now depends on PyObjC's Metal bindings (`pyobjc-framework-Metal`, about 7 MB to
-  download); other platforms install nothing new. The noise sampler and every statevector component run as Metal
-  kernels, in float32; postselection runs on the GPU, and only the kept shots'
-  rows are written. A seed's samples on the GPU differ from the CPU's and depend
-  on `batch_size`. The samplers fall back to the CPU, with a warning, for wider
-  components, when the GPU is out of memory and in a process forked after its
-  parent used the GPU. `TSIM_DEVICE=cpu` keeps them on the CPU. The samplers'
-  repr (`samples on metal`) and `SamplerStats.device` say where they sample.
+- `strategy="active_statevector"` samples on the GPU of an Apple-silicon Mac, in
+  float32, whenever every component has at most 11 active qubits (Tsim now depends
+  on `pyobjc-framework-Metal` there). A seed's GPU samples differ from the CPU's and
+  depend on `batch_size`; `TSIM_DEVICE=cpu` keeps the samplers on the CPU, and
+  `SamplerStats.device` and the repr say where they sample.
 - The docs pages have a menu to copy a page or open it in ChatGPT or Claude, and
   the README, the install page and the agent skill point to the docs MCP server
   at `https://bloqade.quera.com/tsim/mcp`. The README and the install page also
