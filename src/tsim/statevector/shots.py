@@ -348,6 +348,9 @@ def read_outputs(
 class ShotSampler:
     """Samples shot words of a program whose components are statevector ones."""
 
+    device = "cpu"
+    """Where this sampler samples (``SamplerStats.device``)."""
+
     def __init__(
         self,
         program: CompiledProgram,

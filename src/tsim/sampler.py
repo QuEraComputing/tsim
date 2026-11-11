@@ -20,8 +20,7 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
-from tsim.statevector.cuda import runtime as cuda_runtime
-from tsim.statevector.gpu import FORKED
+from tsim.statevector import cuda
 from tsim.statevector.program import StatevectorComponent
 from tsim.statevector.shots import ShotSampler
 from tsim.utils.cuda_helpers import copy_d2h
@@ -315,59 +314,6 @@ class SamplerStats:
     device: str = "cpu"
 
 
-def _gpu_shots(
-    host: ShotSampler,
-    channels: ChannelSampler,
-    num_detectors: int,
-    seed: np.random.SeedSequence,
-) -> ShotSampler | CudaShotSampler:
-    """Return a GPU shot sampler of ``host``'s program when one can run it, else ``host``.
-
-    It warns when a GPU is there but cannot be used: in a process forked after its
-    parent used the GPU, for a component wider than the GPU executor runs, for
-    noise beyond its tables' limits, and when the GPU sampler cannot be set up
-    for lack of GPU memory.
-    """
-    # NOTE: as JAX does for the stabilizer-rank strategies, a GPU is used whenever
-    # there is one.
-    if os.environ.get("TSIM_DEVICE", "").lower() == "cpu":
-        return host
-    if cuda_runtime.forked_after_init():
-        warnings.warn(FORKED, stacklevel=5)
-        return host
-    if not cuda_runtime.available():
-        return host
-    from tsim.statevector.cuda.sampler import CudaShotSampler
-    from tsim.statevector.gpu.tape import MAX_WIDTH
-
-    layout = host.layout
-    if layout.num_words == 0:
-        return host
-    if not CudaShotSampler.supports(layout):
-        width = max(c.width for c in layout.components)
-        warnings.warn(
-            f"A CUDA GPU is available, but a component needs {width} active "
-            f"qubits, more than the {MAX_WIDTH} that the GPU executor supports; "
-            "sampling on the CPU.",
-            stacklevel=5,
-        )
-        return host
-    try:
-        return CudaShotSampler(host, channels, num_detectors, seed)
-    except ValueError as error:
-        # NOTE: noise beyond the GPU tables' limits (channels of more than 127
-        # outcomes, outcomes that flip more than 255 words).
-        warnings.warn(
-            f"The GPU cannot sample this circuit ({error}); sampling on the CPU.",
-            stacklevel=5,
-        )
-    except Exception as error:
-        if not cuda_runtime.out_of_memory(error):
-            raise
-        warnings.warn("The GPU is out of memory; sampling on the CPU.", stacklevel=5)
-    return host
-
-
 class _CompiledSamplerBase:
     """Base class for compiled samplers with common initialization logic."""
 
@@ -438,8 +384,13 @@ class _CompiledSamplerBase:
                 self._num_detectors,
                 shots_seed,
             )
-            if mode == "sequential":
-                self._shots = _gpu_shots(
+            # NOTE: as JAX does for the stabilizer-rank strategies, a GPU is used
+            # whenever there is one.
+            if (
+                mode == "sequential"
+                and os.environ.get("TSIM_DEVICE", "").lower() != "cpu"
+            ):
+                self._shots = cuda.shot_sampler(
                     self._shots, self._channel_sampler, self._num_detectors, cuda_seed
                 )
         else:
@@ -823,7 +774,7 @@ class _CompiledSamplerBase:
             ),
             peak_bytes_per_shot=peak,
             compiled_bytes=compiled_bytes,
-            device=getattr(self._shots, "device", "cpu"),
+            device=self._shots.device if self._shots is not None else "cpu",
         )
 
     def __repr__(self) -> str:
