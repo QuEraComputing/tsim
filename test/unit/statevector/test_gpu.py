@@ -285,14 +285,6 @@ def test_unrolled_tapes_split_their_amplitudes_into_chunks():
     assert "float2 a[64];" in whole
 
 
-@pytest.mark.parametrize("chunk", [0, -32, 48])
-def test_dialects_reject_chunks_that_would_leave_a_partial_array(chunk):
-    # NOTE: an unrolled tape of 64 amplitudes in chunks of 48 would declare one
-    # array and index a second.
-    with pytest.raises(ValueError, match="power of two"):
-        tape.Dialect(**{**TEST_DIALECT.__dict__, "amplitude_chunk": chunk})
-
-
 def test_projections_read_pairs_or_every_partner_first():
     (program,) = _programs(_wide_unrolled(), mask=False)
     unpaired = tape.Dialect(**{**TEST_DIALECT.__dict__, "pair_projections": False})

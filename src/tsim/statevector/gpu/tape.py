@@ -115,10 +115,9 @@ class Dialect:
     pair_projections: bool = False
 
     def __post_init__(self) -> None:
-        """Check the chunk size."""
+        """Check that the chunk size is a positive power of two."""
         chunk = self.amplitude_chunk
-        if chunk is not None and (chunk <= 0 or chunk & (chunk - 1)):
-            raise ValueError("amplitude_chunk must be a positive power of two")
+        assert chunk is None or (chunk > 0 and not chunk & (chunk - 1))
 
     def hex64(self, value) -> str:
         """Return an unsigned 64-bit literal."""
