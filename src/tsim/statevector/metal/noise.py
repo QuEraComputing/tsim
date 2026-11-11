@@ -70,26 +70,24 @@ NOISE_SHARED = _NOISE_SIGNATURE + r"""{{
     Segments seg = {{seg_first, seg_outcomes, seg_begin, seg_end, seg_log_keep}};
     add_faults<threadgroup u64*, {S}, 1, false>(sw, events, &num_events, args.max_events, ns, args.seed ^ ((u64)bid * 0xD1B54A32D192ED03UL),
                args.num_segments, seg, records, overflow, tid, nt);
-    for (int s0 = 0; s0 < {S}; s0 += nt) {{
-        int s = s0 + tid;
-        bool alive = false;
-        if (s < ns) {{
-            u64 hit = 0;
-            for (int i = 0; i < {OW}; ++i) {{
-                u64 v = sw[i * {S} + s] ^ constants[i];
-                hit |= v & screen[i];
-                sw[i * {S} + s] = v;
-            }}
-            alive = !hit;
-        }}
-        if (s < {S}) passed[s] = alive;
-        enqueue(alive, s, s0 + (tid & ~31u), base, ns, lane, args.has_survivors, queue, count, survivors);
+    // NOTE: the screen reads the words in parallel, a thread per word and shot (a
+    // shot's threads only ever clear its flag); the constants go into the rows.
+    for (uint s = tid; s < {S}; s += nt) passed[s] = (int)s < ns;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint i = tid; i < {OW} * {S}; i += nt) {{
+        uint word = i / {S}, s = i - word * {S};
+        if ((sw[i] ^ constants[word]) & screen[word]) passed[s] = false;
     }}
     threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (int s0 = 0; s0 < {S}; s0 += nt) {{
+        int s = s0 + tid;
+        bool alive = s < {S} && passed[s];
+        enqueue(alive, s, s0 + (tid & ~31u), base, ns, lane, args.has_survivors, queue, count, survivors);
+    }}
     device u64* rows = out + base * {NW};
     for (int i = tid; i < ns * {NW}; i += nt) {{
         int s = i / {NW}, word = i - s * {NW};
-        if (passed[s]) rows[i] = sw[word * {S} + s];
+        if (passed[s]) rows[i] = sw[word * {S} + s] ^ (word < {OW} ? constants[word] : 0);
     }}
 }}
 
@@ -97,6 +95,7 @@ NOISE_SHARED = _NOISE_SIGNATURE + r"""{{
 
 NOISE_DEVICE = _NOISE_SIGNATURE + r"""{{
     threadgroup atomic_int num_events;
+    threadgroup bool passed[{S}];
     long base = (long)bid * {S};
     int ns = (int)min((long){S}, args.shots - base);
     device u64* rows = out + base * {NW};
@@ -107,19 +106,20 @@ NOISE_DEVICE = _NOISE_SIGNATURE + r"""{{
     add_faults<device u64*, 1, {NW}, true>(rows, events, &num_events, args.max_events, ns,
                args.seed ^ ((u64)bid * 0xD1B54A32D192ED03UL), args.num_segments, seg, records,
                overflow, tid, nt);
+    // NOTE: as in the kernel above, the screen reads the words in parallel.
+    for (uint s = tid; s < {S}; s += nt) passed[s] = (int)s < ns;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (int i = tid; i < ns * {OW}; i += nt) {{
+        int s = i / {OW}, word = i - s * {OW};
+        device u64* at = rows + (long)s * {NW} + word;
+        u64 v = *at ^ constants[word];
+        *at = v;
+        if (v & screen[word]) passed[s] = false;
+    }}
+    threadgroup_barrier(mem_flags::mem_device | mem_flags::mem_threadgroup);
     for (int s0 = 0; s0 < {S}; s0 += nt) {{
         int s = s0 + tid;
-        bool alive = false;
-        if (s < ns) {{
-            u64 hit = 0;
-            device u64* row = rows + (long)s * {NW};
-            for (int i = 0; i < {OW}; ++i) {{
-                u64 v = row[i] ^ constants[i];
-                hit |= v & screen[i];
-                row[i] = v;
-            }}
-            alive = !hit;
-        }}
+        bool alive = s < {S} && passed[s];
         enqueue(alive, s, s0 + (tid & ~31u), base, ns, lane, args.has_survivors, queue, count, survivors);
     }}
 }}
