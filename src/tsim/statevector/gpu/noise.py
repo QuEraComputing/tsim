@@ -37,10 +37,15 @@ from __future__ import annotations
 import itertools
 import math
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from tsim.noise.channels import ChannelSampler, WordTables
+from tsim.statevector.shared import pack_bits
+
+if TYPE_CHECKING:
+    from tsim.statevector.shots import ShotLayout, ShotPlan
 
 FAULTS_PER_SEGMENT = 4.0
 # NOTE: rows take 8 bits of an event.
@@ -54,6 +59,9 @@ MAX_FLIPS = 255
 # faults is drawn from 48 bits instead (the kernels' fine path).
 TINY_P = 2.0**-23
 FINE_FAULTS = 2.0**-13
+DEFER_SHARE = 0.25
+"""Share of the expected faults that postselection cannot see, from which they
+are drawn on the accepted shots only, after the tapes (``split``)."""
 
 _RECORD = np.dtype(
     [
@@ -197,6 +205,59 @@ def deferred_channels(
     hits = np.concatenate([[0], np.cumsum(_outcome_hits(flips, read))])
     start = channels._tables.outcome_start
     return hits[start[1:]] == hits[start[:-1]]
+
+
+def split(
+    tables: NoiseTables,
+    channels: ChannelSampler,
+    layout: ShotLayout,
+    plan: ShotPlan,
+    psm_words: np.ndarray,
+    observables_from: int | None = None,
+) -> tuple[NoiseGroups, NoiseGroups] | None:
+    """Return a postselected batch's noise passes ``(screened, deferred)``, or None.
+
+    The deferred channels flip none of the bits that the screen, the tapes or
+    the postselection ``psm_words`` read: the postselected outputs, the keys,
+    and, with ``observables_from``, the components' outputs from that index on
+    (the observables, whose expectations the tapes return). They are drawn
+    apart when they are at least ``DEFER_SHARE`` of the expected faults.
+    """
+    read = np.zeros(layout.num_words, dtype=np.uint64)
+    read[: layout.output_words] = psm_words | plan.screen
+    for program in plan.programs:
+        start = program.key_start
+        read[start : start + program.key_words] = ~np.uint64(0)
+        np.bitwise_or.at(read, program.ps_word, program.ps_mask.astype(np.uint64))
+    if observables_from is not None:
+        bits = np.zeros(64 * layout.output_words, dtype=bool)
+        for component in layout.components:
+            for index in component.output_indices:
+                if index >= observables_from:
+                    bits[index] = True
+        read[: layout.output_words] |= pack_bits(bits, layout.output_words)
+    deferred = deferred_channels(channels, layout.noise, read)
+    later = tables.subset(deferred)
+    if later.faults > 0 and later.faults >= DEFER_SHARE * tables.groups.faults:
+        return tables.subset(~deferred), later
+    return None
+
+
+def screen_pass_rate(
+    channels: ChannelSampler, layout: ShotLayout, plan: ShotPlan
+) -> float:
+    """Return the estimated share of shots that pass ``plan``'s screen."""
+    screen = np.zeros(layout.num_words, dtype=np.uint64)
+    screen[: layout.output_words] = plan.screen
+    return pass_rate(channels, layout.noise, screen) if screen.any() else 1.0
+
+
+def words_fit(num_words: int, shared_bytes: int) -> bool:
+    """Return whether rows of ``num_words`` words fit a block's ``shared_bytes``.
+
+    The smallest block (32 shots) must leave room for ``MIN_EVENTS`` events.
+    """
+    return 8 * 32 * num_words <= shared_bytes - 8 * MIN_EVENTS
 
 
 def pass_rate(channels: ChannelSampler, flips: WordTables, read: np.ndarray) -> float:

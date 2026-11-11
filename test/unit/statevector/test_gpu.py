@@ -117,6 +117,8 @@ def test_noise_tables_size_blocks_for_their_memory():
         channels, layout.noise, layout.num_words, 2048, shared_words=False
     )
     assert wide.block_shots == noise.MAX_BLOCK_SHOTS
+    assert noise.words_fit(layout.num_words, 14 * 1024)
+    assert not noise.words_fit(layout.num_words, 2048)
     assert wide.groups.max_events <= 2048 // 8
     with pytest.raises(ValueError, match="do not fit"):
         noise.noise_tables(channels, layout.noise, layout.num_words, 2048)
@@ -181,6 +183,27 @@ def test_pass_rate_and_deferred_channels():
     tables = noise.noise_tables(channels, layout.noise, layout.num_words, 14 * 1024)
     first, later = tables.subset(~deferred), tables.subset(deferred)
     assert np.isclose(first.faults + later.faults, tables.groups.faults)
+
+
+def test_split_defers_the_channels_that_postselection_cannot_see():
+    host, channels = _shots(NOISY)
+    layout = host.layout
+    tables = noise.noise_tables(channels, layout.noise, layout.num_words, 14 * 1024)
+    # NOTE: postselect detector 0 only: every channel but those that flip it waits.
+    mask = np.zeros(200, bool)
+    mask[0] = True
+    plan = host.plan(mask)
+    psm = np.zeros(layout.output_words, np.uint64)
+    psm[0] = 1
+    found = noise.split(tables, channels, layout, plan, psm)
+    assert found is not None
+    first, later = found
+    assert 0 < first.faults < later.faults
+    assert np.isclose(first.faults + later.faults, tables.groups.faults)
+    # NOTE: reading every output leaves nothing to defer.
+    every = np.full(layout.output_words, ~np.uint64(0))
+    assert noise.split(tables, channels, layout, plan, every) is None
+    assert noise.screen_pass_rate(channels, layout, host.plan(None)) == 1.0
 
 
 def test_select_reads_the_columns_of_rows():
