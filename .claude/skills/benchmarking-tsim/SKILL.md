@@ -98,8 +98,9 @@ uv run tsim-dev bench --side .:threads=4 --side origin/main:threads=4
   freshly compiled ones (the cached case is what users get). A worker whose warmup
   compiled a kernel is started again.
 - The first 3 rounds' processes start at once, so their imports and compiles
-  overlap; each then times calls (calibrated once, about 0.3 s, best of 2) when its
-  round comes. With `--ref` the rounds stop after 3 when every round agrees on the
+  overlap; each then times calls (calibrated once per device, about 0.3 s, best of
+  2) when its round comes. A call returns at most about 256 MB of rows (bit-packed,
+  kept rows only), so a GPU's per-call overhead does not dominate. With `--ref` the rounds stop after 3 when every round agrees on the
   verdict, else they go on to `--rounds` (5).
 - `--thorough` runs each round's process from start to end on its own, every round,
   with 0.5 s calls (best of 3) and a prime run first: about 4x slower. Use it for the
