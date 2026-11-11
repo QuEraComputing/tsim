@@ -41,7 +41,7 @@ from tsim.statevector.cuda import runtime
 from tsim.statevector.cuda.codegen import PRELUDE, hex64, tape_function
 from tsim.statevector.cuda.noise import noise_tables, source as noise_source
 from tsim.statevector.gpu.noise import NoiseGroups, deferred_channels, pass_rate
-from tsim.statevector.gpu.rows import pieces, select
+from tsim.statevector.gpu.rows import select
 from tsim.statevector.shared import pack_bits
 from tsim.statevector.shots import ShotLayout, ShotPlan, ShotSampler
 
@@ -160,11 +160,10 @@ extern "C" __global__ void __launch_bounds__(1024) list_bits(
     for (; w; w &= w - 1) index[at++] = (unsigned)(32 * i + __ffs(w) - 1);
 }}
 
-// The returned outputs of rows ``index[j]`` (or every row), bit-packed densely
+// The outputs of rows ``index[j]`` (or every row), bit-packed densely
 // (``pack_rows``): a block packs {S} rows' output words.
 extern "C" __global__ void __launch_bounds__(256) gather_columns(
     const u64* __restrict__ rows, long long n, const unsigned* __restrict__ index,
-    const uint2* __restrict__ pieces, const unsigned* __restrict__ start,
     unsigned char* __restrict__ dst) {{
     __shared__ u64 sw[{OW} * {S}];
     extern __shared__ __align__(16) unsigned char stage[];
@@ -176,7 +175,7 @@ extern "C" __global__ void __launch_bounds__(256) gather_columns(
         sw[w * {S} + s] = rows[r * {NW} + w];
     }}
     __syncthreads();
-    pack_rows(sw, ns, pieces, start, stage, dst + base * {NB});
+    pack_rows(sw, ns, stage, dst + base * {NB});
 }}
 
 // The batch's counts, stored into pinned host memory: a read that does not
@@ -222,10 +221,6 @@ class _Module:
     screen: Any
     tape_blocks: int
     has_mask: bool
-    columns: np.ndarray
-    """The outputs that ``sample_accepted`` returns: all of them, in order."""
-    pieces: Any
-    piece_start: Any
     plan: ShotPlan
     psm_words: np.ndarray
     passing: float
@@ -435,8 +430,6 @@ class CudaShotSampler:
         if mask is not None:
             bits[: len(mask)] = mask
         psm_words = pack_bits(bits, layout.output_words)
-        # NOTE: the rows keep the postselected outputs, as the CPU's do.
-        columns = np.arange(layout.num_outputs, dtype=np.int32)
         # NOTE: the tapes write only their outputs' words, and test the
         # postselected outputs among them.
         written = sorted({int(w) for p in plan.programs for w in p.out_words})
@@ -446,7 +439,7 @@ class CudaShotSampler:
         )
         source = (
             PRELUDE
-            + noise_source(self._noise, layout.output_words, -(-len(columns) // 8))
+            + noise_source(self._noise, layout.output_words, layout.num_outputs)
             + functions
             + _KERNELS.format(
                 block=block,
@@ -458,7 +451,8 @@ class CudaShotSampler:
                 NO=max(1, len(self._observables)),
                 NE=max(1, len(self._observables)),
                 S=self._noise.block_shots,
-                NB=max(-(-len(columns) // 8), 1),
+                # NOTE: the rows keep every output, the postselected ones too.
+                NB=max(-(-layout.num_outputs // 8), 1),
                 calls=calls,
                 # NOTE: each component's stream, from the call's seed.
                 seeds="\n".join(
@@ -479,7 +473,6 @@ class CudaShotSampler:
                     tape.ptr, block, 0
                 ),
             )
-        found, piece_start = pieces(columns)
         compiled = _Module(
             noise=module.get_function("noise"),
             noise_kept=module.get_function("noise_kept"),
@@ -492,9 +485,6 @@ class CudaShotSampler:
             screen=self._upload(plan.screen),
             tape_blocks=runtime.multiprocessors() * blocks_per_sm,
             has_mask=mask is not None,
-            columns=columns,
-            pieces=self._upload(found),
-            piece_start=self._upload(piece_start),
             plan=plan,
             psm_words=psm_words,
             passing=self._passing(plan),
@@ -706,12 +696,11 @@ class CudaShotSampler:
     ) -> Any:
         """Return the ``count`` rows ``index`` (or all) on the device, as copied to the host.
 
-        Their outputs ``module.columns``, bit-packed; with ``split`` the deferred
-        noise kernel adds the deferred channels' faults first.
+        Their outputs, bit-packed; with ``split`` the deferred noise kernel adds
+        the deferred channels' faults first.
         """
         S = self._noise.block_shots
-        m = len(module.columns)
-        nb = -(-m // 8)
+        nb = -(-self.layout.num_outputs // 8)
         # NOTE: a new array per chunk, so that refilling it never waits for a copy.
         dst = self._cp.empty((max(count, 1), nb), dtype=np.uint8)
         if not count or not nb:
@@ -733,8 +722,6 @@ class CudaShotSampler:
                     *launch.args,
                     *self._record_args,
                     dst,
-                    module.pieces,
-                    module.piece_start,
                 ),
                 shared_mem=max(8 * launch.max_events, S * nb),
             )
@@ -746,8 +733,6 @@ class CudaShotSampler:
                     words,
                     np.int64(count),
                     index if index is not None else np.uint64(0),
-                    module.pieces,
-                    module.piece_start,
                     dst,
                 ),
                 shared_mem=S * nb,
@@ -910,7 +895,7 @@ class CudaShotSampler:
         cp = self._cp
         module = self._module(mask)
         layout = self.layout
-        nb, no = -(-len(module.columns) // 8), len(self._observables)
+        nb, no = -(-layout.num_outputs // 8), len(self._observables)
         if not shots:
             values = np.zeros((0, no), np.float32) if expectations else None
             return np.zeros((0, nb), np.uint8), values, 0.0
@@ -1016,22 +1001,17 @@ class CudaShotSampler:
         rows, values = out.result()
         if values is None:
             return rows, None, deviation
-        self._direct_expectations(rows, values, module.columns)
+        self._direct_expectations(rows, values)
         return rows, values, deviation
 
-    def _direct_expectations(
-        self, rows: np.ndarray, values: np.ndarray, columns: np.ndarray
-    ) -> None:
-        """Set the expectations of observables outside the components: ``±1``.
-
-        ``columns`` are the outputs that ``rows`` hold.
-        """
+    def _direct_expectations(self, rows: np.ndarray, values: np.ndarray) -> None:
+        """Set the expectations of observables outside the components: ``±1``."""
         layout = self.layout
         in_components = {i for c in layout.components for i in c.output_indices}
         for column, index in enumerate(self._observables):
             if int(index) in in_components:
                 continue
-            k = int(np.searchsorted(columns, index))
+            k = int(index)
             bit = (rows[:, k >> 3] >> np.uint8(k & 7)) & np.uint8(1)
             values[:, column] = 1.0 - 2.0 * bit.astype(np.float32)
 

@@ -43,26 +43,18 @@ __device__ __forceinline__ void apply_fault(u64* sw, int row, unsigned rec, unsi
     }}
 }}
 
-// The returned outputs of the block's ``ns`` rows ``sw[w * S + s]``, bit-packed
-// into {NB} bytes per row, contiguously at ``dst``. Output word ``k`` of a row
-// is the pieces ``pieces[start[k] : start[k + 1]]``, each ``(word, bit | (length
-// - 1) << 6 | position << 12)``: ``length`` bits from ``bit`` of a shot word.
-// Consecutive threads pack one word of consecutive rows (one piece, distinct
-// banks) into ``stage``, from which the block's rows go out 16 bytes at a time.
-__device__ __forceinline__ void pack_rows(const u64* sw, int ns, const uint2* __restrict__ pieces,
-    const unsigned* __restrict__ start, unsigned char* stage, unsigned char* __restrict__ dst)
+// The outputs of the block's ``ns`` rows ``sw[w * S + s]``, bit-packed into
+// {NB} bytes per row (the bits past them cleared), contiguously at ``dst``.
+// Consecutive threads pack one word of consecutive rows (distinct banks) into
+// ``stage``, from which the block's rows go out 16 bytes at a time.
+__device__ __forceinline__ void pack_rows(const u64* sw, int ns, unsigned char* stage,
+    unsigned char* __restrict__ dst)
 {{
     for (int i = threadIdx.x; i < {NK} * {S}; i += blockDim.x) {{
         int k = i / {S}, s = i - k * {S};
         if (s >= ns) continue;
-        u64 v = 0;
-        for (unsigned p = start[k]; p < start[k + 1]; ++p) {{
-            uint2 q = pieces[p];
-            u64 x = sw[q.x * {S} + s] >> (q.y & 63);
-            int length = ((q.y >> 6) & 63) + 1;
-            if (length < 64) x &= (1ULL << length) - 1;
-            v |= x << (q.y >> 12);
-        }}
+        u64 v = sw[k * {S} + s];
+        if (k == {NK} - 1) v &= {LAST_WORD};
         unsigned char* at = stage + s * {NB} + 8 * k;
         #pragma unroll
         for (int j = 0; j < 8; ++j) if (8 * k + j < {NB}) at[j] = (unsigned char)(v >> (8 * j));
@@ -212,8 +204,7 @@ extern "C" __global__ void __launch_bounds__(256) noise_kept(
     const int* __restrict__ seg_begin, const int* __restrict__ seg_end,
     const float* __restrict__ seg_log_keep, const Record* __restrict__ records,
     const Flip* __restrict__ overflow,
-    unsigned char* __restrict__ dst, const uint2* __restrict__ pieces,
-    const unsigned* __restrict__ piece_start)
+    unsigned char* __restrict__ dst)
 {{
     __shared__ u64 sw[{OW} * {S}];
     extern __shared__ __align__(16) uint2 events[];
@@ -230,7 +221,7 @@ extern "C" __global__ void __launch_bounds__(256) noise_kept(
                num_segments, seg_first, seg_outcomes, seg_begin, seg_end, seg_log_keep, records,
                overflow);
     // NOTE: the events are applied, so their buffer stages the packed rows.
-    pack_rows(sw, ns, pieces, piece_start, (unsigned char*)events, dst + base * {NB});
+    pack_rows(sw, ns, (unsigned char*)events, dst + base * {NB});
 }}
 """
 
@@ -248,15 +239,17 @@ def noise_tables(
     return _noise_tables(channels, flips, num_words, shared_bytes=SHARED_BYTES)
 
 
-def source(tables: NoiseTables, output_words: int, packed_bytes: int) -> str:
+def source(tables: NoiseTables, output_words: int, num_outputs: int) -> str:
     """Return the CUDA source of the ``noise`` and ``noise_kept`` kernels.
 
-    ``noise_kept`` packs rows of ``packed_bytes`` bytes.
+    ``noise_kept`` packs rows of ``num_outputs`` outputs.
     """
+    packed_bytes = -(-num_outputs // 8)
     return SOURCE.format(
         NW=tables.num_words,
         OW=output_words,
         S=tables.block_shots,
         NB=max(packed_bytes, 1),
         NK=max(-(-packed_bytes // 8), 1),
+        LAST_WORD=f"0x{(1 << (num_outputs % 64 or 64)) - 1:016X}ULL",
     )
