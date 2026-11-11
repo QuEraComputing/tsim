@@ -39,11 +39,27 @@ import numpy as np
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.cuda import runtime
 from tsim.statevector.cuda.codegen import CUDA, PRELUDE
-from tsim.statevector.cuda.noise import noise_tables, source as noise_source
+from tsim.statevector.cuda.noise import (
+    THREADS as NOISE_THREADS,
+    noise_tables,
+    source as noise_source,
+)
 from tsim.statevector.gpu import FORKED, tape
 from tsim.statevector.gpu.noise import NoiseGroups, screen_pass_rate, split
 from tsim.statevector.gpu.rows import select
 from tsim.statevector.shots import ShotPlan, ShotSampler
+
+TAPE_THREADS = 128
+"""Threads per block of the tape kernel."""
+
+COPY_THREADS = 256
+"""Threads per block of the kernels that gather rows and expectations."""
+
+SCAN_THREADS = 1024
+"""Threads per block of ``count_bits`` and ``list_bits``: one per bitmap word."""
+
+# NOTE: the words of a batch's ``counts``.
+_SURVIVORS, _ACCEPTED, _DEVIATION = range(3)
 
 KERNEL_SHARED_BYTES = 48 * 1024
 """Shared memory that a kernel may use without opting in, static and dynamic."""
@@ -108,7 +124,7 @@ extern "C" __global__ void __launch_bounds__({block}) tape(
 }}
 
 // The shots of the ``words`` words of ``bits`` set, in order, as indices into
-// ``index``: ``count_bits`` counts each block's 1024 words, ``list_bits`` lists
+// ``index``: ``count_bits`` counts each block's {SCAN} words, ``list_bits`` lists
 // a block's shots after those of the blocks before it.
 __device__ __forceinline__ unsigned block_scan(unsigned v, unsigned* total) {{
     __shared__ unsigned warps[32];
@@ -131,21 +147,21 @@ __device__ __forceinline__ unsigned block_scan(unsigned v, unsigned* total) {{
     return before;
 }}
 
-extern "C" __global__ void __launch_bounds__(1024) count_bits(
+extern "C" __global__ void __launch_bounds__({SCAN}) count_bits(
     const unsigned* __restrict__ bits, long long words, unsigned* __restrict__ totals) {{
-    long long i = (long long)blockIdx.x * 1024 + threadIdx.x;
+    long long i = (long long)blockIdx.x * {SCAN} + threadIdx.x;
     unsigned total;
     block_scan(i < words ? __popc(bits[i]) : 0, &total);
     if (threadIdx.x == 0) totals[blockIdx.x] = total;
 }}
 
-extern "C" __global__ void __launch_bounds__(1024) list_bits(
+extern "C" __global__ void __launch_bounds__({SCAN}) list_bits(
     const unsigned* __restrict__ bits, long long words, const unsigned* __restrict__ totals,
     unsigned* __restrict__ index) {{
     unsigned earlier = 0, total;
     for (int b = threadIdx.x; b < blockIdx.x; b += blockDim.x) earlier += totals[b];
     block_scan(earlier, &earlier);
-    long long i = (long long)blockIdx.x * 1024 + threadIdx.x;
+    long long i = (long long)blockIdx.x * {SCAN} + threadIdx.x;
     unsigned w = i < words ? bits[i] : 0;
     unsigned at = earlier + block_scan(__popc(w), &total);
     for (; w; w &= w - 1) index[at++] = (unsigned)(32 * i + __ffs(w) - 1);
@@ -153,7 +169,7 @@ extern "C" __global__ void __launch_bounds__(1024) list_bits(
 
 // The outputs of rows ``index[j]`` (or every row), bit-packed densely
 // (``pack_rows``): a block packs {S} rows' output words.
-extern "C" __global__ void __launch_bounds__(256) gather_columns(
+extern "C" __global__ void __launch_bounds__({COPY}) gather_columns(
     const u64* __restrict__ rows, long long n, const unsigned* __restrict__ index,
     unsigned char* __restrict__ dst) {{
     __shared__ u64 sw[{OW} * {S}];
@@ -387,7 +403,6 @@ class CudaShotSampler:
         layout = self.layout
         tb = tape.threads_per_shot(layout)
         T = 1 << tb
-        block = 128
         parts = tape.tape_kernel(layout, plan, mask, self._num_detectors, tb, CUDA)
         gmask = (
             "0xffffffffu"
@@ -399,7 +414,9 @@ class CudaShotSampler:
             + noise_source(self._noise, layout.output_words, layout.num_outputs)
             + parts.functions
             + _KERNELS.format(
-                block=block,
+                block=TAPE_THREADS,
+                SCAN=SCAN_THREADS,
+                COPY=COPY_THREADS,
                 T1=T - 1,
                 tb=tb,
                 gmask=gmask,
@@ -422,7 +439,7 @@ class CudaShotSampler:
             blocks_per_sm = max(
                 1,
                 cp.cuda.runtime.occupancyMaxActiveBlocksPerMultiprocessor(
-                    tape_fn.ptr, block, 0
+                    tape_fn.ptr, TAPE_THREADS, 0
                 ),
             )
         compiled = _Module(
@@ -581,7 +598,7 @@ class CudaShotSampler:
         S = self._noise.block_shots
         module.noise(
             ((shots + S - 1) // S,),
-            (256,),
+            (NOISE_THREADS,),
             (
                 words,
                 np.int64(shots),
@@ -593,7 +610,7 @@ class CudaShotSampler:
                 constant,
                 module.screen,
                 queue,
-                counts[0:1],
+                counts[_SURVIVORS : _SURVIVORS + 1],
                 accepted if module.has_mask else np.uint64(0),
             ),
             shared_mem=8 * launch.max_events,
@@ -604,22 +621,22 @@ class CudaShotSampler:
         if layout.components:
             module.tape(
                 (module.tape_blocks,),
-                (128,),
+                (TAPE_THREADS,),
                 (
                     words,
                     np.int64(first_shot),
                     seed,
                     queue,
-                    counts[0:1],
+                    counts[_SURVIVORS : _SURVIVORS + 1],
                     accepted if module.has_mask else np.uint64(0),
-                    counts[1:2],
+                    counts[_ACCEPTED : _ACCEPTED + 1],
                     values if values is not None else np.uint64(0),
-                    counts[2:3],
+                    counts[_DEVIATION : _DEVIATION + 1],
                 ),
             )
         elif module.has_mask:
             # NOTE: without components the screened survivors are the accepted shots.
-            counts[1:2] = counts[0:1]
+            counts[_ACCEPTED : _ACCEPTED + 1] = counts[_SURVIVORS : _SURVIVORS + 1]
         return words, accepted, counts, values
 
     def _pack(
@@ -647,7 +664,7 @@ class CudaShotSampler:
             seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
             module.noise_kept(
                 (blocks,),
-                (256,),
+                (NOISE_THREADS,),
                 (
                     words,
                     np.int64(count),
@@ -664,7 +681,7 @@ class CudaShotSampler:
         else:
             module.gather_columns(
                 (blocks,),
-                (256,),
+                (COPY_THREADS,),
                 (
                     words,
                     np.int64(count),
@@ -678,11 +695,12 @@ class CudaShotSampler:
     def _list(self, module: _Module, bits, shots: int, count: int, slot: int) -> Any:
         """Return the ``count`` shots of the bitmap ``bits`` of ``shots`` shots, in order."""
         words = -(-shots // 32)
-        blocks = -(-words // 1024)
+        blocks = -(-words // SCAN_THREADS)
         totals = self._buffer(f"totals{slot}", (blocks,), np.uint32)
         index = self._buffer(f"index{slot}", (max(count, 1),), np.uint32)
-        module.count_bits((blocks,), (1024,), (bits, np.int64(words), totals))
-        module.list_bits((blocks,), (1024,), (bits, np.int64(words), totals, index))
+        grid, threads = (blocks,), (SCAN_THREADS,)
+        module.count_bits(grid, threads, (bits, np.int64(words), totals))
+        module.list_bits(grid, threads, (bits, np.int64(words), totals, index))
         return index[:count]
 
     def sample(
@@ -875,7 +893,7 @@ class CudaShotSampler:
                 ready.synchronize()
                 host_counts = self._published[slot][0].copy()
             with self._streams[slot]:
-                count = n if mask is None else int(host_counts[1])
+                count = n if mask is None else int(host_counts[_ACCEPTED])
                 if first == 0:
                     out.allocate(count, n, shots)
                 elif out.total + count > out.capacity:
@@ -906,7 +924,7 @@ class CudaShotSampler:
                         dst = cp.empty((count, no), dtype=np.float32)
                         module.gather_float(
                             (runtime.multiprocessors() * 8,),
-                            (256,),
+                            (COPY_THREADS,),
                             (values, np.int64(count), np.int32(no), index, dst),
                         )
                         if copy is not stream:
@@ -915,7 +933,7 @@ class CudaShotSampler:
                         held.append(dst)
                     else:
                         values_host[:] = 0
-            return tape.deviation(host_counts[2])
+            return tape.deviation(host_counts[_DEVIATION])
 
         # NOTE: each chunk is launched before the previous one is finished, so its
         # kernels overlap that copy.

@@ -20,6 +20,9 @@ from __future__ import annotations
 from tsim.noise.channels import ChannelSampler, WordTables
 from tsim.statevector.gpu.noise import NoiseTables, noise_tables as _noise_tables
 
+THREADS = 256
+"""Threads per block of the noise kernels."""
+
 SHARED_BYTES = 46 * 1024
 """Shared memory of a block's words and events (the events' share is set per launch)."""
 
@@ -137,7 +140,7 @@ __device__ __forceinline__ void add_faults(u64* sw, uint2* events, int* num_even
     __syncthreads();
 }}
 
-extern "C" __global__ void __launch_bounds__(256) noise(
+extern "C" __global__ void __launch_bounds__({NT}) noise(
     u64* __restrict__ out, long long shots, u64 seed, int num_segments, int max_events,
     const int* __restrict__ seg_first, const int* __restrict__ seg_outcomes,
     const int* __restrict__ seg_begin, const int* __restrict__ seg_end,
@@ -197,7 +200,7 @@ extern "C" __global__ void __launch_bounds__(256) noise(
 // The deferred channels' faults on the ``n`` kept shots ``index``, then their
 // returned outputs bit-packed (``pack_rows``). The deferred channels flip output
 // words only, so a block loads just those.
-extern "C" __global__ void __launch_bounds__(256) noise_kept(
+extern "C" __global__ void __launch_bounds__({NT}) noise_kept(
     const u64* __restrict__ out, long long n, const unsigned* __restrict__ index, u64 seed,
     int num_segments, int max_events,
     const int* __restrict__ seg_first, const int* __restrict__ seg_outcomes,
@@ -246,6 +249,7 @@ def source(tables: NoiseTables, output_words: int, num_outputs: int) -> str:
     """
     packed_bytes = -(-num_outputs // 8)
     return SOURCE.format(
+        NT=THREADS,
         NW=tables.num_words,
         OW=output_words,
         S=tables.block_shots,
