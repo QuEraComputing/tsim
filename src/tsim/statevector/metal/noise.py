@@ -33,20 +33,32 @@ d=5 takes 7.3 instead of 11.5 ns per shot on an M4 Pro (most other circuits
 gain 10-25%, distillation loses up to 15%).
 """
 
-NOISE_SHARED = r"""
-kernel void noise(
-    device u64* out [[buffer(0)]], constant NoiseArgs& args [[buffer(1)]],
+_SEGMENT_PARAMS = """\
     device const int* seg_first [[buffer(2)]], device const int* seg_outcomes [[buffer(3)]],
     device const int* seg_begin [[buffer(4)]], device const int* seg_end [[buffer(5)]],
     device const float* seg_log_keep [[buffer(6)]], device const Record* records [[buffer(7)]],
     device const Flip* overflow [[buffer(8)]],
+"""
+
+# NOTE: the signature of both ``noise`` kernels: with the block's words in
+# threadgroup memory or in device memory.
+_NOISE_SIGNATURE = (
+    """\
+kernel void noise(
+    device u64* out [[buffer(0)]], constant NoiseArgs& args [[buffer(1)]],
+"""
+    + _SEGMENT_PARAMS
+    + """\
     device const u64* constants [[buffer(9)]], device const u64* screen [[buffer(10)]],
     device uint* queue [[buffer(11)]], device atomic_uint* count [[buffer(12)]],
     device uint* survivors [[buffer(13)]],
     threadgroup uint2* events [[threadgroup(0)]],
     uint tid [[thread_position_in_threadgroup]], uint bid [[threadgroup_position_in_grid]],
     uint nt [[threads_per_threadgroup]], uint lane [[thread_index_in_simdgroup]])
-{{
+"""
+)
+
+NOISE_SHARED = _NOISE_SIGNATURE + r"""{{
     threadgroup u64 sw[{NW} * {S}];
     threadgroup atomic_int num_events;
     threadgroup bool passed[{S}];
@@ -71,16 +83,7 @@ kernel void noise(
             alive = !hit;
         }}
         if (s < {S}) passed[s] = alive;
-        uint ballot = uint(static_cast<simd_vote::vote_t>(simd_ballot(alive)));
-        int warp_first = s0 + (tid & ~31u);
-        if (args.has_survivors && lane == 0 && warp_first < ns)
-            survivors[(base + warp_first) >> 5] = ballot;
-        if (ballot) {{
-            uint leader = ctz(ballot), b = 0;
-            if (lane == leader) b = atomic_fetch_add_explicit(count, popcount(ballot), memory_order_relaxed);
-            b = simd_broadcast(b, (ushort)leader);
-            if (alive) queue[b + popcount(ballot & ((1u << lane) - 1))] = (uint)(base + s);
-        }}
+        enqueue(alive, s, s0 + (tid & ~31u), base, ns, lane, args.has_survivors, queue, count, survivors);
     }}
     threadgroup_barrier(mem_flags::mem_threadgroup);
     device u64* rows = out + base * {NW};
@@ -92,20 +95,7 @@ kernel void noise(
 
 """
 
-NOISE_DEVICE = r"""
-kernel void noise(
-    device u64* out [[buffer(0)]], constant NoiseArgs& args [[buffer(1)]],
-    device const int* seg_first [[buffer(2)]], device const int* seg_outcomes [[buffer(3)]],
-    device const int* seg_begin [[buffer(4)]], device const int* seg_end [[buffer(5)]],
-    device const float* seg_log_keep [[buffer(6)]], device const Record* records [[buffer(7)]],
-    device const Flip* overflow [[buffer(8)]],
-    device const u64* constants [[buffer(9)]], device const u64* screen [[buffer(10)]],
-    device uint* queue [[buffer(11)]], device atomic_uint* count [[buffer(12)]],
-    device uint* survivors [[buffer(13)]],
-    threadgroup uint2* events [[threadgroup(0)]],
-    uint tid [[thread_position_in_threadgroup]], uint bid [[threadgroup_position_in_grid]],
-    uint nt [[threads_per_threadgroup]], uint lane [[thread_index_in_simdgroup]])
-{{
+NOISE_DEVICE = _NOISE_SIGNATURE + r"""{{
     threadgroup atomic_int num_events;
     long base = (long)bid * {S};
     int ns = (int)min((long){S}, args.shots - base);
@@ -130,33 +120,23 @@ kernel void noise(
             }}
             alive = !hit;
         }}
-        uint ballot = uint(static_cast<simd_vote::vote_t>(simd_ballot(alive)));
-        int warp_first = s0 + (tid & ~31u);
-        if (args.has_survivors && lane == 0 && warp_first < ns)
-            survivors[(base + warp_first) >> 5] = ballot;
-        if (ballot) {{
-            uint leader = ctz(ballot), b = 0;
-            if (lane == leader) b = atomic_fetch_add_explicit(count, popcount(ballot), memory_order_relaxed);
-            b = simd_broadcast(b, (ushort)leader);
-            if (alive) queue[b + popcount(ballot & ((1u << lane) - 1))] = (uint)(base + s);
-        }}
+        enqueue(alive, s, s0 + (tid & ~31u), base, ns, lane, args.has_survivors, queue, count, survivors);
     }}
 }}
 
 """
 
-NOISE_KEPT = r"""
+NOISE_KEPT = (
+    r"""
 struct KeptArgs {{ u64 seed; int num_segments; int max_events; }};
 
 // The deferred channels' faults on the kept shots ``index`` (``*n`` of them),
 // then their returned outputs bit-packed (``pack_rows``).
 kernel void noise_kept(
     device const u64* out [[buffer(0)]], constant KeptArgs& args [[buffer(1)]],
-    device const int* seg_first [[buffer(2)]], device const int* seg_outcomes [[buffer(3)]],
-    device const int* seg_begin [[buffer(4)]], device const int* seg_end [[buffer(5)]],
-    device const float* seg_log_keep [[buffer(6)]], device const Record* records [[buffer(7)]],
-    device const Flip* overflow [[buffer(8)]],
-    device const uint* n [[buffer(9)]], device const uint* index [[buffer(10)]],
+"""
+    + _SEGMENT_PARAMS
+    + r"""    device const uint* n [[buffer(9)]], device const uint* index [[buffer(10)]],
     device uchar* dst [[buffer(11)]], device const uint* cursor [[buffer(12)]],
     threadgroup uint2* events [[threadgroup(0)]],
     uint tid [[thread_position_in_threadgroup]], uint bid [[threadgroup_position_in_grid]],
@@ -182,6 +162,7 @@ kernel void noise_kept(
     pack_rows(sw, ns, (threadgroup uchar*)events, dst, ((long)*cursor + base) * {NB}, tid, nt);
 }}
 """
+)
 
 SOURCE = r"""
 struct Record {{ uint alias; uint words; uint extra; uint pad; u64 m0; u64 m1; }};
@@ -338,6 +319,22 @@ inline void add_faults(W sw, threadgroup uint2* events, threadgroup atomic_int* 
 }}
 
 struct NoiseArgs {{ long shots; u64 seed; int num_segments; int max_events; int has_survivors; }};
+
+// Marks a SIMD group's surviving shots (of the block's ``ns``, from ``first``)
+// in the bitmap ``survivors`` if ``has_survivors``, and appends them to
+// ``queue`` after the ``count`` queued so far.
+inline void enqueue(bool alive, int s, int first, long base, int ns, uint lane,
+    int has_survivors, device uint* queue, device atomic_uint* count, device uint* survivors)
+{{
+    uint ballot = uint(static_cast<simd_vote::vote_t>(simd_ballot(alive)));
+    if (has_survivors && lane == 0 && first < ns) survivors[(base + first) >> 5] = ballot;
+    if (ballot) {{
+        uint leader = ctz(ballot), b = 0;
+        if (lane == leader) b = atomic_fetch_add_explicit(count, popcount(ballot), memory_order_relaxed);
+        b = simd_broadcast(b, (ushort)leader);
+        if (alive) queue[b + popcount(ballot & ((1u << lane) - 1))] = (uint)(base + s);
+    }}
+}}
 
 {NOISE}{KEPT}"""
 
