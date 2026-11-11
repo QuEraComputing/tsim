@@ -1,6 +1,9 @@
 """The host side of the GPU backends: noise tables, row packing and the tape generator."""
 
+import ctypes
 import re
+import shutil
+import subprocess
 from test.helpers.statevector import CIRCUITS
 
 import numpy as np
@@ -8,6 +11,7 @@ import pytest
 
 from tsim.circuit import Circuit
 from tsim.noise.channels import ChannelSampler
+from tsim.statevector import shared
 from tsim.statevector.gpu import noise, rows, tape
 from tsim.statevector.shots import ShotSampler
 
@@ -213,6 +217,7 @@ def test_select_reads_the_columns_of_rows():
     packed = np.packbits(bits, axis=1, bitorder="little")
     for columns in (
         np.arange(count),
+        np.arange(count - 3),
         np.arange(num_outputs),
         np.sort(rng.choice(num_outputs, count, replace=False)),
     ):
@@ -306,6 +311,224 @@ def test_projections_read_pairs_or_every_partner_first():
     assert re.search(r"\n      float2 q63 = ", whole)
     assert not re.search(r"\n      float2 q\d+ = ", paired)
     assert re.search(r"\{ float2 q\d+ = .*, q\d+ = ", paired)
+
+
+GXX = shutil.which("g++")
+
+# NOTE: a tape in C++ for one thread per shot (tb = 0): no shuffles. ``draw_one``
+# follows the CPU executor's ``shared._cut`` in double.
+CPP_DIALECT = tape.Dialect(
+    inline="static inline",
+    noinline="__attribute__((noinline)) static",
+    private="",
+    deviation="unsigned*",
+    constant="static const",
+    float2="float2",
+    rsqrt="rsqrt",
+    fmax="std::fmax",
+    u64="ULL",
+    shuffle2="{value}",
+    shuffle1="{value}",
+    lane_mask=False,
+    goto=False,
+    amplitude_chunk=32,
+    pair_projections=True,
+)
+
+CPP_PRELUDE = r"""
+#include <cmath>
+#include <cstring>
+typedef unsigned long long u64;
+struct float2 {
+    float x, y;
+    float2() = default;
+    float2(float x_, float y_) : x(x_), y(y_) {}
+};
+#define GOLDEN 0x9E3779B97F4A7C15ULL
+static inline u64 mix64(u64 z) {
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+static inline u64 draw(u64 seed, u64 shot, u64 slots, u64 slot) {
+    return mix64(seed + (shot * slots + slot) * GOLDEN + GOLDEN);
+}
+static inline int par(u64 v) { return __builtin_popcountll(v) & 1; }
+static inline u64 threshold(double p) {
+    double scaled = p * 18446744073709551616.0;
+    return scaled < 1.8446744073709550e19 ? (u64)scaled : 0xFFFFFFFFFFFFF800ULL;
+}
+static inline int draw_one(u64 r, float w0, float w1, float) {
+    double total = (double)w0 + (double)w1;
+    if (w1 <= w0) return r < threshold(w1 / total);
+    return r < 0ULL - threshold(w0 / total);
+}
+static inline float rsqrt(float x) { return 1.f / std::sqrt(x); }
+static inline float2 cmul(float2 p, float2 q) {
+    return float2(p.x * q.x - p.y * q.y, p.x * q.y + p.y * q.x);
+}
+static inline float2 cmac(float2 a, float c, float s, float2 q) {
+    return float2(std::fmaf(c, a.x, s * q.x), std::fmaf(c, a.y, s * q.y));
+}
+static inline float2 cmac_i(float2 a, float c, float s, float2 q) {
+    return float2(std::fmaf(c, a.x, -s * q.y), std::fmaf(c, a.y, s * q.x));
+}
+static inline void deviate(unsigned* deviation, float total) {
+    float d = std::fabs(total - 1.f);
+    unsigned bits;
+    std::memcpy(&bits, &d, 4);
+    if (!(d <= 1e-3f) && bits > *deviation) *deviation = bits;
+}
+"""
+
+
+def _compile_tapes(sources: list[str], directory) -> list:
+    """Compile tape functions ``component_0`` into ``run_<k>(words, shots, nwords, seed, grave, ev, nev, deviation)``."""
+    parts = [CPP_PRELUDE]
+    for k, source in enumerate(sources):
+        parts.append(
+            f"namespace v{k} {{\n{source}\n"
+            f'extern "C" void run_{k}(u64* words, long shots, long nwords, u64 seed,'
+            " int* grave, float* ev, long nev, unsigned* deviation) {\n"
+            "    for (long s = 0; s < shots; ++s)\n"
+            "        grave[s] = component_0(words + s * nwords, (u64)s, seed, 0,"
+            " nev ? ev + s * nev : nullptr, deviation);\n}\n}"
+        )
+    cpp, lib = directory / "tapes.cpp", directory / "tapes.so"
+    cpp.write_text("\n".join(parts))
+    # NOTE: -O0 compiles the unrolled tapes several times faster; ``cmac`` and
+    # ``cmac_i`` fuse explicitly, so the arithmetic does not depend on it.
+    assert GXX is not None
+    flags = ["-std=c++17", "-O0", "-ffp-contract=off", "-w", "-shared", "-fPIC"]
+    subprocess.run([GXX, *flags, "-o", str(lib), str(cpp)], check=True)  # noqa: S603
+    dll = ctypes.CDLL(str(lib))
+    functions = []
+    for k in range(len(sources)):
+        f = getattr(dll, f"run_{k}")
+        f.restype = None
+        functions.append(f)
+    return functions
+
+
+def _run_tape(f, words, seed, nev):
+    words = words.copy()
+    shots, nwords = words.shape
+    grave = np.empty(shots, np.int32)
+    ev = np.zeros((shots, max(nev, 1)), np.float32)
+    deviation = np.zeros(1, np.uint32)
+    f(
+        words.ctypes.data_as(ctypes.c_void_p),
+        ctypes.c_long(shots),
+        ctypes.c_long(nwords),
+        ctypes.c_uint64(seed),
+        grave.ctypes.data_as(ctypes.c_void_p),
+        ev.ctypes.data_as(ctypes.c_void_p),
+        ctypes.c_long(nev),
+        deviation.ctypes.data_as(ctypes.c_void_p),
+    )
+    assert tape.deviation(deviation[0]) == 0.0
+    return words, grave, ev[:, :nev]
+
+
+def _looping_circuit(n=5, layers=5, seed=0):
+    """A width-``n`` component with every kind of action that a looping tape runs.
+
+    T gates (diagonal rotations), U3 (others), X, Z and Pauli-product mid-circuit
+    measurements with feedforward, noise, postselected detectors, and two
+    observables.
+    """
+    rng = np.random.default_rng(seed)
+    lines = ["R " + " ".join(map(str, range(n))), "H " + " ".join(map(str, range(n)))]
+    for layer in range(layers):
+        for q in range(n):
+            t = rng.uniform(-1, 1, 3)
+            lines.append(f"U3({t[0]:.4f},{t[1]:.4f},{t[2]:.4f}) {q}")
+        lines.append("T " + " ".join(map(str, range(0, n, 2))))
+        perm = rng.permutation(n)
+        lines.append("CX " + " ".join(map(str, perm[: n & ~1])))
+        lines.append(f"DEPOLARIZE1(0.02) {rng.integers(n)}")
+        q = int(rng.integers(n))
+        if layer % 3 == 0:
+            lines += [f"MX {q}", f"CZ rec[-1] {(q + 1) % n}"]
+        elif layer % 3 == 1:
+            lines += [f"MPP X{q}*Z{(q + 2) % n}*Y{(q + 4) % n}"]
+        else:
+            lines += [f"M {q}", f"CX rec[-1] {(q + 3) % n}"]
+    lines.append("M " + " ".join(map(str, range(n))))
+    lines += [
+        f"DETECTOR rec[-{n + 1}]",
+        "DETECTOR rec[-1] rec[-2]",
+        "OBSERVABLE_INCLUDE(0) rec[-3]",
+        "OBSERVABLE_INCLUDE(1) rec[-4] rec[-5]",
+    ]
+    return "\n".join(lines)
+
+
+@pytest.mark.skipif(GXX is None, reason="needs g++")
+@pytest.mark.parametrize(
+    "text",
+    [_looping_circuit(), CIRCUITS["midcircuit_feedforward"], CIRCUITS["t_ghz"]],
+    ids=["looping", "feedforward", "t_ghz"],
+)
+def test_looping_and_unrolled_tapes_run_as_the_cpu_executor(
+    text, tmp_path, monkeypatch
+):
+    host, _ = _shots(text)
+    layout = host.layout
+    num_detectors = Circuit(text).num_detectors
+    plan = host.plan(np.ones(num_detectors, bool))
+    (component,) = layout.components
+    (program,) = plan.programs
+    observables = {
+        o: index - num_detectors
+        for o, index in enumerate(component.output_indices)
+        if index >= num_detectors
+    }
+    assert observables
+    # NOTE: unrolled in each dialect variant, and looping.
+    variants = [
+        CPP_DIALECT,
+        tape.Dialect(**{**CPP_DIALECT.__dict__, "goto": True}),
+        tape.Dialect(**{**CPP_DIALECT.__dict__, "amplitude_chunk": None}),
+        tape.Dialect(**{**CPP_DIALECT.__dict__, "pair_projections": False}),
+    ]
+    assert not tape.loops(program, 0, 0)
+    sources = [tape.tape_function(program, 0, 0, observables, d) for d in variants]
+    monkeypatch.setattr(tape, "UNROLL_BUDGET", 0)
+    assert tape.loops(program, 0, 0)
+    looping = tape.tape_function(program, 0, 0, observables, CPP_DIALECT)
+    assert "#pragma unroll 1" in looping
+    *unrolled, looped = _compile_tapes([*sources, looping], tmp_path)
+
+    shots, seed = 2000, 0x1234_5678_9ABC_DEF0
+    rng = np.random.default_rng(7)
+    words = rng.integers(0, 2**63, (shots, layout.num_words), dtype=np.uint64)
+    words <<= np.uint64(1)
+    words |= rng.integers(0, 2, words.shape, dtype=np.uint64)
+    expected = words.copy()
+    alive = np.ones(shots, np.bool_)
+    shared.run_lanes(
+        shots << program.width,
+        expected,
+        alive,
+        0,
+        np.uint64(seed),
+        True,
+        program,
+        False,
+        1 << 60,
+        1,
+    )
+    assert 0 < alive.sum() < shots
+    got, grave, ev = _run_tape(looped, words, seed, len(observables))
+    np.testing.assert_array_equal(grave == np.iinfo(np.int32).max, alive)
+    np.testing.assert_array_equal(got[alive], expected[alive])
+    assert np.abs(ev).max() > 0
+    for f in unrolled:
+        other, other_grave, other_ev = _run_tape(f, words, seed, len(observables))
+        np.testing.assert_array_equal(other_grave, grave)
+        np.testing.assert_array_equal(other, got)
+        np.testing.assert_allclose(other_ev, ev, atol=1e-5)
 
 
 @pytest.mark.parametrize(("p", "qubits"), [(2e-8, 192), (1e-9, 3200)])
