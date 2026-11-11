@@ -53,7 +53,22 @@ BATCH_BYTES = 256 << 20
 """Bytes of shot words of one batch, which bound its shots below ``BATCH_SHOTS``."""
 
 NOISE_THREADS = 256
-"""Threads per threadgroup of the noise kernel."""
+"""Threads per threadgroup of the noise kernels."""
+
+COPY_THREADS = 256
+"""Threads per threadgroup of the kernels that copy rows."""
+
+MAX_COPY_THREADS = 1 << 20
+"""Most threads of a copy kernel's dispatch; each thread loops over its share."""
+
+SCAN_THREADS = 1024
+"""Threads per threadgroup of ``count_bits`` and ``list_bits``: one per bitmap word."""
+
+# NOTE: the words of ``_Slot.counts``.
+_SURVIVORS, _ACCEPTED, _DEVIATION, _CURSOR, _CAPACITY = range(5)
+
+_STACKLEVEL = 5
+"""Stack level of the samplers' warnings: the caller of ``sample``."""
 
 TAPE_THREADS = 128
 """Threads per threadgroup of the tape kernel."""
@@ -124,7 +139,7 @@ inline uint block_scan(uint v, thread uint& total, threadgroup uint* warps, uint
 }}
 
 // The shots of the set bits of ``bits`` (``words`` words), in order: ``count_bits``
-// counts each block's 1024 words, ``list_bits`` lists a block's shots after
+// counts each block's {SCAN} words, ``list_bits`` lists a block's shots after
 // those of the blocks before it.
 kernel void count_bits(
     device const uint* bits [[buffer(0)]], constant long& words [[buffer(1)]],
@@ -134,7 +149,7 @@ kernel void count_bits(
     uint nwarps [[simdgroups_per_threadgroup]])
 {{
     threadgroup uint warps[32];
-    long i = (long)bid * 1024 + tid;
+    long i = (long)bid * {SCAN} + tid;
     uint total;
     block_scan(i < words ? popcount(bits[i]) : 0, total, warps, lane, warp, nwarps);
     if (tid == 0) totals[bid] = total;
@@ -149,9 +164,9 @@ kernel void list_bits(
 {{
     threadgroup uint warps[32];
     uint earlier = 0, total;
-    for (uint b = tid; b < bid; b += 1024) earlier += totals[b];
+    for (uint b = tid; b < bid; b += {SCAN}) earlier += totals[b];
     block_scan(earlier, earlier, warps, lane, warp, nwarps);
-    long i = (long)bid * 1024 + tid;
+    long i = (long)bid * {SCAN} + tid;
     uint w = i < words ? bits[i] : 0;
     uint at = earlier + block_scan(popcount(w), total, warps, lane, warp, nwarps);
     for (; w; w &= w - 1) index[at++] = (uint)(32 * i + ctz(w));
@@ -373,6 +388,7 @@ class MetalShotSampler:
                 T1=T - 1,
                 tb=tb,
                 NW=layout.num_words,
+                SCAN=SCAN_THREADS,
                 NO=max(1, len(self._observables)),
                 NB=max(nb, 1),
                 RB=8 * layout.num_words,
@@ -466,7 +482,7 @@ class MetalShotSampler:
                 queue=runtime.buffer(shots, np.uint32),
                 accepted=runtime.buffer(-(-shots // 32), np.uint32),
                 counts=runtime.buffer(8, np.uint32),
-                totals=runtime.buffer(-(-shots // 32 // 1024) + 1, np.uint32),
+                totals=runtime.buffer(-(-shots // 32 // SCAN_THREADS) + 1, np.uint32),
                 index=runtime.buffer(shots, np.uint32),
             )
             if expectations:
@@ -515,7 +531,7 @@ class MetalShotSampler:
                 constant,
                 module.screen,
                 slot.queue,
-                (slot.counts, 0),
+                _count(slot, _SURVIVORS),
                 slot.accepted,
             ],
             -(-shots // S),
@@ -534,11 +550,11 @@ class MetalShotSampler:
                     words,
                     tape_args,
                     slot.queue,
-                    (slot.counts, 0),
+                    _count(slot, _SURVIVORS),
                     slot.accepted,
-                    (slot.counts, 4),
+                    _count(slot, _ACCEPTED),
                     values,
-                    (slot.counts, 8),
+                    _count(slot, _DEVIATION),
                 ],
                 -(-threads // TAPE_THREADS),
                 TAPE_THREADS,
@@ -568,23 +584,24 @@ class MetalShotSampler:
         no = len(self._observables)
         if module.has_mask:
             words = -(-shots // 32)
-            blocks = -(-words // 1024)
+            blocks = -(-words // SCAN_THREADS)
             encoder.dispatch(
                 library.pipeline("count_bits"),
                 [slot.accepted, np.int64(words), slot.totals],
                 blocks,
-                1024,
+                SCAN_THREADS,
             )
             encoder.dispatch(
                 library.pipeline("list_bits"),
                 [slot.accepted, np.int64(words), slot.totals, slot.index],
                 blocks,
-                1024,
+                SCAN_THREADS,
             )
-            count = (slot.counts, 4) if self.layout.components else (slot.counts, 0)
+            kept = _ACCEPTED if self.layout.components else _SURVIVORS
+            count = _count(slot, kept)
         else:
             count = fixed
-        cursor = (slot.counts, 12)
+        cursor = _count(slot, _CURSOR)
         blocks = -(-shots // S)
         if nb and split is not None:
             launch = split[1]
@@ -608,11 +625,11 @@ class MetalShotSampler:
                     cursor,
                 ],
                 blocks,
-                256,
+                NOISE_THREADS,
                 threadgroup_bytes=max(8 * launch.max_events, S * nb),
             )
         elif nb:
-            threads = min(-(-shots * nb // 4) + 1, 1 << 20)
+            threads = min(-(-shots * nb // 4) + 1, MAX_COPY_THREADS)
             encoder.dispatch(
                 library.pipeline("gather_rows"),
                 [
@@ -623,8 +640,8 @@ class MetalShotSampler:
                     rows,
                     cursor,
                 ],
-                -(-threads // 256),
-                256,
+                -(-threads // COPY_THREADS),
+                COPY_THREADS,
             )
         if expectations and no and self.layout.components:
             assert slot.values is not None and values is not None
@@ -639,8 +656,8 @@ class MetalShotSampler:
                     cursor,
                     np.int32(module.has_mask),
                 ],
-                256,
-                256,
+                COPY_THREADS,
+                COPY_THREADS,
             )
         encoder.dispatch(library.pipeline("advance"), [cursor, count], 1, 1)
 
@@ -718,7 +735,7 @@ class MetalShotSampler:
         starts = range(0, shots, batch)
         fixed = runtime.buffer(len(starts), np.uint32)
         slot.counts.array[:] = 0
-        slot.counts.array[4] = capacity
+        slot.counts.array[_CAPACITY] = capacity
         commands = []
         try:
             for k, start in enumerate(starts):
@@ -882,14 +899,14 @@ class MetalShotSampler:
                 values,
                 capacity,
             )
-            total = int(slot.counts.array[3])
+            total = int(slot.counts.array[_CURSOR])
             if total <= capacity:
                 break
             self._rng.bit_generator.state = state
             capacity = shots
         self._shares[key] = total / max(shots, 1)
         # NOTE: fast math records a NaN total as NaN (not inf), which must warn.
-        deviation = tape.deviation(slot.counts.array[2])
+        deviation = tape.deviation(slot.counts.array[_DEVIATION])
         packed = rows.array[: total * nb].reshape(total, nb)
         expected = None
         if values is not None:
@@ -911,13 +928,13 @@ class MetalShotSampler:
             return _select(packed, np.arange(num_outputs), num_outputs, False)
         out = runtime.buffer(total * num_outputs, np.uint8, recycle=True)
         if total and num_outputs:
-            threads = min(total * groups, 1 << 20)
+            threads = min(total * groups, MAX_COPY_THREADS)
             encoder = runtime.Encoder()
             encoder.dispatch(
                 module.library.pipeline("unpack_rows"),
                 [rows, out, np.uint32(total)],
-                -(-threads // 256),
-                256,
+                -(-threads // COPY_THREADS),
+                COPY_THREADS,
             )
             self._wait_all([encoder.commit()])
         return out.array[: total * num_outputs].reshape(total, num_outputs).view(bool)
@@ -949,14 +966,20 @@ def _forked() -> bool:
     """Return whether this process was forked after Metal's setup, with a warning."""
     if not runtime.forked_after_init():
         return False
-    warnings.warn(FORKED, stacklevel=5)
+    warnings.warn(FORKED, stacklevel=_STACKLEVEL)
     return True
 
 
 def _warn_out_of_memory(error: MemoryError) -> None:
     warnings.warn(
-        f"{error}; sampling on the CPU. Fewer shots per call fit.", stacklevel=5
+        f"{error}; sampling on the CPU. Fewer shots per call fit.",
+        stacklevel=_STACKLEVEL,
     )
+
+
+def _count(slot: _Slot, word: int) -> tuple[runtime.Buffer, int]:
+    """Return word ``word`` of ``slot.counts``, as a kernel argument."""
+    return slot.counts, 4 * word
 
 
 def _restore(
