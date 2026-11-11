@@ -44,11 +44,12 @@ def decode_t_user_tag(tag: str) -> str:
 
 
 def parse_parametric_tag_text(tag: str) -> tuple[str, dict[str, Fraction]] | None:
-    """Parse a parametric gate tag such as ``R_Z(theta=0.3*pi)`` or ``R_Z(0.3)``.
+    """Parse a parametric gate tag such as ``R_Z(0.3)``.
 
-    Angles are in units of pi. They are given either all by keyword with an
-    explicit ``*pi`` suffix, or all by position (``U3`` takes theta, phi, lambda
-    in that order, as in the shorthand).
+    Angles are in units of pi and given by position (``U3`` takes theta, phi,
+    lambda in that order, as in the shorthand). This is the form Tsim emits. The
+    legacy keyword form with an explicit ``*pi`` suffix, e.g.
+    ``R_Z(theta=0.3*pi)``, is still accepted.
 
     Args:
         tag: The Stim instruction tag.
@@ -94,15 +95,42 @@ def parse_parametric_tag_text(tag: str) -> tuple[str, dict[str, Fraction]] | Non
         return gate_name, dict(zip(expected, map(Fraction, args), strict=True))
 
     positional_example = ", ".join("0.25" for _ in expected)
-    keyword_example = ", ".join(f"{name}=0.25*pi" for name in expected)
     raise ValueError(
         f"Malformed parametric tag {tag!r}. Angles are in units of pi, e.g. "
-        f"'{gate_name}({positional_example})' or '{gate_name}({keyword_example})'"
+        f"'{gate_name}({positional_example})'"
     )
 
 
-def format_parametric_tag(gate_name: str, params: dict[str, Fraction]) -> str:
-    """Format a parametric gate tag in its canonical keyword form."""
+def format_parametric_tag(gate_name: str, *angles: float | Fraction) -> str:
+    """Format a parametric gate tag in its canonical positional form.
+
+    Angles are in units of pi and given in the gate's parameter order (``U3`` takes
+    theta, phi, lambda), e.g. ``format_parametric_tag("R_Z", 0.3) == "R_Z(0.3)"``.
+    The tag is the Tsim shorthand instruction itself.
+    """
+    expected = _PARAMETRIC_GATE_PARAMS[gate_name]
+    if len(angles) != len(expected):
+        raise ValueError(
+            f"{gate_name} takes {len(expected)} angles ({', '.join(expected)}), "
+            f"got {len(angles)}"
+        )
+    # `+ 0.0` turns -0.0 into 0.0, which is what parsing the tag gives back.
+    return f"{gate_name}({', '.join(str(float(a) + 0.0) for a in angles)})"
+
+
+def format_parsed_parametric_tag(gate_name: str, params: dict[str, Fraction]) -> str:
+    """Format the result of :func:`parse_parametric_tag_text` canonically."""
+    return format_parametric_tag(
+        gate_name, *(params[name] for name in _PARAMETRIC_GATE_PARAMS[gate_name])
+    )
+
+
+def format_keyword_parametric_tag(gate_name: str, params: dict[str, Fraction]) -> str:
+    """Format a parametric gate tag in the legacy form ``R_Z(theta=0.3*pi)``.
+
+    Tsim no longer emits this form; it exists only for external tools that do not
+    yet understand the positional form.
+    """
     args = ", ".join(
         f"{name}={float(params[name])}*pi"
         for name in _PARAMETRIC_GATE_PARAMS[gate_name]

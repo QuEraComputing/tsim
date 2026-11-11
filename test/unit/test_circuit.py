@@ -146,15 +146,18 @@ def test_non_r_pauli_parametric_tag_on_spp_raises(program):
 @pytest.mark.parametrize(
     "stim_program, shorthand",
     [
-        ("I[R_X(0.1)] 0", "R_X(0.1) 0"),
-        ("I[U3(0.3, 0.24, 0.49)] 0", "U3(0.3, 0.24, 0.49) 0"),
-        ("SPP[R_PAULI(0.1)] X0*Y1", "R_PAULI(0.1) X0*Y1"),
+        ("I[R_X(theta=0.1*pi)] 0", "R_X(0.1) 0"),
+        (
+            "I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0",
+            "U3(0.3, 0.24, 0.49) 0",
+        ),
+        ("SPP[R_PAULI(theta=0.1*pi)] X0*Y1", "R_PAULI(0.1) X0*Y1"),
     ],
 )
-def test_positional_tag_from_stim_matches_shorthand(stim_program, shorthand):
+def test_legacy_tag_from_stim_matches_shorthand(stim_program, shorthand):
     c1 = Circuit.from_stim_program(stim.Circuit(stim_program))
     c2 = Circuit(shorthand)
-    assert c1.stim_circuit != c2.stim_circuit
+    assert c1 == c2
     np.testing.assert_allclose(c1.to_tensor(), c2.to_tensor(), atol=1e-12)
     np.testing.assert_allclose(
         c1.inverse().to_tensor(), c2.inverse().to_tensor(), atol=1e-12
@@ -1305,7 +1308,7 @@ def test_stim_circuit_repeat_block_keeps_non_clifford_parametric():
     body = block.body_copy()
     instr = body[0]
     assert instr.name == "I"
-    assert instr.tag == "R_X(theta=0.3*pi)"
+    assert instr.tag == "R_X(0.3)"
 
 
 def test_stim_circuit_repeat_block_expands_half_pi_parametric():
@@ -1441,6 +1444,7 @@ def test_append_tpp_anti_hermitian_pauli_string_rejected(name: str):
         ("SPP", "-Z", None, "", "SPP !Z0"),
         ("SPP_DAG", "-XZ", None, "", "SPP_DAG !X0*Z1"),
         ("SPP", "-Z", None, "T", "TPP !Z0"),
+        ("SPP", "-XY", None, "R_PAULI(0.3)", "R_PAULI(0.3) !X0*Y1"),
         ("SPP", "-XY", None, "R_PAULI(theta=0.3*pi)", "R_PAULI(0.3) !X0*Y1"),
         ("OBSERVABLE_INCLUDE", "-Z", 0, "", "OBSERVABLE_INCLUDE(0) !Z0"),
         ("OBSERVABLE_INCLUDE", "XZ", 0, "", "OBSERVABLE_INCLUDE(0) X0 Z1"),
@@ -1590,3 +1594,69 @@ def test_append_instruction_rejects_extra_arguments(kwargs):
     c = Circuit()
     with pytest.raises(ValueError, match="Can't specify targets"):
         c.append(stim.CircuitInstruction("H", [0]), **kwargs)
+
+
+def test_append_canonicalizes_legacy_parametric_tag():
+    c = Circuit()
+    c.append("I", [0], tag="R_X(theta=0.25*pi)")
+    assert c.stim_circuit == stim.Circuit("I[R_X(0.25)] 0")
+    assert c == Circuit("R_X(0.25) 0")
+
+
+_LEGACY_STIM = (
+    "I[R_X(theta=0.1*pi)] 0\n"
+    "REPEAT 2 {\n"
+    "    SPP[R_PAULI(theta=0.3*pi)] X0*Y1\n"
+    "    I[U3(theta=0.1*pi, phi=0.2*pi, lambda=0.3*pi)] 1\n"
+    "}"
+)
+_CANONICAL_STIM = (
+    "I[R_X(0.1)] 0\n"
+    "REPEAT 2 {\n"
+    "    SPP[R_PAULI(0.3)] X0*Y1\n"
+    "    I[U3(0.1, 0.2, 0.3)] 1\n"
+    "}"
+)
+
+
+def _append_instructions(circuit: stim.Circuit) -> Circuit:
+    c = Circuit()
+    for instr in circuit:
+        c.append(instr)
+    return c
+
+
+def _iadd(circuit: stim.Circuit) -> Circuit:
+    c = Circuit()
+    c += circuit
+    return c
+
+
+@pytest.mark.parametrize(
+    "build",
+    [Circuit, Circuit.from_stim_program, _iadd, _append_instructions],
+)
+def test_legacy_tags_from_stim_circuit_are_canonicalized(build):
+    c = build(stim.Circuit(_LEGACY_STIM))
+    assert c._stim_circ == stim.Circuit(_CANONICAL_STIM)
+    assert c == Circuit(_LEGACY_STIM)
+    assert Circuit(str(c)) == c
+
+
+def test_approx_equals_reads_legacy_stim_tags():
+    assert Circuit(_CANONICAL_STIM).approx_equals(stim.Circuit(_LEGACY_STIM), atol=1e-9)
+
+
+@pytest.mark.parametrize("program", ["R_X(-0.0) 0", "U3(-0.0, 0.1, -0.0) 0"])
+def test_negative_zero_angle_roundtrip(program):
+    c = Circuit(program)
+    assert "-0.0" not in str(c._stim_circ)
+    assert Circuit(str(c)) == c
+
+
+@pytest.mark.parametrize("tag", ["note I[R_X(0.1)", "a S[T", "b SPP[R_PAULI(0.1)"])
+def test_gate_like_text_inside_another_tag_roundtrips(tag):
+    c = Circuit()
+    c.append("X", [0], tag=tag)
+    assert str(c).startswith("X[")
+    assert Circuit(str(c)) == c

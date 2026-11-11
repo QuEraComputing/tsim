@@ -1,13 +1,17 @@
 """Conversion utilities between Tsim shorthand and Stim program text."""
 
 import re
-from collections.abc import Callable
+from fractions import Fraction
+
+import stim
 
 from tsim.core.tags import (
     FLOAT_RE,
     decode_t_user_tag,
     encode_t_tag,
     format_parametric_tag,
+    format_parsed_parametric_tag,
+    is_t_tag,
     parse_parametric_tag_text,
 )
 
@@ -27,6 +31,17 @@ _TSIM_GATES = {
 _ROTATION_SHORTHAND_GATES = _TSIM_GATES - CONTROLLED_GATE_ARITY.keys()
 _T_FAMILY = {"T": "S", "T_DAG": "S_DAG", "TPP": "SPP", "TPP_DAG": "SPP_DAG"}
 _PARAMETRIC_TAG_GATES = {"I", "SPP", "SPP_DAG"}
+_SINGLE_QUBIT_PARAMETRIC_GATES = {"R_X", "R_Y", "R_Z", "U3"}
+_SAME_AXIS_PAIR_RE = re.compile(r"([XYZ])(\d+)\*\1(\d+)")
+_T_FAMILY_SHORTHAND = {stim_name: name for name, stim_name in _T_FAMILY.items()}
+# A tagged instruction on one line of Stim output, split into indentation, gate
+# name, tag and the rest. Stim escapes `]` in tags, so a tag never contains one.
+_STIM_LINE_RE = re.compile(r"^([ \t]*)(\w+)\[([^\]\n]*)\](.*)$")
+# A tagged I/SPP/SPP_DAG instruction at the start of a line of Stim output. Stim
+# escapes `]` in tags, so a tag never contains one.
+_STIM_PARAMETRIC_INSTRUCTION_RE = re.compile(
+    r"^[ \t]*(I|SPP|SPP_DAG)\[([^\]\n]*)\]", re.MULTILINE
+)
 # The prefix group also takes block delimiters that share the instruction's line,
 # as in `REPEAT 2 { H 0` or `} H 0`.
 _INSTRUCTION_RE = re.compile(
@@ -132,15 +147,6 @@ def _expand_controlled_gates(text: str) -> str:
     return "\n".join(lines)
 
 
-def _replace_t_family_shorthand(tsim_gate: str) -> Callable[[re.Match[str]], str]:
-    def replace(m: re.Match[str]) -> str:
-        user_tag = decode_t_user_tag(m.group(1))
-        tag_suffix = f"[{user_tag}]" if user_tag else ""
-        return f"{tsim_gate}{tag_suffix}"
-
-    return replace
-
-
 def enriched_stim_error(exc: ValueError, converted_text: str) -> ValueError:
     """Improve Stim parse errors for Tsim-specific gates.
 
@@ -172,19 +178,23 @@ def shorthand_to_stim(text: str) -> str:
         T_DAG 0 1           → S_DAG[T] 0 1
         TPP X0*Y1           → SPP[T] X0*Y1
         TPP_DAG X0*Y1       → SPP_DAG[T] X0*Y1
-        R_Z(0.3) 0          → I[R_Z(theta=0.3*pi)] 0
-        R_X(0.25) 0         → I[R_X(theta=0.25*pi)] 0
-        R_Y(-0.5) 0         → I[R_Y(theta=-0.5*pi)] 0
-        R_XX(0.5) 0 1       → SPP[R_PAULI(theta=0.5*pi)] X0*X1
-        R_YY(0.5) 0 1       → SPP[R_PAULI(theta=0.5*pi)] Y0*Y1
-        R_ZZ(0.5) 0 1       → SPP[R_PAULI(theta=0.5*pi)] Z0*Z1
-        R_PAULI(0.3) X0*Y1  → SPP[R_PAULI(theta=0.3*pi)] X0*Y1
-        R_PAULI(0.3) !X0*Y1 → SPP[R_PAULI(theta=0.3*pi)] !X0*Y1
-        U3(0.3, 0.24, 0.49) 0 → I[U3(theta=0.3*pi, phi=0.24*pi, lambda=0.49*pi)] 0
+        R_Z(0.3) 0          → I[R_Z(0.3)] 0
+        R_X(0.25) 0         → I[R_X(0.25)] 0
+        R_Y(-0.5) 0         → I[R_Y(-0.5)] 0
+        R_XX(0.5) 0 1       → SPP[R_PAULI(0.5)] X0*X1
+        R_YY(0.5) 0 1       → SPP[R_PAULI(0.5)] Y0*Y1
+        R_ZZ(0.5) 0 1       → SPP[R_PAULI(0.5)] Z0*Z1
+        R_PAULI(0.3) X0*Y1  → SPP[R_PAULI(0.3)] X0*Y1
+        R_PAULI(0.3) !X0*Y1 → SPP[R_PAULI(0.3)] !X0*Y1
+        U3(0.3, 0.24, 0.49) 0 → I[U3(0.3, 0.24, 0.49)] 0
+
+    The tag of a parametric gate is the Tsim instruction itself, with angles in
+    units of pi.
 
     Tags and comments are left untouched, except that parametric tags on ``I``,
-    ``SPP`` and ``SPP_DAG`` are canonicalized to the keyword form above, so that
-    e.g. ``I[R_X(0.25)] 0`` and ``R_X(0.25) 0`` produce the same instruction.
+    ``SPP`` and ``SPP_DAG`` are canonicalized to the form above, so that e.g.
+    ``I[R_X(0.25e0)] 0``, ``I[R_X(theta=0.25*pi)] 0`` (the legacy keyword form) and
+    ``R_X(0.25) 0`` produce the same instruction.
 
     """
     text = _expand_controlled_gates(text)
@@ -205,22 +215,65 @@ def _convert_line(line: str) -> str:
     elif upper in _ROTATION_SHORTHAND_GATES and tag is None:
         instruction = _expand_rotation_shorthand(upper + rest)
     elif upper in _PARAMETRIC_TAG_GATES and tag:
-        instruction = f"{name}[{_canonical_parametric_tag(tag)}]{rest}"
+        instruction = f"{name}[{canonical_parametric_tag(tag)}]{rest}"
     else:
         return line
     return f"{indent}{instruction}{sep}{comment}"
 
 
-def _canonical_parametric_tag(tag: str) -> str:
+def canonical_parametric_tag(tag: str) -> str:
+    """Return ``tag`` in canonical positional form if it is a parametric tag."""
     # Canonicalize so that equivalent inputs like `I[R_X(0.005)]`,
-    # `I[R_X(theta=0.5e-2*pi)]` and `I[R_X(theta=0.005*pi)]` produce the same Stim
-    # tag string. This keeps `tsim.Circuit(str(c)) == c` round-trip stable across
-    # notations. Malformed tags are kept as-is and rejected when parsed.
+    # `I[R_X(0.5e-2)]` and the legacy `I[R_X(theta=0.005*pi)]` produce the same
+    # Stim tag string. This keeps `tsim.Circuit(str(c)) == c` round-trip stable
+    # across notations. Malformed tags are kept as-is and rejected when parsed.
+    parsed = _try_parse_parametric_tag(tag)
+    return tag if parsed is None else format_parsed_parametric_tag(*parsed)
+
+
+def canonicalize_parametric_tags(circuit: stim.Circuit) -> stim.Circuit:
+    """Return a copy of ``circuit`` with parametric tags in canonical form.
+
+    Rewrites tags on ``I``, ``SPP`` and ``SPP_DAG`` (including inside ``REPEAT``
+    blocks), e.g. the legacy ``I[R_X(theta=0.1*pi)]`` to ``I[R_X(0.1)]``, so that
+    circuits built from a ``stim.Circuit`` compare equal to the same circuit
+    written as text. Circuits without parametric tags are only copied.
+    """
+    if not any(
+        m.group(2) != canonical_parametric_tag(m.group(2))
+        for m in _STIM_PARAMETRIC_INSTRUCTION_RE.finditer(str(circuit))
+    ):
+        return circuit.copy()
+    return _rebuild_with_canonical_tags(circuit)
+
+
+def _rebuild_with_canonical_tags(circuit: stim.Circuit) -> stim.Circuit:
+    result = stim.Circuit()
+    for instr in circuit:
+        if isinstance(instr, stim.CircuitRepeatBlock):
+            body = _rebuild_with_canonical_tags(instr.body_copy())
+            result.append(
+                stim.CircuitRepeatBlock(instr.repeat_count, body, tag=instr.tag)
+            )
+        elif instr.name in _PARAMETRIC_TAG_GATES and instr.tag:
+            result.append(
+                stim.CircuitInstruction(
+                    instr.name,
+                    instr.targets_copy(),
+                    instr.gate_args_copy(),
+                    tag=canonical_parametric_tag(instr.tag),
+                )
+            )
+        else:
+            result.append(instr)
+    return result
+
+
+def _try_parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
     try:
-        parsed = parse_parametric_tag_text(tag)
-        return tag if parsed is None else format_parametric_tag(*parsed)
+        return parse_parametric_tag_text(tag)
     except (ValueError, OverflowError):
-        return tag
+        return None
 
 
 def _expand_rotation_shorthand(instruction: str) -> str:
@@ -232,7 +285,7 @@ def _expand_rotation_shorthand(instruction: str) -> str:
             raise ValueError(
                 f"R_{pauli}{pauli} target qubits must be distinct, got {q0} {q1}."
             )
-        return f"SPP[R_PAULI(theta={alpha}*pi)] {pauli}{q0}*{pauli}{q1}"
+        return f"SPP[{format_parametric_tag('R_PAULI', alpha)}] {pauli}{q0}*{pauli}{q1}"
 
     instruction = re.sub(
         rf"^R_([XYZ])\1\(({FLOAT_RE})\)\s+(\d+)\s+(\d+)",
@@ -242,7 +295,7 @@ def _expand_rotation_shorthand(instruction: str) -> str:
 
     def replace_pauli(m: re.Match) -> str:
         alpha = float(m.group(1))
-        return f"SPP[R_PAULI(theta={alpha}*pi)] {m.group(2)}"
+        return f"SPP[{format_parametric_tag('R_PAULI', alpha)}] {m.group(2)}"
 
     instruction = re.sub(
         rf"^R_PAULI\(({FLOAT_RE})\)\s+(!?[XYZxyz]\d+(?:\*!?[XYZxyz]\d+)*)",
@@ -252,13 +305,13 @@ def _expand_rotation_shorthand(instruction: str) -> str:
 
     def replace_rotation(m: re.Match) -> str:
         axis = m.group(1)
-        return f"I[R_{axis}(theta={float(m.group(2))}*pi)]"
+        return f"I[{format_parametric_tag(f'R_{axis}', float(m.group(2)))}]"
 
     instruction = re.sub(rf"^R_([XYZ])\(({FLOAT_RE})\)", replace_rotation, instruction)
 
     def replace_u3(m: re.Match) -> str:
         theta, phi, lam = float(m.group(1)), float(m.group(2)), float(m.group(3))
-        return f"I[U3(theta={theta}*pi, phi={phi}*pi, lambda={lam}*pi)]"
+        return f"I[{format_parametric_tag('U3', theta, phi, lam)}]"
 
     return re.sub(
         rf"^U3\(({FLOAT_RE})\s*,\s*({FLOAT_RE})\s*,\s*({FLOAT_RE})\)",
@@ -270,87 +323,46 @@ def _expand_rotation_shorthand(instruction: str) -> str:
 def stim_to_shorthand(text: str) -> str:
     """Convert expanded Stim annotations back to Tsim shorthand.
 
-    Rewrites:
-    - I[U3(theta=θ*pi, phi=φ*pi, lambda=λ*pi)] → U3(θ, φ, λ)
-    - I[R_X(theta=α*pi)] / I[R_Y(...)] / I[R_Z(...)] → R_X(α) / R_Y(α) / R_Z(α)
-    - SPP[R_PAULI(theta=α*pi)] P0*P1 → R_PP(α) 0 1 (P ∈ {X, Y, Z})
-    - SPP[R_PAULI(theta=α*pi)] X0*Y1 → R_PAULI(α) X0*Y1
-    - SPP[R_PAULI(theta=α*pi)] !X0*Y1 → R_PAULI(α) !X0*Y1
+    Rewrites (the legacy keyword tag form, e.g. ``R_X(theta=α*pi)``, is also read):
+    - I[U3(θ, φ, λ)] → U3(θ, φ, λ)
+    - I[R_X(α)] / I[R_Y(α)] / I[R_Z(α)] → R_X(α) / R_Y(α) / R_Z(α)
+    - SPP[R_PAULI(α)] P0*P1 → R_PP(α) 0 1 (P ∈ {X, Y, Z})
+    - SPP[R_PAULI(α)] X0*Y1 → R_PAULI(α) X0*Y1
+    - SPP[R_PAULI(α)] !X0*Y1 → R_PAULI(α) !X0*Y1
     - SPP[T] → TPP
     - SPP_DAG[T] → TPP_DAG
     - S[T] → T
     - S_DAG[T] → T_DAG
     """
+    return "\n".join(_shorthand_line(line) for line in text.split("\n"))
 
-    # Replace I[U3(theta=θ*pi, phi=φ*pi, lambda=λ*pi)] with U3(θ, φ, λ)
-    def replace_u3(m: re.Match) -> str:
-        theta, phi, lam = m.group(1), m.group(2), m.group(3)
-        return f"U3({theta}, {phi}, {lam})"
 
-    text = re.sub(
-        rf"\bI\[U3\(theta=({FLOAT_RE})\*pi, phi=({FLOAT_RE})\*pi, lambda=({FLOAT_RE})\*pi\)\]",
-        replace_u3,
-        text,
-    )
+def _shorthand_line(line: str) -> str:
+    # Stim prints one instruction per line, so only the gate at the start of a line
+    # is rewritten, never text inside another instruction's tag.
+    match = _STIM_LINE_RE.match(line)
+    if not match:
+        return line
+    indent, name, tag, rest = match.groups()
 
-    # SPP[R_PAULI(...)] with a same-axis two-qubit product → R_XX/R_YY/R_ZZ shorthand.
-    # Must precede the general R_PAULI rewrite below.
-    def replace_pauli_pair(m: re.Match) -> str:
-        alpha, pauli, q0, q1 = m.group(1), m.group(2), m.group(3), m.group(4)
-        return f"R_{pauli}{pauli}({alpha}) {q0} {q1}"
+    if name in _T_FAMILY_SHORTHAND and is_t_tag(tag):
+        user_tag = decode_t_user_tag(tag)
+        tag_suffix = f"[{user_tag}]" if user_tag else ""
+        return f"{indent}{_T_FAMILY_SHORTHAND[name]}{tag_suffix}{rest}"
 
-    text = re.sub(
-        rf"\bSPP\[R_PAULI\(theta=({FLOAT_RE})\*pi\)\] ([XYZ])(\d+)\*\2(\d+)(?!\*)\b",
-        replace_pauli_pair,
-        text,
-    )
-
-    def replace_pauli(m: re.Match) -> str:
-        alpha, product = m.group(1), m.group(2)
-        return f"R_PAULI({alpha}) {product}"
-
-    text = re.sub(
-        rf"\bSPP\[R_PAULI\(theta=({FLOAT_RE})\*pi\)\] (!?[XYZ]\d+(?:\*!?[XYZ]\d+)*)",
-        replace_pauli,
-        text,
-    )
-
-    # Replace I[R_X(...)] / I[R_Y(...)] / I[R_Z(...)] with R_X(α) / R_Y(α) / R_Z(α)
-    def replace_rotation(m: re.Match) -> str:
-        axis = m.group(1)
-        angle = m.group(2)
-        return f"R_{axis}({angle})"
-
-    text = re.sub(
-        rf"\bI\[R_([XYZ])\(theta=({FLOAT_RE})\*pi\)\]",
-        replace_rotation,
-        text,
-    )
-
-    # Replace SPP[T] and SPP_DAG[T] with TPP and TPP_DAG
-    # Must come before S[T]/S_DAG[T] to avoid partial matches
-    text = re.sub(
-        r"(?<!\w)SPP_DAG\[(T(?::[^\]\n]*)?)\](?!\w)",
-        _replace_t_family_shorthand("TPP_DAG"),
-        text,
-    )
-    text = re.sub(
-        r"(?<!\w)SPP\[(T(?::[^\]\n]*)?)\](?!\w)",
-        _replace_t_family_shorthand("TPP"),
-        text,
-    )
-
-    # Replace S[T] and S_DAG[T] with T and T_DAG
-    # Use non-word lookarounds because trailing ] is not a word character.
-    text = re.sub(
-        r"(?<!\w)S_DAG\[(T(?::[^\]\n]*)?)\](?!\w)",
-        _replace_t_family_shorthand("T_DAG"),
-        text,
-    )
-    text = re.sub(
-        r"(?<!\w)S\[(T(?::[^\]\n]*)?)\](?!\w)",
-        _replace_t_family_shorthand("T"),
-        text,
-    )
-
-    return text
+    parsed = _try_parse_parametric_tag(tag)
+    if parsed is None:
+        return line
+    shorthand = format_parsed_parametric_tag(*parsed)
+    if name == "I" and parsed[0] in _SINGLE_QUBIT_PARAMETRIC_GATES:
+        return f"{indent}{shorthand}{rest}"
+    if name == "SPP" and parsed[0] == "R_PAULI":
+        # Only a lone same-axis pair is R_XX/R_YY/R_ZZ; further products would be
+        # misread as qubit targets of the two-qubit shorthand.
+        pair = _SAME_AXIS_PAIR_RE.fullmatch(rest.strip())
+        if pair:
+            pauli, q0, q1 = pair.groups()
+            angle = shorthand.removeprefix("R_PAULI")
+            return f"{indent}R_{pauli}{pauli}{angle} {q0} {q1}"
+        return f"{indent}{shorthand}{rest}"
+    return line

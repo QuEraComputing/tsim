@@ -27,10 +27,11 @@ R_PAULI_MAX_QUBITS = 64
 def parse_parametric_tag(
     instruction: stim.CircuitInstruction,
 ) -> tuple[str, dict[str, Fraction]] | None:
-    """Parse the parametric tag on an instruction (e.g. ``I[R_Z(theta=0.3*pi)]``).
+    """Parse the parametric tag on an instruction (e.g. ``I[R_Z(0.3)]``).
 
-    Supports gates: R_Z, R_X, R_Y, R_PAULI, U3. Angles are in units of pi and may
-    be given by keyword (``R_Z(theta=0.3*pi)``) or by position (``R_Z(0.3)``).
+    Supports gates: R_Z, R_X, R_Y, R_PAULI, U3. Angles are in units of pi and given
+    by position (``R_Z(0.3)``); the legacy keyword form (``R_Z(theta=0.3*pi)``) is
+    also accepted.
 
     Args:
         instruction: The Stim instruction whose tag will be parsed.
@@ -186,7 +187,7 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
         elif name == "S_DAG" and is_t_tag(instruction.tag):
             name = "T_DAG"
 
-        # Handle parametric gates via tags (e.g., I with tag "R_Z(theta=0.3*pi)")
+        # Handle parametric gates via tags (e.g., I with tag "R_Z(0.3)")
         if name == "I" and instruction.tag:
             result = parse_parametric_tag(instruction)
             if result is not None:
