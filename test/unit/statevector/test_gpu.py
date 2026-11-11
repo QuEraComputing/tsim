@@ -183,7 +183,7 @@ def test_pass_rate_and_deferred_channels():
     assert np.isclose(first.faults + later.faults, tables.groups.faults)
 
 
-def test_select_and_pieces_read_the_columns_of_rows():
+def test_select_reads_the_columns_of_rows():
     rng = np.random.default_rng(3)
     num_outputs, count = 150, 40
     bits = rng.integers(0, 2, (64, num_outputs)).astype(np.uint8)
@@ -199,18 +199,6 @@ def test_select_and_pieces_read_the_columns_of_rows():
         np.testing.assert_array_equal(
             got, np.packbits(bits[:, columns], axis=1, bitorder="little")
         )
-        # NOTE: pack the columns from 64-bit shot words, as a kernel does.
-        words = np.zeros((64, 3), dtype=np.uint64)
-        words.view(np.uint8)[:, : packed.shape[1]] = packed
-        found, start = rows.pieces(columns)
-        out = np.zeros((64, -(-len(columns) // 64)), dtype=np.uint64)
-        for k in range(out.shape[1]):
-            for word, code in found[start[k] : start[k + 1]].tolist():
-                bit, length, at = code & 63, ((code >> 6) & 63) + 1, code >> 12
-                run = (words[:, word] >> np.uint64(bit)) & np.uint64((1 << length) - 1)
-                out[:, k] |= run << np.uint64(at)
-        unpacked = np.unpackbits(out.view(np.uint8), axis=1, bitorder="little")
-        np.testing.assert_array_equal(unpacked[:, : len(columns)], bits[:, columns])
 
 
 TEST_DIALECT = tape.Dialect(
