@@ -171,6 +171,7 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
 
         name = instruction.name
         if name == "SHIFT_COORDS":
+
             # TODO: handle visualization annotations in ZX diagrams
             continue
 

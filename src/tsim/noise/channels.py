@@ -740,7 +740,8 @@ class ChannelSampler:
         num_blocks = -(-num_samples // _BLOCK_SHOTS)
         if len(seeds) != num_blocks:
             raise ValueError(
-                f"{num_samples} samples need {num_blocks} block seeds, got {len(seeds)}"
+                f"{num_samples} samples need {num_blocks} block seeds, "
+                f"got {len(seeds)}"
             )
         t = self._tables
         _sample_blocks(
@@ -772,7 +773,8 @@ class ChannelSampler:
         num_blocks = -(-num_samples // _BLOCK_SHOTS)
         if len(seeds) != num_blocks:
             raise ValueError(
-                f"{num_samples} samples need {num_blocks} block seeds, got {len(seeds)}"
+                f"{num_samples} samples need {num_blocks} block seeds, "
+                f"got {len(seeds)}"
             )
         if not (len(constant) == len(screen) == out.shape[1]):
             raise ValueError("constant and screen must cover every word of a row")
