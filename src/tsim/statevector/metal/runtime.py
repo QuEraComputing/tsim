@@ -73,9 +73,28 @@ def queue() -> Any:
     return device().newCommandQueue()
 
 
+LANE_PROBE_THREADS = (128, 256, 1024)
+"""Threadgroup sizes of the kernels, whose SIMD lanes the device check probes."""
+
+_PROBE = r"""
+#include <metal_stdlib>
+using namespace metal;
+kernel void lanes(device uint* out [[buffer(0)]], uint gid [[thread_position_in_grid]],
+    uint tid [[thread_position_in_threadgroup]], uint lane [[thread_index_in_simdgroup]],
+    uint group [[simdgroup_index_in_threadgroup]])
+{
+    out[gid] = tid | (lane << 12) | (group << 20);
+}
+"""
+
+
 @functools.cache
-def check_simd_width() -> None:
-    """Check that the device runs SIMD groups of 32 threads, as the kernels assume.
+def check_device() -> None:
+    """Check that the device runs SIMD groups of 32 threads, in order, as the kernels assume.
+
+    The kernels take a thread's lane and SIMD group from its index in its
+    threadgroup (``tid % 32`` and ``tid / 32``): a shot's threads exchange
+    amplitudes by lane, and the scans list shots in lane order.
 
     Raises:
         RuntimeError: If it does not (e.g. an Intel or AMD GPU).
@@ -83,15 +102,37 @@ def check_simd_width() -> None:
     """
     if not device().supportsFamily_(metal().MTLGPUFamilyApple7):
         raise RuntimeError("the Metal executor needs an Apple GPU (Apple silicon)")
-    probe = Library(
-        "#include <metal_stdlib>\nusing namespace metal;\n"
-        "kernel void probe(device uint* out [[buffer(0)]]) { out[0] = 0; }"
-    ).pipeline("probe")
+    probe = Library(_PROBE).pipeline("lanes")
     width = int(probe.threadExecutionWidth())
     if width != 32:
         raise RuntimeError(
             f"the Metal executor needs SIMD groups of 32 threads, not {width}"
         )
+    for threads in LANE_PROBE_THREADS:
+        out = buffer(4 * threads, np.uint32)
+        encoder = Encoder()
+        encoder.dispatch(probe, [out], 4, threads)
+        wait(encoder.commit())
+        if not lanes_in_order(out.array, threads):
+            raise RuntimeError(
+                "the Metal executor needs SIMD lanes in thread order, which this "
+                f"GPU does not keep in threadgroups of {threads} threads"
+            )
+
+
+def lanes_in_order(probed: np.ndarray, threads: int) -> bool:
+    """Return whether the ``lanes`` probe of threadgroups of ``threads`` found lanes in order.
+
+    ``probed[gid]`` holds the thread's index in its threadgroup (bits 0-11), its
+    lane (bits 12-19) and its SIMD group (bits 20-31).
+    """
+    probed = np.asarray(probed, np.uint32)
+    tid, lane, group = probed & 0xFFF, (probed >> 12) & 0xFF, probed >> 20
+    return bool(
+        np.all(tid == np.arange(len(probed)) % threads)
+        and np.all(lane == tid % 32)
+        and np.all(group == tid // 32)
+    )
 
 
 def available() -> bool:
@@ -105,7 +146,7 @@ def available() -> bool:
 @functools.cache
 def _device_available() -> bool:
     try:
-        check_simd_width()
+        check_device()
         return True
     except Exception:
         return False

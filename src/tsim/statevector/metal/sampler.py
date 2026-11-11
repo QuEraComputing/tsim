@@ -164,7 +164,7 @@ class MetalShotSampler:
             RuntimeError: If there is no Apple GPU.
 
         """
-        runtime.check_simd_width()
+        runtime.check_device()
         assert self.supports(host.layout)
         self._args = (host, channels, num_detectors, seed)
         # NOTE: a call's batches share the sampler's buffers, so calls from several
