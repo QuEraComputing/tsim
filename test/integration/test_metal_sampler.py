@@ -98,38 +98,49 @@ def _packed(sampler, shots, mask=None):
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_metal_detector_sampling_matches_stabilizer_rank(name):
+@pytest.mark.parametrize(
+    ("kind", "looping"),
+    [("detector", False), ("measurement", False), ("detector", True)],
+)
+def test_metal_sampling_matches_stabilizer_rank(monkeypatch, name, kind, looping):
+    if looping:
+        # NOTE: measurements, projections and pruning in looping tapes.
+        monkeypatch.setattr(tape, "UNROLL_BUDGET", 0)
     circuit = Circuit(CIRCUITS[name])
     shots = 40_000
-    expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
-        shots, batch_size=10_000, append_observables=True
-    )
-    got = _gpu(circuit.compile_detector_sampler(seed=2)).sample(
-        shots, append_observables=True
-    )
+    if kind == "detector":
+        expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
+            shots, batch_size=10_000, append_observables=True
+        )
+        got = _gpu(circuit.compile_detector_sampler(seed=2)).sample(
+            shots, append_observables=True
+        )
+    else:
+        expected = circuit.compile_sampler(strategy="cat5", seed=1).sample(
+            shots, batch_size=10_000
+        )
+        got = _gpu(circuit.compile_sampler(seed=2)).sample(shots)
     assert_counts_match(got, expected)
 
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_metal_measurement_sampling_matches_stabilizer_rank(name):
+@pytest.mark.parametrize("device_memory", [False, True])
+def test_metal_postselection_keeps_the_accepted_distribution(
+    monkeypatch, name, device_memory
+):
     circuit = Circuit(CIRCUITS[name])
-    shots = 40_000
-    expected = circuit.compile_sampler(strategy="cat5", seed=1).sample(
-        shots, batch_size=10_000
-    )
-    got = _gpu(circuit.compile_sampler(seed=2)).sample(shots)
-    assert_counts_match(got, expected)
-
-
-@pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_metal_postselection_keeps_the_accepted_distribution(name):
-    circuit = Circuit(CIRCUITS[name])
-    if circuit.num_detectors == 0:
+    if device_memory:
+        # NOTE: too little threadgroup memory for the rows: the noise kernel
+        # keeps them in device memory.
+        monkeypatch.setattr(metal_noise, "SHARED_BYTES", 2048 + 8)
+    elif circuit.num_detectors == 0:
         pytest.skip("no detectors to postselect")
     shots = 40_000
-    mask = np.ones(circuit.num_detectors, dtype=bool)
+    mask = np.ones(circuit.num_detectors, dtype=bool) if circuit.num_detectors else None
     expected = _accepted(_cpu(circuit.compile_detector_sampler, seed=1), shots, mask)
-    got = _accepted(_gpu(circuit.compile_detector_sampler(seed=2)), shots, mask)
+    sampler = _gpu(circuit.compile_detector_sampler(seed=2))
+    assert _gpu_shots(sampler)._noise.shared_words != device_memory
+    got = _accepted(sampler, shots, mask)
     rate, gpu_rate = len(expected) / shots, len(got) / shots
     sigma = np.sqrt(rate * (1 - rate) * 2 / shots)
     assert abs(gpu_rate - rate) <= 5 * sigma + 3 / shots
@@ -519,21 +530,6 @@ def test_metal_shots_start_after_the_common_prefix(width):
     _assert_matches_cpu(circuit, width)
 
 
-@pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_metal_looping_tapes_match_stabilizer_rank(monkeypatch, name):
-    # NOTE: measurements, projections and pruning in looping tapes.
-    monkeypatch.setattr(tape, "UNROLL_BUDGET", 0)
-    circuit = Circuit(CIRCUITS[name])
-    shots = 40_000
-    expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
-        shots, batch_size=10_000, append_observables=True
-    )
-    got = _gpu(circuit.compile_detector_sampler(seed=2)).sample(
-        shots, append_observables=True
-    )
-    assert_counts_match(got, expected)
-
-
 def test_components_wider_than_the_limit_run_on_the_cpu():
     circuit = _random_unitary_circuit(13, 12)
     assert _widest(circuit) > tape.MAX_WIDTH
@@ -614,24 +610,6 @@ def test_metal_samples_rows_too_wide_for_threadgroup_memory():
     np.testing.assert_allclose(got[:, :3200].mean(), 0.05, atol=5e-4)
     np.testing.assert_allclose(got[:, -1].mean(), 2 * 0.05 * 0.95, atol=0.01)
     np.testing.assert_array_equal(got[:, -1], got[:, -2] ^ got[:, -3])
-
-
-@pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_metal_noise_in_device_memory_matches_the_cpu(monkeypatch, name):
-    monkeypatch.setattr(metal_noise, "SHARED_BYTES", 2048 + 8)
-    circuit = Circuit(CIRCUITS[name])
-    shots = 40_000
-    mask = np.ones(circuit.num_detectors, dtype=bool) if circuit.num_detectors else None
-    expected = _accepted(_cpu(circuit.compile_detector_sampler, seed=1), shots, mask)
-    sampler = _gpu(circuit.compile_detector_sampler(seed=2))
-    assert not _gpu_shots(sampler)._noise.shared_words
-    got = _accepted(sampler, shots, mask)
-    rate, gpu_rate = len(expected) / shots, len(got) / shots
-    assert (
-        abs(gpu_rate - rate) <= 5 * np.sqrt(rate * (1 - rate) * 2 / shots) + 3 / shots
-    )
-    if len(got) and len(expected):
-        assert_counts_match(got, expected)
 
 
 def test_metal_unrolled_width_11_tapes_match_the_cpu_executor():
@@ -721,8 +699,13 @@ kernel void zeros(constant float& w0 [[buffer(0)]], constant ulong& n [[buffer(1
     assert abs(int(count.array[0]) - expected) <= 5 * np.sqrt(expected) + 1
 
 
-def test_calls_out_of_gpu_memory_fall_back_to_the_cpu(monkeypatch):
-    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+@pytest.mark.parametrize(
+    "text",
+    # NOTE: a quantum component (``sample``) and direct outputs only (``direct_bools``).
+    [GHZ_WITH_DIRECT_DETECTOR, "R 0\nX_ERROR(0.1) 0\nM 0\nDETECTOR rec[-1]"],
+)
+def test_calls_out_of_gpu_memory_fall_back_to_the_cpu(monkeypatch, text):
+    circuit = Circuit(text)
     sampler = _gpu(circuit.compile_detector_sampler(seed=1))
 
     def out_of_memory(*args, **kwargs):
@@ -894,19 +877,6 @@ def test_noise_beyond_the_gpu_tables_samples_on_the_cpu():
         sampler = Circuit(text).compile_detector_sampler(seed=1)
     assert type(sampler._shots) is ShotSampler
     assert sampler.sample(10).shape == (10, 9)
-
-
-def test_direct_outputs_out_of_gpu_memory_fall_back_to_the_cpu(monkeypatch):
-    circuit = Circuit("R 0\nX_ERROR(0.1) 0\nM 0\nDETECTOR rec[-1]")
-    sampler = _gpu(circuit.compile_detector_sampler(seed=1))
-
-    def out_of_memory(*args, **kwargs):
-        raise MemoryError("the GPU ran out of memory")
-
-    monkeypatch.setattr(_gpu_shots(sampler), "sample_accepted", out_of_memory)
-    with pytest.warns(UserWarning, match="out of memory; sampling on the CPU"):
-        rows = sampler.sample(20_000)
-    assert rows.shape == (20_000, 1) and abs(rows.mean() - 0.1) < 0.01
 
 
 def test_calls_larger_than_the_counters_run_in_parts(monkeypatch):
