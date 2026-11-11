@@ -191,8 +191,8 @@ yourself.
   Tsim processes side by side; they oversubscribe the CPU.
 - **Apple GPUs:** on an Apple-silicon Mac the default strategy samples on the GPU when every
   component has at most 11 active qubits, often 5 to 10 times faster than all CPU cores. It
-  computes outcome probabilities in float32; set `TSIM_DEVICE=cpu` before compiling to stay on
-  the CPU, in double precision. The sampler's repr says where it samples (`samples on metal`).
+  computes outcome probabilities in float32 and never draws an outcome below about 1e-11; set
+  `TSIM_DEVICE=cpu` before compiling to stay on the CPU, in double precision. The sampler's repr says where it samples (`samples on metal`).
 - **Seeds:** a `seed` reproduces samples for the same Tsim and dependency versions and
   backend. On the CPU, thread count and `batch_size` do not affect the samples; on a GPU,
   `batch_size` does.
