@@ -37,11 +37,24 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from tsim.statevector.program import MEASURE_DORMANT, ROTATE, ROTATE_DIAG
-from tsim.statevector.shared import LaneProgram, common_prefix
+from tsim.statevector.shared import LaneProgram, common_prefix, pack_bits
+
+if TYPE_CHECKING:
+    from tsim.statevector.shots import ShotLayout, ShotPlan
+
+MAX_WIDTH = 11
+"""Widest component the GPU executors run: 32 threads of 64 amplitudes."""
+
+AMPLITUDE_AXES = 5
+"""Log2 of the amplitudes per thread from which a shot takes more threads."""
+
+DEVIATION_TOLERANCE = 1e-3
+"""Normalization deviation that float32 amplitudes tolerate without a warning."""
 
 TINY = 1e-30
 
@@ -127,6 +140,102 @@ class Dialect:
         """Return the parity of ``sym & row``, or ``0``."""
         terms = [f"(sym[{w}] & {self.hex64(m)})" for w, m in enumerate(row) if int(m)]
         return f"par({' ^ '.join(terms)})" if terms else "0"
+
+
+def supports(layout: ShotLayout) -> bool:
+    """Return whether a GPU executor runs ``layout``.
+
+    It needs shot words and components of at most ``MAX_WIDTH`` qubits. A layout without shot words (no outputs and no noise) stays on the CPU.
+    """
+    return layout.num_words > 0 and all(c.width <= MAX_WIDTH for c in layout.components)
+
+
+def threads_per_shot(layout: ShotLayout) -> int:
+    """Return log2 of a shot's threads: one per ``2^AMPLITUDE_AXES`` amplitudes, at most 32."""
+    width = max((c.width for c in layout.components), default=0)
+    return min(5, max(0, width - AMPLITUDE_AXES))
+
+
+def deviation(bits) -> float:
+    """Return the normalization deviation of a call (the bits of a float32), or 0.
+
+    It is 0 within ``DEVIATION_TOLERANCE``; a NaN stays NaN, which must warn.
+    """
+    value = float(np.asarray(bits, np.uint32).reshape(1).view(np.float32)[0])
+    return 0.0 if value <= DEVIATION_TOLERANCE else value
+
+
+@dataclass(frozen=True)
+class TapeKernel:
+    """The parts of a backend's tape kernel that a plan fills in.
+
+    Attributes:
+        functions: Every component's tape function, ``component_<i>``.
+        seeds: The components' streams ``seed_<i>``, from the call's ``seed``.
+        calls: The calls of the tape functions, each lowering ``grave``.
+        stores: The stores of the words that the tapes write, ``row[k] = w[k]``.
+        hits: The postselected bits among those words, OR-ed (``0`` if none).
+        psm_words: The postselection mask, as output words.
+
+    """
+
+    functions: str
+    seeds: str
+    calls: str
+    stores: str
+    hits: str
+    psm_words: np.ndarray
+
+
+def tape_kernel(
+    layout: ShotLayout,
+    plan: ShotPlan,
+    mask: np.ndarray | None,
+    num_detectors: int,
+    tb: int,
+    dialect: Dialect,
+) -> TapeKernel:
+    """Return the tape kernel's parts for ``plan`` of postselection ``mask``.
+
+    The outputs from ``num_detectors`` on are observables, whose expectations
+    the tapes return in that order.
+    """
+    functions = []
+    for i, (program, component) in enumerate(
+        zip(plan.programs, layout.components, strict=True)
+    ):
+        observables = {
+            o: index - num_detectors
+            for o, index in enumerate(component.output_indices)
+            if index >= num_detectors
+        }
+        functions.append(tape_function(program, i, tb, observables, dialect))
+    lanes = "t, gmask" if dialect.lane_mask else "t"
+    count = len(plan.programs)
+    bits = np.zeros(64 * layout.output_words, dtype=bool)
+    if mask is not None:
+        bits[: len(mask)] = mask
+    psm_words = pack_bits(bits, layout.output_words)
+    # NOTE: the tapes write only their outputs' words, and test the postselected
+    # outputs among them.
+    written = sorted({int(w) for p in plan.programs for w in p.out_words})
+    hits = [
+        f"(w[{w}] & {dialect.hex64(psm_words[w])})" for w in written if psm_words[w]
+    ]
+    return TapeKernel(
+        functions="\n\n".join(functions),
+        seeds="\n".join(
+            f"    const u64 seed_{i} = mix64(seed + {i + 1}{dialect.u64} * GOLDEN);"
+            for i in range(count)
+        ),
+        calls="\n".join(
+            f"    grave = min(grave, component_{i}(w, shot, seed_{i}, {lanes}, ev, deviation));"
+            for i in range(count)
+        ),
+        stores="\n".join(f"        row[{w}] = w[{w}];" for w in written),
+        hits=" | ".join(hits) or "0",
+        psm_words=psm_words,
+    )
 
 
 def f32(value: float) -> str:

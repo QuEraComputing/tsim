@@ -326,3 +326,34 @@ def test_tiny_probability_segments_take_the_kernels_fine_path(p, qubits):
     expected = (end - begin).astype(np.float32) * -log_keep
     assert (expected[tiny] < 2.0**-12).all()
     assert (end - begin).sum() == tables.block_shots * qubits
+
+
+def test_tape_kernel_fills_in_every_component():
+    text = CIRCUITS["two_components"]
+    host, _ = _shots(text)
+    layout = host.layout
+    num_detectors = Circuit(text).num_detectors
+    mask = np.ones(num_detectors, bool)
+    plan = host.plan(mask)
+    tb = tape.threads_per_shot(layout)
+    kernel = tape.tape_kernel(layout, plan, mask, num_detectors, tb, TEST_DIALECT)
+    count = len(plan.programs)
+    assert count == len(layout.components) > 1
+    assert kernel.calls.count("grave = min(grave, component_") == count
+    assert kernel.seeds.count("const u64 seed_") == count
+    assert all(f"component_{i}(" in kernel.functions for i in range(count))
+    assert kernel.hits != "0" and kernel.psm_words.any()
+    unmasked = tape.tape_kernel(
+        layout, host.plan(None), None, num_detectors, tb, TEST_DIALECT
+    )
+    assert unmasked.hits == "0" and not unmasked.psm_words.any()
+    assert tape.supports(layout)
+
+
+def test_deviation_reports_only_what_float32_rounding_does_not_explain():
+    def bits(value):
+        return np.float32(value).view(np.uint32)
+
+    assert tape.deviation(bits(1e-4)) == 0.0
+    assert tape.deviation(bits(0.01)) == pytest.approx(0.01)
+    assert np.isnan(tape.deviation(np.uint32(0x7FC00000)))
