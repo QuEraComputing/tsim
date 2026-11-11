@@ -6,3 +6,9 @@ noise kernels read (``noise``), the tape generator, which writes a component's
 tape in any of their languages (``tape``), and the selection of outputs from
 the rows that the kernels return (``rows``).
 """
+
+FORKED = (
+    "This process was forked after its parent used the GPU, so it samples on the "
+    "CPU; start it with the 'spawn' or 'forkserver' method to sample on the GPU."
+)
+"""The warning of a GPU sampler in a process forked after its parent used the GPU."""
