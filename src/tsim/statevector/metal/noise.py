@@ -68,7 +68,7 @@ NOISE_SHARED = _NOISE_SIGNATURE + r"""{{
     if (tid == 0) atomic_store_explicit(&num_events, 0, memory_order_relaxed);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     Segments seg = {{seg_first, seg_outcomes, seg_begin, seg_end, seg_log_keep}};
-    add_faults<threadgroup u64*, {S}, 1, false>(sw, events, &num_events, args.max_events, ns, args.seed ^ ((u64)bid * 0xD1B54A32D192ED03UL),
+    add_faults<threadgroup u64*, {S}, 1, false>(sw, events, &num_events, args.max_events, ns, block_stream(args.seed, bid),
                args.num_segments, seg, records, overflow, tid, nt);
     // NOTE: the screen reads the words in parallel, a thread per word and shot (a
     // shot's threads only ever clear its flag); the constants go into the rows.
@@ -104,7 +104,7 @@ NOISE_DEVICE = _NOISE_SIGNATURE + r"""{{
     threadgroup_barrier(mem_flags::mem_device | mem_flags::mem_threadgroup);
     Segments seg = {{seg_first, seg_outcomes, seg_begin, seg_end, seg_log_keep}};
     add_faults<device u64*, 1, {NW}, true>(rows, events, &num_events, args.max_events, ns,
-               args.seed ^ ((u64)bid * 0xD1B54A32D192ED03UL), args.num_segments, seg, records,
+               block_stream(args.seed, bid), args.num_segments, seg, records,
                overflow, tid, nt);
     // NOTE: as in the kernel above, the screen reads the words in parallel.
     for (uint s = tid; s < {S}; s += nt) passed[s] = (int)s < ns;
@@ -157,7 +157,7 @@ kernel void noise_kept(
     threadgroup_barrier(mem_flags::mem_threadgroup);
     Segments seg = {{seg_first, seg_outcomes, seg_begin, seg_end, seg_log_keep}};
     add_faults<threadgroup u64*, {S}, 1, false>(sw, events, &num_events, args.max_events, ns,
-               args.seed ^ ((u64)bid * 0xD1B54A32D192ED03UL), args.num_segments, seg, records,
+               block_stream(args.seed, bid), args.num_segments, seg, records,
                overflow, tid, nt);
     pack_rows(sw, ns, (threadgroup uchar*)events, dst, ((long)*cursor + base) * {NB}, tid, nt);
 }}
@@ -236,6 +236,13 @@ inline void pack_rows(threadgroup const u64* sw, int ns, threadgroup uchar* stag
         }}
     }}
     for (int i = head + body * 16 + tid; i < total; i += nt) d[i] = stage[i];
+}}
+
+// The stream of block ``bid``. NOTE: hashed, so that a segment's stream
+// ``mix64(stream ^ sg * GOLDEN)`` cannot equal another block's: with ``seed ^ bid * C``
+// alone, two (block, segment) pairs with equal XORs would share their draws.
+inline u64 block_stream(u64 seed, uint bid) {{
+    return mix64(seed ^ ((u64)bid * 0xD1B54A32D192ED03UL));
 }}
 
 struct Segments {{
