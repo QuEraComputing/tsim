@@ -60,7 +60,7 @@ samples (`samples on metal` or `samples on cpu`), and so does `sampler.stats.dev
 The GPU computes outcome probabilities in float32, so a sample follows the CPU's distribution
 to within float32 rounding. Float32 cannot tell a measurement outcome of probability below
 about 1e-11 from rounding error, so the GPU never draws one; a circuit with a rotation small
-enough to make such an outcome (an `R_Z` or `R_X` by less than about 1e-4 π) samples on the
+enough to make such an outcome (an `R_Z` or `R_X` by less than about 6e-5 π) samples on the
 CPU (or raises, with `device="metal"`).
 
 A seed's samples on the GPU differ from the CPU's and depend on `batch_size`, so with

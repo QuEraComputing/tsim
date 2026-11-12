@@ -187,8 +187,14 @@ class MetalShotSampler:
 
     @property
     def device(self) -> str:
-        """Return where this sampler samples (``SamplerStats.device``)."""
-        return "cpu" if self._cpu_only else "metal"
+        """Return where this sampler samples (``SamplerStats.device``).
+
+        It is ``"cpu"`` after a kernel failed to compile, and in a process forked
+        after its parent used the GPU, where every call samples on the CPU.
+        """
+        if self._cpu_only or runtime.forked_after_init():
+            return "cpu"
+        return "metal"
 
     def __reduce__(self):
         """Pickle the CPU sampler and the inputs; the GPU state is rebuilt on load."""

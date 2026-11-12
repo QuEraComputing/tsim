@@ -358,7 +358,7 @@ class _CompiledSamplerBase:
                 CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
                 samples on an Apple GPU or raises: without one, for a component
                 of more than 11 active qubits, a rotation by less than about
-                1e-4 π, noise beyond the GPU's tables, or a call that runs out
+                6e-5 π, noise beyond the GPU's tables, or a call that runs out
                 of GPU memory. The stabilizer rank strategies take only "auto".
 
         Raises:
@@ -772,8 +772,9 @@ class _CompiledSamplerBase:
         - ``device`` (``str``): where ``"active_statevector"`` samples:
           ``"metal"`` on an Apple GPU, else ``"cpu"`` (a stabilizer-rank
           strategy runs wherever JAX does). With ``device="auto"`` it is where
-          the samplers ended up; a sampler whose GPU kernel fails to compile
-          moves to ``"cpu"``.
+          the sampler ended up: ``"cpu"`` after its GPU kernel failed to
+          compile or in a process forked after its parent used the GPU. A call
+          that runs out of GPU memory samples on the CPU without changing it.
         """
         components = self._program.components
         widths: tuple[int, ...] | None = None
@@ -916,7 +917,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
                 CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
                 samples on an Apple GPU or raises: without one, for a component
                 of more than 11 active qubits, a rotation by less than about
-                1e-4 π, noise beyond the GPU's tables, or a call that runs out
+                6e-5 π, noise beyond the GPU's tables, or a call that runs out
                 of GPU memory. The stabilizer rank strategies take only "auto".
 
         Raises:
@@ -1035,7 +1036,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
                 samples on an Apple GPU or raises: without one, for a component
                 of more than 11 active qubits, a rotation by less than about
-                1e-4 π, noise beyond the GPU's tables, or a call that runs out
+                6e-5 π, noise beyond the GPU's tables, or a call that runs out
                 of GPU memory. The stabilizer rank strategies take only "auto".
 
         Raises:

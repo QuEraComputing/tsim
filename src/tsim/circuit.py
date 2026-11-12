@@ -972,7 +972,7 @@ class Circuit:
                 CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
                 samples on an Apple GPU or raises: without one, for a component
                 of more than 11 active qubits, a rotation by less than about
-                1e-4 π, noise beyond the GPU's tables, or a call that runs out
+                6e-5 π, noise beyond the GPU's tables, or a call that runs out
                 of GPU memory. The stabilizer rank strategies take only "auto".
 
         Returns:
@@ -1027,7 +1027,7 @@ class Circuit:
                 CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
                 samples on an Apple GPU or raises: without one, for a component
                 of more than 11 active qubits, a rotation by less than about
-                1e-4 π, noise beyond the GPU's tables, or a call that runs out
+                6e-5 π, noise beyond the GPU's tables, or a call that runs out
                 of GPU memory. The stabilizer rank strategies take only "auto".
 
         Returns:

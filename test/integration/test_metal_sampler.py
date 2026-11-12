@@ -665,6 +665,7 @@ def _sampler_in_child(_):
         warnings.simplefilter("always")
         sampler = Circuit(T_STATE_X).compile_sampler(seed=1)
         sampler.sample(10)
+        assert sampler.stats.device == "cpu"
     try:
         Circuit(T_STATE_X).compile_sampler(seed=1, device="metal")
         error = ""
@@ -940,16 +941,24 @@ def _sample_in_child(_):
         warnings.simplefilter("always")
         assert SAMPLER_BEFORE_FORK is not None
         rows = SAMPLER_BEFORE_FORK.sample(100)
-    return rows.shape, [str(w.message) for w in caught]
+    return (
+        rows.shape,
+        [str(w.message) for w in caught],
+        SAMPLER_BEFORE_FORK.stats.device,
+    )
 
 
 def test_samplers_compiled_before_a_fork_sample_on_the_cpu_in_the_child():
     global SAMPLER_BEFORE_FORK
     SAMPLER_BEFORE_FORK = _gpu(Circuit(T_STATE_X).compile_detector_sampler(seed=1))
     with multiprocessing.get_context("fork").Pool(1) as pool:
-        shape, messages = pool.map_async(_sample_in_child, [0]).get(timeout=60)[0]
+        shape, messages, device = pool.map_async(_sample_in_child, [0]).get(timeout=60)[
+            0
+        ]
     assert shape == (100, 0)
     assert messages == []
+    assert device == "cpu"
+    assert SAMPLER_BEFORE_FORK.stats.device == "metal"
 
 
 def test_gpu_samplers_pickle_and_continue_their_streams():

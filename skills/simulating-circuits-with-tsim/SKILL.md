@@ -177,12 +177,12 @@ yourself.
 - **Shots per call:** each `sample()` call has a fixed overhead. For fast circuits, ask for
   about 10^6 or more shots per call, limited by memory, instead of looping over small calls.
   Calls of 10^5 shots have been measured 2 to 4 times slower than calls of 10^7, and 100-shot
-  calls about 80 times slower. On a GPU the fixed cost per call is larger (the call waits for
-  the GPU and copies its rows back), so ask for 10^6 to 10^7 shots per call there.
+  calls about 80 times slower. On a GPU the fixed cost per call is larger (setting up the
+  launches and waiting for the GPU to finish), so ask for 10^6 to 10^7 shots per call there.
 - **`batch_size`:** leave it at the default, which is sized from free memory and is close to
   optimal. Small values (a few thousand or less) are several times slower. Lower it only to
-  cap memory; on the CPU it does not change the samples. On a GPU the default batch is 2^20
-  shots, one GPU launch, all launched back to back; `batch_size` can only lower it, a small
+  cap memory; on the CPU it does not change the samples. On a GPU the default batch is up to 2^20
+  shots (fewer for very wide rows), one GPU launch, all launched back to back; `batch_size` can only lower it, a small
   one makes launch overhead dominate, and it changes which samples a seed gives.
 - **`bit_packed=True`** returns little-endian packed `uint8` rows, as in Stim, using 8 times
   less memory. On a distance-11 surface code memory (1,320 detectors) it was twice as fast as
@@ -201,7 +201,7 @@ yourself.
   includes Clifford circuits, whose detectors come from the noise alone: the GPU samples the
   noise too. It
   computes outcome probabilities in float32 and never draws an outcome below about 1e-11
-  (circuits with rotations by less than about 1e-4 π stay on the CPU). Thread settings do not
+  (circuits with rotations by less than about 6e-5 π stay on the CPU). Thread settings do not
   affect GPU sampling.
 - **`device`** (in `compile_sampler` and `compile_detector_sampler`) chooses where it samples:
   `"auto"` (default) uses the GPU when it can and otherwise the CPU, silently; `"cpu"` stays
@@ -210,7 +210,8 @@ yourself.
   `sampler.stats.device` (or the repr, `samples on metal`) after compiling, since `"auto"`
   does not warn. Pass `device="metal"` for long runs that must not drop to the CPU unnoticed,
   and `device="cpu"` to reproduce samples across machines or to compare against the GPU.
-  `TSIM_DEVICE=cpu` in the environment keeps `"auto"` on the CPU.
+  `TSIM_DEVICE=cpu` in the environment keeps `"auto"` on the CPU; it is read when a sampler
+  is compiled, so an unpickled sampler keeps the device choice it was compiled with.
 - **Processes:** sample from one process per GPU. Threads sharing a GPU sampler run its calls
   one at a time, and several processes compete for the same GPU. A process forked after its parent used the GPU cannot use
   it (it samples on the CPU, or raises with `device="metal"`); start workers with the
