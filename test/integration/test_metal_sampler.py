@@ -246,6 +246,12 @@ def test_metal_samples_no_shots():
     sampler = _gpu(circuit.compile_detector_sampler(seed=1))
     assert sampler.sample(0, append_observables=True).shape == (0, 4)
     assert sampler.sample(0, bit_packed=True).shape == (0, 1)
+    for bit_packed in (False, True):
+        detectors, observables = sampler.sample(
+            0, separate_observables=True, bit_packed=bit_packed
+        )
+        assert detectors.shape == (0, 3 if not bit_packed else 1)
+        assert observables.shape == (0, 1)
 
 
 # NOTE: 150 noisy detectors, so the rows span three words, and two observables.
@@ -835,6 +841,56 @@ def test_tsim_device_cpu_keeps_the_samplers_on_the_cpu(monkeypatch):
     _gpu(Circuit(T_STATE_X).compile_sampler(seed=1))
     sampler = Circuit(T_STATE_X).compile_sampler(seed=1, device="cpu")
     assert type(sampler._shots) is ShotSampler
+
+
+@pytest.mark.parametrize(
+    ("detectors", "observables"), [(20, 1), (21, 3), (7, 9), (16, 8), (130, 5)]
+)
+def test_metal_selects_every_layout_of_columns(detectors, observables):
+    # NOTE: the observables start inside a byte (20, 21, 7, 130), end inside one
+    # (21, 7, 130) or span two bytes (7). Samplers of one seed draw the same
+    # shots; the reference is every output as booleans, in order.
+    n = detectors + observables
+    lines = [f"X_ERROR(0.3) {' '.join(map(str, range(n)))}", "H 0", "T 0", "H 0"]
+    lines.append(f"M {' '.join(map(str, range(n)))}")
+    lines += [f"DETECTOR rec[-{n - i}]" for i in range(detectors)]
+    lines += [
+        f"OBSERVABLE_INCLUDE({j}) rec[-{observables - j}]" for j in range(observables)
+    ]
+    circuit = Circuit("\n".join(lines))
+    mask = np.zeros(detectors, dtype=bool)
+    mask[0] = True
+    for postselection_mask in (None, mask):
+
+        def sample(layout, bit_packed=False, postselection_mask=postselection_mask):
+            sampler = _gpu(circuit.compile_detector_sampler(seed=25))
+            return sampler.sample(
+                20_000,
+                separate_observables=layout == "separate",
+                prepend_observables=layout == "prepend",
+                append_observables=layout == "append",
+                bit_packed=bit_packed,
+                postselection_mask=postselection_mask,
+            )
+
+        every = sample("append")
+        assert isinstance(every, np.ndarray)
+        found, events = every[:, :detectors], every[:, detectors:]
+        layouts = {
+            "separate": (found, events),
+            "prepend": (np.hstack([events, found]),),
+            "detectors": (found,),
+        }
+        for layout, expected in layouts.items():
+            for bit_packed in (True, False):
+                got = sample(layout, bit_packed)
+                got = got if isinstance(got, tuple) else (got,)
+                for array, bools in zip(got, expected, strict=True):
+                    if bit_packed:
+                        bools = np.packbits(bools, axis=1, bitorder="little")
+                    else:
+                        assert array.dtype == np.bool_ and array.flags.c_contiguous
+                    np.testing.assert_array_equal(array, bools)
 
 
 @pytest.mark.parametrize("text", [GHZ_WITH_DIRECT_DETECTOR, NOISY_DETECTORS])

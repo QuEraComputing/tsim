@@ -51,6 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in `CS 0 0`, raise an error naming the gate instead of its decomposition.
 
 ### Changed
+- On an Apple GPU, detector samples that return a subset or reordering of the
+  outputs (`separate_observables=True`, `prepend_observables=True`, or detectors
+  only) select their columns on the GPU instead of on the host, bit-packed or as
+  booleans. On an M4 Pro, distance-3 cultivation postselected on every detector
+  samples 1.1 to 1.5 billion shots per second in every layout, instead of 0.06 to
+  0.14; end-to-end cultivation d=5 samples 156 to 291 million instead of 1 to 3
+  million with booleans or prepended observables.
 - `strategy="active_statevector"` may run a component's measurements later
   where that frees no axis that a later rotation reuses and leaves more of the
   tape before its first shot-dependent action, which a GPU backend runs once for
