@@ -75,10 +75,8 @@ def _gpu_shots(sampler) -> MetalShotSampler:
 
 
 def _cpu(compile, **kwargs):
-    """Return ``compile(**kwargs)``, a sampler compiled as on a host without a GPU."""
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(runtime, "available", lambda: False)
-        sampler = compile(**kwargs)
+    """Return ``compile(**kwargs)``, a sampler on the CPU."""
+    sampler = compile(device="cpu", **kwargs)
     assert sampler._shots is None or type(sampler._shots) is ShotSampler
     return sampler
 
@@ -548,9 +546,12 @@ def test_metal_shots_start_after_the_common_prefix(width):
 def test_components_wider_than_the_limit_run_on_the_cpu():
     circuit = _random_unitary_circuit(13, 12)
     assert _widest(circuit) > tape.MAX_WIDTH
-    with pytest.warns(UserWarning, match="sampling on the CPU"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         sampler = circuit.compile_sampler(seed=1)
     assert type(sampler._shots) is ShotSampler
+    with pytest.raises(ValueError, match="more than the 11 that the GPU executor"):
+        circuit.compile_sampler(seed=1, device="metal")
 
 
 @pytest.mark.parametrize(("probability", "shots"), [(2e-8, 1 << 30), (1e-6, 1 << 26)])
@@ -653,9 +654,10 @@ def test_metal_returned_rows_are_not_reused_while_alive():
 
 def test_metal_leaves_programs_without_shot_words_on_the_cpu():
     circuit = Circuit("R 0\nH 0\nT 0\nH 0\nM 0")
-    sampler = circuit.compile_detector_sampler(seed=1)
-    assert type(sampler._shots) is ShotSampler
-    assert sampler.sample(10).shape == (10, 0)
+    for device in ("auto", "metal"):
+        sampler = circuit.compile_detector_sampler(seed=1, device=device)
+        assert type(sampler._shots) is ShotSampler
+        assert sampler.sample(10).shape == (10, 0)
 
 
 def _sampler_in_child(_):
@@ -663,16 +665,23 @@ def _sampler_in_child(_):
         warnings.simplefilter("always")
         sampler = Circuit(T_STATE_X).compile_sampler(seed=1)
         sampler.sample(10)
-    return type(sampler._shots).__name__, [str(w.message) for w in caught]
+        assert sampler.stats.device == "cpu"
+    try:
+        Circuit(T_STATE_X).compile_sampler(seed=1, device="metal")
+        error = ""
+    except RuntimeError as raised:
+        error = str(raised)
+    return type(sampler._shots).__name__, [str(w.message) for w in caught], error
 
 
 def test_processes_forked_after_the_gpu_was_used_sample_on_the_cpu():
     # NOTE: Metal's device does not survive a fork of a process that used it.
     _gpu(Circuit(T_STATE_X).compile_sampler(seed=1)).sample(10)
     with multiprocessing.get_context("fork").Pool(1) as pool:
-        name, messages = pool.map(_sampler_in_child, [0])[0]
+        name, messages, error = pool.map(_sampler_in_child, [0])[0]
     assert name == "ShotSampler"
-    assert any("forked" in m for m in messages)
+    assert messages == []
+    assert "forked" in error
 
 
 def test_a_kernel_that_does_not_compile_samples_on_the_cpu(monkeypatch):
@@ -685,15 +694,17 @@ def test_a_kernel_that_does_not_compile_samples_on_the_cpu(monkeypatch):
         return "kernel void tape("
 
     monkeypatch.setattr(kernels, "source", broken)
-    with pytest.warns(UserWarning, match="Metal compilation failed"):
-        got = sampler.sample(20_000)
-    assert sampler.stats.device == "cpu"
     with warnings.catch_warnings():
         warnings.simplefilter("error")
+        got = sampler.sample(20_000)
+        assert sampler.stats.device == "cpu"
         got = np.concatenate([got, sampler.sample(20_000)])
     assert len(compiled) == 1
     expected = _cpu(circuit.compile_sampler, seed=2).sample(40_000)
     assert_counts_match(got, expected)
+    required = _gpu(circuit.compile_sampler(seed=3, device="metal"))
+    with pytest.raises(runtime.CompileError):
+        required.sample(10)
 
 
 def test_noise_of_tiny_probabilities_fires_at_its_rate():
@@ -740,9 +751,12 @@ def test_rare_outcome_of_a_channel_is_drawn_at_its_rate():
 
 def test_rotation_with_a_branch_float32_cannot_resolve_samples_on_the_cpu():
     circuit = Circuit("R 0\nH 0\nR_Z(1e-5) 0\nH 0\nM 0\nDETECTOR rec[-1]")
-    with pytest.warns(UserWarning, match="rotation has a branch of weight 2.5e-10"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         sampler = circuit.compile_detector_sampler(seed=1)
     assert sampler.stats.device == "cpu"
+    with pytest.raises(ValueError, match=r"rotation has a branch of weight 2\.5e-10"):
+        circuit.compile_detector_sampler(seed=1, device="metal")
 
 
 @pytest.mark.parametrize("p0", [3e-8, 1e-6])
@@ -783,12 +797,17 @@ def test_calls_out_of_gpu_memory_fall_back_to_the_cpu(monkeypatch, text):
         raise MemoryError("the GPU ran out of memory")
 
     monkeypatch.setattr(_gpu_shots(sampler), "sample_accepted", out_of_memory)
-    with pytest.warns(UserWarning, match="out of memory; sampling on the CPU"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         got = sampler.sample(20_000, append_observables=True)
     expected = _cpu(circuit.compile_detector_sampler, seed=2).sample(
         20_000, append_observables=True
     )
     assert_counts_match(got, expected)
+    required = _gpu(circuit.compile_detector_sampler(seed=3, device="metal"))
+    monkeypatch.setattr(_gpu_shots(required), "sample_accepted", out_of_memory)
+    with pytest.raises(MemoryError, match="the GPU ran out of memory"):
+        required.sample(10, append_observables=True)
 
 
 def test_samplers_out_of_gpu_memory_at_setup_run_on_the_cpu(monkeypatch):
@@ -796,9 +815,12 @@ def test_samplers_out_of_gpu_memory_at_setup_run_on_the_cpu(monkeypatch):
         raise MemoryError("no Metal buffer")
 
     monkeypatch.setattr(MetalShotSampler, "__init__", out_of_memory)
-    with pytest.warns(UserWarning, match="out of memory; sampling on the CPU"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         sampler = Circuit(T_STATE_X).compile_sampler(seed=1)
     assert type(sampler._shots) is ShotSampler
+    with pytest.raises(MemoryError, match="no Metal buffer"):
+        Circuit(T_STATE_X).compile_sampler(seed=1, device="metal")
 
 
 def test_tsim_device_cpu_keeps_the_samplers_on_the_cpu(monkeypatch):
@@ -807,8 +829,12 @@ def test_tsim_device_cpu_keeps_the_samplers_on_the_cpu(monkeypatch):
         warnings.simplefilter("error")
         sampler = Circuit(T_STATE_X).compile_sampler(seed=1)
     assert type(sampler._shots) is ShotSampler
+    # NOTE: an explicit device overrides TSIM_DEVICE.
+    _gpu(Circuit(T_STATE_X).compile_sampler(seed=1, device="metal"))
     monkeypatch.setenv("TSIM_DEVICE", "")
     _gpu(Circuit(T_STATE_X).compile_sampler(seed=1))
+    sampler = Circuit(T_STATE_X).compile_sampler(seed=1, device="cpu")
+    assert type(sampler._shots) is ShotSampler
 
 
 @pytest.mark.parametrize("text", [GHZ_WITH_DIRECT_DETECTOR, NOISY_DETECTORS])
@@ -915,16 +941,24 @@ def _sample_in_child(_):
         warnings.simplefilter("always")
         assert SAMPLER_BEFORE_FORK is not None
         rows = SAMPLER_BEFORE_FORK.sample(100)
-    return rows.shape, [str(w.message) for w in caught]
+    return (
+        rows.shape,
+        [str(w.message) for w in caught],
+        SAMPLER_BEFORE_FORK.stats.device,
+    )
 
 
 def test_samplers_compiled_before_a_fork_sample_on_the_cpu_in_the_child():
     global SAMPLER_BEFORE_FORK
     SAMPLER_BEFORE_FORK = _gpu(Circuit(T_STATE_X).compile_detector_sampler(seed=1))
     with multiprocessing.get_context("fork").Pool(1) as pool:
-        shape, messages = pool.map_async(_sample_in_child, [0]).get(timeout=60)[0]
+        shape, messages, device = pool.map_async(_sample_in_child, [0]).get(timeout=60)[
+            0
+        ]
     assert shape == (100, 0)
-    assert any("forked" in m for m in messages)
+    assert messages == []
+    assert device == "cpu"
+    assert SAMPLER_BEFORE_FORK.stats.device == "metal"
 
 
 def test_gpu_samplers_pickle_and_continue_their_streams():
@@ -934,6 +968,8 @@ def test_gpu_samplers_pickle_and_continue_their_streams():
     loaded = pickle.loads(pickle.dumps(sampler))  # noqa: S301
     assert isinstance(loaded._shots, MetalShotSampler)
     np.testing.assert_array_equal(loaded.sample(5000), sampler.sample(5000))
+    required = circuit.compile_detector_sampler(seed=26, device="metal")
+    assert _gpu_shots(pickle.loads(pickle.dumps(required)))._required  # noqa: S301
 
 
 def test_noise_beyond_the_gpu_tables_samples_on_the_cpu():
@@ -944,10 +980,13 @@ def test_noise_beyond_the_gpu_tables_samples_on_the_cpu():
         ["R 0 1 2 3 4 5 6 7 8", "H 8", "T 8", "H 8", *chain, "M 0 1 2 3 4 5 6 7 8"]
         + [f"DETECTOR rec[{k - 9}]" for k in range(9)]
     )
-    with pytest.warns(UserWarning, match="cannot sample this circuit"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         sampler = Circuit(text).compile_detector_sampler(seed=1)
     assert type(sampler._shots) is ShotSampler
     assert sampler.sample(10).shape == (10, 9)
+    with pytest.raises(ValueError, match="channels of up to 127 outcomes"):
+        Circuit(text).compile_detector_sampler(seed=1, device="metal")
 
 
 def test_calls_larger_than_the_counters_run_in_parts(monkeypatch):

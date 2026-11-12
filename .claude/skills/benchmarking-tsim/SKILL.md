@@ -100,10 +100,25 @@ uv run tsim-dev bench --side .:device=gpu --side .:device=cpu,threads=10   # GPU
 ```
 
 - The `device` column must say `metal` on the GPU side. It says `cpu` where Metal falls
-  back: a component wider than 11, noise beyond the GPU tables, no GPU memory.
+  back: a component wider than 11, a rotation branch below float32's resolution (an angle
+  below about 6e-5 π), noise beyond the GPU tables, no GPU memory. Under the default
+  `device="auto"` these fallbacks are silent; in a script of your own, compile with
+  `device="metal"` to make them raise instead.
+- `TSIM_DEVICE=cpu` (the bench's default) keeps `device="auto"` on the CPU; an explicit
+  `device=` argument overrides it.
+- The GPU's rate depends on call size much more than the CPU's: each call pays a fixed cost
+  (setting up the launches, waiting for the GPU to finish), and each batch of up to 2^20 shots is one
+  launch. The bench calibrates calls to about 0.3 s, which is enough. A GPU rate measured
+  with calls of 10^5 shots or fewer, or with a small `batch_size`, measures overhead, not
+  sampling; never report one. Leave `batch_size` unset on the GPU; it can only lower the
+  batch, and it changes a seed's GPU samples.
 - A reference without the Metal backend samples on the CPU even with `--device gpu`; its
   rows end in `DEVICE: cpu -> metal`, and the ratio compares devices, not code.
 - Compare the GPU with all CPU cores (`--threads N`, from the `NOTE` line), not one.
+- Say whether rates are bit-packed (the default) or `--bools`, above all on a GPU: booleans
+  cost it 2.3-3.2x on circuits with hundreds of detectors (surface_d7_r7: 757M packed,
+  237M booleans on an M4 Pro), against 1.0-1.8x on the CPU, so a boolean comparison
+  understates the GPU's lead. Compare Tsim with other simulators on the same output format.
 - The GPU's own time per kernel: set `tsim.statevector.metal.runtime.PROFILE = {}` before
   a `sample` call, which then runs each dispatch alone and adds its GPU seconds under the
   kernel's name (`noise`, `tape`, `gather_rows`, ...).

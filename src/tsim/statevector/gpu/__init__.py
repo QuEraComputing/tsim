@@ -8,7 +8,7 @@ the rows that the kernels return (``rows``).
 """
 
 FORKED = (
-    "This process was forked after its parent used the GPU, so it samples on the "
-    "CPU; start it with the 'spawn' or 'forkserver' method to sample on the GPU."
+    "this process was forked after its parent used the GPU; start it with the "
+    "'spawn' or 'forkserver' method to sample on the GPU"
 )
-"""The warning of a GPU sampler in a process forked after its parent used the GPU."""
+"""Why a GPU cannot sample in a process forked after its parent used the GPU."""
