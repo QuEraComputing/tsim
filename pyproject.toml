@@ -81,7 +81,8 @@ dev = [
     "ruff>=0.7.3",
     "rust-just>=1.36.0",
     "sinter~=1.16.dev",
-    "tesseract-decoder>=0.1.1.dev20251113222502",
+    # NOTE: tesseract-decoder has no Windows wheels.
+    "tesseract-decoder>=0.1.1.dev20251113222502; sys_platform != 'win32'",
     "tqdm>=4.67.1",
     "vulture>=2.16",
     "radon>=6.0.1",

@@ -13,10 +13,23 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }}, ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.11", "3.12", "3.13", "3.14"]
+        # NOTE: macOS (arm64, which installs the Metal backend) and Windows run only the
+        # newest Python; version-specific failures already show up on Linux.
+        include:
+          - os: macos-latest
+            python-version: "3.14"
+          - os: windows-latest
+            python-version: "3.14"
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - uses: actions/checkout@v7
@@ -33,6 +46,12 @@ jobs:
         run: uv sync --python ${{ matrix.python-version }} --dev
       - name: Show test interpreter
         run: uv run --python ${{ matrix.python-version }} python --version
+      - name: Report Metal availability
+        if: runner.os == 'macOS'
+        run: >-
+          uv run --python ${{ matrix.python-version }} python -c
+          "from tsim.statevector.metal import runtime;
+          print('Metal:', runtime.unavailable() or 'available')"
       - name: Run tests
         # For example, using `pytest`
         run: uv run --python ${{ matrix.python-version }} just coverage
