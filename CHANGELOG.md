@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the CPU, without a warning; `"cpu"` keeps them on the CPU; `"metal"` raises when
   the GPU cannot run the circuit. `TSIM_DEVICE=cpu` keeps `"auto"` on the CPU, and
   `SamplerStats.device` and the repr say where they sample.
-- The docs pages have a menu to copy a page or open it in ChatGPT or Claude, and
+- The docs pages have a menu to copy a page, open it in ChatGPT or Claude, or add
+  the docs MCP server to Cursor or VS Code, and
   the README, the install page and the agent skill point to the docs MCP server
   at `https://bloqade.quera.com/tsim/mcp`. The README and the install page also
   show how to install the agent skill with Ion.
