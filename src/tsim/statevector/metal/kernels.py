@@ -2,7 +2,8 @@
 
 ``tape`` runs the components' tapes on the queued shots; ``count_bits`` and
 ``list_bits`` list the accepted shots from the bitmap; ``gather_rows``,
-``unpack_rows`` and ``gather_float`` copy out rows, booleans and expectations;
+``unpack_rows``, ``select_rows`` and ``gather_float`` copy out rows, booleans,
+chosen outputs and expectations;
 ``reset`` and ``advance`` keep a call's counters on the GPU.
 """
 
@@ -172,6 +173,28 @@ kernel void unpack_rows(
     }}
 }}
 
+// Outputs ``columns[k]`` (``k < count``) of the first ``n`` packed rows of ``{NB}``
+// bytes, into rows of ``width`` bytes (``args = (n, count, width, bools)``): one
+// byte per output with ``bools``, else bit-packed with zero bits past them. A
+// thread writes one byte; the host keeps ``n * width`` at most ``MAX_COPY_ITEMS``.
+kernel void select_rows(
+    device const uchar* packed [[buffer(0)]], device uchar* dst [[buffer(1)]],
+    device const uint* columns [[buffer(2)]], constant uint4& args [[buffer(3)]],
+    uint gid [[thread_position_in_grid]], uint grid [[threads_per_grid]])
+{{
+    const uint width = args.z, per = args.w ? 1 : 8;
+    for (uint i = gid; i < args.x * width; i += grid) {{
+        uint r = i / width, k = (i - r * width) * per;
+        device const uchar* row = packed + (ulong)r * {NB};
+        uint v = 0;
+        for (uint b = 0; b < per && k + b < args.y; ++b) {{
+            uint c = columns[k + b];
+            v |= ((row[c >> 3] >> (c & 7)) & 1u) << b;
+        }}
+        dst[i] = uchar(v);
+    }}
+}}
+
 // Observable expectations of rows ``index[j]`` (or of row ``j``, without
 // ``has_index``) for ``j < *n``, densely, after the ``*cursor`` rows of the
 // call's earlier batches.
@@ -227,5 +250,5 @@ def source(
 def names(shared_words: bool) -> list[str]:
     """Return the kernels of a source; ``noise_kept`` needs ``shared_words``."""
     found = ["noise", "tape", "count_bits", "list_bits", "gather_rows"]
-    found += ["gather_float", "reset", "advance", "unpack_rows"]
+    found += ["gather_float", "reset", "advance", "unpack_rows", "select_rows"]
     return [*found, "noise_kept"] if shared_words else found
