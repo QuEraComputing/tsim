@@ -8,6 +8,11 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+# NOTE: the development CLI is POSIX-only (it locks files with fcntl and caps memory).
+if sys.platform == "win32":
+    pytest.skip("tsim-dev runs only on POSIX systems", allow_module_level=True)
+
 from tsim_dev import bench, checks, cli, common, corpus, jobs, width
 
 ROOT = Path(__file__).resolve().parents[2]
