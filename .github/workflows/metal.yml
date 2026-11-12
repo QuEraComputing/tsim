@@ -16,6 +16,8 @@ jobs:
     name: Metal tests on an Apple GPU
     runs-on: macos-latest-xlarge
     timeout-minutes: 20
+    env:
+      UV_PYTHON: "3.14"
     steps:
       - uses: actions/checkout@v7
       - name: Install uv
@@ -25,7 +27,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
       - name: Install the project
-        run: uv sync --python 3.14 --dev
+        run: uv sync --dev
       - name: TEMPORARY probe of the Metal device
         run: uv run python .github/tmp/metal_probe.py
       - name: Check that Metal can run
@@ -38,3 +40,25 @@ jobs:
           print('Metal device:', runtime.device().name())"
       - name: Run the Metal tests
         run: uv run pytest test/integration/test_metal_sampler.py
+
+  # TEMPORARY: do the kernels pass on the paravirtual GPU without the Apple7 check?
+  experiment:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-latest, macos-latest-xlarge]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    env:
+      UV_PYTHON: "3.14"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.13.7"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - run: uv sync --dev
+      - run: sed -i '' 's/if not device().supportsFamily_(metal().MTLGPUFamilyApple7):/if False:/' src/tsim/statevector/metal/runtime.py && grep -n "if False" src/tsim/statevector/metal/runtime.py
+      - run: uv run python -c "from tsim.statevector.metal import runtime; print(runtime.unavailable() or 'available')"
+      - run: uv run pytest test/integration/test_metal_sampler.py -q -rs --durations=5
