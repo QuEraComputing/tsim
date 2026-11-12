@@ -115,6 +115,10 @@ uv run tsim-dev bench --side .:device=gpu --side .:device=cpu,threads=10   # GPU
 - A reference without the Metal backend samples on the CPU even with `--device gpu`; its
   rows end in `DEVICE: cpu -> metal`, and the ratio compares devices, not code.
 - Compare the GPU with all CPU cores (`--threads N`, from the `NOTE` line), not one.
+- Say whether rates are bit-packed (the default) or `--bools`, above all on a GPU: booleans
+  cost it 2.3-3.2x on circuits with hundreds of detectors (surface_d7_r7: 757M packed,
+  237M booleans on an M4 Pro), against 1.0-1.8x on the CPU, so a boolean comparison
+  understates the GPU's lead. Compare Tsim with other simulators on the same output format.
 - The GPU's own time per kernel: set `tsim.statevector.metal.runtime.PROFILE = {}` before
   a `sample` call, which then runs each dispatch alone and adds its GPU seconds under the
   kernel's name (`noise`, `tape`, `gather_rows`, ...).

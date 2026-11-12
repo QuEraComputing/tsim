@@ -186,7 +186,10 @@ yourself.
   one makes launch overhead dominate, and it changes which samples a seed gives.
 - **`bit_packed=True`** returns little-endian packed `uint8` rows, as in Stim, using 8 times
   less memory. On a distance-11 surface code memory (1,320 detectors) it was twice as fast as
-  booleans, at distance 5 about 1.3 times. For small circuits it gains little and is slower
+  booleans, at distance 5 about 1.3 times. On an Apple GPU the gap is larger, since booleans
+  move 8 times more bytes off the GPU: 2.3 to 3.2 times on circuits with hundreds of
+  detectors (surface_d7_r7: 757M against 237M shots/s on an M4 Pro). Use packed rows for
+  large studies and decode them packed. For small circuits it gains little and is slower
   with `separate_observables` (the observables are split off and re-packed); use
   `append_observables=True` with packed output.
 - **Threads:** the default strategy runs on `numba.get_num_threads()` threads, all cores by

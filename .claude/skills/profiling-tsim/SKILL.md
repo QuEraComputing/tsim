@@ -31,9 +31,12 @@ Tsim is slow:
   sampler returns its one observable at 60.9M shots/s per core, the measurement
   sampler its 10 measurements at 11.6M (Apple M4 Pro).
 - **Output.** The harness times bit-packed rows, Tsim's own output. `--bools`
-  times `sample()`'s default boolean output, which adds a conversion: 1.6x on
-  surface_d7_r7 on the CPU. A slow boolean rate next to a fast bit-packed one
-  points at the conversion, not the sampler.
+  times `sample()`'s default boolean output, which adds a conversion: 1.6-1.8x on
+  surface_d7_r7 on the CPU, and 2.3-3.2x on a GPU for circuits with hundreds of
+  detectors (Metal on an M4 Pro: surface_d7_r7 3.2x, end2end_d3_dsurface15 2.8x,
+  hook_inject_T_d15_pd5 2.3x; under 1.3x for circuits with few detectors). A slow
+  boolean rate next to a fast bit-packed one points at the conversion, not the
+  sampler.
 - **Threads.** One pinned thread gives the rate per core. Tsim samples on all
   performance cores by default (`numba.get_num_threads()`); the `NOTE` line says
   how many. Quote all-core rates with `--threads N`.
