@@ -26,6 +26,8 @@ jobs:
           cache-dependency-glob: "uv.lock"
       - name: Install the project
         run: uv sync --python 3.14 --dev
+      - name: TEMPORARY probe of the Metal device
+        run: uv run python .github/tmp/metal_probe.py
       - name: Check that Metal can run
         # NOTE: check_device raises if Metal cannot sample here, so a runner without a
         # usable Apple GPU fails the release instead of skipping the tests below.
