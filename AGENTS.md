@@ -66,9 +66,10 @@ more than a handful of T gates: their compile memory grows exponentially.
   may change in any release; every other module is internal.
 - **Raw outputs:** detectors and observables are raw parities, unlike Stim's flips relative to
   a reference. The reference-sample flags change only that.
-- **Seeds:** with `active_statevector`, a seed's samples do not depend on the thread count or
-  `batch_size`. Do not break this; noise blocks and per-shot draws are seeded by call and shot
-  index (`shots.py`).
+- **Seeds:** with `active_statevector` on the CPU, a seed's samples do not depend on the
+  thread count or `batch_size`. Do not break this; noise blocks and per-shot draws are seeded
+  by call and shot index (`shots.py`). On a GPU (`statevector/metal/`) they depend on
+  `batch_size`, as documented, and differ from the CPU's.
 - **Direct outputs stay direct:** outputs that depend on the noise alone never go through a
   state vector. Most detectors of QEC circuits are direct, which is why the detector sampler is
   fast.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 import warnings
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
 from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
 from tsim.noise.channels import ChannelSampler
+from tsim.statevector import metal
 from tsim.statevector.program import StatevectorComponent
 from tsim.statevector.shots import ShotSampler
 from tsim.utils.cuda_helpers import copy_d2h
@@ -28,6 +30,7 @@ if TYPE_CHECKING:
     from jax import Array as PRNGKey
 
     from tsim.circuit import Circuit
+    from tsim.statevector.metal.sampler import MetalShotSampler
 
 # NOTE: postselection with a stabilizer-rank strategy screens shots for direct
 # discards in rounds of SCREEN_CHUNKS chunks of at most SCREEN_SHOTS shots.
@@ -308,6 +311,7 @@ class SamplerStats:
     error_channel_bits: int
     peak_bytes_per_shot: int
     compiled_bytes: int
+    device: str = "cpu"
 
 
 class _CompiledSamplerBase:
@@ -331,7 +335,9 @@ class _CompiledSamplerBase:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                "bss", "cutting"). "active_statevector" samples in float32 on an
+                Apple GPU when every component has at most 11 active qubits
+                (``TSIM_DEVICE=cpu`` turns this off), else on the CPU, on
                 ``numba.get_num_threads()`` threads. The stabilizer rank
                 strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
@@ -341,14 +347,18 @@ class _CompiledSamplerBase:
                 non-direct components, the samples of a seed depend on neither the batch
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size``, since the default batch size
-                depends on the free memory.
+                depends on the free memory. On a GPU, they do depend on the batch
+                size.
 
         """
         if seed is None:
             seed = secrets.randbits(128)
-        # NOTE: the noise, the shot words and the JAX key draw from children of the
-        # whole seed, so different seeds give independent samples.
-        noise_seed, shots_seed, key_seed = np.random.SeedSequence(seed).spawn(3)
+        # NOTE: the noise, the shot words, the JAX key and the GPU draw from children
+        # of the whole seed, so different seeds give independent samples. The first
+        # three are those of a spawn(3), so the CPU's samples are unchanged.
+        noise_seed, shots_seed, key_seed, gpu_seed = np.random.SeedSequence(seed).spawn(
+            4
+        )
 
         prepared = prepare_graph(circuit, sample_detectors=sample_detectors)
         self._program = compile_program(prepared, mode=mode, strategy=strategy)
@@ -364,15 +374,25 @@ class _CompiledSamplerBase:
         program = self._program
         # NOTE: programs of statevector components, and programs without components
         # under any strategy, are sampled as shot words; the others with JAX.
-        self._shots: ShotSampler | None = None
+        self._shots: ShotSampler | MetalShotSampler | None = None
         self._backend: _StabilizerRankBackend | None = None
         if strategy == "active_statevector" or not program.components:
-            self._shots = ShotSampler(
+            host = ShotSampler(
                 program,
                 self._channel_sampler,
                 self._num_detectors,
                 shots_seed,
             )
+            self._shots = host
+            # NOTE: as JAX does for the stabilizer-rank strategies, a GPU is used
+            # whenever there is one.
+            if (
+                mode == "sequential"
+                and os.environ.get("TSIM_DEVICE", "").lower() != "cpu"
+            ):
+                self._shots = metal.shot_sampler(
+                    host, self._channel_sampler, self._num_detectors, gpu_seed
+                )
         else:
             self._backend = _StabilizerRankBackend(program, key_seed)
 
@@ -428,7 +448,7 @@ class _CompiledSamplerBase:
         # NOTE: only the shot words are filtered by a mask; the noise sampler
         # writes direct outputs straight into boolean rows otherwise.
         if not (self._program.components or bit_packed or mask is not None):
-            samples = self._shots.direct_bools(shots, flip)
+            samples = self._shots.direct_bools(shots, flip, batch_size)
             return [_take_columns(samples, c) for c in columns]
         arrays, deviation = self._shots.sample(
             shots,
@@ -721,6 +741,9 @@ class _CompiledSamplerBase:
         - ``peak_bytes_per_shot`` (``int``): estimated peak memory of one shot,
           by which the default batch sizes are chosen.
         - ``compiled_bytes`` (``int``): memory of the compiled components.
+        - ``device`` (``str``): where ``"active_statevector"`` samples:
+          ``"metal"`` on an Apple GPU, else ``"cpu"`` (a stabilizer-rank
+          strategy runs wherever JAX does).
         """
         components = self._program.components
         widths: tuple[int, ...] | None = None
@@ -751,6 +774,7 @@ class _CompiledSamplerBase:
             ),
             peak_bytes_per_shot=peak,
             compiled_bytes=compiled_bytes,
+            device=self._shots.device if self._shots is not None else "cpu",
         )
 
     def __repr__(self) -> str:
@@ -803,6 +827,8 @@ class _CompiledSamplerBase:
                 f"(width ≤ {stats.active_width}, "
                 f"{stats.num_actions} actions)"
             )
+        if self._shots is not None:
+            parts.append(f"samples on {stats.device}")
         if c_graphs:
             parts.append(f"{sum(c_graphs)} graphs")
         parts += [
@@ -850,7 +876,8 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
                 non-direct components, the samples of a seed depend on neither the batch
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size``, since the default batch size
-                depends on the free memory.
+                depends on the free memory. On a GPU, they do depend on the batch
+                size.
 
         """
         super().__init__(
@@ -951,6 +978,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size`` and the same reference sample
                 settings, since the default batch size depends on the free memory.
+                On a GPU, they do depend on the batch size.
 
         """
         super().__init__(

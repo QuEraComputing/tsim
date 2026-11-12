@@ -43,6 +43,8 @@ dependencies = [
     "stim>=1.15.0",
     "stim-timeline-text>=0.1.0",
     "zxparam>=0.1.0",
+    # NOTE: the statevector executor on Apple GPUs (about 7 MB).
+    "pyobjc-framework-Metal>=10.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
 [project.urls]
@@ -166,6 +168,9 @@ extend_exclude = [
     "^docs/",
     "^test/",
 ]
+
+[tool.deptry.package_module_name_map]
+pyobjc-framework-Metal = "Metal"
 
 [tool.deptry.per_rule_ignores]
 DEP002 = ["ipywidgets"]

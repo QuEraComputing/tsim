@@ -23,8 +23,8 @@ Or with [uv](https://docs.astral.sh/uv/):
 uv add bloqade-tsim
 ```
 
-The default sampling strategy runs on the CPU. To run the stabilizer-rank strategies on an NVIDIA GPU,
-install the JAX CUDA extra:
+The default sampling strategy runs on the CPU, and on the GPU of an Apple-silicon Mac (no extra
+needed). To run the stabilizer-rank strategies on an NVIDIA GPU, install the JAX CUDA extra:
 ```bash
 pip install "bloqade-tsim[cuda13]"   # or bloqade-tsim[cuda12]
 ```
@@ -82,7 +82,7 @@ Choose a strategy with the `strategy` argument of `compile_sampler` and `compile
 
 | Strategy | Method | Runs on | Cost grows with | Use it for |
 |---|---|---|---|---|
-| `"active_statevector"` (default) | Dense state vector over the active qubits of each component, as in [Clifft](https://arxiv.org/abs/2604.27058) and [SymFT](https://arxiv.org/abs/2607.28600) | CPU (numba, multi-threaded) | Number of active qubits (at most 30) | Most circuits, especially with postselection |
+| `"active_statevector"` (default) | Dense state vector over the active qubits of each component, as in [Clifft](https://arxiv.org/abs/2604.27058) and [SymFT](https://arxiv.org/abs/2607.28600) | CPU (numba, multi-threaded), or an Apple GPU (Metal) | Number of active qubits (at most 30) | Most circuits, especially with postselection |
 | `"cat5"`, `"bss"`, `"cutting"` | Stabilizer rank decomposition | CPU or GPU (JAX) | Number of non-Clifford gates | Few non-Clifford gates acting on many qubits; GPU throughput |
 
 ```python

@@ -954,7 +954,9 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                "bss", "cutting"). "active_statevector" samples in float32 on an
+                Apple GPU when every component has at most 11 active qubits
+                (``TSIM_DEVICE=cpu`` turns this off), else on the CPU, on
                 ``numba.get_num_threads()`` threads. The stabilizer rank
                 strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
@@ -964,7 +966,8 @@ class Circuit:
                 non-direct components, the samples of a seed depend on neither the batch
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size``, since the default batch size
-                depends on the free memory.
+                depends on the free memory. On a GPU, they do depend on the batch
+                size.
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
@@ -991,7 +994,9 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples on the CPU, on
+                "bss", "cutting"). "active_statevector" samples in float32 on an
+                Apple GPU when every component has at most 11 active qubits
+                (``TSIM_DEVICE=cpu`` turns this off), else on the CPU, on
                 ``numba.get_num_threads()`` threads. The stabilizer rank
                 strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
@@ -1002,6 +1007,7 @@ class Circuit:
                 size nor the thread count. With a stabilizer-rank strategy they also
                 need the same explicit ``batch_size`` and the same reference sample
                 settings, since the default batch size depends on the free memory.
+                On a GPU, they do depend on the batch size.
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.

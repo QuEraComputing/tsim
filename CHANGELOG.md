@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `strategy="active_statevector"` samples on the GPU of an Apple-silicon Mac, in
+  float32, whenever every component has at most 11 active qubits (Tsim now depends
+  on `pyobjc-framework-Metal` there). A seed's GPU samples differ from the CPU's and
+  depend on `batch_size`; `TSIM_DEVICE=cpu` keeps the samplers on the CPU, and
+  `SamplerStats.device` and the repr say where they sample.
 - The docs pages have a menu to copy a page or open it in ChatGPT or Claude, and
   the README, the install page and the agent skill point to the docs MCP server
   at `https://bloqade.quera.com/tsim/mcp`. The README and the install page also
