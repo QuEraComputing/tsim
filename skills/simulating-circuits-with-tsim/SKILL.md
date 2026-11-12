@@ -194,7 +194,9 @@ yourself.
   importing Tsim) and leave cores free on a shared machine. Do not run several multi-threaded
   Tsim processes side by side; they oversubscribe the CPU.
 - **Apple GPUs:** on an Apple-silicon Mac the default strategy samples on the GPU when every
-  component has at most 11 active qubits, often 5 to 10 times faster than all CPU cores. It
+  component has at most 11 active qubits, often 5 to 10 times faster than all CPU cores. That
+  includes Clifford circuits, whose detectors come from the noise alone: the GPU samples the
+  noise too. It
   computes outcome probabilities in float32 and never draws an outcome below about 1e-11
   (circuits with rotations by less than about 1e-4 π stay on the CPU). Thread settings do not
   affect GPU sampling.

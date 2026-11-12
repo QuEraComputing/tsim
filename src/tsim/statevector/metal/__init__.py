@@ -34,8 +34,9 @@ def shot_sampler(
     """Return a Metal shot sampler of ``host``'s program, or ``host`` where Metal cannot run it.
 
     Without ``required`` (``device="auto"``) it returns ``host`` silently; with it
-    (``device="metal"``) it raises instead. A program without shot words has
-    nothing to sample on a GPU and keeps ``host`` either way.
+    (``device="metal"``) it raises instead. A program without shot words (one
+    with no outputs; direct outputs are shot-word bits too) has nothing to
+    sample on a GPU and keeps ``host`` either way.
 
     Raises:
         RuntimeError: With ``required``, if this process cannot use an Apple GPU:

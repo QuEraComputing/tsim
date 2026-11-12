@@ -51,7 +51,9 @@ the `device` argument of `compile_sampler` and `compile_detector_sampler`:
 sampler = circuit.compile_detector_sampler(device="metal")
 ```
 
-The GPU runs circuits whose components have at most 11 active qubits. Postselection runs on
+The GPU runs circuits whose components have at most 11 active qubits. That includes Clifford
+circuits, whose detectors depend on the noise alone: the GPU samples the noise as well as the
+state vectors. Postselection runs on
 the GPU, so heavily postselected circuits gain the most. A sampler's repr says where it
 samples (`samples on metal` or `samples on cpu`), and so does `sampler.stats.device`.
 
