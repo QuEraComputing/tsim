@@ -165,7 +165,7 @@ kernel void noise_kept(
 )
 
 SOURCE = r"""
-struct Record {{ uint alias; uint words; uint extra; uint pad; u64 m0; u64 m1; }};
+struct Record {{ uint alias; uint words; uint extra; uint keep; u64 m0; u64 m1; }};
 struct Flip {{ uint word; uint pad; u64 mask; }};
 
 inline void xor64(threadgroup u64* sw, int index, u64 mask) {{
@@ -182,15 +182,21 @@ inline void xor64(device u64* sw, int index, u64 mask) {{
     if (hi) atomic_fetch_xor_explicit(halves + 1, hi, memory_order_relaxed);
 }}
 
-// The fault drawn at record ``rec`` (bits 0-23 of ``draw`` its fraction, bits
-// 24-31 its slot in the channel): the slot's outcome or its alias's. Word ``w``
-// of row ``s`` is ``sw[w * WS + s * SS]``.
+// The fault drawn at record ``rec`` (bits 0-23 of ``draw`` the high 24 bits of
+// its 40-bit fraction, bits 24-31 its slot in the channel): the slot's outcome
+// if the fraction is below the keep threshold (gpu/noise.py), else its alias's.
+// The fraction's low 16 bits matter only when its high bits tie with the
+// threshold's, and then come from a hash of the fault. Word ``w`` of row ``s``
+// is ``sw[w * WS + s * SS]``.
 template <typename W, int WS, int SS>
-inline void apply_fault(W sw, int row, uint rec, uint draw,
+inline void apply_fault(W sw, int row, uint rec, uint draw, u64 stream,
     device const Record* records, device const Flip* overflow)
 {{
     Record r = records[rec];
-    if ((draw & 0xFFFFFF) >= (r.alias & 0x1FFFFFF)) r = records[rec - (draw >> 24) + (r.alias >> 25)];
+    uint high = draw & 0xFFFFFF, keep = r.alias & 0x1FFFFFF;
+    if (high > keep || (high == keep &&
+            (uint)(mix64(stream ^ ((u64)(rec << 8 | row) * GOLDEN)) & 0xFFFF) >= r.keep))
+        r = records[rec - (draw >> 24) + (r.alias >> 25)];
     int flips = r.extra & 255;
     if (flips > 0) xor64(sw, (r.words & 0xFFFF) * WS + row * SS, r.m0);
     if (flips > 1) xor64(sw, (r.words >> 16) * WS + row * SS, r.m1);
@@ -255,8 +261,8 @@ struct Segments {{
 // cannot resolve: it would fire such a segment at least 2^-24 of the time.
 template <typename W, int WS, int SS, bool FINE>
 inline void add_segment_faults(W sw, threadgroup uint2* events, threadgroup atomic_int* num_events,
-    int max_events, int ns, u64 state, float lk, int first, int outcomes, int idx, int end,
-    device const Record* records, device const Flip* overflow)
+    int max_events, int ns, u64 stream, u64 state, float lk, int first, int outcomes, int idx,
+    int end, device const Record* records, device const Flip* overflow)
 {{
     while (true) {{
         state += GOLDEN;
@@ -275,25 +281,26 @@ inline void add_segment_faults(W sw, threadgroup uint2* events, threadgroup atom
         idx += 1 + (int)skip;
         int ch = idx / {S}, row = idx - ch * {S};
         if (row >= ns) continue;  // the last block's missing shots
-        // NOTE: the skip reads the high 24 bits of r, the outcome its low 32:
-        // a slot from the high 24 of those, the fraction of the slot below.
-        u64 x = (u64)((uint)r >> 8) * (uint)outcomes;
-        uint slot = (uint)(x >> 24);
+        // NOTE: the skip reads the high 24 bits of r, the outcome its low 40: a
+        // slot, and the fraction of the slot below.
+        u64 x = (r & 0xFFFFFFFFFFUL) * (uint)outcomes;
+        uint slot = (uint)(x >> 40);
         uint rec = (uint)(first + ch * outcomes) + slot;
-        uint draw = (uint)(x & 0xFFFFFF) | (slot << 24);
+        uint draw = (uint)((x >> 16) & 0xFFFFFF) | (slot << 24);
         int e = atomic_fetch_add_explicit(num_events, 1, memory_order_relaxed);
         if (e < max_events) events[e] = uint2((uint)row | (rec << 8), draw);
-        else apply_fault<W, WS, SS>(sw, row, rec, draw, records, overflow);
+        else apply_fault<W, WS, SS>(sw, row, rec, draw, stream, records, overflow);
     }}
 }}
 
 template <typename W, int WS, int SS>
 __attribute__((noinline)) void add_fine_segment_faults(W sw, threadgroup uint2* events,
-    threadgroup atomic_int* num_events, int max_events, int ns, u64 state, float lk, int first,
-    int outcomes, int idx, int end, device const Record* records, device const Flip* overflow)
+    threadgroup atomic_int* num_events, int max_events, int ns, u64 stream, u64 state, float lk,
+    int first, int outcomes, int idx, int end, device const Record* records,
+    device const Flip* overflow)
 {{
-    add_segment_faults<W, WS, SS, true>(sw, events, num_events, max_events, ns, state, lk, first,
-                                        outcomes, idx, end, records, overflow);
+    add_segment_faults<W, WS, SS, true>(sw, events, num_events, max_events, ns, stream, state, lk,
+                                        first, outcomes, idx, end, records, overflow);
 }}
 
 // Phases 1 and 2: draw the segments' faults on the block's ``ns`` shots and XOR
@@ -309,17 +316,19 @@ inline void add_faults(W sw, threadgroup uint2* events, threadgroup atomic_int* 
         int idx = seg.begin[sg] - 1;
         u64 state = mix64(stream ^ ((u64)sg * GOLDEN));
         if ((float)(end - 1 - idx) * -lk < 0x1p-12f)
-            add_fine_segment_faults<W, WS, SS>(sw, events, num_events, max_events, ns, state, lk,
-                                               first, outcomes, idx, end, records, overflow);
+            add_fine_segment_faults<W, WS, SS>(sw, events, num_events, max_events, ns, stream,
+                                               state, lk, first, outcomes, idx, end, records,
+                                               overflow);
         else
-            add_segment_faults<W, WS, SS, false>(sw, events, num_events, max_events, ns, state,
-                                                 lk, first, outcomes, idx, end, records, overflow);
+            add_segment_faults<W, WS, SS, false>(sw, events, num_events, max_events, ns, stream,
+                                                 state, lk, first, outcomes, idx, end, records,
+                                                 overflow);
     }}
     threadgroup_barrier(mem_flags::mem_threadgroup);
     int ne = min(atomic_load_explicit(num_events, memory_order_relaxed), max_events);
     for (int e = tid; e < ne; e += nt) {{
         uint2 v = events[e];
-        apply_fault<W, WS, SS>(sw, v.x & 255, v.x >> 8, v.y, records, overflow);
+        apply_fault<W, WS, SS>(sw, v.x & 255, v.x >> 8, v.y, stream, records, overflow);
     }}
     if (DEV) threadgroup_barrier(mem_flags::mem_device);
     else threadgroup_barrier(mem_flags::mem_threadgroup);

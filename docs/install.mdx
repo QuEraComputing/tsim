@@ -45,9 +45,11 @@ gain the most. A sampler's repr says where it samples (`samples on metal` or `sa
 cpu`), and so does `sampler.stats.device`.
 
 The GPU computes outcome probabilities in float32, so a sample follows the CPU's distribution
-to within float32 rounding. A measurement outcome with probability below about 1e-11 is never
-drawn on the GPU: float32 cannot tell it from rounding error. A seed's samples on the GPU
-differ from the CPU's and depend on `batch_size`.
+to within float32 rounding. Float32 cannot tell a measurement outcome of probability below
+about 1e-11 from rounding error, so the GPU never draws one; a circuit with a rotation small
+enough to make such an outcome (an `R_Z` or `R_X` by less than about 1e-4 π) samples on the
+CPU, with a warning. A seed's samples on the GPU differ from the CPU's and depend on
+`batch_size`.
 
 ### Sampling on the CPU instead
 

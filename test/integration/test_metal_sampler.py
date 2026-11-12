@@ -1,5 +1,6 @@
 """The Metal executor end to end, against the stabilizer-rank strategy and the CPU executor."""
 
+import itertools
 import multiprocessing
 import pickle
 import threading
@@ -539,10 +540,11 @@ def test_components_wider_than_the_limit_run_on_the_cpu():
     assert type(sampler._shots) is ShotSampler
 
 
-@pytest.mark.parametrize(("probability", "shots"), [(1e-10, 1 << 28), (1e-6, 1 << 26)])
+@pytest.mark.parametrize(("probability", "shots"), [(2e-8, 1 << 30), (1e-6, 1 << 26)])
 def test_metal_draws_small_outcome_probabilities_at_their_rate(probability, shots):
     # NOTE: a 24-bit draw takes any positive probability at least 2^-24 = 6e-8 of
-    # the time; float32 rounding gives certain outcomes such probabilities.
+    # the time; float32 rounding gives certain outcomes such probabilities. 2e-8
+    # is about the smallest a rotation may give on the GPU (tape.RESOLVABLE).
     theta = float(2 * np.arcsin(np.sqrt(probability)) / np.pi)
     circuit = Circuit(f"R 0\nI[R_X(theta={theta!r}*pi)] 0\nM 0")
     sampler = _gpu(circuit.compile_sampler(seed=3))
@@ -698,6 +700,36 @@ def test_noise_of_tiny_probabilities_fires_at_its_rate():
     )
     expected = sum(probabilities) * calls * (1 << 22)
     assert abs(faults - expected) <= 5 * np.sqrt(expected)
+
+
+def test_rare_outcome_of_a_channel_is_drawn_at_its_rate():
+    # NOTE: 1000 channels (distinct, so Tsim keeps them apart) fire half the time
+    # and then flip detector 0 with chance 6e-9: with 24-bit keep thresholds it
+    # rounded to zero; ~100 flips are expected here.
+    k, q, calls = 10, 3e-9, 34
+    lines = ["R " + " ".join(map(str, range(k + 1)))]
+    subsets = [
+        s for r in range(1, k + 1) for s in itertools.combinations(range(1, k + 1), r)
+    ][:1000]
+    for subset in subsets:
+        lines.append("E(0.5) " + " ".join(f"X{i}" for i in subset))
+        lines.append(f"ELSE_CORRELATED_ERROR({q / 0.5}) X0")
+    lines.append("M " + " ".join(map(str, range(k + 1))))
+    lines += [f"DETECTOR rec[{i - k - 1}]" for i in range(k + 1)]
+    sampler = _gpu(Circuit("\n".join(lines)).compile_detector_sampler(seed=1))
+    flips = sum(
+        int(np.count_nonzero(sampler.sample(1_000_000, bit_packed=True)[:, 0] & 1))
+        for _ in range(calls)
+    )
+    expected = len(subsets) * q * calls * 1_000_000
+    assert abs(flips - expected) <= 5 * np.sqrt(expected)
+
+
+def test_rotation_with_a_branch_float32_cannot_resolve_samples_on_the_cpu():
+    circuit = Circuit("R 0\nH 0\nR_Z(1e-5) 0\nH 0\nM 0\nDETECTOR rec[-1]")
+    with pytest.warns(UserWarning, match="rotation has a branch of weight 2.5e-10"):
+        sampler = circuit.compile_detector_sampler(seed=1)
+    assert sampler.stats.device == "cpu"
 
 
 @pytest.mark.parametrize("p0", [3e-8, 1e-6])
