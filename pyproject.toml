@@ -1,6 +1,6 @@
 [project]
 name = "bloqade-tsim"
-version = "1.0.0"
+version = "1.1.0"
 description = "A fast sampler for noisy quantum circuits with non-Clifford gates, built on the ZX-calculus"
 authors = [
     { name = "Rafael Haenel", email = "rhaenel@quera.com" },
