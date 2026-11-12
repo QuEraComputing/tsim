@@ -176,7 +176,7 @@ kernel void unpack_rows(
 // Outputs ``columns[k]`` (``k < count``) of the first ``n`` packed rows of ``{NB}``
 // bytes, into rows of ``width`` bytes (``args = (n, count, width, bools)``): one
 // byte per output with ``bools``, else bit-packed with zero bits past them. A
-// thread writes one byte; the host keeps ``n * width`` below 2^32.
+// thread writes one byte; the host keeps ``n * width`` at most ``MAX_COPY_ITEMS``.
 kernel void select_rows(
     device const uchar* packed [[buffer(0)]], device uchar* dst [[buffer(1)]],
     device const uint* columns [[buffer(2)]], constant uint4& args [[buffer(3)]],

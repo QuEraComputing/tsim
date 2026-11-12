@@ -39,7 +39,7 @@ import numpy as np
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector.gpu import FORKED, tape
 from tsim.statevector.gpu.noise import NoiseGroups, screen_pass_rate, split
-from tsim.statevector.gpu.rows import select as _select
+from tsim.statevector.gpu.rows import select as _host_select
 from tsim.statevector.metal import kernels, runtime
 from tsim.statevector.metal.codegen import METAL
 from tsim.statevector.metal.kernels import SCAN_THREADS
@@ -60,6 +60,13 @@ COPY_THREADS = 256
 
 MAX_COPY_THREADS = 1 << 20
 """Most threads of a copy kernel's dispatch; each thread loops over its share."""
+
+MAX_COPY_ITEMS = (1 << 32) - MAX_COPY_THREADS
+"""Most items (bytes) of a copy kernel's dispatch, which runs a 32-bit loop.
+
+NOTE: a thread steps by the dispatch's threads, so an index must stay below 2^32
+by that much; past it, it would wrap and the loop would not end.
+"""
 
 # NOTE: the words of ``_Slot.counts``.
 _SURVIVORS, _ACCEPTED, _DEVIATION, _CURSOR, _CAPACITY = range(5)
@@ -637,7 +644,8 @@ class MetalShotSampler:
         Returns:
             ``(outputs, expectations, deviation)``: the passing shots' outputs,
             bit-packed as ``np.packbits(..., bitorder="little")`` would (``uint8``,
-            in shared memory), with ``expectations`` each observable's
+            in shared memory), as booleans, or with ``columns`` a list of such
+            arrays; with ``expectations`` each observable's
             expectation of ``(-1)^observable`` given the shot's history before
             the measurement that settles it, or its sampled ``±1`` when a
             postselected output of its component is tested at or after that
@@ -753,9 +761,9 @@ class MetalShotSampler:
         num_outputs = self.layout.num_outputs
         nb = -(-num_outputs // 8)
         groups = -(-num_outputs // 4)
-        if total * groups >= 1 << 32:
+        if total * groups > MAX_COPY_ITEMS:
             packed = rows.array[: total * nb].reshape(total, nb)
-            return _select(packed, np.arange(num_outputs), num_outputs, False)
+            return _host_select(packed, np.arange(num_outputs), num_outputs, False)
         out = runtime.buffer(total * num_outputs, np.uint8, recycle=True)
         if total and num_outputs:
             threads = min(total * groups, MAX_COPY_THREADS)
@@ -797,8 +805,9 @@ class MetalShotSampler:
                 selected.append(packed[:, : count // 8])
                 continue
             width = count if bools else -(-count // 8)
-            if total * width >= 1 << 32:
-                selected.append(_select(packed, chosen, num_outputs, not bools))
+            if total * width > MAX_COPY_ITEMS:
+                found = _host_select(packed, chosen, num_outputs, not bools)
+                selected.append(np.ascontiguousarray(found))
                 continue
             out = runtime.buffer(total * width, np.uint8, recycle=True)
             if total * width:

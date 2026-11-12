@@ -848,8 +848,9 @@ def test_tsim_device_cpu_keeps_the_samplers_on_the_cpu(monkeypatch):
 )
 def test_metal_selects_every_layout_of_columns(detectors, observables):
     # NOTE: the observables start inside a byte (20, 21, 7, 130), end inside one
-    # (21, 7, 130) or span two bytes (7). Samplers of one seed draw the same
-    # shots; the reference is every output as booleans, in order.
+    # (20, 130) or span two bytes (7); 16 + 8 lies on byte boundaries. Samplers of
+    # one seed draw the same shots; the reference is every output as booleans,
+    # in order.
     n = detectors + observables
     lines = [f"X_ERROR(0.3) {' '.join(map(str, range(n)))}", "H 0", "T 0", "H 0"]
     lines.append(f"M {' '.join(map(str, range(n)))}")
@@ -891,6 +892,24 @@ def test_metal_selects_every_layout_of_columns(detectors, observables):
                     else:
                         assert array.dtype == np.bool_ and array.flags.c_contiguous
                     np.testing.assert_array_equal(array, bools)
+
+
+def test_outputs_too_large_for_a_copy_kernel_are_selected_on_the_host(monkeypatch):
+    # NOTE: past MAX_COPY_ITEMS bytes a copy kernel's 32-bit loop would wrap.
+    circuit = Circuit(NOISY_DETECTORS)
+
+    def sample(**kwargs):
+        sampler = _gpu(circuit.compile_detector_sampler(seed=26))
+        return sampler.sample(5_000, separate_observables=True, **kwargs)
+
+    expected = {
+        bit_packed: sample(bit_packed=bit_packed) for bit_packed in (True, False)
+    }
+    monkeypatch.setattr(metal_sampler, "MAX_COPY_ITEMS", 0)
+    for bit_packed, arrays in expected.items():
+        for got, want in zip(sample(bit_packed=bit_packed), arrays, strict=True):
+            assert got.flags.c_contiguous
+            np.testing.assert_array_equal(got, want)
 
 
 @pytest.mark.parametrize("text", [GHZ_WITH_DIRECT_DETECTOR, NOISY_DETECTORS])
