@@ -16,6 +16,8 @@ from typing import Any
 
 import numpy as np
 
+from tsim.statevector.gpu import FORKED
+
 
 @functools.cache
 def metal() -> ModuleType:
@@ -140,16 +142,25 @@ def available() -> bool:
 
     It is not in a process forked after its parent used the GPU.
     """
-    return not _forked_after_init and _device_available()
+    return unavailable() is None
+
+
+def unavailable() -> str | None:
+    """Return why this process cannot sample on Metal, or ``None`` if it can."""
+    if _forked_after_init:
+        return FORKED
+    return _device_error()
 
 
 @functools.cache
-def _device_available() -> bool:
+def _device_error() -> str | None:
     try:
         check_device()
-        return True
-    except Exception:
-        return False
+    except ImportError:
+        return "PyObjC's Metal (pyobjc-framework-Metal) is not installed"
+    except Exception as error:
+        return str(error) or type(error).__name__
+    return None
 
 
 @dataclass

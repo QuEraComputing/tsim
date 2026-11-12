@@ -192,8 +192,11 @@ yourself.
 - **Apple GPUs:** on an Apple-silicon Mac the default strategy samples on the GPU when every
   component has at most 11 active qubits, often 5 to 10 times faster than all CPU cores. It
   computes outcome probabilities in float32 and never draws an outcome below about 1e-11
-  (circuits with rotations by less than about 1e-4 π stay on the CPU, with a warning); set
-  `TSIM_DEVICE=cpu` before compiling to stay on the CPU, in double precision. The sampler's repr says where it samples (`samples on metal`).
+  (circuits with rotations by less than about 1e-4 π stay on the CPU). The `device` argument of
+  `compile_sampler` and `compile_detector_sampler` chooses: `"auto"` (default) uses the GPU
+  when it can and falls back silently, `"cpu"` stays on the CPU in double precision, `"metal"`
+  raises if the GPU cannot run the circuit. `sampler.stats.device` and the repr say where it
+  samples (`samples on metal`).
 - **Seeds:** a `seed` reproduces samples for the same Tsim and dependency versions and
   backend. On the CPU, thread count and `batch_size` do not affect the samples; on a GPU,
   `batch_size` does.

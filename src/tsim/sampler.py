@@ -18,7 +18,12 @@ import psutil
 from tsim.compile.evaluate import evaluate
 from tsim.compile.pipeline import compile_program
 from tsim.core.graph import prepare_graph
-from tsim.core.types import CompiledComponent, CompiledProgram, SamplingStrategy
+from tsim.core.types import (
+    CompiledComponent,
+    CompiledProgram,
+    Device,
+    SamplingStrategy,
+)
 from tsim.noise.channels import ChannelSampler
 from tsim.statevector import metal
 from tsim.statevector.program import StatevectorComponent
@@ -325,6 +330,7 @@ class _CompiledSamplerBase:
         mode: Literal["sequential", "joint"],
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
+        device: Device = "auto",
     ):
         """Initialize the sampler by compiling the circuit.
 
@@ -335,11 +341,7 @@ class _CompiledSamplerBase:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples in float32 on an
-                Apple GPU when every component has at most 11 active qubits
-                (``TSIM_DEVICE=cpu`` turns this off), else on the CPU, on
-                ``numba.get_num_threads()`` threads. The stabilizer rank
-                strategies are provisional.
+                "bss", "cutting"). The stabilizer rank strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
@@ -349,8 +351,31 @@ class _CompiledSamplerBase:
                 need the same explicit ``batch_size``, since the default batch size
                 depends on the free memory. On a GPU, they do depend on the batch
                 size.
+            device: Where "active_statevector" samples. "auto" (the default)
+                samples in float32 on an Apple GPU when there is one that can
+                run the circuit, and otherwise on the CPU, without a warning
+                (``TSIM_DEVICE=cpu`` keeps it on the CPU). "cpu" samples on the
+                CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
+                samples on an Apple GPU or raises: without one, for a component
+                of more than 11 active qubits, a rotation by less than about
+                1e-4 π, noise beyond the GPU's tables, or a call that runs out
+                of GPU memory. The stabilizer rank strategies take only "auto".
+
+        Raises:
+            ValueError: If ``device`` is unknown, is not "auto" under a
+                stabilizer-rank strategy, or is "metal" for a circuit that the
+                GPU executor cannot run.
+            RuntimeError: If ``device`` is "metal" and this process cannot use
+                an Apple GPU.
 
         """
+        if device not in ("auto", "cpu", "metal"):
+            raise ValueError(f"device must be 'auto', 'cpu' or 'metal', not {device!r}")
+        if device != "auto" and strategy != "active_statevector":
+            raise ValueError(
+                f"device={device!r} needs strategy='active_statevector'; the "
+                "stabilizer-rank strategies run wherever JAX does"
+            )
         if seed is None:
             seed = secrets.randbits(128)
         # NOTE: the noise, the shot words, the JAX key and the GPU draw from children
@@ -384,14 +409,17 @@ class _CompiledSamplerBase:
                 shots_seed,
             )
             self._shots = host
-            # NOTE: as JAX does for the stabilizer-rank strategies, a GPU is used
-            # whenever there is one.
-            if (
-                mode == "sequential"
-                and os.environ.get("TSIM_DEVICE", "").lower() != "cpu"
-            ):
+            # NOTE: as JAX does for the stabilizer-rank strategies, "auto" uses a
+            # GPU whenever there is one that can run the program.
+            if device == "auto" and os.environ.get("TSIM_DEVICE", "").lower() == "cpu":
+                device = "cpu"
+            if mode == "sequential" and device != "cpu":
                 self._shots = metal.shot_sampler(
-                    host, self._channel_sampler, self._num_detectors, gpu_seed
+                    host,
+                    self._channel_sampler,
+                    self._num_detectors,
+                    gpu_seed,
+                    required=device == "metal",
                 )
         else:
             self._backend = _StabilizerRankBackend(program, key_seed)
@@ -743,7 +771,9 @@ class _CompiledSamplerBase:
         - ``compiled_bytes`` (``int``): memory of the compiled components.
         - ``device`` (``str``): where ``"active_statevector"`` samples:
           ``"metal"`` on an Apple GPU, else ``"cpu"`` (a stabilizer-rank
-          strategy runs wherever JAX does).
+          strategy runs wherever JAX does). With ``device="auto"`` it is where
+          the samplers ended up; a sampler whose GPU kernel fails to compile
+          moves to ``"cpu"``.
         """
         components = self._program.components
         widths: tuple[int, ...] | None = None
@@ -861,6 +891,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
+        device: Device = "auto",
     ):
         """Create a measurement sampler.
 
@@ -878,6 +909,22 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
                 need the same explicit ``batch_size``, since the default batch size
                 depends on the free memory. On a GPU, they do depend on the batch
                 size.
+            device: Where "active_statevector" samples. "auto" (the default)
+                samples in float32 on an Apple GPU when there is one that can
+                run the circuit, and otherwise on the CPU, without a warning
+                (``TSIM_DEVICE=cpu`` keeps it on the CPU). "cpu" samples on the
+                CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
+                samples on an Apple GPU or raises: without one, for a component
+                of more than 11 active qubits, a rotation by less than about
+                1e-4 π, noise beyond the GPU's tables, or a call that runs out
+                of GPU memory. The stabilizer rank strategies take only "auto".
+
+        Raises:
+            ValueError: If ``device`` is unknown, is not "auto" under a
+                stabilizer-rank strategy, or is "metal" for a circuit that the
+                GPU executor cannot run.
+            RuntimeError: If ``device`` is "metal" and this process cannot use
+                an Apple GPU.
 
         """
         super().__init__(
@@ -886,6 +933,7 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             mode="sequential",
             seed=seed,
             strategy=strategy,
+            device=device,
         )
 
     def sample(
@@ -962,6 +1010,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
+        device: Device = "auto",
     ):
         """Create a detector sampler.
 
@@ -979,6 +1028,22 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
                 need the same explicit ``batch_size`` and the same reference sample
                 settings, since the default batch size depends on the free memory.
                 On a GPU, they do depend on the batch size.
+            device: Where "active_statevector" samples. "auto" (the default)
+                samples in float32 on an Apple GPU when there is one that can
+                run the circuit, and otherwise on the CPU, without a warning
+                (``TSIM_DEVICE=cpu`` keeps it on the CPU). "cpu" samples on the
+                CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
+                samples on an Apple GPU or raises: without one, for a component
+                of more than 11 active qubits, a rotation by less than about
+                1e-4 π, noise beyond the GPU's tables, or a call that runs out
+                of GPU memory. The stabilizer rank strategies take only "auto".
+
+        Raises:
+            ValueError: If ``device`` is unknown, is not "auto" under a
+                stabilizer-rank strategy, or is "metal" for a circuit that the
+                GPU executor cannot run.
+            RuntimeError: If ``device`` is "metal" and this process cannot use
+                an Apple GPU.
 
         """
         super().__init__(
@@ -987,6 +1052,7 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             mode="sequential",
             seed=seed,
             strategy=strategy,
+            device=device,
         )
 
     @overload

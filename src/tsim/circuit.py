@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 from tsim.core.graph import transform_error_basis
 from tsim.core.parse import parse_parametric_tag, parse_stim_circuit
 from tsim.core.tags import encode_t_tag
-from tsim.core.types import SamplingStrategy
+from tsim.core.types import Device, SamplingStrategy
 from tsim.noise.dem import get_detector_error_model
 from tsim.utils.clifford import expand_clifford_rotations, is_clifford
 from tsim.utils.diagram import draw_zx, render_svg
@@ -947,6 +947,7 @@ class Circuit:
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
+        device: Device = "auto",
     ) -> CompiledMeasurementSampler:
         """Compile circuit into a measurement sampler.
 
@@ -954,11 +955,7 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples in float32 on an
-                Apple GPU when every component has at most 11 active qubits
-                (``TSIM_DEVICE=cpu`` turns this off), else on the CPU, on
-                ``numba.get_num_threads()`` threads. The stabilizer rank
-                strategies are provisional.
+                "bss", "cutting"). The stabilizer rank strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
@@ -968,20 +965,39 @@ class Circuit:
                 need the same explicit ``batch_size``, since the default batch size
                 depends on the free memory. On a GPU, they do depend on the batch
                 size.
+            device: Where "active_statevector" samples. "auto" (the default)
+                samples in float32 on an Apple GPU when there is one that can
+                run the circuit, and otherwise on the CPU, without a warning
+                (``TSIM_DEVICE=cpu`` keeps it on the CPU). "cpu" samples on the
+                CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
+                samples on an Apple GPU or raises: without one, for a component
+                of more than 11 active qubits, a rotation by less than about
+                1e-4 π, noise beyond the GPU's tables, or a call that runs out
+                of GPU memory. The stabilizer rank strategies take only "auto".
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
 
+        Raises:
+            ValueError: If ``device`` is unknown, is not "auto" under a
+                stabilizer-rank strategy, or is "metal" for a circuit that the
+                GPU executor cannot run.
+            RuntimeError: If ``device`` is "metal" and this process cannot use
+                an Apple GPU.
+
         """
         from tsim.sampler import CompiledMeasurementSampler
 
-        return CompiledMeasurementSampler(self, seed=seed, strategy=strategy)
+        return CompiledMeasurementSampler(
+            self, seed=seed, strategy=strategy, device=device
+        )
 
     def compile_detector_sampler(
         self,
         *,
         strategy: SamplingStrategy = "active_statevector",
         seed: int | None = None,
+        device: Device = "auto",
     ) -> CompiledDetectorSampler:
         """Compile circuit into a detector sampler.
 
@@ -994,11 +1010,7 @@ class Circuit:
             strategy: "active_statevector" (the default) to simulate each
                 non-direct component on a dense state vector over its active
                 qubits, or a stabilizer rank decomposition strategy ("cat5",
-                "bss", "cutting"). "active_statevector" samples in float32 on an
-                Apple GPU when every component has at most 11 active qubits
-                (``TSIM_DEVICE=cpu`` turns this off), else on the CPU, on
-                ``numba.get_num_threads()`` threads. The stabilizer rank
-                strategies are provisional.
+                "bss", "cutting"). The stabilizer rank strategies are provisional.
             seed: Random seed for the sampler. If None, a random seed is drawn. A seed
                 reproduces its samples only with the same versions of Tsim and its
                 dependencies (such as NumPy and JAX) and the same backend (CPU or GPU).
@@ -1008,14 +1020,32 @@ class Circuit:
                 need the same explicit ``batch_size`` and the same reference sample
                 settings, since the default batch size depends on the free memory.
                 On a GPU, they do depend on the batch size.
+            device: Where "active_statevector" samples. "auto" (the default)
+                samples in float32 on an Apple GPU when there is one that can
+                run the circuit, and otherwise on the CPU, without a warning
+                (``TSIM_DEVICE=cpu`` keeps it on the CPU). "cpu" samples on the
+                CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
+                samples on an Apple GPU or raises: without one, for a component
+                of more than 11 active qubits, a rotation by less than about
+                1e-4 π, noise beyond the GPU's tables, or a call that runs out
+                of GPU memory. The stabilizer rank strategies take only "auto".
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.
 
+        Raises:
+            ValueError: If ``device`` is unknown, is not "auto" under a
+                stabilizer-rank strategy, or is "metal" for a circuit that the
+                GPU executor cannot run.
+            RuntimeError: If ``device`` is "metal" and this process cannot use
+                an Apple GPU.
+
         """
         from tsim.sampler import CompiledDetectorSampler
 
-        return CompiledDetectorSampler(self, seed=seed, strategy=strategy)
+        return CompiledDetectorSampler(
+            self, seed=seed, strategy=strategy, device=device
+        )
 
     def inverse(self) -> Circuit:
         """Return the inverse of the circuit."""

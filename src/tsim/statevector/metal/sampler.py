@@ -31,7 +31,6 @@ batch size.
 from __future__ import annotations
 
 import threading
-import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -64,9 +63,6 @@ MAX_COPY_THREADS = 1 << 20
 
 # NOTE: the words of ``_Slot.counts``.
 _SURVIVORS, _ACCEPTED, _DEVIATION, _CURSOR, _CAPACITY = range(5)
-
-_STACKLEVEL = 6
-"""Stack level of the samplers' warnings: the caller of ``sample``."""
 
 TAPE_THREADS = 128
 """Threads per threadgroup of the tape kernel."""
@@ -154,10 +150,13 @@ class MetalShotSampler:
         channels: ChannelSampler,
         num_detectors: int,
         seed: np.random.SeedSequence,
+        *,
+        required: bool = False,
     ) -> None:
         """Upload the noise tables of ``host``'s shot words.
 
-        ``host`` draws the reference samples, on the CPU.
+        ``host`` draws the reference samples, on the CPU, and the calls that the
+        GPU cannot run, unless ``required`` (``device="metal"``): then those raise.
 
         Raises:
             ImportError: If PyObjC's Metal is not installed.
@@ -166,7 +165,8 @@ class MetalShotSampler:
         """
         runtime.check_device()
         assert self.supports(host.layout)
-        self._args = (host, channels, num_detectors, seed)
+        self._args = (host, channels, num_detectors, seed, required)
+        self._required = required
         # NOTE: a call's batches share the sampler's buffers, so calls from several
         # threads run one at a time.
         self._lock = threading.RLock()
@@ -488,8 +488,8 @@ class MetalShotSampler:
         As ``ShotSampler.sample``: with a ``mask`` only the shots that pass
         postselection are returned. ``batch_size`` bounds the shots of a batch.
         Out of GPU memory, when a kernel does not compile, and in a process
-        forked after its parent used the GPU, the call warns and samples on the
-        CPU.
+        forked after its parent used the GPU, the call samples on the CPU, or
+        raises if the sampler is ``required`` on the GPU (``_or_cpu``).
         """
 
         def on_gpu():
@@ -519,25 +519,35 @@ class MetalShotSampler:
         )
 
     def _or_cpu(self, on_gpu, on_cpu):
-        """Return ``on_gpu()``, or warn and return ``on_cpu()`` where the GPU fails.
+        """Return ``on_gpu()``, or ``on_cpu()`` where the GPU fails.
 
         It fails in a process forked after its parent used the GPU, out of GPU
-        memory, and when a kernel does not compile; after that the sampler
-        samples on the CPU.
+        memory, and when a kernel does not compile; after the last the sampler
+        samples on the CPU. A ``required`` sampler raises instead.
+
+        Raises:
+            RuntimeError: If ``required``, in a process forked after its parent
+                used the GPU.
+            MemoryError: If ``required``, out of GPU memory.
+            runtime.CompileError: If ``required``, when a kernel does not compile.
+
         """
-        if self._cpu_only or _forked():
+        if self._cpu_only:
+            return on_cpu()
+        if runtime.forked_after_init():
+            if self._required:
+                raise RuntimeError(f"Cannot sample on Metal: {FORKED}.")
             return on_cpu()
         try:
             return on_gpu()
-        except MemoryError as error:
-            _warn_out_of_memory(error)
+        except MemoryError:
+            if self._required:
+                raise
             return on_cpu()
-        except runtime.CompileError as error:
+        except runtime.CompileError:
+            if self._required:
+                raise
             self._cpu_only = True
-            warnings.warn(
-                f"{error}; this sampler samples on the CPU from now on.",
-                stacklevel=_STACKLEVEL,
-            )
             return on_cpu()
 
     def _capacity(self, key: tuple, module: _Module, shots: int) -> int:
@@ -764,14 +774,6 @@ class MetalShotSampler:
         )
 
 
-def _forked() -> bool:
-    """Return whether this process was forked after Metal's setup, with a warning."""
-    if not runtime.forked_after_init():
-        return False
-    warnings.warn(FORKED, stacklevel=_STACKLEVEL)
-    return True
-
-
 def _threads_per_shot(layout) -> int:
     """Return log2 of a shot's threads, as ``tape.threads_per_shot`` from ``WIDE_TAPE`` on."""
     # NOTE: fewer registers per thread pay for the shuffles once tapes are wide: on
@@ -784,26 +786,23 @@ def _threads_per_shot(layout) -> int:
     return tape.threads_per_shot(layout)
 
 
-def _warn_out_of_memory(error: MemoryError) -> None:
-    warnings.warn(
-        f"{error}; sampling on the CPU. Fewer shots per call fit.",
-        stacklevel=_STACKLEVEL,
-    )
-
-
 def _count(slot: _Slot, word: int) -> tuple[runtime.Buffer, int]:
     """Return word ``word`` of ``slot.counts``, as a kernel argument."""
     return slot.counts, 4 * word
 
 
 def _restore(
-    host, channels, num_detectors, seed, state
+    host, channels, num_detectors, seed, required, state
 ) -> MetalShotSampler | ShotSampler:
-    """Rebuild a pickled ``MetalShotSampler``, or its CPU sampler where Metal is missing."""
-    if not runtime.available():
-        return host
-    shots = MetalShotSampler(host, channels, num_detectors, seed)
-    shots._rng.bit_generator.state = state
+    """Rebuild a pickled ``MetalShotSampler``, or its CPU sampler where Metal cannot run.
+
+    As at compile time, a sampler ``required`` on the GPU raises where Metal cannot run.
+    """
+    from tsim.statevector import metal
+
+    shots = metal.shot_sampler(host, channels, num_detectors, seed, required=required)
+    if isinstance(shots, MetalShotSampler):
+        shots._rng.bit_generator.state = state
     return shots
 
 
