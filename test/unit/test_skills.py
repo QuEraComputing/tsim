@@ -39,7 +39,7 @@ def _ids(path: Path) -> str:
 
 
 def _frontmatter(path: Path) -> tuple[dict, str]:
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     assert text.startswith("---\n"), "SKILL.md must start with YAML frontmatter"
     head, body = text[4:].split("\n---\n", 1)
     front = yaml.safe_load(head)
@@ -85,7 +85,7 @@ def test_frontmatter_follows_the_spec(skill_dir: Path):
 
 @pytest.mark.parametrize("path", MARKDOWN_FILES, ids=_ids)
 def test_relative_links_resolve(path: Path):
-    for target in LINK.findall(path.read_text()):
+    for target in LINK.findall(path.read_text(encoding="utf-8")):
         if re.match(r"^[a-z]+:", target) or target.startswith("#"):
             continue
         assert (path.parent / target.split("#")[0]).exists(), f"broken link {target}"
@@ -94,7 +94,7 @@ def test_relative_links_resolve(path: Path):
 @pytest.mark.parametrize("path", MARKDOWN_FILES, ids=_ids)
 def test_code_blocks_run(path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)  # blocks write figures and logs
-    blocks = CODE_BLOCK.findall(path.read_text())
+    blocks = CODE_BLOCK.findall(path.read_text(encoding="utf-8"))
     # NOTE: blocks must check their results, not only run, so that a change in behavior fails.
     assert not blocks or any(
         "assert " in code for code in blocks
