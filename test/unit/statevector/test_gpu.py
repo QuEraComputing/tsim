@@ -616,3 +616,11 @@ def test_deviation_reports_only_what_float32_rounding_does_not_explain():
     assert tape.deviation(bits(1e-4)) == 0.0
     assert tape.deviation(bits(0.01)) == pytest.approx(0.01)
     assert np.isnan(tape.deviation(np.uint32(0x7FC00000)))
+
+
+@pytest.mark.parametrize("angle, runs", [(0.25, True), (1e-4, True), (1e-5, False)])
+def test_gpu_runs_only_rotations_whose_rare_branches_it_draws(angle, runs):
+    # NOTE: R_Z(1e-5) between Hadamards gives outcome 1 a probability of 2.5e-10,
+    # too close to what float32 rounding leaves a certain outcome (CERTAIN).
+    host, _ = _shots(f"R 0\nH 0\nR_Z({angle}) 0\nH 0\nM 0\nDETECTOR rec[-1]")
+    assert tape.supports(host.layout) == runs
