@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Tsim 1.1 adds a GPU backend for Apple GPUs. For example, end-to-end
 [magic state cultivation](https://arxiv.org/abs/2409.17595) at d=5 now samples
-300 times faster on an M4 Pro than on a single CPU core. The GPU backend
+over 200 times faster on an M4 Pro than on a single CPU core. The GPU backend
 supports active widths of up to 11 and is used by default when available.
 
 ### Added
