@@ -126,14 +126,21 @@ struct __align__(16) Flip {{ unsigned word; unsigned pad; u64 mask; }};
 // The fraction's low 16 bits matter only when its high bits tie with the
 // threshold's, and then come from a hash of the fault. Word ``w`` of row ``s``
 // is ``sw[w * WS + s * SS]``.
+// Whether a fault whose fraction's high bits tie with its record's keep
+// threshold takes the alias: its low 16 bits, from a hash of the fault, are at
+// least the threshold's. NOTE: rare, so out of line, which keeps the hot loop small.
+__device__ __noinline__ bool alias_on_tie(u64 stream, unsigned rec, int row, unsigned keep)
+{{
+    return (unsigned)(mix64(stream ^ ((u64)(rec << 8 | row) * GOLDEN)) & 0xFFFF) >= keep;
+}}
+
 template <int WS, int SS>
 __device__ __forceinline__ void apply_fault(u64* sw, int row, unsigned rec, unsigned draw,
     u64 stream, const Record* __restrict__ records, const Flip* __restrict__ overflow)
 {{
     Record r = records[rec];
     unsigned high = draw & 0xFFFFFF, keep = r.alias & 0x1FFFFFF;
-    if (high > keep || (high == keep &&
-            (unsigned)(mix64(stream ^ ((u64)(rec << 8 | row) * GOLDEN)) & 0xFFFF) >= r.keep))
+    if (high > keep || (high == keep && alias_on_tie(stream, rec, row, r.keep)))
         r = records[rec - (draw >> 24) + (r.alias >> 25)];
     int flips = r.extra & 255;
     if (flips > 0) atomicXor(&sw[(r.words & 0xFFFF) * WS + row * SS], r.m0);

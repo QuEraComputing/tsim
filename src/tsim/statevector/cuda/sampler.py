@@ -601,14 +601,30 @@ class CudaShotSampler:
         )
         return dst
 
-    def _outputs(self, columns: list[np.ndarray], bools: bool) -> list[_Output]:
-        """Return the arrays of a call that returns ``columns``, one array each."""
+    def _outputs(
+        self, columns: list[np.ndarray], bools: bool
+    ) -> tuple[list[_Output], list[tuple[int, int | None]]]:
+        """Return the arrays that a call returning ``columns`` copies to the host.
+
+        Also returns, for each entry of ``columns``, its array and the bytes of
+        each row it keeps (or None for all): bit-packed leading whole bytes are a
+        view of the rows, which are copied once.
+        """
         num_outputs = self.layout.num_outputs
-        found = []
+        nb = -(-num_outputs // 8)
+        found: list[_Output] = []
+        picks: list[tuple[int, int | None]] = []
+        rows = None
         for chosen in columns:
             chosen = np.asarray(chosen, dtype=np.uint32)
             count = len(chosen)
             in_order = bool(np.array_equal(chosen, np.arange(count)))
+            if in_order and not bools and (count == num_outputs or count % 8 == 0):
+                if rows is None:
+                    rows = len(found)
+                    found.append(_Output(None, num_outputs, nb, False, True))
+                picks.append((rows, None if count == num_outputs else count // 8))
+                continue
             device = None
             if not in_order:
                 key = chosen.tobytes()
@@ -621,10 +637,11 @@ class CudaShotSampler:
                     count=count,
                     width=count if bools else -(-count // 8),
                     bools=bools,
-                    whole=in_order and count == num_outputs and not bools,
+                    whole=False,
                 )
             )
-        return found
+            picks.append((len(found) - 1, None))
+        return found, picks
 
     def _list(self, module: _Module, bits, shots: int, count: int, slot: int) -> Any:
         """Return the ``count`` shots of the bitmap ``bits`` of ``shots`` shots, in order."""
@@ -822,11 +839,11 @@ class CudaShotSampler:
         layout = self.layout
         nb, no = -(-layout.num_outputs // 8), len(self._observables)
         chosen = [np.arange(layout.num_outputs)] if columns is None else columns
-        outputs = self._outputs(chosen, bools)
+        outputs, picks = self._outputs(chosen, bools)
         out = _HostRows([o.width for o in outputs], no if expectations else None)
         if not shots:
             arrays, values = out.result()
-            return self._arrays(arrays, columns, bools), values, 0.0
+            return self._arrays(arrays, picks, columns, bools), values, 0.0
         constant = self._constant(flip)
         split = self._split(module, expectations)
         launch = split[0] if split else self._all
@@ -947,14 +964,23 @@ class CudaShotSampler:
             # NOTE: the rows of every output, bit-packed, which a call with
             # expectations returns.
             self._direct_expectations(arrays[0], values)
-        return self._arrays(arrays, columns, bools), values, deviation
+        return self._arrays(arrays, picks, columns, bools), values, deviation
 
     @staticmethod
-    def _arrays(arrays: list[np.ndarray], columns, bools: bool) -> Any:
-        """Return a call's arrays: booleans viewed as such, one array without ``columns``."""
+    def _arrays(
+        arrays: list[np.ndarray],
+        picks: list[tuple[int, int | None]],
+        columns,
+        bools: bool,
+    ) -> Any:
+        """Return a call's outputs from its ``arrays`` and ``picks`` (``_outputs``).
+
+        Booleans are viewed as such; without ``columns`` there is one array.
+        """
+        found = [arrays[k] if cut is None else arrays[k][:, :cut] for k, cut in picks]
         if bools:
-            arrays = [a.view(bool) for a in arrays]
-        return arrays[0] if columns is None else arrays
+            found = [a.view(bool) for a in found]
+        return found[0] if columns is None else found
 
     def _direct_expectations(self, rows: np.ndarray, values: np.ndarray) -> None:
         """Set the expectations of observables outside the components: ``±1``."""
