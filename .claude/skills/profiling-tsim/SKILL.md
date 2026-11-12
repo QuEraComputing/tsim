@@ -41,9 +41,11 @@ Tsim is slow:
   CPU unless you pass `--device gpu` (or `--side REF:device=gpu`). On an
   Apple-silicon Mac, Tsim samples on the GPU by default for k_max <= 11, 4-19x
   faster than all CPU cores; there `--device gpu` measures what users get. The
-  `device` column says where each row sampled: a GPU falls back to the CPU for
-  components wider than it runs, and a row that ends in `DEVICE: cpu -> metal`
-  compares a GPU with the CPU.
+  `device` column says where each row sampled: under `device="auto"` a GPU falls
+  back to the CPU silently (components wider than 11, tiny rotations, noise beyond
+  its tables), and a row that ends in `DEVICE: cpu -> metal` compares a GPU with the
+  CPU. A slow GPU row with small calls or a small `batch_size` is launch overhead;
+  see "Apple-silicon Macs" in the `benchmarking-tsim` skill.
 - **Compile.** `compile` includes the first use of a backend in the process (about
   0.1 s for Metal's PyObjC) but not the first call, whose kernel compilation goes
   into `warmup_s` in the JSON.

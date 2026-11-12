@@ -100,7 +100,18 @@ uv run tsim-dev bench --side .:device=gpu --side .:device=cpu,threads=10   # GPU
 ```
 
 - The `device` column must say `metal` on the GPU side. It says `cpu` where Metal falls
-  back: a component wider than 11, noise beyond the GPU tables, no GPU memory.
+  back: a component wider than 11, a rotation branch below float32's resolution (an angle
+  below about 1e-4 π), noise beyond the GPU tables, no GPU memory. Under the default
+  `device="auto"` these fallbacks are silent; in a script of your own, compile with
+  `device="metal"` to make them raise instead.
+- `TSIM_DEVICE=cpu` (the bench's default) keeps `device="auto"` on the CPU; an explicit
+  `device=` argument overrides it.
+- The GPU's rate depends on call size much more than the CPU's: each call pays a fixed cost
+  (waiting for the GPU, copying rows back), and each batch of up to 2^20 shots is one
+  launch. The bench calibrates calls to about 0.3 s, which is enough. A GPU rate measured
+  with calls of 10^5 shots or fewer, or with a small `batch_size`, measures overhead, not
+  sampling; never report one. Leave `batch_size` unset on the GPU; it can only lower the
+  batch, and it changes a seed's GPU samples.
 - A reference without the Metal backend samples on the CPU even with `--device gpu`; its
   rows end in `DEVICE: cpu -> metal`, and the ratio compares devices, not code.
 - Compare the GPU with all CPU cores (`--threads N`, from the `NOTE` line), not one.
