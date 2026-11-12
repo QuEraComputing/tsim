@@ -609,11 +609,17 @@ class ShotSampler:
                 self._scratch = scratch
         return out
 
-    def direct_bools(self, shots: int, flip: np.ndarray | None = None) -> np.ndarray:
+    def direct_bools(
+        self,
+        shots: int,
+        flip: np.ndarray | None = None,
+        batch_size: int | None = None,
+    ) -> np.ndarray:
         """Return every output bit of a program without components, as booleans.
 
         The noise sampler writes them straight into the rows. The samples equal
-        those of ``sample``. ``flip`` is as in ``sample``.
+        those of ``sample``. ``flip`` is as in ``sample``; ``batch_size`` does not
+        change the samples on the CPU.
         """
         assert self._direct_tables is not None
         out = np.empty((shots, self._layout.num_outputs), dtype=np.uint8)

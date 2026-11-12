@@ -1,10 +1,10 @@
 import pytest
 
-from tsim.statevector.cuda import runtime
+from tsim.statevector.metal import runtime as metal_runtime
 
 
 @pytest.fixture(autouse=True)
 def _cpu_samplers(request, monkeypatch):
-    """Sample on the CPU, except in the CUDA tests, which choose per sampler."""
-    if request.path.name != "test_cuda_sampler.py":
-        monkeypatch.setattr(runtime, "available", lambda: False)
+    """Sample on the CPU, except in the Metal tests, which choose per sampler."""
+    if request.path.name != "test_metal_sampler.py":
+        monkeypatch.setattr(metal_runtime, "unavailable", lambda: "a test on the CPU")

@@ -8,16 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `strategy="active_statevector"` samples on a CUDA GPU, in float32, whenever
-  CuPy sees one and every component has at most 11 active qubits (install with
-  `pip install bloqade-tsim[cuda]`). A seed's GPU samples differ from the CPU's and
-  depend on the batch size; `TSIM_DEVICE=cpu` keeps the samplers on the CPU, and
-  `SamplerStats.device` and the repr say where they sample. The samplers warn and
-  fall back to the CPU for wider components, noise beyond the GPU tables' limits,
-  forked processes and calls that run out of GPU memory even in small batches.
-- The `jax-cuda12` and `jax-cuda13` extras, for the stabilizer-rank strategies
-  on NVIDIA GPUs with JAX. The `cuda12` and `cuda13` extras of Tsim 1.0 install
-  the same packages.
+- `strategy="active_statevector"` samples on the GPU of an Apple-silicon Mac, in
+  float32, whenever every component has at most 11 active qubits (Tsim now depends
+  on `pyobjc-framework-Metal` there). A seed's GPU samples differ from the CPU's and
+  depend on `batch_size`. The `device` argument of `compile_sampler`,
+  `compile_detector_sampler` and the sampler classes chooses where they sample:
+  `"auto"` (the default) uses the GPU when it can run the circuit and otherwise
+  the CPU, without a warning; `"cpu"` keeps them on the CPU; `"metal"` raises when
+  the GPU cannot run the circuit. `TSIM_DEVICE=cpu` keeps `"auto"` on the CPU, and
+  `SamplerStats.device` and the repr say where they sample.
 - The docs pages have a menu to copy a page or open it in ChatGPT or Claude, and
   the README, the install page and the agent skill point to the docs MCP server
   at `https://bloqade.quera.com/tsim/mcp`. The README and the install page also
@@ -52,6 +51,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in `CS 0 0`, raise an error naming the gate instead of its decomposition.
 
 ### Changed
+- On an Apple GPU, detector samples that return a subset or reordering of the
+  outputs (`separate_observables=True`, `prepend_observables=True`, or detectors
+  only) select their columns on the GPU instead of on the host, bit-packed or as
+  booleans. On an M4 Pro, distance-3 cultivation postselected on every detector
+  samples 1.1 to 1.5 billion shots per second in these layouts, instead of 0.06
+  to 0.15 (detectors only, bit-packed, was already fast); end-to-end cultivation
+  d=5 samples 156 to 221 million instead of 1 to 3 million with booleans or
+  prepended observables, and 291 instead of 59 million with separate bit-packed
+  observables.
 - `strategy="active_statevector"` may run a component's measurements later
   where that frees no axis that a later rotation reuses and leaves more of the
   tape before its first shot-dependent action, which a GPU backend runs once for

@@ -104,8 +104,9 @@ If `sampler.active_width` raises `AttributeError`, the installed Tsim is older t
 upgrade `bloqade-tsim` before going further.
 
 Before a long run, time it: one small warm-up call (the first call compiles kernels), then
-one call of about 10^6 shots, and extrapolate. Small calls understate the rate. Report the
-width and the measured shots per second, with the thread count, along with any plan.
+one call of about 10^6 shots, and extrapolate. Small calls understate the rate, on a GPU even
+more. Report the width, the measured shots per second and where it ran (`sampler.stats.device`,
+and the thread count on the CPU), along with any plan.
 
 If the width is too large: postselect inside Tsim (discarded shots stop early, see below),
 simulate a smaller instance (lower distance or fewer rounds) and report how the width grows,
@@ -176,26 +177,49 @@ yourself.
 - **Shots per call:** each `sample()` call has a fixed overhead. For fast circuits, ask for
   about 10^6 or more shots per call, limited by memory, instead of looping over small calls.
   Calls of 10^5 shots have been measured 2 to 4 times slower than calls of 10^7, and 100-shot
-  calls about 80 times slower.
+  calls about 80 times slower. On a GPU the fixed cost per call is larger (setting up the
+  launches and waiting for the GPU to finish), so ask for 10^6 to 10^7 shots per call there.
 - **`batch_size`:** leave it at the default, which is sized from free memory and is close to
   optimal. Small values (a few thousand or less) are several times slower. Lower it only to
-  cap memory; it does not change the samples.
+  cap memory; on the CPU it does not change the samples. On a GPU the default batch is up to 2^20
+  shots (fewer for very wide rows), one GPU launch, all launched back to back; `batch_size` can only lower it, a small
+  one makes launch overhead dominate, and it changes which samples a seed gives.
 - **`bit_packed=True`** returns little-endian packed `uint8` rows, as in Stim, using 8 times
   less memory. On a distance-11 surface code memory (1,320 detectors) it was twice as fast as
-  booleans, at distance 5 about 1.3 times. For small circuits it gains little and is slower
+  booleans, at distance 5 about 1.3 times. On an Apple GPU the gap is larger, since booleans
+  move 8 times more bytes off the GPU: 2.3 to 3.2 times on circuits with hundreds of
+  detectors (surface_d7_r7: 757M against 237M shots/s on an M4 Pro). Use packed rows for
+  large studies and decode them packed. For small circuits it gains little and is slower
   with `separate_observables` (the observables are split off and re-packed); use
   `append_observables=True` with packed output.
 - **Threads:** the default strategy runs on `numba.get_num_threads()` threads, all cores by
   default. Use `numba.set_num_threads(k)` before `sample` (or `NUMBA_NUM_THREADS=k` before
   importing Tsim) and leave cores free on a shared machine. Do not run several multi-threaded
   Tsim processes side by side; they oversubscribe the CPU.
-- **NVIDIA GPUs:** with the `cuda` extra, the default strategy samples on the GPU when every
-  component has at most 11 active qubits. It computes outcome probabilities in float32; set
-  `TSIM_DEVICE=cpu` before compiling to stay on the CPU, in double precision. The sampler's
-  repr says where it samples (`samples on cuda`).
+- **Apple GPUs:** on an Apple-silicon Mac the default strategy samples on the GPU when every
+  component has at most 11 active qubits, often 5 to 10 times faster than all CPU cores. That
+  includes Clifford circuits, whose detectors come from the noise alone: the GPU samples the
+  noise too. It
+  computes outcome probabilities in float32 and never draws an outcome below about 1e-11
+  (circuits with rotations by less than about 6e-5 π stay on the CPU). Thread settings do not
+  affect GPU sampling.
+- **`device`** (in `compile_sampler` and `compile_detector_sampler`) chooses where it samples:
+  `"auto"` (default) uses the GPU when it can and otherwise the CPU, silently; `"cpu"` stays
+  on the CPU in double precision; `"metal"` raises with the reason if the GPU cannot run the
+  circuit (no Apple GPU, width above 11, a tiny rotation, out of GPU memory). Check
+  `sampler.stats.device` (or the repr, `samples on metal`) after compiling, since `"auto"`
+  does not warn. Pass `device="metal"` for long runs that must not drop to the CPU unnoticed,
+  and `device="cpu"` to reproduce samples across machines or to compare against the GPU.
+  `TSIM_DEVICE=cpu` in the environment keeps `"auto"` on the CPU; it is read when a sampler
+  is compiled, so an unpickled sampler keeps the device choice it was compiled with.
+- **Processes:** sample from one process per GPU. Threads sharing a GPU sampler run its calls
+  one at a time, and several processes compete for the same GPU. A process forked after its parent used the GPU cannot use
+  it (it samples on the CPU, or raises with `device="metal"`); start workers with the
+  `"spawn"` or `"forkserver"` method (macOS's default is `"spawn"`).
 - **Seeds:** a `seed` reproduces samples for the same Tsim and dependency versions and
-  backend. On the CPU, thread count and `batch_size` do not affect the samples; on a GPU,
-  `batch_size` does.
+  device. On the CPU, thread count and `batch_size` do not affect the samples; on a GPU,
+  `batch_size` does, and GPU samples differ from CPU samples, so with `device="auto"` a seed
+  reproduces only on the same kind of machine.
 
 ## Postselection
 
@@ -285,7 +309,7 @@ tick it off:
 
 ```
 Tsim results:
-- [ ] Active width read; rate timed with a warm-up and a large call; thread count noted
+- [ ] Active width read; rate timed with a warm-up and a large call; device and threads noted
 - [ ] Noiseless run: detectors used for postselection or decoding never fire
 - [ ] Reference flags used only if detectors and observables are deterministic
 - [ ] At least one check below passed (stand-in vs Stim, to_tensor, independent simulator)

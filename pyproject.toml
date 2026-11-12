@@ -43,6 +43,8 @@ dependencies = [
     "stim>=1.15.0",
     "stim-timeline-text>=0.1.0",
     "zxparam>=0.1.0",
+    # NOTE: the statevector executor on Apple GPUs (about 7 MB).
+    "pyobjc-framework-Metal>=10.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
 ]
 
 [project.urls]
@@ -85,7 +87,8 @@ dev = [
     "ruff>=0.7.3",
     "rust-just>=1.36.0",
     "sinter~=1.16.dev",
-    "tesseract-decoder>=0.1.1.dev20251113222502",
+    # NOTE: tesseract-decoder has no Windows wheels.
+    "tesseract-decoder>=0.1.1.dev20251113222502; sys_platform != 'win32'",
     "tqdm>=4.67.1",
     "vulture>=2.16",
     "radon>=6.0.1",
@@ -172,6 +175,9 @@ extend_exclude = [
     "^docs/",
     "^test/",
 ]
+
+[tool.deptry.package_module_name_map]
+pyobjc-framework-Metal = "Metal"
 
 [tool.deptry.per_rule_ignores]
 DEP002 = ["ipywidgets"]

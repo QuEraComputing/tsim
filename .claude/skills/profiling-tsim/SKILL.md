@@ -31,18 +31,24 @@ Tsim is slow:
   sampler returns its one observable at 60.9M shots/s per core, the measurement
   sampler its 10 measurements at 11.6M (Apple M4 Pro).
 - **Output.** The harness times bit-packed rows, Tsim's own output. `--bools`
-  times `sample()`'s default boolean output, which adds a conversion: 1.6x on
-  surface_d7_r7 on the CPU. A slow boolean rate next to a fast bit-packed one
-  points at the conversion, not the sampler.
+  times `sample()`'s default boolean output, which adds a conversion: 1.6-1.8x on
+  surface_d7_r7 on the CPU, and 2.3-3.2x on a GPU for circuits with hundreds of
+  detectors (Metal on an M4 Pro: surface_d7_r7 3.2x, end2end_d3_dsurface15 2.8x,
+  hook_inject_T_d15_pd5 2.3x; under 1.3x for circuits with few detectors). A slow
+  boolean rate next to a fast bit-packed one points at the conversion, not the
+  sampler.
 - **Threads.** One pinned thread gives the rate per core. Tsim samples on all
   performance cores by default (`numba.get_num_threads()`); the `NOTE` line says
   how many. Quote all-core rates with `--threads N`.
 - **Device.** The harness sets `TSIM_DEVICE=cpu`, so every side samples on the
-  CPU unless you pass `--device gpu` (or `--side REF:device=gpu`). With a GPU
-  backend installed, `--device gpu` measures what users get by default. The
-  `device` column says where each row sampled: a GPU falls back to the CPU for
-  components wider than it runs, and a row that ends in `DEVICE: cpu -> metal`
-  compares a GPU with the CPU.
+  CPU unless you pass `--device gpu` (or `--side REF:device=gpu`). On an
+  Apple-silicon Mac, Tsim samples on the GPU by default for k_max <= 11, 4-19x
+  faster than all CPU cores; there `--device gpu` measures what users get. The
+  `device` column says where each row sampled: under `device="auto"` a GPU falls
+  back to the CPU silently (components wider than 11, tiny rotations, noise beyond
+  its tables), and a row that ends in `DEVICE: cpu -> metal` compares a GPU with the
+  CPU. A slow GPU row with small calls or a small `batch_size` is launch overhead;
+  see "Apple-silicon Macs" in the `benchmarking-tsim` skill.
 - **Compile.** `compile` includes the first use of a backend in the process (about
   0.1 s for Metal's PyObjC) but not the first call, whose kernel compilation goes
   into `warmup_s` in the JSON.
@@ -61,7 +67,8 @@ uv run tsim-dev profile cultivation_d5 --seconds 5
 The run is a fresh process, one pinned thread, warm numba cache, under a memory cap,
 with bit-packed output on the CPU (`--threads`, `--device` and `--sampler` as in
 step 2). py-spy sees the host only: on a GPU the sampling phase shows the wait for
-the device, and the time inside its kernels needs the backend's own timers.
+the device. For Metal's time per kernel, see "Apple-silicon Macs" in the
+`benchmarking-tsim` skill (`runtime.PROFILE`).
 The output splits samples by phase (`compile`, `sample`) and prints three tables:
 
 - **innermost Tsim frame (kernel callers):** read this first. Jitted numba code has
