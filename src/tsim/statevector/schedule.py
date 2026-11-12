@@ -136,8 +136,13 @@ class Schedule:
     width: int
 
 
-def schedule(ops: PauliOps) -> Schedule:
-    """Return an order of ``ops`` that keeps the active width small."""
+def schedule(ops: PauliOps, defer: bool = False) -> Schedule:
+    """Return an order of ``ops`` that keeps the active width small.
+
+    With ``defer``, a measurement waits until the rotations left to run before it
+    would all widen the array, or until the end: it runs after every rotation
+    that it does not need to precede.
+    """
     num_ops = ops.num_ops
     before = np.triu(anticommutation(ops), 1)
     ancestors = _ancestors(before)
@@ -176,10 +181,14 @@ def schedule(ops: PauliOps) -> Schedule:
         while progressed:
             progressed = False
             for j in np.flatnonzero(~done):
-                if waiting[j]:
+                if waiting[j] or (defer and is_measurement[j]):
                     continue
                 keeps_width = not group.anticommuting(ops.x[j], ops.z[j]).any()
                 if is_measurement[j] or keeps_width:
+                    run(int(j))
+                    progressed = True
+            if defer and not progressed:
+                for j in np.flatnonzero(~done & is_measurement & (waiting == 0)):
                     run(int(j))
                     progressed = True
         pending = np.flatnonzero(~done & is_measurement)
@@ -196,5 +205,6 @@ def schedule(ops: PauliOps) -> Schedule:
                 best, lowest = k, highest
         for j in chains[best]:
             run(int(j))
-        run(int(pending[best]))
+        if not defer:
+            run(int(pending[best]))
     return Schedule(order=np.asarray(order, dtype=np.int32), width=width)
