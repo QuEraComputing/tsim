@@ -448,7 +448,7 @@ class _CompiledSamplerBase:
         # NOTE: only the shot words are filtered by a mask; the noise sampler
         # writes direct outputs straight into boolean rows otherwise.
         if not (self._program.components or bit_packed or mask is not None):
-            samples = self._shots.direct_bools(shots, flip)
+            samples = self._shots.direct_bools(shots, flip, batch_size)
             return [_take_columns(samples, c) for c in columns]
         arrays, deviation = self._shots.sample(
             shots,

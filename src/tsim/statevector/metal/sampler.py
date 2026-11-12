@@ -749,11 +749,18 @@ class MetalShotSampler:
             bit = (rows[:, k >> 3] >> np.uint8(k & 7)) & np.uint8(1)
             values[:, column] = 1.0 - 2.0 * bit.astype(np.float32)
 
-    def direct_bools(self, shots: int, flip: np.ndarray | None = None) -> np.ndarray:
+    def direct_bools(
+        self,
+        shots: int,
+        flip: np.ndarray | None = None,
+        batch_size: int | None = None,
+    ) -> np.ndarray:
         """Return every output bit of a program without components, as booleans."""
         return self._or_cpu(
-            lambda: self.sample_accepted(shots, flip=flip, bools=True)[0],
-            lambda: self._host.direct_bools(shots, flip),
+            lambda: self.sample_accepted(
+                shots, flip=flip, batch_size=batch_size, bools=True
+            )[0],
+            lambda: self._host.direct_bools(shots, flip, batch_size),
         )
 
 

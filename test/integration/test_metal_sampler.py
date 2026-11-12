@@ -230,6 +230,19 @@ def test_metal_arranges_the_columns_as_the_cpu_does(bit_packed):
     assert gpu.shape[1] == cpu.shape[1]
 
 
+def test_direct_booleans_take_the_batch_size_as_packed_rows_do():
+    # NOTE: each batch draws its own stream, so a component-free sampler's
+    # booleans and packed rows match only if both honor batch_size.
+    circuit = Circuit("X_ERROR(0.3) 0 1 2\nM 0 1 2\nDETECTOR rec[-1]\nDETECTOR rec[-2]")
+
+    def sample(bit_packed):
+        sampler = _gpu(circuit.compile_detector_sampler(seed=5))
+        return sampler.sample(5_000, batch_size=1_000, bit_packed=bit_packed)
+
+    packed = np.packbits(sample(False), axis=1, bitorder="little")
+    np.testing.assert_array_equal(packed, sample(True))
+
+
 def test_metal_samples_no_shots():
     circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
     sampler = _gpu(circuit.compile_detector_sampler(seed=1))
