@@ -96,7 +96,7 @@ def test_corpus_circuits_are_postselected_unless_turned_off(fake_bench):
     assert "--no-postselect" in command
 
 
-def test_benchmarks_time_bit_packed_rows_on_the_cpu_by_default(fake_bench, monkeypatch):
+def test_benchmarks_time_bit_packed_rows_on_the_cpu_by_default(fake_bench):
     (case,) = bench.select(_bench_args())
     command = bench.worker_command(Path("python"), case, _bench_args(), "bench")
     assert "--bit-packed" in command
@@ -109,13 +109,16 @@ def test_benchmarks_time_bit_packed_rows_on_the_cpu_by_default(fake_bench, monke
     # samples every shot.
     (case,) = bench.select(_bench_args("--sampler", "measurement"))
     assert (case.sampler, case.postselect) == ("measurement", "none")
-    monkeypatch.setenv("TSIM_DEVICE", "gpu-left-over")
     side = bench.parse_side(".:device=gpu")
     assert side.describe().endswith("device=gpu")
-    assert "TSIM_DEVICE" not in bench.side_env(side, 1, "gpu")
-    assert bench.side_env(side, 1, "cpu")["TSIM_DEVICE"] == "cpu"
-    # NOTE: tests and jobs leave the device to the tests themselves.
-    assert common.child_env(1)["TSIM_DEVICE"] == "gpu-left-over"
+    # NOTE: on the CPU the worker runs through on_device.py, which passes
+    # device="cpu" to the samplers; on a GPU it runs as it is.
+    command = bench.worker_command(Path("python"), case, _bench_args(), "bench")
+    assert command[1:3] == [str(bench.ON_DEVICE), "cpu"]
+    command = bench.worker_command(
+        Path("python"), case, _bench_args("--device", "gpu"), "bench"
+    )
+    assert command[1].endswith("worker.py")
 
 
 def test_shot_benchmarks_report_the_device_that_sampled(fake_bench, monkeypatch):
@@ -288,7 +291,7 @@ def test_sides_carry_their_own_settings(fake_bench):
         "cat5",
     )
     assert side.describe().endswith("threads=10 strategy=cat5")
-    assert bench.side_env(side, 10, "cpu")["NUMBA_NUM_THREADS"] == "10"
+    assert common.child_env(side.threads)["NUMBA_NUM_THREADS"] == "10"
     # A python executable is used as given: resolving a venv's symlink would lose the venv.
     python = Path(sys.executable).absolute()
     assert bench.parse_side(f"{python}:threads=2").python == python

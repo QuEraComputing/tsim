@@ -85,21 +85,19 @@ def measure(
     side, cases, args, deadline: float, report: Callable[[str, dict], None]
 ) -> None:
     """Compile every case on one side and call `report(key, result)` for each one."""
-    from .bench import side_env
+    from .bench import worker_launch
 
     pending = _items(cases)
     while pending:
-        cmd = [str(side.python), "-u", str(corpus.worker(args.corpus_dir))]
+        device = side.device or getattr(args, "device", "cpu")
+        python, *worker = worker_launch(side.python, device, args.corpus_dir)
+        cmd = [python, "-u", *worker]
         cmd += ["--mode", "width", "--root", str(corpus.root(args.corpus_dir))]
         if side.strategy or args.strategy:
             cmd += ["--strategy", side.strategy or args.strategy]
         for _, flag, value in pending:
             cmd += [flag, value]
-        env = side_env(
-            side,
-            side.threads or args.threads,
-            side.device or getattr(args, "device", "cpu"),
-        )
+        env = common.child_env(side.threads or args.threads)
         started, outcome, done = None, Exit(), set()
         capped = common.capped(cmd, mem=args.mem)
         for line in _stream(capped, env, args.case_timeout, deadline, outcome):

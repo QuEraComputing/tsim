@@ -179,6 +179,14 @@ rows of 440 bytes a call runs 1.7x longer than into a buffer that a previous
 call returned (and its caller dropped).
 """
 
+POOL_BYTES = 1 << 30
+"""Most bytes of freed buffers kept for reuse; a larger buffer is released at once.
+
+NOTE: the pool outlives the samplers, so this bounds the memory that the process
+holds after their outputs are gone. It is above the rows of calls of a few
+million shots, whose page faults the pool saves.
+"""
+
 _pool: list[Any] = []
 # NOTE: reentrant, since a buffer can be freed (``_Owner.__del__``) while this
 # thread searches the pool.
@@ -204,10 +212,13 @@ class _Owner:
         }
 
     def __del__(self) -> None:
-        if self.recycle and _pool is not None:
-            with _pool_lock:
-                _pool.append(self.handle)
-                del _pool[:-POOL_BUFFERS]
+        if not self.recycle or _pool is None or self.handle.length() > POOL_BYTES:
+            return
+        with _pool_lock:
+            _pool.append(self.handle)
+            del _pool[:-POOL_BUFFERS]
+            while sum(b.length() for b in _pool) > POOL_BYTES:
+                del _pool[0]
 
 
 def buffer(count: int, dtype, recycle: bool = False) -> Buffer:
@@ -215,7 +226,8 @@ def buffer(count: int, dtype, recycle: bool = False) -> Buffer:
 
     Its array keeps the Metal buffer alive, so it may outlive the ``Buffer``.
     With ``recycle`` the buffer may be a freed one of up to twice the size, not
-    zeroed, and returns to the pool once its arrays are gone.
+    zeroed, and returns to the pool once its arrays are gone (unless it is larger
+    than ``POOL_BYTES``).
     """
     dtype = np.dtype(dtype)
     nbytes = max(int(count) * dtype.itemsize, 16)

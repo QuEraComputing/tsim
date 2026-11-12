@@ -72,7 +72,7 @@ width can still be slower. Compile times are shown for each side.
 `--side REF[:key=value,...]`, given twice, replaces `--ref` when the two sides differ in
 more than the checkout. REF is `.` (this checkout), a git revision, a checkout path, or
 a Python executable (an environment built elsewhere). Keys: `threads=N`,
-`strategy=NAME`. The first side is "new".
+`strategy=NAME`, `device=cpu|gpu`. The first side is "new".
 
 ```bash
 uv run tsim-dev bench --side .:threads=10 --side .:threads=1          # 10 cores vs 1
@@ -91,7 +91,8 @@ M4 Pro, 26-96x one CPU thread and 4-19x all ten performance cores, bit-packed. E
 cultivation d=5 ran at 125M shots/s, 19x the ten cores. Circuits without noise whose CPU
 trajectories share well, such as qv_q10, run at the CPU's rate.
 
-The bench sets `TSIM_DEVICE=cpu` by default, so on a Mac a plain run measures the CPU only.
+The bench compiles with `device="cpu"` by default, so on a Mac a plain run measures the CPU
+only.
 Say which you measured, and on a Mac measure both:
 
 ```bash
@@ -104,8 +105,8 @@ uv run tsim-dev bench --side .:device=gpu --side .:device=cpu,threads=10   # GPU
   below about 6e-5 π), noise beyond the GPU tables, no GPU memory. Under the default
   `device="auto"` these fallbacks are silent; in a script of your own, compile with
   `device="metal"` to make them raise instead.
-- `TSIM_DEVICE=cpu` (the bench's default) keeps `device="auto"` on the CPU; an explicit
-  `device=` argument overrides it.
+- `--device cpu` (the default) runs tsim-bench's worker through `dev/tsim_dev/on_device.py`,
+  which compiles with `device="cpu"`; `--device gpu` leaves Tsim's `device="auto"`.
 - The GPU's rate depends on call size much more than the CPU's: each call pays a fixed cost
   (setting up the launches, waiting for the GPU to finish), and each batch of up to 2^20 shots is one
   launch. The bench calibrates calls to about 0.3 s, which is enough. A GPU rate measured
@@ -128,7 +129,7 @@ uv run tsim-dev bench --side .:device=gpu --side .:device=cpu,threads=10   # GPU
 - One thread, pinned to a core (`--threads N` to change; say so when you report).
   The `NOTE` line gives the cores Tsim uses by default.
 - Bit-packed output (`--bools` for `sample()`'s default booleans) and the CPU
-  (`TSIM_DEVICE=cpu`; `--device gpu` lets Tsim use a GPU backend). The header says
+  (`device="cpu"`; `--device gpu` lets Tsim use a GPU backend). The header says
   which; the `profiling-tsim` skill lists how much each changes the rate.
 - The sampler that tsim-bench records for each circuit: the detector sampler for
   QEC circuits. `--sampler detector|measurement` overrides it (a measurement sampler

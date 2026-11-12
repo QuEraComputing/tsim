@@ -42,6 +42,7 @@ evidence.
 | Any | `uv run tsim-dev check` prints PASS for lint and tests |
 | Could affect compile or sampling cost (see below) | `uv run tsim-dev bench --ref origin/main`; any regression investigated and explained |
 | Aims to make Tsim faster | the same with `--suite full`; see the `benchmarking-tsim` skill |
+| Touches the GPU path (`statevector/gpu/`, `statevector/metal/`, or code they call) | on an Apple-silicon Mac, also `uv run tsim-dev bench --device gpu --ref origin/main` (the plain bench samples on the CPU only) |
 | Could change the active width (graph, simplification, scheduling, plan) | `uv run tsim-dev bench --width --ref origin/main`; any `wider` explained |
 | Bug fix | the new test fails on `origin/main` and passes on the branch |
 | User-visible | a `CHANGELOG.md` entry under `## [Unreleased]` |
