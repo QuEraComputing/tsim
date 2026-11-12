@@ -94,7 +94,18 @@ and read these docs. Add it to Claude Code with:
 claude mcp add --transport http tsim https://bloqade.quera.com/tsim/mcp
 ```
 
-For Cursor and VS Code, use the page menu at the top of any page.
+For Cursor and VS Code, use the page menu at the top of any page, or add the server by hand,
+for Cursor in `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "Tsim": {
+      "url": "https://bloqade.quera.com/tsim/mcp"
+    }
+  }
+}
+```
 
 ## Development setup
 

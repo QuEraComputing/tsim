@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `npx skills add QuEraComputing/tsim --skill simulating-circuits-with-tsim`.
 - **Docs for agents and chat assistants**: every docs page can be copied or opened
   in ChatGPT or Claude, and an MCP server for the docs runs at
-  `https://bloqade.quera.com/tsim/mcp`.
+  `https://bloqade.quera.com/tsim/mcp` (the page menu adds it to Cursor or VS Code).
 
 ### Fixed
 - Circuits with many detectors and noise locations compile with far less memory.
