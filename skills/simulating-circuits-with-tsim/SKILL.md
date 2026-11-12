@@ -196,8 +196,9 @@ yourself.
   default. Use `numba.set_num_threads(k)` before `sample` (or `NUMBA_NUM_THREADS=k` before
   importing Tsim) and leave cores free on a shared machine. Do not run several multi-threaded
   Tsim processes side by side; they oversubscribe the CPU.
-- **Apple GPUs:** on an Apple-silicon Mac the default strategy samples on the GPU when every
-  component has at most 11 active qubits, often 5 to 10 times faster than all CPU cores. That
+- **GPUs:** on an Apple-silicon Mac (Metal), or on an NVIDIA GPU with the `cuda` extra, the
+  default strategy samples on the GPU when every component has at most 11 active qubits,
+  often 5 to 10 times faster than all CPU cores. That
   includes Clifford circuits, whose detectors come from the noise alone: the GPU samples the
   noise too. It
   computes outcome probabilities in float32 and never draws an outcome below about 1e-11
@@ -205,16 +206,17 @@ yourself.
   affect GPU sampling.
 - **`device`** (in `compile_sampler` and `compile_detector_sampler`) chooses where it samples:
   `"auto"` (default) uses the GPU when it can and otherwise the CPU, silently; `"cpu"` stays
-  on the CPU in double precision; `"metal"` raises with the reason if the GPU cannot run the
-  circuit (no Apple GPU, width above 11, a tiny rotation, out of GPU memory). Check
-  `sampler.stats.device` (or the repr, `samples on metal`) after compiling, since `"auto"`
-  does not warn. Pass `device="metal"` for long runs that must not drop to the CPU unnoticed,
+  on the CPU in double precision; `"metal"` (Apple) and `"cuda"` (NVIDIA) raise with the
+  reason if the GPU cannot run the circuit (no such GPU, width above 11, a tiny rotation, out
+  of GPU memory). Check `sampler.stats.device` (or the repr, `samples on metal` or `cuda`)
+  after compiling, since `"auto"` does not warn. Pass `device="metal"` or `"cuda"` for long
+  runs that must not drop to the CPU unnoticed,
   and `device="cpu"` to reproduce samples across machines or to compare against the GPU.
   `TSIM_DEVICE=cpu` in the environment keeps `"auto"` on the CPU; it is read when a sampler
   is compiled, so an unpickled sampler keeps the device choice it was compiled with.
 - **Processes:** sample from one process per GPU. Threads sharing a GPU sampler run its calls
   one at a time, and several processes compete for the same GPU. A process forked after its parent used the GPU cannot use
-  it (it samples on the CPU, or raises with `device="metal"`); start workers with the
+  it (it samples on the CPU, or raises with `device="metal"` or `"cuda"`); start workers with the
   `"spawn"` or `"forkserver"` method (macOS's default is `"spawn"`).
 - **Seeds:** a `seed` reproduces samples for the same Tsim and dependency versions and
   device. On the CPU, thread count and `batch_size` do not affect the samples; on a GPU,

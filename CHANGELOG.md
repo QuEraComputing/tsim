@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the CPU, without a warning; `"cpu"` keeps them on the CPU; `"metal"` raises when
   the GPU cannot run the circuit. `TSIM_DEVICE=cpu` keeps `"auto"` on the CPU, and
   `SamplerStats.device` and the repr say where they sample.
+- `strategy="active_statevector"` also samples on NVIDIA GPUs, through CUDA, with
+  the new `cuda` extra (`pip install bloqade-tsim[cuda]`, CUDA 13). It runs the
+  same circuits as Metal and behaves the same way: `device="auto"` picks it when
+  CuPy sees a GPU, and `device="cuda"` raises when the GPU cannot run the circuit.
+- The `jax-cuda12` and `jax-cuda13` extras, for the stabilizer-rank strategies
+  on NVIDIA GPUs with JAX. The `cuda12` and `cuda13` extras of Tsim 1.0 install
+  the same packages.
 - The docs pages have a menu to copy a page or open it in ChatGPT or Claude, and
   the README, the install page and the agent skill point to the docs MCP server
   at `https://bloqade.quera.com/tsim/mcp`. The README and the install page also
