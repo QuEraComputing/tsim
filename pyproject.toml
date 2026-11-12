@@ -166,6 +166,7 @@ extend_exclude = [
     "^benchmarks/",
     "^scripts/",
     "^docs/",
+    "^examples/",
     "^test/",
 ]
 
