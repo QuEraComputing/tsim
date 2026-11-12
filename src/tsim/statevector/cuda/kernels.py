@@ -2,8 +2,10 @@
 
 ``tape`` runs the components' tapes on the queued shots; ``count_bits`` and
 ``list_bits`` list the accepted shots from the bitmap; ``gather_columns`` and
-``gather_float`` gather rows and expectations for the copy to the host;
-``publish`` stores a batch's counts into pinned host memory.
+``gather_float`` gather rows and expectations for the copy to the host
+(``gather_bytes`` the rows too wide for ``gather_columns``);
+``select_rows`` picks the requested outputs out of them, bit-packed or as
+booleans; ``publish`` stores a batch's counts into pinned host memory.
 """
 
 from __future__ import annotations
@@ -22,6 +24,21 @@ COPY_THREADS = 256
 
 SCAN_THREADS = 1024
 """Threads per block of ``count_bits`` and ``list_bits``: one per bitmap word."""
+
+KERNEL_SHARED_BYTES = 48 * 1024
+"""Shared memory that a kernel may use without opting in, static and dynamic."""
+
+
+def gather_shots(layout: ShotLayout, block_shots: int) -> int:
+    """Return the rows that a ``gather_columns`` block packs, or ``0`` if not even 32 fit.
+
+    A block stages its rows' output words and packed bytes in shared memory: at
+    most ``block_shots`` rows, a multiple of 32. Rows of which 32 do not fit
+    take ``gather_bytes`` instead.
+    """
+    row = 8 * layout.output_words + -(-layout.num_outputs // 8)
+    return min(block_shots, KERNEL_SHARED_BYTES // max(row, 1) // 32 * 32)
+
 
 TEMPLATE = r"""
 extern "C" __global__ void __launch_bounds__({block}) tape(
@@ -114,21 +131,58 @@ extern "C" __global__ void __launch_bounds__({SCAN}) list_bits(
 }}
 
 // The outputs of rows ``index[j]`` (or every row), bit-packed densely
-// (``pack_rows``): a block packs {S} rows' output words.
+// (``pack_rows``): a block packs {GS} rows' output words.
 extern "C" __global__ void __launch_bounds__({COPY}) gather_columns(
     const u64* __restrict__ rows, long long n, const unsigned* __restrict__ index,
     unsigned char* __restrict__ dst) {{
-    __shared__ u64 sw[{OW} * {S}];
+    __shared__ u64 sw[{OW} * {GS}];
     extern __shared__ __align__(16) unsigned char stage[];
-    long long base = (long long)blockIdx.x * {S};
-    int ns = (int)min((long long){S}, n - base);
+    long long base = (long long)blockIdx.x * {GS};
+    int ns = (int)min((long long){GS}, n - base);
     for (int i = threadIdx.x; i < ns * {OW}; i += blockDim.x) {{
         int s = i / {OW}, w = i - s * {OW};
         long long r = index != nullptr ? (long long)index[base + s] : base + s;
-        sw[w * {S} + s] = rows[r * {NW} + w];
+        sw[w * {GS} + s] = rows[r * {NW} + w];
     }}
     __syncthreads();
-    pack_rows(sw, ns, stage, dst + base * {NB});
+    pack_rows<{GS}>(sw, ns, stage, dst + base * {NB});
+}}
+
+// As ``gather_columns``, for rows too wide to stage in shared memory: a thread
+// per output byte, read from device memory.
+extern "C" __global__ void gather_bytes(
+    const u64* __restrict__ rows, long long n, const unsigned* __restrict__ index,
+    unsigned char* __restrict__ dst) {{
+    for (long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x; i < n * {NB};
+         i += (long long)gridDim.x * blockDim.x) {{
+        long long j = i / {NB};
+        int b = (int)(i - j * {NB});
+        long long r = index != nullptr ? (long long)index[j] : j;
+        unsigned v = (unsigned)(rows[r * {NW} + (b >> 3)] >> (8 * (b & 7))) & 0xFF;
+        dst[i] = (unsigned char)(b == {NB} - 1 ? v & {LAST_BYTE} : v);
+    }}
+}}
+
+// Outputs ``columns[k]`` (``k < count``; output ``k`` without ``columns``) of
+// ``n`` packed rows of {NB} bytes, into rows of ``width`` bytes: one byte per
+// output with ``bools``, else bit-packed with zero bits past them. A thread
+// writes one byte.
+extern "C" __global__ void select_rows(
+    const unsigned char* __restrict__ packed, long long n, const unsigned* __restrict__ columns,
+    int count, int width, int bools, unsigned char* __restrict__ dst) {{
+    int per = bools ? 1 : 8;
+    for (long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x; i < n * width;
+         i += (long long)gridDim.x * blockDim.x) {{
+        long long r = i / width;
+        int k = (int)(i - r * width) * per;
+        const unsigned char* row = packed + r * {NB};
+        unsigned v = 0;
+        for (int b = 0; b < per && k + b < count; ++b) {{
+            unsigned c = columns != nullptr ? columns[k + b] : (unsigned)(k + b);
+            v |= ((row[c >> 3] >> (c & 7)) & 1u) << b;
+        }}
+        dst[i] = (unsigned char)v;
+    }}
 }}
 
 // The batch's counts, stored into pinned host memory: a read that does not
@@ -179,7 +233,9 @@ def source(
             NW=layout.num_words,
             OW=layout.output_words,
             NO=num_observables,
-            S=tables.block_shots,
+            # NOTE: gather_columns goes unused (and small) where 32 rows do not fit.
+            GS=max(gather_shots(layout, tables.block_shots), 1),
+            LAST_BYTE=f"0x{(1 << (layout.num_outputs % 8 or 8)) - 1:02X}u",
             # NOTE: the rows keep every output, the postselected ones too.
             NB=max(-(-layout.num_outputs // 8), 1),
             calls=parts.calls,

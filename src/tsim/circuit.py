@@ -966,24 +966,26 @@ class Circuit:
                 depends on the free memory. On a GPU, they do depend on the batch
                 size.
             device: Where "active_statevector" samples. "auto" (the default)
-                samples in float32 on an Apple GPU when there is one that can
-                run the circuit, and otherwise on the CPU, without a warning
-                (``TSIM_DEVICE=cpu`` keeps it on the CPU). "cpu" samples on the
-                CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
-                samples on an Apple GPU or raises: without one, for a component
-                of more than 11 active qubits, a rotation by less than about
-                6e-5 π, noise beyond the GPU's tables, or a call that runs out
-                of GPU memory. The stabilizer rank strategies take only "auto".
+                samples in float32 on an Apple GPU or an NVIDIA GPU when there
+                is one that can run the circuit, and otherwise on the CPU,
+                without a warning (``TSIM_DEVICE=cpu`` keeps it on the CPU).
+                "cpu" samples on the CPU in float64, on
+                ``numba.get_num_threads()`` threads. "metal" samples on an Apple
+                GPU and "cuda" on an NVIDIA GPU (with the ``cuda`` extra), or
+                raises: without one, for a component of more than 11 active
+                qubits, a rotation by less than about 6e-5 π, noise beyond the
+                GPU's tables, or a call that runs out of GPU memory. The
+                stabilizer rank strategies take only "auto".
 
         Returns:
             A CompiledMeasurementSampler that can be used to sample measurements.
 
         Raises:
             ValueError: If ``device`` is unknown, is not "auto" under a
-                stabilizer-rank strategy, or is "metal" for a circuit that the
-                GPU executor cannot run.
-            RuntimeError: If ``device`` is "metal" and this process cannot use
-                an Apple GPU.
+                stabilizer-rank strategy, or is "metal" or "cuda" for a circuit
+                that the GPU executor cannot run.
+            RuntimeError: If ``device`` is "metal" or "cuda" and this process
+                cannot use such a GPU.
 
         """
         from tsim.sampler import CompiledMeasurementSampler
@@ -1021,24 +1023,26 @@ class Circuit:
                 settings, since the default batch size depends on the free memory.
                 On a GPU, they do depend on the batch size.
             device: Where "active_statevector" samples. "auto" (the default)
-                samples in float32 on an Apple GPU when there is one that can
-                run the circuit, and otherwise on the CPU, without a warning
-                (``TSIM_DEVICE=cpu`` keeps it on the CPU). "cpu" samples on the
-                CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
-                samples on an Apple GPU or raises: without one, for a component
-                of more than 11 active qubits, a rotation by less than about
-                6e-5 π, noise beyond the GPU's tables, or a call that runs out
-                of GPU memory. The stabilizer rank strategies take only "auto".
+                samples in float32 on an Apple GPU or an NVIDIA GPU when there
+                is one that can run the circuit, and otherwise on the CPU,
+                without a warning (``TSIM_DEVICE=cpu`` keeps it on the CPU).
+                "cpu" samples on the CPU in float64, on
+                ``numba.get_num_threads()`` threads. "metal" samples on an Apple
+                GPU and "cuda" on an NVIDIA GPU (with the ``cuda`` extra), or
+                raises: without one, for a component of more than 11 active
+                qubits, a rotation by less than about 6e-5 π, noise beyond the
+                GPU's tables, or a call that runs out of GPU memory. The
+                stabilizer rank strategies take only "auto".
 
         Returns:
             A CompiledDetectorSampler that can be used to sample detectors and observables.
 
         Raises:
             ValueError: If ``device`` is unknown, is not "auto" under a
-                stabilizer-rank strategy, or is "metal" for a circuit that the
-                GPU executor cannot run.
-            RuntimeError: If ``device`` is "metal" and this process cannot use
-                an Apple GPU.
+                stabilizer-rank strategy, or is "metal" or "cuda" for a circuit
+                that the GPU executor cannot run.
+            RuntimeError: If ``device`` is "metal" or "cuda" and this process
+                cannot use such a GPU.
 
         """
         from tsim.sampler import CompiledDetectorSampler

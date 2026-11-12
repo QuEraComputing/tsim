@@ -14,7 +14,9 @@ A batch of shots runs as these kernels on one stream:
            noise is at least ``DEFER_SHARE`` of the faults
     list   lists the accepted shots in order from the bitmap (``count_bits``,
            ``list_bits``)
-    select gathers the rows (or the accepted rows) for the copy to the host
+    select gathers the rows (or the accepted rows), bit-packed, and picks the
+           requested outputs out of them, bit-packed or as booleans, for the
+           copy to the host
 
 ``sample_accepted`` runs a call as chunks of shots on two streams, so that a
 chunk's copy to the host overlaps the next chunk's kernels.
@@ -23,14 +25,13 @@ The kernels are compiled with NVRTC once per postselection mask (CuPy caches
 them on disk). Amplitudes are complex64, so a sample follows the CPU executor's
 distribution to within float32 rounding of the outcome probabilities; the noise
 and the outcome draws come from other streams than the CPU's, so a seed's
-samples differ from the CPU's.
+samples differ from the CPU's, and they depend on the batch size.
 """
 
 from __future__ import annotations
 
 import math
 import threading
-import warnings
 from dataclasses import dataclass
 from typing import Any
 
@@ -43,14 +44,10 @@ from tsim.statevector.cuda.kernels import COPY_THREADS, SCAN_THREADS, TAPE_THREA
 from tsim.statevector.cuda.noise import THREADS as NOISE_THREADS, noise_tables
 from tsim.statevector.gpu import FORKED, tape
 from tsim.statevector.gpu.noise import NoiseGroups, screen_pass_rate, split
-from tsim.statevector.gpu.rows import select
 from tsim.statevector.shots import ShotPlan, ShotSampler
 
 # NOTE: the words of a batch's ``counts``.
 _SURVIVORS, _ACCEPTED, _DEVIATION = range(3)
-
-KERNEL_SHARED_BYTES = 48 * 1024
-"""Shared memory that a kernel may use without opting in, static and dynamic."""
 
 BATCH_SHOTS = 1 << 22
 """Shots of one batch on the device."""
@@ -83,7 +80,9 @@ class _Module:
     noise_kept: Any
     tape: Any
     gather_columns: Any
+    gather_bytes: Any
     gather_float: Any
+    select_rows: Any
     publish: Any
     count_bits: Any
     list_bits: Any
@@ -96,6 +95,22 @@ class _Module:
     """Estimated share of shots that pass the screen."""
     splits: dict[bool, tuple[_Launch, _Launch] | None]
     """Each ``expectations`` value's noise passes (screened, deferred), or None."""
+
+
+@dataclass(frozen=True)
+class _Output:
+    """One array of a call: chosen outputs of the accepted rows, ``width`` bytes a row.
+
+    Bit-packed (zero bits past the outputs) or one boolean per output; ``whole``
+    is every output in order, bit-packed: the gathered rows themselves.
+    """
+
+    columns: Any
+    """The outputs on the device (``uint32``), or None for the first ``count``."""
+    count: int
+    width: int
+    bools: bool
+    whole: bool
 
 
 def _pinned(shape: tuple[int, ...], dtype) -> np.ndarray:
@@ -116,12 +131,15 @@ def _pinned_counts(cp) -> tuple[np.ndarray, Any]:
 
 
 class _HostRows:
-    """A call's passing rows (and expectations) in pinned host memory, chunk by chunk."""
+    """A call's arrays of passing rows (and expectations) in pinned host memory.
 
-    def __init__(self, nb: int, no: int | None) -> None:
-        self.nb, self.no = nb, no
+    One array per output of ``widths`` bytes a row, filled chunk by chunk.
+    """
+
+    def __init__(self, widths: list[int], no: int | None) -> None:
+        self.widths, self.no = widths, no
         self.capacity, self.total = 0, 0
-        self.rows: np.ndarray | None = None
+        self.arrays: list[np.ndarray] = []
         self.values: np.ndarray | None = None
 
     def allocate(self, passed: int, of: int, shots: int) -> None:
@@ -135,33 +153,32 @@ class _HostRows:
 
     def grow(self, capacity: int) -> None:
         """Make room for ``capacity`` rows, keeping the copied ones (no copy may be pending)."""
-        rows, values, total = self.rows, self.values, self.total
+        arrays, values, total = self.arrays, self.values, self.total
         self._resize(capacity)
-        assert self.rows is not None and rows is not None
-        self.rows[:total] = rows[:total]
+        for new, old in zip(self.arrays, arrays, strict=True):
+            new[:total] = old[:total]
         if values is not None and self.values is not None:
             self.values[:total] = values[:total]
 
     def _resize(self, capacity: int) -> None:
         self.capacity = capacity
-        self.rows = _pinned((capacity, self.nb), np.uint8)
+        self.arrays = [_pinned((capacity, w), np.uint8) for w in self.widths]
         if self.no is not None:
             self.values = _pinned((capacity, self.no), np.float32)
 
-    def take(self, count: int) -> tuple[np.ndarray, np.ndarray | None]:
-        """Return the next ``count`` rows (and expectations) to fill."""
-        assert self.rows is not None and self.total + count <= self.capacity
+    def take(self, count: int) -> tuple[list[np.ndarray], np.ndarray | None]:
+        """Return the next ``count`` rows of each array (and expectations) to fill."""
+        assert self.total + count <= self.capacity
         lo, self.total = self.total, self.total + count
         values = None if self.values is None else self.values[lo : self.total]
-        return self.rows[lo : self.total], values
+        return [a[lo : self.total] for a in self.arrays], values
 
-    def result(self) -> tuple[np.ndarray, np.ndarray | None]:
-        """Return the filled rows and expectations."""
-        if self.rows is None:
+    def result(self) -> tuple[list[np.ndarray], np.ndarray | None]:
+        """Return the filled arrays and expectations."""
+        if self.capacity == 0:
             self._resize(0)
-        assert self.rows is not None
         values = None if self.values is None else self.values[: self.total]
-        return self.rows[: self.total], values
+        return [a[: self.total] for a in self.arrays], values
 
 
 class CudaShotSampler:
@@ -173,8 +190,6 @@ class CudaShotSampler:
     observable's expectation.
     """
 
-    device = "cuda"
-
     supports = staticmethod(tape.supports)
 
     def __init__(
@@ -183,19 +198,25 @@ class CudaShotSampler:
         channels: ChannelSampler,
         num_detectors: int,
         seed: np.random.SeedSequence,
+        *,
+        required: bool = False,
     ) -> None:
         """Upload the noise tables of ``host``'s shot words.
 
-        ``host`` draws the reference samples, on the CPU.
+        ``host`` draws the reference samples, on the CPU, and the calls that the
+        GPU cannot run, unless ``required`` (``device="cuda"``): then those raise.
 
         Raises:
             ImportError: If CuPy is not installed.
+            ValueError: If the noise exceeds the kernels' limits.
 
         """
         self._cp = runtime.cupy()
         cp = self._cp
         assert self.supports(host.layout)
-        self._args = (host, channels, num_detectors, seed)
+        self._args = (host, channels, num_detectors, seed, required)
+        self._required = required
+        self._cpu_only = False
         self._lock = threading.RLock()
         self._host = host
         layout = host.layout
@@ -205,20 +226,16 @@ class CudaShotSampler:
         self._channels = channels
         self._noise = noise_tables(channels, layout.noise, layout.num_words)
         n = self._noise
-        # NOTE: gather_columns and noise_kept stage a block's output words and its
-        # packed rows in shared memory.
-        staged = 8 * layout.output_words * n.block_shots
-        staged += n.block_shots * -(-layout.num_outputs // 8)
-        if staged > KERNEL_SHARED_BYTES:
-            raise ValueError(
-                f"{layout.num_outputs} outputs do not fit the GPU kernels' shared memory"
-            )
+        # NOTE: gather_columns stages a block's output words and its packed rows in
+        # shared memory; without room for 32 rows, gather_bytes reads them directly.
+        self._gather_shots = kernels.gather_shots(layout, n.block_shots)
         self._record_args = [self._upload(n.overflow.view(np.uint8))]
         self._all = self._launch(n.groups)
         self._modules: dict[bytes | None, _Module] = {}
         self._buffers: dict[str, Any] = {}
         self._views: dict[tuple[str, tuple[int, ...]], Any] = {}
         self._constants: dict[bytes, Any] = {}
+        self._columns: dict[bytes, Any] = {}
         # NOTE: each buffer slot has a kernel stream and a copy stream, so that a
         # slot's next kernels need not wait for its copy to the host.
         # NOTE: a slot's noise kernel runs on a stream of the least priority, so the
@@ -231,6 +248,17 @@ class CudaShotSampler:
         self._published = [_pinned_counts(cp) for _ in range(2)]
         # NOTE: lowered when a call runs out of device memory.
         self._max_batch = BATCH_SHOTS
+
+    @property
+    def device(self) -> str:
+        """Return where this sampler samples (``SamplerStats.device``).
+
+        It is ``"cpu"`` after a kernel failed to compile, and in a process forked
+        after its parent used the GPU, where every call samples on the CPU.
+        """
+        if self._cpu_only or runtime.forked_after_init():
+            return "cpu"
+        return "cuda"
 
     def __reduce__(self):
         """Pickle the CPU sampler and the inputs; the GPU state is rebuilt on load."""
@@ -280,10 +308,14 @@ class CudaShotSampler:
             )
         compiled = _Module(
             noise=module.get_function("noise"),
-            noise_kept=module.get_function("noise_kept"),
+            noise_kept=(
+                module.get_function("noise_kept") if self._noise.shared_words else None
+            ),
             tape=tape_fn,
             gather_columns=module.get_function("gather_columns"),
+            gather_bytes=module.get_function("gather_bytes"),
             gather_float=module.get_function("gather_float"),
+            select_rows=module.get_function("select_rows"),
             publish=module.get_function("publish"),
             count_bits=module.get_function("count_bits"),
             list_bits=module.get_function("list_bits"),
@@ -329,7 +361,8 @@ class CudaShotSampler:
         read too. Each key word is read whole, so the deferred channels flip
         output words only.
         """
-        if not module.has_mask:
+        # NOTE: rows too wide for shared memory draw all their noise at once.
+        if not module.has_mask or not self._noise.shared_words:
             return None
         if expectations not in module.splits:
             found = split(
@@ -348,7 +381,12 @@ class CudaShotSampler:
         return module.splits[expectations]
 
     def _compile(self, source: str):
-        """Compile with NVRTC; ptxas -O3 fails on some shuffled tapes, so lower levels follow."""
+        """Compile with NVRTC; ptxas -O3 fails on some shuffled tapes, so lower levels follow.
+
+        Raises:
+            runtime.CompileError: If no level compiles.
+
+        """
         cp = self._cp
         for level in ("3", "2", "1"):
             options = (
@@ -361,9 +399,11 @@ class CudaShotSampler:
                 module = cp.RawModule(code=source, options=options)
                 module.get_function("tape")
                 return module
-            except cp.cuda.compiler.CompileException:
+            except cp.cuda.compiler.CompileException as error:
                 if level == "1":
-                    raise
+                    raise runtime.CompileError(
+                        f"NVRTC compilation failed: {error}"
+                    ) from error
         raise AssertionError("unreachable")
 
     # -- execution --------------------------------------------------------------
@@ -494,8 +534,8 @@ class CudaShotSampler:
         dst = self._cp.empty((max(count, 1), nb), dtype=np.uint8)
         if not count or not nb:
             return dst
-        blocks = (count + S - 1) // S
         if split is not None:
+            blocks = (count + S - 1) // S
             launch = split[1]
             seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
             module.noise_kept(
@@ -514,9 +554,9 @@ class CudaShotSampler:
                 ),
                 shared_mem=max(8 * launch.max_events, S * nb),
             )
-        else:
-            module.gather_columns(
-                (blocks,),
+        elif self._gather_shots == 0:
+            module.gather_bytes(
+                (min(-(-count * nb // COPY_THREADS), 16 * runtime.multiprocessors()),),
                 (COPY_THREADS,),
                 (
                     words,
@@ -524,9 +564,67 @@ class CudaShotSampler:
                     index if index is not None else np.uint64(0),
                     dst,
                 ),
-                shared_mem=S * nb,
+            )
+        else:
+            GS = self._gather_shots
+            module.gather_columns(
+                ((count + GS - 1) // GS,),
+                (COPY_THREADS,),
+                (
+                    words,
+                    np.int64(count),
+                    index if index is not None else np.uint64(0),
+                    dst,
+                ),
+                shared_mem=GS * nb,
             )
         return dst
+
+    def _select(self, module: _Module, rows, count: int, output: _Output) -> Any:
+        """Return ``output``'s outputs of the ``count`` packed ``rows``, on the device."""
+        dst = self._cp.empty((count, output.width), dtype=np.uint8)
+        blocks = min(
+            -(-count * output.width // COPY_THREADS), 16 * runtime.multiprocessors()
+        )
+        module.select_rows(
+            (max(blocks, 1),),
+            (COPY_THREADS,),
+            (
+                rows,
+                np.int64(count),
+                output.columns if output.columns is not None else np.uint64(0),
+                np.int32(output.count),
+                np.int32(output.width),
+                np.int32(output.bools),
+                dst,
+            ),
+        )
+        return dst
+
+    def _outputs(self, columns: list[np.ndarray], bools: bool) -> list[_Output]:
+        """Return the arrays of a call that returns ``columns``, one array each."""
+        num_outputs = self.layout.num_outputs
+        found = []
+        for chosen in columns:
+            chosen = np.asarray(chosen, dtype=np.uint32)
+            count = len(chosen)
+            in_order = bool(np.array_equal(chosen, np.arange(count)))
+            device = None
+            if not in_order:
+                key = chosen.tobytes()
+                if key not in self._columns:
+                    self._columns[key] = self._upload(chosen)
+                device = self._columns[key]
+            found.append(
+                _Output(
+                    columns=device,
+                    count=count,
+                    width=count if bools else -(-count // 8),
+                    bools=bools,
+                    whole=in_order and count == num_outputs and not bools,
+                )
+            )
+        return found
 
     def _list(self, module: _Module, bits, shots: int, count: int, slot: int) -> Any:
         """Return the ``count`` shots of the bitmap ``bits`` of ``shots`` shots, in order."""
@@ -538,6 +636,38 @@ class CudaShotSampler:
         module.count_bits(grid, threads, (bits, np.int64(words), totals))
         module.list_bits(grid, threads, (bits, np.int64(words), totals, index))
         return index[:count]
+
+    def _or_cpu(self, on_gpu, on_cpu):
+        """Return ``on_gpu()``, or ``on_cpu()`` where the GPU fails.
+
+        It fails in a process forked after its parent used the GPU, out of GPU
+        memory, and when a kernel does not compile; after the last the sampler
+        samples on the CPU. A ``required`` sampler raises instead.
+
+        Raises:
+            RuntimeError: If ``required``, in a process forked after its parent
+                used the GPU.
+            MemoryError: If ``required``, out of GPU memory.
+            runtime.CompileError: If ``required``, when a kernel does not compile.
+
+        """
+        if self._cpu_only:
+            return on_cpu()
+        if runtime.forked_after_init():
+            if self._required:
+                raise RuntimeError(f"Cannot sample on CUDA: {FORKED}.")
+            return on_cpu()
+        try:
+            return on_gpu()
+        except MemoryError:
+            if self._required:
+                raise
+            return on_cpu()
+        except runtime.CompileError:
+            if self._required:
+                raise
+            self._cpu_only = True
+            return on_cpu()
 
     def sample(
         self,
@@ -553,57 +683,58 @@ class CudaShotSampler:
 
         As ``ShotSampler.sample``: with a ``mask`` only the shots that pass
         postselection are returned. ``batch_size`` bounds the shots of a device
-        batch.
+        batch. Out of GPU memory, when a kernel does not compile, and in a
+        process forked after its parent used the GPU, the call samples on the
+        CPU, or raises if the sampler is ``required`` on the GPU (``_or_cpu``).
         """
-        accepted = None
-        if not _forked():
-            with self._lock:
-                accepted = self._sample_or_none(shots, mask, flip, batch_size)
-        if accepted is None:
-            return self._host.sample(
+
+        def on_gpu():
+            outputs, _, deviation = self._accepted(
+                shots,
+                mask=mask,
+                flip=flip,
+                batch_size=batch_size,
+                bools=not bit_packed,
+                columns=columns,
+            )
+            return outputs, deviation
+
+        return self._or_cpu(
+            on_gpu,
+            lambda: self._host.sample(
                 shots,
                 columns,
                 bit_packed=bit_packed,
                 batch_size=batch_size,
                 mask=mask,
                 flip=flip,
-            )
-        rows, deviation = accepted
-        num_outputs = self.layout.num_outputs
-        return [select(rows, c, num_outputs, bit_packed) for c in columns], deviation
+            ),
+        )
 
-    def _sample_or_none(
-        self,
-        shots: int,
-        mask: np.ndarray | None,
-        flip: np.ndarray | None,
-        batch_size: int | None,
-    ) -> tuple[np.ndarray, float] | None:
-        """Return ``sample_accepted``'s rows and deviation, or None if the GPU is full.
+    def _accepted(self, shots: int, *, batch_size: int | None, **options) -> Any:
+        """Return ``sample_accepted(shots, **options)``, in smaller batches if the GPU is full.
 
         Out of device memory, the call is retried in batches half as large, down
-        to ``MIN_BATCH_SHOTS``; past that it warns and returns None, for the CPU.
-        Later calls start from the batch that fit.
+        to ``MIN_BATCH_SHOTS``. Later calls start from the batch that fit.
+
+        Raises:
+            MemoryError: If even batches of ``MIN_BATCH_SHOTS`` do not fit.
+
         """
         batch = min(batch_size or BATCH_SHOTS, self._max_batch)
         while True:
             try:
-                rows, _, deviation = self.sample_accepted(
-                    shots, mask=mask, flip=flip, batch_size=batch
-                )
-                return rows, deviation
+                return self.sample_accepted(shots, batch_size=batch, **options)
             except Exception as error:
                 if not runtime.out_of_memory(error):
                     raise
                 self._release()
                 self._max_batch = max(batch // 2, MIN_BATCH_SHOTS)
                 if batch <= MIN_BATCH_SHOTS:
-                    warnings.warn(
-                        "The GPU ran out of memory, even for batches of "
-                        f"{MIN_BATCH_SHOTS} shots; sampling on the CPU.",
-                        stacklevel=5,
-                    )
-                    return None
+                    raise MemoryError(
+                        "the GPU ran out of memory, even for batches of "
+                        f"{MIN_BATCH_SHOTS} shots: {error}"
+                    ) from error
                 batch = self._max_batch
 
     def _release(self) -> None:
@@ -636,11 +767,16 @@ class CudaShotSampler:
         flip: np.ndarray | None = None,
         expectations: bool = False,
         batch_size: int | None = None,
-    ) -> tuple[np.ndarray, np.ndarray | None, float]:
+        bools: bool = False,
+        columns: list[np.ndarray] | None = None,
+    ) -> tuple[Any, np.ndarray | None, float]:
         """Sample ``shots`` shots; return only those that pass postselection.
 
         A shot passes when none of the ``mask``'s detectors is set (every shot
-        passes without a mask). Rows keep their shots' order and hold every output.
+        passes without a mask). Rows keep their shots' order and hold every output;
+        with ``bools``, one boolean per output, unpacked on the GPU. With
+        ``columns``, the outputs are a list of arrays instead, one per entry: its
+        outputs, in its order, selected on the GPU.
 
         The shots run in chunks on two streams: each chunk's rows go to the host
         while the next chunk's kernels run. The chunks hold about ``CHUNK_BYTES``
@@ -650,7 +786,8 @@ class CudaShotSampler:
         Returns:
             ``(outputs, expectations, deviation)``: the passing shots' outputs,
             bit-packed as ``np.packbits(..., bitorder="little")`` would (``uint8``,
-            in pinned host memory), with ``expectations`` each observable's
+            in pinned host memory), as booleans, or with ``columns`` a list of such
+            arrays; with ``expectations`` each observable's
             expectation of ``(-1)^observable`` given the shot's history before
             the measurement that settles it, or its sampled ``±1`` when a
             postselected output of its component is tested at or after that
@@ -665,6 +802,8 @@ class CudaShotSampler:
                 flip=flip,
                 expectations=expectations,
                 batch_size=batch_size,
+                bools=bools,
+                columns=columns,
             )
 
     def _sample_accepted(
@@ -675,20 +814,26 @@ class CudaShotSampler:
         flip: np.ndarray | None,
         expectations: bool,
         batch_size: int | None,
-    ) -> tuple[np.ndarray, np.ndarray | None, float]:
+        bools: bool,
+        columns: list[np.ndarray] | None,
+    ) -> tuple[Any, np.ndarray | None, float]:
         cp = self._cp
         module = self._module(mask)
         layout = self.layout
         nb, no = -(-layout.num_outputs // 8), len(self._observables)
+        chosen = [np.arange(layout.num_outputs)] if columns is None else columns
+        outputs = self._outputs(chosen, bools)
+        out = _HostRows([o.width for o in outputs], no if expectations else None)
         if not shots:
-            values = np.zeros((0, no), np.float32) if expectations else None
-            return np.zeros((0, nb), np.uint8), values, 0.0
+            arrays, values = out.result()
+            return self._arrays(arrays, columns, bools), values, 0.0
         constant = self._constant(flip)
         split = self._split(module, expectations)
         launch = split[0] if split else self._all
         batch = min(batch_size or BATCH_SHOTS, BATCH_SHOTS)
-        out = _HostRows(nb, no if expectations else None)
         state = {"start": 0, "slot": 0}
+        # NOTE: by the packed rows, so that a seed's shots do not depend on the
+        # outputs that a call returns.
         size = self._chunk_shots(min(batch, shots), nb, module.passing)
         deviation = 0.0
         pending: list[tuple[int, int, int, tuple[Any, Any, Any, Any], Any]] = []
@@ -736,7 +881,7 @@ class CudaShotSampler:
                     # NOTE: a rare excess of passing shots: the copies in flight land first.
                     self._synchronize()
                     out.grow(out.total + count + (shots - first - n))
-                rows_host, values_host = out.take(count)
+                parts, values_host = out.take(count)
                 index = (
                     None
                     if mask is None
@@ -747,11 +892,26 @@ class CudaShotSampler:
                 copy = stream if first + n == shots and not held else self._copies[slot]
                 used.add(copy)
                 if count and nb:
-                    dst = self._pack(module, split, words, count, index)
+                    rows = self._pack(module, split, words, count, index)
+                    held.append(rows)
+                    found = [
+                        (
+                            rows[:count]
+                            if o.whole
+                            else (
+                                self._select(module, rows, count, o)
+                                if o.width
+                                else None
+                            )
+                        )
+                        for o in outputs
+                    ]
                     if copy is not stream:
                         copy.wait_event(stream.record())
-                    dst[:count].get(stream=copy, out=rows_host, blocking=False)
-                    held.append(dst)
+                    for part, dst in zip(parts, found, strict=True):
+                        if dst is not None:
+                            dst.get(stream=copy, out=part, blocking=False)
+                            held.append(dst)
                 if values_host is not None and count:
                     if no and layout.components:
                         if index is None:
@@ -782,11 +942,19 @@ class CudaShotSampler:
             deviation = max(deviation, finish())
         for stream in used:
             stream.synchronize()
-        rows, values = out.result()
-        if values is None:
-            return rows, None, deviation
-        self._direct_expectations(rows, values)
-        return rows, values, deviation
+        arrays, values = out.result()
+        if values is not None:
+            # NOTE: the rows of every output, bit-packed, which a call with
+            # expectations returns.
+            self._direct_expectations(arrays[0], values)
+        return self._arrays(arrays, columns, bools), values, deviation
+
+    @staticmethod
+    def _arrays(arrays: list[np.ndarray], columns, bools: bool) -> Any:
+        """Return a call's arrays: booleans viewed as such, one array without ``columns``."""
+        if bools:
+            arrays = [a.view(bool) for a in arrays]
+        return arrays[0] if columns is None else arrays
 
     def _direct_expectations(self, rows: np.ndarray, values: np.ndarray) -> None:
         """Set the expectations of observables outside the components: ``±1``."""
@@ -799,25 +967,19 @@ class CudaShotSampler:
             bit = (rows[:, k >> 3] >> np.uint8(k & 7)) & np.uint8(1)
             values[:, column] = 1.0 - 2.0 * bit.astype(np.float32)
 
-    def direct_bools(self, shots: int, flip: np.ndarray | None = None) -> np.ndarray:
+    def direct_bools(
+        self,
+        shots: int,
+        flip: np.ndarray | None = None,
+        batch_size: int | None = None,
+    ) -> np.ndarray:
         """Return every output bit of a program without components, as booleans."""
-        accepted = None
-        if not _forked():
-            with self._lock:
-                accepted = self._sample_or_none(shots, None, flip, None)
-        if accepted is None:
-            return self._host.direct_bools(shots, flip)
-        rows, _ = accepted
-        num_outputs = self.layout.num_outputs
-        return select(rows, np.arange(num_outputs), num_outputs, False)
-
-
-def _forked() -> bool:
-    """Return whether this process was forked after its parent used CUDA, with a warning."""
-    if not runtime.forked_after_init():
-        return False
-    warnings.warn(FORKED, stacklevel=5)
-    return True
+        return self._or_cpu(
+            lambda: self._accepted(shots, flip=flip, batch_size=batch_size, bools=True)[
+                0
+            ],
+            lambda: self._host.direct_bools(shots, flip, batch_size),
+        )
 
 
 def _restore(
@@ -825,11 +987,16 @@ def _restore(
     channels: ChannelSampler,
     num_detectors: int,
     seed: np.random.SeedSequence,
+    required: bool,
     state: dict,
 ) -> CudaShotSampler | ShotSampler:
-    """Rebuild a pickled ``CudaShotSampler``, or its CPU sampler where CUDA is missing."""
-    if not runtime.available():
-        return host
-    shots = CudaShotSampler(host, channels, num_detectors, seed)
-    shots._rng.bit_generator.state = state
+    """Rebuild a pickled ``CudaShotSampler``, or its CPU sampler where CUDA cannot run.
+
+    As at compile time, a sampler ``required`` on the GPU raises where CUDA cannot run.
+    """
+    from tsim.statevector import cuda
+
+    shots = cuda.shot_sampler(host, channels, num_detectors, seed, required=required)
+    if isinstance(shots, CudaShotSampler):
+        shots._rng.bit_generator.state = state
     return shots

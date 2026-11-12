@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from tsim.statevector.gpu.tape import MAX_WIDTH, RESOLVABLE, rarest_branch, supports
+from tsim.statevector.gpu.tape import unsupported
 from tsim.statevector.metal import runtime
 
 if TYPE_CHECKING:
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
     from tsim.noise.channels import ChannelSampler
     from tsim.statevector.metal.sampler import MetalShotSampler
-    from tsim.statevector.shots import ShotLayout, ShotSampler
+    from tsim.statevector.shots import ShotSampler
 
 
 def shot_sampler(
@@ -55,7 +55,7 @@ def shot_sampler(
         return host
     if host.layout.num_words == 0:
         return host
-    reason = _unsupported(host.layout)
+    reason = unsupported(host.layout)
     if reason is not None:
         if required:
             raise ValueError(f"Cannot sample on Metal: {reason}.")
@@ -73,19 +73,3 @@ def shot_sampler(
         if required:
             raise ValueError(f"Cannot sample on Metal: {error}.") from error
     return host
-
-
-def _unsupported(layout: ShotLayout) -> str | None:
-    """Return why the GPU executor cannot run ``layout``, or ``None`` if it can."""
-    if supports(layout):
-        return None
-    width = max(c.width for c in layout.components)
-    if width > MAX_WIDTH:
-        return (
-            f"a component needs {width} active qubits, more than the "
-            f"{MAX_WIDTH} that the GPU executor supports"
-        )
-    return (
-        f"a rotation has a branch of weight {rarest_branch(layout):.1e}, "
-        f"below the {RESOLVABLE:.0e} that float32 amplitudes resolve"
-    )

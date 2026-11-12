@@ -15,6 +15,8 @@ import os
 import pathlib
 from types import ModuleType
 
+from tsim.statevector.gpu import FORKED
+
 
 @functools.cache
 def cupy() -> ModuleType:
@@ -45,17 +47,24 @@ def _after_fork_in_child() -> None:
     # NOTE: a child forked after its parent initialized CUDA cannot use CUDA; the
     # cached answer is read without touching CUDA.
     global _forked_after_init
-    if _device_available.cache_info().currsize and _device_available():
+    if _device_error.cache_info().currsize and _device_error() is None:
         _forked_after_init = True
 
 
 def available() -> bool:
     """Return whether CuPy is installed and sees a CUDA device this process can use.
 
-    ``CUDA_VISIBLE_DEVICES=""`` hides the devices, so that the samplers run on the
-    CPU, as they do in a process forked after its parent used the GPU.
+    ``CUDA_VISIBLE_DEVICES=""`` hides the devices, as in a process forked after
+    its parent used the GPU.
     """
-    return not _forked_after_init and _device_available()
+    return unavailable() is None
+
+
+def unavailable() -> str | None:
+    """Return why this process cannot sample on CUDA, or ``None`` if it can."""
+    if _forked_after_init:
+        return FORKED
+    return _device_error()
 
 
 def forked_after_init() -> bool:
@@ -64,15 +73,23 @@ def forked_after_init() -> bool:
 
 
 @functools.cache
-def _device_available() -> bool:
+def _device_error() -> str | None:
     try:
         cp = cupy()
-        return cp.cuda.runtime.getDeviceCount() > 0
-    except Exception:
-        return False
+        if cp.cuda.runtime.getDeviceCount() > 0:
+            return None
+        return "CuPy sees no CUDA device"
+    except ImportError:
+        return (
+            "CuPy is not installed (install Tsim's cuda extra: "
+            "pip install 'bloqade-tsim[cuda]')"
+        )
+    except Exception as error:
+        return f"CuPy sees no usable CUDA device ({error})"
 
 
-os.register_at_fork(after_in_child=_after_fork_in_child)
+if hasattr(os, "register_at_fork"):  # not on Windows
+    os.register_at_fork(after_in_child=_after_fork_in_child)
 
 
 @functools.cache
@@ -98,3 +115,7 @@ def out_of_memory(error: BaseException) -> bool:
     # NOTE: CUDA_ERROR_OUT_OF_MEMORY and cudaErrorMemoryAllocation are both 2.
     errors = (cuda.driver.CUDADriverError, cuda.runtime.CUDARuntimeError)
     return isinstance(error, errors) and getattr(error, "status", None) == 2
+
+
+class CompileError(RuntimeError):
+    """A CUDA kernel that NVRTC does not compile."""

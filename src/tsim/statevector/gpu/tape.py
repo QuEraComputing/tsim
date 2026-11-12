@@ -162,6 +162,22 @@ def supports(layout: ShotLayout) -> bool:
     )
 
 
+def unsupported(layout: ShotLayout) -> str | None:
+    """Return why a GPU executor cannot run ``layout``'s components, or ``None`` if it can."""
+    if supports(layout) or layout.num_words == 0:
+        return None
+    width = max(c.width for c in layout.components)
+    if width > MAX_WIDTH:
+        return (
+            f"a component needs {width} active qubits, more than the "
+            f"{MAX_WIDTH} that the GPU executor supports"
+        )
+    return (
+        f"a rotation has a branch of weight {rarest_branch(layout):.1e}, "
+        f"below the {RESOLVABLE:.0e} that float32 amplitudes resolve"
+    )
+
+
 def rarest_branch(layout: ShotLayout) -> float:
     """Return the smallest nonzero branch weight (``cos^2``, ``sin^2``) of a rotation.
 

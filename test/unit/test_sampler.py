@@ -829,22 +829,29 @@ def test_device_cpu_samples_on_the_cpu(compile):
 
 
 def test_unknown_devices_raise():
-    with pytest.raises(ValueError, match="device must be 'auto', 'cpu' or 'metal'"):
+    with pytest.raises(
+        ValueError, match="device must be 'auto', 'cpu', 'metal' or 'cuda'"
+    ):
         Circuit(NOISY_T_STATE).compile_sampler(device="gpu")  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("device", ["cpu", "metal"])
+@pytest.mark.parametrize("device", ["cpu", "metal", "cuda"])
 def test_stabilizer_rank_strategies_take_only_the_auto_device(device):
     with pytest.raises(ValueError, match="needs strategy='active_statevector'"):
         Circuit(NOISY_T_STATE).compile_sampler(strategy="cat5", device=device)
 
 
-def test_metal_device_raises_where_metal_cannot_run(monkeypatch):
-    from tsim.statevector.metal import runtime
+@pytest.mark.parametrize(
+    ("device", "name", "reason"),
+    [("metal", "Metal", "no Apple GPU"), ("cuda", "CUDA", "no CUDA device")],
+)
+def test_gpu_devices_raise_where_the_gpu_cannot_run(monkeypatch, device, name, reason):
+    from tsim.statevector import cuda, metal
 
-    monkeypatch.setattr(runtime, "unavailable", lambda: "no Apple GPU")
-    with pytest.raises(RuntimeError, match="Cannot sample on Metal: no Apple GPU"):
-        Circuit(NOISY_T_STATE).compile_detector_sampler(device="metal")
+    runtime = {"metal": metal.runtime, "cuda": cuda.runtime}[device]
+    monkeypatch.setattr(runtime, "unavailable", lambda: reason)
+    with pytest.raises(RuntimeError, match=f"Cannot sample on {name}: {reason}"):
+        Circuit(NOISY_T_STATE).compile_detector_sampler(device=device)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         sampler = Circuit(NOISY_T_STATE).compile_detector_sampler(seed=1)
