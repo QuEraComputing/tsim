@@ -8,72 +8,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `strategy="active_statevector"` samples on the GPU of an Apple-silicon Mac, in
-  float32, whenever every component has at most 11 active qubits (Tsim now depends
-  on `pyobjc-framework-Metal` there). A seed's GPU samples differ from the CPU's and
-  depend on `batch_size`. The `device` argument of `compile_sampler`,
-  `compile_detector_sampler` and the sampler classes chooses where they sample:
-  `"auto"` (the default) uses the GPU when it can run the circuit and otherwise
-  the CPU, without a warning; `"cpu"` keeps them on the CPU; `"metal"` raises when
-  the GPU cannot run the circuit. `TSIM_DEVICE=cpu` keeps `"auto"` on the CPU, and
-  `SamplerStats.device` and the repr say where they sample.
-- `strategy="active_statevector"` also samples on NVIDIA GPUs, through CUDA, with
-  the new `cuda` extra (`pip install bloqade-tsim[cuda]`, CUDA 13). It runs the
-  same circuits as Metal and behaves the same way: `device="auto"` picks it when
-  CuPy sees a GPU, and `device="cuda"` raises when the GPU cannot run the circuit.
+- **NVIDIA GPU sampling.** With the new `cuda` extra
+  (`pip install "bloqade-tsim[cuda]"`, CUDA 13), Tsim samples on NVIDIA GPUs
+  through CuPy, as it does on Apple GPUs: every component must have at most 11
+  active qubits, `device="auto"` picks the GPU when it can run the circuit, and
+  `device="cuda"` raises an error explaining why it can't. On an RTX 5090,
+  end-to-end cultivation at d=5 samples about 1.6 billion shots per second,
+  postselected, in any output layout.
 - The `jax-cuda12` and `jax-cuda13` extras, for the stabilizer-rank strategies
   on NVIDIA GPUs with JAX. The `cuda12` and `cuda13` extras of Tsim 1.0 install
   the same packages.
-- The docs pages have a menu to copy a page or open it in ChatGPT or Claude, and
-  the README, the install page and the agent skill point to the docs MCP server
-  at `https://bloqade.quera.com/tsim/mcp`. The README and the install page also
-  show how to install the agent skill with Ion.
-- An agent skill, `simulating-circuits-with-tsim`, in `skills/`, that teaches
-  coding agents to use Tsim: active width, sampling and postselection, QEC
-  studies with decoders, and porting published circuits. Install it with
-  `npx skills add QuEraComputing/tsim --skill simulating-circuits-with-tsim`;
-  the docs site also serves it. The repository's development skills in
-  `.claude/skills` are marked internal, so the installer does not offer them.
-- `Circuit(...)` accepts a `stim.Circuit` or another `Circuit` and copies it,
-  like `Circuit.from_stim_program`. Before, passing a `stim.Circuit` raised an
-  `AttributeError`.
-- `CS` and `CS_DAG` (controlled-S and its inverse) gates in circuit text and
-  `Circuit.append`, implemented using Clifford+T decompositions.
-- `active_width` and `stats` properties on `CompiledMeasurementSampler` and
-  `CompiledDetectorSampler`. `active_width` is the largest number of active
-  qubits that a shot simulates (0 if every output is direct, `None` under a
-  stabilizer-rank strategy); `stats` is a frozen dataclass with it, the
-  component widths, the action and error-bit counts, and memory estimates.
-  They replace reading the private `_program` or parsing `repr(sampler)`.
+
+## [1.1.0] - 2026-11-12
+
+Tsim 1.1 adds a GPU backend for Apple GPUs. For example, end-to-end
+[magic state cultivation](https://arxiv.org/abs/2409.17595) at d=5 now samples
+over 200 times faster on an M4 Pro than on a single CPU core. The GPU backend
+supports active widths of up to 11 and is used by default when available.
+
+### Added
+- **Apple GPU sampling.** On Apple-silicon Macs, Tsim now samples on the GPU
+  whenever every component has at most 11 active qubits, often 5 to 10 times
+  faster than all CPU cores. Choose the device with the new `device` argument of
+  `compile_sampler` and `compile_detector_sampler`: `"auto"` (the default) uses
+  the GPU when it can and otherwise the CPU, `"cpu"` stays on the CPU, and
+  `"metal"` raises an error explaining why the GPU can't run a circuit.
+  `sampler.stats.device` tells you where a sampler ended up. The GPU computes in
+  float32, and its samples for a given seed differ from the CPU's.
+- **`active_width` and `stats`** on the compiled samplers show how expensive a
+  circuit is to sample: the active width, component widths, memory estimates and
+  more. No more reading `_program` or parsing the repr.
+- **`CS` and `CS_DAG`** gates.
+- **`Circuit(...)` accepts a `stim.Circuit`** or another `Circuit`.
+- **An agent skill**, `simulating-circuits-with-tsim`, that teaches coding agents
+  to use Tsim. Install it with
+  `npx skills add QuEraComputing/tsim --skill simulating-circuits-with-tsim`.
+- **Docs for agents and chat assistants**: every docs page can be copied or opened
+  in ChatGPT or Claude, and an MCP server for the docs runs at
+  `https://bloqade.quera.com/tsim/mcp` (the page menu adds it to Cursor or VS Code).
 
 ### Fixed
-- Compiling a circuit with many detectors and noise locations no longer needs
-  memory proportional to their product. The error basis (a GF(2) elimination
-  over vertices x error bits) is now built and kept sparse, so a d=25
-  surface-code 15-to-1 distillation circuit (40k qubits, 115k detectors, 1.1M
-  error bits) compiles with 4.5 GB instead of failing to allocate 121 GiB.
-  Seeded samples are unchanged.
-- `CS`, `CCZ` and `CCX` in circuit text accept a tag containing `#` and can
-  share a line with a `REPEAT n {` or `}` delimiter. Repeated target qubits, as
-  in `CS 0 0`, raise an error naming the gate instead of its decomposition.
+- Circuits with many detectors and noise locations compile with far less memory.
+  A d=25 15-to-1 distillation circuit (115k detectors) now compiles with 4.5 GB
+  instead of failing to allocate 121 GiB. Seeded samples are unchanged.
+- `CS`, `CCZ` and `CCX` accept tags containing `#` and can share a line with
+  `REPEAT n {` or `}`. Repeated targets such as `CS 0 0` give a clear error.
 
 ### Changed
-- On an Apple GPU, detector samples that return a subset or reordering of the
-  outputs (`separate_observables=True`, `prepend_observables=True`, or detectors
-  only) select their columns on the GPU instead of on the host, bit-packed or as
-  booleans. On an M4 Pro, distance-3 cultivation postselected on every detector
-  samples 1.1 to 1.5 billion shots per second in these layouts, instead of 0.06
-  to 0.15 (detectors only, bit-packed, was already fast); end-to-end cultivation
-  d=5 samples 156 to 221 million instead of 1 to 3 million with booleans or
-  prepended observables, and 291 instead of 59 million with separate bit-packed
-  observables.
-- `strategy="active_statevector"` may run a component's measurements later
-  where that frees no axis that a later rotation reuses and leaves more of the
-  tape before its first shot-dependent action, which a GPU backend runs once for
-  all shots. The samples follow the same distribution, but some circuits' seeds
-  give other samples than in 1.0.
-- `ChannelSampler.signature_matrix` is now a `tsim.utils.linalg.SparseGF2Matrix`
-  instead of a dense uint8 array; `np.asarray` gives the dense matrix.
+- Some circuits give different samples for a given seed than in 1.0, because
+  measurements may be scheduled later. The sampled distribution is the same.
+- `ChannelSampler.signature_matrix` is now a sparse matrix; `np.asarray` gives
+  the dense one.
 
 ## [1.0.0] - 2026-11-04
 

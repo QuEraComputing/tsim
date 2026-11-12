@@ -58,7 +58,10 @@ def shot_sampler(
     reason = unsupported(host.layout)
     if reason is not None:
         if required:
-            raise ValueError(f"Cannot sample on CUDA: {reason}.")
+            raise ValueError(
+                f"Cannot sample on CUDA: {reason}; sample with device='cpu', or "
+                "with device='auto', which falls back to the CPU."
+            )
         return host
     from tsim.statevector.cuda.sampler import CudaShotSampler
 

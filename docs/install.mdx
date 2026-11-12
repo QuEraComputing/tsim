@@ -65,25 +65,12 @@ A sampler's repr says where it samples (`samples on metal`, `samples on cuda` or
 The GPU computes outcome probabilities in float32, so a sample follows the CPU's distribution
 to within float32 rounding. Float32 cannot tell a measurement outcome of probability below
 about 1e-11 from rounding error, so the GPU never draws one; a circuit with a rotation small
-enough to make such an outcome (an `R_Z` or `R_X` by less than about 6e-5 π) samples on the
-CPU (or raises, with `device="metal"` or `"cuda"`).
+enough to make such an outcome (an angle within about 6e-5 π of a multiple of π/2) samples on
+the CPU (or raises, with `device="metal"` or `"cuda"`).
 
 A seed's samples on the GPU differ from the CPU's and depend on `batch_size`, so with
 `device="auto"` a seed reproduces its samples only on the same kind of machine. Use
 `device="cpu"` to reproduce samples across machines.
-
-### Sampling on the CPU instead
-
-Set `TSIM_DEVICE=cpu` to keep the samplers of `device="auto"` on the CPU without changing
-code, for example to reproduce samples from another machine:
-
-```bash
-TSIM_DEVICE=cpu python my_script.py
-```
-
-Tsim reads it whenever it compiles a sampler, so `os.environ["TSIM_DEVICE"] = "cpu"` before
-`compile_sampler` or `compile_detector_sampler` works too. An explicit `device` argument
-overrides it.
 
 ## Agent skill
 
@@ -112,7 +99,18 @@ and read these docs. Add it to Claude Code with:
 claude mcp add --transport http tsim https://bloqade.quera.com/tsim/mcp
 ```
 
-For Cursor and VS Code, use the page menu at the top of any page.
+For Cursor and VS Code, use the page menu at the top of any page, or add the server by hand,
+for Cursor in `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "Tsim": {
+      "url": "https://bloqade.quera.com/tsim/mcp"
+    }
+  }
+}
+```
 
 ## Development setup
 

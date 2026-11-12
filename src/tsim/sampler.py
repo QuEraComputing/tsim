@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import secrets
 import warnings
 from dataclasses import dataclass
@@ -358,14 +357,13 @@ class _CompiledSamplerBase:
             device: Where "active_statevector" samples. "auto" (the default)
                 samples in float32 on an Apple GPU or an NVIDIA GPU when there
                 is one that can run the circuit, and otherwise on the CPU,
-                without a warning (``TSIM_DEVICE=cpu`` keeps it on the CPU).
-                "cpu" samples on the CPU in float64, on
+                without a warning. "cpu" samples on the CPU in float64, on
                 ``numba.get_num_threads()`` threads. "metal" samples on an Apple
                 GPU and "cuda" on an NVIDIA GPU (with the ``cuda`` extra), or
                 raises: without one, for a component of more than 11 active
-                qubits, a rotation by less than about 6e-5 π, noise beyond the
-                GPU's tables, or a call that runs out of GPU memory. The
-                stabilizer rank strategies take only "auto".
+                qubits, a rotation within about 6e-5 π of a multiple of π/2,
+                noise beyond the GPU's tables, or a call that runs out of GPU
+                memory. The stabilizer rank strategies take only "auto".
 
         Raises:
             ValueError: If ``device`` is unknown, is not "auto" under a
@@ -419,8 +417,6 @@ class _CompiledSamplerBase:
             self._shots = host
             # NOTE: as JAX does for the stabilizer-rank strategies, "auto" uses a
             # GPU whenever there is one that can run the program.
-            if device == "auto" and os.environ.get("TSIM_DEVICE", "").lower() == "cpu":
-                device = "cpu"
             if mode == "sequential" and device != "cpu":
                 # NOTE: "auto" takes the first GPU that runs the program.
                 for name in _GPUS if device == "auto" else (device,):
@@ -925,14 +921,13 @@ class CompiledMeasurementSampler(_CompiledSamplerBase):
             device: Where "active_statevector" samples. "auto" (the default)
                 samples in float32 on an Apple GPU or an NVIDIA GPU when there
                 is one that can run the circuit, and otherwise on the CPU,
-                without a warning (``TSIM_DEVICE=cpu`` keeps it on the CPU).
-                "cpu" samples on the CPU in float64, on
+                without a warning. "cpu" samples on the CPU in float64, on
                 ``numba.get_num_threads()`` threads. "metal" samples on an Apple
                 GPU and "cuda" on an NVIDIA GPU (with the ``cuda`` extra), or
                 raises: without one, for a component of more than 11 active
-                qubits, a rotation by less than about 6e-5 π, noise beyond the
-                GPU's tables, or a call that runs out of GPU memory. The
-                stabilizer rank strategies take only "auto".
+                qubits, a rotation within about 6e-5 π of a multiple of π/2,
+                noise beyond the GPU's tables, or a call that runs out of GPU
+                memory. The stabilizer rank strategies take only "auto".
 
         Raises:
             ValueError: If ``device`` is unknown, is not "auto" under a
@@ -1046,14 +1041,13 @@ class CompiledDetectorSampler(_CompiledSamplerBase):
             device: Where "active_statevector" samples. "auto" (the default)
                 samples in float32 on an Apple GPU or an NVIDIA GPU when there
                 is one that can run the circuit, and otherwise on the CPU,
-                without a warning (``TSIM_DEVICE=cpu`` keeps it on the CPU).
-                "cpu" samples on the CPU in float64, on
+                without a warning. "cpu" samples on the CPU in float64, on
                 ``numba.get_num_threads()`` threads. "metal" samples on an Apple
                 GPU and "cuda" on an NVIDIA GPU (with the ``cuda`` extra), or
                 raises: without one, for a component of more than 11 active
-                qubits, a rotation by less than about 6e-5 π, noise beyond the
-                GPU's tables, or a call that runs out of GPU memory. The
-                stabilizer rank strategies take only "auto".
+                qubits, a rotation within about 6e-5 π of a multiple of π/2,
+                noise beyond the GPU's tables, or a call that runs out of GPU
+                memory. The stabilizer rank strategies take only "auto".
 
         Raises:
             ValueError: If ``device`` is unknown, is not "auto" under a

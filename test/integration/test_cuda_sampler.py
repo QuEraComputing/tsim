@@ -704,18 +704,13 @@ def test_kernels_wait_for_the_tables_they_read():
         assert_counts_match(got, expected)
 
 
-def test_tsim_device_cpu_keeps_the_samplers_on_the_cpu(monkeypatch):
+def test_device_cpu_keeps_the_samplers_on_the_cpu(monkeypatch):
+    # NOTE: the environment no longer chooses the device.
     monkeypatch.setenv("TSIM_DEVICE", "cpu")
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        sampler = Circuit(T_STATE_X).compile_sampler(seed=1)
-    assert type(sampler._shots) is ShotSampler
-    # NOTE: an explicit device overrides TSIM_DEVICE.
-    _gpu(Circuit(T_STATE_X).compile_sampler(seed=1, device="cuda"))
-    monkeypatch.setenv("TSIM_DEVICE", "")
     _gpu(Circuit(T_STATE_X).compile_sampler(seed=1))
     sampler = Circuit(T_STATE_X).compile_sampler(seed=1, device="cpu")
     assert type(sampler._shots) is ShotSampler
+    assert sampler.stats.device == "cpu"
 
 
 def test_the_repr_says_where_a_sampler_samples():
@@ -907,7 +902,8 @@ def test_rotation_with_a_branch_float32_cannot_resolve_samples_on_the_cpu():
         warnings.simplefilter("error")
         sampler = circuit.compile_detector_sampler(seed=1)
     assert sampler.stats.device == "cpu"
-    with pytest.raises(ValueError, match=r"rotation has a branch of weight 2\.5e-10"):
+    message = r"angle is 1\.0e-05 π from a Clifford angle.*6\.4e-05 π.*device='cpu'"
+    with pytest.raises(ValueError, match=message):
         circuit.compile_detector_sampler(seed=1, device="cuda")
 
 

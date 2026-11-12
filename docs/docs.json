@@ -9,7 +9,30 @@
   },
   "favicon": "/images/favicon.svg",
   "contextual": {
-    "options": ["copy", "view", "chatgpt", "claude", "mcp", "cursor", "vscode"]
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      {
+        "title": "MCP server",
+        "description": "Connect an agent to the docs MCP server",
+        "icon": "plug",
+        "href": "https://bloqade.quera.com/tsim/install#docs-mcp-server"
+      },
+      {
+        "title": "Connect to Cursor",
+        "description": "Install the docs MCP server in Cursor",
+        "icon": "arrow-pointer",
+        "href": "cursor://anysphere.cursor-deeplink/mcp/install?name=Tsim&config=eyJ1cmwiOiJodHRwczovL2Jsb3FhZGUucXVlcmEuY29tL3RzaW0vbWNwIn0%3D"
+      },
+      {
+        "title": "Connect to VS Code",
+        "description": "Install the docs MCP server in VS Code",
+        "icon": "code",
+        "href": "vscode:mcp/install?%7B%22name%22%3A%22Tsim%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fbloqade.quera.com%2Ftsim%2Fmcp%22%7D"
+      }
+    ]
   },
   "seo": {
     "metatags": {
@@ -66,5 +89,11 @@
       "linkedin": "https://www.linkedin.com/company/quera-computing-inc/"
     }
   },
-  "footerCopyright": "Copyright \u00a9 2025 QuEra Computing, Inc."
+  "footerCopyright": "Copyright \u00a9 2025 QuEra Computing, Inc.",
+  "redirects": [
+    {
+      "source": "/.well-known/skills/simulating-circuits-with-tsim/references/:slug",
+      "destination": "/skill-references/:slug"
+    }
+  ]
 }

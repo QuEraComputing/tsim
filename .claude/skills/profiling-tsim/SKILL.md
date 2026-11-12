@@ -40,8 +40,8 @@ Tsim is slow:
 - **Threads.** One pinned thread gives the rate per core. Tsim samples on all
   performance cores by default (`numba.get_num_threads()`); the `NOTE` line says
   how many. Quote all-core rates with `--threads N`.
-- **Device.** The harness sets `TSIM_DEVICE=cpu`, so every side samples on the
-  CPU unless you pass `--device gpu` (or `--side REF:device=gpu`). On an
+- **Device.** The harness compiles with `device="cpu"`, so every side samples on
+  the CPU unless you pass `--device gpu` (or `--side REF:device=gpu`). On an
   Apple-silicon Mac, Tsim samples on the GPU by default for k_max <= 11, 4-19x
   faster than all CPU cores; there `--device gpu` measures what users get. The
   `device` column says where each row sampled: under `device="auto"` a GPU falls
