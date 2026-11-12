@@ -62,9 +62,15 @@ CERTAIN = 1e-11
 """Outcome weight, relative to the total, below which an outcome is impossible.
 
 float32 amplitudes leave a certain outcome's other branch a weight of ~1e-14 to
-1e-12; genuine outcome probabilities of tsim's circuits (T gates, Pauli noise,
-small-angle rotations) stay above ~1e-10.
+1e-12, which the GPU cannot tell from a genuine outcome probability that small.
 """
+
+RESOLVABLE = 1e-8
+"""Smallest branch weight of a rotation (``cos^2`` or ``sin^2`` of its angle) that
+a GPU executor runs: a smaller one could give an outcome a genuine probability
+below ``CERTAIN``, which the GPU would never draw."""
+
+_STRUCTURAL = 1e-20
 
 UNROLL_BUDGET = 12_000
 """Amplitude updates (local spans summed over the actions) up to which a tape unrolls.
@@ -145,9 +151,32 @@ class Dialect:
 def supports(layout: ShotLayout) -> bool:
     """Return whether a GPU executor runs ``layout``.
 
-    It needs shot words and components of at most ``MAX_WIDTH`` qubits. A layout without shot words (no outputs and no noise) stays on the CPU.
+    It needs shot words, components of at most ``MAX_WIDTH`` qubits and rotations
+    whose branches the GPU resolves (``rarest_branch`` at least ``RESOLVABLE``). A
+    layout without shot words (no outputs and no noise) stays on the CPU.
     """
-    return layout.num_words > 0 and all(c.width <= MAX_WIDTH for c in layout.components)
+    return (
+        layout.num_words > 0
+        and all(c.width <= MAX_WIDTH for c in layout.components)
+        and rarest_branch(layout) >= RESOLVABLE
+    )
+
+
+def rarest_branch(layout: ShotLayout) -> float:
+    """Return the smallest nonzero branch weight (``cos^2``, ``sin^2``) of a rotation.
+
+    It is 1 without rotations; a weight below ``_STRUCTURAL`` (of a Clifford
+    angle, in float64) counts as zero.
+    """
+    rarest = 1.0
+    for component in layout.components:
+        t = component.tape
+        rotations = (t.kind == ROTATE) | (t.kind == ROTATE_DIAG)
+        weights = np.concatenate([t.cos[rotations] ** 2, t.sin[rotations] ** 2])
+        weights = weights[weights >= _STRUCTURAL]
+        if len(weights):
+            rarest = min(rarest, float(weights.min()))
+    return rarest
 
 
 def threads_per_shot(layout: ShotLayout, amplitude_axes: int = AMPLITUDE_AXES) -> int:
