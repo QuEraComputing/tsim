@@ -1,0 +1,36 @@
+name: Metal
+
+# Runs the Metal backend's tests on an Apple GPU before a release; release.yml calls it
+# on version tags and publishes only if it passes. The standard macOS runners have only
+# a paravirtual GPU, on which Tsim cannot sample, so this uses the paid M2 Pro runner
+# (macos-latest-xlarge, GPU acceleration enabled) and runs only the tests that need the
+# GPU. Every other test runs on all platforms in ci.yml.
+
+on:
+  workflow_call:
+
+jobs:
+  metal:
+    name: Metal tests on an Apple GPU
+    runs-on: macos-latest-xlarge
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.13.7"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Install the project
+        run: uv sync --python 3.14 --dev
+      - name: Check that Metal can run
+        # NOTE: check_device raises if Metal cannot sample here, so a runner without a
+        # usable Apple GPU fails the release instead of skipping the tests below.
+        run: >-
+          uv run python -c
+          "from tsim.statevector.metal import runtime;
+          runtime.check_device();
+          print('Metal device:', runtime.device().name())"
+      - name: Run the Metal tests
+        run: uv run pytest test/integration/test_metal_sampler.py

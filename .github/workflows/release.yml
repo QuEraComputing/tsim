@@ -29,12 +29,18 @@ jobs:
         name: python-package-distributions
         path: dist/
 
+  metal:
+    name: Test the Metal backend on an Apple GPU
+    if: startsWith(github.ref, 'refs/tags/')  # only before a release; the runner is paid
+    uses: ./.github/workflows/metal.yml
+
   publish-to-pypi:
     name: >-
       Publish Python 🐍 distribution 📦 to PyPI
     if: startsWith(github.ref, 'refs/tags/')  # only publish to PyPI on tag pushes
     needs:
     - build
+    - metal
     runs-on: ubuntu-latest
     environment:
       name: pypi
