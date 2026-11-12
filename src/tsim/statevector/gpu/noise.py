@@ -15,10 +15,15 @@ Each launch lays out its channels' outcomes in group order, so a group's
 channel ``c`` has its records at ``first + c * outcomes`` and a fault reads one
 aligned 32-byte record (and its alias's, in the same channel):
 
-    alias:  bits 0-24 keep threshold (probability * 2^24), bits 25-31 alias slot
+    alias:  bits 0-24 keep threshold's high bits, bits 25-31 alias slot
     words:  the first two flipped words (16 bits each)
     extra:  bits 0-7 number of flips, bits 8-31 start of the rest in the overflow
+    keep:   bits 0-15 keep threshold's low bits
     masks:  the first two flip masks
+
+The keep threshold is the slot's keep probability times ``2^KEEP_BITS``: a fault
+draws its slot and a ``KEEP_BITS``-bit fraction, and keeps the slot's outcome if
+the fraction is below it (``keep_threshold``).
 
 The flips past an outcome's first two are 16-byte ``(word, mask)`` pairs, in
 order. The samples follow ``ChannelSampler``'s distribution, not its streams:
@@ -59,6 +64,9 @@ MAX_FLIPS = 255
 # faults is drawn from 48 bits instead (the kernels' fine path).
 TINY_P = 2.0**-23
 FINE_FAULTS = 2.0**-13
+# NOTE: an outcome's share of its channel is exact to 2^-40 (24 bits left
+# outcomes below ~1e-8 impossible), and a nonzero share never rounds to zero.
+KEEP_BITS = 40
 DEFER_SHARE = 0.25
 """Share of the expected faults that postselection cannot see, from which they
 are drawn on the accepted shots only, after the tapes (``split``)."""
@@ -68,7 +76,7 @@ _RECORD = np.dtype(
         ("alias", "<u4"),
         ("words", "<u4"),
         ("extra", "<u4"),
-        ("pad", "<u4"),
+        ("keep", "<u4"),
         ("m0", "<u8"),
         ("m1", "<u8"),
     ],
@@ -278,6 +286,17 @@ def pass_rate(channels: ChannelSampler, flips: WordTables, read: np.ndarray) -> 
     return float(np.exp(np.log1p(-np.minimum(p, 1 - 1e-12)).sum()))
 
 
+def _keep(probability: float) -> int:
+    """Return a slot's keep threshold for its keep ``probability``: at least 1 if positive."""
+    keep = min(round(float(probability) * (1 << KEEP_BITS)), 1 << KEEP_BITS)
+    return max(keep, 1) if probability > 0 else 0
+
+
+def keep_threshold(record: np.void) -> int:
+    """Return a record's keep threshold, as the kernels read it from its fields."""
+    return ((int(record["alias"]) & 0x1FFFFFF) << 16) | int(record["keep"])
+
+
 def noise_tables(
     channels: ChannelSampler,
     flips: WordTables,
@@ -332,12 +351,9 @@ def noise_tables(
                 "the GPU noise sampler supports channels of up to 127 outcomes"
             )
         for k in range(lo, hi):
-            keep = (
-                1 << 24
-                if hi - lo == 1
-                else min(round(float(fire.alias_prob[k]) * (1 << 24)), 1 << 24)
-            )
-            records[k]["alias"] = keep | ((int(fire.alias_index[k]) - lo) << 25)
+            keep = 1 << KEEP_BITS if hi - lo == 1 else _keep(fire.alias_prob[k])
+            records[k]["alias"] = (keep >> 16) | ((int(fire.alias_index[k]) - lo) << 25)
+            records[k]["keep"] = keep & 0xFFFF
             j0, j1 = int(flips.start[k]), int(flips.start[k + 1])
             words = flips.word[j0:j1].tolist()
             masks = flips.mask[j0:j1].tolist()

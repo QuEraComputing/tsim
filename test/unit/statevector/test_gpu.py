@@ -43,7 +43,7 @@ def _model_words(tables: noise.NoiseTables, shots: int, seed: int) -> np.ndarray
     """Draw shot words from the tables as a noise kernel reads them.
 
     Each segment's trials fire independently with probability ``1 - e^log_keep``;
-    a fault draws a slot of its channel and a 24-bit fraction, takes the slot's
+    a fault draws a slot of its channel and a ``KEEP_BITS``-bit fraction, takes the slot's
     alias past its threshold and XORs the outcome's flips into its row.
     """
     rng = np.random.default_rng(seed)
@@ -62,10 +62,10 @@ def _model_words(tables: noise.NoiseTables, shots: int, seed: int) -> np.ndarray
                     continue
                 n = int(per[k])
                 slot = int(rng.integers(n))
-                fraction = int(rng.integers(1 << 24))
+                fraction = int(rng.integers(1 << noise.KEEP_BITS))
                 at = int(first[k]) + channel * n + slot
                 record = groups.records[at]
-                if fraction >= int(record["alias"]) & 0x1FFFFFF:
+                if fraction >= noise.keep_threshold(record):
                     record = groups.records[at - slot + (int(record["alias"]) >> 25)]
                 extra = int(record["extra"])
                 words = [int(record["words"]) & 0xFFFF, int(record["words"]) >> 16]
@@ -106,6 +106,42 @@ def test_noise_tables_draw_the_channel_samplers_distribution(shared_words):
     for bits in (got, expected):
         together = bits[:, joint].all(axis=1).mean()
         assert abs(together - 0.05 * (1 - 0.01) ** 2) < 0.01
+
+
+@pytest.mark.parametrize(
+    "channel",
+    [
+        "HERALDED_PAULI_CHANNEL_1(0.1, 1e-10, 0, 0) 0",
+        "PAULI_CHANNEL_2(0.1, 0, 0, 1e-10, 0.05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) 0 1",
+        "PAULI_CHANNEL_2(0.3, 0, 0, 0.2, 1e-12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) 0 1",
+        "DEPOLARIZE2(0.03) 0 1",
+    ],
+)
+def test_noise_tables_keep_every_outcome_probability(channel):
+    # NOTE: with 24-bit keep thresholds, an outcome below ~1e-8 of its channel
+    # rounded to zero, and the GPU never drew it.
+    detectors = 3 if channel.startswith("HERALDED") else 2
+    text = f"R 0 1\n{channel}\nM 0 1\n" + "\n".join(
+        f"DETECTOR rec[{-i}]" for i in range(1, detectors + 1)
+    )
+    host, channels = _shots(text)
+    tables = noise.noise_tables(
+        channels, host.layout.noise, host.layout.num_words, 14 * 1024
+    )
+    fire, full = channels._tables, 1 << noise.KEEP_BITS
+    lo, hi = int(fire.outcome_start[0]), int(fire.outcome_start[1])
+    n = hi - lo
+    assert n > 1
+    drawn, exact = np.zeros(n), np.zeros(n)
+    for k in range(n):
+        keep = noise.keep_threshold(tables.records[lo + k])
+        alias = int(tables.records[lo + k]["alias"]) >> 25
+        drawn[k] += keep / (n * full)
+        drawn[alias] += (full - keep) / (n * full)
+        exact[k] += fire.alias_prob[lo + k] / n
+        exact[fire.alias_index[lo + k] - lo] += (1 - fire.alias_prob[lo + k]) / n
+    assert ((drawn > 0) == (exact > 0)).all()
+    np.testing.assert_allclose(drawn, exact, rtol=1e-12, atol=2.0**-40)
 
 
 def test_noise_tables_size_blocks_for_their_memory():
