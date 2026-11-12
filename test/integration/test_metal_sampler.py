@@ -761,8 +761,12 @@ def test_rotation_with_a_branch_float32_cannot_resolve_samples_on_the_cpu():
         warnings.simplefilter("error")
         sampler = circuit.compile_detector_sampler(seed=1)
     assert sampler.stats.device == "cpu"
-    with pytest.raises(ValueError, match=r"rotation has a branch of weight 2\.5e-10"):
+    message = r"angle is 1\.0e-05 π from a Clifford angle.*6\.4e-05 π.*device='cpu'"
+    with pytest.raises(ValueError, match=message):
         circuit.compile_detector_sampler(seed=1, device="metal")
+    # NOTE: the Clifford part of a rotation is absorbed before the GPU sees it.
+    near_s = Circuit("R 0\nH 0\nR_Z(0.50001) 0\nH 0\nM 0\nDETECTOR rec[-1]")
+    assert near_s.compile_detector_sampler(seed=1).stats.device == "cpu"
 
 
 @pytest.mark.parametrize("p0", [3e-8, 1e-6])
@@ -829,18 +833,28 @@ def test_samplers_out_of_gpu_memory_at_setup_run_on_the_cpu(monkeypatch):
         Circuit(T_STATE_X).compile_sampler(seed=1, device="metal")
 
 
-def test_tsim_device_cpu_keeps_the_samplers_on_the_cpu(monkeypatch):
+def test_device_cpu_keeps_the_samplers_on_the_cpu(monkeypatch):
+    # NOTE: the environment no longer chooses the device.
     monkeypatch.setenv("TSIM_DEVICE", "cpu")
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        sampler = Circuit(T_STATE_X).compile_sampler(seed=1)
-    assert type(sampler._shots) is ShotSampler
-    # NOTE: an explicit device overrides TSIM_DEVICE.
-    _gpu(Circuit(T_STATE_X).compile_sampler(seed=1, device="metal"))
-    monkeypatch.setenv("TSIM_DEVICE", "")
     _gpu(Circuit(T_STATE_X).compile_sampler(seed=1))
     sampler = Circuit(T_STATE_X).compile_sampler(seed=1, device="cpu")
     assert type(sampler._shots) is ShotSampler
+    assert sampler.stats.device == "cpu"
+
+
+def test_freed_buffers_beyond_the_pool_bytes_are_released(monkeypatch):
+    monkeypatch.setattr(runtime, "_pool", [])
+    monkeypatch.setattr(runtime, "POOL_BYTES", 1 << 20)
+    small = runtime.buffer(1 << 16, np.uint8, recycle=True)
+    del small
+    assert [b.length() for b in runtime._pool] == [1 << 16]
+    large = runtime.buffer(2 << 20, np.uint8, recycle=True)
+    del large
+    assert [b.length() for b in runtime._pool] == [1 << 16]
+    medium = runtime.buffer(1 << 20, np.uint8, recycle=True)
+    del medium
+    # NOTE: the oldest buffers go first.
+    assert [b.length() for b in runtime._pool] == [1 << 20]
 
 
 @pytest.mark.parametrize(

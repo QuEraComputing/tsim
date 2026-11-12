@@ -4,12 +4,14 @@ The noise sampler (``noise``) and every component's tape (``codegen``, written
 by ``tsim.statevector.gpu.tape``) run as Metal kernels that PyObjC compiles at
 runtime (``runtime``); ``MetalShotSampler`` (``sampler``) replaces
 ``ShotSampler`` behind the compiled samplers of ``device="auto"`` or
-``"metal"`` whenever PyObjC sees an Apple GPU and every component fits. Amplitudes are complex64. It needs Apple silicon,
-where Tsim depends on ``pyobjc-framework-Metal``.
+``"metal"`` whenever PyObjC sees an Apple GPU and every component fits.
+Amplitudes are complex64. It needs Apple silicon, where Tsim depends on
+``pyobjc-framework-Metal``.
 """
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 from tsim.statevector.gpu.tape import MAX_WIDTH, RESOLVABLE, rarest_branch, supports
@@ -58,7 +60,10 @@ def shot_sampler(
     reason = _unsupported(host.layout)
     if reason is not None:
         if required:
-            raise ValueError(f"Cannot sample on Metal: {reason}.")
+            raise ValueError(
+                f"Cannot sample on Metal: {reason}; sample with device='cpu', or "
+                "with device='auto', which falls back to the CPU."
+            )
         return host
     from tsim.statevector.metal.sampler import MetalShotSampler
 
@@ -85,7 +90,18 @@ def _unsupported(layout: ShotLayout) -> str | None:
             f"a component needs {width} active qubits, more than the "
             f"{MAX_WIDTH} that the GPU executor supports"
         )
+    # NOTE: a rotation's branch weights are cos^2 and sin^2 of half its angle, so
+    # a weight w is that of an angle 2 asin(sqrt(w)) from a multiple of π. The
+    # tape's rotations are the circuit's without their Clifford parts (multiples
+    # of π/2), so the circuit's angle is as far from a multiple of π/2.
+    distance = _angle(rarest_branch(layout))
     return (
-        f"a rotation has a branch of weight {rarest_branch(layout):.1e}, "
-        f"below the {RESOLVABLE:.0e} that float32 amplitudes resolve"
+        f"a rotation's angle is {distance:.1e} π from a Clifford angle (a "
+        f"multiple of π/2), closer than the {_angle(RESOLVABLE):.1e} π that "
+        "float32 amplitudes resolve"
     )
+
+
+def _angle(weight: float) -> float:
+    """Return the angle, in units of π, whose branch weight ``sin^2`` is ``weight``."""
+    return 2 * math.asin(math.sqrt(weight)) / math.pi

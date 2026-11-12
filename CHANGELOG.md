@@ -15,8 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `compile_detector_sampler` and the sampler classes chooses where they sample:
   `"auto"` (the default) uses the GPU when it can run the circuit and otherwise
   the CPU, without a warning; `"cpu"` keeps them on the CPU; `"metal"` raises when
-  the GPU cannot run the circuit. `TSIM_DEVICE=cpu` keeps `"auto"` on the CPU, and
-  `SamplerStats.device` and the repr say where they sample.
+  the GPU cannot run the circuit, and says why. `SamplerStats.device` and the repr
+  say where they sample. Freed GPU output buffers are kept for reuse up to 1 GB.
 - The docs pages have a menu to copy a page or open it in ChatGPT or Claude, and
   the README, the install page and the agent skill point to the docs MCP server
   at `https://bloqade.quera.com/tsim/mcp`. The README and the install page also

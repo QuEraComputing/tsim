@@ -117,7 +117,7 @@ def profile(args) -> int:
     )
     done = subprocess.run(
         cmd,
-        env=common.child_env(args.threads, args.device),
+        env=common.child_env(args.threads),
         capture_output=True,
         text=True,
         check=False,

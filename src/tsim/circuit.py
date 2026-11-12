@@ -967,12 +967,12 @@ class Circuit:
                 size.
             device: Where "active_statevector" samples. "auto" (the default)
                 samples in float32 on an Apple GPU when there is one that can
-                run the circuit, and otherwise on the CPU, without a warning
-                (``TSIM_DEVICE=cpu`` keeps it on the CPU). "cpu" samples on the
-                CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
-                samples on an Apple GPU or raises: without one, for a component
-                of more than 11 active qubits, a rotation by less than about
-                6e-5 π, noise beyond the GPU's tables, or a call that runs out
+                run the circuit, and otherwise on the CPU, without a warning.
+                "cpu" samples on the CPU in float64, on
+                ``numba.get_num_threads()`` threads. "metal" samples on an Apple
+                GPU or raises: without one, for a component of more than 11
+                active qubits, a rotation within about 6e-5 π of a multiple of
+                π/2, noise beyond the GPU's tables, or a call that runs out
                 of GPU memory. The stabilizer rank strategies take only "auto".
 
         Returns:
@@ -1022,12 +1022,12 @@ class Circuit:
                 On a GPU, they do depend on the batch size.
             device: Where "active_statevector" samples. "auto" (the default)
                 samples in float32 on an Apple GPU when there is one that can
-                run the circuit, and otherwise on the CPU, without a warning
-                (``TSIM_DEVICE=cpu`` keeps it on the CPU). "cpu" samples on the
-                CPU in float64, on ``numba.get_num_threads()`` threads. "metal"
-                samples on an Apple GPU or raises: without one, for a component
-                of more than 11 active qubits, a rotation by less than about
-                6e-5 π, noise beyond the GPU's tables, or a call that runs out
+                run the circuit, and otherwise on the CPU, without a warning.
+                "cpu" samples on the CPU in float64, on
+                ``numba.get_num_threads()`` threads. "metal" samples on an Apple
+                GPU or raises: without one, for a component of more than 11
+                active qubits, a rotation within about 6e-5 π of a multiple of
+                π/2, noise beyond the GPU's tables, or a call that runs out
                 of GPU memory. The stabilizer rank strategies take only "auto".
 
         Returns:

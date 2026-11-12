@@ -81,8 +81,8 @@ def _circuit_options(parser) -> None:
         "--device",
         default="cpu",
         choices=["cpu", "gpu"],
-        help="cpu: TSIM_DEVICE=cpu; gpu: let Tsim pick a GPU when it has one "
-        "(default cpu)",
+        help='cpu: compile with device="cpu"; gpu: let Tsim pick a GPU when it '
+        "has one (default cpu)",
     )
 
 

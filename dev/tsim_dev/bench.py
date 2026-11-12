@@ -10,7 +10,7 @@ when every round agrees on the verdict (up to `--rounds`, default 5).
 measurement for a pull request's table.
 
 By default a call returns bit-packed rows, Tsim's native output, on one CPU thread
-with `TSIM_DEVICE=cpu`; each row says which device sampled. `--bools` times
+with `device="cpu"` (`on_device.py`); each row says which device sampled. `--bools` times
 `sample()`'s default boolean output, `--threads N` more cores and `--device gpu`
 a GPU, each of which changes the rate severalfold.
 """
@@ -260,9 +260,30 @@ def reference(ref: str) -> Side:
     return Side(f"{ref}@{sha[:8]}", python)
 
 
-def worker_command(python: Path, case: Case, args, mode: str) -> list[str]:
-    """Return the command that times `case` with tsim-bench's worker."""
-    cmd = [str(python), str(corpus.worker(args.corpus_dir)), "--mode", mode]
+ON_DEVICE = Path(__file__).with_name("on_device.py")
+
+
+def worker_launch(python: Path, device: str, corpus_dir: str | None) -> list[str]:
+    """Return the command that starts tsim-bench's worker with `python` on `device`.
+
+    "cpu" compiles Tsim's samplers with `device="cpu"` (`on_device.py`); "gpu"
+    leaves Tsim's default, which samples on a GPU when it has one.
+    """
+    worker = str(corpus.worker(corpus_dir))
+    if device == "cpu":
+        return [str(python), str(ON_DEVICE), "cpu", worker]
+    return [str(python), worker]
+
+
+def worker_command(
+    python: Path, case: Case, args, mode: str, device: str | None = None
+) -> list[str]:
+    """Return the command that times `case` with tsim-bench's worker on `device`.
+
+    `device` defaults to `args.device`.
+    """
+    device = device or args.device
+    cmd = [*worker_launch(python, device, args.corpus_dir), "--mode", mode]
     if case.id is not None:
         cmd += ["--root", str(corpus.root(args.corpus_dir)), "--case", case.id]
         cmd += ["--sampler", case.sampler]
@@ -281,16 +302,6 @@ def worker_command(python: Path, case: Case, args, mode: str) -> list[str]:
     return cmd
 
 
-def side_env(side: Side, threads: int, device: str) -> dict[str, str]:
-    """Return the environment of one side's worker.
-
-    `device="cpu"` sets `TSIM_DEVICE=cpu`, which keeps a Tsim with a GPU backend on
-    the CPU; "gpu" leaves Tsim to pick a GPU when it has one.
-    """
-    env = common.child_env(threads, device)
-    return env
-
-
 def measure(side: Side, case: Case, args, mode: str = "bench") -> dict:
     """Run the worker once and return its result, or `{"error": ...}`."""
     threads = side.threads or args.threads
@@ -298,13 +309,13 @@ def measure(side: Side, case: Case, args, mode: str = "bench") -> dict:
     options = args
     if side.strategy is not None:
         options = argparse.Namespace(**{**vars(args), "strategy": side.strategy})
-    cmd = worker_command(side.python, case, options, mode)
+    cmd = worker_command(side.python, case, options, mode, device)
     wrapped = common.capped(
         cmd, mem=args.mem, timeout=args.timeout, pin=common.pin_cpus(threads)
     )
     done = subprocess.run(
         wrapped,
-        env=side_env(side, threads, device),
+        env=common.child_env(threads),
         capture_output=True,
         text=True,
         check=False,
@@ -326,13 +337,15 @@ class Worker:
         options = args
         if side.strategy is not None:
             options = argparse.Namespace(**{**vars(args), "strategy": side.strategy})
-        cmd = worker_command(side.python, case, options, "serve")
+        cmd = worker_command(
+            side.python, case, options, "serve", side.device or args.device
+        )
         self.args = args
         self.process = subprocess.Popen(
             common.capped(
                 cmd, mem=args.mem, timeout=args.timeout, pin=common.pin_cpus(threads)
             ),
-            env=side_env(side, threads, side.device or args.device),
+            env=common.child_env(threads),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
