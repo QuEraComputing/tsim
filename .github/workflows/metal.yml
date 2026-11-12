@@ -8,6 +8,8 @@ name: Metal
 
 on:
   workflow_call:
+  push:  # TEMPORARY: test run, removed before review
+    branches: [ci/metal-release]
 
 jobs:
   metal:
