@@ -37,8 +37,9 @@ if TYPE_CHECKING:
     from tsim.statevector.cuda.sampler import CudaShotSampler
     from tsim.statevector.metal.sampler import MetalShotSampler
 
-_GPUS = {"metal": metal, "cuda": cuda}
-"""The GPU backends of ``device``, in the order that ``device="auto"`` tries them."""
+_GPUS = {"cuda": cuda, "metal": metal}
+"""The GPU backends of ``device``, in the order that ``device="auto"`` tries them:
+CUDA first, then Metal."""
 
 # NOTE: postselection with a stabilizer-rank strategy screens shots for direct
 # discards in rounds of SCREEN_CHUNKS chunks of at most SCREEN_SHOTS shots.
