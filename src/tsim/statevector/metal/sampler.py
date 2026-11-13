@@ -31,7 +31,7 @@ batch size.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -103,8 +103,7 @@ class _Module:
     psm_words: np.ndarray
     passing: float
     """Estimated share of shots that pass the screen."""
-    split: tuple[_Launch, _Launch] | None
-    """A postselected batch's noise passes (screened, deferred), or None."""
+    splits: dict[bool, tuple[_Launch, _Launch] | None] = field(default_factory=dict)
 
 
 @dataclass
@@ -123,6 +122,7 @@ class _Slot:
     counts: runtime.Buffer
     totals: runtime.Buffer
     index: runtime.Buffer
+    values: runtime.Buffer | None = None
 
 
 @dataclass
@@ -133,8 +133,11 @@ class _Call:
     slot: _Slot
     constant: runtime.Buffer
     split: tuple[_Launch, _Launch] | None
+    expectations: bool
     rows: runtime.Buffer
     """The accepted rows, bit-packed."""
+    values: runtime.Buffer | None
+    """The accepted rows' expectations, with ``expectations``."""
 
 
 class MetalShotSampler:
@@ -142,7 +145,8 @@ class MetalShotSampler:
 
     It keeps ``ShotSampler``'s interface (``sample``, ``direct_bools``,
     ``reference``, ``plan``, ``layout``); ``sample`` returns only the shots that
-    pass postselection.
+    pass postselection. ``sample_accepted`` can also return each observable's
+    expectation.
     """
 
     supports = staticmethod(tape.supports)
@@ -175,6 +179,8 @@ class MetalShotSampler:
         self._lock = threading.RLock()
         self._host = host
         layout = host.layout
+        self._num_detectors = num_detectors
+        self._observables = np.arange(num_detectors, layout.num_outputs)
         self._rng = np.random.default_rng(seed)
         self._channels = channels
         self._noise = noise_tables(channels, layout.noise, layout.num_words)
@@ -182,8 +188,8 @@ class MetalShotSampler:
         self._all = self._launch(self._noise.groups)
         self._modules: dict[bytes, _Module] = {}
         self._constants: dict[bytes, runtime.Buffer] = {}
-        self._slots: dict[int, _Slot] = {}
-        self._shares: dict[ShotPlan, float] = {}
+        self._slots: dict[tuple[int, bool], _Slot] = {}
+        self._shares: dict[tuple, float] = {}
         self._cpu_only = False
 
     @property
@@ -227,8 +233,10 @@ class MetalShotSampler:
         plan = self.plan(mask)
         layout = self.layout
         tb = _threads_per_shot(layout)
-        parts = tape.tape_kernel(layout, plan, mask, tb, METAL)
-        source = kernels.source(layout, self._noise, parts, tb)
+        parts = tape.tape_kernel(layout, plan, mask, self._num_detectors, tb, METAL)
+        source = kernels.source(
+            layout, self._noise, parts, tb, max(1, len(self._observables))
+        )
         library = runtime.Library(source)
         for name in kernels.names(self._noise.shared_words):
             library.pipeline(name)
@@ -240,7 +248,6 @@ class MetalShotSampler:
             plan=plan,
             psm_words=parts.psm_words,
             passing=screen_pass_rate(self._channels, layout, plan),
-            split=self._split(plan, parts.psm_words, mask is not None),
         )
         self._modules[key] = compiled
         return compiled
@@ -255,19 +262,31 @@ class MetalShotSampler:
         )
 
     def _split(
-        self, plan: ShotPlan, psm_words: np.ndarray, has_mask: bool
+        self, module: _Module, expectations: bool
     ) -> tuple[_Launch, _Launch] | None:
         """Return a postselected batch's noise passes (screened, deferred), or None.
 
-        As ``gpu.noise.split``.
+        As ``gpu.noise.split``; with ``expectations`` the observables' bits are
+        read too.
         """
         # NOTE: rows too wide for threadgroup memory draw all their noise at once.
-        if not has_mask or not self._noise.shared_words:
+        if not module.has_mask or not self._noise.shared_words:
             return None
-        found = split(self._noise, self._channels, self.layout, plan, psm_words)
-        if found is None:
-            return None
-        return self._launch(found[0]), self._launch(found[1])
+        if expectations not in module.splits:
+            found = split(
+                self._noise,
+                self._channels,
+                self.layout,
+                module.plan,
+                module.psm_words,
+                self._num_detectors if expectations else None,
+            )
+            module.splits[expectations] = (
+                None
+                if found is None
+                else (self._launch(found[0]), self._launch(found[1]))
+            )
+        return module.splits[expectations]
 
     # -- execution --------------------------------------------------------------
 
@@ -285,11 +304,12 @@ class MetalShotSampler:
         cap = max(1 << 10, BATCH_BYTES // (8 * self.layout.num_words))
         return max(1, min(batch_size or BATCH_SHOTS, BATCH_SHOTS, cap, shots))
 
-    def _slot(self, shots: int) -> _Slot:
+    def _slot(self, shots: int, expectations: bool) -> _Slot:
         """Return the buffers for batches of up to ``shots`` shots."""
-        slot = self._slots.get(shots)
+        key = (shots, expectations)
+        slot = self._slots.get(key)
         if slot is None:
-            nw = self.layout.num_words
+            nw, no = self.layout.num_words, max(1, len(self._observables))
             slot = _Slot(
                 words=runtime.buffer(shots * nw, np.uint64),
                 queue=runtime.buffer(shots, np.uint32),
@@ -298,7 +318,10 @@ class MetalShotSampler:
                 totals=runtime.buffer(-(-shots // 32 // SCAN_THREADS) + 1, np.uint32),
                 index=runtime.buffer(shots, np.uint32),
             )
-            self._slots = {shots: slot}
+            if expectations:
+                slot.values = runtime.buffer(shots * no, np.float32)
+            self._slots = {k: v for k, v in self._slots.items() if k[1] != expectations}
+            self._slots[key] = slot
         return slot
 
     def _encode_batch(
@@ -309,6 +332,7 @@ class MetalShotSampler:
         Only the shots that pass the screen get their words written.
         """
         module, slot, constant = call.module, call.slot, call.constant
+        expectations = call.expectations
         launch = call.split[0] if call.split else self._all
         library = module.library
         words = slot.words
@@ -344,7 +368,9 @@ class MetalShotSampler:
         )
         if self.layout.components:
             tape_args = np.zeros(1, dtype=_TAPE_ARGS)
-            tape_args[0] = (first_shot, seed, int(module.has_mask), 0)
+            flags = int(module.has_mask) | (2 if expectations else 0)
+            tape_args[0] = (first_shot, seed, flags, 0)
+            values = slot.values if slot.values is not None else slot.counts
             threads = shots << module.tb
             encoder.dispatch(
                 library.pipeline("tape"),
@@ -355,6 +381,7 @@ class MetalShotSampler:
                     _count(slot, _SURVIVORS),
                     slot.accepted,
                     _count(slot, _ACCEPTED),
+                    values,
                     _count(slot, _DEVIATION),
                 ],
                 -(-threads // TAPE_THREADS),
@@ -370,14 +397,16 @@ class MetalShotSampler:
     ) -> None:
         """Encode the listing and packing of a batch's accepted rows into ``call.rows``.
 
-        They follow the rows of the call's earlier batches (at the cursor);
-        ``fixed`` holds the batch's shots, which a call without a mask returns.
+        They follow the rows of the call's earlier batches (at the cursor), and
+        their expectations go to ``call.values``; ``fixed`` holds the batch's
+        shots, which a call without a mask returns.
         """
         module, slot, split = call.module, call.slot, call.split
-        rows = call.rows
+        expectations, rows, values = call.expectations, call.rows, call.values
         library = module.library
         S = self._noise.block_shots
         nb = -(-self.layout.num_outputs // 8)
+        no = len(self._observables)
         if module.has_mask:
             words = -(-shots // 32)
             blocks = -(-words // SCAN_THREADS)
@@ -439,6 +468,22 @@ class MetalShotSampler:
                 -(-threads // COPY_THREADS),
                 COPY_THREADS,
             )
+        if expectations and no and self.layout.components:
+            assert slot.values is not None and values is not None
+            encoder.dispatch(
+                library.pipeline("gather_float"),
+                [
+                    slot.values,
+                    count,
+                    np.int32(no),
+                    slot.index,
+                    values,
+                    cursor,
+                    np.int32(module.has_mask),
+                ],
+                COPY_THREADS,
+                COPY_THREADS,
+            )
         encoder.dispatch(library.pipeline("advance"), [cursor, count], 1, 1)
 
     def sample(
@@ -459,15 +504,20 @@ class MetalShotSampler:
         forked after its parent used the GPU, the call samples on the CPU, or
         raises if the sampler is ``required`` on the GPU (``_or_cpu``).
         """
-        return self._or_cpu(
-            lambda: self._accepted(
+
+        def on_gpu():
+            outputs, _, deviation = self.sample_accepted(
                 shots,
-                columns,
                 mask=mask,
                 flip=flip,
                 batch_size=batch_size,
                 bools=not bit_packed,
-            ),
+                columns=columns,
+            )
+            return outputs, deviation
+
+        return self._or_cpu(
+            on_gpu,
             lambda: self._host.sample(
                 shots,
                 columns,
@@ -510,7 +560,7 @@ class MetalShotSampler:
             self._cpu_only = True
             return on_cpu()
 
-    def _capacity(self, key: ShotPlan, module: _Module, shots: int) -> int:
+    def _capacity(self, key: tuple, module: _Module, shots: int) -> int:
         """Return the rows to make room for: the expected accepted shots and a margin.
 
         The share comes from the previous call of ``key``, or else the screen's
@@ -521,7 +571,7 @@ class MetalShotSampler:
         return min(shots, int(1.05 * expected + 8 * np.sqrt(expected) + 4096))
 
     def _run_accepted(self, call: _Call, shots: int, batch: int, capacity: int) -> None:
-        """Run a call's batches into ``call.rows`` of ``capacity`` rows."""
+        """Run a call's batches into ``call.rows`` (and ``values``) of ``capacity`` rows."""
         slot = call.slot
         starts = range(0, shots, batch)
         fixed = runtime.buffer(len(starts), np.uint32)
@@ -572,27 +622,35 @@ class MetalShotSampler:
                 except KeyboardInterrupt:
                     continue
 
-    def _accepted(
+    def sample_accepted(
         self,
         shots: int,
-        columns: list[np.ndarray],
         *,
         mask: np.ndarray | None = None,
         flip: np.ndarray | None = None,
+        expectations: bool = False,
         batch_size: int | None = None,
         bools: bool = False,
-    ) -> tuple[list[np.ndarray], float]:
+        columns: list[np.ndarray] | None = None,
+    ) -> tuple[Any, np.ndarray | None, float]:
         """Sample ``shots`` shots; return only those that pass postselection.
 
         A shot passes when none of the ``mask``'s detectors is set (every shot
-        passes without a mask). Rows keep their shots' order. Each entry of
-        ``columns`` is an array of its outputs, in its order, selected on the
-        GPU: bit-packed as ``np.packbits(..., bitorder="little")`` would
-        (``uint8``, in shared memory), or with ``bools`` one boolean per output.
+        passes without a mask). Rows keep their shots' order and hold every output;
+        with ``bools``, one boolean per output, unpacked on the GPU. With
+        ``columns``, the outputs are a list of arrays instead, one per entry: its
+        outputs, in its order, selected on the GPU.
 
         Returns:
-            ``(outputs, deviation)``: the passing shots' arrays and the largest
-            normalization deviation beyond float32 rounding.
+            ``(outputs, expectations, deviation)``: the passing shots' outputs,
+            bit-packed as ``np.packbits(..., bitorder="little")`` would (``uint8``,
+            in shared memory), as booleans, or with ``columns`` a list of such
+            arrays; with ``expectations`` each observable's
+            expectation of ``(-1)^observable`` given the shot's history before
+            the measurement that settles it, or its sampled ``±1`` when a
+            postselected output of its component is tested at or after that
+            measurement (else None), and the largest normalization deviation
+            beyond float32 rounding.
 
         Raises:
             MemoryError: If the GPU runs out of memory.
@@ -600,46 +658,68 @@ class MetalShotSampler:
         """
         if shots > MAX_CALL_SHOTS:
             parts = [
-                self._accepted(
+                self.sample_accepted(
                     min(MAX_CALL_SHOTS, shots - start),
-                    columns,
                     mask=mask,
                     flip=flip,
+                    expectations=expectations,
                     batch_size=batch_size,
                     bools=bools,
+                    columns=columns,
                 )
                 for start in range(0, shots, MAX_CALL_SHOTS)
             ]
-            outputs = [
-                np.concatenate(cut) for cut in zip(*(p[0] for p in parts), strict=True)
-            ]
-            return outputs, max(p[1] for p in parts)
+            found = [p[1] for p in parts if p[1] is not None]
+            values = np.concatenate(found) if expectations else None
+            if columns is None:
+                outputs = np.concatenate([p[0] for p in parts])
+            else:
+                outputs = [
+                    np.concatenate(cut)
+                    for cut in zip(*(p[0] for p in parts), strict=True)
+                ]
+            return outputs, values, max(p[2] for p in parts)
         with self._lock:
             return self._sample_call(
-                shots, columns, mask=mask, flip=flip, batch_size=batch_size, bools=bools
+                shots,
+                mask=mask,
+                flip=flip,
+                expectations=expectations,
+                batch_size=batch_size,
+                bools=bools,
+                columns=columns,
             )
 
     def _sample_call(
         self,
         shots: int,
-        columns: list[np.ndarray],
         *,
-        mask: np.ndarray | None,
-        flip: np.ndarray | None,
-        batch_size: int | None,
-        bools: bool,
-    ) -> tuple[list[np.ndarray], float]:
-        """One call of ``_accepted``, of at most ``MAX_CALL_SHOTS`` shots."""
+        mask: np.ndarray | None = None,
+        flip: np.ndarray | None = None,
+        expectations: bool = False,
+        batch_size: int | None = None,
+        bools: bool = False,
+        columns: list[np.ndarray] | None = None,
+    ) -> tuple[Any, np.ndarray | None, float]:
+        """One call of ``sample_accepted``, of at most ``MAX_CALL_SHOTS`` shots."""
         module = self._module(mask)
-        nb = -(-self.layout.num_outputs // 8)
+        nb, no = -(-self.layout.num_outputs // 8), len(self._observables)
         if not shots:
+            values = np.zeros((0, no), np.float32) if expectations else None
+            if columns is not None:
+                if bools:
+                    empty = [np.zeros((0, len(c)), bool) for c in columns]
+                else:
+                    empty = [np.zeros((0, -(-len(c) // 8)), np.uint8) for c in columns]
+                return empty, values, 0.0
             if bools:
-                return [np.zeros((0, len(c)), bool) for c in columns], 0.0
-            return [np.zeros((0, -(-len(c) // 8)), np.uint8) for c in columns], 0.0
+                return np.zeros((0, self.layout.num_outputs), bool), values, 0.0
+            return np.zeros((0, nb), np.uint8), values, 0.0
         constant = self._constant(flip)
+        split = self._split(module, expectations)
         batch = self._batch_shots(shots, batch_size)
-        slot = self._slot(batch)
-        key = module.plan
+        slot = self._slot(batch, expectations)
+        key = (module.plan, expectations)
         state = self._rng.bit_generator.state
         capacity = self._capacity(key, module, shots)
         while True:
@@ -647,7 +727,12 @@ class MetalShotSampler:
             # output has room for the expected rows only; a call that overflows
             # it runs again, on the same streams, with room for every shot.
             rows = runtime.buffer(capacity * nb, np.uint8, recycle=True)
-            call = _Call(module, slot, constant, module.split, rows)
+            values = (
+                runtime.buffer(capacity * no, np.float32, recycle=True)
+                if expectations
+                else None
+            )
+            call = _Call(module, slot, constant, split, expectations, rows, values)
             self._run_accepted(call, shots, batch, capacity)
             total = int(slot.counts.array[_CURSOR])
             if total <= capacity:
@@ -657,7 +742,19 @@ class MetalShotSampler:
         self._shares[key] = total / max(shots, 1)
         # NOTE: fast math records a NaN total as NaN (not inf), which must warn.
         deviation = tape.deviation(slot.counts.array[_DEVIATION])
-        return self._select(module, rows, total, columns, bools), deviation
+        packed = rows.array[: total * nb].reshape(total, nb)
+        expected = None
+        if values is not None:
+            expected = values.array[: total * no].reshape(total, no)
+            if not self.layout.components:
+                expected[:] = 0
+            self._direct_expectations(packed, expected)
+        if columns is not None:
+            selected = self._select(module, rows, total, columns, bools)
+            return selected, expected, deviation
+        if bools:
+            return self._unpack(module, rows, total), expected, deviation
+        return packed, expected, deviation
 
     def _unpack(self, module: _Module, rows: runtime.Buffer, total: int) -> np.ndarray:
         """Return the first ``total`` packed ``rows`` as booleans, unpacked on the GPU."""
@@ -697,8 +794,7 @@ class MetalShotSampler:
         num_outputs = self.layout.num_outputs
         nb = -(-num_outputs // 8)
         packed = rows.array[: total * nb].reshape(total, nb)
-        selected: list[np.ndarray] = []
-        encoder = None
+        selected, encoder, dispatched = [], runtime.Encoder(), False
         for chosen in columns:
             count = len(chosen)
             leading = np.array_equal(chosen, np.arange(count))
@@ -717,18 +813,30 @@ class MetalShotSampler:
             if total * width:
                 threads = min(total * width, MAX_COPY_THREADS)
                 arguments = np.array([total, count, width, int(bools)], np.uint32)
-                encoder = encoder or runtime.Encoder()
                 encoder.dispatch(
                     module.library.pipeline("select_rows"),
                     [rows, out, runtime.upload(chosen.astype(np.uint32)), arguments],
                     -(-threads // COPY_THREADS),
                     COPY_THREADS,
                 )
+                dispatched = True
             array = out.array[: total * width].reshape(total, width)
             selected.append(array.view(bool) if bools else array)
-        if encoder is not None:
-            self._wait_all([encoder.commit()])
+        commands = encoder.commit()
+        if dispatched:
+            self._wait_all([commands])
         return selected
+
+    def _direct_expectations(self, rows: np.ndarray, values: np.ndarray) -> None:
+        """Set the expectations of observables outside the components: ``±1``."""
+        layout = self.layout
+        in_components = {i for c in layout.components for i in c.output_indices}
+        for column, index in enumerate(self._observables):
+            if int(index) in in_components:
+                continue
+            k = int(index)
+            bit = (rows[:, k >> 3] >> np.uint8(k & 7)) & np.uint8(1)
+            values[:, column] = 1.0 - 2.0 * bit.astype(np.float32)
 
     def direct_bools(
         self,
@@ -737,11 +845,10 @@ class MetalShotSampler:
         batch_size: int | None = None,
     ) -> np.ndarray:
         """Return every output bit of a program without components, as booleans."""
-        every = [np.arange(self.layout.num_outputs)]
         return self._or_cpu(
-            lambda: self._accepted(
-                shots, every, flip=flip, batch_size=batch_size, bools=True
-            )[0][0],
+            lambda: self.sample_accepted(
+                shots, flip=flip, batch_size=batch_size, bools=True
+            )[0],
             lambda: self._host.direct_bools(shots, flip, batch_size),
         )
 

@@ -291,7 +291,9 @@ class CudaShotSampler:
         plan = self.plan(mask)
         layout = self.layout
         tb = tape.threads_per_shot(layout)
-        parts = tape.tape_kernel(layout, plan, mask, tb, CUDA)
+        # NOTE: every output counts as a detector, so the tapes compute no
+        # observable expectations.
+        parts = tape.tape_kernel(layout, plan, mask, layout.num_outputs, tb, CUDA)
         source = kernels.source(layout, self._noise, parts, tb)
         module = self._compile(source)
         tape_fn = module.get_function("tape")

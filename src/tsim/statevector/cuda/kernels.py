@@ -62,6 +62,7 @@ extern "C" __global__ void __launch_bounds__({block}) tape(
         u64 w[{NW}];
         #pragma unroll
         for (int i = 0; i < {NW}; ++i) w[i] = row[i];
+        float* ev = nullptr;
         int grave = 0x7fffffff;
 {calls}
         if (valid && t == 0) {{

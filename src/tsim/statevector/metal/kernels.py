@@ -2,7 +2,8 @@
 
 ``tape`` runs the components' tapes on the queued shots; ``count_bits`` and
 ``list_bits`` list the accepted shots from the bitmap; ``gather_rows``,
-``unpack_rows`` and ``select_rows`` copy out rows, booleans and chosen outputs;
+``unpack_rows``, ``select_rows`` and ``gather_float`` copy out rows, booleans,
+chosen outputs and expectations;
 ``reset`` and ``advance`` keep a call's counters on the GPU.
 """
 
@@ -20,12 +21,13 @@ SCAN_THREADS = 1024
 TEMPLATE = r"""
 struct TapeArgs {{ long first_shot; u64 seed; int flags; }};
 
-// flags: 1 clears rejected shots from ``survivors`` and counts the accepted ones.
+// flags: 1 clears rejected shots from ``survivors`` and counts the accepted ones,
+// 2 writes the expectations.
 kernel void tape(
     device u64* out [[buffer(0)]], constant TapeArgs& args [[buffer(1)]],
     device const uint* queue [[buffer(2)]], device const uint* count [[buffer(3)]],
     device atomic_uint* survivors [[buffer(4)]], device atomic_uint* acc_count [[buffer(5)]],
-    device atomic_uint* deviation [[buffer(6)]],
+    device float* expectations [[buffer(6)]], device atomic_uint* deviation [[buffer(7)]],
     uint gid [[thread_position_in_grid]], uint lane [[thread_index_in_simdgroup]])
 {{
     int t = lane & {T1};
@@ -38,10 +40,13 @@ kernel void tape(
     device u64* row = out + (long)row_index * {NW};
     u64 w[{NW}];
     for (int i = 0; i < {NW}; ++i) w[i] = row[i];
+    float ev[{NO}];
     int grave = 0x7fffffff;
 {calls}
     if (t == 0) {{
 {stores}
+        if (args.flags & 2)
+            for (int i = 0; i < {NO}; ++i) expectations[(long)row_index * {NO} + i] = ev[i];
     }}
     if (args.flags & 1) {{
         u64 hit = {hits};
@@ -189,6 +194,25 @@ kernel void select_rows(
         dst[i] = uchar(v);
     }}
 }}
+
+// Observable expectations of rows ``index[j]`` (or of row ``j``, without
+// ``has_index``) for ``j < *n``, densely, after the ``*cursor`` rows of the
+// call's earlier batches.
+kernel void gather_float(
+    device const float* values [[buffer(0)]], device const uint* n [[buffer(1)]],
+    constant int& width [[buffer(2)]], device const uint* index [[buffer(3)]],
+    device float* dst [[buffer(4)]], device const uint* cursor [[buffer(5)]],
+    constant int& has_index [[buffer(6)]],
+    uint gid [[thread_position_in_grid]], uint grid [[threads_per_grid]])
+{{
+    long total = min((long)*n, (long)cursor[1] - (long)cursor[0]) * width;
+    dst += (long)*cursor * width;
+    for (long k = gid; k < total; k += grid) {{
+        long j = k / width; int c = (int)(k - j * width);
+        long r = has_index ? (long)index[j] : j;
+        dst[k] = values[r * width + c];
+    }}
+}}
 """
 
 
@@ -197,6 +221,7 @@ def source(
     tables: NoiseTables,
     parts: TapeKernel,
     tb: int,
+    num_observables: int,
 ) -> str:
     """Return the MSL source of every kernel, for tapes of ``2^tb`` threads a shot."""
     nb = -(-layout.num_outputs // 8)
@@ -209,6 +234,7 @@ def source(
             tb=tb,
             NW=layout.num_words,
             SCAN=SCAN_THREADS,
+            NO=num_observables,
             NB=max(nb, 1),
             RB=8 * layout.num_words,
             NOUT=max(layout.num_outputs, 1),
@@ -224,5 +250,5 @@ def source(
 def names(shared_words: bool) -> list[str]:
     """Return the kernels of a source; ``noise_kept`` needs ``shared_words``."""
     found = ["noise", "tape", "count_bits", "list_bits", "gather_rows"]
-    found += ["reset", "advance", "unpack_rows", "select_rows"]
+    found += ["gather_float", "reset", "advance", "unpack_rows", "select_rows"]
     return [*found, "noise_kept"] if shared_words else found
