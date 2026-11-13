@@ -661,6 +661,9 @@ def test_calls_out_of_gpu_memory_fall_back_to_the_cpu(monkeypatch):
     _out_of_memory_above(monkeypatch, required, 0)
     with pytest.raises(MemoryError, match="the GPU ran out of memory"):
         required.sample(10, append_observables=True)
+    # NOTE: a call that no batch fits leaves the later calls' batch alone.
+    assert _gpu_shots(sampler)._max_batch == cuda_sampler.BATCH_SHOTS
+    assert _gpu_shots(required)._max_batch == cuda_sampler.BATCH_SHOTS
 
 
 def test_samplers_out_of_gpu_memory_at_setup_run_on_the_cpu(monkeypatch):
@@ -1045,6 +1048,38 @@ def test_host_rows_grow_by_the_rate_seen_so_far():
     assert 512 <= out.capacity < 50_000
     rows = out.take(300 - 256)[0][0]
     assert rows.shape == (300 - 256, 357)
+
+
+def test_a_call_keeps_only_the_rows_in_flight_on_the_device(monkeypatch):
+    # NOTE: a call kept every chunk's rows on the device until it returned, so a
+    # result larger than the free device memory ran out of it at every batch size.
+    sampler = _gpu(Circuit(NOISY_DETECTORS).compile_detector_sampler(seed=41))
+    shots = _gpu_shots(sampler)
+    pool = runtime.cupy().get_default_memory_pool()
+    batch, chunks = 1 << 15, 64
+
+    def sample(n):
+        return sampler.sample(
+            n, append_observables=True, bit_packed=True, batch_size=batch
+        )
+
+    # NOTE: a first call allocates the buffers that the calls reuse.
+    sample(2 * batch)
+    before = pool.used_bytes()
+    pack, used = shots._pack, []
+
+    def spy(*args, **kwargs):
+        used.append(pool.used_bytes() - before)
+        return pack(*args, **kwargs)
+
+    monkeypatch.setattr(shots, "_pack", spy)
+    rows = sample(chunks * batch)
+    assert len(used) == chunks
+    assert rows.shape == (chunks * batch, 19)
+    # NOTE: 512 bytes more per chunk, to which the pool rounds an allocation.
+    chunk_bytes = rows.nbytes // chunks + 512
+    assert max(used) <= cuda_sampler.MAX_IN_FLIGHT * chunk_bytes
+    np.testing.assert_allclose(np.unpackbits(rows[:, :18]).mean(), 0.3, atol=1e-3)
 
 
 def test_rows_that_fill_shared_memory_draw_all_their_noise_at_once():

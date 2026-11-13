@@ -62,6 +62,11 @@ the host overlaps the next chunk's kernels on the other stream."""
 MAX_CHUNKS = 8
 """Most chunks of a batch, so that a chunk's fixed costs stay small."""
 
+MAX_IN_FLIGHT = 4
+"""Most chunks whose device rows wait for their copies to the host, so that a
+call's device memory does not grow with its result: both copy streams stay
+busy, and a chunk past them waits for the oldest copy to land."""
+
 
 @dataclass
 class _Launch:
@@ -753,21 +758,25 @@ class CudaShotSampler:
             MemoryError: If even batches of ``MIN_BATCH_SHOTS`` do not fit.
 
         """
-        batch = min(batch_size or BATCH_SHOTS, self._max_batch)
+        first = batch = min(batch_size or BATCH_SHOTS, self._max_batch)
         while True:
             try:
-                return self.sample_accepted(shots, batch_size=batch, **options)
+                found = self.sample_accepted(shots, batch_size=batch, **options)
             except Exception as error:
                 if not runtime.out_of_memory(error):
                     raise
                 self._release()
-                self._max_batch = max(batch // 2, MIN_BATCH_SHOTS)
+                # NOTE: a call that no batch fits leaves the later calls' batch alone.
                 if batch <= MIN_BATCH_SHOTS:
                     raise MemoryError(
                         "the GPU ran out of memory, even for batches of "
                         f"{MIN_BATCH_SHOTS} shots: {error}"
                     ) from error
-                batch = self._max_batch
+                batch = max(batch // 2, MIN_BATCH_SHOTS)
+            else:
+                if batch < first:
+                    self._max_batch = batch
+                return found
 
     def _release(self) -> None:
         """Wait for the device and free the buffers that calls reuse."""
@@ -863,16 +872,23 @@ class CudaShotSampler:
         split = self._split(module, expectations)
         launch = split[0] if split else self._all
         batch = min(batch_size or BATCH_SHOTS, BATCH_SHOTS)
-        state = {"start": 0, "slot": 0}
+        state = {"start": 0, "slot": 0, "copied": False}
         # NOTE: by the packed rows, so that a seed's shots do not depend on the
         # outputs that a call returns.
         size = self._chunk_shots(min(batch, shots), nb, module.passing)
         deviation = 0.0
         pending: list[tuple[int, int, int, tuple[Any, Any, Any, Any], Any]] = []
-        # NOTE: the device rows in flight to the host, kept until the copies land,
-        # and the streams that copy them.
-        held: list[Any] = []
+        # NOTE: each chunk's device rows in flight to the host, kept until its
+        # copies land (an event of its copy stream), and the streams that copy them.
+        flights: list[tuple[Any, list[Any]]] = []
         used: set[Any] = set()
+
+        def land() -> None:
+            # NOTE: the rows whose copies landed are freed for the next chunk's; at
+            # most MAX_IN_FLIGHT chunks' rows wait, or the oldest copy is waited for.
+            flights[:] = [flight for flight in flights if not flight[0].done]
+            while len(flights) >= MAX_IN_FLIGHT:
+                flights.pop(0)[0].synchronize()
 
         def launch_next() -> None:
             first, slot = state["start"], state["slot"]
@@ -921,8 +937,11 @@ class CudaShotSampler:
                 )
                 stream = self._streams[slot]
                 # NOTE: a call of one chunk has nothing to overlap its copy with.
-                copy = stream if first + n == shots and not held else self._copies[slot]
+                alone = first + n == shots and not state["copied"]
+                copy = stream if alone else self._copies[slot]
                 used.add(copy)
+                held: list[Any] = []
+                land()
                 if count and nb:
                     rows = self._pack(module, split, words, count, index)
                     held.append(rows)
@@ -961,6 +980,9 @@ class CudaShotSampler:
                         held.append(dst)
                     else:
                         values_host[:] = 0
+                if held:
+                    state["copied"] = True
+                    flights.append((copy.record(), held))
             return tape.deviation(host_counts[_DEVIATION])
 
         # NOTE: each chunk is launched before the previous one is finished, so its
