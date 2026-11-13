@@ -40,6 +40,17 @@ def gather_shots(layout: ShotLayout, block_shots: int) -> int:
     return min(block_shots, KERNEL_SHARED_BYTES // max(row, 1) // 32 * 32)
 
 
+def kept_fits(layout: ShotLayout, block_shots: int) -> bool:
+    """Return whether a ``noise_kept`` block of ``block_shots`` rows fits shared memory.
+
+    As a ``gather_columns`` block, it stages its rows' output words and packed
+    bytes, and it counts its events besides: 16 bytes, with the alignment of
+    the stage.
+    """
+    row = 8 * layout.output_words + -(-layout.num_outputs // 8)
+    return block_shots * row + 16 <= KERNEL_SHARED_BYTES
+
+
 TEMPLATE = r"""
 extern "C" __global__ void __launch_bounds__({block}) tape(
     u64* __restrict__ out, long long first_shot, u64 seed,

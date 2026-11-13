@@ -1045,3 +1045,31 @@ def test_host_rows_grow_by_the_rate_seen_so_far():
     assert 512 <= out.capacity < 50_000
     rows = out.take(300 - 256)[0][0]
     assert rows.shape == (300 - 256, 357)
+
+
+def test_rows_that_fill_shared_memory_draw_all_their_noise_at_once():
+    # NOTE: 6144 detectors are 96 words: 32 rows' output words and packed bytes
+    # are exactly gather_columns' 48 KB of shared memory, which noise_kept, with
+    # its event counter besides, overflowed (CUDA_ERROR_INVALID_VALUE at launch).
+    n = 6144
+    qubits = " ".join(map(str, range(n)))
+    circuit = Circuit(
+        "\n".join(
+            [
+                f"X_ERROR(0.01) {qubits}",
+                f"M {qubits}",
+                *(f"DETECTOR rec[{i - n}]" for i in range(n)),
+            ]
+        )
+    )
+    sampler = _gpu(circuit.compile_detector_sampler(seed=42, device="cuda"))
+    shots = _gpu_shots(sampler)
+    assert shots._gather_shots == shots._noise.block_shots == 32
+    assert not kernels.kept_fits(shots.layout, 32)
+    mask = np.zeros(n, dtype=bool)
+    mask[0] = True
+    got = sampler.sample(20_000, postselection_mask=mask)
+    assert not got[:, 0].any()
+    expected = 20_000 * 0.99
+    assert abs(len(got) - expected) <= 5 * np.sqrt(expected)
+    np.testing.assert_allclose(got[:, 1:].mean(), 0.01, atol=2e-4)

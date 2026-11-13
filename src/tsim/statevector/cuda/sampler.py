@@ -373,11 +373,11 @@ class CudaShotSampler:
         output words only.
         """
         # NOTE: rows too wide for shared memory draw all their noise at once, and
-        # so do rows of which noise_kept cannot stage a block (as gather_columns).
+        # so do rows of which noise_kept cannot stage a block.
         n = self._noise
         if not module.has_mask or not n.shared_words:
             return None
-        if self._gather_shots < n.block_shots:
+        if not kernels.kept_fits(self.layout, n.block_shots):
             return None
         if expectations not in module.splits:
             found = split(
