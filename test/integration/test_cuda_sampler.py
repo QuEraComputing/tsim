@@ -43,8 +43,7 @@ M 3
 DETECTOR rec[-1]
 """
 
-# NOTE: a T state measured in X after a noisy idle: its observable's expectation
-# is cos(π/4) = 0.707 before noise.
+# NOTE: a T state measured in X after a noisy idle.
 T_STATE_X = """
 R 0
 H 0
@@ -306,33 +305,10 @@ def test_cuda_defers_the_noise_that_postselection_cannot_see():
     mask[[0, 2]] = True
     sampler = _gpu(circuit.compile_detector_sampler(seed=12))
     got = _accepted(sampler, 200_000, mask)
-    assert _gpu_shots(sampler)._module(mask).splits[False] is not None
+    assert _gpu_shots(sampler)._module(mask).split is not None
     full = _accepted(_cpu(circuit.compile_detector_sampler, seed=13), 200_000, mask)
     assert abs(len(got) - len(full)) <= 5 * np.sqrt(len(full))
     assert_counts_match(got, full)
-
-
-def _expectations(sampler, shots, mask=None):
-    """Return the passing rows and expectations of ``sample_accepted``."""
-    rows, values, _ = _gpu_shots(sampler).sample_accepted(
-        shots, mask=mask, expectations=True
-    )
-    assert values is not None
-    return rows, values
-
-
-def test_deferred_noise_leaves_the_expectations_unbiased():
-    # NOTE: with expectations, the noise on the observable's direct qubit is not
-    # deferred: the tape reads the observable's bit for its sign.
-    circuit = Circuit(UNREAD_NOISE)
-    mask = np.zeros(circuit.num_detectors, dtype=bool)
-    mask[[0, 2]] = True
-    sampler = _gpu(circuit.compile_detector_sampler(seed=14))
-    _, values = _expectations(sampler, 200_000, mask)
-    assert _gpu_shots(sampler)._module(mask).splits[True] is not None
-    full = _accepted(_cpu(circuit.compile_detector_sampler, seed=15), 200_000, mask)
-    expected = np.mean(1 - 2 * full[:, -1].astype(float))
-    assert abs(values.mean() - expected) < 5 / np.sqrt(len(full))
 
 
 @pytest.mark.parametrize("text", [NOISY_DETECTORS, UNREAD_NOISE])
@@ -359,94 +335,6 @@ def test_cuda_chunks_return_the_rows_of_one_pass(monkeypatch, text):
     passing = ~full_bits[:, : circuit.num_detectors][:, mask].any(axis=1)
     assert 0 < passing.sum() < 10_500
     np.testing.assert_array_equal(rows, full[passing])
-
-
-def test_observable_expectations_average_to_the_sampled_observable():
-    circuit = Circuit(T_STATE_X)
-    sampler = _gpu(circuit.compile_detector_sampler(seed=6))
-    packed, values = _expectations(sampler, 200_000)
-    assert values.shape == (len(packed), 1)
-    # NOTE: given the shot's Z error, the expectation is ±cos(π/4).
-    np.testing.assert_allclose(np.abs(values), np.sqrt(0.5), atol=1e-5)
-    observed = 1 - 2 * np.unpackbits(packed, axis=1, bitorder="little")[:, 0].astype(
-        float
-    )
-    sampled = _cpu(circuit.compile_detector_sampler, seed=7).sample(
-        200_000, append_observables=True
-    )[:, 0]
-    expected = np.mean(1 - 2 * sampled.astype(float))
-    assert abs(values.mean() - expected) < 5 * 1 / np.sqrt(200_000)
-    # NOTE: the returned observable bit is sampled from the same state.
-    assert abs(observed.mean() - values.mean()) < 5 / np.sqrt(200_000)
-
-
-# NOTE: the T state's X outcome is copied onto qubit 1, whose postselected (and
-# noisy) detector is settled after the observable's measurement.
-T_STATE_X_THEN_DETECTOR = """
-R 0 1
-H 0
-T 0
-H 0
-CNOT 0 1
-X_ERROR(0.1) 1
-M 0
-OBSERVABLE_INCLUDE(0) rec[-1]
-M 1
-DETECTOR rec[-1]
-"""
-
-# NOTE: a postselected T-state detector settled before the observable's measurement.
-T_STATE_X_AFTER_DETECTOR = """
-R 0 1
-H 0 1
-T 0 1
-H 1
-M 1
-DETECTOR rec[-1]
-Z_ERROR(0.1) 0
-H 0
-M 0
-OBSERVABLE_INCLUDE(0) rec[-1]
-"""
-
-
-def _postselected_expectations(text, shots):
-    circuit = Circuit(text)
-    mask = np.ones(circuit.num_detectors, dtype=bool)
-    sampler = _gpu(circuit.compile_detector_sampler(seed=9))
-    _, values = _expectations(sampler, shots, mask)
-    detectors, observables = _cpu(circuit.compile_detector_sampler, seed=10).sample(
-        shots, separate_observables=True
-    )
-    kept = observables[~(detectors & mask).any(axis=1), 0]
-    return values[:, 0], np.mean(1 - 2 * kept.astype(float)), len(kept)
-
-
-def test_expectations_stay_unbiased_under_later_postselection():
-    values, expected, kept = _postselected_expectations(
-        T_STATE_X_THEN_DETECTOR, 200_000
-    )
-    # NOTE: the expectation before the measurement would average to cos(π/4).
-    assert abs(values.mean() - expected) < 5 * np.sqrt(1 / len(values) + 1 / kept)
-    np.testing.assert_array_equal(np.abs(values), 1)
-
-
-def test_expectations_are_exact_after_earlier_postselection():
-    values, expected, kept = _postselected_expectations(
-        T_STATE_X_AFTER_DETECTOR, 200_000
-    )
-    np.testing.assert_allclose(np.abs(values), np.sqrt(0.5), atol=1e-5)
-    assert abs(values.mean() - expected) < 5 * np.sqrt(1 / len(values) + 1 / kept)
-
-
-def test_clifford_observables_have_expectations_of_plus_or_minus_one():
-    circuit = Circuit(
-        "R 0 1\nX_ERROR(0.3) 0\nCNOT 0 1\nM 0 1\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-2]"
-    )
-    sampler = _gpu(circuit.compile_detector_sampler(seed=8))
-    packed, values = _expectations(sampler, 10_000)
-    bits = np.unpackbits(packed, axis=1, bitorder="little")
-    np.testing.assert_array_equal(values[:, 0], 1 - 2 * bits[:, 1].astype(np.float32))
 
 
 @pytest.mark.parametrize("reference", [False, True])
@@ -620,17 +508,17 @@ def test_cuda_draws_small_outcome_probabilities_at_their_rate(probability, shots
 def _out_of_memory_above(monkeypatch, sampler, limit):
     """Make ``sampler``'s GPU calls of batches above ``limit`` run out of memory."""
     shots = _gpu_shots(sampler)
-    sample_accepted = shots.sample_accepted
+    sample_rows = shots._sample_rows
     batches = []
 
-    def fake(n, *, batch_size=None, **kwargs):
-        batches.append(batch_size)
-        if batch_size is None or batch_size > limit:
+    def fake(n, columns, *, batch, **kwargs):
+        batches.append(batch)
+        if batch > limit:
             cp = runtime.cupy()
             raise cp.cuda.memory.OutOfMemoryError(1 << 40, 0)
-        return sample_accepted(n, batch_size=batch_size, **kwargs)
+        return sample_rows(n, columns, batch=batch, **kwargs)
 
-    monkeypatch.setattr(shots, "sample_accepted", fake)
+    monkeypatch.setattr(shots, "_sample_rows", fake)
     return batches
 
 
@@ -1039,14 +927,14 @@ def test_postselected_rows_too_wide_to_stage_draw_all_their_noise_at_once():
 def test_host_rows_grow_by_the_rate_seen_so_far():
     # NOTE: growing to room for every remaining shot asked a 2^27-shot call of
     # star_d=13 for 48 GB of pinned memory.
-    out = cuda_sampler._HostRows([357], None)
+    out = cuda_sampler._HostRows([357])
     shots = 1 << 27
     out.allocate(0, 1 << 20, shots)
     assert out.capacity == 256
     out.take(256)
     out.grow(300, 2 << 20, shots)
     assert 512 <= out.capacity < 50_000
-    rows = out.take(300 - 256)[0][0]
+    rows = out.take(300 - 256)[0]
     assert rows.shape == (300 - 256, 357)
 
 

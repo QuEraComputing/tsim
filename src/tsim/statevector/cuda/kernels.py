@@ -1,9 +1,9 @@
 """The CUDA sampler's kernels other than the noise ones, and their source.
 
 ``tape`` runs the components' tapes on the queued shots; ``count_bits`` and
-``list_bits`` list the accepted shots from the bitmap; ``gather_columns`` and
-``gather_float`` gather rows and expectations for the copy to the host
-(``gather_bytes`` the rows too wide for ``gather_columns``);
+``list_bits`` list the accepted shots from the bitmap; ``gather_columns``
+gathers rows for the copy to the host (``gather_bytes`` the rows too wide for
+``gather_columns``);
 ``select_rows`` picks the requested outputs out of them, bit-packed or as
 booleans; ``publish`` stores a batch's counts into pinned host memory.
 """
@@ -20,7 +20,7 @@ TAPE_THREADS = 128
 """Threads per block of the tape kernel."""
 
 COPY_THREADS = 256
-"""Threads per block of the kernels that gather rows and expectations."""
+"""Threads per block of the kernels that gather and select rows."""
 
 SCAN_THREADS = 1024
 """Threads per block of ``count_bits`` and ``list_bits``: one per bitmap word."""
@@ -56,7 +56,7 @@ extern "C" __global__ void __launch_bounds__({block}) tape(
     u64* __restrict__ out, long long first_shot, u64 seed,
     const unsigned* __restrict__ queue, const unsigned* __restrict__ count,
     unsigned* __restrict__ survivors, unsigned* __restrict__ acc_count,
-    float* __restrict__ expectations, unsigned* __restrict__ deviation)
+    unsigned* __restrict__ deviation)
 {{
     int t = threadIdx.x & {T1};
     unsigned gmask = {gmask};
@@ -76,15 +76,10 @@ extern "C" __global__ void __launch_bounds__({block}) tape(
         u64 w[{NW}];
         #pragma unroll
         for (int i = 0; i < {NW}; ++i) w[i] = row[i];
-        float ev[{NO}];
         int grave = 0x7fffffff;
 {calls}
         if (valid && t == 0) {{
 {stores}
-            if (expectations != nullptr) {{
-                #pragma unroll
-                for (int i = 0; i < {NO}; ++i) expectations[row_index * {NO} + i] = ev[i];
-            }}
         }}
         if (survivors != nullptr) {{
             // NOTE: the postselected direct outputs passed the screen already;
@@ -202,16 +197,6 @@ extern "C" __global__ void publish(const unsigned* __restrict__ counts, volatile
     if (threadIdx.x < 3) host[threadIdx.x] = counts[threadIdx.x];
     __threadfence_system();
 }}
-
-// Observable expectations of rows ``index[j]``, densely.
-extern "C" __global__ void gather_float(const float* __restrict__ values, long long n, int width,
-                                        const unsigned* __restrict__ index, float* __restrict__ dst) {{
-    for (long long k = (long long)blockIdx.x * blockDim.x + threadIdx.x; k < n * width;
-         k += (long long)gridDim.x * blockDim.x) {{
-        long long j = k / width; int c = (int)(k - j * width);
-        dst[k] = values[(long long)index[j] * width + c];
-    }}
-}}
 """
 
 
@@ -220,7 +205,6 @@ def source(
     tables: NoiseTables,
     parts: TapeKernel,
     tb: int,
-    num_observables: int,
 ) -> str:
     """Return the CUDA source of every kernel, for tapes of ``2^tb`` threads a shot."""
     T = 1 << tb
@@ -243,7 +227,6 @@ def source(
             gmask=gmask,
             NW=layout.num_words,
             OW=layout.output_words,
-            NO=num_observables,
             # NOTE: gather_columns goes unused (and small) where 32 rows do not fit.
             GS=max(gather_shots(layout, tables.block_shots), 1),
             LAST_BYTE=f"0x{(1 << (layout.num_outputs % 8 or 8)) - 1:02X}u",
