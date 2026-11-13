@@ -83,8 +83,7 @@ class _Module:
     noise: Any
     noise_kept: Any
     tape: Any
-    gather_columns: Any
-    gather_bytes: Any
+    gather_rows: Any
     select_rows: Any
     publish: Any
     count_bits: Any
@@ -230,9 +229,6 @@ class CudaShotSampler:
         self._channels = channels
         self._noise = noise_tables(channels, layout.noise, layout.num_words)
         n = self._noise
-        # NOTE: gather_columns stages a block's output words and its packed rows in
-        # shared memory; without room for 32 rows, gather_bytes reads them directly.
-        self._gather_shots = kernels.gather_shots(layout, n.block_shots)
         self._record_args = [self._upload(n.overflow.view(np.uint8))]
         self._all = self._launch(n.groups)
         self._modules: dict[bytes | None, _Module] = {}
@@ -313,8 +309,7 @@ class CudaShotSampler:
                 module.get_function("noise_kept") if self._noise.shared_words else None
             ),
             tape=tape_fn,
-            gather_columns=module.get_function("gather_columns"),
-            gather_bytes=module.get_function("gather_bytes"),
+            gather_rows=module.get_function("gather_rows"),
             select_rows=module.get_function("select_rows"),
             publish=module.get_function("publish"),
             count_bits=module.get_function("count_bits"),
@@ -532,8 +527,8 @@ class CudaShotSampler:
                 ),
                 shared_mem=max(8 * launch.max_events, S * nb),
             )
-        elif self._gather_shots == 0:
-            module.gather_bytes(
+        else:
+            module.gather_rows(
                 (min(-(-count * nb // COPY_THREADS), 16 * runtime.multiprocessors()),),
                 (COPY_THREADS,),
                 (
@@ -542,19 +537,6 @@ class CudaShotSampler:
                     index if index is not None else np.uint64(0),
                     dst,
                 ),
-            )
-        else:
-            GS = self._gather_shots
-            module.gather_columns(
-                ((count + GS - 1) // GS,),
-                (COPY_THREADS,),
-                (
-                    words,
-                    np.int64(count),
-                    index if index is not None else np.uint64(0),
-                    dst,
-                ),
-                shared_mem=GS * nb,
             )
         return dst
 

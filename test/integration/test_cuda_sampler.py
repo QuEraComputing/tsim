@@ -703,7 +703,7 @@ def test_cuda_samples_rows_too_wide_for_shared_memory():
     )
     sampler = _gpu(circuit.compile_detector_sampler(seed=31))
     shots = _gpu_shots(sampler)
-    assert not shots._noise.shared_words and shots._gather_shots == 0
+    assert not shots._noise.shared_words
     got = sampler.sample(20_000, append_observables=True)
     np.testing.assert_allclose(got[:, :n].mean(), 0.05, atol=5e-4)
     np.testing.assert_allclose(got[:, -1].mean(), 2 * 0.05 * 0.95, atol=0.01)
@@ -912,7 +912,7 @@ def test_postselected_rows_too_wide_to_stage_draw_all_their_noise_at_once():
     sampler = _gpu(circuit.compile_detector_sampler(seed=32, device="cuda"))
     shots = _gpu_shots(sampler)
     assert shots._noise.shared_words
-    assert shots._gather_shots < shots._noise.block_shots
+    assert not kernels.kept_fits(shots.layout, shots._noise.block_shots)
     mask = np.zeros(n, dtype=bool)
     mask[:3] = True
     got = sampler.sample(20_000, append_observables=True, postselection_mask=mask)
@@ -972,7 +972,7 @@ def test_a_call_keeps_only_the_rows_in_flight_on_the_device(monkeypatch):
 
 def test_rows_that_fill_shared_memory_draw_all_their_noise_at_once():
     # NOTE: 6144 detectors are 96 words: 32 rows' output words and packed bytes
-    # are exactly gather_columns' 48 KB of shared memory, which noise_kept, with
+    # are exactly 48 KB of shared memory, which noise_kept, with
     # its event counter besides, overflowed (CUDA_ERROR_INVALID_VALUE at launch).
     n = 6144
     qubits = " ".join(map(str, range(n)))
@@ -987,7 +987,7 @@ def test_rows_that_fill_shared_memory_draw_all_their_noise_at_once():
     )
     sampler = _gpu(circuit.compile_detector_sampler(seed=42, device="cuda"))
     shots = _gpu_shots(sampler)
-    assert shots._gather_shots == shots._noise.block_shots == 32
+    assert shots._noise.block_shots == 32
     assert not kernels.kept_fits(shots.layout, 32)
     mask = np.zeros(n, dtype=bool)
     mask[0] = True

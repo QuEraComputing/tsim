@@ -1,10 +1,8 @@
 """The CUDA sampler's kernels other than the noise ones, and their source.
 
 ``tape`` runs the components' tapes on the queued shots; ``count_bits`` and
-``list_bits`` list the accepted shots from the bitmap; ``gather_columns``
-gathers rows for the copy to the host (``gather_bytes`` the rows too wide for
-``gather_columns``);
-``select_rows`` picks the requested outputs out of them, bit-packed or as
+``list_bits`` list the accepted shots from the bitmap; ``gather_rows`` gathers
+rows, bit-packed, for the copy to the host; ``select_rows`` picks the requested outputs out of them, bit-packed or as
 booleans; ``publish`` stores a batch's counts into pinned host memory.
 """
 
@@ -29,23 +27,11 @@ KERNEL_SHARED_BYTES = 48 * 1024
 """Shared memory that a kernel may use without opting in, static and dynamic."""
 
 
-def gather_shots(layout: ShotLayout, block_shots: int) -> int:
-    """Return the rows that a ``gather_columns`` block packs, or ``0`` if not even 32 fit.
-
-    A block stages its rows' output words and packed bytes in shared memory: at
-    most ``block_shots`` rows, a multiple of 32. Rows of which 32 do not fit
-    take ``gather_bytes`` instead.
-    """
-    row = 8 * layout.output_words + -(-layout.num_outputs // 8)
-    return min(block_shots, KERNEL_SHARED_BYTES // max(row, 1) // 32 * 32)
-
-
 def kept_fits(layout: ShotLayout, block_shots: int) -> bool:
     """Return whether a ``noise_kept`` block of ``block_shots`` rows fits shared memory.
 
-    As a ``gather_columns`` block, it stages its rows' output words and packed
-    bytes, and it counts its events besides: 16 bytes, with the alignment of
-    the stage.
+    A block stages its rows' output words and packed bytes, and it counts its
+    events besides: 16 bytes, with the alignment of the stage.
     """
     row = 8 * layout.output_words + -(-layout.num_outputs // 8)
     return block_shots * row + 16 <= KERNEL_SHARED_BYTES
@@ -136,27 +122,9 @@ extern "C" __global__ void __launch_bounds__({SCAN}) list_bits(
     for (; w; w &= w - 1) index[at++] = (unsigned)(32 * i + __ffs(w) - 1);
 }}
 
-// The outputs of rows ``index[j]`` (or every row), bit-packed densely
-// (``pack_rows``): a block packs {GS} rows' output words.
-extern "C" __global__ void __launch_bounds__({COPY}) gather_columns(
-    const u64* __restrict__ rows, long long n, const unsigned* __restrict__ index,
-    unsigned char* __restrict__ dst) {{
-    __shared__ u64 sw[{OW} * {GS}];
-    extern __shared__ __align__(16) unsigned char stage[];
-    long long base = (long long)blockIdx.x * {GS};
-    int ns = (int)min((long long){GS}, n - base);
-    for (int i = threadIdx.x; i < ns * {OW}; i += blockDim.x) {{
-        int s = i / {OW}, w = i - s * {OW};
-        long long r = index != nullptr ? (long long)index[base + s] : base + s;
-        sw[w * {GS} + s] = rows[r * {NW} + w];
-    }}
-    __syncthreads();
-    pack_rows<{GS}>(sw, ns, stage, dst + base * {NB});
-}}
-
-// As ``gather_columns``, for rows too wide to stage in shared memory: a thread
+// The outputs of rows ``index[j]`` (or every row), bit-packed densely: a thread
 // per output byte, read from device memory.
-extern "C" __global__ void gather_bytes(
+extern "C" __global__ void gather_rows(
     const u64* __restrict__ rows, long long n, const unsigned* __restrict__ index,
     unsigned char* __restrict__ dst) {{
     for (long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x; i < n * {NB};
@@ -192,7 +160,7 @@ extern "C" __global__ void select_rows(
 }}
 
 // The batch's counts, stored into pinned host memory: a read that does not
-// queue behind the copies to the host.
+// queue behind the copies to the host (a copy of them costs 3-7% on the RTX 5090).
 extern "C" __global__ void publish(const unsigned* __restrict__ counts, volatile unsigned* host) {{
     if (threadIdx.x < 3) host[threadIdx.x] = counts[threadIdx.x];
     __threadfence_system();
@@ -227,8 +195,6 @@ def source(
             gmask=gmask,
             NW=layout.num_words,
             OW=layout.output_words,
-            # NOTE: gather_columns goes unused (and small) where 32 rows do not fit.
-            GS=max(gather_shots(layout, tables.block_shots), 1),
             LAST_BYTE=f"0x{(1 << (layout.num_outputs % 8 or 8)) - 1:02X}u",
             # NOTE: the rows keep every output, the postselected ones too.
             NB=max(-(-layout.num_outputs // 8), 1),
