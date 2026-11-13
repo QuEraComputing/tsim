@@ -310,13 +310,13 @@ def test_tapes_break_out_of_a_block_without_goto():
     programs = _programs(CIRCUITS["t_ghz"])
     assert any(p.pruned.any() or p.prune_first.any() for p in programs)
     for i, program in enumerate(programs):
-        source = tape.tape_function(program, i, 0, {}, TEST_DIALECT)
+        source = tape.tape_function(program, i, 0, TEST_DIALECT)
         assert "goto" not in source and "done:" not in source
         assert source.count("    do {") == source.count("} while (false);") == 1
         if program.pruned.any():
             assert "break; }" in source
         goto = tape.tape_function(
-            program, i, 0, {}, tape.Dialect(**{**TEST_DIALECT.__dict__, "goto": True})
+            program, i, 0, tape.Dialect(**{**TEST_DIALECT.__dict__, "goto": True})
         )
         assert "do {" not in goto and "done:" in goto
 
@@ -324,14 +324,13 @@ def test_tapes_break_out_of_a_block_without_goto():
 def test_unrolled_tapes_split_their_amplitudes_into_chunks():
     (program,) = _programs(_wide_unrolled(), mask=False)
     assert program.width == 11 and not tape.loops(program, 5, 0)
-    source = tape.tape_function(program, 0, 5, {}, TEST_DIALECT)
+    source = tape.tape_function(program, 0, 5, TEST_DIALECT)
     assert re.search(r"\ba\[", source) is None
     assert "float2 a0[32], a1[32];" in source and "a1[31]" in source
     whole = tape.tape_function(
         program,
         0,
         5,
-        {},
         tape.Dialect(**{**TEST_DIALECT.__dict__, "amplitude_chunk": None}),
     )
     assert "float2 a[64];" in whole
@@ -340,8 +339,8 @@ def test_unrolled_tapes_split_their_amplitudes_into_chunks():
 def test_projections_read_pairs_or_every_partner_first():
     (program,) = _programs(_wide_unrolled(), mask=False)
     unpaired = tape.Dialect(**{**TEST_DIALECT.__dict__, "pair_projections": False})
-    paired = tape.tape_function(program, 0, 5, {}, TEST_DIALECT)
-    whole = tape.tape_function(program, 0, 5, {}, unpaired)
+    paired = tape.tape_function(program, 0, 5, TEST_DIALECT)
+    whole = tape.tape_function(program, 0, 5, unpaired)
     # NOTE: a non-diagonal projection loads its partners as q<loc>: all of them
     # before it updates any, or a pair in a block of its own.
     assert re.search(r"\n      float2 q63 = ", whole)
@@ -419,16 +418,16 @@ static inline void deviate(unsigned* deviation, float total) {
 
 
 def _compile_tapes(sources: list[str], directory) -> list:
-    """Compile tape functions ``component_0`` into ``run_<k>(words, shots, nwords, seed, grave, ev, nev, deviation)``."""
+    """Compile tape functions ``component_0`` into ``run_<k>(words, shots, nwords, seed, grave, deviation)``."""
     parts = [CPP_PRELUDE]
     for k, source in enumerate(sources):
         parts.append(
             f"namespace v{k} {{\n{source}\n"
             f'extern "C" void run_{k}(u64* words, long shots, long nwords, u64 seed,'
-            " int* grave, float* ev, long nev, unsigned* deviation) {\n"
+            " int* grave, unsigned* deviation) {\n"
             "    for (long s = 0; s < shots; ++s)\n"
             "        grave[s] = component_0(words + s * nwords, (u64)s, seed, 0,"
-            " nev ? ev + s * nev : nullptr, deviation);\n}\n}"
+            " deviation);\n}\n}"
         )
     cpp, lib = directory / "tapes.cpp", directory / "tapes.so"
     cpp.write_text("\n".join(parts))
@@ -446,11 +445,10 @@ def _compile_tapes(sources: list[str], directory) -> list:
     return functions
 
 
-def _run_tape(f, words, seed, nev):
+def _run_tape(f, words, seed):
     words = words.copy()
     shots, nwords = words.shape
     grave = np.empty(shots, np.int32)
-    ev = np.zeros((shots, max(nev, 1)), np.float32)
     deviation = np.zeros(1, np.uint32)
     f(
         words.ctypes.data_as(ctypes.c_void_p),
@@ -458,20 +456,17 @@ def _run_tape(f, words, seed, nev):
         ctypes.c_long(nwords),
         ctypes.c_uint64(seed),
         grave.ctypes.data_as(ctypes.c_void_p),
-        ev.ctypes.data_as(ctypes.c_void_p),
-        ctypes.c_long(nev),
         deviation.ctypes.data_as(ctypes.c_void_p),
     )
     assert tape.deviation(deviation[0]) == 0.0
-    return words, grave, ev[:, :nev]
+    return words, grave
 
 
 def _looping_circuit(n=5, layers=5, seed=0):
     """A width-``n`` component with every kind of action that a looping tape runs.
 
     T gates (diagonal rotations), U3 (others), X, Z and Pauli-product mid-circuit
-    measurements with feedforward, noise, postselected detectors, and two
-    observables.
+    measurements with feedforward, noise, and postselected detectors.
     """
     rng = np.random.default_rng(seed)
     lines = ["R " + " ".join(map(str, range(n))), "H " + " ".join(map(str, range(n)))]
@@ -513,14 +508,7 @@ def test_looping_and_unrolled_tapes_run_as_the_cpu_executor(
     layout = host.layout
     num_detectors = Circuit(text).num_detectors
     plan = host.plan(np.ones(num_detectors, bool))
-    (component,) = layout.components
     (program,) = plan.programs
-    observables = {
-        o: index - num_detectors
-        for o, index in enumerate(component.output_indices)
-        if index >= num_detectors
-    }
-    assert observables
     # NOTE: unrolled in each dialect variant, and looping.
     variants = [
         CPP_DIALECT,
@@ -529,10 +517,10 @@ def test_looping_and_unrolled_tapes_run_as_the_cpu_executor(
         tape.Dialect(**{**CPP_DIALECT.__dict__, "pair_projections": False}),
     ]
     assert not tape.loops(program, 0, 0)
-    sources = [tape.tape_function(program, 0, 0, observables, d) for d in variants]
+    sources = [tape.tape_function(program, 0, 0, d) for d in variants]
     monkeypatch.setattr(tape, "UNROLL_BUDGET", 0)
     assert tape.loops(program, 0, 0)
-    looping = tape.tape_function(program, 0, 0, observables, CPP_DIALECT)
+    looping = tape.tape_function(program, 0, 0, CPP_DIALECT)
     assert "#pragma unroll 1" in looping
     *unrolled, looped = _compile_tapes([*sources, looping], tmp_path)
 
@@ -556,15 +544,13 @@ def test_looping_and_unrolled_tapes_run_as_the_cpu_executor(
         1,
     )
     assert 0 < alive.sum() < shots
-    got, grave, ev = _run_tape(looped, words, seed, len(observables))
+    got, grave = _run_tape(looped, words, seed)
     np.testing.assert_array_equal(grave == np.iinfo(np.int32).max, alive)
     np.testing.assert_array_equal(got[alive], expected[alive])
-    assert np.abs(ev).max() > 0
     for f in unrolled:
-        other, other_grave, other_ev = _run_tape(f, words, seed, len(observables))
+        other, other_grave = _run_tape(f, words, seed)
         np.testing.assert_array_equal(other_grave, grave)
         np.testing.assert_array_equal(other, got)
-        np.testing.assert_allclose(other_ev, ev, atol=1e-5)
 
 
 @pytest.mark.parametrize(("p", "qubits"), [(2e-8, 192), (1e-9, 3200)])
@@ -595,16 +581,14 @@ def test_tape_kernel_fills_in_every_component():
     mask = np.ones(num_detectors, bool)
     plan = host.plan(mask)
     tb = tape.threads_per_shot(layout)
-    kernel = tape.tape_kernel(layout, plan, mask, num_detectors, tb, TEST_DIALECT)
+    kernel = tape.tape_kernel(layout, plan, mask, tb, TEST_DIALECT)
     count = len(plan.programs)
     assert count == len(layout.components) > 1
     assert kernel.calls.count("grave = min(grave, component_") == count
     assert kernel.seeds.count("const u64 seed_") == count
     assert all(f"component_{i}(" in kernel.functions for i in range(count))
     assert kernel.hits != "0" and kernel.psm_words.any()
-    unmasked = tape.tape_kernel(
-        layout, host.plan(None), None, num_detectors, tb, TEST_DIALECT
-    )
+    unmasked = tape.tape_kernel(layout, host.plan(None), None, tb, TEST_DIALECT)
     assert unmasked.hits == "0" and not unmasked.psm_words.any()
     assert tape.supports(layout)
 

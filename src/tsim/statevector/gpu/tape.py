@@ -20,16 +20,6 @@ end it adds its branch parts, coins and hidden outputs to the shot's words.
 The actions before the first one that reads a lane symbol run alike for every
 shot (``shared.common_prefix``): they run once, on the host, and every shot
 starts from the amplitudes they leave.
-
-With ``expectations``, the tape also returns, for each observable output, the
-expectation of ``(-1)^output`` given the shot's history before the measurement
-that sets the observable's last branch bit ``b``:
-``(-1)^(output ⊕ b) (w0 - w1) / (w0 + w1)``. A fair coin's is 0 and an output
-without branch bits has ``±1``. The expectation ignores postselection that
-follows it, so when a postselected output of the component is tested at or
-after that measurement, the tape returns the sampled ``(-1)^output`` instead:
-the expectation's average over the accepted shots would be biased, the sample's
-is not.
 """
 
 from __future__ import annotations
@@ -220,25 +210,14 @@ def tape_kernel(
     layout: ShotLayout,
     plan: ShotPlan,
     mask: np.ndarray | None,
-    num_detectors: int,
     tb: int,
     dialect: Dialect,
 ) -> TapeKernel:
-    """Return the tape kernel's parts for ``plan`` of postselection ``mask``.
-
-    The outputs from ``num_detectors`` on are observables, whose expectations
-    the tapes return in that order.
-    """
-    functions = []
-    for i, (program, component) in enumerate(
-        zip(plan.programs, layout.components, strict=True)
-    ):
-        observables = {
-            o: index - num_detectors
-            for o, index in enumerate(component.output_indices)
-            if index >= num_detectors
-        }
-        functions.append(tape_function(program, i, tb, observables, dialect))
+    """Return the tape kernel's parts for ``plan`` of postselection ``mask``."""
+    functions = [
+        tape_function(program, i, tb, dialect)
+        for i, program in enumerate(plan.programs)
+    ]
     lanes = "t, gmask" if dialect.lane_mask else "t"
     count = len(plan.programs)
     bits = np.zeros(64 * layout.output_words, dtype=bool)
@@ -258,7 +237,7 @@ def tape_kernel(
             for i in range(count)
         ),
         calls="\n".join(
-            f"    grave = min(grave, component_{i}(w, shot, seed_{i}, {lanes}, ev, deviation));"
+            f"    grave = min(grave, component_{i}(w, shot, seed_{i}, {lanes}, deviation));"
             for i in range(count)
         ),
         stores="\n".join(f"        row[{w}] = w[{w}];" for w in written),
@@ -691,7 +670,6 @@ def tape_function(
     program: LaneProgram,
     index: int,
     tb: int,
-    observables: dict[int, int],
     dialect: Dialect,
 ) -> str:
     """Return ``component_<index>``: one shot's run of a component's tape.
@@ -700,8 +678,6 @@ def tape_function(
         program: The component's lane program.
         index: The component's index (names the function).
         tb: Log2 of the threads per shot.
-        observables: Slot of each of the component's observable outputs
-            (output slot in the program -> column of the expectations).
         dialect: The language to write it in.
 
     """
@@ -726,16 +702,9 @@ def tape_function(
     num_coins = p.coin_pattern.shape[0]
     slots = A + (num_coins + 63) // 64
     ready = p.ready
-    # NOTE: an expectation is exact only if no postselected output of the component
-    # is tested at or after its measurement (other components and direct outputs
-    # depend on it only through the f-bits, which it is conditioned on).
-    exact = {o: ready[o] < 0 or not p.pruned[ready[o] :].any() for o in observables}
-    # NOTE: the measurements whose weights an observable's expectation reads.
-    watched = {int(ready[o]) for o in observables if ready[o] >= 0 and exact[o]}
-
     mask = "unsigned gmask, " if d.lane_mask else ""
     emit(
-        f"{d.inline} int component_{index}({d.private}u64* words, u64 shot, u64 seed, int t, {mask}{d.private}float* ev, {d.deviation} deviation) {{"
+        f"{d.inline} int component_{index}({d.private}u64* words, u64 shot, u64 seed, int t, {mask}{d.deviation} deviation) {{"
     )
     emit(f"    u64 sym[{p.lane_words}];")
     for w in range(p.key_words):
@@ -769,8 +738,6 @@ def tape_function(
         emit("    if (t == 0) a[0].x = 1.f;")
     emit("    int grave = 0x7fffffff;")
     emit("    float w0, w1, total, weight, scale, s; int outcome, f;")
-    for a in sorted(watched):
-        emit(f"    float ev_{a} = 0.f; int b_{a} = 0;")
     if not d.goto:
         emit("    do {")
     if p.prune_first.any():
@@ -804,10 +771,6 @@ def tape_function(
             f"    else outcome = draw_one(draw(seed, shot, {slots}, {a}), w0, w1, total);"
         )
         emit("    weight = outcome ? w1 : w0;")
-        if a in watched:
-            emit(
-                f"    ev_{a} = total > {TINY}f ? (w0 - w1) / total : 0.f; b_{a} = outcome;"
-            )
         if kind != MEASURE_DORMANT:
             tape.project(a)
         bit = int(p.branch[a])
@@ -843,23 +806,6 @@ def tape_function(
             emit(
                 f"    if (grave < {int(ready[o])}) words[{w}] &= ~{d.hex64(1 << int(p.output_bit[o]))};"
             )
-    if observables:
-        emit("    if (ev != nullptr) {")
-        for o, column in observables.items():
-            w = int(p.out_words[p.output_word[o]])
-            bit = f"(int)((words[{w}] >> {int(p.output_bit[o])}) & 1)"
-            r = int(ready[o])
-            if r >= 0 and not p.splits[r]:
-                # NOTE: a fair coin that no postselected output reads.
-                value = "0.f"
-            elif r < 0 or not exact[o]:
-                value = f"({bit} ? -1.f : 1.f)"
-            elif int(p.kind[r]) == MEASURE_DORMANT:
-                value = "0.f"
-            else:
-                value = f"((({bit}) ^ b_{r}) ? -ev_{r} : ev_{r})"
-            emit(f"        ev[{column}] = grave < {max(r, 0)} ? 0.f : {value};")
-        emit("    }")
     emit("    return grave;")
     emit("}")
     if split:
