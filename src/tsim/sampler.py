@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import secrets
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import ceil
 from typing import TYPE_CHECKING, Literal, overload
 
@@ -125,10 +125,10 @@ def sample_component(
         (batch_size, num_outputs_for_component).
 
     """
-    # Skip JIT for small components (overhead not worth it)
-    if len(component.output_indices) <= 1:
-        return _sample_component(component, f_params, key)
-    return _sample_component_jit(component, f_params, key)
+    # NOTE: output_indices is a static field and so part of the jit cache key.
+    # Sampling does not read it; without it, components of the same shape share one
+    # compilation (a Clifford circuit has one such component per measured qubit).
+    return _sample_component_jit(replace(component, output_indices=()), f_params, key)
 
 
 def _check_norm(max_norm_deviation: float | jax.Array, threshold: float) -> None:
