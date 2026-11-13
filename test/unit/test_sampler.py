@@ -829,23 +829,99 @@ def test_device_cpu_samples_on_the_cpu(compile):
 
 
 def test_unknown_devices_raise():
-    with pytest.raises(ValueError, match="device must be 'auto', 'cpu' or 'metal'"):
+    with pytest.raises(
+        ValueError, match="device must be 'auto', 'cpu', 'metal' or 'cuda'"
+    ):
         Circuit(NOISY_T_STATE).compile_sampler(device="gpu")  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("device", ["cpu", "metal"])
+@pytest.mark.parametrize("device", ["cpu", "metal", "cuda"])
 def test_stabilizer_rank_strategies_take_only_the_auto_device(device):
     with pytest.raises(ValueError, match="needs strategy='active_statevector'"):
         Circuit(NOISY_T_STATE).compile_sampler(strategy="cat5", device=device)
 
 
-def test_metal_device_raises_where_metal_cannot_run(monkeypatch):
-    from tsim.statevector.metal import runtime
+@pytest.mark.parametrize(
+    ("device", "name", "reason"),
+    [("metal", "Metal", "no Apple GPU"), ("cuda", "CUDA", "no CUDA device")],
+)
+def test_gpu_devices_raise_where_the_gpu_cannot_run(monkeypatch, device, name, reason):
+    from tsim.statevector import cuda, metal
 
-    monkeypatch.setattr(runtime, "unavailable", lambda: "no Apple GPU")
-    with pytest.raises(RuntimeError, match="Cannot sample on Metal: no Apple GPU"):
-        Circuit(NOISY_T_STATE).compile_detector_sampler(device="metal")
+    runtime = {"metal": metal.runtime, "cuda": cuda.runtime}[device]
+    monkeypatch.setattr(runtime, "unavailable", lambda: reason)
+    with pytest.raises(RuntimeError, match=f"Cannot sample on {name}: {reason}"):
+        Circuit(NOISY_T_STATE).compile_detector_sampler(device=device)
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         sampler = Circuit(NOISY_T_STATE).compile_detector_sampler(seed=1)
     assert sampler.stats.device == "cpu"
+
+
+def _wide_circuit() -> Circuit:
+    """Return a circuit of one component of 13 active qubits: random U3 and CX layers."""
+    rng = np.random.default_rng(0)
+    lines = []
+    for _ in range(12):
+        perm = rng.permutation(13)
+        for a, b in zip(perm[::2], perm[1::2], strict=False):
+            lines += [
+                f"U3({t[0]},{t[1]},{t[2]}) {q}"
+                for q in (a, b)
+                for t in [rng.uniform(-1, 1, 3)]
+            ]
+            lines.append(f"CX {a} {b}")
+    lines.append("M " + " ".join(map(str, range(13))))
+    return Circuit("\n".join(lines))
+
+
+@pytest.mark.parametrize(("device", "name"), [("metal", "Metal"), ("cuda", "CUDA")])
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        (None, "a component needs 13 active qubits, more than the 11"),
+        (
+            "R 0\nH 0\nR_Z(1e-5) 0\nH 0\nM 0\nDETECTOR rec[-1]",
+            r"a rotation's angle is 1\.0e-05 π from a Clifford angle.*6\.4e-05 π",
+        ),
+    ],
+)
+def test_gpu_devices_raise_for_circuits_the_gpu_cannot_run(
+    monkeypatch, device, name, text, message
+):
+    # NOTE: the check runs before any GPU work, so a GPU that seems usable will do.
+    from tsim.statevector import cuda, metal
+
+    runtime = {"metal": metal.runtime, "cuda": cuda.runtime}[device]
+    monkeypatch.setattr(runtime, "unavailable", lambda: None)
+    circuit = _wide_circuit() if text is None else Circuit(text)
+    with pytest.raises(ValueError, match=f"Cannot sample on {name}: {message}"):
+        circuit.compile_sampler(seed=1, device=device)
+    sampler = circuit.compile_sampler(seed=1)
+    assert type(shot_sampler(sampler)) is ShotSampler
+
+
+@pytest.mark.parametrize("cuda_runs", [True, False])
+def test_the_auto_device_tries_cuda_then_metal(monkeypatch, cuda_runs):
+    import copy
+
+    from tsim.statevector import cuda, metal
+
+    tried = []
+
+    def backend(name, runs):
+        def shot_sampler(host, *args, required, **kwargs):
+            tried.append((name, required))
+            # NOTE: a copy stands in for a GPU sampler: it is not the CPU's.
+            return copy.copy(host) if runs else host
+
+        return shot_sampler
+
+    monkeypatch.setattr(cuda, "shot_sampler", backend("cuda", cuda_runs))
+    monkeypatch.setattr(metal, "shot_sampler", backend("metal", True))
+    sampler = Circuit(NOISY_T_STATE).compile_detector_sampler(seed=1)
+    if cuda_runs:
+        assert tried == [("cuda", False)]
+    else:
+        assert tried == [("cuda", False), ("metal", False)]
+    assert sampler.sample(10).shape == (10, 1)

@@ -27,8 +27,8 @@ circuit                     k device  shots/s   kept  compile   shots/s vs ref (
 inject_cultivate_d5_p0.001  6    cpu    13.9M  0.141     0.13   1.20x [1.19, 1.21] faster  0.96x same
 ```
 
-- `device` is where the new side sampled (`cpu`, or a GPU backend such as `metal`).
-  A row that ends in `DEVICE: cpu -> metal` compares two devices: its ratio is not
+- `device` is where the new side sampled (`cpu`, or a GPU backend: `metal` or `cuda`).
+  A row that ends in `DEVICE: cpu -> metal` (or `cuda`) compares two devices: its ratio is not
   a code change.
 - `kept` is the fraction of shots that survive postselection (`-` when there is none).
 - `k` is the active width of the compiled sampler. With `--ref`, a row that ends in
@@ -82,7 +82,9 @@ uv run tsim-dev bench --side .:threads=4 --side origin/main:threads=4
 - Compile time is compared too; when the sides differ only in threads, read the rate
   column.
 
-## Apple-silicon Macs (Metal)
+## GPUs
+
+### Apple-silicon Macs (Metal)
 
 On a Mac with an M-series chip, the default strategy samples on the GPU through Metal
 whenever every component has at most 11 active qubits (k_max <= 11). A plain `uv sync`
@@ -108,8 +110,8 @@ uv run tsim-dev bench --side .:device=gpu --side .:device=cpu,threads=10   # GPU
 - `--device cpu` (the default) runs tsim-bench's worker through `dev/tsim_dev/on_device.py`,
   which compiles with `device="cpu"`; `--device gpu` leaves Tsim's `device="auto"`.
 - The GPU's rate depends on call size much more than the CPU's: each call pays a fixed cost
-  (setting up the launches, waiting for the GPU to finish), and each batch of up to 2^20 shots is one
-  launch. The bench calibrates calls to about 0.3 s, which is enough. A GPU rate measured
+  (setting up the launches, waiting for the GPU to finish), and each batch of up to 2^20 shots
+  (2^22 on CUDA) is one launch. The bench calibrates calls to about 0.3 s, which is enough. A GPU rate measured
   with calls of 10^5 shots or fewer, or with a small `batch_size`, measures overhead, not
   sampling; never report one. Leave `batch_size` unset on the GPU; it can only lower the
   batch, and it changes a seed's GPU samples.
@@ -117,12 +119,32 @@ uv run tsim-dev bench --side .:device=gpu --side .:device=cpu,threads=10   # GPU
   rows end in `DEVICE: cpu -> metal`, and the ratio compares devices, not code.
 - Compare the GPU with all CPU cores (`--threads N`, from the `NOTE` line), not one.
 - Say whether rates are bit-packed (the default) or `--bools`, above all on a GPU: booleans
-  cost it 2.3-3.2x on circuits with hundreds of detectors (surface_d7_r7: 757M packed,
-  237M booleans on an M4 Pro), against 1.0-1.8x on the CPU, so a boolean comparison
+  cost it 2.3-3.2x on Metal on circuits with hundreds of detectors (surface_d7_r7: 757M
+  packed, 237M booleans on an M4 Pro) and 7-8x on CUDA (surface_d7_r7: 1,168M packed, 159M
+  booleans on an RTX 5090), against 1.0-1.8x on the CPU, so a boolean comparison
   understates the GPU's lead. Compare Tsim with other simulators on the same output format.
 - The GPU's own time per kernel: set `tsim.statevector.metal.runtime.PROFILE = {}` before
   a `sample` call, which then runs each dispatch alone and adds its GPU seconds under the
   kernel's name (`noise`, `tape`, `gather_rows`, ...).
+
+### NVIDIA GPUs (CUDA)
+
+With CuPy installed (`uv sync --extra cuda`; CUDA 13, driver 580 or later), the default
+strategy samples on an NVIDIA GPU under the same conditions as Metal, and `"auto"` tries CUDA
+before Metal. A plain `uv sync` does not install CuPy, so check that the `device` column says
+`cuda`. On an RTX 5090 the full corpus (k_max <= 11) ran at a median of 286x one CPU core,
+bit-packed; end-to-end cultivation d=5 at about 1.6G shots/s.
+
+Everything in the Metal section holds, with `cuda` for `metal`, except:
+
+- `--ref` builds the reference with `uv sync --no-dev`, without CuPy, so its side samples on
+  the CPU and its rows end in `DEVICE: cpu -> cuda`. For a GPU A/B, check the reference out
+  in a worktree, `uv sync --extra cuda` there, and pass it as a side:
+  `--side .:device=gpu --side /path/to/ref-worktree:device=gpu`.
+- With `--threads 1`, all of a circuit's workers are pinned to one core, so compiles of a
+  minute or more (distillation d17+, stability t100) can time out; pass `--timeout 3600`.
+- For the GPU's own time per kernel, use Nsight Systems (`nsys profile`) or Nsight Compute;
+  the 5090 needs a 2025 or later release.
 
 ## What the command controls for you
 

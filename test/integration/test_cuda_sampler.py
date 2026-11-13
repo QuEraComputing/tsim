@@ -1,0 +1,998 @@
+"""The CUDA executor end to end, against the stabilizer-rank strategy and the CPU executor."""
+
+import itertools
+import multiprocessing
+import pickle
+import threading
+import warnings
+from test.helpers.gen import gen_stim_circuit
+from test.helpers.statevector import CIRCUITS, assert_counts_match
+
+import numpy as np
+import pytest
+
+from tsim.circuit import Circuit
+from tsim.statevector.cuda import codegen, kernels, runtime, sampler as cuda_sampler
+from tsim.statevector.cuda.sampler import CudaShotSampler
+from tsim.statevector.gpu import noise as gpu_noise, tape
+from tsim.statevector.program import StatevectorComponent
+from tsim.statevector.shots import ShotSampler
+
+pytestmark = pytest.mark.skipif(
+    not runtime.available(), reason="needs CuPy and a CUDA GPU"
+)
+
+# NOTE: t_ghz plus a direct detector (detector 2), as in test_trajectory_sharing.
+GHZ_WITH_DIRECT_DETECTOR = """
+R 0 1 2 3
+H 0
+CNOT 0 1
+CNOT 1 2
+T 0 1 2
+H 0 1 2
+DEPOLARIZE1(0.05) 0 1 2
+T 0 1
+CZ 0 1
+H 0 1
+M 0 1 2
+DETECTOR rec[-3] rec[-2]
+DETECTOR rec[-2] rec[-1]
+OBSERVABLE_INCLUDE(0) rec[-1]
+X_ERROR(0.2) 3
+M 3
+DETECTOR rec[-1]
+"""
+
+# NOTE: a T state measured in X after a noisy idle.
+T_STATE_X = """
+R 0
+H 0
+T 0
+Z_ERROR(0.1) 0
+H 0
+M 0
+OBSERVABLE_INCLUDE(0) rec[-1]
+"""
+
+
+def _gpu(sampler):
+    """Return ``sampler``, which must run on the GPU."""
+    _gpu_shots(sampler)
+    return sampler
+
+
+def _gpu_shots(sampler) -> CudaShotSampler:
+    """Return the GPU shot sampler of ``sampler``."""
+    assert isinstance(sampler._shots, CudaShotSampler)
+    return sampler._shots
+
+
+def _cpu(compile, **kwargs):
+    """Return ``compile(**kwargs)``, a sampler on the CPU."""
+    sampler = compile(device="cpu", **kwargs)
+    assert sampler._shots is None or type(sampler._shots) is ShotSampler
+    return sampler
+
+
+def _accepted(sampler, shots, mask, **kwargs):
+    detectors, observables = sampler.sample(
+        shots, separate_observables=True, postselection_mask=mask, **kwargs
+    )
+    # NOTE: sample returns only the shots that the mask keeps.
+    assert mask is None or not (detectors & mask).any()
+    return np.concatenate([detectors, observables], axis=1)
+
+
+def _packed(sampler, shots, mask=None):
+    """Return ``sample``'s bit-packed detectors then observables."""
+    return sampler.sample(
+        shots, append_observables=True, bit_packed=True, postselection_mask=mask
+    )
+
+
+@pytest.mark.parametrize("name", sorted(CIRCUITS))
+@pytest.mark.parametrize(
+    ("kind", "looping"),
+    [("detector", False), ("measurement", False), ("detector", True)],
+)
+def test_cuda_sampling_matches_stabilizer_rank(monkeypatch, name, kind, looping):
+    if looping:
+        # NOTE: measurements, projections and pruning in looping tapes.
+        monkeypatch.setattr(tape, "UNROLL_BUDGET", 0)
+    circuit = Circuit(CIRCUITS[name])
+    shots = 40_000
+    if kind == "detector":
+        expected = circuit.compile_detector_sampler(strategy="cat5", seed=1).sample(
+            shots, batch_size=10_000, append_observables=True
+        )
+        got = _gpu(circuit.compile_detector_sampler(seed=2)).sample(
+            shots, append_observables=True
+        )
+    else:
+        expected = circuit.compile_sampler(strategy="cat5", seed=1).sample(
+            shots, batch_size=10_000
+        )
+        got = _gpu(circuit.compile_sampler(seed=2)).sample(shots)
+    assert_counts_match(got, expected)
+
+
+@pytest.mark.parametrize("name", sorted(CIRCUITS))
+def test_cuda_postselection_keeps_the_accepted_distribution(name):
+    circuit = Circuit(CIRCUITS[name])
+    if circuit.num_detectors == 0:
+        pytest.skip("no detectors to postselect")
+    shots = 40_000
+    mask = np.ones(circuit.num_detectors, dtype=bool)
+    expected = _accepted(_cpu(circuit.compile_detector_sampler, seed=1), shots, mask)
+    got = _accepted(_gpu(circuit.compile_detector_sampler(seed=2)), shots, mask)
+    rate, cuda_rate = len(expected) / shots, len(got) / shots
+    sigma = np.sqrt(rate * (1 - rate) * 2 / shots)
+    assert abs(cuda_rate - rate) <= 5 * sigma + 3 / shots
+    if len(got) and len(expected):
+        assert_counts_match(got, expected)
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_cuda_sampling_of_random_noisy_circuits(seed):
+    stim_circuit = gen_stim_circuit(3, 60, p_t=3, p_x_error=0.5, p_r_z=0.5, seed=seed)
+    circuit = Circuit.from_stim_program(stim_circuit)
+    shots = 8_192
+    expected = circuit.compile_sampler(strategy="cat5", seed=seed).sample(
+        shots, batch_size=shots
+    )
+    got = _gpu(circuit.compile_sampler(seed=seed + 10)).sample(shots)
+    assert_counts_match(got, expected)
+
+
+@pytest.mark.parametrize("reference", [False, True])
+def test_cuda_reference_samples_and_pruning(reference):
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    mask = np.ones(circuit.num_detectors, dtype=bool)
+    shots = 40_000
+    kwargs = {"use_detector_reference_sample": reference}
+    expected = _accepted(
+        _cpu(circuit.compile_detector_sampler, seed=3), shots, mask, **kwargs
+    )
+    got = _accepted(
+        _gpu(circuit.compile_detector_sampler(seed=3)), shots, mask, **kwargs
+    )
+    rate, cuda_rate = len(expected) / shots, len(got) / shots
+    assert abs(cuda_rate - rate) <= 5 * np.sqrt(rate * (1 - rate) * 2 / shots)
+    assert_counts_match(got, expected)
+
+
+def test_cuda_postselection_keeps_every_column():
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    mask = np.zeros(circuit.num_detectors, dtype=bool)
+    mask[[0, 2]] = True
+    packed = _packed(_gpu(circuit.compile_detector_sampler(seed=4)), 20_000, mask)
+    outputs = circuit.num_detectors + circuit.num_observables
+    assert packed.shape[1] == -(-outputs // 8)
+    bits = np.unpackbits(packed, axis=1, bitorder="little")
+    assert not bits[:, outputs:].any()
+    assert not bits[:, : circuit.num_detectors][:, mask].any()
+    full = _accepted(_cpu(circuit.compile_detector_sampler, seed=5), 20_000, mask)
+    assert abs(len(bits) - len(full)) <= 5 * np.sqrt(len(full))
+    assert_counts_match(bits[:, :outputs].astype(bool), full)
+
+
+@pytest.mark.parametrize("bit_packed", [False, True])
+def test_cuda_arranges_the_columns_as_the_cpu_does(bit_packed):
+    # NOTE: samplers of one seed draw the same shots, whichever columns they return.
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    mask = np.zeros(circuit.num_detectors, dtype=bool)
+    mask[0] = True
+    num_detectors = circuit.num_detectors
+
+    def sample(**kwargs):
+        sampler = _gpu(circuit.compile_detector_sampler(seed=17))
+        return sampler.sample(
+            5_000, postselection_mask=mask, bit_packed=bit_packed, **kwargs
+        )
+
+    def bools(array, count):
+        if not bit_packed:
+            return array
+        return np.unpackbits(array, axis=1, count=count, bitorder="little").astype(bool)
+
+    appended = bools(sample(append_observables=True), num_detectors + 1)
+    detectors = bools(sample(), num_detectors)
+    prepended = bools(sample(prepend_observables=True), num_detectors + 1)
+    separate = sample(separate_observables=True)
+    np.testing.assert_array_equal(detectors, appended[:, :num_detectors])
+    np.testing.assert_array_equal(prepended[:, 0], appended[:, -1])
+    np.testing.assert_array_equal(prepended[:, 1:], detectors)
+    np.testing.assert_array_equal(bools(separate[0], num_detectors), detectors)
+    np.testing.assert_array_equal(bools(separate[1], 1), appended[:, -1:])
+    cpu = _cpu(circuit.compile_detector_sampler, seed=17).sample(
+        10, postselection_mask=mask, bit_packed=bit_packed, append_observables=True
+    )
+    gpu = sample(append_observables=True)
+    assert gpu.dtype == cpu.dtype
+    assert gpu.shape[1] == cpu.shape[1]
+
+
+def test_cuda_samples_no_shots():
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    sampler = _gpu(circuit.compile_detector_sampler(seed=1))
+    assert sampler.sample(0, append_observables=True).shape == (0, 4)
+    assert sampler.sample(0, bit_packed=True).shape == (0, 1)
+    for bit_packed in (False, True):
+        detectors, observables = sampler.sample(
+            0, separate_observables=True, bit_packed=bit_packed
+        )
+        assert detectors.shape == (0, 3 if not bit_packed else 1)
+        assert observables.shape == (0, 1)
+
+
+def test_direct_booleans_take_the_batch_size_as_packed_rows_do():
+    # NOTE: each batch draws its own stream, so a component-free sampler's
+    # booleans and packed rows match only if both honor batch_size.
+    circuit = Circuit("X_ERROR(0.3) 0 1 2\nM 0 1 2\nDETECTOR rec[-1]\nDETECTOR rec[-2]")
+
+    def sample(bit_packed):
+        sampler = _gpu(circuit.compile_detector_sampler(seed=5))
+        return sampler.sample(5_000, batch_size=1_000, bit_packed=bit_packed)
+
+    packed = np.packbits(sample(False), axis=1, bitorder="little")
+    np.testing.assert_array_equal(packed, sample(True))
+
+
+# NOTE: 150 noisy detectors, so the rows span three words, and two observables.
+NOISY_DETECTORS = "\n".join(
+    [
+        "R " + " ".join(map(str, range(150))),
+        "X_ERROR(0.3) " + " ".join(map(str, range(150))),
+        "M " + " ".join(map(str, range(150))),
+        *(f"DETECTOR rec[{i - 150}]" for i in range(150)),
+        "OBSERVABLE_INCLUDE(0) rec[-1] rec[-7]",
+        "OBSERVABLE_INCLUDE(1) rec[-150]",
+    ]
+)
+
+
+def test_cuda_postselection_drops_the_rows_that_fail(monkeypatch):
+    # NOTE: the masked run must draw the unmasked run's noise, so none is deferred.
+    monkeypatch.setattr(gpu_noise, "DEFER_SHARE", 2.0)
+    circuit = Circuit(NOISY_DETECTORS)
+    rng = np.random.default_rng(0)
+    mask = np.zeros(150, dtype=bool)
+    # NOTE: a few masked detectors, then unmasked runs across words, then a mix.
+    mask[[0, 3, 4]] = True
+    mask[100:] = rng.random(50) < 0.1
+    full = _packed(_gpu(circuit.compile_detector_sampler(seed=11)), 5_000)
+    rows = _packed(_gpu(circuit.compile_detector_sampler(seed=11)), 5_000, mask)
+    full_bits = np.unpackbits(full, axis=1, count=152, bitorder="little")
+    passing = ~full_bits[:, :150][:, mask].any(axis=1)
+    assert 0 < passing.sum() < 5_000
+    np.testing.assert_array_equal(rows, full[passing])
+
+
+# NOTE: GHZ_WITH_DIRECT_DETECTOR's component and direct detector, then four
+# noisy direct detectors that no mask below reads; one fault flips detectors 2
+# and 3 together, and the observable also reads the last noisy qubit.
+UNREAD_NOISE = """
+R 0 1 2 3 4 5 6 7
+H 0
+CNOT 0 1
+CNOT 1 2
+T 0 1 2
+H 0 1 2
+DEPOLARIZE1(0.05) 0 1 2
+T 0 1
+CZ 0 1
+H 0 1
+M 0 1 2
+DETECTOR rec[-3] rec[-2]
+DETECTOR rec[-2] rec[-1]
+OBSERVABLE_INCLUDE(0) rec[-1]
+X_ERROR(0.2) 3
+E(0.1) X3 X4
+X_ERROR(0.3) 4 5 6 7
+M 3 4 5 6 7
+DETECTOR rec[-5]
+DETECTOR rec[-4]
+DETECTOR rec[-3]
+DETECTOR rec[-2]
+DETECTOR rec[-1]
+OBSERVABLE_INCLUDE(0) rec[-1]
+"""
+
+
+def test_cuda_defers_the_noise_that_postselection_cannot_see():
+    circuit = Circuit(UNREAD_NOISE)
+    mask = np.zeros(circuit.num_detectors, dtype=bool)
+    mask[[0, 2]] = True
+    sampler = _gpu(circuit.compile_detector_sampler(seed=12))
+    got = _accepted(sampler, 200_000, mask)
+    assert _gpu_shots(sampler)._module(mask).split is not None
+    full = _accepted(_cpu(circuit.compile_detector_sampler, seed=13), 200_000, mask)
+    assert abs(len(got) - len(full)) <= 5 * np.sqrt(len(full))
+    assert_counts_match(got, full)
+
+
+@pytest.mark.parametrize("text", [NOISY_DETECTORS, UNREAD_NOISE])
+def test_cuda_chunks_return_the_rows_of_one_pass(monkeypatch, text):
+    # NOTE: 1000-shot chunks on both streams, and host rows that start with room
+    # for the first chunk only; without deferral, a masked and an unmasked run on
+    # the same chunks draw the same shots.
+    monkeypatch.setattr(gpu_noise, "DEFER_SHARE", 2.0)
+    monkeypatch.setattr(
+        cuda_sampler.CudaShotSampler, "_chunk_shots", lambda self, *args: 1000
+    )
+    monkeypatch.setattr(
+        cuda_sampler._HostRows,
+        "allocate",
+        lambda self, passed, of, shots: self._resize(passed),
+    )
+    circuit = Circuit(text)
+    mask = np.zeros(circuit.num_detectors, dtype=bool)
+    mask[[0, 2]] = True
+    outputs = circuit.num_detectors + circuit.num_observables
+    full = _packed(_gpu(circuit.compile_detector_sampler(seed=16)), 10_500)
+    rows = _packed(_gpu(circuit.compile_detector_sampler(seed=16)), 10_500, mask)
+    full_bits = np.unpackbits(full, axis=1, count=outputs, bitorder="little")
+    passing = ~full_bits[:, : circuit.num_detectors][:, mask].any(axis=1)
+    assert 0 < passing.sum() < 10_500
+    np.testing.assert_array_equal(rows, full[passing])
+
+
+@pytest.mark.parametrize("reference", [False, True])
+def test_cuda_samples_programs_without_components(reference):
+    circuit = Circuit(
+        "R 0 1\nX_ERROR(0.3) 0\nCNOT 0 1\nM 0 1\nDETECTOR rec[-1]\nOBSERVABLE_INCLUDE(0) rec[-2]"
+    )
+    kwargs = {"use_detector_reference_sample": reference}
+    expected = _cpu(circuit.compile_detector_sampler, seed=1).sample(
+        40_000, append_observables=True, **kwargs
+    )
+    got = _gpu(circuit.compile_detector_sampler(seed=2)).sample(
+        40_000, append_observables=True, **kwargs
+    )
+    assert_counts_match(got, expected)
+    measured = _gpu(circuit.compile_sampler(seed=3)).sample(40_000)
+    assert measured.shape == (40_000, 2)
+    np.testing.assert_array_equal(measured[:, 0], measured[:, 1])
+
+
+def test_stabilizer_rank_strategies_stay_on_jax():
+    circuit = Circuit(T_STATE_X)
+    assert circuit.compile_detector_sampler(strategy="cat5")._shots is None
+
+
+def _widest(circuit):
+    """Return the active width of the circuit's widest statevector component."""
+    components = circuit.compile_sampler(seed=1)._program.components
+    return max(c.width for c in components if isinstance(c, StatevectorComponent))
+
+
+def _random_unitary_circuit(width, layers, seed=0, noise=True):
+    """Layers of random U3 pairs and CX gates, then every qubit measured.
+
+    With ``noise``, X errors come first, so that every rotation reads the shot's
+    f-bits and none of them runs before the shots split (``common_prefix``).
+    """
+    rng = np.random.default_rng(seed)
+    lines = ["X_ERROR(0.2) " + " ".join(map(str, range(width)))] if noise else []
+    for _ in range(layers):
+        perm = rng.permutation(width)
+        for a, b in zip(perm[::2], perm[1::2], strict=False):
+            for q in (a, b):
+                t = rng.uniform(-1, 1, 3)
+                lines.append(f"U3({t[0]},{t[1]},{t[2]}) {q}")
+            lines.append(f"CX {a} {b}")
+    lines.append("M " + " ".join(map(str, range(width))))
+    return Circuit("\n".join(lines))
+
+
+def _assert_matches_cpu(circuit, width, shots=200_000):
+    expected = _cpu(circuit.compile_sampler, seed=1).sample(shots)
+    got = _gpu(circuit.compile_sampler(seed=2)).sample(shots)
+    np.testing.assert_allclose(
+        got.mean(axis=0), expected.mean(axis=0), atol=5 * 0.5 / np.sqrt(shots / 2)
+    )
+    # NOTE: pairs of bits, which a wrong shuffle partner would scramble.
+    for a, b in [(0, 1), (0, width - 1), (width // 2, width - 1)]:
+        assert_counts_match(got[:, [a, b]], expected[:, [a, b]])
+
+
+@pytest.mark.parametrize(("width", "layers"), [(6, 8), (8, 8), (9, 10), (11, 12)])
+def test_cuda_wide_components_match_the_cpu_executor(width, layers):
+    # NOTE: widths 6, 8, 9 and 11 run 2, 8, 16 and 32 threads per shot.
+    circuit = _random_unitary_circuit(width, layers)
+    assert _widest(circuit) == width
+    _assert_matches_cpu(circuit, width)
+
+
+@pytest.mark.parametrize(("width", "layers"), [(6, 6), (8, 8), (11, 6)])
+def test_cuda_looping_tapes_match_the_cpu_executor(monkeypatch, width, layers):
+    # NOTE: a tape past the unroll budget loops, applying runs of rotations together.
+    monkeypatch.setattr(tape, "UNROLL_BUDGET", 0)
+    _assert_matches_cpu(_random_unitary_circuit(width, layers, seed=width), width)
+
+
+@pytest.mark.parametrize("width", [6, 9, 11])
+def test_cuda_shots_start_after_the_common_prefix(width):
+    # NOTE: without noise the rotations before the first measurement run once,
+    # on the host; the shots load their amplitudes and run the rest.
+    circuit = _random_unitary_circuit(width, width + 2, seed=width, noise=False)
+    _assert_matches_cpu(circuit, width)
+
+
+def test_components_wider_than_the_limit_run_on_the_cpu():
+    circuit = _random_unitary_circuit(13, 12)
+    assert _widest(circuit) > tape.MAX_WIDTH
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        sampler = circuit.compile_sampler(seed=1)
+    assert type(sampler._shots) is ShotSampler
+    with pytest.raises(ValueError, match="more than the 11 that the GPU executor"):
+        circuit.compile_sampler(seed=1, device="cuda")
+
+
+def _sampler_in_child(_):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        sampler = Circuit(T_STATE_X).compile_sampler(seed=1)
+        sampler.sample(10)
+        assert sampler.stats.device == "cpu"
+    try:
+        Circuit(T_STATE_X).compile_sampler(seed=1, device="cuda")
+        error = ""
+    except RuntimeError as raised:
+        error = str(raised)
+    return type(sampler._shots).__name__, [str(w.message) for w in caught], error
+
+
+def test_processes_forked_after_the_gpu_was_used_sample_on_the_cpu():
+    # NOTE: CUDA cannot be used in a child forked after its parent initialized it.
+    _gpu(Circuit(T_STATE_X).compile_sampler(seed=1)).sample(10)
+    with multiprocessing.get_context("fork").Pool(1) as pool:
+        name, messages, error = pool.map(_sampler_in_child, [0])[0]
+    assert name == "ShotSampler"
+    assert messages == []
+    assert "forked" in error
+
+
+def test_noise_of_tiny_probabilities_fires_at_its_rate():
+    # NOTE: 24-bit skips alone fire every segment at least 2^-24 of the time,
+    # here ~90 faults instead of ~0.4.
+    n, p = 1000, 1e-12
+    text = "\n".join(f"X_ERROR({p * (1 + i / n)!r}) {i}" for i in range(n))
+    sampler = _gpu(
+        Circuit(f"{text}\nM " + " ".join(map(str, range(n)))).compile_sampler(seed=1)
+    )
+    # NOTE: faults are rare enough that each lands in a byte of its own.
+    faults = sum(
+        np.count_nonzero(sampler.sample(1 << 22, bit_packed=True)) for _ in range(64)
+    )
+    assert faults <= 5
+
+
+@pytest.mark.parametrize("p0", [3e-8, 1e-6])
+def test_rare_outcome_zero_is_drawn_at_its_rate(p0):
+    # NOTE: w1 / total rounds to a multiple of 2^-24 below 1 in float32; the draw
+    # must use w0, as the CPU's ``_cut`` does.
+    cp = runtime.cupy()
+    source = codegen.PRELUDE + r"""
+extern "C" __global__ void zeros(float w0, unsigned long long n, unsigned long long* count) {
+    unsigned long long local = 0;
+    for (u64 i = blockIdx.x * (u64)blockDim.x + threadIdx.x; i < n; i += (u64)gridDim.x * blockDim.x)
+        local += !draw_one(mix64(i * GOLDEN + 12345), w0, 1.f, w0 + 1.f);
+    atomicAdd(count, local);
+}
+"""
+    kernel = cp.RawModule(
+        code=source, options=(runtime.arch(), "-std=c++17")
+    ).get_function("zeros")
+    count = cp.zeros(1, dtype=cp.uint64)
+    n = 1 << 30
+    kernel((1024,), (256,), (np.float32(p0), np.uint64(n), count))
+    expected = p0 * n
+    assert abs(int(count.get()[0]) - expected) <= 5 * np.sqrt(expected) + 1
+
+
+@pytest.mark.parametrize(("probability", "shots"), [(2e-8, 1 << 30), (1e-6, 1 << 26)])
+def test_cuda_draws_small_outcome_probabilities_at_their_rate(probability, shots):
+    # NOTE: a 24-bit draw takes any positive probability at least 2^-24 = 6e-8 of
+    # the time; float32 rounding gives certain outcomes such probabilities. 2e-8
+    # is about the smallest a rotation may give on the GPU (tape.RESOLVABLE).
+    theta = float(2 * np.arcsin(np.sqrt(probability)) / np.pi)
+    circuit = Circuit(f"R 0\nI[R_X(theta={theta!r}*pi)] 0\nM 0")
+    sampler = _gpu(circuit.compile_sampler(seed=3))
+    ones = sum(int(sampler.sample(1 << 24).sum()) for _ in range(shots >> 24))
+    expected = probability * shots
+    assert abs(ones - expected) <= 5 * np.sqrt(expected) + 1
+
+
+def _out_of_memory_above(monkeypatch, sampler, limit):
+    """Make ``sampler``'s GPU calls of batches above ``limit`` run out of memory."""
+    shots = _gpu_shots(sampler)
+    sample_rows = shots._sample_rows
+    batches = []
+
+    def fake(n, columns, *, batch, **kwargs):
+        batches.append(batch)
+        if batch > limit:
+            cp = runtime.cupy()
+            raise cp.cuda.memory.OutOfMemoryError(1 << 40, 0)
+        return sample_rows(n, columns, batch=batch, **kwargs)
+
+    monkeypatch.setattr(shots, "_sample_rows", fake)
+    return batches
+
+
+def test_calls_out_of_gpu_memory_retry_in_smaller_batches(monkeypatch):
+    sampler = _gpu(Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(seed=1))
+    batches = _out_of_memory_above(monkeypatch, sampler, 1 << 20)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert sampler.sample(1000).shape == (1000, 3)
+    assert batches == [1 << 22, 1 << 21, 1 << 20]
+    # NOTE: later calls start from the batch that fit.
+    sampler.sample(1000)
+    assert batches[-1] == 1 << 20
+
+
+def test_calls_out_of_gpu_memory_fall_back_to_the_cpu(monkeypatch):
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    sampler = _gpu(circuit.compile_detector_sampler(seed=1))
+    _out_of_memory_above(monkeypatch, sampler, 0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        got = sampler.sample(20_000, append_observables=True)
+    expected = _cpu(circuit.compile_detector_sampler, seed=2).sample(
+        20_000, append_observables=True
+    )
+    assert_counts_match(got, expected)
+    required = _gpu(circuit.compile_detector_sampler(seed=3, device="cuda"))
+    _out_of_memory_above(monkeypatch, required, 0)
+    with pytest.raises(MemoryError, match="the GPU ran out of memory"):
+        required.sample(10, append_observables=True)
+    # NOTE: a call that no batch fits leaves the later calls' batch alone.
+    assert _gpu_shots(sampler)._max_batch == cuda_sampler.BATCH_SHOTS
+    assert _gpu_shots(required)._max_batch == cuda_sampler.BATCH_SHOTS
+
+
+def test_samplers_out_of_gpu_memory_at_setup_run_on_the_cpu(monkeypatch):
+    cp = runtime.cupy()
+
+    def out_of_memory(*args, **kwargs):
+        raise cp.cuda.memory.OutOfMemoryError(1 << 40, 0)
+
+    monkeypatch.setattr(CudaShotSampler, "__init__", out_of_memory)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        sampler = Circuit(T_STATE_X).compile_sampler(seed=1)
+    assert type(sampler._shots) is ShotSampler
+    with pytest.raises(MemoryError, match="Cannot sample on CUDA"):
+        Circuit(T_STATE_X).compile_sampler(seed=1, device="cuda")
+
+
+def test_kernels_wait_for_the_tables_they_read():
+    # NOTE: the tables are copied on the current (legacy default) stream, which
+    # the sampler's non-blocking streams do not wait for; a kernel that keeps
+    # that stream busy delays the copies, so the first call would read them
+    # before they land.
+    cp = runtime.cupy()
+    spin = cp.RawKernel(
+        r"""
+        extern "C" __global__ void spin(long long cycles) {
+            long long start = clock64();
+            while (clock64() - start < cycles) {}
+        }
+        """,
+        "spin",
+    )
+    circuit = Circuit(GHZ_WITH_DIRECT_DETECTOR)
+    expected = _cpu(circuit.compile_detector_sampler, seed=1).sample(
+        40_000, append_observables=True
+    )
+    for seed in range(8):
+        spin((1,), (1,), (np.int64(200_000_000),))
+        sampler = _gpu(circuit.compile_detector_sampler(seed=seed))
+        got = sampler.sample(40_000, append_observables=True)
+        assert_counts_match(got, expected)
+
+
+def test_device_cpu_keeps_the_samplers_on_the_cpu(monkeypatch):
+    # NOTE: the environment no longer chooses the device.
+    monkeypatch.setenv("TSIM_DEVICE", "cpu")
+    _gpu(Circuit(T_STATE_X).compile_sampler(seed=1))
+    sampler = Circuit(T_STATE_X).compile_sampler(seed=1, device="cpu")
+    assert type(sampler._shots) is ShotSampler
+    assert sampler.stats.device == "cpu"
+
+
+def test_the_repr_says_where_a_sampler_samples():
+    circuit = Circuit(T_STATE_X)
+    gpu = _gpu(circuit.compile_detector_sampler(seed=1))
+    assert "samples on cuda" in repr(gpu) and gpu.stats.device == "cuda"
+    cpu = _cpu(circuit.compile_detector_sampler, seed=1)
+    assert "samples on cpu" in repr(cpu) and cpu.stats.device == "cpu"
+
+
+def test_programs_without_shot_words_sample_on_the_cpu():
+    # NOTE: a detector sampler of a circuit without detectors, observables or noise.
+    for device in ("auto", "cuda"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            sampler = Circuit("R 0\nH 0\nT 0\nM 0").compile_detector_sampler(
+                seed=1, device=device
+            )
+        assert type(sampler._shots) is ShotSampler
+        assert sampler.sample(10).shape == (10, 0)
+
+
+def test_noise_beyond_the_gpu_tables_samples_on_the_cpu():
+    # NOTE: a chain of 8 correlated errors has 255 outcomes, more than the 127 of
+    # a GPU noise record.
+    chain = ["E(0.01) X0", *(f"ELSE_CORRELATED_ERROR(0.01) X{k}" for k in range(1, 8))]
+    text = "\n".join(
+        ["R 0 1 2 3 4 5 6 7 8", "H 8", "T 8", "H 8", *chain, "M 0 1 2 3 4 5 6 7 8"]
+        + [f"DETECTOR rec[{k - 9}]" for k in range(9)]
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        sampler = Circuit(text).compile_detector_sampler(seed=1)
+    assert type(sampler._shots) is ShotSampler
+    assert sampler.sample(10).shape == (10, 9)
+    with pytest.raises(ValueError, match="channels of up to 127 outcomes"):
+        Circuit(text).compile_detector_sampler(seed=1, device="cuda")
+
+
+_FORKED = {}
+
+
+def _sample_in_child(_):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        shape = _FORKED["sampler"].sample(100).shape
+    return shape, [str(w.message) for w in caught], _FORKED["sampler"].stats.device
+
+
+def test_samplers_compiled_before_a_fork_sample_on_the_cpu_in_the_child():
+    sampler = _gpu(Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(seed=1))
+    sampler.sample(10)
+    # NOTE: the child gets the sampler by fork, not by pickle.
+    _FORKED["sampler"] = sampler
+    try:
+        with multiprocessing.get_context("fork").Pool(1) as pool:
+            shape, messages, device = pool.map(_sample_in_child, [0])[0]
+    finally:
+        _FORKED.clear()
+    assert shape == (100, 3)
+    assert messages == []
+    assert device == "cpu"
+    assert sampler.stats.device == "cuda"
+
+
+def test_gpu_samplers_pickle_and_continue_their_streams():
+    sampler = _gpu(Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(seed=26))
+    sampler.sample(1000)
+    loaded = pickle.loads(pickle.dumps(sampler))  # noqa: S301
+    assert isinstance(loaded._shots, CudaShotSampler)
+    np.testing.assert_array_equal(loaded.sample(5000), sampler.sample(5000))
+    required = Circuit(T_STATE_X).compile_detector_sampler(seed=26, device="cuda")
+    assert _gpu_shots(pickle.loads(pickle.dumps(required)))._required  # noqa: S301
+
+
+def test_an_empty_mask_is_not_taken_for_no_mask():
+    sampler = _gpu(Circuit(T_STATE_X).compile_detector_sampler(seed=1))
+    assert sampler.sample(1000, append_observables=True).shape == (1000, 1)
+    empty = np.zeros(0, dtype=bool)
+    kept = sampler.sample(1000, append_observables=True, postselection_mask=empty)
+    assert kept.shape == (1000, 1)
+
+
+def test_cuda_samples_rows_too_wide_for_shared_memory():
+    # NOTE: 12000 detectors are 188 words: the noise goes into device memory, and
+    # the rows are gathered without staging them in shared memory.
+    n = 12000
+    qubits = " ".join(map(str, range(n)))
+    circuit = Circuit(
+        "\n".join(
+            [
+                f"R {qubits}",
+                f"X_ERROR(0.05) {qubits}",
+                f"M {qubits}",
+                *(f"DETECTOR rec[{i - n}]" for i in range(n)),
+                "OBSERVABLE_INCLUDE(0) rec[-1] rec[-2]",
+            ]
+        )
+    )
+    sampler = _gpu(circuit.compile_detector_sampler(seed=31))
+    shots = _gpu_shots(sampler)
+    assert not shots._noise.shared_words
+    got = sampler.sample(20_000, append_observables=True)
+    np.testing.assert_allclose(got[:, :n].mean(), 0.05, atol=5e-4)
+    np.testing.assert_allclose(got[:, -1].mean(), 2 * 0.05 * 0.95, atol=0.01)
+    np.testing.assert_array_equal(got[:, -1], got[:, -2] ^ got[:, -3])
+    packed = sampler.sample(1000, append_observables=True, bit_packed=True)
+    assert packed.shape == (1000, -(-(n + 1) // 8))
+    assert not np.unpackbits(packed, axis=1, bitorder="little")[:, n + 1 :].any()
+
+
+def test_concurrent_calls_on_one_sampler_are_serialized():
+    sampler = _gpu(Circuit(GHZ_WITH_DIRECT_DETECTOR).compile_detector_sampler(seed=1))
+    mask = np.array([False, False, True])
+    results, errors = [], []
+
+    def work(k):
+        try:
+            for _ in range(20):
+                got = sampler.sample(20_000, postselection_mask=mask if k % 2 else None)
+                results.append((k % 2, got))
+        except Exception as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=work, args=(k,)) for k in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not errors
+    for masked, got in results:
+        assert got.shape[1] == 3
+        if masked:
+            assert not got[:, 2].any()
+        else:
+            # NOTE: detector 2 fires at rate 0.2.
+            assert abs(got[:, 2].mean() - 0.2) < 0.02
+
+
+def test_a_kernel_that_does_not_compile_samples_on_the_cpu(monkeypatch):
+    circuit = Circuit(T_STATE_X)
+    sampler = _gpu(circuit.compile_sampler(seed=1))
+    compiled = []
+
+    def broken(*args, **kwargs):
+        compiled.append(1)
+        return 'extern "C" __global__ void tape('
+
+    monkeypatch.setattr(kernels, "source", broken)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        got = sampler.sample(20_000)
+        assert sampler.stats.device == "cpu"
+        got = np.concatenate([got, sampler.sample(20_000)])
+    assert len(compiled) == 1
+    expected = _cpu(circuit.compile_sampler, seed=2).sample(40_000)
+    assert_counts_match(got, expected)
+    required = _gpu(circuit.compile_sampler(seed=3, device="cuda"))
+    with pytest.raises(runtime.CompileError):
+        required.sample(10)
+
+
+def test_rare_outcome_of_a_channel_is_drawn_at_its_rate():
+    # NOTE: 1000 channels (distinct, so Tsim keeps them apart) fire half the time
+    # and then flip detector 0 with chance 6e-9: with 24-bit keep thresholds it
+    # rounded to zero; ~100 flips are expected here.
+    k, q, calls = 10, 3e-9, 34
+    lines = ["R " + " ".join(map(str, range(k + 1)))]
+    subsets = [
+        s for r in range(1, k + 1) for s in itertools.combinations(range(1, k + 1), r)
+    ][:1000]
+    for subset in subsets:
+        lines.append("E(0.5) " + " ".join(f"X{i}" for i in subset))
+        lines.append(f"ELSE_CORRELATED_ERROR({q / 0.5}) X0")
+    lines.append("M " + " ".join(map(str, range(k + 1))))
+    lines += [f"DETECTOR rec[{i - k - 1}]" for i in range(k + 1)]
+    sampler = _gpu(Circuit("\n".join(lines)).compile_detector_sampler(seed=1))
+    flips = sum(
+        int(np.count_nonzero(sampler.sample(1_000_000, bit_packed=True)[:, 0] & 1))
+        for _ in range(calls)
+    )
+    expected = len(subsets) * q * calls * 1_000_000
+    assert abs(flips - expected) <= 5 * np.sqrt(expected)
+
+
+def test_rotation_with_a_branch_float32_cannot_resolve_samples_on_the_cpu():
+    circuit = Circuit("R 0\nH 0\nR_Z(1e-5) 0\nH 0\nM 0\nDETECTOR rec[-1]")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        sampler = circuit.compile_detector_sampler(seed=1)
+    assert sampler.stats.device == "cpu"
+    message = r"angle is 1\.0e-05 π from a Clifford angle.*6\.4e-05 π.*device='cpu'"
+    with pytest.raises(ValueError, match=message):
+        circuit.compile_detector_sampler(seed=1, device="cuda")
+
+
+@pytest.mark.parametrize(
+    ("detectors", "observables"), [(20, 1), (21, 3), (7, 9), (16, 8), (130, 5)]
+)
+def test_cuda_selects_every_layout_of_columns(detectors, observables):
+    # NOTE: the observables start inside a byte (20, 21, 7, 130), end inside one
+    # (20, 130) or span two bytes (7); 16 + 8 lies on byte boundaries. Samplers of
+    # one seed draw the same shots; the reference is every output as booleans,
+    # in order.
+    n = detectors + observables
+    lines = [f"X_ERROR(0.3) {' '.join(map(str, range(n)))}", "H 0", "T 0", "H 0"]
+    lines.append(f"M {' '.join(map(str, range(n)))}")
+    lines += [f"DETECTOR rec[-{n - i}]" for i in range(detectors)]
+    lines += [
+        f"OBSERVABLE_INCLUDE({j}) rec[-{observables - j}]" for j in range(observables)
+    ]
+    circuit = Circuit("\n".join(lines))
+    mask = np.zeros(detectors, dtype=bool)
+    mask[0] = True
+    for postselection_mask in (None, mask):
+
+        def sample(layout, bit_packed=False, postselection_mask=postselection_mask):
+            sampler = _gpu(circuit.compile_detector_sampler(seed=25))
+            return sampler.sample(
+                20_000,
+                separate_observables=layout == "separate",
+                prepend_observables=layout == "prepend",
+                append_observables=layout == "append",
+                bit_packed=bit_packed,
+                postselection_mask=postselection_mask,
+            )
+
+        every = sample("append")
+        assert isinstance(every, np.ndarray)
+        found, events = every[:, :detectors], every[:, detectors:]
+        layouts = {
+            "separate": (found, events),
+            "prepend": (np.hstack([events, found]),),
+            "detectors": (found,),
+        }
+        for layout, expected in layouts.items():
+            for bit_packed in (True, False):
+                got = sample(layout, bit_packed)
+                got = got if isinstance(got, tuple) else (got,)
+                for array, bools in zip(got, expected, strict=True):
+                    if bit_packed:
+                        bools = np.packbits(bools, axis=1, bitorder="little")
+                    else:
+                        assert array.dtype == np.bool_ and array.flags.c_contiguous
+                    np.testing.assert_array_equal(array, bools)
+
+
+@pytest.mark.parametrize("text", [GHZ_WITH_DIRECT_DETECTOR, NOISY_DETECTORS])
+def test_cuda_unpacks_booleans_as_it_packs_rows(text):
+    # NOTE: samplers of one seed draw the same shots; 4 and 152 outputs, neither a
+    # multiple of 8.
+    circuit = Circuit(text)
+    outputs = circuit.num_detectors + circuit.num_observables
+    mask = np.zeros(circuit.num_detectors, dtype=bool)
+    mask[0] = True
+    for postselection_mask in (None, mask):
+
+        def sample(bit_packed, postselection_mask=postselection_mask):
+            sampler = _gpu(circuit.compile_detector_sampler(seed=23))
+            return sampler.sample(
+                30_000,
+                append_observables=True,
+                bit_packed=bit_packed,
+                postselection_mask=postselection_mask,
+            )
+
+        packed, bools = sample(True), sample(False)
+        assert bools.dtype == np.bool_ and bools.flags.c_contiguous
+        unpacked = np.unpackbits(packed, axis=1, count=outputs, bitorder="little")
+        np.testing.assert_array_equal(bools, unpacked.astype(bool))
+        detectors = _gpu(circuit.compile_detector_sampler(seed=23)).sample(
+            30_000, postselection_mask=postselection_mask
+        )
+        assert detectors.flags.c_contiguous
+        np.testing.assert_array_equal(detectors, bools[:, : circuit.num_detectors])
+
+
+def test_returned_rows_are_not_reused_while_alive():
+    circuit = Circuit(NOISY_DETECTORS)
+    sampler = _gpu(circuit.compile_detector_sampler(seed=3))
+    first = _packed(sampler, 200_000)
+    kept = first.copy()
+    second = _packed(sampler, 200_000)
+    np.testing.assert_array_equal(first, kept)
+    assert not np.shares_memory(first, second)
+
+
+def test_postselected_rows_too_wide_to_stage_draw_all_their_noise_at_once():
+    # NOTE: 6500 detectors are 102 words: a noise block of 32 shots fits in shared
+    # memory, but its packed rows do not fit beside them, so noise_kept cannot
+    # stage a block and the noise is not deferred.
+    n = 6500
+    qubits = " ".join(map(str, range(n)))
+    circuit = Circuit(
+        "\n".join(
+            [
+                f"R {qubits} {n}",
+                f"X_ERROR(0.05) {qubits}",
+                f"H {n}",
+                f"T {n}",
+                f"H {n}",
+                f"M {qubits} {n}",
+                *(f"DETECTOR rec[{i - n - 1}]" for i in range(n)),
+                "OBSERVABLE_INCLUDE(0) rec[-1]",
+            ]
+        )
+    )
+    sampler = _gpu(circuit.compile_detector_sampler(seed=32, device="cuda"))
+    shots = _gpu_shots(sampler)
+    assert shots._noise.shared_words
+    assert not kernels.kept_fits(shots.layout, shots._noise.block_shots)
+    mask = np.zeros(n, dtype=bool)
+    mask[:3] = True
+    got = sampler.sample(20_000, append_observables=True, postselection_mask=mask)
+    assert not got[:, :3].any()
+    expected = 20_000 * 0.95**3
+    assert abs(len(got) - expected) <= 5 * np.sqrt(expected)
+    np.testing.assert_allclose(got[:, 3:n].mean(), 0.05, atol=1e-3)
+    # NOTE: the T state measured in X: 1 with probability sin^2(π/8).
+    np.testing.assert_allclose(got[:, -1].mean(), np.sin(np.pi / 8) ** 2, atol=0.02)
+
+
+def test_host_rows_grow_by_the_rate_seen_so_far():
+    # NOTE: growing to room for every remaining shot asked a 2^27-shot call of
+    # star_d=13 for 48 GB of pinned memory.
+    out = cuda_sampler._HostRows([357])
+    shots = 1 << 27
+    out.allocate(0, 1 << 20, shots)
+    assert out.capacity == 256
+    out.take(256)
+    out.grow(300, 2 << 20, shots)
+    assert 512 <= out.capacity < 50_000
+    rows = out.take(300 - 256)[0]
+    assert rows.shape == (300 - 256, 357)
+
+
+def test_a_call_keeps_only_the_rows_in_flight_on_the_device(monkeypatch):
+    # NOTE: a call kept every chunk's rows on the device until it returned, so a
+    # result larger than the free device memory ran out of it at every batch size.
+    sampler = _gpu(Circuit(NOISY_DETECTORS).compile_detector_sampler(seed=41))
+    shots = _gpu_shots(sampler)
+    pool = runtime.cupy().get_default_memory_pool()
+    batch, chunks = 1 << 15, 64
+
+    def sample(n):
+        return sampler.sample(
+            n, append_observables=True, bit_packed=True, batch_size=batch
+        )
+
+    # NOTE: a first call allocates the buffers that the calls reuse.
+    sample(2 * batch)
+    before = pool.used_bytes()
+    pack, used = shots._pack, []
+
+    def spy(*args, **kwargs):
+        used.append(pool.used_bytes() - before)
+        return pack(*args, **kwargs)
+
+    monkeypatch.setattr(shots, "_pack", spy)
+    rows = sample(chunks * batch)
+    assert len(used) == chunks
+    assert rows.shape == (chunks * batch, 19)
+    # NOTE: 512 bytes more per chunk, to which the pool rounds an allocation.
+    chunk_bytes = rows.nbytes // chunks + 512
+    assert max(used) <= cuda_sampler.MAX_IN_FLIGHT * chunk_bytes
+    np.testing.assert_allclose(np.unpackbits(rows[:, :18]).mean(), 0.3, atol=1e-3)
+
+
+def test_rows_that_fill_shared_memory_draw_all_their_noise_at_once():
+    # NOTE: 6144 detectors are 96 words: 32 rows' output words and packed bytes
+    # are exactly 48 KB of shared memory, which noise_kept, with
+    # its event counter besides, overflowed (CUDA_ERROR_INVALID_VALUE at launch).
+    n = 6144
+    qubits = " ".join(map(str, range(n)))
+    circuit = Circuit(
+        "\n".join(
+            [
+                f"X_ERROR(0.01) {qubits}",
+                f"M {qubits}",
+                *(f"DETECTOR rec[{i - n}]" for i in range(n)),
+            ]
+        )
+    )
+    sampler = _gpu(circuit.compile_detector_sampler(seed=42, device="cuda"))
+    shots = _gpu_shots(sampler)
+    assert shots._noise.block_shots == 32
+    assert not kernels.kept_fits(shots.layout, 32)
+    mask = np.zeros(n, dtype=bool)
+    mask[0] = True
+    got = sampler.sample(20_000, postselection_mask=mask)
+    assert not got[:, 0].any()
+    expected = 20_000 * 0.99
+    assert abs(len(got) - expected) <= 5 * np.sqrt(expected)
+    np.testing.assert_allclose(got[:, 1:].mean(), 0.01, atol=2e-4)

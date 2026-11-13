@@ -1,6 +1,6 @@
 ---
 name: simulating-circuits-with-tsim
-description: "Samples noisy quantum circuits with non-Clifford gates using Tsim (bloqade-tsim), a Stim-compatible simulator, and runs Monte Carlo QEC studies with it. Use when a task involves Tsim or bloqade-tsim, or a noisy Stim-format circuit with T, T_DAG, R_X, R_Y, R_Z, U3, R_PAULI, TPP, CCZ, CCX or CS gates (magic state cultivation, distillation, injection, coherent rotation errors), even if Tsim is not named: feasibility and run time (active width); sampling detectors, measurements or observables, on the CPU or an Apple GPU; postselection; logical error rates, acceptance or fidelity with error bars; decoding Tsim samples; detector error models; sinter; or porting published circuits whose T or CCZ gates are Clifford stand-ins. Also for errors such as \"needs N active qubits\", \"Malformed parametric tag\" or \"Cannot sample on Metal\", detectors that read 1 where Stim reports 0, or slow sample() calls."
+description: "Samples noisy quantum circuits with non-Clifford gates using Tsim (bloqade-tsim), a Stim-compatible simulator, and runs Monte Carlo QEC studies with it. Use when a task involves Tsim or bloqade-tsim, or a noisy Stim-format circuit with T, T_DAG, R_X, R_Y, R_Z, U3, R_PAULI, TPP, CCZ, CCX or CS gates (magic state cultivation, distillation, injection, coherent rotation errors), even if Tsim is not named: feasibility and run time (active width); sampling detectors, measurements or observables, on the CPU or a GPU (Apple or NVIDIA); postselection; logical error rates, acceptance or fidelity with error bars; decoding Tsim samples; detector error models; sinter; or porting published circuits whose T or CCZ gates are Clifford stand-ins. Also for errors such as \"needs N active qubits\", \"Malformed parametric tag\" or \"Cannot sample on Metal\" or \"Cannot sample on CUDA\", detectors that read 1 where Stim reports 0, or slow sample() calls."
 license: Apache-2.0
 compatibility: Python 3.11+ and Tsim 1.1.0 or later (bloqade-tsim). Decoders are separate packages.
 metadata:
@@ -15,7 +15,7 @@ metadata:
 Tsim samples noisy quantum circuits with non-Clifford gates. It reads Stim's circuit format plus
 a few non-Clifford instructions and mirrors Stim's sampler API, so most Stim code ports by
 changing `stim` to `tsim`. Install with `uv add bloqade-tsim` or `pip install bloqade-tsim`
-(1.1.0 or later); import as `tsim`. Docs: https://bloqade.quera.com/tsim (append `.md` to any
+(1.1.0 or later), or `bloqade-tsim[cuda]` to sample on an NVIDIA GPU (CUDA 13); import as `tsim`. Docs: https://bloqade.quera.com/tsim (append `.md` to any
 page for Markdown; an MCP server for searching them is at https://bloqade.quera.com/tsim/mcp).
 
 This file covers what every task needs. Open the references when the task calls for them:
@@ -182,38 +182,45 @@ yourself.
 - **`batch_size`:** leave it at the default, which is sized from free memory and is close to
   optimal. Small values (a few thousand or less) are several times slower. Lower it only to
   cap memory; on the CPU it does not change the samples. On a GPU the default batch is up to
-  2^20 shots (fewer for very wide rows), one GPU launch, all launched back to back;
+  2^20 shots on Metal and 2^22 on CUDA (fewer for very wide rows), launched back to back;
   `batch_size` can only lower it, a small one makes launch overhead dominate, and it changes
   which samples a seed gives.
 - **`bit_packed=True`** returns little-endian packed `uint8` rows, as in Stim, using 8 times
   less memory. On a distance-11 surface code memory (1,320 detectors) it was twice as fast as
-  booleans, at distance 5 about 1.3 times. On an Apple GPU the gap is larger, since booleans
-  move 8 times more bytes off the GPU: 2.3 to 3.2 times on circuits with hundreds of
-  detectors (surface_d7_r7: 757M against 237M shots/s on an M4 Pro). Use packed rows for
-  large studies and decode them packed. For small circuits it gains little and is slower
+  booleans, at distance 5 about 1.3 times. On a GPU the gap is much larger, since booleans
+  move 8 times more bytes off the GPU: on an Apple GPU 2.3 to 3.2 times on circuits with
+  hundreds of detectors (surface_d7_r7: 757M against 237M shots/s on an M4 Pro), and on an
+  NVIDIA GPU 7 to 8 times, where booleans throw away most of its lead (RTX 5090:
+  surface_d7_r7 1,168M against 159M shots/s; end-to-end cultivation d=3 346M against 46M).
+  Circuits with few outputs, such as qv_q10, lose nothing. `sample()` returns booleans by
+  default, so on a GPU always pass `bit_packed=True` for large runs and decode packed rows. For small circuits it gains little and is slower
   with `separate_observables` (the observables are split off and re-packed); use
   `append_observables=True` with packed output.
 - **Threads:** the default strategy runs on `numba.get_num_threads()` threads, all cores by
   default. Use `numba.set_num_threads(k)` before `sample` (or `NUMBA_NUM_THREADS=k` before
   importing Tsim) and leave cores free on a shared machine. Do not run several multi-threaded
   Tsim processes side by side; they oversubscribe the CPU.
-- **Apple GPUs:** on an Apple-silicon Mac the default strategy samples on the GPU when every
-  component has at most 11 active qubits, often 5 to 10 times faster than all CPU cores. That
+- **GPUs:** on an Apple-silicon Mac (Metal), or on an NVIDIA GPU with the `cuda` extra, the
+  default strategy samples on the GPU when every component has at most 11 active qubits,
+  often 5 to 10 times faster than all CPU cores on a Mac, and a few hundred times faster than
+  one CPU core on an RTX 5090 (bit-packed). That
   includes Clifford circuits, whose detectors come from the noise alone: the GPU samples the
   noise too. It computes outcome probabilities in float32 and never draws an outcome below
   about 1e-11 (circuits with a rotation angle within about 6e-5 π of a multiple of π/2 stay
   on the CPU). Thread settings do not affect GPU sampling.
 - **`device`** (in `compile_sampler` and `compile_detector_sampler`) chooses where it samples:
   `"auto"` (default) uses the GPU when it can and otherwise the CPU, silently; `"cpu"` stays
-  on the CPU in double precision; `"metal"` raises with the reason if the GPU cannot run the
-  circuit (no Apple GPU, width above 11, a tiny rotation, out of GPU memory). Check
-  `sampler.stats.device` (or the repr, `samples on metal`) after compiling, since `"auto"`
-  does not warn. Pass `device="metal"` for long runs that must not drop to the CPU unnoticed,
+  on the CPU in double precision; `"metal"` (Apple) and `"cuda"` (NVIDIA) raise with the
+  reason if the GPU cannot run the circuit (no such GPU, width above 11, a tiny rotation, out
+  of GPU memory). Check `sampler.stats.device` (or the repr, `samples on metal` or `cuda`)
+  after compiling, since `"auto"` does not warn. Pass `device="metal"` or `"cuda"` for long
+  runs that must not drop to the CPU unnoticed,
   and `device="cpu"` to reproduce samples across machines or to compare against the GPU.
 - **Processes:** sample from one process per GPU. Threads sharing a GPU sampler run its calls
   one at a time, and several processes compete for the same GPU. A process forked after its
-  parent used the GPU cannot use it (it samples on the CPU, or raises with `device="metal"`);
-  start workers with the `"spawn"` or `"forkserver"` method (macOS's default is `"spawn"`).
+  parent used the GPU cannot use it (it samples on the CPU, or raises with `device="metal"` or
+  `"cuda"`); start workers with the `"spawn"` or `"forkserver"` method (macOS's default is
+  `"spawn"`).
 - **Seeds:** a `seed` reproduces samples for the same Tsim and dependency versions and
   device. On the CPU, thread count and `batch_size` do not affect the samples; on a GPU,
   `batch_size` does, and GPU samples differ from CPU samples, so with `device="auto"` a seed
@@ -332,9 +339,11 @@ Tsim results:
 - **Memory sizing ignores container limits.** On the CPU the default batch size is chosen from
   the machine's free memory, not from a container or cgroup memory limit, so inside a
   memory-capped job pass an explicit `batch_size` (for example 2^16) to stay within the cap. On
-  an Apple GPU leave `batch_size` unset (see "Sampling options"): a GPU call needs about 300 MB
-  beyond the rows it returns, and Tsim keeps up to 1 GB of freed rows for reuse, so ask for
-  fewer shots per call to use less memory.
+  a GPU leave `batch_size` unset (see "Sampling options") and ask for fewer shots per call to
+  use less memory. On an Apple GPU a call needs about 300 MB beyond the rows it returns, and
+  Tsim keeps up to 1 GB of freed rows for reuse. On an NVIDIA GPU the rows come back in pinned
+  (page-locked) host memory, which CuPy rounds up to a power of two and keeps after the array
+  is freed: a 1.1 GB result holds 2 GB of RAM for the rest of the process.
 - **`str(circuit)` rounds noise probabilities** to 6 significant digits, as Stim does; rotation
   angles keep full precision. Keep the original file when exact noise strengths matter.
 - **`CCZ`, `CCX`, `CS` and `CS_DAG` are stored as their T-gate decompositions**, so `str(c)`
@@ -354,10 +363,11 @@ Tsim results:
 | `Malformed parametric tag` | Angles are in units of π: write `R_X(0.25) 0` or `I[R_X(0.25)] 0` |
 | `'Circuit' object has no attribute ...` | A Stim method; call it on `c.stim_circuit` |
 | `Cannot set NUMBA_NUM_THREADS ... once the threads have been launched` | Use `numba.set_num_threads(k)` |
-| `Cannot sample on Metal: a component needs N active qubits, more than the 11 ...` | The GPU runs widths up to 11; use `device="cpu"` or `"auto"`, or reduce the width |
-| `Cannot sample on Metal: a rotation's angle is ... π from a Clifford angle ...` | float32 cannot resolve the rotation; use `device="cpu"` or `"auto"` |
-| `Cannot sample on Metal: this process was forked after its parent used the GPU ...` | Start workers with the `"spawn"` or `"forkserver"` method |
+| `Cannot sample on Metal` (or `on CUDA`)`: a component needs N active qubits, more than the 11 ...` | The GPU runs widths up to 11; use `device="cpu"` or `"auto"`, or reduce the width |
+| `Cannot sample on Metal` (or `on CUDA`)`: a rotation's angle is ... π from a Clifford angle ...` | float32 cannot resolve the rotation; use `device="cpu"` or `"auto"` |
+| `Cannot sample on Metal` (or `on CUDA`)`: this process was forked after its parent used the GPU ...` | Start workers with the `"spawn"` or `"forkserver"` method |
 | `Cannot sample on Metal: no Metal device`, `... needs an Apple GPU ...` or `... (pyobjc-framework-Metal) is not installed` | Not an Apple-silicon Mac, or `pyobjc-framework-Metal` is missing; use `device="cpu"` or `"auto"` |
+| `Cannot sample on CUDA: CuPy is not installed ...` or `... CuPy sees no CUDA device` | Install `bloqade-tsim[cuda]` (CUDA 13, driver 580 or later), or check `nvidia-smi` and `CUDA_VISIBLE_DEVICES`; or use `device="cpu"` or `"auto"` |
 | `no Metal buffer of N bytes ...` or `the GPU ran out of memory` | Sample fewer shots per call |
 
 ## Reporting bugs and circuits Tsim cannot simulate yet
