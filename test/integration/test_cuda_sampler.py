@@ -996,3 +996,38 @@ def test_returned_rows_are_not_reused_while_alive():
     second = _packed(sampler, 200_000)
     np.testing.assert_array_equal(first, kept)
     assert not np.shares_memory(first, second)
+
+
+def test_postselected_rows_too_wide_to_stage_draw_all_their_noise_at_once():
+    # NOTE: 6500 detectors are 102 words: a noise block of 32 shots fits in shared
+    # memory, but its packed rows do not fit beside them, so noise_kept cannot
+    # stage a block and the noise is not deferred.
+    n = 6500
+    qubits = " ".join(map(str, range(n)))
+    circuit = Circuit(
+        "\n".join(
+            [
+                f"R {qubits} {n}",
+                f"X_ERROR(0.05) {qubits}",
+                f"H {n}",
+                f"T {n}",
+                f"H {n}",
+                f"M {qubits} {n}",
+                *(f"DETECTOR rec[{i - n - 1}]" for i in range(n)),
+                "OBSERVABLE_INCLUDE(0) rec[-1]",
+            ]
+        )
+    )
+    sampler = _gpu(circuit.compile_detector_sampler(seed=32, device="cuda"))
+    shots = _gpu_shots(sampler)
+    assert shots._noise.shared_words
+    assert shots._gather_shots < shots._noise.block_shots
+    mask = np.zeros(n, dtype=bool)
+    mask[:3] = True
+    got = sampler.sample(20_000, append_observables=True, postselection_mask=mask)
+    assert not got[:, :3].any()
+    expected = 20_000 * 0.95**3
+    assert abs(len(got) - expected) <= 5 * np.sqrt(expected)
+    np.testing.assert_allclose(got[:, 3:n].mean(), 0.05, atol=1e-3)
+    # NOTE: the T state measured in X: 1 with probability sin^2(π/8).
+    np.testing.assert_allclose(got[:, -1].mean(), np.sin(np.pi / 8) ** 2, atol=0.02)

@@ -361,8 +361,12 @@ class CudaShotSampler:
         read too. Each key word is read whole, so the deferred channels flip
         output words only.
         """
-        # NOTE: rows too wide for shared memory draw all their noise at once.
-        if not module.has_mask or not self._noise.shared_words:
+        # NOTE: rows too wide for shared memory draw all their noise at once, and
+        # so do rows of which noise_kept cannot stage a block (as gather_columns).
+        n = self._noise
+        if not module.has_mask or not n.shared_words:
+            return None
+        if self._gather_shots < n.block_shots:
             return None
         if expectations not in module.splits:
             found = split(
