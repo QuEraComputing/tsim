@@ -1,0 +1,126 @@
+---
+title: "Installation"
+description: "Install Tsim with uv or pip, with optional GPU support."
+---
+
+Tsim requires Python 3.11 or later.
+
+## Using uv (recommended)
+
+We recommend using [`uv`](https://docs.astral.sh/uv/) for dependency management.
+
+```bash
+uv add bloqade-tsim
+```
+
+For GPU acceleration with CUDA:
+
+```bash
+# For CUDA 13
+uv add "bloqade-tsim[cuda13]"
+
+# For CUDA 12
+uv add "bloqade-tsim[cuda12]"
+```
+
+## Using pip
+
+```bash
+pip install bloqade-tsim
+```
+
+For GPU acceleration with CUDA:
+
+```bash
+pip install "bloqade-tsim[cuda13]"
+```
+
+## Apple GPUs
+
+On an Apple-silicon Mac, the default strategy (`"active_statevector"`) samples on the GPU
+through Metal; the plain install includes PyObjC's Metal bindings for it. Where it samples is
+the `device` argument of `compile_sampler` and `compile_detector_sampler`:
+
+| `device` | Samples |
+| --- | --- |
+| `"auto"` (default) | On the GPU when it can run the circuit, else on the CPU, without a warning |
+| `"cpu"` | On the CPU, in double precision |
+| `"metal"` | On the GPU, or raises an error that says why it cannot |
+
+```python
+sampler = circuit.compile_detector_sampler(device="metal")
+```
+
+The GPU runs circuits whose components have at most 11 active qubits. That includes Clifford
+circuits, whose detectors depend on the noise alone: the GPU samples the noise as well as the
+state vectors. Postselection runs on the GPU, so heavily postselected circuits gain the most.
+A sampler's repr says where it samples (`samples on metal` or `samples on cpu`), and so does
+`sampler.stats.device`.
+
+The GPU computes outcome probabilities in float32, so a sample follows the CPU's distribution
+to within float32 rounding. Float32 cannot tell a measurement outcome of probability below
+about 1e-11 from rounding error, so the GPU never draws one; a circuit with a rotation small
+enough to make such an outcome (an angle within about 6e-5 π of a multiple of π/2) samples on
+the CPU (or raises, with `device="metal"`).
+
+A seed's samples on the GPU differ from the CPU's and depend on `batch_size`, so with
+`device="auto"` a seed reproduces its samples only on the same kind of machine. Use
+`device="cpu"` to reproduce samples across machines.
+
+## Agent skill
+
+Tsim ships an agent skill that teaches coding agents (Claude Code, Codex, Cursor and others)
+how to judge whether a circuit is feasible, sample and postselect it, run logical error rate
+studies, and port published Stim circuits. Install it with [Ion](https://github.com/roger-luo/ion):
+
+```bash
+ion add QuEraComputing/tsim/skills/simulating-circuits-with-tsim
+```
+
+or with `npx skills`:
+
+```bash
+npx skills add QuEraComputing/tsim --skill simulating-circuits-with-tsim
+```
+
+The skill is also served by this site at `/.well-known/skills/`.
+
+## Docs MCP server
+
+This site runs an MCP server at `https://bloqade.quera.com/tsim/mcp` that lets agents search
+and read these docs. Add it to Claude Code with:
+
+```bash
+claude mcp add --transport http tsim https://bloqade.quera.com/tsim/mcp
+```
+
+For Cursor and VS Code, use the page menu at the top of any page, or add the server by hand,
+for Cursor in `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "Tsim": {
+      "url": "https://bloqade.quera.com/tsim/mcp"
+    }
+  }
+}
+```
+
+## Development setup
+
+If you're contributing to Tsim, clone the repository and install development dependencies:
+
+```bash
+git clone https://github.com/QuEraComputing/tsim.git
+cd tsim
+uv sync
+```
+
+Install pre-commit hooks to run linting checks automatically:
+
+```bash
+pre-commit install
+```
+
+This will run formatters and linters (black, isort, ruff, pyright) before each commit.

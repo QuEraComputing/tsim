@@ -1,0 +1,152 @@
+---
+title: "Experimental"
+description: "Helpers outside of the stable API. They may change or be removed in any release."
+---
+
+## class `CompiledStateProbs`
+
+```python
+CompiledStateProbs(circuit: Circuit, sample_detectors: bool = False, strategy: SamplingStrategy = 'cat5', seed: int | None = None)
+```
+
+Computes measurement probabilities for a given state.
+
+Uses joint decomposition [0, n] where:
+- compiled_scalar_graphs[0]: normalization (0 outputs plugged)
+- compiled_scalar_graphs[1]: full joint probability (all outputs plugged)
+
+
+### `probability_of`
+
+```python
+probability_of(state: np.ndarray, batch_size: int) -> np.ndarray
+```
+
+Compute probabilities for a batch of error samples given a measurement state.
+
+**Parameters:**
+
+- `state` (`np.ndarray`) — The measurement outcome state to compute probability for.
+- `batch_size` (`int`) — Number of error samples to use for estimation.
+
+**Returns:**
+
+- `np.ndarray` — Array of probabilities P(state | error_sample) for each error sample.
+
+
+## class `SteaneEncoder`
+
+```python
+SteaneEncoder()
+```
+
+Transversal encoder for the &#91;&#91;7,1,3&#93;&#93; Steane code.
+
+
+### `diagram`
+
+```python
+diagram(kwargs = {})
+```
+
+Return a timeline-svg diagram of the encoded circuit.
+
+
+### `encode_transversally`
+
+```python
+encode_transversally(program_text: str) -> None
+```
+
+Encode a program transversally by replacing  physicalgates with transversal gates.
+
+Transform a program on m qubits into a program on n * m qubits (consisting of n code blocks).
+
+**Parameters:**
+
+- `program_text` (`str`) — The program to encode transversally.
+
+
+### `encoding_flow_generators`
+
+```python
+encoding_flow_generators()
+```
+
+Return the Pauli flow generators for the encoding circuit.
+
+
+### `initialize`
+
+```python
+initialize(program_text: str, encoding_program_text: str | None = None) -> None
+```
+
+Initialize state preparation and apply encoding circuit.
+
+Apply the state preparation program for k qubits, then apply an encoding
+circuit to encode the state into n qubits.
+
+**Parameters:**
+
+- `program_text` (`str`) — The state preparation program for k qubits. Generally, this should be a simple program that prepares each of the k qubits in a single-qubit state.
+- `encoding_program_text` (`optional`) — An encoding circuit for a single logical qubit. This should encode a single logical qubit at input `self.encoding_qubit` into a state of n qubits. If not provided, the encoder will use a noiseless default encoding.
+
+
+## class `ColorEncoder5`
+
+```python
+ColorEncoder5()
+```
+
+Transversal encoder for the &#91;&#91;17,1,5&#93;&#93; 2D color code.
+
+
+### `diagram`
+
+```python
+diagram(kwargs = {})
+```
+
+Return a timeline-svg diagram of the encoded circuit.
+
+
+### `encode_transversally`
+
+```python
+encode_transversally(program_text: str) -> None
+```
+
+Encode a program transversally by replacing  physicalgates with transversal gates.
+
+Transform a program on m qubits into a program on n * m qubits (consisting of n code blocks).
+
+**Parameters:**
+
+- `program_text` (`str`) — The program to encode transversally.
+
+
+### `encoding_flow_generators`
+
+```python
+encoding_flow_generators()
+```
+
+Return the Pauli flow generators for the encoding circuit.
+
+
+### `initialize`
+
+```python
+initialize(program_text: str, encoding_program_text: str | None = None) -> None
+```
+
+Initialize state preparation and apply encoding circuit.
+
+Apply the state preparation program for k qubits, then apply an encoding
+circuit to encode the state into n qubits.
+
+**Parameters:**
+
+- `program_text` (`str`) — The state preparation program for k qubits. Generally, this should be a simple program that prepares each of the k qubits in a single-qubit state.
+- `encoding_program_text` (`optional`) — An encoding circuit for a single logical qubit. This should encode a single logical qubit at input `self.encoding_qubit` into a state of n qubits. If not provided, the encoder will use a noiseless default encoding.
