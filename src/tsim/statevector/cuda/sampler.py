@@ -130,6 +130,15 @@ def _pinned_counts(cp) -> tuple[np.ndarray, Any]:
     return host, device
 
 
+def _expected_rows(passed: int, of: int, shots: int) -> int:
+    """Return the rows to reserve for a call of ``shots``: ``passed`` of its first ``of`` passed.
+
+    The rest pass at the same rate, with a margin of 5% and 6 standard deviations.
+    """
+    expected = (shots - of) * passed / of
+    return min(shots, passed + int(1.05 * expected + 6 * np.sqrt(expected) + 256))
+
+
 class _HostRows:
     """A call's arrays of passing rows (and expectations) in pinned host memory.
 
@@ -144,17 +153,19 @@ class _HostRows:
 
     def allocate(self, passed: int, of: int, shots: int) -> None:
         """Reserve the rows of a call of ``shots``, ``passed`` of its first ``of`` passing."""
-        rest = shots - of
-        share = passed / of
-        expected = rest * share
-        self._resize(
-            min(shots, passed + int(1.05 * expected + 6 * np.sqrt(expected) + 256))
-        )
+        self._resize(_expected_rows(passed, of, shots))
 
-    def grow(self, capacity: int) -> None:
-        """Make room for ``capacity`` rows, keeping the copied ones (no copy may be pending)."""
+    def grow(self, passed: int, of: int, shots: int) -> None:
+        """Make room for more rows: ``passed`` of the first ``of`` shots of ``shots`` passed.
+
+        The room is for the rows expected at that rate, and at least twice the
+        current room, so that a call grows a few times at most. The copied rows
+        are kept (no copy may be pending).
+        """
         arrays, values, total = self.arrays, self.values, self.total
-        self._resize(capacity)
+        self._resize(
+            min(shots, max(_expected_rows(passed, of, shots), 2 * self.capacity))
+        )
         for new, old in zip(self.arrays, arrays, strict=True):
             new[:total] = old[:total]
         if values is not None and self.values is not None:
@@ -901,7 +912,7 @@ class CudaShotSampler:
                 elif out.total + count > out.capacity:
                     # NOTE: a rare excess of passing shots: the copies in flight land first.
                     self._synchronize()
-                    out.grow(out.total + count + (shots - first - n))
+                    out.grow(out.total + count, first + n, shots)
                 parts, values_host = out.take(count)
                 index = (
                     None

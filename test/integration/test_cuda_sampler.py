@@ -1031,3 +1031,17 @@ def test_postselected_rows_too_wide_to_stage_draw_all_their_noise_at_once():
     np.testing.assert_allclose(got[:, 3:n].mean(), 0.05, atol=1e-3)
     # NOTE: the T state measured in X: 1 with probability sin^2(π/8).
     np.testing.assert_allclose(got[:, -1].mean(), np.sin(np.pi / 8) ** 2, atol=0.02)
+
+
+def test_host_rows_grow_by_the_rate_seen_so_far():
+    # NOTE: growing to room for every remaining shot asked a 2^27-shot call of
+    # star_d=13 for 48 GB of pinned memory.
+    out = cuda_sampler._HostRows([357], None)
+    shots = 1 << 27
+    out.allocate(0, 1 << 20, shots)
+    assert out.capacity == 256
+    out.take(256)
+    out.grow(300, 2 << 20, shots)
+    assert 512 <= out.capacity < 50_000
+    rows = out.take(300 - 256)[0][0]
+    assert rows.shape == (300 - 256, 357)
