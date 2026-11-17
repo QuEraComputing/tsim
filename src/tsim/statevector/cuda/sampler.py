@@ -410,7 +410,7 @@ class CudaShotSampler:
         """Compile with NVRTC; ptxas -O3 fails on some shuffled tapes, so lower levels follow.
 
         Raises:
-            runtime.CompileError: If no level compiles.
+            runtime.CompileError: If no level compiles, or NVRTC does not load.
 
         """
         cp = self._cp
@@ -428,6 +428,12 @@ class CudaShotSampler:
                 return module
             except cp.cuda.compiler.CompileException as error:
                 failure = error
+            except Exception as error:
+                # NOTE: CuPy raises a plain RuntimeError when it cannot load NVRTC
+                # (a CuPy without the cuda extra's NVRTC, or one too old for the GPU).
+                if runtime.out_of_memory(error):
+                    raise
+                raise runtime.CompileError(f"NVRTC is unusable: {error}") from error
         raise runtime.CompileError(f"NVRTC compilation failed: {failure}") from failure
 
     # -- execution --------------------------------------------------------------

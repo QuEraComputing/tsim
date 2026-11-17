@@ -768,6 +768,22 @@ def test_a_kernel_that_does_not_compile_samples_on_the_cpu(monkeypatch):
         required.sample(10)
 
 
+def test_a_missing_nvrtc_samples_on_the_cpu(monkeypatch):
+    def unloadable(*args, **kwargs):
+        raise RuntimeError("Failed to dlopen libnvrtc.so.13")
+
+    circuit = Circuit(T_STATE_X)
+    sampler = _gpu(circuit.compile_sampler(seed=1))
+    required = _gpu(circuit.compile_sampler(seed=3, device="cuda"))
+    monkeypatch.setattr(runtime.cupy(), "RawModule", unloadable)
+    got = sampler.sample(20_000)
+    assert sampler.stats.device == "cpu"
+    expected = _cpu(circuit.compile_sampler, seed=2).sample(20_000)
+    assert_counts_match(got, expected)
+    with pytest.raises(runtime.CompileError, match="NVRTC is unusable"):
+        required.sample(10)
+
+
 def test_rare_outcome_of_a_channel_is_drawn_at_its_rate():
     # NOTE: 1000 channels (distinct, so Tsim keeps them apart) fire half the time
     # and then flip detector 0 with chance 6e-9: with 24-bit keep thresholds it
