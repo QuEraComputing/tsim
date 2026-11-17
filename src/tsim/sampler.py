@@ -780,10 +780,11 @@ class _CompiledSamplerBase:
         - ``compiled_bytes`` (``int``): memory of the compiled components.
         - ``device`` (``str``): where ``"active_statevector"`` samples:
           ``"metal"`` on an Apple GPU, ``"cuda"`` on an NVIDIA GPU, else
-          ``"cpu"`` (a stabilizer-rank strategy runs wherever JAX does). With ``device="auto"`` it is where
-          the sampler ended up: ``"cpu"`` after its GPU kernel failed to
-          compile or in a process forked after its parent used the GPU. A call
-          that runs out of GPU memory samples on the CPU without changing it.
+          ``"cpu"`` (a stabilizer-rank strategy runs wherever JAX does). With
+          ``device="auto"`` it is where the sampler ended up: ``"cpu"`` after its
+          GPU kernel failed to compile or in a process forked after its parent
+          used the GPU. A call that runs out of GPU memory samples on the CPU
+          without changing it.
         """
         components = self._program.components
         widths: tuple[int, ...] | None = None

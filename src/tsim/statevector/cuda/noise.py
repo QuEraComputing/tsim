@@ -19,6 +19,8 @@ draws the noise that cannot change whether a shot is kept
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from tsim.noise.channels import ChannelSampler, WordTables
 from tsim.statevector.gpu.noise import (
     NoiseTables,
@@ -26,11 +28,17 @@ from tsim.statevector.gpu.noise import (
     words_fit,
 )
 
+if TYPE_CHECKING:
+    from tsim.statevector.shots import ShotLayout
+
 THREADS = 256
 """Threads per block of the noise kernels."""
 
 SHARED_BYTES = 46 * 1024
 """Shared memory of a block's words and events (the events' share is set per launch)."""
+
+KERNEL_SHARED_BYTES = 48 * 1024
+"""Shared memory that a kernel may use without opting in, static and dynamic."""
 
 _NOISE_SIGNATURE = r"""
 extern "C" __global__ void __launch_bounds__({NT}) noise(
@@ -120,12 +128,6 @@ SOURCE = r"""
 struct __align__(32) Record {{ unsigned alias; unsigned words; unsigned extra; unsigned keep; u64 m0; u64 m1; }};
 struct __align__(16) Flip {{ unsigned word; unsigned pad; u64 mask; }};
 
-// The fault drawn at record ``rec`` (bits 0-23 of ``draw`` the high 24 bits of
-// its 40-bit fraction, bits 24-31 its slot in the channel): the slot's outcome
-// if the fraction is below the keep threshold (gpu/noise.py), else its alias's.
-// The fraction's low 16 bits matter only when its high bits tie with the
-// threshold's, and then come from a hash of the fault. Word ``w`` of row ``s``
-// is ``sw[w * WS + s * SS]``.
 // Whether a fault whose fraction's high bits tie with its record's keep
 // threshold takes the alias: its low 16 bits, from a hash of the fault, are at
 // least the threshold's. NOTE: rare, so out of line, which keeps the hot loop small.
@@ -134,6 +136,12 @@ __device__ __noinline__ bool alias_on_tie(u64 stream, unsigned rec, int row, uns
     return (unsigned)(mix64(stream ^ ((u64)(rec << 8 | row) * GOLDEN)) & 0xFFFF) >= keep;
 }}
 
+// The fault drawn at record ``rec`` (bits 0-23 of ``draw`` the high 24 bits of
+// its 40-bit fraction, bits 24-31 its slot in the channel): the slot's outcome
+// if the fraction is below the keep threshold (gpu/noise.py), else its alias's.
+// The fraction's low 16 bits matter only when its high bits tie with the
+// threshold's, and then come from a hash of the fault (``alias_on_tie``). Word
+// ``w`` of row ``s`` is ``sw[w * WS + s * SS]``.
 template <int WS, int SS>
 __device__ __forceinline__ void apply_fault(u64* sw, int row, unsigned rec, unsigned draw,
     u64 stream, const Record* __restrict__ records, const Flip* __restrict__ overflow)
@@ -316,6 +324,16 @@ def noise_tables(
         shared_bytes=SHARED_BYTES,
         shared_words=words_fit(num_words, SHARED_BYTES),
     )
+
+
+def kept_fits(layout: ShotLayout, block_shots: int) -> bool:
+    """Return whether a ``noise_kept`` block of ``block_shots`` rows fits shared memory.
+
+    A block stages its rows' output words and packed bytes, and it counts its
+    events besides: 16 bytes, with the alignment of the stage.
+    """
+    row = 8 * layout.output_words + -(-layout.num_outputs // 8)
+    return block_shots * row + 16 <= KERNEL_SHARED_BYTES
 
 
 def source(tables: NoiseTables, output_words: int, num_outputs: int) -> str:

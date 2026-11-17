@@ -2,8 +2,9 @@
 
 ``tape`` runs the components' tapes on the queued shots; ``count_bits`` and
 ``list_bits`` list the accepted shots from the bitmap; ``gather_rows`` gathers
-rows, bit-packed, for the copy to the host; ``select_rows`` picks the requested outputs out of them, bit-packed or as
-booleans; ``publish`` stores a batch's counts into pinned host memory.
+rows, bit-packed, for the copy to the host; ``select_rows`` picks the requested
+outputs out of them, bit-packed or as booleans; ``publish`` stores a batch's
+counts into pinned host memory.
 """
 
 from __future__ import annotations
@@ -22,20 +23,6 @@ COPY_THREADS = 256
 
 SCAN_THREADS = 1024
 """Threads per block of ``count_bits`` and ``list_bits``: one per bitmap word."""
-
-KERNEL_SHARED_BYTES = 48 * 1024
-"""Shared memory that a kernel may use without opting in, static and dynamic."""
-
-
-def kept_fits(layout: ShotLayout, block_shots: int) -> bool:
-    """Return whether a ``noise_kept`` block of ``block_shots`` rows fits shared memory.
-
-    A block stages its rows' output words and packed bytes, and it counts its
-    events besides: 16 bytes, with the alignment of the stage.
-    """
-    row = 8 * layout.output_words + -(-layout.num_outputs // 8)
-    return block_shots * row + 16 <= KERNEL_SHARED_BYTES
-
 
 TEMPLATE = r"""
 extern "C" __global__ void __launch_bounds__({block}) tape(
@@ -168,12 +155,7 @@ extern "C" __global__ void publish(const unsigned* __restrict__ counts, volatile
 """
 
 
-def source(
-    layout: ShotLayout,
-    tables: NoiseTables,
-    parts: TapeKernel,
-    tb: int,
-) -> str:
+def source(layout: ShotLayout, tables: NoiseTables, parts: TapeKernel, tb: int) -> str:
     """Return the CUDA source of every kernel, for tapes of ``2^tb`` threads a shot."""
     T = 1 << tb
     # NOTE: a shot's lanes within its warp.
@@ -189,12 +171,10 @@ def source(
         + TEMPLATE.format(
             block=TAPE_THREADS,
             SCAN=SCAN_THREADS,
-            COPY=COPY_THREADS,
             T1=T - 1,
             tb=tb,
             gmask=gmask,
             NW=layout.num_words,
-            OW=layout.output_words,
             LAST_BYTE=f"0x{(1 << (layout.num_outputs % 8 or 8)) - 1:02X}u",
             # NOTE: the rows keep every output, the postselected ones too.
             NB=max(-(-layout.num_outputs // 8), 1),

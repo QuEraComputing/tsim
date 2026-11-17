@@ -12,7 +12,13 @@ import numpy as np
 import pytest
 
 from tsim.circuit import Circuit
-from tsim.statevector.cuda import codegen, kernels, runtime, sampler as cuda_sampler
+from tsim.statevector.cuda import (
+    codegen,
+    kernels,
+    noise as cuda_noise,
+    runtime,
+    sampler as cuda_sampler,
+)
 from tsim.statevector.cuda.sampler import CudaShotSampler
 from tsim.statevector.gpu import noise as gpu_noise, tape
 from tsim.statevector.program import StatevectorComponent
@@ -321,9 +327,7 @@ def test_cuda_chunks_return_the_rows_of_one_pass(monkeypatch, text):
         cuda_sampler.CudaShotSampler, "_chunk_shots", lambda self, *args: 1000
     )
     monkeypatch.setattr(
-        cuda_sampler._HostRows,
-        "allocate",
-        lambda self, passed, of, shots: self._resize(passed),
+        cuda_sampler, "_expected_rows", lambda passed, of, shots: passed
     )
     circuit = Circuit(text)
     mask = np.zeros(circuit.num_detectors, dtype=bool)
@@ -912,7 +916,7 @@ def test_postselected_rows_too_wide_to_stage_draw_all_their_noise_at_once():
     sampler = _gpu(circuit.compile_detector_sampler(seed=32, device="cuda"))
     shots = _gpu_shots(sampler)
     assert shots._noise.shared_words
-    assert not kernels.kept_fits(shots.layout, shots._noise.block_shots)
+    assert not cuda_noise.kept_fits(shots.layout, shots._noise.block_shots)
     mask = np.zeros(n, dtype=bool)
     mask[:3] = True
     got = sampler.sample(20_000, append_observables=True, postselection_mask=mask)
@@ -929,10 +933,10 @@ def test_host_rows_grow_by_the_rate_seen_so_far():
     # star_d=13 for 48 GB of pinned memory.
     out = cuda_sampler._HostRows([357])
     shots = 1 << 27
-    out.allocate(0, 1 << 20, shots)
+    out.reserve(0, 1 << 20, shots)
     assert out.capacity == 256
     out.take(256)
-    out.grow(300, 2 << 20, shots)
+    out.reserve(300, 2 << 20, shots)
     assert 512 <= out.capacity < 50_000
     rows = out.take(300 - 256)[0]
     assert rows.shape == (300 - 256, 357)
@@ -988,7 +992,7 @@ def test_rows_that_fill_shared_memory_draw_all_their_noise_at_once():
     sampler = _gpu(circuit.compile_detector_sampler(seed=42, device="cuda"))
     shots = _gpu_shots(sampler)
     assert shots._noise.block_shots == 32
-    assert not kernels.kept_fits(shots.layout, 32)
+    assert not cuda_noise.kept_fits(shots.layout, 32)
     mask = np.zeros(n, dtype=bool)
     mask[0] = True
     got = sampler.sample(20_000, postselection_mask=mask)

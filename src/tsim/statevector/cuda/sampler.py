@@ -40,7 +40,11 @@ from tsim.noise.channels import ChannelSampler
 from tsim.statevector.cuda import kernels, runtime
 from tsim.statevector.cuda.codegen import CUDA
 from tsim.statevector.cuda.kernels import COPY_THREADS, SCAN_THREADS, TAPE_THREADS
-from tsim.statevector.cuda.noise import THREADS as NOISE_THREADS, noise_tables
+from tsim.statevector.cuda.noise import (
+    THREADS as NOISE_THREADS,
+    kept_fits,
+    noise_tables,
+)
 from tsim.statevector.gpu import FORKED, tape
 from tsim.statevector.gpu.noise import NoiseGroups, screen_pass_rate, split
 from tsim.statevector.shots import ShotPlan, ShotSampler
@@ -66,6 +70,9 @@ MAX_IN_FLIGHT = 4
 call's device memory does not grow with its result: both copy streams stay
 busy, and a chunk past them waits for the oldest copy to land."""
 
+TAPE_BLOCKS_PER_SM = 4
+"""Blocks of the tape kernel per streaming multiprocessor."""
+
 
 @dataclass
 class _Launch:
@@ -89,10 +96,7 @@ class _Module:
     count_bits: Any
     list_bits: Any
     screen: Any
-    tape_blocks: int
     has_mask: bool
-    plan: ShotPlan
-    psm_words: np.ndarray
     passing: float
     """Estimated share of shots that pass the screen."""
     split: tuple[_Launch, _Launch] | None
@@ -115,6 +119,37 @@ class _Output:
     whole: bool
 
 
+@dataclass
+class _Chunk:
+    """A launched chunk of a call: its shots, and what its kernels write on the device."""
+
+    slot: int
+    first: int
+    shots: int
+    words: Any
+    accepted: Any
+    """The bitmap of the accepted shots (with a mask)."""
+    counts: Any
+    """The screened survivors, the accepted shots and the norm deviation's bits."""
+    published: Any
+    """The event after which the counts are in pinned host memory, or None."""
+
+
+@dataclass
+class _Call:
+    """What the chunks of one call share."""
+
+    module: _Module
+    constant: Any
+    shots: int
+    chunk_shots: int
+    outputs: list[_Output]
+    rows: _HostRows
+    flights: list[tuple[Any, list[Any]]]
+    """Each chunk's device rows in flight to the host, kept until its copies land
+    (an event of its copy stream)."""
+
+
 def _pinned(shape: tuple[int, ...], dtype) -> np.ndarray:
     """Return an uninitialized array in pinned host memory."""
     import cupyx
@@ -130,6 +165,11 @@ def _pinned_counts(cp) -> tuple[np.ndarray, Any]:
     memory = cp.cuda.UnownedMemory(host.ctypes.data, host.nbytes, host)
     device = cp.ndarray((3,), np.uint32, cp.cuda.MemoryPointer(memory, 0))
     return host, device
+
+
+def _copy_blocks(items: int) -> int:
+    """Return the blocks of a kernel that gathers or selects ``items`` bytes, a thread each."""
+    return min(-(-items // COPY_THREADS), 16 * runtime.multiprocessors())
 
 
 def _expected_rows(passed: int, of: int, shots: int) -> int:
@@ -148,31 +188,23 @@ class _HostRows:
     """
 
     def __init__(self, widths: list[int]) -> None:
-        self.widths = widths
         self.capacity, self.total = 0, 0
-        self.arrays: list[np.ndarray] = []
+        self.arrays = [np.empty((0, w), np.uint8) for w in widths]
 
-    def allocate(self, passed: int, of: int, shots: int) -> None:
-        """Reserve the rows of a call of ``shots``, ``passed`` of its first ``of`` passing."""
-        self._resize(_expected_rows(passed, of, shots))
-
-    def grow(self, passed: int, of: int, shots: int) -> None:
-        """Make room for more rows: ``passed`` of the first ``of`` shots of ``shots`` passed.
+    def reserve(self, passed: int, of: int, shots: int) -> None:
+        """Make room for a call's rows: ``passed`` of the first ``of`` shots of ``shots`` passed.
 
         The room is for the rows expected at that rate, and at least twice the
         current room, so that a call grows a few times at most. The copied rows
         are kept (no copy may be pending).
         """
-        arrays, total = self.arrays, self.total
-        self._resize(
-            min(shots, max(_expected_rows(passed, of, shots), 2 * self.capacity))
+        self.capacity = min(
+            shots, max(_expected_rows(passed, of, shots), 2 * self.capacity)
         )
-        for new, old in zip(self.arrays, arrays, strict=True):
-            new[:total] = old[:total]
-
-    def _resize(self, capacity: int) -> None:
-        self.capacity = capacity
-        self.arrays = [_pinned((capacity, w), np.uint8) for w in self.widths]
+        filled = self.result()
+        self.arrays = [_pinned((self.capacity, a.shape[1]), np.uint8) for a in filled]
+        for new, old in zip(self.arrays, filled, strict=True):
+            new[: self.total] = old
 
     def take(self, count: int) -> list[np.ndarray]:
         """Return the next ``count`` rows of each array to fill."""
@@ -182,8 +214,6 @@ class _HostRows:
 
     def result(self) -> list[np.ndarray]:
         """Return the filled arrays."""
-        if self.capacity == 0:
-            self._resize(0)
         return [a[: self.total] for a in self.arrays]
 
 
@@ -228,9 +258,8 @@ class CudaShotSampler:
         self._rng = np.random.default_rng(seed)
         self._channels = channels
         self._noise = noise_tables(channels, layout.noise, layout.num_words)
-        n = self._noise
-        self._record_args = [self._upload(n.overflow.view(np.uint8))]
-        self._all = self._launch(n.groups)
+        self._overflow = self._upload(self._noise.overflow.view(np.uint8))
+        self._all = self._launch(self._noise.groups)
         self._modules: dict[bytes | None, _Module] = {}
         self._buffers: dict[str, Any] = {}
         self._constants: dict[bytes, Any] = {}
@@ -287,38 +316,24 @@ class CudaShotSampler:
         key = None if mask is None else np.asarray(mask, bool).tobytes()
         if key in self._modules:
             return self._modules[key]
-        cp = self._cp
         plan = self.plan(mask)
         layout = self.layout
         tb = tape.threads_per_shot(layout)
         parts = tape.tape_kernel(layout, plan, mask, tb, CUDA)
-        source = kernels.source(layout, self._noise, parts, tb)
-        module = self._compile(source)
-        tape_fn = module.get_function("tape")
-        blocks_per_sm = 4
-        if hasattr(cp.cuda.runtime, "occupancyMaxActiveBlocksPerMultiprocessor"):
-            blocks_per_sm = max(
-                1,
-                cp.cuda.runtime.occupancyMaxActiveBlocksPerMultiprocessor(
-                    tape_fn.ptr, TAPE_THREADS, 0
-                ),
-            )
+        module = self._compile(kernels.source(layout, self._noise, parts, tb))
         compiled = _Module(
             noise=module.get_function("noise"),
             noise_kept=(
                 module.get_function("noise_kept") if self._noise.shared_words else None
             ),
-            tape=tape_fn,
+            tape=module.get_function("tape"),
             gather_rows=module.get_function("gather_rows"),
             select_rows=module.get_function("select_rows"),
             publish=module.get_function("publish"),
             count_bits=module.get_function("count_bits"),
             list_bits=module.get_function("list_bits"),
             screen=self._upload(plan.screen),
-            tape_blocks=runtime.multiprocessors() * blocks_per_sm,
             has_mask=mask is not None,
-            plan=plan,
-            psm_words=parts.psm_words,
             passing=screen_pass_rate(self._channels, layout, plan),
             split=self._split(plan, parts.psm_words, mask is not None),
         )
@@ -360,7 +375,7 @@ class CudaShotSampler:
         n = self._noise
         if not has_mask or not n.shared_words:
             return None
-        if not kernels.kept_fits(self.layout, n.block_shots):
+        if not kept_fits(self.layout, n.block_shots):
             return None
         found = split(n, self._channels, self.layout, plan, psm_words)
         if found is None:
@@ -375,7 +390,8 @@ class CudaShotSampler:
 
         """
         cp = self._cp
-        for level in ("3", "2", "1"):
+        failure = None
+        for level in (3, 2, 1):
             options = (
                 runtime.arch(),
                 "-std=c++17",
@@ -387,11 +403,8 @@ class CudaShotSampler:
                 module.get_function("tape")
                 return module
             except cp.cuda.compiler.CompileException as error:
-                if level == "1":
-                    raise runtime.CompileError(
-                        f"NVRTC compilation failed: {error}"
-                    ) from error
-        raise AssertionError("unreachable")
+                failure = error
+        raise runtime.CompileError(f"NVRTC compilation failed: {failure}") from failure
 
     # -- execution --------------------------------------------------------------
 
@@ -411,108 +424,93 @@ class CudaShotSampler:
             self._constants[key] = self._upload(self._host._constant(flip))
         return self._constants[key]
 
-    def _run_batch(
-        self,
-        module: _Module,
-        shots: int,
-        first_shot: int,
-        constant: Any,
-        launch: _Launch,
-        slot: int = 0,
-        noise_stream: Any = None,
-    ) -> tuple[Any, Any, Any]:
-        """Launch one batch on the current stream: ``(words, accepted, counts)``.
+    def _start(self, call: _Call, first: int) -> _Chunk:
+        """Launch the noise and the tapes of a call's chunk that starts at shot ``first``.
 
-        ``accepted`` is the bitmap of the accepted shots (with a mask).
-
-        ``launch`` holds the channels that the noise kernel draws; only the rows
-        of the shots that pass the screen are written.
-        ``counts`` holds the screened survivors, the accepted shots and the norm
-        deviation's bits. ``slot`` names the device buffers; ``noise_stream``, if
-        given, runs the noise kernel, after the current stream's work.
+        The noise kernel draws the channels of the module's first noise pass and
+        writes only the rows of the shots that pass the screen; the tapes run on
+        those. Chunks alternate between the two slots of buffers and streams.
         """
-        cp = self._cp
-        layout = self.layout
-        nw = layout.num_words
-        words = self._buffer(f"words{slot}", (shots, nw), np.uint64)
+        module, layout = call.module, self.layout
+        shots = min(call.chunk_shots, call.shots - first)
+        slot = first // call.chunk_shots % 2
+        stream, noise_stream = self._streams[slot], self._noise_streams[slot]
+        words = self._buffer(f"words{slot}", (shots, layout.num_words), np.uint64)
         queue = self._buffer(f"queue{slot}", (shots,), np.uint32)
         accepted = self._buffer(f"accepted{slot}", (-(-shots // 32),), np.uint32)
         counts = self._buffer(f"counts{slot}", (3,), np.uint32)
-        current = cp.cuda.get_current_stream()
-        if noise_stream is not None:
-            noise_stream.wait_event(current.record())
-            noise_stream.use()
-        counts.fill(0)
+        survivors, passed, deviation = (counts[i : i + 1] for i in range(3))
+        bitmap = accepted if module.has_mask else np.uint64(0)
         seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
         noise_seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
+        launch = module.split[0] if module.split else self._all
         S = self._noise.block_shots
-        module.noise(
-            ((shots + S - 1) // S,),
-            (NOISE_THREADS,),
-            (
-                words,
-                np.int64(shots),
-                noise_seed,
-                np.int32(launch.num_segments),
-                np.int32(launch.max_events),
-                *launch.args,
-                *self._record_args,
-                constant,
-                module.screen,
-                queue,
-                counts[_SURVIVORS : _SURVIVORS + 1],
-                accepted if module.has_mask else np.uint64(0),
-            ),
-            shared_mem=8 * launch.max_events,
-        )
-        if noise_stream is not None:
-            current.wait_event(noise_stream.record())
-            current.use()
-        if layout.components:
-            module.tape(
-                (module.tape_blocks,),
-                (TAPE_THREADS,),
+        # NOTE: the noise follows the slot's earlier work, and the tapes the noise.
+        noise_stream.wait_event(stream.record())
+        with noise_stream:
+            counts.fill(0)
+            module.noise(
+                (-(-shots // S),),
+                (NOISE_THREADS,),
                 (
                     words,
-                    np.int64(first_shot),
-                    seed,
+                    np.int64(shots),
+                    noise_seed,
+                    np.int32(launch.num_segments),
+                    np.int32(launch.max_events),
+                    *launch.args,
+                    self._overflow,
+                    call.constant,
+                    module.screen,
                     queue,
-                    counts[_SURVIVORS : _SURVIVORS + 1],
-                    accepted if module.has_mask else np.uint64(0),
-                    counts[_ACCEPTED : _ACCEPTED + 1],
-                    counts[_DEVIATION : _DEVIATION + 1],
+                    survivors,
+                    bitmap,
                 ),
+                shared_mem=8 * launch.max_events,
             )
-        elif module.has_mask:
-            # NOTE: without components the screened survivors are the accepted shots.
-            counts[_ACCEPTED : _ACCEPTED + 1] = counts[_SURVIVORS : _SURVIVORS + 1]
-        return words, accepted, counts
+        stream.wait_event(noise_stream.record())
+        published = None
+        with stream:
+            if layout.components:
+                module.tape(
+                    (TAPE_BLOCKS_PER_SM * runtime.multiprocessors(),),
+                    (TAPE_THREADS,),
+                    (
+                        words,
+                        np.int64(first),
+                        seed,
+                        queue,
+                        survivors,
+                        bitmap,
+                        passed,
+                        deviation,
+                    ),
+                )
+            elif module.has_mask:
+                # NOTE: without components the screened survivors are the accepted shots.
+                passed[:] = survivors
+            # NOTE: no copy is in flight when the first chunk finishes, so it
+            # reads its counts with a copy of its own.
+            if first:
+                module.publish((1,), (32,), (counts, self._published[slot][1]))
+                published = stream.record()
+        return _Chunk(slot, first, shots, words, accepted, counts, published)
 
-    def _pack(
-        self,
-        module: _Module,
-        split: tuple[_Launch, _Launch] | None,
-        words,
-        count: int,
-        index,
-    ) -> Any:
+    def _pack(self, module: _Module, words, count: int, index) -> Any:
         """Return the ``count`` rows ``index`` (or all) on the device, as copied to the host.
 
-        Their outputs, bit-packed; with ``split`` the deferred noise kernel adds
-        the deferred channels' faults first.
+        Their outputs, bit-packed; with a split module the deferred noise kernel
+        adds the deferred channels' faults first.
         """
         S = self._noise.block_shots
         nb = -(-self.layout.num_outputs // 8)
         # NOTE: a new array per chunk, so that refilling it never waits for a copy.
-        dst = self._cp.empty((max(count, 1), nb), dtype=np.uint8)
-        if not count or not nb:
-            return dst
-        if split is not None:
-            blocks = (count + S - 1) // S
-            launch = split[1]
+        dst = self._cp.empty((count, nb), dtype=np.uint8)
+        if module.split is not None:
+            launch = module.split[1]
             seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
             module.noise_kept(
-                (blocks,),
+                (-(-count // S),),
                 (NOISE_THREADS,),
                 (
                     words,
@@ -522,14 +520,14 @@ class CudaShotSampler:
                     np.int32(launch.num_segments),
                     np.int32(launch.max_events),
                     *launch.args,
-                    *self._record_args,
+                    self._overflow,
                     dst,
                 ),
                 shared_mem=max(8 * launch.max_events, S * nb),
             )
         else:
             module.gather_rows(
-                (min(-(-count * nb // COPY_THREADS), 16 * runtime.multiprocessors()),),
+                (_copy_blocks(count * nb),),
                 (COPY_THREADS,),
                 (
                     words,
@@ -543,11 +541,8 @@ class CudaShotSampler:
     def _select(self, module: _Module, rows, count: int, output: _Output) -> Any:
         """Return ``output``'s outputs of the ``count`` packed ``rows``, on the device."""
         dst = self._cp.empty((count, output.width), dtype=np.uint8)
-        blocks = min(
-            -(-count * output.width // COPY_THREADS), 16 * runtime.multiprocessors()
-        )
         module.select_rows(
-            (max(blocks, 1),),
+            (_copy_blocks(count * output.width),),
             (COPY_THREADS,),
             (
                 rows,
@@ -608,11 +603,11 @@ class CudaShotSampler:
         words = -(-shots // 32)
         blocks = -(-words // SCAN_THREADS)
         totals = self._buffer(f"totals{slot}", (blocks,), np.uint32)
-        index = self._buffer(f"index{slot}", (max(count, 1),), np.uint32)
+        index = self._buffer(f"index{slot}", (count,), np.uint32)
         grid, threads = (blocks,), (SCAN_THREADS,)
         module.count_bits(grid, threads, (bits, np.int64(words), totals))
         module.list_bits(grid, threads, (bits, np.int64(words), totals, index))
-        return index[:count]
+        return index
 
     def _or_cpu(self, on_gpu, on_cpu):
         """Return ``on_gpu()``, or ``on_cpu()`` where the GPU fails.
@@ -773,121 +768,80 @@ class CudaShotSampler:
 
         """
         module = self._module(mask)
-        nb = -(-self.layout.num_outputs // 8)
         outputs, picks = self._outputs(columns, bools)
-        out = _HostRows([o.width for o in outputs])
-        if not shots:
-            return self._arrays(out.result(), picks, bools), 0.0
-        constant = self._constant(flip)
-        split = module.split
-        launch = split[0] if split else self._all
-        state = {"start": 0, "slot": 0, "copied": False}
-        # NOTE: by the packed rows, so that a seed's shots do not depend on the
-        # outputs that a call returns.
-        size = self._chunk_shots(min(batch, shots), nb, module.passing)
+        rows = _HostRows([o.width for o in outputs])
         deviation = 0.0
-        pending: list[tuple[int, int, int, tuple[Any, Any, Any], Any]] = []
-        # NOTE: each chunk's device rows in flight to the host, kept until its
-        # copies land (an event of its copy stream), and the streams that copy them.
-        flights: list[tuple[Any, list[Any]]] = []
-        used: set[Any] = set()
+        if shots:
+            # NOTE: by the packed rows, so that a seed's shots do not depend on the
+            # outputs that a call returns.
+            nb = -(-self.layout.num_outputs // 8)
+            size = self._chunk_shots(min(batch, shots), nb, module.passing)
+            call = _Call(module, self._constant(flip), shots, size, outputs, rows, [])
+            # NOTE: each chunk is launched before the previous one is finished, so
+            # its kernels overlap that copy.
+            chunk = self._start(call, 0)
+            for first in range(size, shots, size):
+                following = self._start(call, first)
+                deviation = max(deviation, self._finish(call, chunk))
+                chunk = following
+            deviation = max(deviation, self._finish(call, chunk))
+            self._synchronize()
+        return self._arrays(rows.result(), picks, bools), deviation
 
-        def land() -> None:
-            # NOTE: the rows whose copies landed are freed for the next chunk's; at
-            # most MAX_IN_FLIGHT chunks' rows wait, or the oldest copy is waited for.
+    def _finish(self, call: _Call, chunk: _Chunk) -> float:
+        """Send a launched chunk's passing rows to the host; return its norm deviation.
+
+        Waits for the chunk's counts, then lists the accepted shots, packs their
+        rows, selects the call's outputs and starts their copies into the
+        call's host rows, without waiting for them.
+        """
+        module, out, slot = call.module, call.rows, chunk.slot
+        stream = self._streams[slot]
+        if chunk.published is None:
+            counts = chunk.counts.get(stream=stream)
+        else:
+            chunk.published.synchronize()
+            counts = self._published[slot][0].copy()
+        count = int(counts[_ACCEPTED]) if module.has_mask else chunk.shots
+        if count:
+            if out.total + count > out.capacity:
+                # NOTE: the first rows, or a rare excess of passing shots: the
+                # copies in flight land first.
+                if out.total:
+                    self._synchronize()
+                out.reserve(out.total + count, chunk.first + chunk.shots, call.shots)
+            parts = out.take(count)
+            # NOTE: a call of one chunk has nothing to overlap its copy with.
+            alone = call.chunk_shots >= call.shots
+            copy = stream if alone else self._copies[slot]
+            # NOTE: the rows whose copies landed are freed for this chunk's; at most
+            # MAX_IN_FLIGHT chunks' rows wait, or the oldest copy is waited for.
+            flights = call.flights
             flights[:] = [flight for flight in flights if not flight[0].done]
             while len(flights) >= MAX_IN_FLIGHT:
                 flights.pop(0)[0].synchronize()
-
-        def launch_next() -> None:
-            first, slot = state["start"], state["slot"]
-            n = min(size, shots - first)
-            device = self._published[slot][1]
-            ready = None
-            with self._streams[slot]:
-                launched = self._run_batch(
-                    module,
-                    n,
-                    first,
-                    constant,
-                    launch,
-                    slot,
-                    self._noise_streams[slot],
-                )
-                # NOTE: no copy is in flight when the first chunk finishes, so it
-                # reads its counts with a copy of its own.
-                if first:
-                    module.publish((1,), (32,), (launched[2], device))
-                    ready = self._streams[slot].record()
-            pending.append((slot, first, n, launched, ready))
-            state["start"], state["slot"] = first + n, 1 - slot
-
-        def finish() -> float:
-            slot, first, n, (words, accepted, counts), ready = pending.pop(0)
-            if ready is None:
-                host_counts = counts.get(stream=self._streams[slot])
-            else:
-                ready.synchronize()
-                host_counts = self._published[slot][0].copy()
-            with self._streams[slot]:
-                count = n if mask is None else int(host_counts[_ACCEPTED])
-                if first == 0:
-                    out.allocate(count, n, shots)
-                elif out.total + count > out.capacity:
-                    # NOTE: a rare excess of passing shots: the copies in flight land first.
-                    self._synchronize()
-                    out.grow(out.total + count, first + n, shots)
-                parts = out.take(count)
-                index = (
-                    None
-                    if mask is None
-                    else self._list(module, accepted, n, count, slot)
-                )
-                stream = self._streams[slot]
-                # NOTE: a call of one chunk has nothing to overlap its copy with.
-                alone = first + n == shots and not state["copied"]
-                copy = stream if alone else self._copies[slot]
-                used.add(copy)
-                held: list[Any] = []
-                land()
-                if count and nb:
-                    rows = self._pack(module, split, words, count, index)
-                    held.append(rows)
-                    found = [
-                        (
-                            rows[:count]
-                            if o.whole
-                            else (
-                                self._select(module, rows, count, o)
-                                if o.width
-                                else None
-                            )
-                        )
-                        for o in outputs
-                    ]
-                    if copy is not stream:
-                        copy.wait_event(stream.record())
-                    for part, dst in zip(parts, found, strict=True):
-                        if dst is not None:
-                            dst.get(stream=copy, out=part, blocking=False)
-                            held.append(dst)
-                if held:
-                    state["copied"] = True
-                    flights.append((copy.record(), held))
-            return tape.deviation(host_counts[_DEVIATION])
-
-        # NOTE: each chunk is launched before the previous one is finished, so its
-        # kernels overlap that copy.
-        launch_next()
-        while state["start"] < shots:
-            launch_next()
-            if len(pending) == 2:
-                deviation = max(deviation, finish())
-        while pending:
-            deviation = max(deviation, finish())
-        for stream in used:
-            stream.synchronize()
-        return self._arrays(out.result(), picks, bools), deviation
+            with stream:
+                index = None
+                if module.has_mask:
+                    index = self._list(module, chunk.accepted, chunk.shots, count, slot)
+                packed = self._pack(module, chunk.words, count, index)
+                held = [packed]
+                found = [
+                    (
+                        packed
+                        if o.whole
+                        else self._select(module, packed, count, o) if o.width else None
+                    )
+                    for o in call.outputs
+                ]
+                if not alone:
+                    copy.wait_event(stream.record())
+                for part, dst in zip(parts, found, strict=True):
+                    if dst is not None:
+                        dst.get(stream=copy, out=part, blocking=False)
+                        held.append(dst)
+            flights.append((copy.record(), held))
+        return tape.deviation(counts[_DEVIATION])
 
     @staticmethod
     def _arrays(
