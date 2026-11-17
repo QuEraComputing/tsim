@@ -146,6 +146,45 @@ def test_sample_program_raises_on_component_norm_deviation(monkeypatch):
         )
 
 
+def _jit_cache_key(component: CompiledComponent):
+    graphs = (component.f_selection, component.compiled_scalar_graphs)
+    leaves, structure = jax.tree_util.tree_flatten(graphs)
+    return str(structure), tuple((jnp.shape(x), jnp.result_type(x)) for x in leaves)
+
+
+def test_components_of_one_shape_share_a_compilation(monkeypatch):
+    # NOTE: three Bell-like pairs and three lone qubits, all Clifford.
+    circuit = Circuit("""
+        H 0 1 2 3 4 5 6 7 8
+        CZ 0 1 2 3 4 5
+        S 1 3 7
+        H 0 2 4
+        M 0 1 2 3 4 5 6 7 8
+        """)
+    sampler = circuit.compile_sampler(strategy="cat5", seed=5)
+    components = [
+        c for c in sampler._program.components if isinstance(c, CompiledComponent)
+    ]
+    shapes = {_jit_cache_key(c) for c in components}
+    assert len(shapes) < len(components)
+
+    # NOTE: under jit, _sample_component runs once per compilation, not per call.
+    traced = []
+    sample_eagerly = sampler_module._sample_component
+
+    def spy(component, f_params, key):
+        traced.append(component)
+        return sample_eagerly(component, f_params, key)
+
+    monkeypatch.setattr(sampler_module, "_sample_component", spy)
+    jitted = sampler.sample(64)
+    assert len(traced) <= len(shapes)
+
+    monkeypatch.setattr(sampler_module, "sample_component", sample_eagerly)
+    eager = circuit.compile_sampler(strategy="cat5", seed=5).sample(64)
+    np.testing.assert_array_equal(jitted, eager)
+
+
 @pytest.mark.parametrize(
     "code_task",
     [

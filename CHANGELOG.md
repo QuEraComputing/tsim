@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The stabilizer-rank strategies compile components of the same shape once, and
+  no longer run components with a single output without compiling them. A
+  20-qubit Clifford circuit with `strategy="cat5"` samples 8 times faster and its
+  first call takes 1.1 s instead of 1.8 s. Seeded samples are unchanged.
+
 ## [1.1.0] - 2026-11-12
 
 Tsim 1.1 adds a GPU backend for Apple GPUs. For example, end-to-end
