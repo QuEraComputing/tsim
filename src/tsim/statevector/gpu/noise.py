@@ -47,7 +47,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from tsim.noise.channels import ChannelSampler, WordTables
-from tsim.statevector.shared import pack_bits
 
 if TYPE_CHECKING:
     from tsim.statevector.shots import ShotLayout, ShotPlan
@@ -221,15 +220,12 @@ def split(
     layout: ShotLayout,
     plan: ShotPlan,
     psm_words: np.ndarray,
-    observables_from: int | None = None,
 ) -> tuple[NoiseGroups, NoiseGroups] | None:
     """Return a postselected batch's noise passes ``(screened, deferred)``, or None.
 
     The deferred channels flip none of the bits that the screen, the tapes or
-    the postselection ``psm_words`` read: the postselected outputs, the keys,
-    and, with ``observables_from``, the components' outputs from that index on
-    (the observables, whose expectations the tapes return). They are drawn
-    apart when they are at least ``DEFER_SHARE`` of the expected faults.
+    the postselection ``psm_words`` read: the postselected outputs and the keys.
+    They are drawn apart when they are at least ``DEFER_SHARE`` of the expected faults.
     """
     read = np.zeros(layout.num_words, dtype=np.uint64)
     read[: layout.output_words] = psm_words | plan.screen
@@ -237,13 +233,6 @@ def split(
         start = program.key_start
         read[start : start + program.key_words] = ~np.uint64(0)
         np.bitwise_or.at(read, program.ps_word, program.ps_mask.astype(np.uint64))
-    if observables_from is not None:
-        bits = np.zeros(64 * layout.output_words, dtype=bool)
-        for component in layout.components:
-            for index in component.output_indices:
-                if index >= observables_from:
-                    bits[index] = True
-        read[: layout.output_words] |= pack_bits(bits, layout.output_words)
     deferred = deferred_channels(channels, layout.noise, read)
     later = tables.subset(deferred)
     if later.faults > 0 and later.faults >= DEFER_SHARE * tables.groups.faults:
