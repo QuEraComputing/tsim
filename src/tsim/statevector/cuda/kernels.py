@@ -27,15 +27,18 @@ SCAN_THREADS = 1024
 TEMPLATE = r"""
 extern "C" __global__ void __launch_bounds__({block}) tape(
     u64* __restrict__ out, long long first_shot, u64 seed,
-    const unsigned* __restrict__ queue, const unsigned* __restrict__ count,
-    unsigned* __restrict__ survivors, unsigned* __restrict__ acc_count,
-    unsigned* __restrict__ deviation)
+    const unsigned* __restrict__ queue, unsigned* __restrict__ counts,
+    unsigned* __restrict__ survivors)
 {{
+    // NOTE: the batch's counts: the queued shots, the accepted shots and the
+    // norm deviation's bits.
+    unsigned* acc_count = counts + 1;
+    unsigned* deviation = counts + 2;
     int t = threadIdx.x & {T1};
     unsigned gmask = {gmask};
 {seeds}
     long long groups = ((long long)gridDim.x * blockDim.x) >> {tb};
-    long long n = *count;
+    long long n = counts[0];
     // NOTE: whole warps leave the loop together, so the shuffles keep their groups.
     long long rounds = (n + groups - 1) / groups;
     long long g0 = ((long long)blockIdx.x * blockDim.x + threadIdx.x) >> {tb};

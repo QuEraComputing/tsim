@@ -49,7 +49,8 @@ from tsim.statevector.gpu import FORKED, tape
 from tsim.statevector.gpu.noise import NoiseGroups, screen_pass_rate, split
 from tsim.statevector.shots import ShotPlan, ShotSampler
 
-# NOTE: the words of a batch's ``counts``.
+# NOTE: the words of a batch's ``counts``. The kernels take the array: the noise
+# kernel counts the survivors in its first word.
 _SURVIVORS, _ACCEPTED, _DEVIATION = range(3)
 
 BATCH_SHOTS = 1 << 22
@@ -462,10 +463,8 @@ class CudaShotSampler:
         queue = self._buffer(f"queue{k}", (shots,), np.uint32)
         accepted = self._buffer(f"accepted{k}", (-(-shots // 32),), np.uint32)
         counts = self._buffer(f"counts{k}", (3,), np.uint32)
-        survivors, passed, deviation = (counts[i : i + 1] for i in range(3))
         bitmap = accepted if module.has_mask else np.uint64(0)
-        seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
-        noise_seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
+        seed, noise_seed = self._rng.integers(0, 2**64, size=2, dtype=np.uint64)
         launch = module.split[0] if module.split else self._all
         S = self._noise.block_shots
         # NOTE: the noise follows the slot's earlier work, and the tapes the noise.
@@ -486,7 +485,7 @@ class CudaShotSampler:
                     call.constant,
                     module.screen,
                     queue,
-                    survivors,
+                    counts,
                     bitmap,
                 ),
                 shared_mem=8 * launch.max_events,
@@ -498,20 +497,11 @@ class CudaShotSampler:
                 module.tape(
                     (TAPE_BLOCKS_PER_SM * runtime.multiprocessors(),),
                     (TAPE_THREADS,),
-                    (
-                        words,
-                        np.int64(first),
-                        seed,
-                        queue,
-                        survivors,
-                        bitmap,
-                        passed,
-                        deviation,
-                    ),
+                    (words, np.int64(first), seed, queue, counts, bitmap),
                 )
             elif module.has_mask:
                 # NOTE: without components the screened survivors are the accepted shots.
-                passed[:] = survivors
+                counts[_ACCEPTED : _ACCEPTED + 1] = counts[_SURVIVORS : _SURVIVORS + 1]
             # NOTE: no copy is in flight when the first chunk finishes, so it
             # reads its counts with a copy of its own.
             if first:
