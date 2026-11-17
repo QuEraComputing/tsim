@@ -1,4 +1,5 @@
-# NOTE: the Metal executor needs an Apple GPU, which CI does not have; its tests
-# run on Apple silicon only.
+# NOTE: the GPU executors need a GPU, which CI does not have: the Metal tests run
+# on Apple silicon only, and the CUDA tests on an NVIDIA GPU with CuPy installed.
 ignore:
   - "src/tsim/statevector/metal"
+  - "src/tsim/statevector/cuda"

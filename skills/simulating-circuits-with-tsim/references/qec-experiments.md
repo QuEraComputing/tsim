@@ -56,7 +56,7 @@ sinter can call Tsim, but it costs speed and can cost correctness:
 - sinter's decoders expect Stim's flips relative to a noiseless reference; Tsim returns raw
   values, so a detector that is 1 without noise looks like an error.
 - Each sinter worker process compiles its own sampler and starts its own numba thread pool, so
-  several workers oversubscribe the CPU, or queue on the one GPU of an Apple-silicon Mac.
+  several workers oversubscribe the CPU, or queue on one GPU.
 
 Write the short loop below instead. sinter's helpers are still useful for the statistics
 (`sinter.fit_binomial`) and for plotting.
@@ -127,7 +127,8 @@ Notes:
   shot count: 10^6 shots of a circuit with 50,000 detectors is a 50 GB array. Keep calls
   large on a GPU as well: below about 10^6 shots per call its fixed cost per call shows.
 - `run_point` works on boolean rows, which the decoder recipes expect. For circuits with
-  hundreds of detectors or more, packed rows use 8 times less memory and can be twice as fast;
+  hundreds of detectors or more, packed rows use 8 times less memory and can be twice as fast
+  on the CPU, about 3 times on an Apple GPU and 7 to 8 times on an NVIDIA GPU;
   to use them, change the loop to sample with `bit_packed=True` and `append_observables=True`,
   split the observable bits off with `np.unpackbits(rows, axis=1, bitorder="little")`, and
   decode packed detector rows (PyMatching: `decode_batch(dets, bit_packed_shots=True,

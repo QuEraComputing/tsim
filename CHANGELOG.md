@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **NVIDIA GPU sampling.** With the new `cuda` extra
+  (`pip install "bloqade-tsim[cuda]"`, CUDA 13), Tsim samples on NVIDIA GPUs
+  through CuPy, as it does on Apple GPUs: every component must have at most 11
+  active qubits, `device="auto"` picks the GPU when it can run the circuit, and
+  `device="cuda"` raises an error explaining why it can't. On an RTX 5090,
+  end-to-end cultivation at d=5 samples about 1.6 billion shots per second,
+  postselected, in any output layout.
+- The `jax-cuda12` and `jax-cuda13` extras, for the stabilizer-rank strategies
+  on NVIDIA GPUs with JAX. The `cuda12` and `cuda13` extras of Tsim 1.0 install
+  the same packages.
+
 ### Changed
 - The stabilizer-rank strategies compile components of the same shape once, and
   no longer run components with a single output without compiling them. A

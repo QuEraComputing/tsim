@@ -46,9 +46,9 @@ handful of T gates; its memory grows exponentially.
   test is a broken test.
 - Stim merges consecutive identical instructions into one with several targets, so
   write circuits that exercise both single- and multi-target paths.
-- GPU tests: `test/conftest.py` keeps every test outside
-  `test/integration/test_metal_sampler.py` on the CPU. In the Metal tests compile the
-  GPU side with `device="metal"`, so a silent fallback cannot make the test pass on the
+- GPU tests: `test/conftest.py` keeps every test outside `test/integration/test_metal_sampler.py`
+  and `test_cuda_sampler.py` on the CPU. In the GPU tests compile the GPU side with
+  `device="metal"` or `device="cuda"`, so a silent fallback cannot make the test pass on the
   CPU, and the reference with `device="cpu"`; compare them with `assert_counts_match`
   (GPU samples never equal CPU samples bit for bit).
 - Keep circuits small (a few qubits, tens of thousands of shots) so the suite stays

@@ -13,55 +13,60 @@ We recommend using [`uv`](https://docs.astral.sh/uv/) for dependency management.
 uv add bloqade-tsim
 ```
 
-For GPU acceleration with CUDA:
-
-```bash
-# For CUDA 13
-uv add "bloqade-tsim[cuda13]"
-
-# For CUDA 12
-uv add "bloqade-tsim[cuda12]"
-```
-
 ## Using pip
 
 ```bash
 pip install bloqade-tsim
 ```
 
-For GPU acceleration with CUDA:
+## GPUs
+
+The default strategy (`"active_statevector"`) samples on an Apple GPU through Metal, or on an
+NVIDIA GPU through CUDA. On an Apple-silicon Mac, the plain install includes PyObjC's Metal
+bindings for it. For NVIDIA GPUs, install an extra; each sampling strategy has its own:
+
+| Extra | Accelerates | Needs |
+|---|---|---|
+| `cuda` | `"active_statevector"` (the default), with CuPy | CUDA 13 (driver 580 or later) |
+| `jax-cuda13` | `"cat5"`, `"bss"` and `"cutting"`, with JAX | CUDA 13 |
+| `jax-cuda12` | `"cat5"`, `"bss"` and `"cutting"`, with JAX | CUDA 12 |
 
 ```bash
-pip install "bloqade-tsim[cuda13]"
+uv add "bloqade-tsim[cuda]"
+# or, with both strategies on the GPU:
+uv add "bloqade-tsim[cuda,jax-cuda13]"
 ```
 
-## Apple GPUs
+The `cuda12` and `cuda13` extras of Tsim 1.0 still install the JAX extras. JAX starts only
+when a stabilizer-rank strategy samples, and then reserves 75% of the GPU's memory; to sample
+with both strategies in one process, set `XLA_PYTHON_CLIENT_PREALLOCATE=false` before starting
+Python.
 
-On an Apple-silicon Mac, the default strategy (`"active_statevector"`) samples on the GPU
-through Metal; the plain install includes PyObjC's Metal bindings for it. Where it samples is
-the `device` argument of `compile_sampler` and `compile_detector_sampler`:
+Where `"active_statevector"` samples is the `device` argument of `compile_sampler` and
+`compile_detector_sampler`:
 
 | `device` | Samples |
 | --- | --- |
-| `"auto"` (default) | On the GPU when it can run the circuit, else on the CPU, without a warning |
+| `"auto"` (default) | On a GPU when it can run the circuit, else on the CPU, without a warning |
 | `"cpu"` | On the CPU, in double precision |
-| `"metal"` | On the GPU, or raises an error that says why it cannot |
+| `"metal"` | On an Apple GPU, or raises an error that says why it cannot |
+| `"cuda"` | On an NVIDIA GPU, or raises an error that says why it cannot |
 
 ```python
-sampler = circuit.compile_detector_sampler(device="metal")
+sampler = circuit.compile_detector_sampler(device="cuda")
 ```
 
 The GPU runs circuits whose components have at most 11 active qubits. That includes Clifford
 circuits, whose detectors depend on the noise alone: the GPU samples the noise as well as the
 state vectors. Postselection runs on the GPU, so heavily postselected circuits gain the most.
-A sampler's repr says where it samples (`samples on metal` or `samples on cpu`), and so does
-`sampler.stats.device`.
+A sampler's repr says where it samples (`samples on metal`, `samples on cuda` or
+`samples on cpu`), and so does `sampler.stats.device`.
 
 The GPU computes outcome probabilities in float32, so a sample follows the CPU's distribution
 to within float32 rounding. Float32 cannot tell a measurement outcome of probability below
 about 1e-11 from rounding error, so the GPU never draws one; a circuit with a rotation small
 enough to make such an outcome (an angle within about 6e-5 π of a multiple of π/2) samples on
-the CPU (or raises, with `device="metal"`).
+the CPU (or raises, with `device="metal"` or `"cuda"`).
 
 A seed's samples on the GPU differ from the CPU's and depend on `batch_size`, so with
 `device="auto"` a seed reproduces its samples only on the same kind of machine. Use

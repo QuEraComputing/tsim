@@ -1,0 +1,903 @@
+"""``CudaShotSampler``: ``ShotSampler`` with the noise and the tapes on a CUDA GPU.
+
+A batch of shots runs as these kernels on one stream:
+
+    noise  draws every shot's noise into its words and screens it (``noise``);
+           the screened survivors go to a queue
+    tape   runs every component on the queued shots, a group of ``2^tb`` threads
+           per shot with its amplitudes in registers (``codegen``, ``gpu.tape``); with a
+           postselection mask it clears the rejected shots from the screen's
+           bitmap of survivors
+    kept   under postselection, draws the noise that cannot change whether a
+           shot is kept on the accepted shots only (``noise_kept``), when that
+           noise is at least ``DEFER_SHARE`` of the faults
+    list   lists the accepted shots in order from the bitmap (``count_bits``,
+           ``list_bits``)
+    select gathers the rows (or the accepted rows), bit-packed, and picks the
+           requested outputs out of them, bit-packed or as booleans, for the
+           copy to the host
+
+``_sample_rows`` runs a call as chunks of shots on two streams, so that a
+chunk's copy to the host overlaps the next chunk's kernels.
+
+The kernels are compiled with NVRTC once per postselection mask (CuPy caches
+them on disk). Amplitudes are complex64, so a sample follows the CPU executor's
+distribution to within float32 rounding of the outcome probabilities; the noise
+and the outcome draws come from other streams than the CPU's, so a seed's
+samples differ from the CPU's, and they depend on the batch size.
+"""
+
+from __future__ import annotations
+
+import math
+import threading
+from dataclasses import dataclass
+from typing import Any
+
+import numpy as np
+
+from tsim.noise.channels import ChannelSampler
+from tsim.statevector.cuda import kernels, runtime
+from tsim.statevector.cuda.codegen import CUDA
+from tsim.statevector.cuda.kernels import COPY_THREADS, SCAN_THREADS, TAPE_THREADS
+from tsim.statevector.cuda.noise import (
+    THREADS as NOISE_THREADS,
+    kept_fits,
+    noise_tables,
+)
+from tsim.statevector.gpu import FORKED, tape
+from tsim.statevector.gpu.noise import NoiseGroups, screen_pass_rate, split
+from tsim.statevector.shots import ShotPlan, ShotSampler
+
+# NOTE: the words of a batch's ``counts``. The kernels take the array: the noise
+# kernel counts the survivors in its first word.
+_SURVIVORS, _ACCEPTED, _DEVIATION = range(3)
+
+BATCH_SHOTS = 1 << 22
+"""Shots of one batch on the device."""
+
+MIN_BATCH_SHOTS = 1 << 14
+"""Smallest batch that a call out of device memory retries with, before the CPU."""
+
+CHUNK_BYTES = 6 << 20
+"""Bytes of kept rows per chunk that a call's chunks aim at: each chunk's copy to
+the host overlaps the next chunk's kernels on the other stream."""
+
+MAX_CHUNKS = 8
+"""Most chunks of a batch, so that a chunk's fixed costs stay small."""
+
+MAX_IN_FLIGHT = 4
+"""Most chunks whose device rows wait for their copies to the host, so that a
+call's device memory does not grow with its result: both copy streams stay
+busy, and a chunk past them waits for the oldest copy to land."""
+
+TAPE_BLOCKS_PER_SM = 4
+"""Blocks of the tape kernel per streaming multiprocessor."""
+
+
+@dataclass
+class _Launch:
+    """The device tables of one noise launch: its segments and records."""
+
+    args: list[Any]
+    num_segments: int
+    max_events: int
+
+
+@dataclass
+class _Module:
+    """A plan's compiled kernels and its device constants."""
+
+    noise: Any
+    noise_kept: Any
+    tape: Any
+    gather_rows: Any
+    select_rows: Any
+    publish: Any
+    count_bits: Any
+    list_bits: Any
+    screen: Any
+    has_mask: bool
+    passing: float
+    """Estimated share of shots that pass the screen."""
+    split: tuple[_Launch, _Launch] | None
+    """A postselected batch's noise passes (screened, deferred), or None."""
+
+
+@dataclass(frozen=True)
+class _Output:
+    """One array of a call: chosen outputs of the accepted rows, ``width`` bytes a row.
+
+    Bit-packed (zero bits past the outputs) or one boolean per output; ``whole``
+    is every output in order, bit-packed: the gathered rows themselves.
+    """
+
+    columns: Any
+    """The outputs on the device (``uint32``), or None for the first ``count``."""
+    count: int
+    width: int
+    bools: bool
+    whole: bool
+
+
+@dataclass
+class _Slot:
+    """One of the two sets of streams and buffers that a call's chunks alternate between.
+
+    A slot's copy to the host has a stream of its own, so that the slot's next
+    kernels need not wait for it. Its noise kernel runs on a stream of lower
+    priority than its tapes and packing, so that the other slot's, which the
+    next copy waits for, go first.
+    """
+
+    index: int
+    stream: Any
+    """The stream of the tapes and the packing."""
+    noise: Any
+    copy: Any
+    counts: np.ndarray
+    """Pinned host memory that ``publish`` stores a chunk's counts into."""
+    published: Any
+    """``counts``, as a device array."""
+
+
+@dataclass
+class _Chunk:
+    """A launched chunk of a call: its shots, and what its kernels write on the device."""
+
+    slot: _Slot
+    first: int
+    shots: int
+    words: Any
+    accepted: Any
+    """The bitmap of the accepted shots (with a mask)."""
+    counts: Any
+    """The screened survivors, the accepted shots and the norm deviation's bits."""
+    published: Any
+    """The event after which the counts are in pinned host memory, or None."""
+
+
+@dataclass
+class _Call:
+    """What the chunks of one call share."""
+
+    module: _Module
+    constant: Any
+    shots: int
+    chunk_shots: int
+    outputs: list[_Output]
+    rows: _HostRows
+    flights: list[tuple[Any, list[Any]]]
+    """Each chunk's device rows in flight to the host, kept until its copies land
+    (an event of its copy stream, which follows the chunk's kernels)."""
+
+    def land(self) -> None:
+        """Wait for the copies in flight, and with them for every kernel of the call."""
+        for landed, _ in self.flights:
+            landed.synchronize()
+        self.flights.clear()
+
+
+def _pinned(shape: tuple[int, ...], dtype) -> np.ndarray:
+    """Return an uninitialized array in pinned host memory."""
+    import cupyx
+
+    # NOTE: CuPy's stub types the dtype as a float type.
+    return cupyx.empty_pinned(shape, dtype=dtype)  # pyright: ignore[reportArgumentType]
+
+
+def _copy_blocks(items: int) -> int:
+    """Return the blocks of a kernel that gathers or selects ``items`` bytes, a thread each."""
+    return min(-(-items // COPY_THREADS), 16 * runtime.multiprocessors())
+
+
+def _expected_rows(passed: int, of: int, shots: int) -> int:
+    """Return the rows to reserve for a call of ``shots``: ``passed`` of its first ``of`` passed.
+
+    The rest pass at the same rate, with a margin of 5% and 6 standard deviations.
+    """
+    expected = (shots - of) * passed / of
+    return min(shots, passed + int(1.05 * expected + 6 * np.sqrt(expected) + 256))
+
+
+class _HostRows:
+    """A call's arrays of passing rows in pinned host memory.
+
+    One array per output of ``widths`` bytes a row, filled chunk by chunk.
+    """
+
+    def __init__(self, widths: list[int]) -> None:
+        self.capacity, self.total = 0, 0
+        self.arrays = [np.empty((0, w), np.uint8) for w in widths]
+
+    def reserve(self, passed: int, of: int, shots: int) -> None:
+        """Make room for a call's rows: ``passed`` of the first ``of`` shots of ``shots`` passed.
+
+        The room is for the rows expected at that rate, and at least twice the
+        current room, so that a call grows a few times at most. The copied rows
+        are kept (no copy may be pending).
+        """
+        self.capacity = min(
+            shots, max(_expected_rows(passed, of, shots), 2 * self.capacity)
+        )
+        filled = self.result()
+        self.arrays = [_pinned((self.capacity, a.shape[1]), np.uint8) for a in filled]
+        for new, old in zip(self.arrays, filled, strict=True):
+            new[: self.total] = old
+
+    def take(self, count: int) -> list[np.ndarray]:
+        """Return the next ``count`` rows of each array to fill."""
+        assert self.total + count <= self.capacity
+        lo, self.total = self.total, self.total + count
+        return [a[lo : self.total] for a in self.arrays]
+
+    def result(self) -> list[np.ndarray]:
+        """Return the filled arrays."""
+        return [a[: self.total] for a in self.arrays]
+
+
+class CudaShotSampler:
+    """Samples shot words of a statevector program on a CUDA GPU.
+
+    It keeps ``ShotSampler``'s interface (``sample``, ``direct_bools``,
+    ``reference``, ``plan``, ``layout``); ``sample`` copies only the shots that
+    pass postselection off the GPU.
+    """
+
+    supports = staticmethod(tape.supports)
+
+    def __init__(
+        self,
+        host: ShotSampler,
+        channels: ChannelSampler,
+        num_detectors: int,
+        seed: np.random.SeedSequence,
+        *,
+        required: bool = False,
+    ) -> None:
+        """Upload the noise tables of ``host``'s shot words.
+
+        ``host`` draws the reference samples, on the CPU, and the calls that the
+        GPU cannot run, unless ``required`` (``device="cuda"``): then those raise.
+
+        Raises:
+            ImportError: If CuPy is not installed.
+            ValueError: If the noise exceeds the kernels' limits.
+
+        """
+        self._cp = runtime.cupy()
+        assert self.supports(host.layout)
+        self._args = (host, channels, num_detectors, seed, required)
+        self._required = required
+        self._cpu_only = False
+        self._lock = threading.RLock()
+        self._host = host
+        layout = host.layout
+        self._rng = np.random.default_rng(seed)
+        self._channels = channels
+        self._noise = noise_tables(channels, layout.noise, layout.num_words)
+        self._overflow = self._upload(self._noise.overflow.view(np.uint8))
+        self._all = self._launch(self._noise.groups)
+        self._modules: dict[bytes | None, _Module] = {}
+        self._buffers: dict[str, Any] = {}
+        self._constants: dict[bytes, Any] = {}
+        self._columns: dict[bytes, Any] = {}
+        self._slots = [self._slot(index) for index in range(2)]
+        # NOTE: lowered when a call runs out of device memory.
+        self._max_batch = BATCH_SHOTS
+
+    def _slot(self, index: int) -> _Slot:
+        cuda = self._cp.cuda
+        counts = _pinned((3,), np.uint32)
+        # NOTE: with unified addressing a pinned host pointer is also a device pointer.
+        memory = cuda.UnownedMemory(counts.ctypes.data, counts.nbytes, counts)
+        return _Slot(
+            index,
+            # NOTE: a lower number is a higher priority.
+            stream=cuda.Stream(non_blocking=True, priority=-1),
+            noise=cuda.Stream(non_blocking=True),
+            copy=cuda.Stream(non_blocking=True),
+            counts=counts,
+            published=self._cp.ndarray((3,), np.uint32, cuda.MemoryPointer(memory, 0)),
+        )
+
+    @property
+    def device(self) -> str:
+        """Return where this sampler samples (``SamplerStats.device``).
+
+        It is ``"cpu"`` after a kernel failed to compile, and in a process forked
+        after its parent used the GPU, where every call samples on the CPU.
+        """
+        if self._cpu_only or runtime.forked_after_init():
+            return "cpu"
+        return "cuda"
+
+    def __reduce__(self):
+        """Pickle the CPU sampler and the inputs; the GPU state is rebuilt on load."""
+        return _restore, (*self._args, self._rng.bit_generator.state)
+
+    @property
+    def layout(self):
+        """Return the shot words' layout."""
+        return self._host.layout
+
+    def plan(self, mask: np.ndarray | None) -> ShotPlan:
+        """Return the plan for a postselection ``mask``."""
+        return self._host.plan(mask)
+
+    def bytes_per_shot(self) -> int:
+        """Return the host memory of one shot's words."""
+        return 8 * self.layout.num_words
+
+    def reference(self) -> tuple[np.ndarray, float]:
+        """Return a noiseless sample of every output (on the CPU executor)."""
+        return self._host.reference()
+
+    # -- compilation ----------------------------------------------------------
+
+    def _module(self, mask: np.ndarray | None) -> _Module:
+        # NOTE: None, not b"", so that an empty mask is not taken for no mask.
+        key = None if mask is None else np.asarray(mask, bool).tobytes()
+        if key in self._modules:
+            return self._modules[key]
+        plan = self.plan(mask)
+        layout = self.layout
+        tb = tape.threads_per_shot(layout)
+        parts = tape.tape_kernel(layout, plan, mask, tb, CUDA)
+        module = self._compile(kernels.source(layout, self._noise, parts, tb))
+        compiled = _Module(
+            noise=module.get_function("noise"),
+            noise_kept=(
+                module.get_function("noise_kept") if self._noise.shared_words else None
+            ),
+            tape=module.get_function("tape"),
+            gather_rows=module.get_function("gather_rows"),
+            select_rows=module.get_function("select_rows"),
+            publish=module.get_function("publish"),
+            count_bits=module.get_function("count_bits"),
+            list_bits=module.get_function("list_bits"),
+            screen=self._upload(plan.screen),
+            has_mask=mask is not None,
+            passing=screen_pass_rate(self._channels, layout, plan),
+            split=self._split(plan, parts.psm_words, mask is not None),
+        )
+        self._modules[key] = compiled
+        return compiled
+
+    def _upload(self, array: np.ndarray) -> Any:
+        """Return ``array`` on the device, copied before any later kernel runs.
+
+        ``cp.asarray`` copies on the current stream, usually the legacy default
+        stream, which the sampler's non-blocking streams do not wait for: a kernel
+        could read the array before the copy lands. Uploads are one-time, cached.
+        """
+        device = self._cp.asarray(array)
+        self._cp.cuda.get_current_stream().synchronize()
+        return device
+
+    def _launch(self, groups: NoiseGroups) -> _Launch:
+        """Upload a noise launch's segments and records."""
+        return _Launch(
+            args=[
+                *(self._upload(a) for a in groups.segments),
+                self._upload(groups.records.view(np.uint8)),
+            ],
+            num_segments=len(groups.segments[0]),
+            max_events=groups.max_events,
+        )
+
+    def _split(
+        self, plan: ShotPlan, psm_words: np.ndarray, has_mask: bool
+    ) -> tuple[_Launch, _Launch] | None:
+        """Return a postselected batch's noise passes (screened, deferred), or None.
+
+        As ``gpu.noise.split``. Each key word is read whole, so the deferred
+        channels flip output words only.
+        """
+        # NOTE: rows too wide for shared memory draw all their noise at once, and
+        # so do rows of which noise_kept cannot stage a block.
+        n = self._noise
+        if not has_mask or not n.shared_words:
+            return None
+        if not kept_fits(self.layout, n.block_shots):
+            return None
+        found = split(n, self._channels, self.layout, plan, psm_words)
+        if found is None:
+            return None
+        return self._launch(found[0]), self._launch(found[1])
+
+    def _compile(self, source: str):
+        """Compile with NVRTC; ptxas -O3 fails on some shuffled tapes, so lower levels follow.
+
+        Raises:
+            runtime.CompileError: If no level compiles, or NVRTC does not load.
+
+        """
+        cp = self._cp
+        failure = None
+        for level in (3, 2, 1):
+            options = (
+                runtime.arch(),
+                "-std=c++17",
+                "-diag-suppress=177",
+                f"-Xptxas=-O{level}",
+            )
+            try:
+                module = cp.RawModule(code=source, options=options)
+                module.get_function("tape")
+                return module
+            except cp.cuda.compiler.CompileException as error:
+                failure = error
+            except Exception as error:
+                # NOTE: CuPy raises a plain RuntimeError when it cannot load NVRTC
+                # (a CuPy without the cuda extra's NVRTC, or one too old for the GPU).
+                if runtime.out_of_memory(error):
+                    raise
+                raise runtime.CompileError(f"NVRTC is unusable: {error}") from error
+        raise runtime.CompileError(f"NVRTC compilation failed: {failure}") from failure
+
+    # -- execution --------------------------------------------------------------
+
+    def _buffer(self, name: str, shape: tuple[int, ...], dtype) -> Any:
+        """Return a device buffer of at least ``shape``, reused across calls."""
+        size = int(np.prod(shape))
+        held = self._buffers.get(name)
+        if held is None or held.size < size or held.dtype != np.dtype(dtype):
+            held = self._cp.empty(size, dtype=dtype)
+            self._buffers[name] = held
+        return held[:size].reshape(shape)
+
+    def _constant(self, flip: np.ndarray | None) -> Any:
+        """Return the outputs' constants XOR the reference bits ``flip``, on the device."""
+        key = b"" if flip is None else np.asarray(flip, bool).tobytes()
+        if key not in self._constants:
+            self._constants[key] = self._upload(self._host._constant(flip))
+        return self._constants[key]
+
+    def _start(self, call: _Call, first: int) -> _Chunk:
+        """Launch the noise and the tapes of a call's chunk that starts at shot ``first``.
+
+        The noise kernel draws the channels of the module's first noise pass and
+        writes only the rows of the shots that pass the screen; the tapes run on
+        those. Chunks alternate between the two slots of buffers and streams.
+        """
+        module, layout = call.module, self.layout
+        shots = min(call.chunk_shots, call.shots - first)
+        slot = self._slots[first // call.chunk_shots % 2]
+        k = slot.index
+        words = self._buffer(f"words{k}", (shots, layout.num_words), np.uint64)
+        queue = self._buffer(f"queue{k}", (shots,), np.uint32)
+        accepted = self._buffer(f"accepted{k}", (-(-shots // 32),), np.uint32)
+        counts = self._buffer(f"counts{k}", (3,), np.uint32)
+        bitmap = accepted if module.has_mask else np.uint64(0)
+        seed, noise_seed = self._rng.integers(0, 2**64, size=2, dtype=np.uint64)
+        launch = module.split[0] if module.split else self._all
+        S = self._noise.block_shots
+        # NOTE: the noise follows the slot's earlier work, and the tapes the noise.
+        slot.noise.wait_event(slot.stream.record())
+        with slot.noise:
+            counts.fill(0)
+            module.noise(
+                (-(-shots // S),),
+                (NOISE_THREADS,),
+                (
+                    words,
+                    np.int64(shots),
+                    noise_seed,
+                    np.int32(launch.num_segments),
+                    np.int32(launch.max_events),
+                    *launch.args,
+                    self._overflow,
+                    call.constant,
+                    module.screen,
+                    queue,
+                    counts,
+                    bitmap,
+                ),
+                shared_mem=8 * launch.max_events,
+            )
+        slot.stream.wait_event(slot.noise.record())
+        published = None
+        with slot.stream:
+            if layout.components:
+                module.tape(
+                    (TAPE_BLOCKS_PER_SM * runtime.multiprocessors(),),
+                    (TAPE_THREADS,),
+                    (words, np.int64(first), seed, queue, counts, bitmap),
+                )
+            elif module.has_mask:
+                # NOTE: without components the screened survivors are the accepted shots.
+                counts[_ACCEPTED : _ACCEPTED + 1] = counts[_SURVIVORS : _SURVIVORS + 1]
+            # NOTE: no copy is in flight when the first chunk finishes, so it
+            # reads its counts with a copy of its own.
+            if first:
+                module.publish((1,), (32,), (counts, slot.published))
+                published = slot.stream.record()
+        return _Chunk(slot, first, shots, words, accepted, counts, published)
+
+    def _pack(self, module: _Module, words, count: int, index) -> Any:
+        """Return the ``count`` rows ``index`` (or all) on the device, as copied to the host.
+
+        Their outputs, bit-packed; with a split module the deferred noise kernel
+        adds the deferred channels' faults first.
+        """
+        S = self._noise.block_shots
+        nb = -(-self.layout.num_outputs // 8)
+        # NOTE: a new array per chunk, so that refilling it never waits for a copy.
+        dst = self._cp.empty((count, nb), dtype=np.uint8)
+        if module.split is not None:
+            launch = module.split[1]
+            seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
+            module.noise_kept(
+                (-(-count // S),),
+                (NOISE_THREADS,),
+                (
+                    words,
+                    np.int64(count),
+                    index,
+                    seed,
+                    np.int32(launch.num_segments),
+                    np.int32(launch.max_events),
+                    *launch.args,
+                    self._overflow,
+                    dst,
+                ),
+                shared_mem=max(8 * launch.max_events, S * nb),
+            )
+        else:
+            module.gather_rows(
+                (_copy_blocks(count * nb),),
+                (COPY_THREADS,),
+                (
+                    words,
+                    np.int64(count),
+                    index if index is not None else np.uint64(0),
+                    dst,
+                ),
+            )
+        return dst
+
+    def _select(self, module: _Module, rows, count: int, output: _Output) -> Any:
+        """Return ``output``'s outputs of the ``count`` packed ``rows``, on the device.
+
+        The rows themselves if it is ``whole``, and None if it has no outputs.
+        """
+        if output.whole:
+            return rows
+        if not output.width:
+            return None
+        dst = self._cp.empty((count, output.width), dtype=np.uint8)
+        module.select_rows(
+            (_copy_blocks(count * output.width),),
+            (COPY_THREADS,),
+            (
+                rows,
+                np.int64(count),
+                output.columns if output.columns is not None else np.uint64(0),
+                np.int32(output.count),
+                np.int32(output.width),
+                np.int32(output.bools),
+                dst,
+            ),
+        )
+        return dst
+
+    def _outputs(
+        self, columns: list[np.ndarray], bools: bool
+    ) -> tuple[list[_Output], list[tuple[int, int | None]]]:
+        """Return the arrays that a call returning ``columns`` copies to the host.
+
+        Also returns, for each entry of ``columns``, its array and the bytes of
+        each row it keeps (or None for all): bit-packed leading whole bytes are a
+        view of the rows, which are copied once.
+        """
+        num_outputs = self.layout.num_outputs
+        nb = -(-num_outputs // 8)
+        found: list[_Output] = []
+        picks: list[tuple[int, int | None]] = []
+        rows = None
+        for chosen in columns:
+            chosen = np.asarray(chosen, dtype=np.uint32)
+            count = len(chosen)
+            in_order = bool(np.array_equal(chosen, np.arange(count)))
+            if in_order and not bools and (count == num_outputs or count % 8 == 0):
+                if rows is None:
+                    rows = len(found)
+                    found.append(_Output(None, num_outputs, nb, False, True))
+                picks.append((rows, None if count == num_outputs else count // 8))
+                continue
+            device = None
+            if not in_order:
+                key = chosen.tobytes()
+                if key not in self._columns:
+                    self._columns[key] = self._upload(chosen)
+                device = self._columns[key]
+            found.append(
+                _Output(
+                    columns=device,
+                    count=count,
+                    width=count if bools else -(-count // 8),
+                    bools=bools,
+                    whole=False,
+                )
+            )
+            picks.append((len(found) - 1, None))
+        return found, picks
+
+    def _list(self, module: _Module, bits, shots: int, count: int, slot: int) -> Any:
+        """Return the ``count`` shots of the bitmap ``bits`` of ``shots`` shots, in order."""
+        words = -(-shots // 32)
+        blocks = -(-words // SCAN_THREADS)
+        totals = self._buffer(f"totals{slot}", (blocks,), np.uint32)
+        index = self._buffer(f"index{slot}", (count,), np.uint32)
+        grid, threads = (blocks,), (SCAN_THREADS,)
+        module.count_bits(grid, threads, (bits, np.int64(words), totals))
+        module.list_bits(grid, threads, (bits, np.int64(words), totals, index))
+        return index
+
+    def _or_cpu(self, on_gpu, on_cpu):
+        """Return ``on_gpu()``, or ``on_cpu()`` where the GPU fails.
+
+        It fails in a process forked after its parent used the GPU, out of GPU
+        memory, and when a kernel does not compile; after the last the sampler
+        samples on the CPU. A ``required`` sampler raises instead.
+
+        Raises:
+            RuntimeError: If ``required``, in a process forked after its parent
+                used the GPU.
+            MemoryError: If ``required``, out of GPU memory.
+            runtime.CompileError: If ``required``, when a kernel does not compile.
+
+        """
+        if self._cpu_only:
+            return on_cpu()
+        if runtime.forked_after_init():
+            if self._required:
+                raise RuntimeError(f"Cannot sample on CUDA: {FORKED}.")
+            return on_cpu()
+        try:
+            return on_gpu()
+        except MemoryError:
+            if self._required:
+                raise
+            return on_cpu()
+        except runtime.CompileError:
+            if self._required:
+                raise
+            self._cpu_only = True
+            return on_cpu()
+
+    def sample(
+        self,
+        shots: int,
+        columns: list[np.ndarray],
+        *,
+        bit_packed: bool,
+        batch_size: int | None = None,
+        mask: np.ndarray | None = None,
+        flip: np.ndarray | None = None,
+    ) -> tuple[list[np.ndarray], float]:
+        """Return the output bits ``columns`` of ``shots`` shots and the largest norm deviation.
+
+        As ``ShotSampler.sample``: with a ``mask`` only the shots that pass
+        postselection are returned. ``batch_size`` bounds the shots of a device
+        batch. Out of GPU memory, when a kernel does not compile, and in a
+        process forked after its parent used the GPU, the call samples on the
+        CPU, or raises if the sampler is ``required`` on the GPU (``_or_cpu``).
+        """
+        return self._or_cpu(
+            lambda: self._accepted(
+                shots,
+                columns,
+                mask=mask,
+                flip=flip,
+                batch_size=batch_size,
+                bools=not bit_packed,
+            ),
+            lambda: self._host.sample(
+                shots,
+                columns,
+                bit_packed=bit_packed,
+                batch_size=batch_size,
+                mask=mask,
+                flip=flip,
+            ),
+        )
+
+    def _accepted(
+        self,
+        shots: int,
+        columns: list[np.ndarray],
+        *,
+        batch_size: int | None,
+        **options,
+    ) -> tuple[list[np.ndarray], float]:
+        """Return ``_sample_rows(shots, columns, **options)``, in smaller batches if the GPU is full.
+
+        Out of device memory, the call is retried in batches half as large, down
+        to ``MIN_BATCH_SHOTS``. Later calls start from the batch that fit. Calls
+        on one sampler run one at a time: they share its buffers and streams.
+
+        Raises:
+            MemoryError: If even batches of ``MIN_BATCH_SHOTS`` do not fit.
+
+        """
+        with self._lock:
+            first = batch = min(batch_size or BATCH_SHOTS, self._max_batch)
+            while True:
+                try:
+                    found = self._sample_rows(shots, columns, batch=batch, **options)
+                except Exception as error:
+                    if not runtime.out_of_memory(error):
+                        raise
+                    self._release()
+                    # NOTE: a call that no batch fits leaves the later calls' batch alone.
+                    if batch <= MIN_BATCH_SHOTS:
+                        raise MemoryError(
+                            "the GPU ran out of memory, even for batches of "
+                            f"{MIN_BATCH_SHOTS} shots: {error}"
+                        ) from error
+                    batch = max(batch // 2, MIN_BATCH_SHOTS)
+                else:
+                    if batch < first:
+                        self._max_batch = batch
+                    return found
+
+    def _release(self) -> None:
+        """Wait for the device and free the buffers that calls reuse."""
+        cp = self._cp
+        cp.cuda.Device().synchronize()
+        self._buffers.clear()
+        cp.get_default_memory_pool().free_all_blocks()
+
+    def _chunk_shots(self, shots: int, nb: int, passing: float) -> int:
+        """Return a chunk's shots: about ``CHUNK_BYTES`` of rows of ``nb`` bytes.
+
+        ``passing`` is the share of shots kept, and a batch of ``shots`` shots
+        splits into at most ``MAX_CHUNKS`` chunks.
+        """
+        chunks = min(MAX_CHUNKS, max(1, math.ceil(nb * passing * shots / CHUNK_BYTES)))
+        return -(-shots // chunks)
+
+    def _sample_rows(
+        self,
+        shots: int,
+        columns: list[np.ndarray],
+        *,
+        mask: np.ndarray | None = None,
+        flip: np.ndarray | None = None,
+        batch: int,
+        bools: bool = False,
+    ) -> tuple[list[np.ndarray], float]:
+        """Sample ``shots`` shots in batches of ``batch``; keep those that pass postselection.
+
+        A shot passes when none of the ``mask``'s detectors is set (every shot
+        passes without a mask). Rows keep their shots' order. Each entry of
+        ``columns`` is an array of its outputs, in its order, selected on the
+        GPU: bit-packed as ``np.packbits(..., bitorder="little")`` would
+        (``uint8``, in pinned host memory), or with ``bools`` one boolean per
+        output.
+
+        The shots run in chunks on two streams: each chunk's rows go to the host
+        while the next chunk's kernels run. The chunks hold about ``CHUNK_BYTES``
+        of rows, by the screen's estimated share of passing shots, so a seed's
+        samples do not depend on earlier calls.
+
+        Returns:
+            ``(outputs, deviation)``: the passing shots' arrays and the largest
+            normalization deviation beyond float32 rounding.
+
+        """
+        module = self._module(mask)
+        outputs, picks = self._outputs(columns, bools)
+        rows = _HostRows([o.width for o in outputs])
+        deviation = 0.0
+        if shots:
+            # NOTE: by the packed rows, so that a seed's shots do not depend on the
+            # outputs that a call returns.
+            nb = -(-self.layout.num_outputs // 8)
+            size = self._chunk_shots(min(batch, shots), nb, module.passing)
+            call = _Call(module, self._constant(flip), shots, size, outputs, rows, [])
+            # NOTE: each chunk is launched before the previous one is finished, so
+            # its kernels overlap that copy.
+            chunk = self._start(call, 0)
+            for first in range(size, shots, size):
+                following = self._start(call, first)
+                deviation = max(deviation, self._finish(call, chunk))
+                chunk = following
+            deviation = max(deviation, self._finish(call, chunk))
+            call.land()
+        return self._arrays(rows.result(), picks, bools), deviation
+
+    def _finish(self, call: _Call, chunk: _Chunk) -> float:
+        """Send a launched chunk's passing rows to the host; return its norm deviation.
+
+        Waits for the chunk's counts, then lists the accepted shots, packs their
+        rows, selects the call's outputs and starts their copies into the
+        call's host rows, without waiting for them.
+        """
+        module, out, slot = call.module, call.rows, chunk.slot
+        stream = slot.stream
+        if chunk.published is None:
+            counts = chunk.counts.get(stream=stream)
+        else:
+            chunk.published.synchronize()
+            counts = slot.counts.copy()
+        count = int(counts[_ACCEPTED]) if module.has_mask else chunk.shots
+        if count:
+            if out.total + count > out.capacity:
+                # NOTE: the first rows, or a rare excess of passing shots: the
+                # copies in flight land first.
+                call.land()
+                out.reserve(out.total + count, chunk.first + chunk.shots, call.shots)
+            parts = out.take(count)
+            # NOTE: a call of one chunk has nothing to overlap its copy with.
+            alone = call.chunk_shots >= call.shots
+            copy = stream if alone else slot.copy
+            # NOTE: the rows whose copies landed are freed for this chunk's; at most
+            # MAX_IN_FLIGHT chunks' rows wait, or the oldest copy is waited for.
+            flights = call.flights
+            flights[:] = [flight for flight in flights if not flight[0].done]
+            while len(flights) >= MAX_IN_FLIGHT:
+                flights.pop(0)[0].synchronize()
+            with stream:
+                index = None
+                if module.has_mask:
+                    index = self._list(
+                        module, chunk.accepted, chunk.shots, count, slot.index
+                    )
+                packed = self._pack(module, chunk.words, count, index)
+                found = [self._select(module, packed, count, o) for o in call.outputs]
+                if not alone:
+                    copy.wait_event(stream.record())
+                for part, selected in zip(parts, found, strict=True):
+                    if selected is not None:
+                        selected.get(stream=copy, out=part, blocking=False)
+            flights.append((copy.record(), [packed, *found]))
+        return tape.deviation(counts[_DEVIATION])
+
+    @staticmethod
+    def _arrays(
+        arrays: list[np.ndarray], picks: list[tuple[int, int | None]], bools: bool
+    ) -> list[np.ndarray]:
+        """Return a call's outputs from its ``arrays`` and ``picks`` (``_outputs``).
+
+        Booleans are viewed as such.
+        """
+        found = [arrays[k] if cut is None else arrays[k][:, :cut] for k, cut in picks]
+        return [a.view(bool) for a in found] if bools else found
+
+    def direct_bools(
+        self,
+        shots: int,
+        flip: np.ndarray | None = None,
+        batch_size: int | None = None,
+    ) -> np.ndarray:
+        """Return every output bit of a program without components, as booleans."""
+        every = [np.arange(self.layout.num_outputs)]
+        return self._or_cpu(
+            lambda: self._accepted(
+                shots, every, flip=flip, batch_size=batch_size, bools=True
+            )[0][0],
+            lambda: self._host.direct_bools(shots, flip, batch_size),
+        )
+
+
+def _restore(
+    host: ShotSampler,
+    channels: ChannelSampler,
+    num_detectors: int,
+    seed: np.random.SeedSequence,
+    required: bool,
+    state: dict,
+) -> CudaShotSampler | ShotSampler:
+    """Rebuild a pickled ``CudaShotSampler``, or its CPU sampler where CUDA cannot run.
+
+    As at compile time, a sampler ``required`` on the GPU raises where CUDA cannot run.
+    """
+    from tsim.statevector import cuda
+
+    shots = cuda.shot_sampler(host, channels, num_detectors, seed, required=required)
+    if isinstance(shots, CudaShotSampler):
+        shots._rng.bit_generator.state = state
+    return shots
