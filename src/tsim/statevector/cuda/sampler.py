@@ -120,10 +120,31 @@ class _Output:
 
 
 @dataclass
+class _Slot:
+    """One of the two sets of streams and buffers that a call's chunks alternate between.
+
+    A slot's copy to the host has a stream of its own, so that the slot's next
+    kernels need not wait for it. Its noise kernel runs on a stream of lower
+    priority than its tapes and packing, so that the other slot's, which the
+    next copy waits for, go first.
+    """
+
+    index: int
+    stream: Any
+    """The stream of the tapes and the packing."""
+    noise: Any
+    copy: Any
+    counts: np.ndarray
+    """Pinned host memory that ``publish`` stores a chunk's counts into."""
+    published: Any
+    """``counts``, as a device array."""
+
+
+@dataclass
 class _Chunk:
     """A launched chunk of a call: its shots, and what its kernels write on the device."""
 
-    slot: int
+    slot: _Slot
     first: int
     shots: int
     words: Any
@@ -147,7 +168,13 @@ class _Call:
     rows: _HostRows
     flights: list[tuple[Any, list[Any]]]
     """Each chunk's device rows in flight to the host, kept until its copies land
-    (an event of its copy stream)."""
+    (an event of its copy stream, which follows the chunk's kernels)."""
+
+    def land(self) -> None:
+        """Wait for the copies in flight, and with them for every kernel of the call."""
+        for landed, _ in self.flights:
+            landed.synchronize()
+        self.flights.clear()
 
 
 def _pinned(shape: tuple[int, ...], dtype) -> np.ndarray:
@@ -156,15 +183,6 @@ def _pinned(shape: tuple[int, ...], dtype) -> np.ndarray:
 
     # NOTE: CuPy's stub types the dtype as a float type.
     return cupyx.empty_pinned(shape, dtype=dtype)  # pyright: ignore[reportArgumentType]
-
-
-def _pinned_counts(cp) -> tuple[np.ndarray, Any]:
-    """Return three pinned host counters and a device array over the same memory."""
-    host = _pinned((3,), np.uint32)
-    # NOTE: with unified addressing a pinned host pointer is also a device pointer.
-    memory = cp.cuda.UnownedMemory(host.ctypes.data, host.nbytes, host)
-    device = cp.ndarray((3,), np.uint32, cp.cuda.MemoryPointer(memory, 0))
-    return host, device
 
 
 def _copy_blocks(items: int) -> int:
@@ -247,7 +265,6 @@ class CudaShotSampler:
 
         """
         self._cp = runtime.cupy()
-        cp = self._cp
         assert self.supports(host.layout)
         self._args = (host, channels, num_detectors, seed, required)
         self._required = required
@@ -264,18 +281,24 @@ class CudaShotSampler:
         self._buffers: dict[str, Any] = {}
         self._constants: dict[bytes, Any] = {}
         self._columns: dict[bytes, Any] = {}
-        # NOTE: each buffer slot has a kernel stream and a copy stream, so that a
-        # slot's next kernels need not wait for its copy to the host.
-        # NOTE: a slot's noise kernel runs on a stream of the least priority, so the
-        # other slot's tape and packing, which the next copy waits for, go first.
-        self._streams = [
-            cp.cuda.Stream(non_blocking=True, priority=-1) for _ in range(2)
-        ]
-        self._noise_streams = [cp.cuda.Stream(non_blocking=True) for _ in range(2)]
-        self._copies = [cp.cuda.Stream(non_blocking=True) for _ in range(2)]
-        self._published = [_pinned_counts(cp) for _ in range(2)]
+        self._slots = [self._slot(index) for index in range(2)]
         # NOTE: lowered when a call runs out of device memory.
         self._max_batch = BATCH_SHOTS
+
+    def _slot(self, index: int) -> _Slot:
+        cuda = self._cp.cuda
+        counts = _pinned((3,), np.uint32)
+        # NOTE: with unified addressing a pinned host pointer is also a device pointer.
+        memory = cuda.UnownedMemory(counts.ctypes.data, counts.nbytes, counts)
+        return _Slot(
+            index,
+            # NOTE: a lower number is a higher priority.
+            stream=cuda.Stream(non_blocking=True, priority=-1),
+            noise=cuda.Stream(non_blocking=True),
+            copy=cuda.Stream(non_blocking=True),
+            counts=counts,
+            published=self._cp.ndarray((3,), np.uint32, cuda.MemoryPointer(memory, 0)),
+        )
 
     @property
     def device(self) -> str:
@@ -433,12 +456,12 @@ class CudaShotSampler:
         """
         module, layout = call.module, self.layout
         shots = min(call.chunk_shots, call.shots - first)
-        slot = first // call.chunk_shots % 2
-        stream, noise_stream = self._streams[slot], self._noise_streams[slot]
-        words = self._buffer(f"words{slot}", (shots, layout.num_words), np.uint64)
-        queue = self._buffer(f"queue{slot}", (shots,), np.uint32)
-        accepted = self._buffer(f"accepted{slot}", (-(-shots // 32),), np.uint32)
-        counts = self._buffer(f"counts{slot}", (3,), np.uint32)
+        slot = self._slots[first // call.chunk_shots % 2]
+        k = slot.index
+        words = self._buffer(f"words{k}", (shots, layout.num_words), np.uint64)
+        queue = self._buffer(f"queue{k}", (shots,), np.uint32)
+        accepted = self._buffer(f"accepted{k}", (-(-shots // 32),), np.uint32)
+        counts = self._buffer(f"counts{k}", (3,), np.uint32)
         survivors, passed, deviation = (counts[i : i + 1] for i in range(3))
         bitmap = accepted if module.has_mask else np.uint64(0)
         seed = np.uint64(self._rng.integers(0, 2**64, dtype=np.uint64))
@@ -446,8 +469,8 @@ class CudaShotSampler:
         launch = module.split[0] if module.split else self._all
         S = self._noise.block_shots
         # NOTE: the noise follows the slot's earlier work, and the tapes the noise.
-        noise_stream.wait_event(stream.record())
-        with noise_stream:
+        slot.noise.wait_event(slot.stream.record())
+        with slot.noise:
             counts.fill(0)
             module.noise(
                 (-(-shots // S),),
@@ -468,9 +491,9 @@ class CudaShotSampler:
                 ),
                 shared_mem=8 * launch.max_events,
             )
-        stream.wait_event(noise_stream.record())
+        slot.stream.wait_event(slot.noise.record())
         published = None
-        with stream:
+        with slot.stream:
             if layout.components:
                 module.tape(
                     (TAPE_BLOCKS_PER_SM * runtime.multiprocessors(),),
@@ -492,8 +515,8 @@ class CudaShotSampler:
             # NOTE: no copy is in flight when the first chunk finishes, so it
             # reads its counts with a copy of its own.
             if first:
-                module.publish((1,), (32,), (counts, self._published[slot][1]))
-                published = stream.record()
+                module.publish((1,), (32,), (counts, slot.published))
+                published = slot.stream.record()
         return _Chunk(slot, first, shots, words, accepted, counts, published)
 
     def _pack(self, module: _Module, words, count: int, index) -> Any:
@@ -539,7 +562,14 @@ class CudaShotSampler:
         return dst
 
     def _select(self, module: _Module, rows, count: int, output: _Output) -> Any:
-        """Return ``output``'s outputs of the ``count`` packed ``rows``, on the device."""
+        """Return ``output``'s outputs of the ``count`` packed ``rows``, on the device.
+
+        The rows themselves if it is ``whole``, and None if it has no outputs.
+        """
+        if output.whole:
+            return rows
+        if not output.width:
+            return None
         dst = self._cp.empty((count, output.width), dtype=np.uint8)
         module.select_rows(
             (_copy_blocks(count * output.width),),
@@ -724,11 +754,6 @@ class CudaShotSampler:
         self._buffers.clear()
         cp.get_default_memory_pool().free_all_blocks()
 
-    def _synchronize(self) -> None:
-        """Wait for every kernel and copy of ``_sample_rows``."""
-        for stream in (*self._streams, *self._copies):
-            stream.synchronize()
-
     def _chunk_shots(self, shots: int, nb: int, passing: float) -> int:
         """Return a chunk's shots: about ``CHUNK_BYTES`` of rows of ``nb`` bytes.
 
@@ -785,7 +810,7 @@ class CudaShotSampler:
                 deviation = max(deviation, self._finish(call, chunk))
                 chunk = following
             deviation = max(deviation, self._finish(call, chunk))
-            self._synchronize()
+            call.land()
         return self._arrays(rows.result(), picks, bools), deviation
 
     def _finish(self, call: _Call, chunk: _Chunk) -> float:
@@ -796,24 +821,23 @@ class CudaShotSampler:
         call's host rows, without waiting for them.
         """
         module, out, slot = call.module, call.rows, chunk.slot
-        stream = self._streams[slot]
+        stream = slot.stream
         if chunk.published is None:
             counts = chunk.counts.get(stream=stream)
         else:
             chunk.published.synchronize()
-            counts = self._published[slot][0].copy()
+            counts = slot.counts.copy()
         count = int(counts[_ACCEPTED]) if module.has_mask else chunk.shots
         if count:
             if out.total + count > out.capacity:
                 # NOTE: the first rows, or a rare excess of passing shots: the
                 # copies in flight land first.
-                if out.total:
-                    self._synchronize()
+                call.land()
                 out.reserve(out.total + count, chunk.first + chunk.shots, call.shots)
             parts = out.take(count)
             # NOTE: a call of one chunk has nothing to overlap its copy with.
             alone = call.chunk_shots >= call.shots
-            copy = stream if alone else self._copies[slot]
+            copy = stream if alone else slot.copy
             # NOTE: the rows whose copies landed are freed for this chunk's; at most
             # MAX_IN_FLIGHT chunks' rows wait, or the oldest copy is waited for.
             flights = call.flights
@@ -823,24 +847,17 @@ class CudaShotSampler:
             with stream:
                 index = None
                 if module.has_mask:
-                    index = self._list(module, chunk.accepted, chunk.shots, count, slot)
-                packed = self._pack(module, chunk.words, count, index)
-                held = [packed]
-                found = [
-                    (
-                        packed
-                        if o.whole
-                        else self._select(module, packed, count, o) if o.width else None
+                    index = self._list(
+                        module, chunk.accepted, chunk.shots, count, slot.index
                     )
-                    for o in call.outputs
-                ]
+                packed = self._pack(module, chunk.words, count, index)
+                found = [self._select(module, packed, count, o) for o in call.outputs]
                 if not alone:
                     copy.wait_event(stream.record())
-                for part, dst in zip(parts, found, strict=True):
-                    if dst is not None:
-                        dst.get(stream=copy, out=part, blocking=False)
-                        held.append(dst)
-            flights.append((copy.record(), held))
+                for part, selected in zip(parts, found, strict=True):
+                    if selected is not None:
+                        selected.get(stream=copy, out=part, blocking=False)
+            flights.append((copy.record(), [packed, *found]))
         return tape.deviation(counts[_DEVIATION])
 
     @staticmethod
