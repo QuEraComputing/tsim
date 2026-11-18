@@ -31,6 +31,7 @@ combination of the others and walks each tape once per distinct signs.
 
 from __future__ import annotations
 
+import functools
 import warnings
 from itertools import product
 from typing import TYPE_CHECKING
@@ -117,8 +118,8 @@ def missing_detectors(
     result is no particularly good basis otherwise.
 
     A Tsim detector is its raw parity, so a returned one whose noiseless value
-    is 1 fires in every shot unless the sampler XORs in a reference sample
-    (``use_detector_reference_sample=True``).
+    is 1 fires in every shot: sample with
+    ``sample(..., use_detector_reference_sample=True)``.
 
     Args:
         circuit: The circuit. Its noise is ignored.
@@ -267,18 +268,32 @@ def _overlaps(
 def _directions(
     circuit: Circuit, unknown_input: bool, shots: int | None, seed: int | None
 ) -> Span:
-    """Return the span of ``m + m₀`` over the noiseless records ``m``."""
+    """Return the span of ``m + m₀`` over the noiseless records ``m``.
+
+    The span is cached, since every function here needs it and compiling is
+    slow, but not from shots without a seed. Callers must not change it.
+    """
+    if shots is not None and shots < 1:
+        raise ValueError(f"shots must be at least 1, not {shots}")
+    text = str(circuit.without_noise().without_annotations().stim_circuit)
+    if shots is not None and seed is None:
+        return _directions_of.__wrapped__(text, unknown_input, shots, seed)
+    return _directions_of(text, unknown_input, shots, seed)
+
+
+@functools.lru_cache(maxsize=8)
+def _directions_of(
+    text: str, unknown_input: bool, shots: int | None, seed: int | None
+) -> Span:
     from tsim.circuit import Circuit
 
-    noiseless = circuit.without_noise().without_annotations()
+    noiseless = Circuit(stim.Circuit(text))
     if unknown_input and noiseless.num_qubits:
         mixed = stim.Circuit()
         mixed.append("X_ERROR", range(noiseless.num_qubits), 0.5)
         noiseless = Circuit.from_stim_program(mixed) + noiseless
     if shots is None:
         return _exact_directions(noiseless)
-    if shots < 1:
-        raise ValueError(f"shots must be at least 1, not {shots}")
     return _sampled_directions(noiseless, shots, seed)
 
 
@@ -304,7 +319,7 @@ def _sampled_directions(circuit: Circuit, shots: int, seed: int | None) -> Span:
         warnings.warn(
             f"shot {last_growth} of {shots} still found a new direction, so some "
             "parities that look determined may be random; use more shots",
-            stacklevel=4,
+            stacklevel=5,
         )
     return span
 

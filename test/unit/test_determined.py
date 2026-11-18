@@ -6,10 +6,19 @@ import stim
 
 from tsim.circuit import Circuit
 from tsim.determined import (
+    _directions_of,
     count_determined_measurements,
     missing_detectors,
     nondeterministic_detectors,
 )
+
+
+@pytest.fixture(autouse=True)
+def _uncached():
+    # NOTE: some tests change the limits of the exact walk, which the cached
+    # directions do not see.
+    _directions_of.cache_clear()
+
 
 STIM_EXAMPLES = [
     "R 0\nM 0",
@@ -78,8 +87,8 @@ def test_the_missing_detectors_are_determined_in_every_shot(text):
     bare = Circuit(text).without_noise().without_annotations()
     missing = missing_detectors(bare)
     assert len(missing) == count_determined_measurements(bare)
-    samples = (bare + missing).compile_detector_sampler(seed=1).sample(500)
-    assert (samples == samples[0]).all()
+    sampler = (bare + missing).compile_detector_sampler(seed=1)
+    assert not sampler.sample(500, use_detector_reference_sample=True).any()
 
 
 def test_t_gates_randomize_a_measurement_and_t4_is_z():
@@ -242,6 +251,7 @@ def test_unknown_inputs_that_set_rotation_signs_match_many_shots(text, monkeypat
     )
     assert exact == sampled
     monkeypatch.setattr("tsim.determined.MAX_SIGN_BITS", 0)
+    _directions_of.cache_clear()
     with pytest.raises(ValueError, match="independent rotation signs"):
         count_determined_measurements(circuit, unknown_input=True)
 
@@ -289,3 +299,12 @@ def test_padded_measurements_are_determined():
 def test_a_circuit_without_measurements():
     assert count_determined_measurements(Circuit("H 0\nT 0")) == 0
     assert len(missing_detectors(Circuit("H 0\nT 0"))) == 0
+
+
+def test_the_directions_are_cached_unless_shots_have_no_seed():
+    circuit = Circuit("R 0\nH 0\nT 0\nH 0\nM 0\nDETECTOR rec[-1]")
+    count_determined_measurements(circuit)
+    nondeterministic_detectors(circuit)
+    assert _directions_of.cache_info().hits == 1
+    count_determined_measurements(circuit, shots=10)
+    assert _directions_of.cache_info().currsize == 1
