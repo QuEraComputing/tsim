@@ -1,4 +1,4 @@
-"""Tests for ``tsim.statevector.branches``: exact outcome probabilities of a tape."""
+"""Tests for ``tsim.statevector.branches``: exact outcome distributions of a tape."""
 
 from test.helpers.statevector import (
     CIRCUITS,
@@ -12,7 +12,7 @@ from test.helpers.statevector import (
 import numpy as np
 import pytest
 
-from tsim.statevector.branches import Branches, unique_rows
+from tsim.statevector.branches import Branches, gf2_product
 from tsim.statevector.pbc import ComponentLayout, read_pauli_ops
 from tsim.statevector.program import compile_statevector_component
 
@@ -49,7 +49,7 @@ def test_the_branches_have_the_exact_output_distribution(name, sample_detectors)
         branches = Branches(compiled, num_detectors=len(compiled.output_indices))
         got: list[dict] = [{} for _ in patterns]
         f = np.array(patterns, dtype=np.uint8).reshape(len(patterns), ops.num_f)
-        for row, weight, outputs in branches._leaves(f, prune=False):
+        for row, weight, outputs in branches._leaves(f):
             for r, w, out in zip(
                 row.tolist(), weight.tolist(), outputs.tolist(), strict=True
             ):
@@ -58,36 +58,55 @@ def test_the_branches_have_the_exact_output_distribution(name, sample_detectors)
             assert_distributions_close(distribution, ops_distribution(ops, pattern))
 
 
-def test_probabilities_are_those_of_the_reference_outputs():
+def test_outcomes_are_the_deviations_from_the_reference():
     ((compiled, ops),) = _components(DETERMINISTIC, sample_detectors=True)
-    # NOTE: outputs 0 and 1 are the detectors, output 2 is the observable.
-    is_detector = np.array(compiled.output_indices) < 2
     branches = Branches(compiled, num_detectors=2)
-    reference = branches.reference
     patterns = f_patterns(ops.num_f, limit=64)
-    passed, unflipped = branches.probabilities(np.array(patterns, dtype=np.uint8))
-    assert passed[0] == pytest.approx(1.0)
-    assert unflipped[0] == pytest.approx(1.0)
-    assert any(0.4 < p < 0.6 for p in passed)
-    for i, pattern in enumerate(patterns):
-        distribution = ops_distribution(ops, pattern)
-        quiet = {
-            outcome: p
-            for outcome, p in distribution.items()
-            if np.array_equal(np.array(outcome)[is_detector], reference[is_detector])
+    f = np.array(patterns, dtype=np.uint8)
+    flips = gf2_product(f, branches.output_rows) ^ branches.reference
+    for i, (deviations, probability) in enumerate(branches.outcomes(f)):
+        expected = {
+            tuple(int(b) for b in np.array(outcome) ^ flips[i]): p
+            for outcome, p in ops_distribution(ops, patterns[i]).items()
+            if p > 1e-12
         }
-        assert passed[i] == pytest.approx(sum(quiet.values()), abs=1e-9)
-        same = quiet.get(tuple(reference.tolist()), 0.0)
-        assert unflipped[i] == pytest.approx(same, abs=1e-9)
+        got = dict(zip(map(tuple, deviations.tolist()), probability, strict=True))
+        assert_distributions_close(got, expected, atol=1e-9)
+    noiseless, probability = branches.outcomes(f[:1])[0]
+    assert noiseless.tolist() == [[0] * len(branches.reference)]
+    assert probability == pytest.approx([1.0])
+
+
+def test_outcomes_depend_only_on_the_rotation_signs():
+    ((compiled, ops),) = _components(DETERMINISTIC, sample_detectors=True)
+    branches = Branches(compiled, num_detectors=2)
+    f = np.array(f_patterns(ops.num_f, limit=64), dtype=np.uint8)
+    signs = gf2_product(f, branches.sign_rows)
+    outcomes = branches.outcomes(f)
+    for i in range(len(f)):
+        for j in np.flatnonzero((signs == signs[i]).all(axis=1)).tolist():
+            assert np.array_equal(outcomes[i][0], outcomes[j][0])
+            np.testing.assert_allclose(outcomes[i][1], outcomes[j][1])
 
 
 def test_many_rows_split_into_lanes(monkeypatch):
     ((compiled, ops),) = _components(DETERMINISTIC, sample_detectors=True)
     f = np.array(f_patterns(ops.num_f, limit=64), dtype=np.uint8)
-    expected = Branches(compiled, num_detectors=2).probabilities(f)
+    expected = Branches(compiled, num_detectors=2).outcomes(f)
     monkeypatch.setattr("tsim.statevector.branches.MAX_BYTES", 64)
-    got = Branches(compiled, num_detectors=2).probabilities(f)
-    np.testing.assert_allclose(got, expected, atol=1e-12)
+    got = Branches(compiled, num_detectors=2).outcomes(f)
+    for (a, p), (b, q) in zip(got, expected, strict=True):
+        assert np.array_equal(a, b)
+        np.testing.assert_allclose(p, q, atol=1e-12)
+
+
+def test_too_many_branches_are_refused(monkeypatch):
+    ((compiled, ops),) = _components(DETERMINISTIC, sample_detectors=True)
+    branches = Branches(compiled, num_detectors=2)
+    assert branches.reference is not None
+    monkeypatch.setattr("tsim.statevector.branches.MAX_BRANCHES", 0)
+    with pytest.raises(ValueError, match="measurement branches"):
+        branches.outcomes(np.zeros((1, ops.num_f), dtype=np.uint8))
 
 
 def test_a_random_noiseless_output_has_no_reference():
@@ -102,14 +121,4 @@ def test_a_random_noiseless_output_has_no_reference():
     """
     ((compiled, _),) = _components(text, sample_detectors=True)
     with pytest.raises(ValueError, match="detector 0 is random without noise"):
-        Branches(compiled, num_detectors=1).probabilities(np.zeros((1, 1)))
-
-
-def test_unique_rows_groups_equal_rows():
-    rng = np.random.default_rng(0)
-    rows = rng.integers(0, 3, size=(500, 11), dtype=np.uint8)
-    one, group = unique_rows(rows)
-    assert len(one) == len(np.unique(rows, axis=0))
-    assert np.array_equal(rows[one][group], rows)
-    one, group = unique_rows(np.zeros((3, 0), dtype=np.uint8))
-    assert one.tolist() == [0] and group.tolist() == [0, 0, 0]
+        assert Branches(compiled, num_detectors=1).reference is not None

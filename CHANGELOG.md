@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and that they flip an observable, and explains each fault with
   `stim.CircuitErrorLocation`s. An empty result proves the distance exceeds `k`.
   The fault distance of d=5 T-state cultivation (3, as found by
-  [Chan et al.](https://arxiv.org/abs/2609.17706)) takes 7 s.
+  [Chan et al.](https://arxiv.org/abs/2609.17706)) takes under a second, and
+  that of its Z-flagged version (4) takes 5 s.
 
 ### Changed
 - The stabilizer-rank strategies compile components of the same shape once, and

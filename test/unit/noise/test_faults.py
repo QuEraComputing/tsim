@@ -297,3 +297,43 @@ def test_distinct():
     assert _distinct([{1, 2}, {1}])
     assert not _distinct([{1}, {1}])
     assert not _distinct([{1, 2}, {1, 2}, {1, 2}])
+
+
+def test_full_buffers_grow(monkeypatch):
+    circuit = Circuit(_generated("surface_code:rotated_memory_z", 3))
+    expected = shortest_errors(circuit, max_weight=3)
+    monkeypatch.setattr("tsim.noise.faults.FIRST_CAPACITY", 1)
+    got = shortest_errors(circuit, max_weight=3)
+    assert [str(e) for e in got] == [str(e) for e in expected]
+
+
+def test_two_components_combine():
+    # NOTE: two Bell pairs with T gates and an observable each are two
+    # statevector components.
+    pair = BELL.format(gate="T")
+    shifted = pair.replace(" 0", " 2").replace(" 1", " 3").replace("X0*X1", "X2*X3")
+    shifted = shifted.replace("Z0*Z1", "Z2*Z3").replace(
+        "OBSERVABLE_INCLUDE(0)", "OBSERVABLE_INCLUDE(1)"
+    )
+    circuit = Circuit(pair + shifted)
+    assert circuit.num_observables == 2
+    errors = shortest_errors(circuit, max_weight=2)
+    assert len(errors) == 2
+    for error in errors:
+        assert len(error) == 1
+        assert error.undetected_probability == pytest.approx(0.5)
+        assert error.logical_flip_probability == pytest.approx(0.5)
+    qubits = {
+        location.flipped_pauli_product[0].gate_target.value
+        for error in errors
+        for location in error.faults[0].circuit_error_locations
+    }
+    assert qubits == {0, 1, 2, 3}
+
+
+def test_max_errors_keeps_the_most_likely():
+    circuit = Circuit(_generated("surface_code:rotated_memory_z", 3))
+    every = shortest_errors(circuit, max_weight=3)
+    best = shortest_errors(circuit, max_weight=3, max_errors=5)
+    assert len(every) > 5
+    assert [str(e) for e in best] == [str(e) for e in every[:5]]

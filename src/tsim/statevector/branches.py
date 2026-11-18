@@ -1,10 +1,14 @@
-"""Exact outcome probabilities of a statevector component, for given f-bits.
+"""Exact outcome distributions of a statevector component, for given f-bits.
 
 The sampler draws each measurement of a component's tape. ``Branches`` follows
-both outcomes instead, for many rows of f-bits at once, and drops a branch as
-soon as one of its detectors differs from the noiseless value. What reaches the
-end of the tape gives, for each row, the exact probability that no detector of
-the component flips, and that no detector and no observable flips.
+both outcomes instead, for many rows of f-bits at once, and returns the exact
+distribution of the component's outputs.
+
+The f-bits enter the tape in two ways: they set the signs of its rotations, and
+they flip its outputs by a parity of their own. Only the first needs the walk.
+``outcomes`` therefore reports how the outputs deviate from their noiseless
+values apart from the second, so one walk serves every row with the same
+rotation signs.
 """
 
 from __future__ import annotations
@@ -19,8 +23,8 @@ from tsim.statevector.program import MEASURE_DORMANT, ROTATE, StatevectorCompone
 MAX_BYTES = 1 << 27
 """Bytes of amplitudes that a walk aims to hold at once."""
 
-MAX_NOISELESS_BRANCHES = 1 << 12
-"""Most measurement branches of the noiseless circuit that a component may have."""
+MAX_BRANCHES = 1 << 20
+"""Most measurement branches that one row of f-bits may have."""
 
 IMPOSSIBLE = 1e-12
 """Weight below which a measurement outcome cannot happen."""
@@ -48,23 +52,10 @@ def _bit_parity(bits: np.ndarray, rows: np.ndarray) -> np.ndarray:
     return (bits @ rows.T) & 1
 
 
-def unique_rows(rows: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Group the equal rows of a uint8 matrix.
-
-    Returns:
-        The index of one row of each group, and the group of each row.
-
-    """
-    # NOTE: sorting 64-bit words is much faster than ``np.unique(rows, axis=0)``.
-    words = np.zeros((len(rows), max(8, -(-rows.shape[1] // 8) * 8)), dtype=np.uint8)
-    words[:, : rows.shape[1]] = rows
-    words = words.view(np.uint64)
-    order = np.lexsort(words.T)
-    first = np.ones(len(rows), dtype=bool)
-    first[1:] = (words[order[1:]] != words[order[:-1]]).any(axis=1)
-    group = np.empty(len(rows), dtype=np.int64)
-    group[order] = np.cumsum(first) - 1
-    return order[first], group
+def gf2_product(bits: np.ndarray, rows: np.ndarray) -> np.ndarray:
+    """Return ``bits @ rows.T`` modulo 2, as uint8."""
+    product = bits.astype(np.float32) @ rows.T.astype(np.float32)
+    return (product.astype(np.int64) & 1).astype(np.uint8)
 
 
 class Branches:
@@ -72,11 +63,14 @@ class Branches:
 
     Attributes:
         f_selection: Global f-bit index of each component f-bit.
+        sign_rows: The component f-bits that each rotation's sign reads.
+        output_rows: The component f-bits that each output slot reads.
+        observable: Whether each output slot is an observable.
 
     """
 
     def __init__(self, component: StatevectorComponent, num_detectors: int) -> None:
-        """Read the tape of ``component``, whose outputs from ``num_detectors`` on are observables."""
+        """Read the tape of ``component``; outputs from ``num_detectors`` on are observables."""
         tape = component.tape
         num_f = len(tape.f_selection)
         self.f_selection = tape.f_selection
@@ -84,25 +78,16 @@ class Branches:
         self._size = 1 << component.width
         self._index = np.arange(self._size)
         self._lanes = max(2, MAX_BYTES // (16 * self._size))
-        self._sign_f = tape.sign_row[:, :num_f].astype(np.float32)
+        rotation = tape.kind <= ROTATE
+        self._rotations = np.flatnonzero(rotation)
+        self.sign_rows = tape.sign_row[rotation, :num_f].astype(np.uint8)
+        self.output_rows = tape.output_row[:, :num_f].astype(np.uint8)
         self._sign_b = tape.sign_row[:, num_f:].astype(np.uint8)
-        self._out_f = tape.output_row[:, :num_f].astype(np.float32)
         self._out_b = tape.output_row[:, num_f:].astype(np.uint8)
         self._branch = tape.branch - num_f
-        # NOTE: an output is known once the last measurement that it reads ran.
-        measured = np.flatnonzero(tape.branch >= 0)
-        setter = np.full(self._out_b.shape[1], -1)
-        setter[self._branch[measured]] = measured
-        ready = np.max(np.where(self._out_b, setter[None, :], -1), axis=1, initial=-1)
         self._outputs = np.asarray(component.output_indices, dtype=np.int64)
         self._num_detectors = num_detectors
-        self._observable = self._outputs >= num_detectors
-        self._early = np.flatnonzero((ready < 0) & ~self._observable)
-        self._ready = [
-            np.flatnonzero((ready == a) & ~self._observable)
-            for a in range(len(tape.kind))
-        ]
-        self._cache: dict[bytes, tuple[float, float]] = {}
+        self.observable = self._outputs >= num_detectors
 
     @cached_property
     def reference(self) -> np.ndarray:
@@ -110,20 +95,18 @@ class Branches:
 
         Raises:
             ValueError: If a detector or an observable of the component is
-                random without noise, or the noiseless tape has more than
-                ``MAX_NOISELESS_BRANCHES`` measurement branches.
+                random without noise.
 
         """
         noiseless = np.zeros((1, len(self.f_selection)), dtype=np.uint8)
-        leaves = list(self._leaves(noiseless, prune=False))
-        values = np.concatenate([outputs for _, _, outputs in leaves])
+        values = np.concatenate([out for _, _, out in self._leaves(noiseless)])
         random = np.flatnonzero((values != values[0]).any(axis=0))
         if len(random):
             slot = int(random[0])
             index = int(self._outputs[slot])
             name = (
                 f"observable {index - self._num_detectors}"
-                if self._observable[slot]
+                if self.observable[slot]
                 else f"detector {index}"
             )
             raise ValueError(
@@ -132,59 +115,72 @@ class Branches:
             )
         return values[0]
 
-    def probabilities(self, f: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Return each row's chance to pass the detectors, and to pass unflipped.
+    def outcomes(self, f: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
+        """Return each row's distribution of output deviations.
+
+        A deviation is the outputs XOR their noiseless values XOR
+        ``gf2_product(f, output_rows)``, so it depends on ``f`` only through
+        ``gf2_product(f, sign_rows)``.
 
         Args:
             f: The component's f-bits, shape ``(rows, len(f_selection))``.
 
         Returns:
-            The probability that no detector of the component flips, and the
-            probability that no detector and no observable flips, per row.
+            For each row, the deviations that can happen, shape
+            ``(deviations, output slots)``, and their probabilities.
+
+        Raises:
+            ValueError: If the walk has more than ``MAX_BRANCHES`` branches
+                per row.
 
         """
         f = np.asarray(f, dtype=np.uint8)
-        packed = np.packbits(f, axis=1)
-        one, group = unique_rows(packed)
-        keys = [row.tobytes() for row in packed[one]]
-        missing = [i for i, key in enumerate(keys) if key not in self._cache]
-        if missing:
-            passed = np.zeros(len(missing))
-            unflipped = np.zeros(len(missing))
-            for row, weight, outputs in self._leaves(f[one[missing]], prune=True):
-                same = (outputs == self.reference)[:, self._observable].all(axis=1)
-                np.add.at(passed, row, weight)
-                np.add.at(unflipped, row[same], weight[same])
-            for i, p, u in zip(missing, passed, unflipped, strict=True):
-                self._cache[keys[i]] = (float(p), float(u))
-        result = np.array([self._cache[key] for key in keys]).reshape(-1, 2)[group]
-        return result[:, 0], result[:, 1]
+        flips = gf2_product(f, self.output_rows) ^ self.reference
+        rows, weights, deviations = [], [], []
+        leaves = 0
+        for row, weight, outputs in self._leaves(f):
+            leaves += len(row)
+            if leaves > MAX_BRANCHES * len(f):
+                raise ValueError(
+                    f"the tape has more than {MAX_BRANCHES} measurement branches"
+                )
+            rows.append(row)
+            weights.append(weight)
+            deviations.append(outputs ^ flips[row])
+        row = np.concatenate(rows)
+        weight = np.concatenate(weights)
+        deviation = np.concatenate(deviations)
+        order = np.argsort(row, kind="stable")
+        bounds = np.searchsorted(row[order], np.arange(len(f) + 1))
+        result = []
+        for r in range(len(f)):
+            mine = order[bounds[r] : bounds[r + 1]]
+            values, group = np.unique(deviation[mine], axis=0, return_inverse=True)
+            probability = np.zeros(len(values))
+            np.add.at(probability, group.ravel(), weight[mine])
+            result.append((values, probability))
+        return result
 
     def _leaves(
-        self, f: np.ndarray, *, prune: bool
+        self, f: np.ndarray
     ) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """Yield the branches that reach the end of the tape, in batches.
 
         A batch is the row of ``f`` of each branch, its probability and its
-        output values. With ``prune``, only branches whose detectors have their
-        reference values are followed.
+        output values.
         """
         tape = self._tape
-        sign = (f @ self._sign_f.T).astype(np.int64) & 1
-        sign ^= tape.sign_const.astype(np.int64)
-        out = ((f @ self._out_f.T).astype(np.int64) & 1).astype(np.uint8)
-        out ^= tape.output_const.astype(np.uint8)
-        rows = np.arange(len(f))
-        if prune:
-            early = self._early
-            rows = rows[(out[:, early] == self.reference[early]).all(axis=1)]
+        sign = np.zeros((len(f), len(tape.kind)), dtype=np.uint8)
+        sign[:, self._rotations] = gf2_product(f, self.sign_rows)
+        sign ^= tape.sign_const.astype(np.uint8)
+        out = gf2_product(f, self.output_rows) ^ tape.output_const.astype(np.uint8)
         step = max(1, self._lanes // 4)
-        for start in range(0, len(rows), step):
-            row = rows[start : start + step]
+        for start in range(0, len(f), step):
+            row = np.arange(start, min(start + step, len(f)))
             amps = np.zeros((len(row), self._size), dtype=np.complex128)
             amps[:, 0] = 1.0
             bits = np.zeros((len(row), self._out_b.shape[1]), dtype=np.uint8)
-            yield from self._walk(0, amps, row, bits, sign, out, prune)
+            yield from self._walk(0, amps, row, bits, sign, out)
 
     def _walk(
         self,
@@ -194,19 +190,16 @@ class Branches:
         bits: np.ndarray,
         sign: np.ndarray,
         out: np.ndarray,
-        prune: bool,
     ) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """Run the actions from ``start`` on lanes and yield those that finish.
 
         Lane ``i`` has amplitudes ``amps[i]``, whose squared norm is its
         probability, belongs to row ``row[i]`` and has branch bits ``bits[i]``.
-        ``sign`` and ``out`` hold the rows' f-bit parts of the rotation signs
-        and of the outputs.
+        ``sign`` and ``out`` hold the rows' f-bit parts of the action signs and
+        of the outputs.
         """
         tape = self._tape
         for a in range(start, len(tape.kind)):
-            if len(row) == 0:
-                return
             x, z = int(tape.x_mask[a]), int(tape.z_mask[a])
             # NOTE: the Pauli P = i^|x&z| X^x Z^z takes amplitudes ``amps`` to
             # ``amps[:, source] * phase``.
@@ -243,21 +236,11 @@ class Branches:
             amps = np.concatenate([child[0] for child in children])
             row = np.concatenate([child[1] for child in children])
             bits = np.concatenate([child[2] for child in children])
-            slots = self._ready[a]
-            if prune and len(slots):
-                values = out[row][:, slots] ^ _bit_parity(bits, self._out_b[slots])
-                keep = (values == self.reference[slots]).all(axis=1)
-                amps, row, bits = amps[keep], row[keep], bits[keep]
-            if not prune and len(row) > MAX_NOISELESS_BRANCHES:
-                raise ValueError(
-                    "the noiseless circuit has more than "
-                    f"{MAX_NOISELESS_BRANCHES} measurement branches in one component"
-                )
             if len(row) > self._lanes:
                 half = len(row) // 2
                 for part in (slice(0, half), slice(half, None)):
                     yield from self._walk(
-                        a + 1, amps[part], row[part], bits[part], sign, out, prune
+                        a + 1, amps[part], row[part], bits[part], sign, out
                     )
                 return
         yield row, _weights(amps), out[row] ^ _bit_parity(bits, self._out_b)
