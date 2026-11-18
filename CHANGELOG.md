@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Fault distance of non-Clifford circuits (experimental).**
+  `tsim.experimental.shortest_errors(circuit, max_weight=k)` returns every
+  smallest set of faults that can flip an observable without flipping a
+  detector, like Stim's `shortest_graphlike_error` but exact and for circuits
+  with T gates. Each result gives the probability that the faults go undetected
+  and that they flip an observable, and explains each fault with
+  `stim.CircuitErrorLocation`s. An empty result proves the distance exceeds `k`.
+  The fault distance of d=5 T-state cultivation (3, as found by
+  [Chan et al.](https://arxiv.org/abs/2609.17706)) takes 7 s.
+
 ### Changed
 - The stabilizer-rank strategies compile components of the same shape once, and
   no longer run components with a single output without compiling them. A
