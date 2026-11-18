@@ -406,12 +406,12 @@ class _Join:
     set of the others, which ``fault_join.scan`` streams.
     """
 
-    def __init__(self, search: _Search, weight: int) -> None:
+    def __init__(self, search: _Search, weight: int, small: int | None = None) -> None:
+        small = weight // 2 if small is None else small
         self._weight = weight
-        self._large = weight - weight // 2
+        self._large = weight - small
         self._search = search
         self._faults = (search._d, search._s, search._o, search._hash)
-        small = weight // 2
         sets = _combinations(len(search._events), small)
         last = sets[:, -1].astype(np.int64) if small else np.full(len(sets), -1)
         hashes = np.bitwise_xor.reduce(search._hash[sets], axis=1, initial=np.uint64(0))
