@@ -77,6 +77,8 @@ class SatSearch:
         self._clauses.append(nontrivial)
         self._cuts: dict[bytes, int] = {}
         self.rounds = 0
+        self.prefix_rounds = 0
+        self.prefix_cuts = False
         self.walks = 0
         self.solver_seconds = 0.0
         self._log(
@@ -188,6 +190,12 @@ class SatSearch:
                 float(undetected[0]),
                 float(flip[0]),
             )
+        if self.prefix_cuts:
+            cut = self._prefix_cut(row_s, chosen, distributions)
+            if cut is not None:
+                self._sat.add_clause(cut)
+                if key in self._cuts:
+                    return None
         if key in self._cuts:
             # NOTE: the cut let this set through, but its chance is below
             # MIN_PROBABILITY.
@@ -196,6 +204,56 @@ class SatSearch:
         self._cuts[key] = self.rounds
         self._sat.add_clause(self._cut(row_s, search._table(signs, distributions)))
         return None
+
+    def _prefix_cut(
+        self, row_s: np.ndarray, chosen: list[int], distributions: list[list]
+    ) -> list[int] | None:
+        """Return the shortest cut that a failed detector of ``chosen`` justifies.
+
+        A detector of a component that the tape knows after action ``a`` depends
+        only on the signs of the rotations before ``a``. If the set's output
+        flips put the detectors known after ``a`` outside every deviation that
+        its signs allow, then every set with the same signs before ``a`` and
+        the same such flips fails too. Returns None if every detector can pass.
+        """
+        search = self._search
+        num_s, num_o = self._sbits.shape[1], self._obits.shape[1]
+        s = _bits(row_s[None, :], num_s)[0]
+        o = _bits(np.bitwise_xor.reduce(search._o[chosen], axis=0)[None, :], num_o)[0]
+        best = None
+        offset = 0
+        for branches, slots, component in zip(
+            search._branches, search._slots, distributions, strict=True
+        ):
+            deviations, _ = component[0]
+            detector = ~branches.observable
+            mine = o[slots].astype(bool)
+            for a in np.unique(branches.ready[detector]).tolist():
+                known = detector & (branches.ready <= a)
+                allowed = deviations.astype(bool)[:, known]
+                if not (allowed == mine[known]).all(axis=1).any():
+                    before = np.flatnonzero(branches.rotation_actions < a) + offset
+                    literals = [k for k in before.tolist() if self._s_var[k]]
+                    if best is None or len(literals) < len(best[0]):
+                        best = (literals, slots[known], allowed)
+                    break
+            offset += len(branches.sign_rows)
+        if best is None:
+            return None
+        literals, known_slots, allowed = best
+        self.prefix_rounds += 1
+        clause = [-self._s_var[k] if s[k] else self._s_var[k] for k in literals]
+        for row in np.unique(allowed, axis=0):
+            z = self._var()
+            for k, want in zip(known_slots.tolist(), row.tolist(), strict=True):
+                v = self._o_var[k]
+                if v:
+                    self._sat.add_clause([-z, v if want else -v])
+                elif want:
+                    self._sat.add_clause([-z])
+                    break
+            clause.append(z)
+        return clause
 
     def _cut(self, row_s: np.ndarray, table: tuple) -> list[int]:
         """Return the clause "signs are not ``row_s``, or a row of ``table`` holds".

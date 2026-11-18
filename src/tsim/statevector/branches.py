@@ -66,6 +66,9 @@ class Branches:
         sign_rows: The component f-bits that each rotation's sign reads.
         output_rows: The component f-bits that each output slot reads.
         observable: Whether each output slot is an observable.
+        ready: The action after which each output slot is known, -1 for none.
+        rotation_actions: The action of each rotation, in the order of
+            ``sign_rows``.
 
     """
 
@@ -88,6 +91,15 @@ class Branches:
         self._outputs = np.asarray(component.output_indices, dtype=np.int64)
         self._num_detectors = num_detectors
         self.observable = self._outputs >= num_detectors
+        # NOTE: an output is known once the last measurement that it reads ran;
+        # it depends only on the rotation signs before that action.
+        measured = np.flatnonzero(tape.branch >= 0)
+        setter = np.full(self._out_b.shape[1], -1)
+        setter[self._branch[measured]] = measured
+        self.ready = np.max(
+            np.where(self._out_b.astype(bool), setter[None, :], -1), axis=1, initial=-1
+        )
+        self.rotation_actions = self._rotations
 
     @cached_property
     def reference(self) -> np.ndarray:
