@@ -84,6 +84,11 @@ __device__ void visit(const Args &a, u64 h, const int *c) {
             if (fp == 0) fp = 1;
             long long slot = (long long)(fp & (u64)(a.set_cap - 1));
             while (true) {
+                // NOTE: a plain read first: most signs are already in the set,
+                // and an atomic on a hot slot serializes the threads.
+                u64 seen = *(volatile u64 *)&a.set_fp[slot];
+                if (seen == fp) break;
+                if (seen != 0ULL) { slot = (slot + 1) & (a.set_cap - 1); continue; }
                 u64 old = atomicCAS(&a.set_fp[slot], 0ULL, fp);
                 if (old == 0ULL) {
                     for (int k = 0; k < a.ws; k++) a.set_keys[slot * a.ws + k] = S[k];
@@ -282,15 +287,40 @@ class CudaJoin:
         dtype = np.dtype(fields, align=True)
         return np.array([tuple(values)], dtype=dtype)[0]
 
+    progress = None
+    """Called with (prefixes done, prefixes in all, seconds) after each launch."""
+
+    stop_after = None
+    """If set, stop after this many prefixes (for timing a sample)."""
+
     def _launch(self, args) -> None:
+        import time
+
         total = self._n if self._r == 1 else self._n * self._n
         block = 128
         # NOTE: launches of a bounded size keep each under the display watchdog.
         chunk = 1 << 20 if self._r >= 4 else 1 << 26
-        for first in range(0, total, chunk):
+        start = time.monotonic()
+        # NOTE: prefixes (c0, c1) are visited from the largest c0 down, so a
+        # sample spans the cheap and the expensive ones evenly when shuffled.
+        firsts = list(range(0, total, chunk))
+        if self.stop_after is not None:
+            rng = np.random.default_rng(0)
+            firsts = sorted(
+                rng.permutation(firsts)[: max(1, -(-self.stop_after // chunk))].tolist()
+            )
+        for i, first in enumerate(firsts):
             count = min(chunk, total - first)
             grid = -(-count // block)
             _kernel()((grid,), (block,), (args, np.int64(first), np.int64(count)))
+            if self.progress is not None:
+                cp.cuda.Device().synchronize()
+                self.progress(
+                    (i + 1) * chunk,
+                    len(firsts) * chunk,
+                    total,
+                    time.monotonic() - start,
+                )
         cp.cuda.Device().synchronize()
 
     def _dummy_emit(self):
