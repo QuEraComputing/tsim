@@ -122,3 +122,34 @@ def test_a_random_noiseless_output_has_no_reference():
     ((compiled, _),) = _components(text, sample_detectors=True)
     with pytest.raises(ValueError, match="detector 0 is random without noise"):
         assert Branches(compiled, num_detectors=1).reference is not None
+
+
+@pytest.mark.parametrize("name", sorted(CIRCUITS))
+def test_the_support_with_its_coins_is_every_possible_outcome(name):
+    for compiled, ops in _components(CIRCUITS[name], sample_detectors=False):
+        branches = Branches(compiled, num_detectors=len(compiled.output_indices))
+        f = np.array(f_patterns(ops.num_f, limit=4), dtype=np.uint8)
+        f = f.reshape(len(f), ops.num_f)
+        row, values = branches.support(f)
+        assert np.all(np.diff(row) >= 0)
+        coins = branches.coin_rows
+        flips = np.array(
+            [
+                np.bitwise_xor.reduce(coins[list(s)], axis=0, initial=0)
+                for s in _subsets(len(coins))
+            ],
+            dtype=np.uint8,
+        ).reshape(-1, coins.shape[1])
+        expected = [set() for _ in f]
+        for r, weight, out in branches._leaves(f):
+            for i, w, o in zip(r.tolist(), weight.tolist(), out.tolist(), strict=True):
+                if w > 1e-12:
+                    expected[i].add(tuple(o))
+        got = [set() for _ in f]
+        for i, v in zip(row.tolist(), values, strict=True):
+            got[i] |= {tuple(int(b) for b in v ^ flip) for flip in flips}
+        assert got == expected
+
+
+def _subsets(n: int) -> list[list[int]]:
+    return [[i for i in range(n) if mask >> i & 1] for mask in range(1 << n)]

@@ -27,7 +27,7 @@ MAX_BRANCHES = 1 << 20
 """Most measurement branches that one row of f-bits may have."""
 
 IMPOSSIBLE = 1e-12
-"""Weight below which a measurement outcome cannot happen."""
+"""Probability below which a measurement outcome cannot happen."""
 
 _I_POWERS = (1, 1j, -1, -1j)
 
@@ -66,6 +66,9 @@ class Branches:
         sign_rows: The component f-bits that each rotation's sign reads.
         output_rows: The component f-bits that each output slot reads.
         observable: Whether each output slot is an observable.
+        coin_rows: The output slots that each fair coin flips, for the coins
+            that ``support`` fixes at 0: dormant measurements that no
+            rotation reads.
 
     """
 
@@ -88,6 +91,13 @@ class Branches:
         self._outputs = np.asarray(component.output_indices, dtype=np.int64)
         self._num_detectors = num_detectors
         self.observable = self._outputs >= num_detectors
+        # NOTE: a dormant measurement leaves the amplitudes alone; if no rotation
+        # reads it either, it only flips outputs, independently of the rest.
+        dormant = np.flatnonzero(tape.kind == MEASURE_DORMANT)
+        unread = ~np.asarray(self._sign_b.any(axis=0))[self._branch[dormant]]
+        self._coins = np.zeros(len(tape.kind), dtype=bool)
+        self._coins[dormant[unread]] = True
+        self.coin_rows = self._out_b[:, self._branch[dormant[unread]]].T
 
     @cached_property
     def reference(self) -> np.ndarray:
@@ -136,39 +146,72 @@ class Branches:
         """
         f = np.asarray(f, dtype=np.uint8)
         flips = gf2_product(f, self.output_rows) ^ self.reference
-        rows, weights, deviations = [], [], []
-        leaves = 0
-        for row, weight, outputs in self._leaves(f):
-            leaves += len(row)
-            if leaves > MAX_BRANCHES * len(f):
-                raise ValueError(
-                    f"the tape has more than {MAX_BRANCHES} measurement branches"
-                )
-            rows.append(row)
-            weights.append(weight)
-            deviations.append(outputs ^ flips[row])
-        row = np.concatenate(rows)
-        weight = np.concatenate(weights)
-        deviation = np.concatenate(deviations)
-        order = np.argsort(row, kind="stable")
-        bounds = np.searchsorted(row[order], np.arange(len(f) + 1))
+        row, weight, outputs = self._collect(f, skip_coins=False)
+        deviation = outputs ^ flips[row]
+        bounds = np.searchsorted(row, np.arange(len(f) + 1))
         result = []
         for r in range(len(f)):
-            mine = order[bounds[r] : bounds[r + 1]]
+            mine = slice(bounds[r], bounds[r + 1])
             values, group = np.unique(deviation[mine], axis=0, return_inverse=True)
             probability = np.zeros(len(values))
             np.add.at(probability, group.ravel(), weight[mine])
             result.append((values, probability))
         return result
 
+    def support(self, f: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Return the output values that each row of f-bits can give.
+
+        The walk fixes the coins of ``coin_rows`` at 0: each of them flips the
+        outputs by its row of ``coin_rows`` with probability 1/2, whatever
+        else happens.
+
+        Args:
+            f: The component's f-bits, shape ``(rows, len(f_selection))``.
+
+        Returns:
+            The row of ``f`` of each possible outcome, in increasing order,
+            and its output values, shape ``(outcomes, output slots)``.
+
+        Raises:
+            ValueError: If the walk has more than ``MAX_BRANCHES`` branches
+                per row.
+
+        """
+        row, _, outputs = self._collect(np.asarray(f, dtype=np.uint8), skip_coins=True)
+        return row, outputs
+
+    def _collect(
+        self, f: np.ndarray, *, skip_coins: bool
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return every branch's row, probability and outputs, sorted by row."""
+        rows, weights, outputs = [], [], []
+        leaves = 0
+        for row, weight, out in self._leaves(f, skip_coins=skip_coins):
+            rows.append(row)
+            weights.append(weight)
+            outputs.append(out)
+            leaves += len(row)
+            if leaves > MAX_BRANCHES * len(f):
+                raise ValueError(
+                    f"the tape has more than {MAX_BRANCHES} measurement branches"
+                )
+        row = np.concatenate(rows)
+        order = np.argsort(row, kind="stable")
+        return (
+            row[order],
+            np.concatenate(weights)[order],
+            np.concatenate(outputs)[order],
+        )
+
     def _leaves(
-        self, f: np.ndarray
+        self, f: np.ndarray, *, skip_coins: bool = False
     ) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """Yield the branches that reach the end of the tape, in batches.
 
         A batch is the row of ``f`` of each branch, its probability and its
-        output values.
+        output values. With ``skip_coins``, the coins of ``coin_rows`` land 0.
         """
+        skip = self._coins if skip_coins else np.zeros_like(self._coins)
         tape = self._tape
         sign = np.zeros((len(f), len(tape.kind)), dtype=np.uint8)
         sign[:, self._rotations] = gf2_product(f, self.sign_rows)
@@ -180,7 +223,7 @@ class Branches:
             amps = np.zeros((len(row), self._size), dtype=np.complex128)
             amps[:, 0] = 1.0
             bits = np.zeros((len(row), self._out_b.shape[1]), dtype=np.uint8)
-            yield from self._walk(0, amps, row, bits, sign, out)
+            yield from self._walk(0, amps, row, bits, sign, out, skip)
 
     def _walk(
         self,
@@ -190,16 +233,19 @@ class Branches:
         bits: np.ndarray,
         sign: np.ndarray,
         out: np.ndarray,
+        skip: np.ndarray,
     ) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """Run the actions from ``start`` on lanes and yield those that finish.
 
         Lane ``i`` has amplitudes ``amps[i]``, whose squared norm is its
         probability, belongs to row ``row[i]`` and has branch bits ``bits[i]``.
         ``sign`` and ``out`` hold the rows' f-bit parts of the action signs and
-        of the outputs.
+        of the outputs. The actions of ``skip`` do not run.
         """
         tape = self._tape
         for a in range(start, len(tape.kind)):
+            if skip[a]:
+                continue
             x, z = int(tape.x_mask[a]), int(tape.z_mask[a])
             # NOTE: the Pauli P = i^|x&z| X^x Z^z takes amplitudes ``amps`` to
             # ``amps[:, source] * phase``.
@@ -219,7 +265,9 @@ class Branches:
                 else:
                     moved = amps[:, source] * phase
                     projected = (amps - moved if outcome else amps + moved) / 2
-                    kept = np.flatnonzero(_weights(projected) > IMPOSSIBLE)
+                    # NOTE: relative to the lane's weight, as ``shared._cut``.
+                    possible = _weights(projected) > IMPOSSIBLE * _weights(amps)
+                    kept = np.flatnonzero(possible)
                     projected = projected[kept]
                     # NOTE: the planner moved the measured Pauli onto the pivot,
                     # which ends in |0>, as in ``shared._project_range``.
@@ -240,7 +288,7 @@ class Branches:
                 half = len(row) // 2
                 for part in (slice(0, half), slice(half, None)):
                     yield from self._walk(
-                        a + 1, amps[part], row[part], bits[part], sign, out
+                        a + 1, amps[part], row[part], bits[part], sign, out, skip
                     )
                 return
         yield row, _weights(amps), out[row] ^ _bit_parity(bits, self._out_b)
