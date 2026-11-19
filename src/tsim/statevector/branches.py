@@ -185,13 +185,13 @@ class Branches:
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Return every branch's row, probability and outputs, sorted by row."""
         rows, weights, outputs = [], [], []
-        leaves = 0
+        leaves = np.zeros(len(f), dtype=np.int64)
         for row, weight, out in self._leaves(f, skip_coins=skip_coins):
             rows.append(row)
             weights.append(weight)
             outputs.append(out)
-            leaves += len(row)
-            if leaves > MAX_BRANCHES * len(f):
+            leaves += np.bincount(row, minlength=len(f))
+            if leaves.max() > MAX_BRANCHES:
                 raise ValueError(
                     f"the tape has more than {MAX_BRANCHES} measurement branches"
                 )

@@ -312,6 +312,43 @@ def test_the_directions_are_cached_unless_shots_have_no_seed():
     assert _directions_of.cache_info().currsize == 1
 
 
+@pytest.mark.parametrize("function", [missing_detectors, nondeterministic_detectors])
+def test_a_record_before_the_first_measurement_is_refused(function):
+    # NOTE: the lookback used to index the padding of the packed words.
+    with pytest.raises(ValueError, match="before the first measurement"):
+        function(Circuit("R 0\nM 0\nDETECTOR rec[-2]"))
+
+
+@pytest.mark.parametrize("shots", [None, 1000])
+def test_measurements_after_resets_where_stim_116_is_wrong(shots):
+    # NOTE: Stim 1.16 counts the M 0 here as determined, and its missing
+    # detectors for MRX 1 MRX 1 name both records; its sampler shows both
+    # are random.
+    reset = Circuit("H 0\nCX 0 1\nR 1\nM 0")
+    assert count_determined_measurements(reset, shots=shots, seed=0) == 0
+    twice = Circuit("MRX 1\nMRX 1")
+    assert str(missing_detectors(twice, shots=shots, seed=0)).split() == [
+        "DETECTOR",
+        "rec[-1]",
+    ]
+
+
+@pytest.mark.parametrize(
+    "declarations",
+    [
+        "OBSERVABLE_INCLUDE(0) rec[-1]\nOBSERVABLE_INCLUDE(1) rec[-2]",
+        "DETECTOR rec[-2]\nOBSERVABLE_INCLUDE(0) rec[-1]",
+    ],
+)
+def test_determined_parities_with_random_observables_are_not_returned(declarations):
+    # NOTE: the Bell pair's M0 ⊕ M1 is determined; as a detector it would
+    # detect flips of the observable.
+    circuit = Circuit(f"R 0 1\nH 0\nCX 0 1\nM 0 1\n{declarations}")
+    assert len(nondeterministic_detectors(circuit)) == 2
+    assert count_determined_measurements(circuit) == 1
+    assert str(missing_detectors(circuit)) == ""
+
+
 def test_declarations_of_paulis_are_refused():
     circuit = Circuit("R 0\nM 0\nOBSERVABLE_INCLUDE(0) X0")
     with pytest.raises(ValueError, match="non-record target"):

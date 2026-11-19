@@ -67,7 +67,9 @@ def count_determined_measurements(
     As ``stim.Circuit.count_determined_measurements``, for any circuit: the
     number of independent parities of measurements that every noiseless shot
     gives the same value. In a Clifford circuit that is the number of
-    measurements that are a parity of earlier ones, as in Stim. With
+    measurements that are a parity of earlier ones, as in Stim, except that
+    Stim 1.16 also counts some measurements after a reset of an entangled qubit
+    that are random, such as ``M 0`` in ``H 0; CX 0 1; R 1; M 0``. With
     non-Clifford gates a measurement can also be a nonlinear function of
     earlier ones, which this does not count, since no detector can use it.
 
@@ -110,11 +112,13 @@ def missing_detectors(
     As ``stim.Circuit.missing_detectors``, for any circuit: the returned
     ``DETECTOR`` instructions can be appended to ``circuit``, and then every
     determined parity (``count_determined_measurements``) is a parity of its
-    determined detectors and observables. A random declared detector
-    (``nondeterministic_detectors``) covers nothing, but parities of random
-    detectors that are determined come first in the result, so it heals them:
-    if S gates became T gates and randomized detectors ``D1`` and ``D2`` while
-    ``D1 ⊕ D2`` stayed determined, that is a returned detector. Like Stim's, the
+    detectors and observables. A random declared detector
+    (``nondeterministic_detectors``) is no use, so the result first heals
+    random detectors with their parities that are determined: if S gates
+    became T gates and randomized detectors ``D1`` and ``D2`` while
+    ``D1 ⊕ D2`` stayed determined, that is a returned detector. Determined
+    parities that need a random observable are not returned, as in Stim: a
+    detector of one would detect flips of the observable. Like Stim's, the
     result is no particularly good basis otherwise.
 
     A Tsim detector is its raw parity, so a returned one whose noiseless value
@@ -137,21 +141,37 @@ def missing_detectors(
     overlaps, random = declared.random(directions)
     covered = Span(num_m)
     covered.insert(np.delete(declared.words, random, axis=0))
-    # NOTE: a parity of random declarations is determined when it overlaps no
-    # direction; the kernel's rows end at distinct declarations, so they pair
-    # each random one with earlier ones where they can.
-    kernel = Span(len(random))
-    kernel.insert_bits(unpack(overlaps[random], directions.rank).T)
-    combinations = unpack(kernel.annihilator(), len(random)).astype(bool)
-    healed = np.zeros((len(combinations), num_words(num_m)), dtype=np.uint64)
-    for i, combination in enumerate(combinations):
-        healed[i] = np.bitwise_xor.reduce(declared.words[random[combination]], axis=0)
-    candidates = np.concatenate([healed, directions.annihilator()])
+    # NOTE: the determined parities of random detectors are returned first.
+    # Those that need a random observable come next and are covered silently.
+    detectors = random[random < circuit.num_detectors]
+    healed = _determined_parities(declared, overlaps, detectors, directions.rank)
+    all_random = _determined_parities(declared, overlaps, random, directions.rank)
+    candidates = np.concatenate([healed, all_random, directions.annihilator()])
+    new = covered.insert(candidates)
+    new[len(healed) : len(healed) + len(all_random)] = False
     result = stim.Circuit()
-    for words in candidates[covered.insert(candidates)]:
+    for words in candidates[new]:
         records = np.flatnonzero(unpack(words[None], num_m)[0])
         result.append("DETECTOR", [stim.target_rec(int(m) - num_m) for m in records])
     return result
+
+
+def _determined_parities(
+    declared: _Declared, overlaps: np.ndarray, random: np.ndarray, rank: int
+) -> np.ndarray:
+    """Return the parities of the declarations ``random`` that are determined.
+
+    A parity is determined when it overlaps no direction. The kernel's rows end
+    at distinct declarations, so they pair each one with earlier ones where
+    they can.
+    """
+    kernel = Span(len(random))
+    kernel.insert_bits(unpack(overlaps[random], rank).T)
+    combinations = unpack(kernel.annihilator(), len(random)).astype(bool)
+    words = np.zeros((len(combinations), declared.words.shape[1]), dtype=np.uint64)
+    for i, combination in enumerate(combinations):
+        words[i] = np.bitwise_xor.reduce(declared.words[random[combination]], axis=0)
+    return words
 
 
 def nondeterministic_detectors(
@@ -228,7 +248,13 @@ class _Declared:
                         f"{instruction.name} with a non-record target ({target}) "
                         "is not supported"
                     )
-                members[row] ^= {measured + target.value}
+                record = measured + target.value
+                if record < 0:
+                    raise ValueError(
+                        f"{instruction.name} refers to {target}, before the "
+                        "first measurement"
+                    )
+                members[row] ^= {record}
         sizes = [len(records) for records in members]
         self.starts = np.cumsum([0, *sizes], dtype=np.int64)
         self.records = np.array(

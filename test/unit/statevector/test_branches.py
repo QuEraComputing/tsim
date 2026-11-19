@@ -115,6 +115,22 @@ def test_too_many_branches_are_refused(monkeypatch):
         branches.outcomes(np.zeros((1, ops.num_f), dtype=np.uint8))
 
 
+def test_the_branches_are_limited_per_row(monkeypatch):
+    # NOTE: f = 0 leaves two random MX, four branches; f = 1 undoes the T
+    # gates and leaves one. Four rows have 7 branches, below 2 per row on
+    # average.
+    text = "RX 0 1\nT 0 1\nE(0.1) X0 X1\nT 0 1\nCX 0 1\nMX 0 1"
+    ((compiled, ops),) = _components(text, sample_detectors=False)
+    branches = Branches(compiled, num_detectors=len(compiled.output_indices))
+    f = np.array([[0], [1], [1], [1]], dtype=np.uint8)
+    assert ops.num_f == 1
+    monkeypatch.setattr("tsim.statevector.branches.MAX_BRANCHES", 4)
+    branches.support(f)
+    monkeypatch.setattr("tsim.statevector.branches.MAX_BRANCHES", 2)
+    with pytest.raises(ValueError, match="measurement branches"):
+        branches.support(f)
+
+
 def test_a_random_noiseless_output_has_no_reference():
     text = """
         R 0
