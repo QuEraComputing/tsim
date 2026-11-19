@@ -44,6 +44,9 @@ if TYPE_CHECKING:
 MIN_PROBABILITY = 1e-9
 """Smallest chance to flip an observable undetected that counts as a logical error."""
 
+MAX_WEIGHT = 6
+"""Most faults in a set that the search tries: the join streams up to 3 of them."""
+
 MAX_COMBINATIONS = 30_000_000
 """Most sets of faults that the stored side of the join may hold."""
 
@@ -62,16 +65,35 @@ _MEASURED_PAIR = {"MXX": "X", "MYY": "Y", "MZZ": "Z"}
 class Fault:
     """One way for a circuit to go wrong: circuit errors with the same effect.
 
+    Its first two attributes are those of ``stim.ExplainedError``, which
+    ``to_explained_error`` returns.
+
     Attributes:
-        circuit_error_locations: The circuit errors that are this fault, as in
-            ``stim.ExplainedError``. Their instruction offsets index
-            ``circuit.flattened()``.
-        probability: The sum of their probabilities.
+        dem_error_terms: The detectors and then the observables that the fault
+            flips in every shot when it happens alone. In a Clifford circuit
+            that is every one it flips; with non-Clifford gates it can also flip
+            some in only part of the shots, which are not listed.
+        circuit_error_locations: The circuit errors that are this fault. Their
+            instruction offsets index ``circuit.flattened()``, so for a circuit
+            with ``REPEAT`` blocks they have one stack frame, not Stim's nested
+            ones.
+        probability: The probability that the fault happens: that an odd number
+            of its circuit errors do, those of one noise channel excluding each
+            other and those of different channels being independent, as when
+            Stim merges the errors of a detector error model.
 
     """
 
+    dem_error_terms: tuple[stim.DemTargetWithCoords, ...]
     circuit_error_locations: tuple[stim.CircuitErrorLocation, ...]
     probability: float
+
+    def to_explained_error(self) -> stim.ExplainedError:
+        """Return the fault as a ``stim.ExplainedError``, without its probability."""
+        return stim.ExplainedError(
+            dem_error_terms=list(self.dem_error_terms),
+            circuit_error_locations=list(self.circuit_error_locations),
+        )
 
 
 @dataclass(frozen=True)
@@ -79,7 +101,7 @@ class LogicalError:
     """Faults that together can flip an observable without flipping a detector.
 
     ``len(error)`` is the number of faults and iterating yields them, as for the
-    list that ``stim.Circuit.shortest_graphlike_error`` returns.
+    list of ``stim.ExplainedError`` that Stim's search methods return.
 
     Attributes:
         faults: The faults.
@@ -118,7 +140,14 @@ def shortest_errors(
     circuit's fault distance, and an empty result proves that the distance is
     above ``max_weight``. It stores the sets of ``max_weight // 2`` faults and
     streams those of the other faults, so its time grows as (number of
-    faults)^(max_weight - max_weight // 2). It supports up to 6 faults.
+    faults)^(max_weight - max_weight // 2). It supports up to ``MAX_WEIGHT`` (6)
+    faults.
+
+    On a Clifford circuit it finds what
+    ``stim.Circuit.search_for_undetectable_logical_errors`` finds without
+    limits, not only graphlike errors as ``shortest_graphlike_error`` does, but
+    every logical error of the smallest weight rather than one, and it returns
+    an empty list where Stim raises because there is none.
 
     Args:
         circuit: The circuit, with its noise, detectors and observables.
@@ -134,13 +163,14 @@ def shortest_errors(
 
     Raises:
         ValueError: If a detector or an observable is random without noise,
-            ``max_weight`` is above 6, or the search would need more than
+            ``max_weight`` is below 1 or above ``MAX_WEIGHT``, or the search
+            would need more than
             ``MAX_COMBINATIONS`` stored or ``MAX_SCANNED`` streamed sets of
             faults.
 
     """
-    if max_weight < 1:
-        raise ValueError(f"max_weight must be at least 1, not {max_weight}")
+    if not 1 <= max_weight <= MAX_WEIGHT:
+        raise ValueError(f"max_weight must be from 1 to {MAX_WEIGHT}, not {max_weight}")
     if circuit.num_observables == 0:
         return []
     search = _Search(circuit)
@@ -184,7 +214,7 @@ class _Search:
             first += num_bits
         self._events = list(groups.values())
         self._fault_probability = np.array(
-            [sum(p for _, _, p in events) for events in self._events]
+            [_probability(events) for events in self._events]
         )
         # NOTE: the channel of each fault whose circuit errors share one, else -1.
         self._single_channel = np.array(
@@ -202,16 +232,22 @@ class _Search:
 
         num_direct = len(program.direct_f_indices)
         direct = program.direct_f_indices
-        is_detector = program.output_order[:num_direct] < prepared.num_detectors
+        self._num_detectors = prepared.num_detectors
+        self._num_outputs = prepared.num_outputs
+        self._direct_outputs = program.output_order[:num_direct]
+        self._direct_bits = direct
+        is_detector = self._direct_outputs < prepared.num_detectors
         detector_bits = np.unique(direct[is_detector & (direct >= 0)])
         observable_bits = np.unique(direct[~is_detector & (direct >= 0)])
         self._branches: list[Branches] = []
+        self._outputs: list[np.ndarray] = []
         for component in program.components:
             assert isinstance(component, StatevectorComponent)
             branches = Branches(component, prepared.num_detectors)
             # NOTE: this raises if an output is random without noise.
             assert branches.reference is not None
             self._branches.append(branches)
+            self._outputs.append(np.asarray(component.output_indices, np.int64))
 
         # NOTE: each fault is three rows of bits: the direct detectors that it
         # flips, the rotation signs that it flips, and the output flips of the
@@ -254,8 +290,6 @@ class _Search:
         """Return the logical errors of exactly ``weight`` faults."""
         n = len(self._events)
         small, large = weight // 2, weight - weight // 2
-        if large > 3:
-            raise ValueError(f"the search supports up to 6 faults, not {weight}")
         if comb(n, small) > MAX_COMBINATIONS or comb(n, large) > MAX_SCANNED:
             raise ValueError(
                 f"sets of {weight} out of {n} faults are too many to search; lower "
@@ -278,6 +312,7 @@ class _Search:
         sets, undetected, flip = sets[keep], undetected[keep], flip[keep]
         likelihood = flip * np.prod(self._fault_probability[sets], axis=1)
         order = np.argsort(-likelihood, kind="stable")[:max_errors]
+        self._explain(np.unique(sets[order]).tolist())
         return [
             LogicalError(
                 tuple(self._fault(j) for j in sets[i].tolist()),
@@ -385,18 +420,49 @@ class _Search:
 
     def _fault(self, index: int) -> Fault:
         """Return fault ``index`` with its circuit errors explained."""
-        if index in self._explained:
-            return self._explained[index]
+        self._explain([index])
+        return self._explained[index]
+
+    def _explain(self, indices: list[int]) -> None:
+        """Explain the faults ``indices``, with one walk per component for all."""
+        indices = [i for i in indices if i not in self._explained]
+        if not indices:
+            return
         if self._locations is None:
             self._locations = _Locations(self._stim_circuit)
-        events = self._events[index]
-        self._explained[index] = Fault(
-            tuple(
-                self._locations.of(channel, outcome) for channel, outcome, _ in events
-            ),
-            sum(p for _, _, p in events),
-        )
-        return self._explained[index]
+        bits = self._bits[indices]
+        flipped = np.zeros((len(indices), self._num_outputs), dtype=bool)
+        direct = self._direct_bits >= 0
+        flipped[:, self._direct_outputs[direct]] = bits[
+            :, self._direct_bits[direct]
+        ].astype(bool)
+        for branches, outputs in zip(self._branches, self._outputs, strict=True):
+            local = bits[:, branches.f_selection]
+            shifts = gf2_product(local, branches.output_rows).astype(bool)
+            flipped[:, outputs] = shifts
+            # NOTE: a fault that flips no rotation sign shifts the outputs, which
+            # are deterministic without noise; the others need the walk.
+            walked = np.flatnonzero(gf2_product(local, branches.sign_rows).any(axis=1))
+            if not len(walked):
+                continue
+            for row, (deviations, probability) in zip(
+                walked.tolist(), branches.outcomes(local[walked]), strict=True
+            ):
+                flips = deviations.astype(bool) ^ shifts[row]
+                certain = flips.T.astype(float) @ probability > 1 - MIN_PROBABILITY
+                flipped[row, outputs] = certain
+        for index, row in zip(indices, flipped, strict=True):
+            events = self._events[index]
+            self._explained[index] = Fault(
+                dem_error_terms=self._locations.terms(
+                    np.flatnonzero(row).tolist(), self._num_detectors
+                ),
+                circuit_error_locations=tuple(
+                    self._locations.of(channel, outcome)
+                    for channel, outcome, _ in events
+                ),
+                probability=float(self._fault_probability[index]),
+            )
 
 
 class _Join:
@@ -499,6 +565,21 @@ def _combinations(n: int, size: int) -> np.ndarray:
     return sets
 
 
+def _probability(events: list[tuple[int, int, float]]) -> float:
+    """Return the probability that an odd number of ``events`` happen.
+
+    The events of one channel exclude each other; those of different channels
+    are independent.
+    """
+    by_channel: dict[int, float] = {}
+    for channel, _, p in events:
+        by_channel[channel] = by_channel.get(channel, 0.0) + p
+    odd = 0.0
+    for p in by_channel.values():
+        odd += p - 2 * odd * p
+    return odd
+
+
 def _distinct(choices: Sequence[set[int]]) -> bool:
     """Return whether one item can be taken from each set, all different."""
     if not choices:
@@ -518,6 +599,25 @@ class _Locations:
         self._flat = stim_circuit.flattened()
         self._coords = self._flat.get_final_qubit_coordinates()
         self._ticks = np.cumsum([op.name == "TICK" for op in self._flat])
+        self._detector_coords = stim_circuit.get_detector_coordinates()
+
+    def terms(
+        self, outputs: list[int], num_detectors: int
+    ) -> tuple[stim.DemTargetWithCoords, ...]:
+        """Return outputs, detectors first, as Stim's terms of an explained error."""
+        return tuple(
+            (
+                stim.DemTargetWithCoords(
+                    stim.target_relative_detector_id(output),
+                    self._detector_coords.get(output, []),
+                )
+                if output < num_detectors
+                else stim.DemTargetWithCoords(
+                    stim.target_logical_observable_id(output - num_detectors), []
+                )
+            )
+            for output in sorted(outputs)
+        )
 
     def _target(self, target: stim.GateTarget) -> stim.GateTargetWithCoords:
         coords = [] if target.is_combiner else self._coords.get(target.value, [])
