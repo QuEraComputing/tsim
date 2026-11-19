@@ -8,7 +8,8 @@ import stim
 
 from tsim import Circuit
 from tsim.experimental import shortest_errors
-from tsim.noise.faults import _combinations, _distinct, _Search
+from tsim.noise import fault_join
+from tsim.noise.faults import FIRST_CAPACITY, _combinations, _distinct, _Search
 
 # A Bell pair is stabilized by XX and ZZ, also under T on one qubit and T_DAG on
 # the other. An X error between the T layers turns into (X ± Y)/√2, which the XX
@@ -337,3 +338,63 @@ def test_max_errors_keeps_the_most_likely():
     best = shortest_errors(circuit, max_weight=3, max_errors=5)
     assert len(every) > 5
     assert [str(e) for e in best] == [str(e) for e in every[:5]]
+
+
+def _python_join(monkeypatch):
+    """Run the numba kernels of ``fault_join`` as Python, so coverage sees them."""
+    for name in (
+        "_mix",
+        "_words_hash",
+        "build_index",
+        "build_word_index",
+        "_find",
+        "_find_words",
+        "_visit",
+        "_collect",
+        "_emit",
+        "_write_set",
+    ):
+        monkeypatch.setattr(fault_join, name, getattr(fault_join, name).py_func)
+    monkeypatch.setattr(fault_join, "scan", lambda _, *args: fault_join._scan(*args))
+
+
+@pytest.mark.parametrize("capacity", [1, FIRST_CAPACITY])
+@pytest.mark.parametrize("task", ["ghz", "noises", "repetition"])
+def test_the_join_kernels_run_as_python(task, capacity, monkeypatch):
+    text = {
+        "ghz": GHZ,
+        "noises": NOISES,
+        "repetition": str(_generated("repetition_code:memory", 3)),
+    }[task]
+    weights = range(1, 7)
+    compiled = [_Search(Circuit(text)).logical_errors(w) for w in weights]
+    _python_join(monkeypatch)
+    monkeypatch.setattr("tsim.noise.faults.FIRST_CAPACITY", capacity)
+    # NOTE: the hashes multiply uint64 scalars, which wrap as they do in numba.
+    with np.errstate(over="ignore"):
+        python = [_Search(Circuit(text)).logical_errors(w) for w in weights]
+    assert [[str(e) for e in errors] for errors in python] == [
+        [str(e) for e in errors] for errors in compiled
+    ]
+
+
+def test_more_than_six_faults_are_refused():
+    with pytest.raises(ValueError, match="up to 6 faults"):
+        _Search(Circuit(GHZ)).logical_errors(7)
+
+
+def test_a_noisy_padding_flips_its_record():
+    # NOTE: Stim explains this error as a flip of the earlier M, so the test
+    # cannot compare with Stim.
+    text = """
+        R 0
+        M 0
+        DETECTOR rec[-1]
+        MPAD(0.01) 0
+        DETECTOR rec[-1]
+    """
+    search = _Search(Circuit(text))
+    (location,) = search._fault(0).circuit_error_locations
+    # NOTE: Stim's getter returns None for a flip without a measured observable.
+    assert "flipped_measurement.measurement_record_index: 1" in str(location)
+    assert location.stack_frames[0].instruction_offset == 3

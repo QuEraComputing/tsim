@@ -563,7 +563,7 @@ class _Locations:
             ]
         elif name == "MPAD":
             measured = []
-        else:
+        else:  # pragma: no cover - every noisy gate of Stim is above
             raise NotImplementedError(f"no explanation for noise of {name}")
         # NOTE: Stim reads a FlippedMeasurement without a record as no flip. Its
         # type stub names the keywords differently from the module.
