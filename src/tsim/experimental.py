@@ -10,10 +10,10 @@ releases.
 - `shortest_errors` finds a circuit's fault distance: every smallest set of
   faults that flips an observable without flipping a detector, as `LogicalError`s
   of `Fault`s.
-- `count_determined_measurements`, `missing_detectors` and
-  `nondeterministic_detectors` find the parities of measurements that every
-  noiseless shot gives the same value, as Stim's methods of those names do for
-  Clifford circuits, and the declared detectors that are random.
+- `count_determined_measurements` and `missing_detectors` find the parities of
+  measurements that every noiseless shot gives the same value, as Stim's
+  methods of those names do for Clifford circuits. `nondeterministic_detectors`
+  lists the declared detectors and observables that are random without noise.
 """
 
 from tsim.determined import (
