@@ -43,7 +43,13 @@ def _components(text: str, *, sample_detectors: bool):
 
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
 @pytest.mark.parametrize("sample_detectors", [True, False])
-def test_the_branches_have_the_exact_output_distribution(name, sample_detectors):
+@pytest.mark.parametrize("max_bytes", [None, 64])
+def test_the_branches_have_the_exact_output_distribution(
+    name, sample_detectors, max_bytes, monkeypatch
+):
+    if max_bytes is not None:
+        # NOTE: tiny lanes make the walk split its branches.
+        monkeypatch.setattr("tsim.statevector.branches.MAX_BYTES", max_bytes)
     for compiled, ops in _components(CIRCUITS[name], sample_detectors=sample_detectors):
         patterns = f_patterns(ops.num_f, limit=8)
         branches = Branches(compiled, num_detectors=len(compiled.output_indices))

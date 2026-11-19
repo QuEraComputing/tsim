@@ -1,5 +1,6 @@
 """Tests for ``tsim.noise.faults``: the exact search for shortest logical errors."""
 
+import collections
 import itertools
 
 import numpy as np
@@ -8,7 +9,8 @@ import stim
 
 from tsim import Circuit
 from tsim.experimental import shortest_errors
-from tsim.noise.faults import _combinations, _distinct, _Search
+from tsim.noise import fault_join
+from tsim.noise.faults import FIRST_CAPACITY, _combinations, _distinct, _Search
 
 # A Bell pair is stabilized by XX and ZZ, also under T on one qubit and T_DAG on
 # the other. An X error between the T layers turns into (X ± Y)/√2, which the XX
@@ -127,6 +129,12 @@ def test_the_distance_of_a_clifford_circuit_is_stims(task, distance):
     for error in errors:
         assert error.undetected_probability == pytest.approx(1.0)
         assert error.logical_flip_probability == pytest.approx(1.0)
+        # NOTE: the faults' detectors cancel and their observables do not.
+        terms = collections.Counter(
+            str(term.dem_target) for fault in error for term in fault.dem_error_terms
+        )
+        odd = {target for target, count in terms.items() if count % 2}
+        assert odd and all(target.startswith("L") for target in odd)
     assert shortest_errors(Circuit(circuit), max_weight=expected - 1) == []
 
 
@@ -166,6 +174,34 @@ def test_the_circuit_error_locations_are_stims(text):
     assert got == expected
 
 
+@pytest.mark.parametrize(
+    "text", [NOISES, str(_generated("surface_code:rotated_memory_z", 3))]
+)
+def test_the_dem_error_terms_are_stims(text):
+    circuit = stim.Circuit(text)
+    terms = {
+        str(location): explained.dem_error_terms
+        for explained in circuit.flattened().explain_detector_error_model_errors()
+        for location in explained.circuit_error_locations
+    }
+    search = _Search(Circuit(circuit))
+    for index in range(len(search._events)):
+        fault = search._fault(index)
+        for location in fault.circuit_error_locations:
+            assert list(fault.dem_error_terms) == terms[str(location)]
+        explained = fault.to_explained_error()
+        assert explained.dem_error_terms == list(fault.dem_error_terms)
+        assert explained.circuit_error_locations == list(fault.circuit_error_locations)
+
+
+def test_the_dem_error_terms_are_the_certain_flips():
+    # NOTE: between S layers the X error is a Y, which flips both checks;
+    # between T layers it flips the XX detector in only half of the shots.
+    for gate, expected in (("S", ["D0", "L0"]), ("T", ["L0"])):
+        fault = _Search(Circuit(BELL.format(gate=gate)))._fault(0)
+        assert [str(t.dem_target) for t in fault.dem_error_terms] == expected
+
+
 def test_t_gates_make_an_error_undetected_half_of_the_time():
     (error,) = shortest_errors(Circuit(BELL.format(gate="T")), max_weight=2)
     assert len(error) == 1
@@ -178,7 +214,8 @@ def test_t_gates_make_an_error_undetected_half_of_the_time():
     ]
     # NOTE: on a Bell pair, an X on either qubit is the same error.
     assert products == [["stim.target_x(0)"], ["stim.target_x(1)"]]
-    assert fault.probability == pytest.approx(0.02)
+    # NOTE: two independent channels: one of them, not both.
+    assert fault.probability == pytest.approx(0.01 + 0.01 - 2 * 0.01 * 0.01)
     location = fault.circuit_error_locations[0]
     assert location.instruction_targets.gate == "X_ERROR"
     assert location.stack_frames[0].instruction_offset == 5
@@ -208,6 +245,21 @@ def test_the_probabilities_are_those_of_sampling_the_errors():
             (flipped.mean(), error.logical_flip_probability),
         ):
             assert abs(got - expected) < 5 * np.sqrt(0.25 / shots)
+
+
+def test_a_fault_combines_its_channels_as_a_detector_error_model():
+    # NOTE: X and Y of the PAULI_CHANNEL_1 exclude each other; the X_ERROR is
+    # independent of them and undoes them.
+    text = """
+        PAULI_CHANNEL_1(0.01, 0.02, 0) 0
+        X_ERROR(0.1) 0
+        M 0
+        OBSERVABLE_INCLUDE(0) rec[-1]
+    """
+    (error,) = shortest_errors(Circuit(text), max_weight=1)
+    (fault,) = error
+    assert len(fault.circuit_error_locations) == 3
+    assert fault.probability == pytest.approx(0.03 + 0.1 - 2 * 0.03 * 0.1)
 
 
 def test_the_most_likely_error_comes_first():
@@ -275,9 +327,11 @@ def test_random_detectors_and_observables_are_rejected():
         )
 
 
-def test_max_weight_is_checked():
-    with pytest.raises(ValueError, match="max_weight must be at least 1"):
-        shortest_errors(Circuit(GHZ), max_weight=0)
+@pytest.mark.parametrize("max_weight", [0, 7])
+def test_max_weight_is_checked(max_weight):
+    # NOTE: GHZ has errors of weight 1, so this checks before searching.
+    with pytest.raises(ValueError, match="max_weight must be from 1 to 6"):
+        shortest_errors(Circuit(GHZ), max_weight=max_weight)
 
 
 def test_a_search_that_is_too_large_is_refused(monkeypatch):
@@ -337,3 +391,58 @@ def test_max_errors_keeps_the_most_likely():
     best = shortest_errors(circuit, max_weight=3, max_errors=5)
     assert len(every) > 5
     assert [str(e) for e in best] == [str(e) for e in every[:5]]
+
+
+def _python_join(monkeypatch):
+    """Run the numba kernels of ``fault_join`` as Python, so coverage sees them."""
+    for name in (
+        "_mix",
+        "_words_hash",
+        "build_index",
+        "build_word_index",
+        "_find",
+        "_find_words",
+        "_visit",
+        "_collect",
+        "_emit",
+        "_write_set",
+    ):
+        monkeypatch.setattr(fault_join, name, getattr(fault_join, name).py_func)
+    monkeypatch.setattr(fault_join, "scan", lambda _, *args: fault_join._scan(*args))
+
+
+@pytest.mark.parametrize("capacity", [1, FIRST_CAPACITY])
+@pytest.mark.parametrize("task", ["ghz", "noises", "repetition"])
+def test_the_join_kernels_run_as_python(task, capacity, monkeypatch):
+    text = {
+        "ghz": GHZ,
+        "noises": NOISES,
+        "repetition": str(_generated("repetition_code:memory", 3)),
+    }[task]
+    weights = range(1, 7)
+    compiled = [_Search(Circuit(text)).logical_errors(w) for w in weights]
+    _python_join(monkeypatch)
+    monkeypatch.setattr("tsim.noise.faults.FIRST_CAPACITY", capacity)
+    # NOTE: the hashes multiply uint64 scalars, which wrap as they do in numba.
+    with np.errstate(over="ignore"):
+        python = [_Search(Circuit(text)).logical_errors(w) for w in weights]
+    assert [[str(e) for e in errors] for errors in python] == [
+        [str(e) for e in errors] for errors in compiled
+    ]
+
+
+def test_a_noisy_padding_flips_its_record():
+    # NOTE: Stim explains this error as a flip of the earlier M, so the test
+    # cannot compare with Stim.
+    text = """
+        R 0
+        M 0
+        DETECTOR rec[-1]
+        MPAD(0.01) 0
+        DETECTOR rec[-1]
+    """
+    search = _Search(Circuit(text))
+    (location,) = search._fault(0).circuit_error_locations
+    # NOTE: Stim's getter returns None for a flip without a measured observable.
+    assert "flipped_measurement.measurement_record_index: 1" in str(location)
+    assert location.stack_frames[0].instruction_offset == 3
