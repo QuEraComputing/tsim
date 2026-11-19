@@ -46,6 +46,22 @@ GHZ = """
     OBSERVABLE_INCLUDE(0) rec[-1]
 """
 
+# Inverted measurements, and two links of a chain with the same effect.
+INVERTED = """
+    R 0 1 2
+    E(0.01) X0
+    ELSE_CORRELATED_ERROR(0.02) X0
+    M(0.01) !0
+    DETECTOR rec[-1]
+    H 1 2
+    MXX(0.01) !1 2
+    DETECTOR rec[-1]
+    MPP(0.01) !X1*X2
+    DETECTOR rec[-1]
+    M 0
+    OBSERVABLE_INCLUDE(0) rec[-1]
+"""
+
 # One round of a three-qubit repetition code, with every kind of noise.
 NOISES = """
     QUBIT_COORDS(0, 1) 0
@@ -159,7 +175,7 @@ def test_the_errors_are_undetectable_logical_errors_for_stim(task):
 
 
 @pytest.mark.parametrize(
-    "text", [NOISES, str(_generated("surface_code:rotated_memory_z", 3))]
+    "text", [NOISES, INVERTED, str(_generated("surface_code:rotated_memory_z", 3))]
 )
 def test_the_circuit_error_locations_are_stims(text):
     circuit = stim.Circuit(text)
@@ -175,7 +191,7 @@ def test_the_circuit_error_locations_are_stims(text):
 
 
 @pytest.mark.parametrize(
-    "text", [NOISES, str(_generated("surface_code:rotated_memory_z", 3))]
+    "text", [NOISES, INVERTED, str(_generated("surface_code:rotated_memory_z", 3))]
 )
 def test_the_dem_error_terms_are_stims(text):
     circuit = stim.Circuit(text)
@@ -287,6 +303,13 @@ def test_errors_of_one_channel_do_not_combine():
         OBSERVABLE_INCLUDE(0) rec[-1]
     """
     assert shortest_errors(Circuit(one_channel), max_weight=2) == []
+    # NOTE: Stim's detector error model takes X and Y as independent.
+    stim_errors = stim.Circuit(one_channel).search_for_undetectable_logical_errors(
+        dont_explore_detection_event_sets_with_size_above=2,
+        dont_explore_edges_with_degree_above=2,
+        dont_explore_edges_increasing_symptom_degree=False,
+    )
+    assert len(stim_errors) == 2
     two_channels = one_channel.replace(
         "PAULI_CHANNEL_1(0.01, 0.01, 0) 0", "X_ERROR(0.01) 0\nY_ERROR(0.01) 0"
     )
@@ -332,6 +355,13 @@ def test_max_weight_is_checked(max_weight):
     # NOTE: GHZ has errors of weight 1, so this checks before searching.
     with pytest.raises(ValueError, match="max_weight must be from 1 to 6"):
         shortest_errors(Circuit(GHZ), max_weight=max_weight)
+
+
+@pytest.mark.parametrize("max_errors", [0, -1])
+def test_max_errors_is_checked(max_errors):
+    # NOTE: a slice with these would drop errors and skip to the next weight.
+    with pytest.raises(ValueError, match="max_errors must be at least 1"):
+        shortest_errors(Circuit(GHZ), max_weight=2, max_errors=max_errors)
 
 
 def test_a_search_that_is_too_large_is_refused(monkeypatch):

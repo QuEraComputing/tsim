@@ -31,6 +31,7 @@ import numpy as np
 import stim
 
 from tsim.compile.pipeline import compile_program
+from tsim.core.builder import Site
 from tsim.core.graph import prepare_graph
 from tsim.core.parse import parse_stim_circuit
 from tsim.noise import fault_join
@@ -58,7 +59,7 @@ FIRST_CAPACITY = 1 << 10
 
 _PAULI = {1: stim.target_z, 2: stim.target_x, 3: stim.target_y}
 _MEASURED = {"M": "Z", "MX": "X", "MY": "Y", "MR": "Z", "MRX": "X", "MRY": "Y"}
-_MEASURED_PAIR = {"MXX": "X", "MYY": "Y", "MZZ": "Z"}
+_MEASURED |= {"MXX": "X", "MYY": "Y", "MZZ": "Z"}
 
 
 @dataclass(frozen=True)
@@ -79,8 +80,10 @@ class Fault:
             ones.
         probability: The probability that the fault happens: that an odd number
             of its circuit errors do, those of one noise channel excluding each
-            other and those of different channels being independent, as when
-            Stim merges the errors of a detector error model.
+            other and those of different channels being independent. This is
+            exact; Stim's detector error model differs slightly, as it splits
+            ``DEPOLARIZE`` and ``PAULI_CHANNEL`` instructions into independent
+            errors.
 
     """
 
@@ -138,7 +141,8 @@ def shortest_errors(
 
     The search is exhaustive, so the number of faults in the result is the
     circuit's fault distance, and an empty result proves that the distance is
-    above ``max_weight``. It stores the sets of ``max_weight // 2`` faults and
+    above ``max_weight``. A set counts only if it flips an observable undetected
+    with a probability above ``MIN_PROBABILITY`` (1e-9). It stores the sets of ``max_weight // 2`` faults and
     streams those of the other faults, so its time grows as (number of
     faults)^(max_weight - max_weight // 2). It supports up to ``MAX_WEIGHT`` (6)
     faults.
@@ -147,13 +151,17 @@ def shortest_errors(
     ``stim.Circuit.search_for_undetectable_logical_errors`` finds without
     limits, not only graphlike errors as ``shortest_graphlike_error`` does, but
     every logical error of the smallest weight rather than one, and it returns
-    an empty list where Stim raises because there is none.
+    an empty list where Stim raises because there is none. Unlike Stim, it never
+    combines two circuit errors of one noise channel, such as the X and Y of a
+    ``PAULI_CHANNEL_1`` or two links of an ``ELSE_CORRELATED_ERROR`` chain:
+    they exclude each other, while Stim's detector error model treats them as
+    independent and can report a smaller distance.
 
     Args:
         circuit: The circuit, with its noise, detectors and observables.
         max_weight: The largest number of faults to try.
-        max_errors: If given, return only this many of the logical errors, the
-            most likely ones.
+        max_errors: If given, at least 1: return only this many of the logical
+            errors, the most likely ones.
 
     Returns:
         The logical errors with the fewest faults, most likely first, or an
@@ -163,7 +171,8 @@ def shortest_errors(
 
     Raises:
         ValueError: If a detector or an observable is random without noise,
-            ``max_weight`` is below 1 or above ``MAX_WEIGHT``, or the search
+            ``max_weight`` is below 1 or above ``MAX_WEIGHT``, ``max_errors``
+            is below 1, or the search
             would need more than
             ``MAX_COMBINATIONS`` stored or ``MAX_SCANNED`` streamed sets of
             faults.
@@ -171,6 +180,8 @@ def shortest_errors(
     """
     if not 1 <= max_weight <= MAX_WEIGHT:
         raise ValueError(f"max_weight must be from 1 to {MAX_WEIGHT}, not {max_weight}")
+    if max_errors is not None and max_errors < 1:
+        raise ValueError(f"max_errors must be at least 1, not {max_errors}")
     if circuit.num_observables == 0:
         return []
     search = _Search(circuit)
@@ -458,8 +469,9 @@ class _Search:
                     np.flatnonzero(row).tolist(), self._num_detectors
                 ),
                 circuit_error_locations=tuple(
-                    self._locations.of(channel, outcome)
+                    location
                     for channel, outcome, _ in events
+                    for location in self._locations.of(channel, outcome)
                 ),
                 probability=float(self._fault_probability[index]),
             )
@@ -623,12 +635,20 @@ class _Locations:
         coords = [] if target.is_combiner else self._coords.get(target.value, [])
         return stim.GateTargetWithCoords(target, coords)
 
-    def of(self, channel: int, outcome: int) -> stim.CircuitErrorLocation:
-        """Return the circuit error of ``outcome`` of noise channel ``channel``."""
-        site = self._sites[channel]
-        for mask, link in self._links.get(channel, ()):
-            if mask == outcome:
-                site = link
+    def of(self, channel: int, outcome: int) -> list[stim.CircuitErrorLocation]:
+        """Return the circuit errors of ``outcome`` of noise channel ``channel``.
+
+        Links of a correlated-error chain with the same effect share an outcome.
+        """
+        links = self._links.get(channel)
+        if links is None:
+            return [self._location(self._sites[channel], outcome)]
+        return [
+            self._location(site, outcome) for mask, site in links if mask == outcome
+        ]
+
+    def _location(self, site: Site, outcome: int) -> stim.CircuitErrorLocation:
+        """Return the circuit error of ``outcome`` of the noise channel at ``site``."""
         op = self._flat[site.instruction]
         assert isinstance(op, stim.CircuitInstruction)
         name = op.name
@@ -651,13 +671,14 @@ class _Locations:
             product, measured = paulis([outcome >> 1]), []
         elif name in ("E", "ELSE_CORRELATED_ERROR"):
             product = targets
-        elif name in _MEASURED:
-            measured = [stim.target_pauli(qubits[0], _MEASURED[name])]
-        elif name in _MEASURED_PAIR:
-            measured = [stim.target_pauli(q, _MEASURED_PAIR[name]) for q in qubits]
-        elif name == "MPP":
+        elif name in _MEASURED or name == "MPP":
+            # NOTE: Stim marks an inverted measurement on its measured observable.
             measured = [
-                stim.target_pauli(t.value, t.pauli_type)
+                stim.target_pauli(
+                    t.value,
+                    t.pauli_type if name == "MPP" else _MEASURED[name],
+                    t.is_inverted_result_target,
+                )
                 for t in targets
                 if not t.is_combiner
             ]
