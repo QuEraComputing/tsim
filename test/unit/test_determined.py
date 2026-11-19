@@ -310,3 +310,27 @@ def test_the_directions_are_cached_unless_shots_have_no_seed():
     assert _directions_of.cache_info().hits == 1
     count_determined_measurements(circuit, shots=10)
     assert _directions_of.cache_info().currsize == 1
+
+
+def test_declarations_of_paulis_are_refused():
+    circuit = Circuit("R 0\nM 0\nOBSERVABLE_INCLUDE(0) X0")
+    with pytest.raises(ValueError, match="non-record target"):
+        missing_detectors(circuit)
+
+
+def test_the_kernels_as_python_give_the_same_results(monkeypatch):
+    # NOTE: coverage cannot see inside numba kernels, so run them as Python too.
+    import tsim.determined
+    import tsim.utils.gf2_span
+
+    circuit = Circuit("R 0 1 2\nH 0\nT 0\nCX 0 1\nH 0\nM 0 1\nDETECTOR rec[-1]\nM 2")
+    expected = str(missing_detectors(circuit)), nondeterministic_detectors(circuit)
+    for module, names in (
+        (tsim.determined, ["_overlaps"]),
+        (tsim.utils.gf2_span, ["_lowest", "_has_bit", "_insert", "_annihilator"]),
+    ):
+        for name in names:
+            monkeypatch.setattr(module, name, getattr(module, name).py_func)
+    _directions_of.cache_clear()
+    got = str(missing_detectors(circuit)), nondeterministic_detectors(circuit)
+    assert got == expected

@@ -3,7 +3,17 @@
 import numpy as np
 import pytest
 
+import tsim.utils.gf2_span
 from tsim.utils.gf2_span import Span, pack, pack_bytes, unpack
+
+
+@pytest.fixture(autouse=True, params=["numba", "python"])
+def _kernels(request, monkeypatch):
+    # NOTE: coverage cannot see inside numba kernels, so run them as Python too.
+    if request.param == "python":
+        for name in ("_lowest", "_has_bit", "_insert", "_annihilator"):
+            kernel = getattr(tsim.utils.gf2_span, name)
+            monkeypatch.setattr(tsim.utils.gf2_span, name, kernel.py_func)
 
 
 def _rank(matrix: np.ndarray) -> int:

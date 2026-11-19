@@ -124,8 +124,12 @@ def test_a_random_noiseless_output_has_no_reference():
         assert Branches(compiled, num_detectors=1).reference is not None
 
 
+@pytest.mark.parametrize("split", [False, True])
 @pytest.mark.parametrize("name", sorted(CIRCUITS))
-def test_the_support_with_its_coins_is_every_possible_outcome(name):
+def test_the_support_with_its_coins_is_every_possible_outcome(name, split, monkeypatch):
+    if split:
+        # NOTE: two-row lanes, so the walk splits them.
+        monkeypatch.setattr("tsim.statevector.branches.MAX_BYTES", 64)
     for compiled, ops in _components(CIRCUITS[name], sample_detectors=False):
         branches = Branches(compiled, num_detectors=len(compiled.output_indices))
         f = np.array(f_patterns(ops.num_f, limit=4), dtype=np.uint8)
