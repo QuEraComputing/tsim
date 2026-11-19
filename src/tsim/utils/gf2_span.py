@@ -80,24 +80,6 @@ def _insert(basis: np.ndarray, has: np.ndarray, rows: np.ndarray) -> np.ndarray:
 
 
 @numba.njit(cache=True)
-def _contains(basis: np.ndarray, has: np.ndarray, rows: np.ndarray) -> np.ndarray:
-    """Return, for each of ``rows``, whether it is in the span."""
-    inside = np.ones(len(rows), dtype=np.bool_)
-    v = np.empty(basis.shape[1], dtype=np.uint64)
-    for i in range(len(rows)):
-        v[:] = rows[i]
-        while True:
-            p = _lowest(v)
-            if p < 0:
-                break
-            if not has[p]:
-                inside[i] = False
-                break
-            v ^= basis[p]
-    return inside
-
-
-@numba.njit(cache=True)
 def _annihilator(basis: np.ndarray, has: np.ndarray) -> np.ndarray:
     """Return, per column j that is no pivot, e_j plus the pivots before it, packed."""
     width = len(has)
@@ -153,10 +135,6 @@ class Span:
         """Insert vectors of 0/1 entries; see ``insert``."""
         bits = np.asarray(bits, dtype=np.uint8)
         return self.insert(pack(bits[None] if bits.ndim == 1 else bits))
-
-    def contains(self, words: np.ndarray) -> np.ndarray:
-        """Return, for each packed vector, whether it is in the span."""
-        return _contains(self._basis, self._has, self._rows(words))
 
     def annihilator(self) -> np.ndarray:
         """Return a basis of the vectors orthogonal to the span, packed.

@@ -283,8 +283,10 @@ def test_too_few_shots_warn():
     circuit = Circuit(
         "R 0 1 2 3 4 5 6 7 8 9\nH 0 1 2 3 4 5 6 7 8 9\nM 0 1 2 3 4 5 6 7 8 9"
     )
-    with pytest.warns(UserWarning, match="use more shots"):
-        count_determined_measurements(circuit, shots=12, seed=0)
+    for function in (count_determined_measurements, missing_detectors):
+        with pytest.warns(UserWarning, match="use more shots") as record:
+            function(circuit, shots=12, seed=0)
+        assert record[0].filename == __file__
     with pytest.raises(ValueError, match="at least 1"):
         count_determined_measurements(circuit, shots=0)
 
@@ -304,7 +306,7 @@ def test_a_circuit_without_measurements():
 def test_the_directions_are_cached_unless_shots_have_no_seed():
     circuit = Circuit("R 0\nH 0\nT 0\nH 0\nM 0\nDETECTOR rec[-1]")
     count_determined_measurements(circuit)
-    nondeterministic_detectors(circuit)
+    nondeterministic_detectors(circuit, seed=3)
     assert _directions_of.cache_info().hits == 1
     count_determined_measurements(circuit, shots=10)
     assert _directions_of.cache_info().currsize == 1

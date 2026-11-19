@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import functools
 import warnings
-from itertools import product
 from typing import TYPE_CHECKING
 
 import numba
@@ -53,7 +52,7 @@ MAX_SIGN_BITS = 16
 """Most independent rotation signs that unknown inputs may set, exactly."""
 
 BATCH = 1 << 16
-"""Shots drawn, or combinations of unknown inputs tried, at a time."""
+"""Shots drawn at a time."""
 
 
 def count_determined_measurements(
@@ -89,7 +88,8 @@ def count_determined_measurements(
 
     Raises:
         ValueError: If the exact walk follows more than
-            ``Branches.MAX_BRANCHES`` branches per combination of inputs, or
+            ``tsim.statevector.branches.MAX_BRANCHES`` branches per
+            combination of inputs, or
             unknown inputs set more than ``MAX_SIGN_BITS`` independent
             rotation signs. Sampling avoids both.
 
@@ -134,8 +134,7 @@ def missing_detectors(
     num_m = circuit.num_measurements
     directions = _directions(circuit, unknown_input, shots, seed)
     declared = _Declared(circuit.stim_circuit)
-    overlaps = declared.overlaps(directions.basis())
-    random = np.flatnonzero(overlaps.any(axis=1))
+    overlaps, random = declared.random(directions)
     covered = Span(num_m)
     covered.insert(np.delete(declared.words, random, axis=0))
     # NOTE: a parity of random declarations is determined when it overlaps no
@@ -182,7 +181,7 @@ def nondeterministic_detectors(
 
     """
     directions = _directions(circuit, unknown_input, shots, seed)
-    overlaps = _Declared(circuit.stim_circuit).overlaps(directions.basis())
+    _, random = _Declared(circuit.stim_circuit).random(directions)
     num_detectors = circuit.num_detectors
     return [
         (
@@ -190,7 +189,7 @@ def nondeterministic_detectors(
             if index < num_detectors
             else stim.target_logical_observable_id(index - num_detectors)
         )
-        for index in np.flatnonzero(overlaps.any(axis=1)).tolist()
+        for index in random.tolist()
     ]
 
 
@@ -208,7 +207,10 @@ class _Declared:
     def __init__(self, circuit: stim.Circuit) -> None:
         num_m = circuit.num_measurements
         num_detectors = circuit.num_detectors
-        rows, records = [], []
+        # NOTE: a measurement that a declaration names twice cancels.
+        members: list[set[int]] = [
+            set() for _ in range(num_detectors + circuit.num_observables)
+        ]
         measured = detector = 0
         for instruction in circuit.flattened():
             assert isinstance(instruction, stim.CircuitInstruction)
@@ -226,27 +228,23 @@ class _Declared:
                         f"{instruction.name} with a non-record target ({target}) "
                         "is not supported"
                     )
-                rows.append(row)
-                records.append(measured + target.value)
-        # NOTE: a measurement that a declaration names twice cancels.
-        keys, counts = np.unique(
-            np.array(rows, dtype=np.int64) * num_m + np.array(records, dtype=np.int64),
-            return_counts=True,
+                members[row] ^= {measured + target.value}
+        sizes = [len(records) for records in members]
+        self.starts = np.cumsum([0, *sizes], dtype=np.int64)
+        self.records = np.array(
+            [m for records in members for m in sorted(records)], dtype=np.int64
         )
-        keys = keys[counts % 2 == 1]
-        row, self.records = np.divmod(keys, max(num_m, 1))
-        count = num_detectors + circuit.num_observables
-        self.starts = np.searchsorted(row, np.arange(count + 1))
-        self.words = np.zeros((count, num_words(num_m)), dtype=np.uint64)
+        self.words = np.zeros((len(members), num_words(num_m)), dtype=np.uint64)
         np.bitwise_or.at(
             self.words,
-            (row, self.records // 64),
+            (np.repeat(np.arange(len(members)), sizes), self.records // 64),
             np.uint64(1) << (self.records % 64).astype(np.uint64),
         )
 
-    def overlaps(self, directions: np.ndarray) -> np.ndarray:
-        """Return, packed, which of the packed ``directions`` each declaration flips."""
-        return _overlaps(np.ascontiguousarray(directions), self.starts, self.records)
+    def random(self, directions: Span) -> tuple[np.ndarray, np.ndarray]:
+        """Return which directions each declaration flips, packed, and the random ones."""
+        overlaps = _overlaps(directions.basis(), self.starts, self.records)
+        return overlaps, np.flatnonzero(overlaps.any(axis=1))
 
 
 @numba.njit(cache=True)
@@ -273,18 +271,27 @@ def _directions(
     The span is cached, since every function here needs it and compiling is
     slow, but not from shots without a seed. Callers must not change it.
     """
-    if shots is not None and shots < 1:
-        raise ValueError(f"shots must be at least 1, not {shots}")
     text = str(circuit.without_noise().without_annotations().stim_circuit)
-    if shots is not None and seed is None:
-        return _directions_of.__wrapped__(text, unknown_input, shots, seed)
-    return _directions_of(text, unknown_input, shots, seed)
+    if shots is None:
+        return _directions_of(text, unknown_input, None, None)[0]
+    if shots < 1:
+        raise ValueError(f"shots must be at least 1, not {shots}")
+    find = _directions_of if seed is not None else _directions_of.__wrapped__
+    span, last_growth = find(text, unknown_input, shots, seed)
+    if last_growth > shots // 2:
+        warnings.warn(
+            f"shot {last_growth} of {shots} still found a new direction, so some "
+            "parities that look determined may be random; use more shots",
+            stacklevel=3,
+        )
+    return span
 
 
 @functools.lru_cache(maxsize=8)
 def _directions_of(
     text: str, unknown_input: bool, shots: int | None, seed: int | None
-) -> Span:
+) -> tuple[Span, int]:
+    """Return the directions, and the last shot that grew them, if sampled."""
     from tsim.circuit import Circuit
 
     noiseless = Circuit(stim.Circuit(text))
@@ -293,12 +300,17 @@ def _directions_of(
         mixed.append("X_ERROR", range(noiseless.num_qubits), 0.5)
         noiseless = Circuit.from_stim_program(mixed) + noiseless
     if shots is None:
-        return _exact_directions(noiseless)
+        return _exact_directions(noiseless), 0
     return _sampled_directions(noiseless, shots, seed)
 
 
-def _sampled_directions(circuit: Circuit, shots: int, seed: int | None) -> Span:
-    """Return the span of ``m + m₀`` over ``shots`` noiseless shots ``m``."""
+def _sampled_directions(
+    circuit: Circuit, shots: int, seed: int | None
+) -> tuple[Span, int]:
+    """Return the span of ``m + m₀`` over ``shots`` noiseless shots ``m``.
+
+    Also return the last shot that grew it.
+    """
     num_m = circuit.num_measurements
     span = Span(num_m)
     sampler = circuit.compile_sampler(seed=seed)
@@ -315,13 +327,7 @@ def _sampled_directions(circuit: Circuit, shots: int, seed: int | None) -> Span:
         grew = span.insert(rows[order])
         if grew.any():
             last_growth = done + int(first[order][grew].max()) + 1
-    if last_growth > shots // 2:
-        warnings.warn(
-            f"shot {last_growth} of {shots} still found a new direction, so some "
-            "parities that look determined may be random; use more shots",
-            stacklevel=5,
-        )
-    return span
+    return span, last_growth
 
 
 def _exact_directions(circuit: Circuit) -> Span:
@@ -363,7 +369,7 @@ def _exact_directions(circuit: Circuit) -> Span:
             f"than {MAX_SIGN_BITS}; pass shots to sample instead"
         )
     f = np.zeros((1 << len(choices), num_f), dtype=np.uint8)
-    f[:, choices] = list(product((0, 1), repeat=len(choices)))
+    f[:, choices] = np.arange(len(f))[:, None] >> np.arange(len(choices)) & 1
 
     # NOTE: a tape's outputs are its f-bits' flips XOR a value that depends
     # only on its rotation signs: walk each distinct signs once.
@@ -371,22 +377,20 @@ def _exact_directions(circuit: Circuit) -> Span:
     for branches, outputs in tapes:
         local = f[:, branches.f_selection]
         first, inverse = _groups(gf2_product(local, branches.sign_rows))
-        row, values = branches.support(local[first])
+        try:
+            row, values = branches.support(local[first])
+        except ValueError as error:
+            raise ValueError(f"{error}; pass shots to sample instead") from error
         firsts = values[np.searchsorted(row, np.arange(len(first)))]
         within = Span(len(outputs))
         within.insert_bits(values ^ firsts[row])
         span.insert_bits(_embed(unpack(within.basis(), len(outputs)), outputs, num_m))
         base = firsts ^ gf2_product(local[first], branches.output_rows)
         bases.append((inverse, base, outputs))
-    reference = None
-    for start in range(0, len(f), BATCH):
-        chunk = slice(start, start + BATCH)
-        points = gf2_product(f[chunk], output_map) ^ constant
-        for inverse, base, outputs in bases:
-            points[:, outputs] ^= base[inverse[chunk]]
-        if reference is None:
-            reference = points[0].copy()
-        span.insert_bits(points ^ reference)
+    points = gf2_product(f, output_map) ^ constant
+    for inverse, base, outputs in bases:
+        points[:, outputs] ^= base[inverse]
+    span.insert_bits(points ^ points[0])
     return span
 
 

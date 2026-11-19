@@ -10,10 +10,12 @@ import stim
 
 from tsim.circuit import Circuit
 from tsim.determined import (
+    _Declared,
     count_determined_measurements,
     missing_detectors,
     nondeterministic_detectors,
 )
+from tsim.utils.gf2_span import Span
 
 CIRCUIT = Path(__file__).parent.parent / "data" / "determined"
 CIRCUIT = CIRCUIT / "chan_d5a19_uncorrected_T.stim"
@@ -32,7 +34,8 @@ def test_chan_uncorrected_d5_circuit_has_random_detectors(shots):
         stim.target_relative_detector_id(i) for i in (69, 91, 97, 102)
     ]
     missing = missing_detectors(circuit, shots=shots, seed=0)
-    assert str(missing) == str(stim.Circuit("""
-            DETECTOR rec[-46] rec[-45] rec[-16] rec[-10]
-            DETECTOR rec[-47] rec[-45] rec[-39] rec[-16] rec[-5]
-            """))
+    assert len(missing) == 2
+    words = _Declared((circuit + missing).stim_circuit).words
+    span = Span(circuit.num_measurements)
+    span.insert(words[[107, 108]])
+    assert not span.insert(words[[91, 91]] ^ words[[97, 102]]).any()

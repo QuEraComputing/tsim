@@ -141,10 +141,9 @@ def test_the_support_with_its_coins_is_every_possible_outcome(name):
             dtype=np.uint8,
         ).reshape(-1, coins.shape[1])
         expected = [set() for _ in f]
-        for r, weight, out in branches._leaves(f):
-            for i, w, o in zip(r.tolist(), weight.tolist(), out.tolist(), strict=True):
-                if w > 1e-12:
-                    expected[i].add(tuple(o))
+        for r, _, out in branches._leaves(f):
+            for i, o in zip(r.tolist(), out.tolist(), strict=True):
+                expected[i].add(tuple(o))
         got = [set() for _ in f]
         for i, v in zip(row.tolist(), values, strict=True):
             got[i] |= {tuple(int(b) for b in v ^ flip) for flip in flips}

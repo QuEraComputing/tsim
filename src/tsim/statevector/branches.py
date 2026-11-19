@@ -259,14 +259,16 @@ class Branches:
                 )
                 continue
             children = []
+            weight = _weights(amps)
             for outcome in (0, 1):
                 if tape.kind[a] == MEASURE_DORMANT:
                     kept, child = np.arange(len(row)), amps * np.sqrt(0.5)
                 else:
                     moved = amps[:, source] * phase
                     projected = (amps - moved if outcome else amps + moved) / 2
-                    # NOTE: relative to the lane's weight, as ``shared._cut``.
-                    possible = _weights(projected) > IMPOSSIBLE * _weights(amps)
+                    # NOTE: an outcome is impossible given the lane, whatever
+                    # the lane's own weight.
+                    possible = _weights(projected) > IMPOSSIBLE * weight
                     kept = np.flatnonzero(possible)
                     projected = projected[kept]
                     # NOTE: the planner moved the measured Pauli onto the pivot,

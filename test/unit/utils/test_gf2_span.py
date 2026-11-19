@@ -48,13 +48,9 @@ def test_the_annihilator_is_the_orthogonal_complement(seed):
     assert ends == sorted(set(ends))
 
 
-def test_contains():
+def test_the_basis_has_one_vector_per_pivot():
     span = Span(3)
-    vectors = pack(np.array([[0, 0, 0], [1, 1, 0], [0, 1, 1], [1, 0, 1]]))
-    assert span.contains(vectors).tolist() == [True, False, False, False]
-    span.insert(vectors[1])
-    assert span.contains(vectors).tolist() == [True, True, False, False]
-    span.insert(vectors[2])
-    assert span.contains(vectors).tolist() == [True, True, True, True]
+    grew = span.insert(pack(np.array([[0, 0, 0], [1, 1, 0], [0, 1, 1], [1, 0, 1]])))
+    assert grew.tolist() == [False, True, True, False]
     assert span.rank == 2
     assert unpack(span.basis(), 3).tolist() == [[1, 1, 0], [0, 1, 1]]
