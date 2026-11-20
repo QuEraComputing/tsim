@@ -115,6 +115,22 @@ def test_too_many_branches_are_refused(monkeypatch):
         branches.outcomes(np.zeros((1, ops.num_f), dtype=np.uint8))
 
 
+def test_the_branches_are_limited_per_row(monkeypatch):
+    # NOTE: f = 0 leaves two random MX, four branches; f = 1 undoes the T
+    # gates and leaves one. Four rows have 7 branches, below 2 per row on
+    # average.
+    text = "RX 0 1\nT 0 1\nE(0.1) X0 X1\nT 0 1\nCX 0 1\nMX 0 1"
+    ((compiled, ops),) = _components(text, sample_detectors=False)
+    branches = Branches(compiled, num_detectors=len(compiled.output_indices))
+    f = np.array([[0], [1], [1], [1]], dtype=np.uint8)
+    assert ops.num_f == 1
+    monkeypatch.setattr("tsim.statevector.branches.MAX_BRANCHES", 4)
+    branches.support(f)
+    monkeypatch.setattr("tsim.statevector.branches.MAX_BRANCHES", 2)
+    with pytest.raises(ValueError, match="measurement branches"):
+        branches.support(f)
+
+
 def test_a_random_noiseless_output_has_no_reference():
     text = """
         R 0
@@ -128,3 +144,37 @@ def test_a_random_noiseless_output_has_no_reference():
     ((compiled, _),) = _components(text, sample_detectors=True)
     with pytest.raises(ValueError, match="detector 0 is random without noise"):
         assert Branches(compiled, num_detectors=1).reference is not None
+
+
+@pytest.mark.parametrize("split", [False, True])
+@pytest.mark.parametrize("name", sorted(CIRCUITS))
+def test_the_support_with_its_coins_is_every_possible_outcome(name, split, monkeypatch):
+    if split:
+        # NOTE: two-row lanes, so the walk splits them.
+        monkeypatch.setattr("tsim.statevector.branches.MAX_BYTES", 64)
+    for compiled, ops in _components(CIRCUITS[name], sample_detectors=False):
+        branches = Branches(compiled, num_detectors=len(compiled.output_indices))
+        f = np.array(f_patterns(ops.num_f, limit=4), dtype=np.uint8)
+        f = f.reshape(len(f), ops.num_f)
+        row, values = branches.support(f)
+        assert np.all(np.diff(row) >= 0)
+        coins = branches.coin_rows
+        flips = np.array(
+            [
+                np.bitwise_xor.reduce(coins[list(s)], axis=0, initial=0)
+                for s in _subsets(len(coins))
+            ],
+            dtype=np.uint8,
+        ).reshape(-1, coins.shape[1])
+        expected = [set() for _ in f]
+        for r, _, out in branches._leaves(f):
+            for i, o in zip(r.tolist(), out.tolist(), strict=True):
+                expected[i].add(tuple(o))
+        got = [set() for _ in f]
+        for i, v in zip(row.tolist(), values, strict=True):
+            got[i] |= {tuple(int(b) for b in v ^ flip) for flip in flips}
+        assert got == expected
+
+
+def _subsets(n: int) -> list[list[int]]:
+    return [[i for i in range(n) if mask >> i & 1] for mask in range(1 << n)]
