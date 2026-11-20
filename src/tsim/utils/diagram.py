@@ -10,7 +10,7 @@ import numpy as np
 import stim
 import zxparam as zx
 from lxml import etree  # type: ignore
-from zxparam import Graph
+from zxparam import Graph, Scalar
 from zxparam.viz.layout import Layout
 
 from tsim.core.params import ParamLayout
@@ -476,8 +476,26 @@ def render_svg(
     return Diagram(svg, html)
 
 
+def _with_drawn_scalar(g: Graph, show_scalar: bool) -> Graph:
+    """Return a copy of ``g`` whose scalar is the one to draw.
+
+    zxparam's viewer prints the scalar unless it is ``1``, and prints it
+    unsimplified, so the copy's scalar is ``1`` to hide it and the simplified
+    scalar to show it. ``g`` is not changed.
+    """
+    # NOTE: once Tsim requires a zxparam release whose ``draw`` has a
+    # ``show_scalar`` option, pass that instead of replacing the scalar.
+    drawn = g.copy()
+    drawn.scalar = g.scalar.simplified() if show_scalar else Scalar.one()
+    return drawn
+
+
 def draw_zx(
-    g: Graph, num_errors: int, kwargs: dict[str, Any], layout: Layout = "auto"
+    g: Graph,
+    num_errors: int,
+    kwargs: dict[str, Any],
+    layout: Layout = "auto",
+    show_scalar: bool = False,
 ) -> Any:
     """Draw ``g`` with zxparam's D3 viewer, naming its parameters.
 
@@ -490,6 +508,8 @@ def draw_zx(
             names, and ``layout`` overrides the ``layout`` argument. Not
             modified.
         layout: zxparam's drawing layout unless ``kwargs`` sets one.
+        show_scalar: Whether to print the graph's scalar, simplified, above the
+            drawing. If False, the scalar is hidden.
 
     Returns:
         zxparam's D3 drawing object.
@@ -504,4 +524,4 @@ def draw_zx(
     names = ParamLayout(num_errors).names(g.parameters())
     names.update(options.pop("param_names", None) or {})
     options.setdefault("layout", layout)
-    return zx.draw(g, param_names=names, **options)
+    return zx.draw(_with_drawn_scalar(g, show_scalar), param_names=names, **options)

@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   corrected ones.
 
 ### Changed
+- `Circuit.diagram` no longer prints the graph's scalar above "zx", "zx-dets"
+  and "zx-meas" drawings, where it is a normalization that is rarely needed and
+  was shown unsimplified. Pass `show_scalar=True` to print it, simplified.
 - The stabilizer-rank strategies compile components of the same shape once, and
   no longer run components with a single output without compiling them. A
   20-qubit Clifford circuit with `strategy="cat5"` samples 8 times faster and its

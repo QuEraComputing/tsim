@@ -764,6 +764,7 @@ class Circuit:
         height: float | None = None,
         width: float | None = None,
         zoomable: bool = True,
+        show_scalar: bool = False,
         **kwargs: Any,
     ) -> Any:
         """Return a diagram of the circuit, from a variety of options.
@@ -822,6 +823,10 @@ class Circuit:
             zoomable: If True (default), wraps SVG diagrams in an interactive
                 container with pan and Ctrl/Cmd+wheel zoom. Only applies to
                 timeline-svg and timeslice-svg diagram types.
+            show_scalar: If True, prints the ZX graph's scalar, simplified, above
+                the drawing. Hidden by default: for "zx-dets" and "zx-meas" it
+                is a normalization that is rarely needed. Only applies to zx,
+                zx-dets and zx-meas diagram types.
             **kwargs: Additional keyword arguments passed to the underlying diagram renderer.
 
         Returns:
@@ -853,7 +858,7 @@ class Circuit:
         elif type == "zx":
             builder = parse_stim_circuit(self._stim_circ)
             g = builder.build(closed=False, outputs="detectors")
-            return draw_zx(g, builder.num_error_bits, kwargs)
+            return draw_zx(g, builder.num_error_bits, kwargs, show_scalar=show_scalar)
         elif type in ("zx-dets", "zx-meas"):
             builder = parse_stim_circuit(self._stim_circ)
             outputs = "detectors" if type == "zx-dets" else "records"
@@ -861,7 +866,13 @@ class Circuit:
             zx.full_reduce(g)
             g, _ = transform_error_basis(g, builder.num_error_bits)
             g.to_rg()
-            return draw_zx(g, builder.num_error_bits, kwargs, layout="outputs")
+            return draw_zx(
+                g,
+                builder.num_error_bits,
+                kwargs,
+                layout="outputs",
+                show_scalar=show_scalar,
+            )
         elif type == "timeline-text":
             from stim_timeline_text import render_timeline_text
 
