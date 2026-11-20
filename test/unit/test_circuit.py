@@ -12,6 +12,8 @@ import zxparam
 from zxparam.viz.layout import compute_positions
 
 from tsim.circuit import Circuit
+from tsim.core.parse import parse_stim_circuit
+from tsim.utils.diagram import draw_zx
 
 
 @pytest.mark.parametrize(
@@ -1144,6 +1146,40 @@ def test_diagram_zx_passes_draw_options_through(
 def test_diagram_zx_with_zero_scale_draws(type: Literal["zx", "zx-meas", "zx-dets"]):
     html = Circuit("H 0\nM 0").diagram(type=type, scale_horizontally=0)
     assert "renderZx" in html._repr_html_()
+
+
+def _drawn_scalar(c: Circuit, type: str, **kwargs) -> str:
+    with patch("zxparam.draw", wraps=zxparam.draw) as mock_draw:
+        c.diagram(type=type, **kwargs)  # type: ignore[arg-type]
+    return mock_draw.call_args.args[0].scalar.format({})
+
+
+@pytest.mark.parametrize("type", ["zx", "zx-meas", "zx-dets"])
+def test_diagram_zx_hides_scalar_by_default(type: str):
+    c = Circuit(
+        "R 0 1\nH 0\nCNOT 0 1\nX_ERROR(0.1) 0 1\nM 0 1\nDETECTOR rec[-1] rec[-2]"
+    )
+    assert _drawn_scalar(c, type) == "1"
+
+
+def test_diagram_zx_show_scalar_draws_it_simplified():
+    c = Circuit(
+        "R 0 1\nH 0\nCNOT 0 1\nX_ERROR(0.1) 0 1\nM 0 1\nDETECTOR rec[-1] rec[-2]"
+    )
+    assert _drawn_scalar(c, "zx-dets", show_scalar=True) == "(1ω + 1ω⁻¹)·2^-1"
+    # Unsimplified, this scalar is "(1)·2^-1 · Node(0,∅)".
+    assert _drawn_scalar(Circuit("T 0\nH 0\nM 0"), "zx-dets", show_scalar=True) == "1"
+
+
+@pytest.mark.parametrize("show_scalar", [False, True])
+def test_draw_zx_does_not_change_the_graph(show_scalar: bool):
+    builder = parse_stim_circuit(Circuit("T 0\nH 0\nM 0")._stim_circ)
+    g = builder.build(closed=True, outputs="detectors")
+    zxparam.full_reduce(g)
+    before = g.scalar.format({})
+    assert "Node" in before
+    draw_zx(g, builder.num_error_bits, {}, show_scalar=show_scalar)
+    assert g.scalar.format({}) == before
 
 
 @pytest.mark.parametrize("type", ["pyzx", "pyzx-dets", "pyzx-meas"])
