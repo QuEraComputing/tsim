@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Literal, get_args
+from typing import Literal, NamedTuple, get_args
 
 import numpy as np
 from zxparam import Domain, EdgeType, Graph, Phase, Vertex, VertexType
@@ -44,6 +44,23 @@ ANNOTATION_ROW = -2.0
 
 Outputs = Literal["detectors", "records", "none"]
 """The classical outputs of a built graph (see ``GraphBuilder.build``)."""
+
+
+class Site(NamedTuple):
+    """Where a noise channel sits in the flattened circuit.
+
+    Attributes:
+        instruction: Index of its instruction in the flattened circuit.
+        start: Index of its first target in the instruction.
+        end: One past the index of its last target.
+        record: Index of the measurement record it flips, if it flips one.
+
+    """
+
+    instruction: int
+    start: int
+    end: int
+    record: int
 
 
 def error_phase(error_bit: int) -> Phase:
@@ -90,7 +107,12 @@ class GraphBuilder:
         self._first_vertex: dict[int, Vertex] = {}
         self._last_vertex: dict[int, Vertex] = {}
         self._channel_probs: list[np.ndarray] = []
+        self._channel_sites: list[Site] = []
+        self._chain_links: dict[int, list[tuple[int, Site]]] = {}
+        self._chain_sites: list[Site] = []
         self._num_error_bits = 0
+        self.position: tuple[int, int, int] = (-1, 0, 0)
+        """Instruction index and target range that the parser is at."""
         self._correlated_error_probs: list[float] = []
         self._chain_spiders: list[Vertex] = []
         self._chain_toggles: list[set[int]] = []
@@ -125,6 +147,29 @@ class GraphBuilder:
         """Each noise channel's distribution over its error bits, in bit order."""
         self._check_finalized()
         return list(self._channel_probs)
+
+    @property
+    def channel_sites(self) -> list[Site]:
+        """Each noise channel's place in the flattened circuit.
+
+        A correlated-error chain is at its first link; ``chain_links`` has the
+        others.
+        """
+        self._check_finalized()
+        return list(self._channel_sites)
+
+    @property
+    def chain_links(self) -> dict[int, list[tuple[int, Site]]]:
+        """The links of each correlated-error chain, by channel.
+
+        A link is the channel outcome in which it alone fires, and its site.
+        """
+        self._check_finalized()
+        return dict(self._chain_links)
+
+    def _site(self) -> Site:
+        """Return the site of a channel added at the parser's position."""
+        return Site(*self.position, len(self._records))
 
     @property
     def num_error_bits(self) -> int:
@@ -358,6 +403,7 @@ class GraphBuilder:
         num_bits = channel_num_bits(probs)
         first = self._num_error_bits
         self._channel_probs.append(probs)
+        self._channel_sites.append(self._site())
         self._num_error_bits += num_bits
         return first
 
@@ -385,6 +431,7 @@ class GraphBuilder:
             if type_ == "Z" or type_ == "Y":
                 self._chain_toggles[self._chain_spider(qubit, VertexType.Z)] ^= {term}
         self._correlated_error_probs.append(p)
+        self._chain_sites.append(self._site())
 
     def _chain_spider(self, qubit: int, vertex_type: VertexType) -> int:
         """Return the index of the pending chain's noise spider for a component.
@@ -431,6 +478,8 @@ class GraphBuilder:
         if not probabilities:
             return
         spiders, toggles = self._chain_spiders, self._chain_toggles
+        sites = self._chain_sites
+        self._chain_sites = []
         self._chain_spiders = []
         self._chain_toggles = []
         self._chain_runs = {}
@@ -445,7 +494,9 @@ class GraphBuilder:
                 "instructions approximate it to first order in p"
             )
         # NOTE: a chain that flips no spider, such as E(p) X0 X0, has no channel.
-        if 0 < c < k:
+        if c == 0:
+            return
+        if c < k:
             masks = [0] * k
             for bit, i in enumerate(live):
                 for term in toggles[i]:
@@ -453,11 +504,16 @@ class GraphBuilder:
             first = self.add_channel(chain_error_probs(masks, probabilities, c))
             for bit, i in enumerate(live):
                 self._graph.set_phase(spiders[i], error_phase(first + bit))
-        elif c > 0:
+        else:
+            masks = [1 << term for term in range(k)]
             first = self.add_channel(correlated_error_probs(probabilities))
             for i in live:
                 bits = frozenset(first + term for term in toggles[i])
                 self._graph.set_phase(spiders[i], Phase(Fraction(0), bits))
+        # NOTE: add_channel recorded the parser's position, which is past the chain.
+        channel = len(self._channel_sites) - 1
+        self._channel_sites[channel] = sites[0]
+        self._chain_links[channel] = list(zip(masks, sites, strict=True))
 
     # -------------------------------------------------------------------------
     # Detectors and observables
