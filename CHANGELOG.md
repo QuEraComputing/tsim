@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the d=5 cultivation circuits of [Chan et al.](https://arxiv.org/abs/2609.17706),
   they find the 4 random detectors of the uncorrected circuit and none in the
   corrected ones.
+- **Stabilizer flows of non-Clifford circuits (experimental).**
+  `tsim.experimental.flow_generators`, `has_flow` and `has_all_flows` work like
+  Stim's methods of those names for circuits with T gates, with `stim.Flow`s,
+  either exactly or from `shots` noiseless samples. For a Clifford circuit,
+  `flow_generators` returns Stim's generators. A T gate keeps only the flows
+  that pass through it as Paulis, so `T 0` has `Z -> Z` alone, while
+  `T 0; T_DAG 0` has `X -> X` again. The 147 generators of the d=5 cultivation
+  circuit of [Chan et al.](https://arxiv.org/abs/2609.17706) take about a
+  second. `flow_generators` simulates two copies of the circuit, which doubles
+  the qubits that the statevector holds at once.
 
 ### Changed
 - The stabilizer-rank strategies compile components of the same shape once, and
