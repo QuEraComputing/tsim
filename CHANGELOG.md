@@ -18,6 +18,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `jax-cuda12` and `jax-cuda13` extras, for the stabilizer-rank strategies
   on NVIDIA GPUs with JAX. The `cuda12` and `cuda13` extras of Tsim 1.0 install
   the same packages.
+- **Fault distance of non-Clifford circuits (experimental).**
+  `tsim.experimental.shortest_errors(circuit, max_weight=k)` returns every
+  smallest set of faults that can flip an observable without flipping a
+  detector, like Stim's `search_for_undetectable_logical_errors` but exhaustive
+  and for circuits with T gates. Each result gives the probability that the
+  faults go undetected and that they flip an observable, and explains each
+  fault as Stim's `ExplainedError` does: the detectors and observables it flips,
+  as `stim.DemTargetWithCoords`, and its `stim.CircuitErrorLocation`s.
+  An empty result proves the distance exceeds `k`.
+  The fault distance of d=5 T-state cultivation (3, as found by
+  [Chan et al.](https://arxiv.org/abs/2609.17706)) takes under a second, and
+  that of its Z-flagged version (4) takes 5 s.
+- **Determined measurements of non-Clifford circuits (experimental).**
+  `tsim.experimental.count_determined_measurements` and `missing_detectors`
+  work like Stim's methods of those names for circuits with T gates, either
+  exactly or from `shots` noiseless samples. `nondeterministic_detectors` lists
+  the declared detectors and observables that are random without noise, and
+  `missing_detectors` returns the parities of random detectors that stay
+  determined first, which repairs a circuit whose S gates became T gates. On
+  the d=5 cultivation circuits of [Chan et al.](https://arxiv.org/abs/2609.17706),
+  they find the 4 random detectors of the uncorrected circuit and none in the
+  corrected ones.
 
 ### Changed
 - The stabilizer-rank strategies compile components of the same shape once, and
