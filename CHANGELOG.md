@@ -36,9 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   either exactly or from `shots` noiseless samples. For a Clifford circuit,
   `flow_generators` returns Stim's generators. A T gate keeps only the flows
   that pass through it as Paulis, so `T 0` has `Z -> Z` alone, while
-  `T 0; T_DAG 0` has `X -> X` again. The 147 generators of the d=5 cultivation
-  circuit of [Chan et al.](https://arxiv.org/abs/2609.17706) take about a
-  second. `flow_generators` simulates two copies of the circuit, which doubles
+  `T 0; T_DAG 0` has `X -> X` again. The 147 generators of the uncorrected d=5
+  cultivation circuit of [Chan et al.](https://arxiv.org/abs/2609.17706) take
+  about a second. `flow_generators` simulates two copies of the circuit, which doubles
   the qubits that the statevector holds at once.
 
 ### Changed

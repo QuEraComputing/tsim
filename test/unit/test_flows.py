@@ -63,11 +63,7 @@ def _bare(circuit: Circuit) -> stim.Circuit:
 
 
 def _negated(flow: stim.Flow) -> stim.Flow:
-    return stim.Flow(
-        input=flow.input_copy(),
-        output=-flow.output_copy(),
-        measurements=flow.measurements_copy(),
-    )
+    return flow * stim.Flow("1 -> -1")
 
 
 def _random_product(flows: list[stim.Flow], rng: np.random.Generator) -> stim.Flow:
@@ -217,6 +213,19 @@ def test_has_all_flows_agrees_with_stim_on_clifford_circuits(text):
 )
 def test_generators_with_t_gates(text, expected):
     assert [str(f) for f in flow_generators(Circuit(text))] == expected
+
+
+@pytest.mark.parametrize(
+    "text, same",
+    [
+        ("T 0 1\nMPP X0*X1\nT_DAG 0", "T 0 1\nCX 0 1\nMX 0\nCX 0 1\nT_DAG 0"),
+        ("T 0\nH 0\nT 0\nMY 0", "T 0\nH 0\nT 0\nS_DAG 0\nMX 0\nS 0"),
+    ],
+)
+def test_generators_with_t_gates_and_other_measurements(text, same):
+    generators = flow_generators(Circuit(text))
+    assert generators == flow_generators(Circuit(same))
+    assert has_all_flows(Circuit(text), generators)
 
 
 def test_repeated_non_pauli_measurement_agrees_with_itself():

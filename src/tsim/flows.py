@@ -11,10 +11,10 @@ circuits.
 - The Choi circuit runs the circuit on halves of Bell pairs. A Pauli on the
   other halves, the references, then acts as its transpose before the circuit.
   So the flow holds, up to sign, when the parity of ``S`` and a measurement of
-  ``P`` on the references times ``Q`` on the qubits is determined, and it
-  holds with its sign when that parity is 0, or 1 if ``P`` has an odd number
-  of ``Y``, which the transpose negates. ``has_all_flows`` measures every flow
-  so.
+  ``P`` on the references times ``Q`` on the qubits is determined. It holds
+  with its sign when that parity is 1 for a negative flow and 0 otherwise,
+  flipped if ``P`` has an odd number of ``Y``, which the transpose negates.
+  ``has_all_flows`` measures every flow so.
 - That takes a known flow. To find the flows, ``flow_generators`` runs the Choi
   circuit twice and measures ``XX`` and ``ZZ`` of each qubit and its copy, a
   Bell measurement [1]. A Pauli stabilizes a state, up to sign, exactly when
@@ -50,8 +50,10 @@ def flow_generators(
 
     As ``stim.Circuit.flow_generators``, for any circuit: every flow of the
     circuit is a product of the returned ones, which are independent. They are
-    Stim's generators if the circuit is Clifford. A non-Clifford gate leaves
-    fewer: ``T 0`` has ``Z -> Z`` alone, where ``S 0`` also has ``X -> Y``.
+    Stim's generators if the circuit is Clifford, except that a target of
+    ``MPAD`` counts as a qubit here, as in ``stim.Circuit.num_qubits``. A
+    non-Clifford gate leaves fewer: ``T 0`` has ``Z -> Z`` alone, where ``S 0``
+    also has ``X -> Y``.
 
     Args:
         circuit: The circuit. Its noise and annotations are ignored.
@@ -136,8 +138,7 @@ def has_all_flows(
 ) -> bool:
     """Return whether the circuit has all the stabilizer flows.
 
-    As ``stim.Circuit.has_all_flows``, for any circuit. Unlike Stim, the
-    result is exact with signs too, unless ``shots`` is given.
+    As ``stim.Circuit.has_all_flows``, for any circuit.
 
     Args:
         circuit: The circuit. Its noise and annotations are ignored.
@@ -195,7 +196,9 @@ def _probe(circuit: Circuit, flows: Sequence[stim.Flow]) -> tuple[Circuit, np.nd
         product = after + stim.PauliString(n - len(after)) + before
         records = []
         if product.weight:
-            probe.append("MPP", [product])
+            # NOTE: an MPP measures the Pauli without its sign, which the
+            # detector's value has instead.
+            probe.append("MPP", [product * product.sign])
             records.append(-1)
         for m in flow.measurements_copy():
             if not -num_m <= m < num_m:
