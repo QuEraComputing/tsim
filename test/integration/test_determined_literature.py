@@ -15,6 +15,7 @@ from tsim.determined import (
     missing_detectors,
     nondeterministic_detectors,
 )
+from tsim.flows import flow_generators, has_all_flows
 from tsim.utils.gf2_span import Span
 
 CIRCUIT = Path(__file__).parent.parent / "data" / "determined"
@@ -39,3 +40,17 @@ def test_chan_uncorrected_d5_circuit_has_random_detectors(shots):
     span = Span(circuit.num_measurements)
     span.insert(words[[107, 108]])
     assert not span.insert(words[[91, 91]] ^ words[[97, 102]]).any()
+
+
+def test_chan_uncorrected_d5_circuit_has_flows_that_end_in_its_state():
+    # NOTE: the circuit starts with resets, so no flow has an input. Its flows
+    # of measurements alone are its determined parities. The others stabilize
+    # the 42 qubits it ends with, which hold a T state: one stabilizer fewer
+    # than a stabilizer state has.
+    circuit = Circuit(CIRCUIT.read_text())
+    flows = flow_generators(circuit)
+    assert not any(flow.input_copy().weight for flow in flows)
+    outputs = [flow.output_copy().weight > 0 for flow in flows]
+    assert outputs.count(False) == count_determined_measurements(circuit) == 106
+    assert outputs.count(True) == circuit.num_qubits - 1 == 41
+    assert has_all_flows(circuit, flows)
