@@ -5,3 +5,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+  # Maintain Python dependencies in uv.lock, bundled into one pull request
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv:
+        patterns:
+          - "*"
