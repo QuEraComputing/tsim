@@ -11,6 +11,7 @@ from test.helpers.statevector import (
 import numba
 import numpy as np
 import pytest
+from numba.core import config as numba_config
 
 import tsim.statevector.shots as shots_module
 import tsim.utils.kernels as kernels
@@ -191,7 +192,7 @@ def test_trajectory_sharing_is_on_by_default():
 
 
 # NOTE: numba's most threads, which it sets as a config attribute at import.
-_LIMIT = numba.config.NUMBA_NUM_THREADS  # pyright: ignore[reportAttributeAccessIssue]
+_LIMIT = numba_config.NUMBA_NUM_THREADS  # pyright: ignore[reportAttributeAccessIssue]
 
 
 @pytest.fixture
