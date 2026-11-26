@@ -60,7 +60,9 @@ jobs:
         uses: codecov/codecov-action@v7
         with:
           files: coverage.xml # optional
-          fail_ci_if_error: true # optional (default = false)
+          # NOTE: Dependabot and fork PRs get no secrets, so the upload cannot succeed there;
+          # fail only when the token is present.
+          fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
           use_pypi: true
           verbose: true # optional (default = false)
           token: ${{ secrets.CODECOV_TOKEN }} # required
@@ -74,8 +76,12 @@ jobs:
   post:
     runs-on: ubuntu-latest
     needs: build
-    # Only same-repo PRs get a writable GITHUB_TOKEN; fork PRs cannot post comments.
-    if: github.event.pull_request && github.event.pull_request.head.repo.full_name == github.repository
+    # Only same-repo PRs get a writable GITHUB_TOKEN; fork PRs cannot post comments, and
+    # neither can Dependabot PRs, whose pull_request runs get a read-only token.
+    if: >-
+      github.event.pull_request
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
     permissions:
       pull-requests: write
     steps:
