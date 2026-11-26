@@ -16,10 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   faults go undetected and that they flip an observable, and explains each
   fault as Stim's `ExplainedError` does: the detectors and observables it flips,
   as `stim.DemTargetWithCoords`, and its `stim.CircuitErrorLocation`s.
-  An empty result proves the distance exceeds `k`.
-  The fault distance of d=5 T-state cultivation (3, as found by
-  [Chan et al.](https://arxiv.org/abs/2609.17706)) takes under a second, and
-  that of its Z-flagged version (4) takes 5 s.
+  An empty result proves the distance exceeds `k`. After the distance
+  certifier of [Cheng, Guo and Pan](https://arxiv.org/abs/2611.08247), the
+  search lists only the minimal sets of faults whose direct detectors cancel,
+  and combines the distinct rotation signs and output flips of their unions, so
+  `k` has no fixed limit. The fault distance of d=5 T-state cultivation (3, as
+  found by [Chan et al.](https://arxiv.org/abs/2609.17706)) takes about a
+  second, that of its Z-flagged version (4) 7 s, and that of its four-round
+  flagged version (5, with all 1.7 million smallest errors) about two minutes.
+  Stim's d=7 rotated surface code memory with 7 rounds (distance 7) takes about
+  eight minutes.
 - **Determined measurements of non-Clifford circuits (experimental).**
   `tsim.experimental.count_determined_measurements` and `missing_detectors`
   work like Stim's methods of those names for circuits with T gates, either

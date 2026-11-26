@@ -9,8 +9,9 @@ import stim
 
 from tsim import Circuit
 from tsim.experimental import shortest_errors
-from tsim.noise import fault_join
-from tsim.noise.faults import FIRST_CAPACITY, _combinations, _distinct, _Search
+from tsim.noise import fault_pieces, fault_values
+from tsim.noise.faults import MIN_PROBABILITY, _distinct, _Search
+from tsim.statevector.branches import gf2_product
 
 # A Bell pair is stabilized by XX and ZZ, also under T on one qubit and T_DAG on
 # the other. An X error between the T layers turns into (X ± Y)/√2, which the XX
@@ -87,6 +88,41 @@ NOISES = """
     DETECTOR rec[-3] rec[-2] rec[-5]
     DETECTOR rec[-2] rec[-1] rec[-4]
     OBSERVABLE_INCLUDE(0) rec[-1]
+"""
+
+
+# NOTE: MPP X0*X1 reads qubit 0 after its T gates, so the detector is a
+# statevector output. Z0 and Z1 flip no direct detector: each is a set of one
+# fault whose direct detectors cancel, caught by the statevector detector, and
+# together they flip the observable undetected.
+TWO_PIECES = """
+    RX 0 1
+    T 0
+    X_ERROR(0.01) 0
+    T_DAG 0
+    Z_ERROR(0.01) 0 1
+    MPP X0*X1
+    DETECTOR rec[-1]
+    MX 1
+    OBSERVABLE_INCLUDE(0) rec[-1]
+"""
+
+# A Stim surface code circuit with T gates around one qubit's noise, cut down.
+T_SURFACE = """
+    RX 1 3 5 8 10 12 15 17 19
+    H 2 11 16 25
+    CX 2 3 16 17 11 12 15 14 10 9 19 18
+    S_DAG[T] 15
+    DEPOLARIZE2(0.01) 2 3 16 17 11 12 15 14 10 9 19 18
+    S[T] 15
+    CX 2 1 16 15 11 10 8 14 3 9 12 18
+    CX 16 10 11 5 25 19 8 9 17 18 12 13
+    CX 16 8 11 3 25 17 1 9 10 18 5 13
+    H 2 11 16 25
+    MR 2 9 11 13 14 16 18 25
+    DETECTOR(2, 4, 0) rec[-3]
+    MX 1 3 5 8 10 12 15 17 19
+    OBSERVABLE_INCLUDE(0) rec[-3] rec[-6] rec[-9]
 """
 
 
@@ -350,10 +386,9 @@ def test_random_detectors_and_observables_are_rejected():
         )
 
 
-@pytest.mark.parametrize("max_weight", [0, 7])
+@pytest.mark.parametrize("max_weight", [0, -1])
 def test_max_weight_is_checked(max_weight):
-    # NOTE: GHZ has errors of weight 1, so this checks before searching.
-    with pytest.raises(ValueError, match="max_weight must be from 1 to 6"):
+    with pytest.raises(ValueError, match="max_weight must be at least 1"):
         shortest_errors(Circuit(GHZ), max_weight=max_weight)
 
 
@@ -365,15 +400,9 @@ def test_max_errors_is_checked(max_errors):
 
 
 def test_a_search_that_is_too_large_is_refused(monkeypatch):
-    monkeypatch.setattr("tsim.noise.faults.MAX_COMBINATIONS", 10)
+    monkeypatch.setattr("tsim.noise.faults.MAX_VALUE_BYTES", 1024)
     with pytest.raises(ValueError, match="lower max_weight"):
         shortest_errors(Circuit(_generated("repetition_code:memory", 3)), max_weight=3)
-
-
-@pytest.mark.parametrize(("n", "size"), [(5, 0), (5, 1), (6, 2), (7, 3), (3, 4)])
-def test_combinations(n, size):
-    expected = list(itertools.combinations(range(n), size))
-    assert [tuple(row) for row in _combinations(n, size).tolist()] == expected
 
 
 def test_distinct():
@@ -383,10 +412,18 @@ def test_distinct():
     assert not _distinct([{1, 2}, {1, 2}, {1, 2}])
 
 
-def test_full_buffers_grow(monkeypatch):
+def test_a_search_with_too_many_pieces_is_refused(monkeypatch):
+    monkeypatch.setattr("tsim.noise.faults.MAX_PIECES", 0)
+    with pytest.raises(ValueError, match="lower max_weight"):
+        shortest_errors(Circuit(_generated("repetition_code:memory", 3)), max_weight=3)
+
+
+@pytest.mark.parametrize(("batch", "max_pairs"), [(1, 0), (7, 1 << 24)])
+def test_small_batches_and_no_pairs_give_the_same_errors(batch, max_pairs, monkeypatch):
     circuit = Circuit(_generated("surface_code:rotated_memory_z", 3))
     expected = shortest_errors(circuit, max_weight=3)
-    monkeypatch.setattr("tsim.noise.faults.FIRST_CAPACITY", 1)
+    monkeypatch.setattr("tsim.noise.fault_pieces.BATCH_BYTES", batch)
+    monkeypatch.setattr("tsim.noise.fault_pieces.MAX_PAIRS", max_pairs)
     got = shortest_errors(circuit, max_weight=3)
     assert [str(e) for e in got] == [str(e) for e in expected]
 
@@ -423,42 +460,123 @@ def test_max_errors_keeps_the_most_likely():
     assert [str(e) for e in best] == [str(e) for e in every[:5]]
 
 
-def _python_join(monkeypatch):
-    """Run the numba kernels of ``fault_join`` as Python, so coverage sees them."""
-    for name in (
-        "_mix",
-        "_words_hash",
-        "build_index",
-        "build_word_index",
-        "_find",
-        "_find_words",
-        "_visit",
-        "_collect",
-        "_emit",
-        "_write_set",
-    ):
-        monkeypatch.setattr(fault_join, name, getattr(fault_join, name).py_func)
-    monkeypatch.setattr(fault_join, "scan", lambda _, *args: fault_join._scan(*args))
+@pytest.mark.parametrize("text", [GHZ, TWO_PIECES, T_SURFACE])
+def test_the_parallel_kernels_find_the_same_errors(text, monkeypatch):
+    expected = shortest_errors(Circuit(text), max_weight=4)
+    # NOTE: every kernel then runs in parallel, if numba has threads.
+    monkeypatch.setattr("tsim.utils.kernels.PARALLEL_WORK", 0)
+    got = shortest_errors(Circuit(text), max_weight=4)
+    assert [str(e) for e in got] == [str(e) for e in expected]
 
 
-@pytest.mark.parametrize("capacity", [1, FIRST_CAPACITY])
-@pytest.mark.parametrize("task", ["ghz", "noises", "repetition"])
-def test_the_join_kernels_run_as_python(task, capacity, monkeypatch):
+def _python_kernels(monkeypatch):
+    """Run the numba kernels of the search as Python, so coverage sees them."""
+    for module in (fault_pieces, fault_values):
+        for name, value in vars(module).copy().items():
+            if hasattr(value, "py_func"):
+                monkeypatch.setattr(module, name, value.py_func)
+    # NOTE: a kernel ``name(work, *args)`` runs ``_name(*args)``.
+    kernels = {fault_pieces: ["search"], fault_values: ["find_all", "xor_sets"]}
+    kernels[fault_values] += ["accepted", "probabilities", "accepted_sums"]
+    kernels[fault_values] += ["triples", "join"]
+    for module, names in kernels.items():
+        for name in names:
+            python = getattr(module, f"_{name}")
+            monkeypatch.setattr(module, name, lambda _, *a, run=python: run(*a))
+
+
+@pytest.mark.parametrize("task", ["ghz", "noises", "repetition", "t_surface"])
+def test_the_search_kernels_run_as_python(task, monkeypatch):
     text = {
         "ghz": GHZ,
         "noises": NOISES,
         "repetition": str(_generated("repetition_code:memory", 3)),
+        "t_surface": T_SURFACE,
     }[task]
-    weights = range(1, 7)
+    weights = range(1, 5)
     compiled = [_Search(Circuit(text)).logical_errors(w) for w in weights]
-    _python_join(monkeypatch)
-    monkeypatch.setattr("tsim.noise.faults.FIRST_CAPACITY", capacity)
+    _python_kernels(monkeypatch)
     # NOTE: the hashes multiply uint64 scalars, which wrap as they do in numba.
     with np.errstate(over="ignore"):
         python = [_Search(Circuit(text)).logical_errors(w) for w in weights]
     assert [[str(e) for e in errors] for errors in python] == [
         [str(e) for e in errors] for errors in compiled
     ]
+
+
+def _every_set(search: _Search, weight: int) -> dict[tuple, tuple[float, float]]:
+    """Return the logical errors of ``weight`` faults by trying every set of them.
+
+    The walk of each set takes its f-bits, and the probabilities are products
+    over the components, without the search's tables.
+    """
+    is_detector = search._direct_outputs < search._num_detectors
+    known = search._direct_bits >= 0
+    detectors = np.unique(search._direct_bits[is_detector & known])
+    observables = np.unique(search._direct_bits[~is_detector & known])
+    sets = np.array(
+        list(itertools.combinations(range(len(search._events)), weight)), dtype=np.int64
+    ).reshape(-1, weight)
+    f = np.bitwise_xor.reduce(search._bits[sets], axis=1)
+    quiet = ~f[:, detectors].any(axis=1)
+    sets, f = sets[quiet], f[quiet]
+    undetected = np.ones(len(sets))
+    unflipped = np.where(f[:, observables].any(axis=1), 0.0, 1.0)
+    for branches in search._branches:
+        local = f[:, branches.f_selection]
+        shifts = gf2_product(local, branches.output_rows)
+        for i, (deviations, p) in enumerate(branches.outcomes(local)):
+            same = deviations == shifts[i]
+            undetected[i] *= p[same[:, ~branches.observable].all(axis=1)].sum()
+            unflipped[i] *= p[same.all(axis=1)].sum()
+    flip = undetected - unflipped
+    keep = (flip > MIN_PROBABILITY) & search._distinct_channels(sets)
+    return {
+        tuple(search._fault(j) for j in row): (u, p)
+        for row, u, p in zip(
+            sets[keep].tolist(), undetected[keep], flip[keep], strict=True
+        )
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        GHZ,
+        BELL.format(gate="T"),
+        NOISES,
+        INVERTED,
+        TWO_PIECES,
+        T_SURFACE,
+        str(_generated("repetition_code:memory", 3)),
+    ],
+)
+def test_the_shortest_errors_are_those_of_trying_every_set(text):
+    search = _Search(Circuit(text))
+    for weight in range(1, 5):
+        expected = _every_set(search, weight)
+        got = {
+            error.faults: (error.undetected_probability, error.logical_flip_probability)
+            for error in search.logical_errors(weight)
+        }
+        assert got.keys() == expected.keys()
+        for key, (undetected, flip) in got.items():
+            assert undetected == pytest.approx(expected[key][0], abs=1e-12)
+            assert flip == pytest.approx(expected[key][1], abs=1e-12)
+        if expected:
+            break
+
+
+def test_a_shortest_error_can_be_two_pieces():
+    errors = shortest_errors(Circuit(TWO_PIECES), max_weight=2)
+    paulis = [
+        [str(f.circuit_error_locations[0].flipped_pauli_product[0]) for f in error]
+        for error in errors
+    ]
+    assert paulis == [["Z0", "Z1"], ["X0", "Z1"]]
+    assert [error.logical_flip_probability for error in errors] == pytest.approx(
+        [1.0, 0.5]
+    )
 
 
 def test_a_noisy_padding_flips_its_record():

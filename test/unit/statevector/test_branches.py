@@ -55,7 +55,9 @@ def test_the_branches_have_the_exact_output_distribution(
         branches = Branches(compiled, num_detectors=len(compiled.output_indices))
         got: list[dict] = [{} for _ in patterns]
         f = np.array(patterns, dtype=np.uint8).reshape(len(patterns), ops.num_f)
-        for row, weight, outputs in branches._leaves(f):
+        signs = gf2_product(f, branches.sign_rows)
+        flips = gf2_product(f, branches.output_rows)
+        for row, weight, outputs in branches._leaves(signs, flips):
             for r, w, out in zip(
                 row.tolist(), weight.tolist(), outputs.tolist(), strict=True
             ):
@@ -89,6 +91,9 @@ def test_outcomes_depend_only_on_the_rotation_signs():
     f = np.array(f_patterns(ops.num_f, limit=64), dtype=np.uint8)
     signs = gf2_product(f, branches.sign_rows)
     outcomes = branches.outcomes(f)
+    for (a, p), (b, q) in zip(branches.deviations(signs), outcomes, strict=True):
+        assert np.array_equal(a, b)
+        np.testing.assert_allclose(p, q)
     for i in range(len(f)):
         for j in np.flatnonzero((signs == signs[i]).all(axis=1)).tolist():
             assert np.array_equal(outcomes[i][0], outcomes[j][0])
@@ -167,7 +172,9 @@ def test_the_support_with_its_coins_is_every_possible_outcome(name, split, monke
             dtype=np.uint8,
         ).reshape(-1, coins.shape[1])
         expected = [set() for _ in f]
-        for r, _, out in branches._leaves(f):
+        signs = gf2_product(f, branches.sign_rows)
+        flips_f = gf2_product(f, branches.output_rows)
+        for r, _, out in branches._leaves(signs, flips_f):
             for i, o in zip(r.tolist(), out.tolist(), strict=True):
                 expected[i].add(tuple(o))
         got = [set() for _ in f]

@@ -8,7 +8,7 @@ The f-bits enter the tape in two ways: they set the signs of its rotations, and
 they flip its outputs by a parity of their own. Only the first needs the walk.
 ``outcomes`` therefore reports how the outputs deviate from their noiseless
 values apart from the second, so one walk serves every row with the same
-rotation signs.
+rotation signs; ``deviations`` takes those signs instead of f-bits.
 """
 
 from __future__ import annotations
@@ -108,8 +108,9 @@ class Branches:
                 random without noise.
 
         """
-        noiseless = np.zeros((1, len(self.f_selection)), dtype=np.uint8)
-        values = np.concatenate([out for _, _, out in self._leaves(noiseless)])
+        signs = np.zeros((1, len(self.sign_rows)), dtype=np.uint8)
+        flips = np.zeros((1, len(self.output_rows)), dtype=np.uint8)
+        values = np.concatenate([out for _, _, out in self._leaves(signs, flips)])
         random = np.flatnonzero((values != values[0]).any(axis=0))
         if len(random):
             slot = int(random[0])
@@ -130,7 +131,7 @@ class Branches:
 
         A deviation is the outputs XOR their noiseless values XOR
         ``gf2_product(f, output_rows)``, so it depends on ``f`` only through
-        ``gf2_product(f, sign_rows)``.
+        ``gf2_product(f, sign_rows)``; ``deviations`` takes those signs.
 
         Args:
             f: The component's f-bits, shape ``(rows, len(f_selection))``.
@@ -145,12 +146,31 @@ class Branches:
 
         """
         f = np.asarray(f, dtype=np.uint8)
-        flips = gf2_product(f, self.output_rows) ^ self.reference
-        row, weight, outputs = self._collect(f, skip_coins=False)
-        deviation = outputs ^ flips[row]
-        bounds = np.searchsorted(row, np.arange(len(f) + 1))
+        return self.deviations(gf2_product(f, self.sign_rows))
+
+    def deviations(self, signs: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
+        """Return the distribution of output deviations for each row of signs.
+
+        Args:
+            signs: Whether each rotation's sign flips, shape
+                ``(rows, len(sign_rows))``: ``gf2_product(f, sign_rows)``.
+
+        Returns:
+            For each row, the deviations that can happen, as ``outcomes``
+            returns them, and their probabilities.
+
+        Raises:
+            ValueError: If the walk has more than ``MAX_BRANCHES`` branches
+                per row.
+
+        """
+        signs = np.asarray(signs, dtype=np.uint8)
+        flips = np.zeros((len(signs), len(self.output_rows)), dtype=np.uint8)
+        row, weight, outputs = self._collect(signs, flips, skip_coins=False)
+        deviation = outputs ^ self.reference
+        bounds = np.searchsorted(row, np.arange(len(signs) + 1))
         result = []
-        for r in range(len(f)):
+        for r in range(len(signs)):
             mine = slice(bounds[r], bounds[r + 1])
             values, group = np.unique(deviation[mine], axis=0, return_inverse=True)
             probability = np.zeros(len(values))
@@ -177,20 +197,23 @@ class Branches:
                 per row.
 
         """
-        row, _, outputs = self._collect(np.asarray(f, dtype=np.uint8), skip_coins=True)
+        f = np.asarray(f, dtype=np.uint8)
+        signs = gf2_product(f, self.sign_rows)
+        flips = gf2_product(f, self.output_rows)
+        row, _, outputs = self._collect(signs, flips, skip_coins=True)
         return row, outputs
 
     def _collect(
-        self, f: np.ndarray, *, skip_coins: bool
+        self, signs: np.ndarray, flips: np.ndarray, *, skip_coins: bool
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Return every branch's row, probability and outputs, sorted by row."""
         rows, weights, outputs = [], [], []
-        leaves = np.zeros(len(f), dtype=np.int64)
-        for row, weight, out in self._leaves(f, skip_coins=skip_coins):
+        leaves = np.zeros(len(signs), dtype=np.int64)
+        for row, weight, out in self._leaves(signs, flips, skip_coins=skip_coins):
             rows.append(row)
             weights.append(weight)
             outputs.append(out)
-            leaves += np.bincount(row, minlength=len(f))
+            leaves += np.bincount(row, minlength=len(signs))
             if leaves.max() > MAX_BRANCHES:
                 raise ValueError(
                     f"the tape has more than {MAX_BRANCHES} measurement branches"
@@ -204,22 +227,24 @@ class Branches:
         )
 
     def _leaves(
-        self, f: np.ndarray, *, skip_coins: bool = False
+        self, signs: np.ndarray, flips: np.ndarray, *, skip_coins: bool = False
     ) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
         """Yield the branches that reach the end of the tape, in batches.
 
-        A batch is the row of ``f`` of each branch, its probability and its
-        output values. With ``skip_coins``, the coins of ``coin_rows`` land 0.
+        Row ``i`` flips the signs of the rotations where ``signs[i]`` is 1 and
+        the output slots where ``flips[i]`` is 1. A batch is the row of each
+        branch, its probability and its output values. With ``skip_coins``,
+        the coins of ``coin_rows`` land 0.
         """
         skip = self._coins if skip_coins else np.zeros_like(self._coins)
         tape = self._tape
-        sign = np.zeros((len(f), len(tape.kind)), dtype=np.uint8)
-        sign[:, self._rotations] = gf2_product(f, self.sign_rows)
+        sign = np.zeros((len(signs), len(tape.kind)), dtype=np.uint8)
+        sign[:, self._rotations] = signs
         sign ^= tape.sign_const.astype(np.uint8)
-        out = gf2_product(f, self.output_rows) ^ tape.output_const.astype(np.uint8)
+        out = flips ^ tape.output_const.astype(np.uint8)
         step = max(1, self._lanes // 4)
-        for start in range(0, len(f), step):
-            row = np.arange(start, min(start + step, len(f)))
+        for start in range(0, len(signs), step):
+            row = np.arange(start, min(start + step, len(signs)))
             amps = np.zeros((len(row), self._size), dtype=np.complex128)
             amps[:, 0] = 1.0
             bits = np.zeros((len(row), self._out_b.shape[1]), dtype=np.uint8)
