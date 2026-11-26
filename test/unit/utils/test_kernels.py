@@ -5,6 +5,7 @@ import threading
 import time
 
 import numba
+import numba.np.ufunc
 import numpy as np
 import pytest
 
@@ -21,7 +22,7 @@ def _square_roots(out):
 @kernel
 def _thread_ids(out):
     for i in numba.prange(out.shape[0]):
-        out[i] = numba.get_thread_id()
+        out[i] = numba.np.ufunc.get_thread_id()
 
 
 def test_serial_and_parallel_runs_agree():
