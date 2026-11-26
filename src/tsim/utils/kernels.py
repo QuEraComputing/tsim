@@ -6,7 +6,7 @@ import threading
 import types
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, wait
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import numba
 import numba.core.config
@@ -64,23 +64,16 @@ def jit(
     # it reads them, so the name carries the flags: an entry cached without nogil
     # would keep holding the GIL.
     function = _renamed(function, "_nogil_contract" if contract else "_nogil")
-    options = _prange_only() if parallel else False
-    fastmath = {"contract"} if contract else False
     # NOTE: numba's stubs type ``parallel`` as bool, but its ParallelOptions also
     # takes a dict of options at runtime.
+    options: Any = _prange_only() if parallel else False
+    fastmath = {"contract"} if contract else False
     try:
-        return numba.njit(
-            cache=True,
-            parallel=options,  # pyright: ignore[reportArgumentType]
-            nogil=True,
-            fastmath=fastmath,
-        )(function)
+        return numba.njit(cache=True, parallel=options, nogil=True, fastmath=fastmath)(
+            function
+        )
     except RuntimeError:
-        return numba.njit(
-            parallel=options,  # pyright: ignore[reportArgumentType]
-            nogil=True,
-            fastmath=fastmath,
-        )(function)
+        return numba.njit(parallel=options, nogil=True, fastmath=fastmath)(function)
 
 
 def kernel(function: Callable) -> Callable:
