@@ -1,0 +1,4 @@
+# Build tooling and notebook helpers; Mintlify only needs the MDX output.
+*.py
+*.ipynb
+tutorials/utils/
