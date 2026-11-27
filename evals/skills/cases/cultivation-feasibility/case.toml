@@ -1,0 +1,10 @@
+prompt = """
+I have a magic state cultivation circuit at inputs/msc_d3_inject_cultivate_p1e-3.stim (it has \
+real T gates). Can Tsim simulate it efficiently? Roughly how many shots per second should I \
+expect on this machine, and what fraction of shots survive if I postselect on all detectors? \
+Keep compute to a few minutes.
+"""
+
+# The stand-in with every S and S_DAG line turned into T and T_DAG.
+[inputs]
+"msc_d3_inject_cultivate_p1e-3.stim" = { circuit = "cultivation_d3_standin.stim", s_to_t = true }

@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - "docs/**"
+      - "skills/**"
       - "src/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -41,7 +42,7 @@ jobs:
           version: "0.13.7"
           enable-cache: true
           cache-dependency-glob: "uv.lock"
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - name: Install the Mintlify CLI
@@ -62,7 +63,7 @@ jobs:
           TOKEN: ${{ github.token }}
         run: |
           site=$(mktemp -d)
-          cp -r docs "$site/docs"
+          cp -rL docs "$site/docs"
           cd "$site"
           git init -q -b "$DEPLOY_BRANCH"
           git config user.name "github-actions[bot]"

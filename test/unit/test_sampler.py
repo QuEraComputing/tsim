@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import warnings
 from test.helpers.statevector import shot_sampler
 from unittest.mock import patch
 
@@ -9,6 +10,7 @@ import pytest
 import tsim.sampler as sampler_module
 import tsim.statevector.shared as shared
 from tsim.circuit import Circuit
+from tsim.statevector.shots import ShotSampler
 from tsim.utils.kernels import PARALLEL_WORK
 
 
@@ -813,3 +815,37 @@ def test_only_the_stabilizer_rank_strategies_start_jax():
     # importing Tsim and sampling with "active_statevector" must not start it. A
     # fresh interpreter, since other tests start it.
     subprocess.run([sys.executable, "-c", _JAX_BACKEND_CHECK], check=True)  # noqa: S603
+
+
+# NOTE: a T state measured after noise: one component with shot words.
+NOISY_T_STATE = "R 0\nH 0\nT 0\nZ_ERROR(0.1) 0\nH 0\nM 0\nDETECTOR rec[-1]"
+
+
+@pytest.mark.parametrize("compile", ["compile_sampler", "compile_detector_sampler"])
+def test_device_cpu_samples_on_the_cpu(compile):
+    sampler = getattr(Circuit(NOISY_T_STATE), compile)(seed=1, device="cpu")
+    assert type(shot_sampler(sampler)) is ShotSampler
+    assert sampler.stats.device == "cpu"
+
+
+def test_unknown_devices_raise():
+    with pytest.raises(ValueError, match="device must be 'auto', 'cpu' or 'metal'"):
+        Circuit(NOISY_T_STATE).compile_sampler(device="gpu")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("device", ["cpu", "metal"])
+def test_stabilizer_rank_strategies_take_only_the_auto_device(device):
+    with pytest.raises(ValueError, match="needs strategy='active_statevector'"):
+        Circuit(NOISY_T_STATE).compile_sampler(strategy="cat5", device=device)
+
+
+def test_metal_device_raises_where_metal_cannot_run(monkeypatch):
+    from tsim.statevector.metal import runtime
+
+    monkeypatch.setattr(runtime, "unavailable", lambda: "no Apple GPU")
+    with pytest.raises(RuntimeError, match="Cannot sample on Metal: no Apple GPU"):
+        Circuit(NOISY_T_STATE).compile_detector_sampler(device="metal")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        sampler = Circuit(NOISY_T_STATE).compile_detector_sampler(seed=1)
+    assert sampler.stats.device == "cpu"

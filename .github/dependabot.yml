@@ -5,3 +5,16 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+  # Maintain Python dependencies in uv.lock, bundled into one pull request
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv:
+        patterns:
+          - "*"
+    # tesseract-decoder dev builds dropped Python 3.11 wheels, so uv cannot resolve the
+    # 3.11 split and the whole run fails. Remove this ignore once tsim drops 3.11 support.
+    ignore:
+      - dependency-name: "tesseract-decoder"

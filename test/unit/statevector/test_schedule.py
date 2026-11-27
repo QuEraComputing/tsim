@@ -99,9 +99,32 @@ def test_widening_runs_the_measurement_with_the_lowest_peak_first():
     assert lower_second.width == 2
 
 
-def test_schedules_keep_every_anticommuting_pair_in_order():
+def _measurement_that_a_later_rotation_need_not_follow():
+    # Rotate about X0 and X1, measure Z0 and Z1, rotate about Z1: the last
+    # rotation commutes with the measurement of Z1 and keeps the width.
+    return PauliOps(
+        kind=np.array([ROTATION] * 3 + [MEASUREMENT] * 2, dtype=np.uint8),
+        x=_bits([1, 0], [0, 1], [0, 0], [0, 0], [0, 0]),
+        z=_bits([0, 0], [0, 0], [0, 1], [1, 0], [0, 1]),
+        angle=np.array([0.3, 0.3, 0.3, 0.0, 0.0]),
+        sign=np.zeros((5, 1), dtype=bool),
+        slot=np.array([-1, -1, -1, 0, 1], dtype=np.int32),
+    )
+
+
+def test_deferred_measurements_wait_for_the_rotations_that_keep_the_width():
+    ops = _measurement_that_a_later_rotation_need_not_follow()
+    eager = schedule(ops)
+    assert eager.order.tolist() == [0, 3, 1, 4, 2]
+    deferred = schedule(ops, defer=True)
+    assert deferred.order.tolist() == [0, 3, 1, 2, 4]
+    assert eager.width == deferred.width == 1
+
+
+@pytest.mark.parametrize("defer", [False, True])
+def test_schedules_keep_every_anticommuting_pair_in_order(defer):
     for ops in component_ops():
-        order = schedule(ops).order
+        order = schedule(ops, defer=defer).order
         assert sorted(order.tolist()) == list(range(ops.num_ops))
         position = np.empty(ops.num_ops, dtype=int)
         position[order] = np.arange(ops.num_ops)
@@ -109,18 +132,20 @@ def test_schedules_keep_every_anticommuting_pair_in_order():
         assert np.all(position[first] < position[second])
 
 
-def test_schedules_preserve_the_distribution():
+@pytest.mark.parametrize("defer", [False, True])
+def test_schedules_preserve_the_distribution(defer):
     for ops in component_ops():
-        reordered = ops.take(schedule(ops).order)
+        reordered = ops.take(schedule(ops, defer=defer).order)
         for f in f_patterns(ops.num_f):
             assert_distributions_close(
                 ops_distribution(reordered, f), ops_distribution(ops, f)
             )
 
 
-def test_width_is_the_largest_structural_width_of_the_order():
+@pytest.mark.parametrize("defer", [False, True])
+def test_width_is_the_largest_structural_width_of_the_order(defer):
     for ops in component_ops():
-        scheduled = schedule(ops)
+        scheduled = schedule(ops, defer=defer)
         group = StabilizerGroup(ops.num_lines)
         widths = [0]
         for j in scheduled.order:

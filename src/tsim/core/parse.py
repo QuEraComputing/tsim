@@ -98,6 +98,21 @@ def _validate_r_pauli_targets(instruction: stim.CircuitInstruction) -> None:
             seen = set()
 
 
+def _product_ranges(instruction: stim.CircuitInstruction) -> list[tuple[int, int]]:
+    """Return the target range ``(start, end)`` of each Pauli product."""
+    targets = instruction.targets_copy()
+    ranges = []
+    start = 0
+    for i in range(len(targets)):
+        if targets[i].is_combiner or (
+            i + 1 < len(targets) and targets[i + 1].is_combiner
+        ):
+            continue
+        ranges.append((start, i + 1))
+        start = i + 1
+    return ranges
+
+
 def _iter_pauli_products(
     instruction: stim.CircuitInstruction,
 ) -> Iterator[tuple[list[tuple[Literal["X", "Y", "Z"], int]], bool]]:
@@ -167,8 +182,13 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
     """
     builder = GraphBuilder()
 
-    for instruction in stim_circuit.flattened():
+    flattened = stim_circuit.flattened()
+    for index in range(len(flattened)):
+        instruction = flattened[index]
         assert not isinstance(instruction, stim.CircuitRepeatBlock)
+        # NOTE: the builder records this position with each noise channel that
+        # the instruction adds; the loops below narrow it to the targets.
+        builder.position = (index, 0, len(instruction.targets_copy()))
 
         name = instruction.name
         if name == "SHIFT_COORDS":
@@ -218,7 +238,10 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
         if name == "MPP":
             args = instruction.gate_args_copy()
             p = args[0] if args else 0
-            for paulis, invert in _iter_pauli_products(instruction):
+            products = _iter_pauli_products(instruction)
+            ranges = _product_ranges(instruction)
+            for (paulis, invert), (start, end) in zip(products, ranges, strict=True):
+                builder.position = (index, start, end)
                 mpp(builder, paulis, invert, p=p)
             continue
         if name in ("SPP", "SPP_DAG") and is_t_tag(instruction.tag):
@@ -248,7 +271,8 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
         if name == "MPAD":
             args = instruction.gate_args_copy()
             p = args[0] if args else 0
-            for target in instruction.targets_copy():
+            for i_target, target in enumerate(instruction.targets_copy()):
+                builder.position = (index, i_target, i_target + 1)
                 mpad(builder, target.value, p=p)
             continue
         if name == "E" or name == "ELSE_CORRELATED_ERROR":
@@ -301,6 +325,7 @@ def parse_stim_circuit(stim_circuit: stim.Circuit) -> GraphBuilder:
         for i_target in range(0, len(targets), num_qubits):
             chunk = targets[i_target : i_target + num_qubits]
             cc_chunk = is_classically_controlled[i_target : i_target + num_qubits]
+            builder.position = (index, i_target, i_target + num_qubits)
             chunk_inverted = False
             for j in range(num_qubits):
                 chunk_inverted ^= invert[i_target + j]

@@ -1660,3 +1660,9 @@ def test_gate_like_text_inside_another_tag_roundtrips(tag):
     c.append("X", [0], tag=tag)
     assert str(c).startswith("X[")
     assert Circuit(str(c)) == c
+
+
+@pytest.mark.parametrize("tag", ["R_X(1e400)", "R_X(theta=1e400*pi)"])
+def test_out_of_range_parametric_tag_is_kept_as_is(tag):
+    c = Circuit(f"I[{tag}] 0")
+    assert str(c) == f"I[{tag}] 0"

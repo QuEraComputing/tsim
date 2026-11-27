@@ -5,6 +5,7 @@ import threading
 import time
 
 import numba
+import numba.np.ufunc
 import numpy as np
 import pytest
 
@@ -21,7 +22,7 @@ def _square_roots(out):
 @kernel
 def _thread_ids(out):
     for i in numba.prange(out.shape[0]):
-        out[i] = numba.get_thread_id()
+        out[i] = numba.np.ufunc.get_thread_id()
 
 
 def test_serial_and_parallel_runs_agree():
@@ -100,7 +101,9 @@ def test_the_calling_thread_keeps_parallel_kernels_after_run_tasks():
     if numba.get_num_threads() < 2:
         pytest.skip("needs two numba threads")
     run_tasks(lambda _: _thread_ids(PARALLEL_WORK, np.zeros(64)), range(4), 4)
-    ids = np.full(1 << 12, -1)
+    # NOTE: the loop is long enough that every threading layer splits it; TBB
+    # runs a short loop on one thread.
+    ids = np.full(1 << 22, -1)
     _thread_ids(PARALLEL_WORK, ids)
     assert len(np.unique(ids)) > 1
 

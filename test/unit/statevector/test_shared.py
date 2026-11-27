@@ -18,6 +18,7 @@ import pytest
 import stim
 
 import tsim.statevector.shared as shared
+from tsim.statevector.plan import Rotate
 from tsim.statevector.program import MEASURE, MEASURE_DIAG, lower, plan_component
 
 NAMES = [
@@ -390,3 +391,47 @@ def test_every_action_stays_within_its_extent(name, coherent):
         assert np.all(support < reach)
         measured = np.isin(np.asarray(tape.kind), (MEASURE, MEASURE_DIAG))
         assert np.all((1 << np.asarray(tape.pivot))[measured] < reach[measured])
+
+
+def _noiseless_rotations(width=6, layers=8):
+    """Random U3 pairs and CX gates, then every qubit measured: a long prefix."""
+    rng = np.random.default_rng(width)
+    lines = []
+    for _ in range(layers):
+        perm = rng.permutation(width)
+        for a, b in zip(perm[::2], perm[1::2], strict=False):
+            for q in (a, b):
+                t = rng.uniform(-1, 1, 3)
+                lines.append(f"U3({t[0]},{t[1]},{t[2]}) {q}")
+            lines.append(f"CX {a} {b}")
+    lines.append("M " + " ".join(map(str, range(width))))
+    lines += [f"DETECTOR rec[{i - width}]" for i in range(width)]
+    return "\n".join(lines)
+
+
+@pytest.mark.parametrize("name", [*NAMES, "long_prefix"])
+def test_the_common_prefix_runs_the_leading_shared_rotations(name):
+    text = _noiseless_rotations() if name == "long_prefix" else CIRCUITS[name]
+    starts = []
+    for planned, _, compiled in _compiled_text(text):
+        _, program = component_program(compiled)
+        assert len(program.kind) == len(planned.actions)
+        start, amps = shared.common_prefix(program)
+        starts.append(start)
+        psi = np.zeros(1 << program.width, dtype=complex)
+        psi[0] = 1
+        for a in range(start):
+            action = planned.actions[a]
+            if not isinstance(action, Rotate):
+                assert not program.splits[a]
+                continue
+            assert not program.sign_row[a].any()
+            psi = reference_rotate(
+                psi, action.x, action.z, action.angle, bool(program.sign_const[a])
+            )
+        np.testing.assert_allclose(amps, psi, atol=1e-12)
+        # NOTE: the prefix ends at the first action that depends on the shot.
+        if start < len(program.kind):
+            assert program.splits[start] or program.sign_row[start].any()
+    if name == "long_prefix":
+        assert max(starts) >= 20

@@ -1,0 +1,4 @@
+# NOTE: the Metal executor needs an Apple GPU, which CI does not have; its tests
+# run on Apple silicon only.
+ignore:
+  - "src/tsim/statevector/metal"

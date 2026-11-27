@@ -8,17 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `Circuit(...)` accepts a `stim.Circuit` or another `Circuit` and copies it,
-  like `Circuit.from_stim_program`. Before, passing a `stim.Circuit` raised an
-  `AttributeError`.
-- `CS` and `CS_DAG` (controlled-S and its inverse) gates in circuit text and
-  `Circuit.append`, implemented using Clifford+T decompositions.
-- `active_width` and `stats` properties on `CompiledMeasurementSampler` and
-  `CompiledDetectorSampler`. `active_width` is the largest number of active
-  qubits that a shot simulates (0 if every output is direct, `None` under a
-  stabilizer-rank strategy); `stats` is a frozen dataclass with it, the
-  component widths, the action and error-bit counts, and memory estimates.
-  They replace reading the private `_program` or parsing `repr(sampler)`.
+- **Fault distance of non-Clifford circuits (experimental).**
+  `tsim.experimental.shortest_errors(circuit, max_weight=k)` returns every
+  smallest set of faults that can flip an observable without flipping a
+  detector, like Stim's `search_for_undetectable_logical_errors` but exhaustive
+  and for circuits with T gates. Each result gives the probability that the
+  faults go undetected and that they flip an observable, and explains each
+  fault as Stim's `ExplainedError` does: the detectors and observables it flips,
+  as `stim.DemTargetWithCoords`, and its `stim.CircuitErrorLocation`s.
+  An empty result proves the distance exceeds `k`.
+  The fault distance of d=5 T-state cultivation (3, as found by
+  [Chan et al.](https://arxiv.org/abs/2609.17706)) takes under a second, and
+  that of its Z-flagged version (4) takes 5 s.
+- **Determined measurements of non-Clifford circuits (experimental).**
+  `tsim.experimental.count_determined_measurements` and `missing_detectors`
+  work like Stim's methods of those names for circuits with T gates, either
+  exactly or from `shots` noiseless samples. `nondeterministic_detectors` lists
+  the declared detectors and observables that are random without noise, and
+  `missing_detectors` returns the parities of random detectors that stay
+  determined first, which repairs a circuit whose S gates became T gates. On
+  the d=5 cultivation circuits of [Chan et al.](https://arxiv.org/abs/2609.17706),
+  they find the 4 random detectors of the uncorrected circuit and none in the
+  corrected ones.
 
 ### Changed
 - Parametric gate tags are now written in the positional form, which is the
@@ -29,21 +40,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still read and is rewritten to the positional form wherever a circuit comes
   in: circuit text, `append`, and a `stim.Circuit` passed to `Circuit(...)`,
   `from_stim_program` or `+=`.
+- The stabilizer-rank strategies compile components of the same shape once, and
+  no longer run components with a single output without compiling them. A
+  20-qubit Clifford circuit with `strategy="cat5"` samples 8 times faster and its
+  first call takes 1.1 s instead of 1.8 s. Seeded samples are unchanged.
+
+## [1.1.0] - 2026-11-12
+
+Tsim 1.1 adds a GPU backend for Apple GPUs. For example, end-to-end
+[magic state cultivation](https://arxiv.org/abs/2409.17595) at d=5 now samples
+over 200 times faster on an M4 Pro than on a single CPU core. The GPU backend
+supports active widths of up to 11 and is used by default when available.
+
+### Added
+- **Apple GPU sampling.** On Apple-silicon Macs, Tsim now samples on the GPU
+  whenever every component has at most 11 active qubits, often 5 to 10 times
+  faster than all CPU cores. Choose the device with the new `device` argument of
+  `compile_sampler` and `compile_detector_sampler`: `"auto"` (the default) uses
+  the GPU when it can and otherwise the CPU, `"cpu"` stays on the CPU, and
+  `"metal"` raises an error explaining why the GPU can't run a circuit.
+  `sampler.stats.device` tells you where a sampler ended up. The GPU computes in
+  float32, and its samples for a given seed differ from the CPU's.
+- **`active_width` and `stats`** on the compiled samplers show how expensive a
+  circuit is to sample: the active width, component widths, memory estimates and
+  more. No more reading `_program` or parsing the repr.
+- **`CS` and `CS_DAG`** gates.
+- **`Circuit(...)` accepts a `stim.Circuit`** or another `Circuit`.
+- **An agent skill**, `simulating-circuits-with-tsim`, that teaches coding agents
+  to use Tsim. Install it with
+  `npx skills add QuEraComputing/tsim --skill simulating-circuits-with-tsim`.
+- **Docs for agents and chat assistants**: every docs page can be copied or opened
+  in ChatGPT or Claude, and an MCP server for the docs runs at
+  `https://bloqade.quera.com/tsim/mcp` (the page menu adds it to Cursor or VS Code).
 
 ### Fixed
-- Compiling a circuit with many detectors and noise locations no longer needs
-  memory proportional to their product. The error basis (a GF(2) elimination
-  over vertices x error bits) is now built and kept sparse, so a d=25
-  surface-code 15-to-1 distillation circuit (40k qubits, 115k detectors, 1.1M
-  error bits) compiles with 4.5 GB instead of failing to allocate 121 GiB.
-  Seeded samples are unchanged.
-- `CS`, `CCZ` and `CCX` in circuit text accept a tag containing `#` and can
-  share a line with a `REPEAT n {` or `}` delimiter. Repeated target qubits, as
-  in `CS 0 0`, raise an error naming the gate instead of its decomposition.
+- Circuits with many detectors and noise locations compile with far less memory.
+  A d=25 15-to-1 distillation circuit (115k detectors) now compiles with 4.5 GB
+  instead of failing to allocate 121 GiB. Seeded samples are unchanged.
+- `CS`, `CCZ` and `CCX` accept tags containing `#` and can share a line with
+  `REPEAT n {` or `}`. Repeated targets such as `CS 0 0` give a clear error.
 
 ### Changed
-- `ChannelSampler.signature_matrix` is now a `tsim.utils.linalg.SparseGF2Matrix`
-  instead of a dense uint8 array; `np.asarray` gives the dense matrix.
+- Some circuits give different samples for a given seed than in 1.0, because
+  measurements may be scheduled later. The sampled distribution is the same.
+- `ChannelSampler.signature_matrix` is now a sparse matrix; `np.asarray` gives
+  the dense one.
 
 ## [1.0.0] - 2026-11-04
 

@@ -6,9 +6,10 @@ import threading
 import types
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, wait
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import numba
+import numba.core.config
 
 # NOTE: waking numba's threads costs about 0.1 ms, more than many kernel calls
 # take serially. Numba's default threading layer aborts the process when two
@@ -63,7 +64,9 @@ def jit(
     # it reads them, so the name carries the flags: an entry cached without nogil
     # would keep holding the GIL.
     function = _renamed(function, "_nogil_contract" if contract else "_nogil")
-    options = _prange_only() if parallel else False
+    # NOTE: numba's stubs type ``parallel`` as bool, but its ParallelOptions also
+    # takes a dict of options at runtime.
+    options: Any = _prange_only() if parallel else False
     fastmath = {"contract"} if contract else False
     try:
         return numba.njit(cache=True, parallel=options, nogil=True, fastmath=fastmath)(
@@ -109,7 +112,7 @@ def _mark_task_thread() -> None:
 def _pool() -> ThreadPoolExecutor:
     # NOTE: one pool for every call, as large as numba's thread count can get.
     return ThreadPoolExecutor(
-        numba.config.NUMBA_NUM_THREADS,  # pyright: ignore[reportAttributeAccessIssue]
+        numba.core.config.NUMBA_NUM_THREADS,  # pyright: ignore[reportAttributeAccessIssue]
         initializer=_mark_task_thread,
     )
 

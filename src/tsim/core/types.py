@@ -28,6 +28,9 @@ if TYPE_CHECKING:
 SamplingStrategy = Literal["active_statevector", "cat5", "bss", "cutting"]
 """``"active_statevector"``, or a stabilizer-rank decomposition strategy."""
 
+Device = Literal["auto", "cpu", "metal"]
+"""Where ``"active_statevector"`` samples: ``"auto"`` picks a GPU when one can run it."""
+
 
 @dataclass(frozen=True)
 class SamplingGraph:

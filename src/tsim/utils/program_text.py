@@ -228,7 +228,12 @@ def canonical_parametric_tag(tag: str) -> str:
     # Stim tag string. This keeps `tsim.Circuit(str(c)) == c` round-trip stable
     # across notations. Malformed tags are kept as-is and rejected when parsed.
     parsed = _try_parse_parametric_tag(tag)
-    return tag if parsed is None else format_parsed_parametric_tag(*parsed)
+    if parsed is None:
+        return tag
+    try:
+        return format_parsed_parametric_tag(*parsed)
+    except OverflowError:
+        return tag
 
 
 def canonicalize_parametric_tags(circuit: stim.Circuit) -> stim.Circuit:
@@ -353,7 +358,10 @@ def _shorthand_line(line: str) -> str:
     parsed = _try_parse_parametric_tag(tag)
     if parsed is None:
         return line
-    shorthand = format_parsed_parametric_tag(*parsed)
+    try:
+        shorthand = format_parsed_parametric_tag(*parsed)
+    except OverflowError:
+        return line
     if name == "I" and parsed[0] in _SINGLE_QUBIT_PARAMETRIC_GATES:
         return f"{indent}{shorthand}{rest}"
     if name == "SPP" and parsed[0] == "R_PAULI":
