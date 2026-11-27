@@ -1104,10 +1104,8 @@ class TestParseParametricTag:
         with pytest.raises(ValueError, match="Malformed parametric tag"):
             parse_parametric_tag(_instr("U3(0.1, phi=0.2*pi, lambda=0.3*pi)"))
 
-    def test_malformed_error_suggests_both_forms(self):
-        with pytest.raises(
-            ValueError, match=r"e\.g\. 'R_X\(0\.25\)' or 'R_X\(theta=0\.25\*pi\)'"
-        ):
+    def test_malformed_error_suggests_positional_form(self):
+        with pytest.raises(ValueError, match=r"e\.g\. 'R_X\(0\.25\)'$"):
             parse_parametric_tag(_instr("R_X(.)"))
 
 

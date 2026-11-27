@@ -14,7 +14,11 @@ from zxparam import Graph
 from zxparam.viz.layout import Layout
 
 from tsim.core.params import ParamLayout
-from tsim.core.tags import is_t_tag, parse_parametric_tag_text
+from tsim.core.tags import (
+    format_keyword_parametric_tag,
+    is_t_tag,
+    parse_parametric_tag_text,
+)
 
 _ZX_SCALE = 40
 """zxparam's default number of pixels per unit of (col, row)."""
@@ -331,7 +335,7 @@ def _deduplicate_doubled_spp(svg_string: str) -> str:
 
 
 def _parse_parametric_tag(tag: str) -> tuple[str, dict[str, Fraction]] | None:
-    """Parse a parametric gate tag like R_Z(theta=0.3*pi) or R_Z(0.3)."""
+    """Parse a parametric gate tag like R_Z(0.3) (or legacy R_Z(theta=0.3*pi))."""
     try:
         result = parse_parametric_tag_text(tag)
     except ValueError:
@@ -438,6 +442,29 @@ def _replace_tagged_gates(
 
         modified_circ.append(instr)
     return modified_circ
+
+
+_STIM_TAG_RE = re.compile(r"\[([^\]\n]*)\]")
+
+
+def render_timeline_text(c: stim.Circuit) -> Any:
+    """Render a Stim circuit as a tag-aware ASCII timeline diagram.
+
+    ``stim_timeline_text`` only recognizes parametric tags in the legacy keyword
+    form (``R_Z(theta=0.3*pi)``), so tags are rewritten to it before rendering.
+    """
+    from stim_timeline_text import render_timeline_text as _render
+
+    def to_keyword_form(m: re.Match) -> str:
+        try:
+            parsed = parse_parametric_tag_text(m.group(1))
+        except (ValueError, OverflowError):
+            parsed = None
+        if parsed is None:
+            return m.group()
+        return f"[{format_keyword_parametric_tag(*parsed)}]"
+
+    return _render(_STIM_TAG_RE.sub(to_keyword_form, str(c)))
 
 
 def render_svg(
